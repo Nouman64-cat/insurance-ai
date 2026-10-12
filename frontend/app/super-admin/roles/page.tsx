@@ -5,6 +5,7 @@ import api from "@/app/services/api";
 import { Pagination, usePagination } from "@/components/Pagination";
 import DemoFillButton from "@/components/DemoFillButton";
 import { demoRole } from "@/lib/demoData";
+import { tx } from "@/lib/i18n/tx";
 
 interface Role {
   id: string;
@@ -83,7 +84,7 @@ export default function RoleManagementPage() {
     e.preventDefault();
     setFormError("");
     if (!form.name.trim()) {
-      setFormError("Role name is required.");
+      setFormError(tx("Role name is required."));
       return;
     }
     setSaving(true);
@@ -94,10 +95,10 @@ export default function RoleManagementPage() {
           ? { description: form.description }
           : { name: form.name, description: form.description };
         await api.put(`/roles/${editing.id}`, payload);
-        setSuccess(`Role "${editing.is_system ? editing.name : form.name.trim()}" updated.`);
+        setSuccess(tx("Role \"{0}\" updated.", { 0: editing.is_system ? editing.name : form.name.trim() }));
       } else {
         await api.post("/roles", { name: form.name, description: form.description });
-        setSuccess(`Role "${form.name.trim()}" created.`);
+        setSuccess(tx("Role \"{0}\" created.", { 0: form.name.trim() }));
       }
       setError("");
       setShowModal(false);
@@ -112,15 +113,15 @@ export default function RoleManagementPage() {
   const handleDelete = async (role: Role) => {
     setSuccess("");
     if (role.user_count > 0) {
-      setError(`"${role.name}" is still assigned to ${role.user_count} user(s) — move them to another role before deleting it.`);
+      setError(tx("\"{0}\" is still assigned to {1} user(s) — move them to another role before deleting it.", { 0: role.name, 1: role.user_count }));
       return;
     }
-    if (!confirm(`Delete the role "${role.name}"? This can't be undone.`)) return;
+    if (!confirm(tx("Delete the role \"{0}\"? This can't be undone.", { 0: role.name }))) return;
     setDeletingId(role.id);
     try {
       await api.delete(`/roles/${role.id}`);
       setError("");
-      setSuccess(`Role "${role.name}" deleted.`);
+      setSuccess(tx("Role \"{0}\" deleted.", { 0: role.name }));
       fetchRoles();
     } catch (err: any) {
       setError(errorText(err, "Failed to delete role."));
@@ -141,10 +142,10 @@ export default function RoleManagementPage() {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-950 text-center font-sans min-h-screen">
         <div className="max-w-md p-6 bg-slate-900 border border-slate-800 rounded-xl shadow-xl">
-          <h1 className="text-xl font-bold text-white mb-2">Access Denied</h1>
-          <p className="text-slate-400 text-sm mb-6">You do not have SuperAdmin privileges to access the Platform console.</p>
+          <h1 className="text-xl font-bold text-white mb-2">{tx("Access Denied")}</h1>
+          <p className="text-slate-400 text-sm mb-6">{tx("You do not have SuperAdmin privileges to access the Platform console.")}</p>
           <a href="/" className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm px-5 py-2.5 rounded-lg transition-all">
-            Return to Dashboard
+            {tx("Return to Dashboard")}
           </a>
         </div>
       </div>
@@ -163,9 +164,9 @@ export default function RoleManagementPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Role Management</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Role Management")}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Roles that can be assigned to users. Roles apply across the whole platform.
+            {tx("Roles that can be assigned to users. Roles apply across the whole platform.")}
           </p>
         </div>
         <button
@@ -175,7 +176,7 @@ export default function RoleManagementPage() {
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="w-4 h-4">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
           </svg>
-          Add Role
+          {tx("Add Role")}
         </button>
       </div>
 
@@ -183,7 +184,7 @@ export default function RoleManagementPage() {
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600 font-medium flex items-start justify-between gap-3">
           <span>{error}</span>
-          <button onClick={() => setError("")} className="text-red-400 hover:text-red-600" title="Dismiss">
+          <button onClick={() => setError("")} className="text-red-400 hover:text-red-600" title={tx("Dismiss")}>
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -198,7 +199,7 @@ export default function RoleManagementPage() {
             </svg>
           </span>
           <p className="flex-1 text-sm font-semibold text-slate-800">{success}</p>
-          <button onClick={() => setSuccess("")} className="p-1 text-slate-400 hover:text-slate-600" title="Dismiss">
+          <button onClick={() => setSuccess("")} className="p-1 text-slate-400 hover:text-slate-600" title={tx("Dismiss")}>
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -212,7 +213,7 @@ export default function RoleManagementPage() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
           </svg>
-          <span className="text-xs text-slate-400">Loading roles...</span>
+          <span className="text-xs text-slate-400">{tx("Loading roles...")}</span>
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -240,7 +241,7 @@ export default function RoleManagementPage() {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search roles…"
+                placeholder={tx("Search roles…")}
                 className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               />
             </div>
@@ -248,10 +249,10 @@ export default function RoleManagementPage() {
 
           {visible.length === 0 ? (
             <div className="py-20 text-center text-slate-400 px-5">
-              <p className="text-sm">{roles.length === 0 ? "No roles yet." : "No roles match your filters."}</p>
+              <p className="text-sm">{roles.length === 0 ? tx("No roles yet.") : tx("No roles match your filters.")}</p>
               {roles.length === 0 ? (
                 <button onClick={openCreate} className="mt-3 text-xs text-blue-600 font-semibold hover:underline">
-                  Create the first role
+                  {tx("Create the first role")}
                 </button>
               ) : (
                 <button
@@ -261,7 +262,7 @@ export default function RoleManagementPage() {
                   }}
                   className="mt-3 text-xs text-blue-600 font-semibold hover:underline"
                 >
-                  Clear filters
+                  {tx("Clear filters")}
                 </button>
               )}
             </div>
@@ -271,10 +272,10 @@ export default function RoleManagementPage() {
                 <table className="w-full text-sm min-w-[720px]">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-400 whitespace-nowrap">
-                      <th className="px-5 py-3.5 text-left">Role</th>
-                      <th className="px-5 py-3.5 text-left">Description</th>
-                      <th className="px-5 py-3.5 text-center">Users</th>
-                      <th className="px-5 py-3.5 text-right">Actions</th>
+                      <th className="px-5 py-3.5 text-left">{tx("Role")}</th>
+                      <th className="px-5 py-3.5 text-left">{tx("Description")}</th>
+                      <th className="px-5 py-3.5 text-center">{tx("Users")}</th>
+                      <th className="px-5 py-3.5 text-right">{tx("Actions")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -299,7 +300,7 @@ export default function RoleManagementPage() {
                             </span>
                             <div className="min-w-0">
                               <p className="font-semibold text-slate-800 truncate">{role.name}</p>
-                              <p className="text-[11px] text-slate-400">{role.is_system ? "Built-in" : "Custom"}</p>
+                              <p className="text-[11px] text-slate-400">{role.is_system ? tx("Built-in") : tx("Custom")}</p>
                             </div>
                           </div>
                         </td>
@@ -313,10 +314,10 @@ export default function RoleManagementPage() {
                         <td className="px-5 py-3.5 text-center whitespace-nowrap">
                           {role.user_count > 0 ? (
                             <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border bg-blue-50 text-blue-700 border-blue-200">
-                              {role.user_count} {role.user_count === 1 ? "user" : "users"}
+                              {role.user_count} {role.user_count === 1 ? tx("user") : tx("users")}
                             </span>
                           ) : (
-                            <span className="text-xs text-slate-400">No users</span>
+                            <span className="text-xs text-slate-400">{tx("No users")}</span>
                           )}
                         </td>
                         <td className="px-5 py-3.5 text-right whitespace-nowrap">
@@ -325,15 +326,15 @@ export default function RoleManagementPage() {
                               onClick={() => openEdit(role)}
                               className="px-3 py-1.5 text-xs font-semibold text-blue-600 bg-white hover:bg-slate-50 transition-colors"
                             >
-                              Edit
+                              {tx("Edit")}
                             </button>
                             <button
                               onClick={() => handleDelete(role)}
                               disabled={role.is_system || deletingId === role.id}
-                              title={role.is_system ? "Built-in roles can't be deleted" : undefined}
+                              title={role.is_system ? tx("Built-in roles can't be deleted") : undefined}
                               className="px-3 py-1.5 text-xs font-semibold text-red-600 bg-white hover:bg-slate-50 transition-colors disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed"
                             >
-                              {deletingId === role.id ? "Deleting…" : "Delete"}
+                              {deletingId === role.id ? tx("Deleting…") : tx("Delete")}
                             </button>
                           </div>
                         </td>
@@ -342,7 +343,7 @@ export default function RoleManagementPage() {
                   </tbody>
                 </table>
               </div>
-              <Pagination pagination={pagination} noun="roles" inline />
+              <Pagination pagination={pagination} noun={tx("roles")} inline />
             </>
           )}
 
@@ -352,9 +353,7 @@ export default function RoleManagementPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
             </svg>
             <p>
-              <span className="font-semibold text-slate-600">Built-in</span> roles are recognised by name across the platform, so only their
-              description can be edited. <span className="font-semibold text-slate-600">Custom</span> roles can be assigned to users but carry no
-              extra access until permissions are set up for them.
+              <span className="font-semibold text-slate-600">{tx("Built-in")}</span>{" "}{tx("roles are recognised by name across the platform, so only their description can be edited.")}{" "}<span className="font-semibold text-slate-600">{tx("Custom")}</span>{" "}{tx("roles can be assigned to users but carry no extra access until permissions are set up for them.")}
             </p>
           </div>
         </div>
@@ -365,11 +364,11 @@ export default function RoleManagementPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-4 my-8">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900">{editing ? `Edit Role — ${editing.name}` : "Add Role"}</h3>
+              <h3 className="text-base font-bold text-slate-900">{editing ? tx("Edit Role — {0}", { 0: editing.name }) : tx("Add Role")}</h3>
               {!editing && (
                 <DemoFillButton className="ml-auto mr-3" onFill={() => setForm(demoRole(roles.map((r) => r.name)))} />
               )}
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 transition-colors" title="Close">
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 transition-colors" title={tx("Close")}>
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -380,30 +379,30 @@ export default function RoleManagementPage() {
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs font-medium text-red-600">{formError}</div>
               )}
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Role Name *</label>
+                <label className="block text-xs font-semibold text-slate-600">{tx("Role Name *")}</label>
                 <input
                   type="text"
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                   disabled={!!editing?.is_system}
                   maxLength={50}
-                  placeholder="e.g. Compliance Officer"
+                  placeholder={tx("e.g. Compliance Officer")}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                 />
                 <p className="text-[11px] text-slate-400">
                   {editing?.is_system
-                    ? "Built-in role — the name is fixed because the platform recognises it by name."
-                    : "2–50 characters: letters, numbers, spaces, hyphens or underscores."}
+                    ? tx("Built-in role — the name is fixed because the platform recognises it by name.")
+                    : tx("2–50 characters: letters, numbers, spaces, hyphens or underscores.")}
                 </p>
               </div>
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Description</label>
+                <label className="block text-xs font-semibold text-slate-600">{tx("Description")}</label>
                 <textarea
                   value={form.description}
                   onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                   maxLength={500}
                   rows={3}
-                  placeholder="What this role is for"
+                  placeholder={tx("What this role is for")}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
                 />
                 <p className="text-[11px] text-slate-400 text-right">{form.description.length}/500</p>
@@ -415,7 +414,7 @@ export default function RoleManagementPage() {
                   disabled={saving}
                   className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
                 >
-                  Cancel
+                  {tx("Cancel")}
                 </button>
                 <button
                   type="submit"
@@ -423,7 +422,7 @@ export default function RoleManagementPage() {
                   className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg transition-colors flex items-center gap-1.5"
                 >
                   {saving && <span className="w-3.5 h-3.5 rounded-full border-2 border-white/40 border-t-white animate-spin" />}
-                  {editing ? "Save Changes" : "Create Role"}
+                  {editing ? tx("Save Changes") : tx("Create Role")}
                 </button>
               </div>
             </form>

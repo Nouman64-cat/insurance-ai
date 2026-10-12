@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { COMMISSION_RATE_CARD } from "../../../app/services/commissions";
 import RateCardTab from "../../../components/commissions/RateCardTab";
 import { DateRangeFilter, resolvePreset, type DatePreset, type DateRange } from "../../../components/commissions/DateRangeFilter";
+import { tx } from "@/lib/i18n/tx";
 
 export default function TypesPage() {
   const [notification, setNotification] = useState<{ msg: string; type: "success" | "error" } | null>(null);
@@ -62,9 +63,9 @@ export default function TypesPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-200/80 pb-5">
         <div>
           <div className="flex items-center gap-2.5">
-            <h1 className="text-xl font-extrabold tracking-tight text-slate-900">Commission Types</h1>
+            <h1 className="text-xl font-extrabold tracking-tight text-slate-900">{tx("Commission Types")}</h1>
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
-              Rate Cards &amp; Engine Rules
+              {tx("Rate Cards & Engine Rules")}
             </span>
           </div>
         </div>

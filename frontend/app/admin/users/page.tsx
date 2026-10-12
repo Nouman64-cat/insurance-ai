@@ -7,6 +7,7 @@ import api from "@/app/services/api";
 import { useHighlightTarget } from "@/lib/useHighlightTarget";
 import { useNotify } from "@/components/NotificationContext";
 import { Pagination, usePagination } from "@/components/Pagination";
+import { tx } from "@/lib/i18n/tx";
 
 interface User {
   id: string;
@@ -107,7 +108,7 @@ export default function UserManagementPage() {
     const tenantId = localStorage.getItem("tenant_id");
 
     if (!tenantId) {
-      setError("No active organization tenant found. Please log in again.");
+      setError(tx("No active organization tenant found. Please log in again."));
       setLoading(false);
       return;
     }
@@ -127,7 +128,7 @@ export default function UserManagementPage() {
         setRoleId(filteredRoles[0].id);
       }
     } catch (err: any) {
-      setError(err.message ?? "Failed to load admin management data.");
+      setError(err.message ?? tx("Failed to load admin management data."));
     } finally {
       setLoading(false);
     }
@@ -181,11 +182,11 @@ export default function UserManagementPage() {
         location: location || null,
       });
 
-      notify(`User created successfully! Login credentials were emailed to ${email}.`, true);
+      notify(tx("User created successfully! Login credentials were emailed to {0}.", { 0: email }), true);
       setShowCreateModal(false);
       fetchUsersAndRoles();
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to create user.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to create user."));
     } finally {
       setFormLoading(false);
     }
@@ -220,18 +221,18 @@ export default function UserManagementPage() {
 
       await api.patch(`/tenants/${tenantId}/users/${selectedUser.id}`, updateData);
 
-      notify("User updated successfully!", true);
+      notify(tx("User updated successfully!"), true);
       setShowEditModal(false);
       fetchUsersAndRoles();
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to update user.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to update user."));
     } finally {
       setFormLoading(false);
     }
   };
 
   const handleDeleteUser = async (user: User) => {
-    if (!confirm(`Are you sure you want to delete the user "${user.full_name}"?`)) {
+    if (!confirm(tx("Are you sure you want to delete the user \"{0}\"?", { 0: user.full_name }))) {
       return;
     }
 
@@ -240,10 +241,10 @@ export default function UserManagementPage() {
 
     try {
       await api.delete(`/tenants/${tenantId}/users/${user.id}`);
-      notify("User deleted successfully!", true);
+      notify(tx("User deleted successfully!"), true);
       fetchUsersAndRoles();
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to delete user.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to delete user."));
     }
   };
 
@@ -260,12 +261,12 @@ export default function UserManagementPage() {
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
           </div>
-          <h1 className="text-xl font-bold text-white mb-2">Access Denied</h1>
+          <h1 className="text-xl font-bold text-white mb-2">{tx("Access Denied")}</h1>
           <p className="text-slate-400 text-sm mb-6">
-            You do not have administrative privileges to access the User Management console.
+            {tx("You do not have administrative privileges to access the User Management console.")}
           </p>
           <a href="/" className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm px-5 py-2.5 rounded-lg transition-all">
-            Return to Dashboard
+            {tx("Return to Dashboard")}
           </a>
         </div>
       </div>
@@ -280,9 +281,9 @@ export default function UserManagementPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">User Management</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("User Management")}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Admin console to manage users, assign system roles, and control active portal status.
+            {tx("Admin console to manage users, assign system roles, and control active portal status.")}
           </p>
         </div>
         <button
@@ -292,7 +293,7 @@ export default function UserManagementPage() {
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="w-4 h-4">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
           </svg>
-          Add New User
+          {tx("Add New User")}
         </button>
       </div>
 
@@ -306,8 +307,8 @@ export default function UserManagementPage() {
       {/* Main content table card */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-          <p className="text-sm font-semibold text-slate-700">All Portal Accounts</p>
-          <span className="text-xs text-slate-400 font-medium">Total: {visibleUsers.length}</span>
+          <p className="text-sm font-semibold text-slate-700">{tx("All Portal Accounts")}</p>
+          <span className="text-xs text-slate-400 font-medium">{tx("Total:")}{" "}{visibleUsers.length}</span>
         </div>
 
         {loading ? (
@@ -316,16 +317,16 @@ export default function UserManagementPage() {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
             </svg>
-            <span className="text-xs text-slate-400">Fetching tenant directory...</span>
+            <span className="text-xs text-slate-400">{tx("Fetching tenant directory...")}</span>
           </div>
         ) : visibleUsers.length === 0 ? (
           <div className="py-20 text-center text-slate-400">
-            <p className="text-sm">No other users registered in this tenant.</p>
+            <p className="text-sm">{tx("No other users registered in this tenant.")}</p>
             <button
               onClick={handleOpenCreateModal}
               className="mt-3 text-xs text-blue-600 font-semibold hover:underline"
             >
-              Register a new account
+              {tx("Register a new account")}
             </button>
           </div>
         ) : (
@@ -334,14 +335,14 @@ export default function UserManagementPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  <th className="px-5 py-3.5 text-left">Username</th>
-                  <th className="px-5 py-3.5 text-left">Full Name</th>
-                  <th className="px-5 py-3.5 text-left">Email Address</th>
-                  <th className="px-5 py-3.5 text-left">Portal Role</th>
-                  <th className="px-5 py-3.5 text-left">Department</th>
-                  <th className="px-5 py-3.5 text-center">Status</th>
-                  <th className="px-5 py-3.5 text-left">Created Date</th>
-                  <th className="px-5 py-3.5 text-right">Actions</th>
+                  <th className="px-5 py-3.5 text-left">{tx("Username")}</th>
+                  <th className="px-5 py-3.5 text-left">{tx("Full Name")}</th>
+                  <th className="px-5 py-3.5 text-left">{tx("Email Address")}</th>
+                  <th className="px-5 py-3.5 text-left">{tx("Portal Role")}</th>
+                  <th className="px-5 py-3.5 text-left">{tx("Department")}</th>
+                  <th className="px-5 py-3.5 text-center">{tx("Status")}</th>
+                  <th className="px-5 py-3.5 text-left">{tx("Created Date")}</th>
+                  <th className="px-5 py-3.5 text-right">{tx("Actions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -368,14 +369,14 @@ export default function UserManagementPage() {
                           }`}
                       >
                         {user.status === "ACTIVE"
-                          ? "Active"
+                          ? tx("Active")
                           : user.status === "SUSPENDED"
-                            ? "Suspended"
+                            ? tx("Suspended")
                             : user.status === "LOCKED"
-                              ? "Locked"
+                              ? tx("Locked")
                               : user.status === "INACTIVE"
-                                ? "Inactive"
-                                : "Active"}
+                                ? tx("Inactive")
+                                : tx("Active")}
                       </span>
                     </td>
                     <td className="px-5 py-3.5 text-xs text-slate-400">
@@ -390,14 +391,14 @@ export default function UserManagementPage() {
                         onClick={() => handleOpenEditModal(user)}
                         className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors"
                       >
-                        Edit
+                        {tx("Edit")}
                       </button>
                       <span className="text-slate-200">|</span>
                       <button
                         onClick={() => handleDeleteUser(user)}
                         className="text-xs font-bold text-red-500 hover:text-red-700 transition-colors"
                       >
-                        Delete
+                        {tx("Delete")}
                       </button>
                     </td>
                   </tr>
@@ -405,7 +406,7 @@ export default function UserManagementPage() {
               </tbody>
             </table>
           </div>
-          <Pagination pagination={pagination} noun="users" inline />
+          <Pagination pagination={pagination} noun={tx("users")} inline />
           </>
         )}
       </div>
@@ -415,7 +416,7 @@ export default function UserManagementPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 my-8">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900">Add New User</h3>
+              <h3 className="text-base font-bold text-slate-900">{tx("Add New User")}</h3>
               <button
                 onClick={() => setShowCreateModal(false)}
                 className="text-slate-400 hover:text-slate-600 transition-colors"
@@ -429,60 +430,60 @@ export default function UserManagementPage() {
             <form onSubmit={handleCreateUser} className="space-y-4">
               {myBranch && (
                 <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                  New users will be added to your branch: <span className="font-semibold text-slate-700">{myBranch.name} ({myBranch.branch_code})</span>
+                  {tx("New users will be added to your branch:")}{" "}<span className="font-semibold text-slate-700">{myBranch.name} ({myBranch.branch_code})</span>
                 </p>
               )}
 
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Full Name *</label>
+                <label className="block text-xs font-semibold text-slate-600">{tx("Full Name *")}</label>
                 <input
                   type="text"
                   required
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  placeholder="e.g. Ali Raza"
+                  placeholder={tx("e.g. Ali Raza")}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Email Address *</label>
+                <label className="block text-xs font-semibold text-slate-600">{tx("Email Address *")}</label>
                 <input
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="e.g. ali@adamjeelife.com"
+                  placeholder={tx("e.g. ali@adamjeelife.com")}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">CNIC (Optional)</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("CNIC (Optional)")}</label>
                   <input
                     type="text"
                     value={cnic}
                     onChange={(e) => setCnic(e.target.value)}
-                    placeholder="XXXXX-XXXXXXX-X"
+                    placeholder={tx("XXXXX-XXXXXXX-X")}
                     pattern="[0-9]{5}-[0-9]{7}-[0-9]{1}"
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Location (Optional)</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Location (Optional)")}</label>
                   <input
                     type="text"
                     value={location}
                     onChange={(e) => setLocation(e.target.value)}
-                    placeholder="e.g. Karachi"
+                    placeholder={tx("e.g. Karachi")}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Role *</label>
+                <label className="block text-xs font-semibold text-slate-600">{tx("Role *")}</label>
                 <select
                   value={roleId}
                   onChange={(e) => setRoleId(e.target.value)}
@@ -497,7 +498,7 @@ export default function UserManagementPage() {
               </div>
 
               <p className="text-xs text-slate-400">
-                A username and password will be generated automatically and emailed to this address.
+                {tx("A username and password will be generated automatically and emailed to this address.")}
               </p>
 
               <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
@@ -506,7 +507,7 @@ export default function UserManagementPage() {
                   onClick={() => setShowCreateModal(false)}
                   className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
                 >
-                  Cancel
+                  {tx("Cancel")}
                 </button>
                 <button
                   type="submit"
@@ -519,7 +520,7 @@ export default function UserManagementPage() {
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
                   )}
-                  Create Account
+                  {tx("Create Account")}
                 </button>
               </div>
             </form>
@@ -532,7 +533,7 @@ export default function UserManagementPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-2xl w-full p-6 space-y-4 my-8">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900">Edit Portal Account</h3>
+              <h3 className="text-base font-bold text-slate-900">{tx("Edit Portal Account")}</h3>
               <button
                 onClick={() => setShowEditModal(false)}
                 className="text-slate-400 hover:text-slate-600 transition-colors"
@@ -546,7 +547,7 @@ export default function UserManagementPage() {
             <form onSubmit={handleEditUser} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Username (Read Only)</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Username (Read Only)")}</label>
                   <input
                     type="text"
                     disabled
@@ -556,7 +557,7 @@ export default function UserManagementPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Email (Read Only)</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Email (Read Only)")}</label>
                   <input
                     type="email"
                     disabled
@@ -566,7 +567,7 @@ export default function UserManagementPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">First Name *</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("First Name *")}</label>
                   <input
                     type="text"
                     required
@@ -577,7 +578,7 @@ export default function UserManagementPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Last Name *</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Last Name *")}</label>
                   <input
                     type="text"
                     required
@@ -588,19 +589,19 @@ export default function UserManagementPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Password (Leave blank to keep same)</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Password (Leave blank to keep same)")}</label>
                   <input
                     type="password"
                     autoComplete="new-password"
                     value={editPassword}
                     onChange={(e) => setEditPassword(e.target.value)}
-                    placeholder="Enter new password if updating"
+                    placeholder={tx("Enter new password if updating")}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Role *</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Role *")}</label>
                   <select
                     value={editRoleId}
                     onChange={(e) => setEditRoleId(e.target.value)}
@@ -615,7 +616,7 @@ export default function UserManagementPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Phone</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Phone")}</label>
                   <input
                     type="text"
                     value={editPhone}
@@ -626,40 +627,40 @@ export default function UserManagementPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Department</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Department")}</label>
                   <input
                     type="text"
                     value={editDepartment}
                     onChange={(e) => setEditDepartment(e.target.value)}
-                    placeholder="e.g. Underwriting"
+                    placeholder={tx("e.g. Underwriting")}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Employee ID</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Employee ID")}</label>
                   <input
                     type="text"
                     value={editEmployeeId}
                     onChange={(e) => setEditEmployeeId(e.target.value)}
-                    placeholder="e.g. EMP-1049"
+                    placeholder={tx("e.g. EMP-1049")}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Designation</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Designation")}</label>
                   <input
                     type="text"
                     value={editDesignation}
                     onChange={(e) => setEditDesignation(e.target.value)}
-                    placeholder="e.g. Senior Underwriter"
+                    placeholder={tx("e.g. Senior Underwriter")}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Date of Joining</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Date of Joining")}</label>
                   <input
                     type="date"
                     value={editDateOfJoining}
@@ -669,39 +670,39 @@ export default function UserManagementPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">CNIC</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("CNIC")}</label>
                   <input
                     type="text"
                     value={editCnic}
                     onChange={(e) => setEditCnic(e.target.value)}
-                    placeholder="XXXXX-XXXXXXX-X"
+                    placeholder={tx("XXXXX-XXXXXXX-X")}
                     pattern="[0-9]{5}-[0-9]{7}-[0-9]{1}"
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Location</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Location")}</label>
                   <input
                     type="text"
                     value={editLocation}
                     onChange={(e) => setEditLocation(e.target.value)}
-                    placeholder="e.g. Karachi"
+                    placeholder={tx("e.g. Karachi")}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Account Status *</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Account Status *")}</label>
                   <select
                     value={editStatus}
                     onChange={(e) => setEditStatus(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
                   >
-                    <option value="ACTIVE">Active</option>
-                    <option value="INACTIVE">Inactive</option>
-                    <option value="SUSPENDED">Suspended</option>
-                    <option value="LOCKED">Locked</option>
+                    <option value="ACTIVE">{tx("Active")}</option>
+                    <option value="INACTIVE">{tx("Inactive")}</option>
+                    <option value="SUSPENDED">{tx("Suspended")}</option>
+                    <option value="LOCKED">{tx("Locked")}</option>
                   </select>
                 </div>
               </div>
@@ -712,7 +713,7 @@ export default function UserManagementPage() {
                   onClick={() => setShowEditModal(false)}
                   className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
                 >
-                  Cancel
+                  {tx("Cancel")}
                 </button>
                 <button
                   type="submit"
@@ -725,7 +726,7 @@ export default function UserManagementPage() {
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
                   )}
-                  Save Changes
+                  {tx("Save Changes")}
                 </button>
               </div>
             </form>

@@ -8,6 +8,7 @@ import {
   isTerminal,
   type StageState,
 } from "./lifecycle";
+import { tx } from "@/lib/i18n/tx";
 
 interface LifecycleStepperProps {
   status: string;
@@ -49,7 +50,7 @@ export function LifecycleStepper({ status, compact = false }: Readonly<Lifecycle
           <line x1="9" y1="9" x2="15" y2="15" />
         </svg>
         <span className="text-xs font-semibold">
-          Journey ended — policy {t.label.toLowerCase()}.
+          {tx("Journey ended — policy")}{" "}{t.label.toLowerCase()}.
         </span>
       </div>
     );

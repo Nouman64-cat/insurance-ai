@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import api from "@/app/services/api";
 import { PanelProps, errMsg, mpBase, pkr } from "./groupShared";
+import { tx } from "@/lib/i18n/tx";
 
 interface Parsed {
   filename: string;
@@ -71,16 +72,15 @@ export default function CensusUpload({ tenantId, orgId, mp, reload }: PanelProps
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <p className="text-sm font-semibold text-slate-700">Upload a census file</p>
+          <p className="text-sm font-semibold text-slate-700">{tx("Upload a census file")}</p>
           <p className="text-xs text-slate-400">
-            .csv or .xlsx — columns: cnic, name, dob, gender, occupation, declared_income (annual), plus optional employee_id, designation,
-            grade, joining_date, benefit_class, basic_monthly_salary, is_smoker, height_cm, weight_kg.
+            {tx(".csv or .xlsx — columns: cnic, name, dob, gender, occupation, declared_income (annual), plus optional employee_id, designation, grade, joining_date, benefit_class, basic_monthly_salary, is_smoker, height_cm, weight_kg.")}
           </p>
         </div>
         <input ref={input} type="file" accept=".csv,.xlsx" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }} />
         <button onClick={() => input.current?.click()} disabled={!!busy}
           className="px-4 py-2 text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-60">
-          Choose file
+          {tx("Choose file")}
         </button>
       </div>
 
@@ -91,8 +91,8 @@ export default function CensusUpload({ tenantId, orgId, mp, reload }: PanelProps
       {parsed && (
         <div className="space-y-3">
           <p className="text-xs text-slate-600">
-            <strong>{parsed.filename}</strong> — {parsed.row_count} employee row{parsed.row_count === 1 ? "" : "s"}
-            {parsed.ignored_columns.length > 0 && <span className="text-amber-700"> · ignored columns: {parsed.ignored_columns.join(", ")}</span>}
+            <strong>{parsed.filename}</strong> — {parsed.row_count}{" "}{tx("employee row")}{parsed.row_count === 1 ? "" : "s"}
+            {parsed.ignored_columns.length > 0 && <span className="text-amber-700">{" "}{tx("· ignored columns:")}{" "}{parsed.ignored_columns.join(", ")}</span>}
           </p>
           {parsed.warnings.map((w) => <p key={w} className="text-xs text-amber-700">{w}</p>)}
           <div className="overflow-x-auto border border-slate-100 rounded-lg">
@@ -107,27 +107,27 @@ export default function CensusUpload({ tenantId, orgId, mp, reload }: PanelProps
               </tbody>
             </table>
           </div>
-          {parsed.row_count > preview.length && <p className="text-[11px] text-slate-400">Showing the first {preview.length} rows.</p>}
+          {parsed.row_count > preview.length && <p className="text-[11px] text-slate-400">{tx("Showing the first")}{" "}{preview.length}{" "}{tx("rows.")}</p>}
 
           {verdict && (verdict.is_valid ? (
             <div className="flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
               <p className="text-sm text-emerald-800 font-medium">
-                All {verdict.total} rows are valid{verdict.computed_free_cover_limit != null ? ` · Free Cover Limit will be ${pkr(verdict.computed_free_cover_limit)}` : ""}.
+                {tx("All")}{" "}{verdict.total}{" "}{tx("rows are valid")}{verdict.computed_free_cover_limit != null ? " " + tx("· Free Cover Limit will be {0}", { 0: pkr(verdict.computed_free_cover_limit) }) : ""}.
               </p>
               <div className="flex gap-2">
-                <button onClick={reset} className="px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 bg-white rounded-lg">Cancel</button>
+                <button onClick={reset} className="px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 bg-white rounded-lg">{tx("Cancel")}</button>
                 <button onClick={confirm} disabled={!!busy} className="px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg">
-                  Enrol {verdict.total} employees
+                  {tx("Enrol")}{" "}{verdict.total}{" "}{tx("employees")}
                 </button>
               </div>
             </div>
           ) : (
             <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-1">
-              <p className="text-sm font-bold text-red-700">Fix these before enrolling — nothing has been saved:</p>
+              <p className="text-sm font-bold text-red-700">{tx("Fix these before enrolling — nothing has been saved:")}</p>
               {problems.slice(0, 12).map((p, i) => <p key={i} className="text-xs text-red-700">• {p}</p>)}
-              {problems.length > 12 && <p className="text-xs text-red-700">…and {problems.length - 12} more.</p>}
-              {verdict.duplicate_cnics.length > 0 && <p className="text-xs text-red-700">• Duplicate CNICs: {verdict.duplicate_cnics.join(", ")}</p>}
-              <button onClick={reset} className="mt-1 text-xs font-semibold text-red-700 underline">Choose a corrected file</button>
+              {problems.length > 12 && <p className="text-xs text-red-700">{tx("…and")}{" "}{problems.length - 12}{" "}{tx("more.")}</p>}
+              {verdict.duplicate_cnics.length > 0 && <p className="text-xs text-red-700">{tx("• Duplicate CNICs:")}{" "}{verdict.duplicate_cnics.join(", ")}</p>}
+              <button onClick={reset} className="mt-1 text-xs font-semibold text-red-700 underline">{tx("Choose a corrected file")}</button>
             </div>
           ))}
         </div>

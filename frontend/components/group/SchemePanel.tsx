@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import api from "@/app/services/api";
 import { Chip, GroupQuote, PanelProps, downloadPdf, errMsg, mpBase, pkr, premiumWord } from "./groupShared";
+import { tx } from "@/lib/i18n/tx";
 
 // Where a scheme is in its life, left to right. "Declined" sits beside "Quoted":
 // the employer said no and a revised quote can still be generated.
@@ -46,15 +47,15 @@ export default function SchemePanel({ tenantId, orgId, mp, reload }: PanelProps)
   };
 
   const issue = () => run("Issue", async () => {
-    if (!confirm("Issue the master policy and one certificate per member? Cover starts once the employer's payment is recorded.")) return;
+    if (!confirm(tx("Issue the master policy and one certificate per member? Cover starts once the employer's payment is recorded."))) return;
     const res = await api.post(`${base}/issue`);
-    setNotice(`Master policy ${res.data.master_policy.policy_number} issued with ${res.data.certificates_issued} certificates.`);
+    setNotice(tx("Master policy {0} issued with {1} certificates.", { 0: res.data.master_policy.policy_number, 1: res.data.certificates_issued }));
     await reload();
   });
 
   const pay = () => run("Record payment", async () => {
     const res = await api.post(`${base}/payments`, { reference: reference.trim(), amount: parseFloat(amount) });
-    setNotice(`Payment recorded — ${res.data.certificates_issued} members are now covered.`);
+    setNotice(tx("Payment recorded — {0} members are now covered.", { 0: res.data.certificates_issued }));
     setReference("");
     await reload();
   });
@@ -96,7 +97,7 @@ export default function SchemePanel({ tenantId, orgId, mp, reload }: PanelProps)
           })}
         </ol>
         {mp.status === "Declined" && (
-          <p className="mt-3 text-xs text-red-600 font-medium">The employer declined the last quote — generate a revised one from the Quote tab.</p>
+          <p className="mt-3 text-xs text-red-600 font-medium">{tx("The employer declined the last quote — generate a revised one from the Quote tab.")}</p>
         )}
       </div>
 
@@ -114,11 +115,11 @@ export default function SchemePanel({ tenantId, orgId, mp, reload }: PanelProps)
       {mp.status === "Accepted" && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <p className="text-sm font-semibold text-slate-800">Ready to issue</p>
-            <p className="text-xs text-slate-500">Assigns the master policy number and one numbered certificate per member.</p>
+            <p className="text-sm font-semibold text-slate-800">{tx("Ready to issue")}</p>
+            <p className="text-xs text-slate-500">{tx("Assigns the master policy number and one numbered certificate per member.")}</p>
           </div>
           <button onClick={issue} disabled={!!busy} className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg">
-            {busy === "Issue" ? "Issuing…" : "Issue master policy"}
+            {busy === "Issue" ? tx("Issuing…") : tx("Issue master policy")}
           </button>
         </div>
       )}
@@ -126,23 +127,23 @@ export default function SchemePanel({ tenantId, orgId, mp, reload }: PanelProps)
       {mp.status === "PendingPayment" && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-3">
           <div>
-            <p className="text-sm font-semibold text-slate-800">Awaiting the employer&apos;s {word}</p>
-            <p className="text-xs text-slate-500">Cover starts for every member once the full amount is recorded.{accepted ? ` Amount due ${pkr(accepted.total_premium)}.` : ""}</p>
+            <p className="text-sm font-semibold text-slate-800">{tx("Awaiting the employer's")}{" "}{word}</p>
+            <p className="text-xs text-slate-500">{tx("Cover starts for every member once the full amount is recorded.")}{accepted ? " " + tx("Amount due {0}.", { 0: pkr(accepted.total_premium) }) : ""}</p>
           </div>
           <div className="flex items-end gap-3 flex-wrap">
             <label className="text-xs font-semibold text-slate-600 space-y-1">
-              <span className="block">Bank / transfer reference *</span>
-              <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="IBFT-123456"
+              <span className="block">{tx("Bank / transfer reference *")}</span>
+              <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder={tx("IBFT-123456")}
                 className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm w-56 bg-slate-50" />
             </label>
             <label className="text-xs font-semibold text-slate-600 space-y-1">
-              <span className="block">Amount (PKR)</span>
+              <span className="block">{tx("Amount (PKR)")}</span>
               <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)}
                 className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm w-40 bg-slate-50" />
             </label>
             <button onClick={pay} disabled={!!busy || !reference.trim() || !(parseFloat(amount) > 0)}
               className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg">
-              {busy === "Record payment" ? "Recording…" : "Record payment"}
+              {busy === "Record payment" ? tx("Recording…") : tx("Record payment")}
             </button>
           </div>
         </div>
@@ -150,16 +151,16 @@ export default function SchemePanel({ tenantId, orgId, mp, reload }: PanelProps)
 
       {ptf && ptf.periods?.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <p className="px-5 py-3 border-b border-slate-100 bg-slate-50 text-sm font-semibold text-slate-700">Participants&apos; Takaful Fund</p>
+          <p className="px-5 py-3 border-b border-slate-100 bg-slate-50 text-sm font-semibold text-slate-700">{tx("Participants' Takaful Fund")}</p>
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-slate-100 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                <th className="px-5 py-2 text-left">Period</th>
-                <th className="px-3 py-2 text-right">Wakala fee</th>
-                <th className="px-3 py-2 text-right">Fund</th>
-                <th className="px-3 py-2 text-right">Retakaful</th>
-                <th className="px-3 py-2 text-right">Claims</th>
-                <th className="px-5 py-2 text-right">Surplus / deficit</th>
+                <th className="px-5 py-2 text-left">{tx("Period")}</th>
+                <th className="px-3 py-2 text-right">{tx("Wakala fee")}</th>
+                <th className="px-3 py-2 text-right">{tx("Fund")}</th>
+                <th className="px-3 py-2 text-right">{tx("Retakaful")}</th>
+                <th className="px-3 py-2 text-right">{tx("Claims")}</th>
+                <th className="px-5 py-2 text-right">{tx("Surplus / deficit")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 tabular-nums">
@@ -183,7 +184,7 @@ export default function SchemePanel({ tenantId, orgId, mp, reload }: PanelProps)
         <div className="flex justify-end">
           <button onClick={() => run("Download", () => downloadPdf(`${base}/schedule/document`, `schedule-${mp.policy_number}.pdf`))}
             className="px-4 py-2 text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50">
-            Download policy schedule (PDF)
+            {tx("Download policy schedule (PDF)")}
           </button>
         </div>
       )}

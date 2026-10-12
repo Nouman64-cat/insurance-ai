@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type DragEvent,
+} from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
@@ -9,25 +17,53 @@ import { useNotify } from "@/components/NotificationContext";
 import CaseDocumentList from "@/components/case/CaseDocumentList";
 import { DecisionBanner, StatusBadge } from "@/components/StatusBadge";
 import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
-import { fmtCoverage, fmtDob, fmtIncome, type AIDecision } from "@/lib/mock-data";
+import {
+  fmtCoverage,
+  fmtDob,
+  fmtIncome,
+  type AIDecision,
+} from "@/lib/mock-data";
 import api, { summarizerApi } from "@/app/services/api";
 import { useCaseEvents, type CaseEvent } from "@/lib/agent/useCaseEvents";
 import { parentOrigin } from "@/lib/agent/portalMessage";
-import { getEApplication, inviteEApplication, type EApplication } from "@/app/services/eApplication";
-import { getACR, requestACR, type AgentConfidentialReport } from "@/app/services/agentConfidentialReport";
+import {
+  getEApplication,
+  inviteEApplication,
+  type EApplication,
+} from "@/app/services/eApplication";
+import {
+  getACR,
+  requestACR,
+  type AgentConfidentialReport,
+} from "@/app/services/agentConfidentialReport";
 import { ACRModal } from "@/components/entities/ACRModal";
 import ModalPortal from "@/components/ModalPortal";
 import { getIPP, type IPP } from "@/app/services/initialPremiumPayment";
 import { IPPModal } from "@/components/entities/IPPModal";
-import { getCompliance, runCompliance, clearCompliance, failCompliance, type ComplianceCheck } from "@/app/services/preIssuance";
 import {
-  getInsuranceHistory, runInsuranceHistory, clearInsuranceHistory, failInsuranceHistory,
+  getCompliance,
+  runCompliance,
+  clearCompliance,
+  failCompliance,
+  type ComplianceCheck,
+} from "@/app/services/preIssuance";
+import {
+  getInsuranceHistory,
+  runInsuranceHistory,
+  clearInsuranceHistory,
+  failInsuranceHistory,
   type InsuranceHistory,
 } from "@/app/services/insuranceHistory";
 import {
-  getMedicalExam, assessMedicalExam, inviteMedicalExam, waiveMedicalExam,
-  recordMedicalResult, MEDICAL_CLEARED, type MedicalExamOrder,
+  getMedicalExam,
+  assessMedicalExam,
+  inviteMedicalExam,
+  waiveMedicalExam,
+  recordMedicalResult,
+  MEDICAL_CLEARED,
+  type MedicalExamOrder,
 } from "@/app/services/medicalExam";
+import { tx } from "@/lib/i18n/tx";
 
 // When this page is embedded in the Copilot chat's in-conversation iframe
 // (see CopilotInterface.tsx's case panel), tell the parent window whenever
@@ -37,7 +73,10 @@ import {
 function notifyParentPortal(event: string, detail?: Record<string, unknown>) {
   if (typeof window === "undefined" || window.parent === window) return;
   try {
-    window.parent.postMessage({ source: "insurance-ai-portal", type: event, ...detail }, parentOrigin());
+    window.parent.postMessage(
+      { source: "insurance-ai-portal", type: event, ...detail },
+      parentOrigin(),
+    );
   } catch {
     // Cross-origin or no listener — nothing to recover, the page still works standalone.
   }
@@ -45,13 +84,26 @@ function notifyParentPortal(event: string, detail?: Record<string, unknown>) {
 
 // ── Markdown renderer for the AI document summary ────────────────────────────
 
-const MD_COMPONENTS: React.ComponentProps<typeof ReactMarkdown>["components"] = {
-  h2: ({ children }) => <h2 className="text-xs font-bold text-slate-800 mt-4 mb-1.5 pb-1 border-b border-slate-100 first:mt-0 uppercase tracking-wide">{children}</h2>,
-  p: ({ children }) => <p className="text-xs text-slate-600 leading-relaxed mb-2">{children}</p>,
-  ul: ({ children }) => <ul className="mb-2 space-y-1 pl-4">{children}</ul>,
-  li: ({ children }) => <li className="text-xs text-slate-600 leading-relaxed list-disc">{children}</li>,
-  strong: ({ children }) => <strong className="font-semibold text-slate-800">{children}</strong>,
-};
+const MD_COMPONENTS: React.ComponentProps<typeof ReactMarkdown>["components"] =
+  {
+    h2: ({ children }) => (
+      <h2 className="text-xs font-bold text-slate-800 mt-4 mb-1.5 pb-1 border-b border-slate-100 first:mt-0 uppercase tracking-wide">
+        {children}
+      </h2>
+    ),
+    p: ({ children }) => (
+      <p className="text-xs text-slate-600 leading-relaxed mb-2">{children}</p>
+    ),
+    ul: ({ children }) => <ul className="mb-2 space-y-1 pl-4">{children}</ul>,
+    li: ({ children }) => (
+      <li className="text-xs text-slate-600 leading-relaxed list-disc">
+        {children}
+      </li>
+    ),
+    strong: ({ children }) => (
+      <strong className="font-semibold text-slate-800">{children}</strong>
+    ),
+  };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
 
@@ -173,11 +225,31 @@ interface OrganizationMemberCase {
 }
 
 interface CaseDetailResponse {
-  family_members?: { customer_id: string; name: string; cnic: string; relationship?: string | null; case_id: string; case_number: string; case_status: string; is_current: boolean }[];
+  family_members?: {
+    customer_id: string;
+    name: string;
+    cnic: string;
+    relationship?: string | null;
+    case_id: string;
+    case_number: string;
+    case_status: string;
+    is_current: boolean;
+  }[];
   /** Insured lives on this family policy whose own underwriting isn't approved yet — the policy waits for them. */
   /** Set on an insured spouse's case: the policy is issued to the head, on this case instead. */
-  family_head_case?: { case_id: string; case_number: string; name: string; case_status: string } | null;
-  family_underwriting_pending?: { name: string; relationship?: string | null; case_id: string; case_number: string; case_status: string }[];
+  family_head_case?: {
+    case_id: string;
+    case_number: string;
+    name: string;
+    case_status: string;
+  } | null;
+  family_underwriting_pending?: {
+    name: string;
+    relationship?: string | null;
+    case_id: string;
+    case_number: string;
+    case_status: string;
+  }[];
   case: CaseData;
   customer: CustomerData | null;
   principal_participant_name?: string | null;
@@ -207,7 +279,13 @@ interface CaseRequirement {
   code: string;
   category: string;
   required: boolean;
-  status: "Missing" | "Requested" | "Submitted" | "Satisfied" | "Waived" | "Invalid";
+  status:
+    | "Missing"
+    | "Requested"
+    | "Submitted"
+    | "Satisfied"
+    | "Waived"
+    | "Invalid";
   reason: string | null;
   satisfied_by_artifact_id: string | null;
   updated_at: string;
@@ -235,9 +313,30 @@ export interface RiskFactorObject {
 }
 
 interface UnderwritingResults {
-  medical?: { risk_score: number; risk_class: string; loading_percentage: number | null; requires_human_review: boolean; reasons: unknown[]; evidence_refs: string[] };
-  financial?: { financially_justified: boolean; declared_income: number; verified_income: number | null; coverage_to_income_ratio: number; maximum_supported_cover: number | null; referral_required: boolean; reasons: unknown[]; evidence_refs: string[] };
-  fraud?: { probability: number; severity: string; investigation_required: boolean; reasons: unknown[] };
+  medical?: {
+    risk_score: number;
+    risk_class: string;
+    loading_percentage: number | null;
+    requires_human_review: boolean;
+    reasons: unknown[];
+    evidence_refs: string[];
+  };
+  financial?: {
+    financially_justified: boolean;
+    declared_income: number;
+    verified_income: number | null;
+    coverage_to_income_ratio: number;
+    maximum_supported_cover: number | null;
+    referral_required: boolean;
+    reasons: unknown[];
+    evidence_refs: string[];
+  };
+  fraud?: {
+    probability: number;
+    severity: string;
+    investigation_required: boolean;
+    reasons: unknown[];
+  };
   requirements_satisfied?: boolean;
   verified_facts?: unknown[];
 }
@@ -257,9 +356,16 @@ interface LiveResult {
 }
 
 const EMPTY_LIVE: LiveResult = {
-  completedNodes: [], medicalScore: null, medicalReasons: [],
-  financialScore: null, financialReasons: [], fraudProbability: null,
-  fraudReasons: [], compositeScore: null, aiDecision: null, reasons: [],
+  completedNodes: [],
+  medicalScore: null,
+  medicalReasons: [],
+  financialScore: null,
+  financialReasons: [],
+  fraudProbability: null,
+  fraudReasons: [],
+  compositeScore: null,
+  aiDecision: null,
+  reasons: [],
   underwritingResults: null,
 };
 
@@ -276,7 +382,15 @@ function DataRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function SectionCard({ title, children, className = "" }: { title: string; children: React.ReactNode; className?: string }) {
+function SectionCard({
+  title,
+  children,
+  className = "",
+}: {
+  title: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     <div className={`card ${className}`}>
       <div className="px-5 py-3.5 border-b border-slate-100">
@@ -287,7 +401,17 @@ function SectionCard({ title, children, className = "" }: { title: string; child
   );
 }
 
-function Accordion({ title, defaultOpen = false, action, children }: { title: string; defaultOpen?: boolean; action?: React.ReactNode; children: React.ReactNode }) {
+function Accordion({
+  title,
+  defaultOpen = false,
+  action,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="border-b border-slate-100 last:border-b-0">
@@ -305,7 +429,11 @@ function Accordion({ title, defaultOpen = false, action, children }: { title: st
             stroke="currentColor"
             strokeWidth={2}
           >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M19 9l-7 7-7-7"
+            />
           </svg>
         </button>
         {action && <div className="ml-3 flex-shrink-0">{action}</div>}
@@ -316,7 +444,12 @@ function Accordion({ title, defaultOpen = false, action, children }: { title: st
 }
 
 function InitialsAvatar({ name }: { name: string }) {
-  const initials = name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
+  const initials = name
+    .split(" ")
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
   return (
     <div className="w-14 h-14 rounded-xl bg-blue-700 flex items-center justify-center flex-shrink-0 shadow-sm">
       <span className="text-xl font-bold text-white">{initials}</span>
@@ -328,8 +461,14 @@ function InitialsAvatar({ name }: { name: string }) {
 // drives both the list and table views so their symbols stay in sync.
 function classifyReason(reason: string): "risk" | "clear" {
   const lower = reason.toLowerCase();
-  const isBad = /(high|elevated|suspicious|unverified|irregular|missing|abnormal|poor|inadequate|insufficient|concern|discrepancy|fraud|decline|reject|warning|smoker|hypertension|diabetic|disease|increased|major risk|unstable|severe|critical)/i.test(lower);
-  const isGoodExemption = /(low risk|low mortality|no history|no evidence|non-smoker|absence of|no significant|within normal|normal|clear|healthy|verified|stable|acceptable|good|excellent)/i.test(lower);
+  const isBad =
+    /(high|elevated|suspicious|unverified|irregular|missing|abnormal|poor|inadequate|insufficient|concern|discrepancy|fraud|decline|reject|warning|smoker|hypertension|diabetic|disease|increased|major risk|unstable|severe|critical)/i.test(
+      lower,
+    );
+  const isGoodExemption =
+    /(low risk|low mortality|no history|no evidence|non-smoker|absence of|no significant|within normal|normal|clear|healthy|verified|stable|acceptable|good|excellent)/i.test(
+      lower,
+    );
   return isBad && !isGoodExemption ? "risk" : "clear";
 }
 
@@ -339,59 +478,114 @@ function classifyReason(reason: string): "risk" | "clear" {
 function tidyReason(reason: string): string {
   return reason
     .replace(/\s+/g, " ")
-    .replace(/\s*[:\-–—]\s*(no signals?|no concerns?|normal|nil|none|n\/a|clear)\.?$/i, "")
+    .replace(
+      /\s*[:\-–—]\s*(no signals?|no concerns?|normal|nil|none|n\/a|clear)\.?$/i,
+      "",
+    )
     .replace(/[.;,]+$/, "")
     .trim();
 }
 
-function ReasonIcon({ kind, className = "w-3.5 h-3.5" }: { kind: "risk" | "clear"; className?: string }) {
+function ReasonIcon({
+  kind,
+  className = "w-3.5 h-3.5",
+}: {
+  kind: "risk" | "clear";
+  className?: string;
+}) {
   if (kind === "risk") {
     return (
-      <svg className={`text-amber-500 flex-shrink-0 ${className}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+      <svg
+        className={`text-amber-500 flex-shrink-0 ${className}`}
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        strokeWidth={2.5}
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+        />
       </svg>
     );
   }
   return (
-    <svg className={`text-blue-500 flex-shrink-0 ${className}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+    <svg
+      className={`text-blue-500 flex-shrink-0 ${className}`}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={3}
+    >
       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
     </svg>
   );
 }
 
 interface ReasonSection {
-  label: string;       // full heading, e.g. "Medical Risk Factors"
-  short: string;       // compact label for the table, e.g. "Medical"
-  icon: string;        // emoji icon for domain
+  label: string; // full heading, e.g. "Medical Risk Factors"
+  short: string; // compact label for the table, e.g. "Medical"
+  icon: string; // emoji icon for domain
   score: number;
   scoreLabel: string;
   reasons: (string | RiskFactorObject)[];
   accentColor: string;
 }
 
-function ReasonGroup({ label, scoreLabel, reasons, accentColor }: {
-  label: string; scoreLabel: string; reasons: (string | RiskFactorObject)[]; accentColor: string;
+function ReasonGroup({
+  label,
+  scoreLabel,
+  reasons,
+  accentColor,
+}: {
+  label: string;
+  scoreLabel: string;
+  reasons: (string | RiskFactorObject)[];
+  accentColor: string;
 }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <span className={`text-xs font-bold uppercase tracking-widest ${accentColor}`}>{label}</span>
-        <span className="text-[10px] font-mono text-slate-500 bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5">{scoreLabel}</span>
+        <span
+          className={`text-xs font-bold uppercase tracking-widest ${accentColor}`}
+        >
+          {label}
+        </span>
+        <span className="text-[10px] font-mono text-slate-500 bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5">
+          {scoreLabel}
+        </span>
       </div>
       <ul className="space-y-0.5">
-        {reasons.length === 0 && <li className="text-xs text-slate-400 italic px-2.5 py-1">No factors recorded.</li>}
+        {reasons.length === 0 && (
+          <li className="text-xs text-slate-400 italic px-2.5 py-1">
+            {tx("No factors recorded.")}
+          </li>
+        )}
         {reasons.map((reason, i) => {
           const isObj = typeof reason === "object" && reason !== null;
           const factorStr = isObj ? reason.factor : reason;
           const detailStr = isObj ? reason.reason : tidyReason(reason);
-          const kind = isObj ? (reason.risk_level.toLowerCase().includes("high") || reason.risk_level.toLowerCase().includes("moderate") ? "risk" : "clear") : classifyReason(reason);
+          const kind = isObj
+            ? reason.risk_level.toLowerCase().includes("high") ||
+              reason.risk_level.toLowerCase().includes("moderate")
+              ? "risk"
+              : "clear"
+            : classifyReason(reason);
 
           return (
-            <li key={i} className="flex items-start gap-2.5 rounded-lg px-2.5 py-1.5 hover:bg-slate-50/70 transition-colors">
+            <li
+              key={i}
+              className="flex items-start gap-2.5 rounded-lg px-2.5 py-1.5 hover:bg-slate-50/70 transition-colors"
+            >
               <ReasonIcon kind={kind as any} className="w-3.5 h-3.5 mt-0.5" />
               <div className="flex flex-col">
-                <span className="text-xs font-semibold text-slate-700 leading-snug">{factorStr}</span>
-                <span className="text-[11px] text-slate-500 leading-snug">{detailStr}</span>
+                <span className="text-xs font-semibold text-slate-700 leading-snug">
+                  {factorStr}
+                </span>
+                <span className="text-[11px] text-slate-500 leading-snug">
+                  {detailStr}
+                </span>
               </div>
             </li>
           );
@@ -404,23 +598,40 @@ function ReasonGroup({ label, scoreLabel, reasons, accentColor }: {
 // Compact tabular alternative to the list view — one concise row per factor,
 // with the same ⚠ / ✓ signal symbols and a short category chip.
 function ReasonTable({ sections }: { sections: ReasonSection[] }) {
-  const rows = sections.flatMap(s =>
-    s.reasons.map(reason => {
+  const rows = sections.flatMap((s) =>
+    s.reasons.map((reason) => {
       const isObj = typeof reason === "object" && reason !== null;
       return {
         short: s.short,
         icon: s.icon,
         accentColor: s.accentColor,
-        parameter: isObj ? (reason.parameter || reason.factor) : reason,
-        risk_rating: isObj ? (reason.risk_rating || reason.risk_level) : (classifyReason(reason) === "risk" ? "Moderate" : "Low"),
-        observation: isObj ? (reason.observation || reason.reason) : tidyReason(reason),
-        kind: isObj ? ((reason.risk_rating || reason.risk_level).toLowerCase().includes("high") || (reason.risk_rating || reason.risk_level).toLowerCase().includes("moderate") ? "risk" : "clear") : classifyReason(reason),
+        parameter: isObj ? reason.parameter || reason.factor : reason,
+        risk_rating: isObj
+          ? reason.risk_rating || reason.risk_level
+          : classifyReason(reason) === "risk"
+            ? "Moderate"
+            : "Low",
+        observation: isObj
+          ? reason.observation || reason.reason
+          : tidyReason(reason),
+        kind: isObj
+          ? (reason.risk_rating || reason.risk_level)
+              .toLowerCase()
+              .includes("high") ||
+            (reason.risk_rating || reason.risk_level)
+              .toLowerCase()
+              .includes("moderate")
+            ? "risk"
+            : "clear"
+          : classifyReason(reason),
       };
-    })
+    }),
   );
 
   if (rows.length === 0) {
-    return <p className="text-xs text-slate-400">No factors recorded.</p>;
+    return (
+      <p className="text-xs text-slate-400">{tx("No factors recorded.")}</p>
+    );
   }
 
   return (
@@ -428,31 +639,48 @@ function ReasonTable({ sections }: { sections: ReasonSection[] }) {
       <table className="w-full text-xs border-collapse">
         <thead>
           <tr className="text-left text-[11px] uppercase tracking-widest text-slate-500 border-b border-slate-200">
-            <th className="py-3 px-3 font-medium w-40">Category</th>
-            <th className="py-3 px-3 font-medium w-40">Parameter</th>
-            <th className="py-3 px-3 font-medium">Observation</th>
-            <th className="py-3 px-3 font-medium w-32">Risk Rating</th>
+            <th className="py-3 px-3 font-medium w-40">{tx("Category")}</th>
+            <th className="py-3 px-3 font-medium w-40">{tx("Parameter")}</th>
+            <th className="py-3 px-3 font-medium">{tx("Observation")}</th>
+            <th className="py-3 px-3 font-medium w-32">{tx("Risk Rating")}</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} className="border-b border-slate-200 last:border-0 align-middle">
+            <tr
+              key={i}
+              className="border-b border-slate-200 last:border-0 align-middle"
+            >
               <td className="py-3 px-3">
                 <div className="flex items-center gap-1.5">
                   <span className="text-sm">{row.icon}</span>
-                  <span className={`font-bold uppercase tracking-wide text-xs ${row.accentColor}`}>{row.short}</span>
+                  <span
+                    className={`font-bold uppercase tracking-wide text-xs ${row.accentColor}`}
+                  >
+                    {row.short}
+                  </span>
                 </div>
               </td>
-              <td className="py-3 px-3 text-slate-800 font-semibold">{row.parameter}</td>
+              <td className="py-3 px-3 text-slate-800 font-semibold">
+                {row.parameter}
+              </td>
               <td className="py-3 px-3 text-slate-600">{row.observation}</td>
               <td className="py-3 px-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${row.risk_rating.toLowerCase().includes("high") ? "bg-red-500" :
-                    row.risk_rating.toLowerCase().includes("moderate") ? "bg-amber-500" :
-                      row.risk_rating.toLowerCase().includes("info") ? "bg-blue-500" :
-                        "bg-blue-500"
-                    }`} />
-                  <span className="text-sm text-slate-700">{row.risk_rating}</span>
+                  <div
+                    className={`w-3 h-3 rounded-full ${
+                      row.risk_rating.toLowerCase().includes("high")
+                        ? "bg-red-500"
+                        : row.risk_rating.toLowerCase().includes("moderate")
+                          ? "bg-amber-500"
+                          : row.risk_rating.toLowerCase().includes("info")
+                            ? "bg-blue-500"
+                            : "bg-blue-500"
+                    }`}
+                  />
+                  <span className="text-sm text-slate-700">
+                    {row.risk_rating}
+                  </span>
                 </div>
               </td>
             </tr>
@@ -464,10 +692,22 @@ function ReasonTable({ sections }: { sections: ReasonSection[] }) {
 }
 
 function Spinner({ className = "w-3.5 h-3.5" }: { className?: string }) {
-  return <span className={`inline-block animate-spin rounded-full border-2 border-white/30 border-t-white ${className}`} />;
+  return (
+    <span
+      className={`inline-block animate-spin rounded-full border-2 border-white/30 border-t-white ${className}`}
+    />
+  );
 }
 
-const EXTRA_DOC_TYPES = ["Bank Statement", "Tax Return", "X-Ray", "MRI Scan", "Policy Form", "Child's Birth Certificate", "Other"];
+const EXTRA_DOC_TYPES = [
+  "Bank Statement",
+  "Tax Return",
+  "X-Ray",
+  "MRI Scan",
+  "Policy Form",
+  "Child's Birth Certificate",
+  "Other",
+];
 
 /**
  * Guided upload: one card per document the plan requires, marked Complete once the
@@ -475,23 +715,43 @@ const EXTRA_DOC_TYPES = ["Bank Statement", "Tax Return", "X-Ray", "MRI Scan", "P
  * onto the card they belong to, so each is filed under the right type without a
  * dropdown — and the next missing one is highlighted.
  */
-function UploadModal({ tenantId, caseId, docTypes, missingTypes = [], onClose, onUploaded }: {
-  tenantId: string; caseId: string; docTypes: string[];
+function UploadModal({
+  tenantId,
+  caseId,
+  docTypes,
+  missingTypes = [],
+  onClose,
+  onUploaded,
+}: {
+  tenantId: string;
+  caseId: string;
+  docTypes: string[];
   // Required documents the case still lacks.
   missingTypes?: string[];
-  onClose: () => void; onUploaded: () => void;
+  onClose: () => void;
+  onUploaded: () => void;
 }) {
-  const [fileItems, setFileItems] = useState<{ file: File; type: string }[]>([]);
+  const [fileItems, setFileItems] = useState<{ file: File; type: string }[]>(
+    [],
+  );
   const [dragOver, setDragOver] = useState<string | null>(null);
-  const [extraType, setExtraType] = useState(() => EXTRA_DOC_TYPES.find((t) => !docTypes.includes(t)) ?? "Other");
+  const [extraType, setExtraType] = useState(
+    () => EXTRA_DOC_TYPES.find((t) => !docTypes.includes(t)) ?? "Other",
+  );
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState("");
   const inputs = useRef<Record<string, HTMLInputElement | null>>({});
 
   // Preview of a chosen file, read locally — nothing is uploaded to view it.
-  const [preview, setPreview] = useState<{ url: string; name: string; isPdf: boolean } | null>(null);
+  const [preview, setPreview] = useState<{
+    url: string;
+    name: string;
+    isPdf: boolean;
+  } | null>(null);
   const openPreview = (file: File) => {
-    const isPdf = file.name.toLowerCase().endsWith(".pdf") || file.type === "application/pdf";
+    const isPdf =
+      file.name.toLowerCase().endsWith(".pdf") ||
+      file.type === "application/pdf";
     setPreview({ url: URL.createObjectURL(file), name: file.name, isPdf });
   };
   const closePreview = () => {
@@ -500,12 +760,20 @@ function UploadModal({ tenantId, caseId, docTypes, missingTypes = [], onClose, o
       return null;
     });
   };
-  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview.url); }, [preview]);
+  useEffect(
+    () => () => {
+      if (preview) URL.revokeObjectURL(preview.url);
+    },
+    [preview],
+  );
 
   const missing = new Set(missingTypes);
-  const isComplete = (t: string) => !missing.has(t) || fileItems.some((i) => i.type === t);
+  const isComplete = (t: string) =>
+    !missing.has(t) || fileItems.some((i) => i.type === t);
   const doneCount = docTypes.filter((t) => !missing.has(t)).length;
-  const nextMissing = docTypes.find((t) => missing.has(t) && !fileItems.some((i) => i.type === t));
+  const nextMissing = docTypes.find(
+    (t) => missing.has(t) && !fileItems.some((i) => i.type === t),
+  );
 
   const addFiles = (newFiles: FileList | File[], type: string) => {
     setErr("");
@@ -514,7 +782,9 @@ function UploadModal({ tenantId, caseId, docTypes, missingTypes = [], onClose, o
       const f = newFiles[i];
       const ext = f.name.split(".").pop()?.toLowerCase() ?? "";
       if (!SUPPORTED_EXTS.includes(ext)) {
-        setErr(`Unsupported format ".${ext}". Allowed: ${SUPPORTED_EXTS.join(", ").toUpperCase()}`);
+        setErr(
+          `Unsupported format ".${ext}". Allowed: ${SUPPORTED_EXTS.join(", ").toUpperCase()}`,
+        );
         continue;
       }
       valid.push({ file: f, type });
@@ -533,10 +803,13 @@ function UploadModal({ tenantId, caseId, docTypes, missingTypes = [], onClose, o
       form.append("file", item.file);
       try {
         await api.post(`/tenants/${tenantId}/cases/${caseId}/artifacts`, form, {
-          headers: { "Content-Type": "multipart/form-data" }, timeout: 120_000,
+          headers: { "Content-Type": "multipart/form-data" },
+          timeout: 120_000,
         });
       } catch (e: any) {
-        failures.push(`${item.file.name}: ${e.response?.data?.detail ?? e.message ?? "failed"}`);
+        failures.push(
+          `${item.file.name}: ${e.response?.data?.detail ?? e.message ?? "failed"}`,
+        );
       }
     }
     setUploading(false);
@@ -549,7 +822,10 @@ function UploadModal({ tenantId, caseId, docTypes, missingTypes = [], onClose, o
   };
 
   const dropProps = (type: string) => ({
-    onDragOver: (e: DragEvent<HTMLDivElement>) => { e.preventDefault(); setDragOver(type); },
+    onDragOver: (e: DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      setDragOver(type);
+    },
     onDragLeave: () => setDragOver((d) => (d === type ? null : d)),
     onDrop: (e: DragEvent<HTMLDivElement>) => {
       e.preventDefault();
@@ -559,16 +835,57 @@ function UploadModal({ tenantId, caseId, docTypes, missingTypes = [], onClose, o
   });
 
   const stagedList = (type: string) => {
-    const items = fileItems.map((item, i) => ({ item, i })).filter(({ item }) => item.type === type);
+    const items = fileItems
+      .map((item, i) => ({ item, i }))
+      .filter(({ item }) => item.type === type);
     if (!items.length) return null;
     return (
       <ul className="mt-2.5 space-y-1.5">
         {items.map(({ item, i }) => (
-          <li key={i} className="flex items-center gap-2 text-[11px] bg-white border border-slate-200 rounded-md px-2 py-1.5">
-            <svg className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>
-            <span className="truncate text-slate-700 flex-1" title={item.file.name}>{item.file.name}</span>
-            <button type="button" onClick={(e) => { e.stopPropagation(); openPreview(item.file); }} className="text-blue-600 font-semibold hover:underline flex-shrink-0">View</button>
-            <button type="button" onClick={(e) => { e.stopPropagation(); setFileItems((prev) => prev.filter((_, j) => j !== i)); }} className="text-slate-400 hover:text-red-500 flex-shrink-0" title="Remove">✕</button>
+          <li
+            key={i}
+            className="flex items-center gap-2 text-[11px] bg-white border border-slate-200 rounded-md px-2 py-1.5"
+          >
+            <svg
+              className="w-3.5 h-3.5 text-slate-400 flex-shrink-0"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
+              />
+            </svg>
+            <span
+              className="truncate text-slate-700 flex-1"
+              title={item.file.name}
+            >
+              {item.file.name}
+            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                openPreview(item.file);
+              }}
+              className="text-blue-600 font-semibold hover:underline flex-shrink-0"
+            >
+              {tx("View")}
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setFileItems((prev) => prev.filter((_, j) => j !== i));
+              }}
+              className="text-slate-400 hover:text-red-500 flex-shrink-0"
+              title={tx("Remove")}
+            >
+              ✕
+            </button>
           </li>
         ))}
       </ul>
@@ -577,42 +894,75 @@ function UploadModal({ tenantId, caseId, docTypes, missingTypes = [], onClose, o
 
   const fileInput = (type: string) => (
     <input
-      ref={(el) => { inputs.current[type] = el; }}
+      ref={(el) => {
+        inputs.current[type] = el;
+      }}
       type="file"
       className="sr-only"
       accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp"
       multiple
-      onChange={(e: ChangeEvent<HTMLInputElement>) => { if (e.target.files) addFiles(e.target.files, type); e.target.value = ""; }}
+      onChange={(e: ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files) addFiles(e.target.files, type);
+        e.target.value = "";
+      }}
     />
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden my-8" onClick={e => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden my-8"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header with progress */}
         <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
           <div className="flex items-center justify-between">
-            <h3 className="font-bold text-slate-800">Upload Documents</h3>
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 -mr-1" aria-label="Close">✕</button>
+            <h3 className="font-bold text-slate-800">
+              {tx("Upload Documents")}
+            </h3>
+            <button
+              onClick={onClose}
+              className="text-slate-400 hover:text-slate-600 p-1 -mr-1"
+              aria-label={tx("Close")}
+            >
+              ✕
+            </button>
           </div>
           {docTypes.length > 0 ? (
             <div className="mt-2.5">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-slate-600">
-                  <span className="font-bold text-slate-800">{doneCount} of {docTypes.length}</span> required documents complete
+                  <span className="font-bold text-slate-800">
+                    {doneCount} {tx("of")} {docTypes.length}
+                  </span>{" "}
+                  {tx("required documents complete")}
                 </span>
                 {nextMissing ? (
-                  <span className="text-amber-700 font-semibold">Next: {nextMissing}</span>
+                  <span className="text-amber-700 font-semibold">
+                    {tx("Next:")} {nextMissing}
+                  </span>
                 ) : (
-                  <span className="text-emerald-600 font-semibold">All required documents covered</span>
+                  <span className="text-emerald-600 font-semibold">
+                    {tx("All required documents covered")}
+                  </span>
                 )}
               </div>
               <div className="mt-1.5 h-1.5 rounded-full bg-slate-200 overflow-hidden">
-                <div className="h-full bg-emerald-500 transition-all" style={{ width: `${(doneCount / docTypes.length) * 100}%` }} />
+                <div
+                  className="h-full bg-emerald-500 transition-all"
+                  style={{ width: `${(doneCount / docTypes.length) * 100}%` }}
+                />
               </div>
             </div>
           ) : (
-            <p className="text-xs text-slate-500 mt-1">This plan doesn&apos;t require specific documents — add any supporting files below.</p>
+            <p className="text-xs text-slate-500 mt-1">
+              {tx(
+                "This plan doesn't require specific documents — add any supporting files below.",
+              )}
+            </p>
           )}
         </div>
 
@@ -634,36 +984,76 @@ function UploadModal({ tenantId, caseId, docTypes, missingTypes = [], onClose, o
                       dragOver === type
                         ? "border-blue-400 bg-blue-50"
                         : complete
-                        ? "border-emerald-200 bg-emerald-50/50 hover:border-emerald-300"
-                        : isNext
-                        ? "border-amber-300 bg-amber-50/50 hover:border-amber-400 ring-2 ring-amber-200/60"
-                        : "border-dashed border-slate-300 bg-slate-50 hover:border-blue-300 hover:bg-blue-50/30"
+                          ? "border-emerald-200 bg-emerald-50/50 hover:border-emerald-300"
+                          : isNext
+                            ? "border-amber-300 bg-amber-50/50 hover:border-amber-400 ring-2 ring-amber-200/60"
+                            : "border-dashed border-slate-300 bg-slate-50 hover:border-blue-300 hover:bg-blue-50/30"
                     }`}
                   >
                     {fileInput(type)}
                     <div className="flex items-start gap-3">
-                      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${complete ? "bg-emerald-500 text-white" : "bg-white border border-slate-200 text-slate-400"}`}>
+                      <span
+                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${complete ? "bg-emerald-500 text-white" : "bg-white border border-slate-200 text-slate-400"}`}
+                      >
                         {complete ? (
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
+                          <svg
+                            className="w-5 h-5"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="m4.5 12.75 6 6 9-13.5"
+                            />
+                          </svg>
                         ) : (
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" /></svg>
+                          <svg
+                            className="w-5 h-5"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"
+                            />
+                          </svg>
                         )}
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-semibold text-slate-800">{type}</p>
-                          <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${
-                            alreadyHave ? "bg-emerald-100 text-emerald-700" : staged ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
-                          }`}>
-                            {alreadyHave ? "Complete" : staged ? "Ready to upload" : "Required"}
+                          <p className="text-sm font-semibold text-slate-800">
+                            {type}
+                          </p>
+                          <span
+                            className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${
+                              alreadyHave
+                                ? "bg-emerald-100 text-emerald-700"
+                                : staged
+                                  ? "bg-blue-100 text-blue-700"
+                                  : "bg-amber-100 text-amber-700"
+                            }`}
+                          >
+                            {alreadyHave
+                              ? tx("Complete")
+                              : staged
+                                ? tx("Ready to upload")
+                                : tx("Required")}
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-500 mt-0.5">
                           {alreadyHave
-                            ? "Already on file — drop here to add a newer copy."
+                            ? tx(
+                                "Already on file — drop here to add a newer copy.",
+                              )
                             : staged
-                            ? "Will be uploaded when you press Upload."
-                            : "Drop the file here or click to browse."}
+                              ? tx("Will be uploaded when you press Upload.")
+                              : tx("Drop the file here or click to browse.")}
                         </p>
                       </div>
                     </div>
@@ -683,11 +1073,29 @@ function UploadModal({ tenantId, caseId, docTypes, missingTypes = [], onClose, o
             {fileInput(extraType)}
             <div className="flex items-center gap-3 flex-wrap">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-400">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 4.5v15m7.5-7.5h-15"
+                  />
+                </svg>
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-slate-700">Additional document</p>
-                <p className="text-[11px] text-slate-500">Optional supporting files — choose the type, then drop or click.</p>
+                <p className="text-sm font-semibold text-slate-700">
+                  {tx("Additional document")}
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  {tx(
+                    "Optional supporting files — choose the type, then drop or click.",
+                  )}
+                </p>
               </div>
               <select
                 value={extraType}
@@ -695,26 +1103,59 @@ function UploadModal({ tenantId, caseId, docTypes, missingTypes = [], onClose, o
                 onChange={(e) => setExtraType(e.target.value)}
                 className="bg-white border border-slate-200 rounded-md px-2 py-1 text-xs text-slate-700 focus:outline-none focus:border-blue-400"
               >
-                {EXTRA_DOC_TYPES.filter((t) => !docTypes.includes(t)).map((t) => <option key={t}>{t}</option>)}
+                {EXTRA_DOC_TYPES.filter((t) => !docTypes.includes(t)).map(
+                  (t) => (
+                    <option key={t}>{t}</option>
+                  ),
+                )}
               </select>
             </div>
-            {EXTRA_DOC_TYPES.filter((t) => !docTypes.includes(t)).map((t) => <div key={t}>{stagedList(t)}</div>)}
+            {EXTRA_DOC_TYPES.filter((t) => !docTypes.includes(t)).map((t) => (
+              <div key={t}>{stagedList(t)}</div>
+            ))}
           </div>
 
-          <p className="text-[10px] text-slate-400 text-center">PDF · PNG · JPG · JPEG · TIFF · BMP — each file is read by OCR after upload.</p>
+          <p className="text-[10px] text-slate-400 text-center">
+            {tx(
+              "PDF · PNG · JPG · JPEG · TIFF · BMP — each file is read by OCR after upload.",
+            )}
+          </p>
 
-          {err && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 whitespace-pre-line">{err}</p>}
+          {err && (
+            <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 whitespace-pre-line">
+              {err}
+            </p>
+          )}
         </div>
 
         <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between gap-3">
           <span className="text-xs text-slate-500">
-            {fileItems.length ? `${fileItems.length} file${fileItems.length === 1 ? "" : "s"} ready` : "No files added yet"}
+            {fileItems.length
+              ? tx("{0} file{1} ready", {
+                  0: fileItems.length,
+                  1: fileItems.length === 1 ? "" : "s",
+                })
+              : tx("No files added yet")}
           </span>
           <div className="flex gap-3">
-            <button onClick={onClose} disabled={uploading} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">Cancel</button>
-            <button onClick={submit} disabled={fileItems.length === 0 || uploading} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-all">
+            <button
+              onClick={onClose}
+              disabled={uploading}
+              className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+            >
+              {tx("Cancel")}
+            </button>
+            <button
+              onClick={submit}
+              disabled={fileItems.length === 0 || uploading}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-all"
+            >
               {uploading ? <Spinner /> : null}
-              {uploading ? "Uploading…" : `Upload${fileItems.length ? ` ${fileItems.length}` : ""} & OCR`}
+              {uploading
+                ? tx("Uploading…")
+                : tx("Upload{0} & OCR", {
+                    0: fileItems.length ? ` ${fileItems.length}` : "",
+                  })}
             </button>
           </div>
         </div>
@@ -723,22 +1164,55 @@ function UploadModal({ tenantId, caseId, docTypes, missingTypes = [], onClose, o
       {preview && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/70 p-4"
-          onClick={(e) => { e.stopPropagation(); closePreview(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            closePreview();
+          }}
         >
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-slate-800 truncate" title={preview.name}>{preview.name}</p>
+              <p
+                className="text-sm font-semibold text-slate-800 truncate"
+                title={preview.name}
+              >
+                {preview.name}
+              </p>
               <div className="flex items-center gap-3 flex-shrink-0">
-                <a href={preview.url} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-blue-700 hover:underline">Open in new tab</a>
-                <button type="button" onClick={closePreview} className="text-slate-400 hover:text-slate-600 p-1" title="Close preview">✕</button>
+                <a
+                  href={preview.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-semibold text-blue-700 hover:underline"
+                >
+                  {tx("Open in new tab")}
+                </a>
+                <button
+                  type="button"
+                  onClick={closePreview}
+                  className="text-slate-400 hover:text-slate-600 p-1"
+                  title={tx("Close preview")}
+                >
+                  ✕
+                </button>
               </div>
             </div>
             <div className="flex-1 overflow-auto bg-slate-100 flex items-center justify-center min-h-[40vh]">
               {preview.isPdf ? (
-                <iframe src={preview.url} title={preview.name} className="w-full h-[70vh] border-0 bg-white" />
+                <iframe
+                  src={preview.url}
+                  title={preview.name}
+                  className="w-full h-[70vh] border-0 bg-white"
+                />
               ) : (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={preview.url} alt={preview.name} className="max-w-full max-h-[70vh] object-contain" />
+                <img
+                  src={preview.url}
+                  alt={preview.name}
+                  className="max-w-full max-h-[70vh] object-contain"
+                />
               )}
             </div>
           </div>
@@ -777,7 +1251,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const headRef = useCallback((el: HTMLDivElement | null) => {
     headObserver.current?.disconnect();
     if (!el) return;
-    const measure = () => setHeadHeight(Math.round(el.getBoundingClientRect().height));
+    const measure = () =>
+      setHeadHeight(Math.round(el.getBoundingClientRect().height));
     measure();
     headObserver.current = new ResizeObserver(measure);
     headObserver.current.observe(el);
@@ -811,9 +1286,13 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
   const [artifacts, setArtifacts] = useState<ArtifactData[]>([]);
   const [requirements, setRequirements] = useState<CaseRequirement[]>([]);
-  const [verificationFindings, setVerificationFindings] = useState<VerificationFinding[]>([]);
+  const [verificationFindings, setVerificationFindings] = useState<
+    VerificationFinding[]
+  >([]);
   const [requirementsBusy, setRequirementsBusy] = useState(false);
-  const [requirementsError, setRequirementsError] = useState<string | null>(null);
+  const [requirementsError, setRequirementsError] = useState<string | null>(
+    null,
+  );
   const [showUpload, setShowUpload] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [downloadingApp, setDownloadingApp] = useState(false);
@@ -847,7 +1326,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
   // When multiple plans are sent to underwriting together (from the Quotations
   // page), each plan gets its own case. We store the group in sessionStorage so
   // this page can render a dropdown to switch between the plans for a customer.
-  const [planGroup, setPlanGroup] = useState<{ caseId: string; planLabel: string; insuranceType: string }[]>([]);
+  const [planGroup, setPlanGroup] = useState<
+    { caseId: string; planLabel: string; insuranceType: string }[]
+  >([]);
 
   useEffect(() => {
     try {
@@ -868,16 +1349,22 @@ export default function CasePage({ params }: { params: { id: string } }) {
   // Per-plan underwriting state for the multi-plan group. Every selected plan is
   // streamed in parallel, so we key the live progress / status / errors by caseId
   // and render whichever plan is currently being viewed.
-  const [groupStatuses, setGroupStatuses] = useState<Record<string, StreamStatus>>({});
+  const [groupStatuses, setGroupStatuses] = useState<
+    Record<string, StreamStatus>
+  >({});
   const [groupLive, setGroupLive] = useState<Record<string, LiveResult>>({});
-  const [groupErrors, setGroupErrors] = useState<Record<string, string | null>>({});
+  const [groupErrors, setGroupErrors] = useState<Record<string, string | null>>(
+    {},
+  );
   const groupAbortsRef = useRef<Record<string, AbortController>>({});
   const groupStartedRef = useRef<string | null>(null);
 
   // Track the currently-viewed case for long-lived background streams whose
   // closures would otherwise capture a stale caseId after the user switches plan.
   const currentCaseIdRef = useRef(caseId);
-  useEffect(() => { currentCaseIdRef.current = caseId; }, [caseId]);
+  useEffect(() => {
+    currentCaseIdRef.current = caseId;
+  }, [caseId]);
 
   const isGroup = planGroup.length > 1;
   const effStatus = isGroup ? (groupStatuses[caseId] ?? "idle") : status;
@@ -904,16 +1391,21 @@ export default function CasePage({ params }: { params: { id: string } }) {
     }
   }, [effStatus, hasLive]);
 
-  const tenantId = typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
+  const tenantId =
+    typeof window !== "undefined"
+      ? (localStorage.getItem("tenant_id") ?? "")
+      : "";
 
   const fetchDetail = useCallback(async () => {
     if (!tenantId) return;
     setError(null);
     try {
-      const res = await api.get<CaseDetailResponse>(`/tenants/${tenantId}/cases/${caseId}/detail`);
+      const res = await api.get<CaseDetailResponse>(
+        `/tenants/${tenantId}/cases/${caseId}/detail`,
+      );
       setDetail(res.data);
     } catch (err: any) {
-      setError(err.message ?? "Failed to load case.");
+      setError(err.message ?? tx("Failed to load case."));
     } finally {
       setLoading(false);
     }
@@ -922,25 +1414,37 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const fetchArtifacts = useCallback(async () => {
     if (!tenantId) return;
     try {
-      const res = await api.get<ArtifactData[]>(`/tenants/${tenantId}/cases/${caseId}/artifacts`);
+      const res = await api.get<ArtifactData[]>(
+        `/tenants/${tenantId}/cases/${caseId}/artifacts`,
+      );
       setArtifacts(res.data);
-    } catch { /* non-fatal — the case shell above still renders */ }
+    } catch {
+      /* non-fatal — the case shell above still renders */
+    }
   }, [tenantId, caseId]);
 
   const fetchRequirements = useCallback(async () => {
     if (!tenantId) return;
     try {
-      const res = await api.get<{ requirements: CaseRequirement[] }>(`/tenants/${tenantId}/cases/${caseId}/requirements`);
+      const res = await api.get<{ requirements: CaseRequirement[] }>(
+        `/tenants/${tenantId}/cases/${caseId}/requirements`,
+      );
       setRequirements(res.data.requirements ?? []);
-    } catch { /* non-fatal — requirements may not have been determined yet */ }
+    } catch {
+      /* non-fatal — requirements may not have been determined yet */
+    }
   }, [tenantId, caseId]);
 
   const fetchVerificationFindings = useCallback(async () => {
     if (!tenantId) return;
     try {
-      const res = await api.get<{ findings: VerificationFinding[] }>(`/tenants/${tenantId}/cases/${caseId}/verification-findings`);
+      const res = await api.get<{ findings: VerificationFinding[] }>(
+        `/tenants/${tenantId}/cases/${caseId}/verification-findings`,
+      );
       setVerificationFindings(res.data.findings ?? []);
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
   }, [tenantId, caseId]);
 
   const runDetermineRequirements = useCallback(async () => {
@@ -948,51 +1452,74 @@ export default function CasePage({ params }: { params: { id: string } }) {
     setRequirementsBusy(true);
     setRequirementsError(null);
     try {
-      const res = await api.post<{ requirements: CaseRequirement[]; satisfied: boolean; case_status: string }>(
-        `/tenants/${tenantId}/cases/${caseId}/requirements/determine`
-      );
+      const res = await api.post<{
+        requirements: CaseRequirement[];
+        satisfied: boolean;
+        case_status: string;
+      }>(`/tenants/${tenantId}/cases/${caseId}/requirements/determine`);
       setRequirements(res.data.requirements ?? []);
       await fetchDetail();
     } catch (err: any) {
-      setRequirementsError(err?.response?.data?.detail ?? err.message ?? "Failed to determine requirements.");
+      setRequirementsError(
+        err?.response?.data?.detail ??
+          err.message ??
+          tx("Failed to determine requirements."),
+      );
     } finally {
       setRequirementsBusy(false);
     }
   }, [tenantId, caseId, fetchDetail]);
 
-  const waiveRequirement = useCallback(async (requirementId: string) => {
-    if (!tenantId) return;
-    try {
-      await api.post(`/tenants/${tenantId}/cases/${caseId}/requirements/${requirementId}/waive`, { note: "Waived by underwriter" });
-      await fetchRequirements();
-    } catch (err: any) {
-      setRequirementsError(err?.response?.data?.detail ?? err.message ?? "Failed to waive requirement.");
-    }
-  }, [tenantId, caseId, fetchRequirements]);
+  const waiveRequirement = useCallback(
+    async (requirementId: string) => {
+      if (!tenantId) return;
+      try {
+        await api.post(
+          `/tenants/${tenantId}/cases/${caseId}/requirements/${requirementId}/waive`,
+          { note: "Waived by underwriter" },
+        );
+        await fetchRequirements();
+      } catch (err: any) {
+        setRequirementsError(
+          err?.response?.data?.detail ??
+            err.message ??
+            tx("Failed to waive requirement."),
+        );
+      }
+    },
+    [tenantId, caseId, fetchRequirements],
+  );
 
   const fetchEApplication = useCallback(async () => {
     if (!tenantId) return;
     try {
       setEApp(await getEApplication(caseId));
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
   }, [tenantId, caseId]);
 
   const fetchAcr = useCallback(async () => {
     if (!tenantId) return;
     try {
       setAcr(await getACR(caseId));
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
   }, [tenantId, caseId]);
 
   const fetchIpp = useCallback(async () => {
     if (!tenantId) return;
     try {
       setIpp(await getIPP(caseId));
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
   }, [tenantId, caseId]);
 
   const handleGenerateEAppLink = async () => {
-    setEAppBusy(true); setEAppErr(null);
+    setEAppBusy(true);
+    setEAppErr(null);
     try {
       const invite = await inviteEApplication(caseId);
       setEAppLink(`${window.location.origin}${invite.link_path}`);
@@ -1009,33 +1536,47 @@ export default function CasePage({ params }: { params: { id: string } }) {
     if (!tenantId || !policyId) return;
     try {
       setChecks(await getCompliance(policyId));
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
   }, [tenantId, detail?.policy?.id, detail?.case?.policy_id]);
 
   const handleRunCompliance = async () => {
     let policyId = detail?.policy?.id || detail?.case?.policy_id;
     if (!policyId) {
       if (!customer) {
-        alert("This case has no linked policy yet — PEP/sanctions screening needs one first.");
+        alert(
+          tx(
+            "This case has no linked policy yet — PEP/sanctions screening needs one first.",
+          ),
+        );
         return;
       }
-      if (!window.confirm(
-        "This case has no linked policy yet — PEP/sanctions screening needs one first.\n\n" +
-        "Create a default Term Life Plus proposal for this customer now?"
-      )) return;
+      if (
+        !window.confirm(
+          "This case has no linked policy yet — PEP/sanctions screening needs one first.\n\n" +
+            "Create a default Term Life Plus proposal for this customer now?",
+        )
+      )
+        return;
       setCompBusy(true);
       try {
-        const coverage = Math.min((customer.declared_income || 0) * 10, 20_000_000) || 5_000_000;
-        const res = await api.post(`/tenants/${tenantId}/customers/${customer.id}/policies`, {
-          product_name: "Term Life Plus",
-          insurance_type: "TERM_LIFE",
-          coverage_amount: coverage,
-          term_years: 10,
-        });
+        const coverage =
+          Math.min((customer.declared_income || 0) * 10, 20_000_000) ||
+          5_000_000;
+        const res = await api.post(
+          `/tenants/${tenantId}/customers/${customer.id}/policies`,
+          {
+            product_name: "Term Life Plus",
+            insurance_type: "TERM_LIFE",
+            coverage_amount: coverage,
+            term_years: 10,
+          },
+        );
         policyId = res.data.id;
         await fetchDetail();
       } catch (e: any) {
-        alert(e?.message ?? "Could not create the proposal.");
+        alert(e?.message ?? tx("Could not create the proposal."));
         setCompBusy(false);
         return;
       }
@@ -1045,9 +1586,10 @@ export default function CasePage({ params }: { params: { id: string } }) {
       await runCompliance(policyId);
       await fetchCompliance();
     } catch (e: any) {
-      alert(e?.message ?? "PEP/sanctions screening failed");
+      alert(e?.message ?? tx("PEP/sanctions screening failed"));
+    } finally {
+      setCompBusy(false);
     }
-    finally { setCompBusy(false); }
   };
 
   const handleClearCompliance = async (id: string) => {
@@ -1055,8 +1597,11 @@ export default function CasePage({ params }: { params: { id: string } }) {
     try {
       await clearCompliance(id, "Cleared after review", "officer");
       await fetchCompliance();
-    } catch { /* */ }
-    finally { setCompBusy(false); }
+    } catch {
+      /* */
+    } finally {
+      setCompBusy(false);
+    }
   };
 
   /** Clears every non-Passed check in one go — the checklist only ever
@@ -1069,10 +1614,17 @@ export default function CasePage({ params }: { params: { id: string } }) {
     if (toClear.length === 0) return;
     setCompBusy(true);
     try {
-      await Promise.all(toClear.map((ck) => clearCompliance(ck.id, "Cleared after review", "officer")));
+      await Promise.all(
+        toClear.map((ck) =>
+          clearCompliance(ck.id, "Cleared after review", "officer"),
+        ),
+      );
       await fetchCompliance();
-    } catch { /* */ }
-    finally { setCompBusy(false); }
+    } catch {
+      /* */
+    } finally {
+      setCompBusy(false);
+    }
   };
 
   const handleFailCompliance = async (id: string) => {
@@ -1080,8 +1632,11 @@ export default function CasePage({ params }: { params: { id: string } }) {
     try {
       await failCompliance(id, "Failed after review", "officer");
       await fetchCompliance();
-    } catch { /* */ }
-    finally { setCompBusy(false); }
+    } catch {
+      /* */
+    } finally {
+      setCompBusy(false);
+    }
   };
 
   // ── Gate 5 — Insurance history ────────────────────────────────────────────
@@ -1089,7 +1644,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
     if (!tenantId) return;
     try {
       setHistory(await getInsuranceHistory(caseId));
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
   }, [tenantId, caseId]);
 
   const handleRunHistory = async () => {
@@ -1098,7 +1655,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
       setHistory(await runInsuranceHistory(caseId));
       await fetchDetail();
     } catch (e: any) {
-      alert(e?.message ?? "Insurance history check failed");
+      alert(e?.message ?? tx("Insurance history check failed"));
     } finally {
       setHistBusy(false);
     }
@@ -1109,12 +1666,24 @@ export default function CasePage({ params }: { params: { id: string } }) {
     setAcrRequesting(true);
     try {
       const r = await requestACR(caseId);
-      if (r.self_request) setSuccessMessage("You are the agent on this case: file the report from the agent app.");
-      else setSuccessMessage(r.already_requested ? `Already requested from ${r.recipient?.name ?? "the agent"}.` : `Asked ${r.recipient?.name ?? "the agent"} to file the ACR from the app.`);
+      if (r.self_request)
+        setSuccessMessage(
+          "You are the agent on this case: file the report from the agent app.",
+        );
+      else
+        setSuccessMessage(
+          r.already_requested
+            ? `Already requested from ${r.recipient?.name ?? "the agent"}.`
+            : `Asked ${r.recipient?.name ?? "the agent"} to file the ACR from the app.`,
+        );
       window.setTimeout(() => setSuccessMessage(null), 4000);
       await fetchAcr();
     } catch (e: any) {
-      setError(e?.response?.data?.detail ?? e?.message ?? "Couldn't send the ACR request.");
+      setError(
+        e?.response?.data?.detail ??
+          e?.message ??
+          "Couldn't send the ACR request.",
+      );
     } finally {
       setAcrRequesting(false);
     }
@@ -1126,12 +1695,14 @@ export default function CasePage({ params }: { params: { id: string } }) {
       const note = accept
         ? "Findings reviewed and accepted by the underwriter"
         : "Adverse history — proposal cannot proceed";
-      setHistory(accept
-        ? await clearInsuranceHistory(caseId, note)
-        : await failInsuranceHistory(caseId, note));
+      setHistory(
+        accept
+          ? await clearInsuranceHistory(caseId, note)
+          : await failInsuranceHistory(caseId, note),
+      );
       await fetchDetail();
     } catch (e: any) {
-      alert(e?.message ?? "Failed to record the override");
+      alert(e?.message ?? tx("Failed to record the override"));
     } finally {
       setHistBusy(false);
     }
@@ -1142,11 +1713,14 @@ export default function CasePage({ params }: { params: { id: string } }) {
     if (!tenantId) return;
     try {
       setMedical(await getMedicalExam(caseId));
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
   }, [tenantId, caseId]);
 
   const handleAssessMedical = async () => {
-    setMedBusy(true); setMedErr(null);
+    setMedBusy(true);
+    setMedErr(null);
     try {
       const order = await assessMedicalExam(caseId);
       setMedical(order);
@@ -1171,7 +1745,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
   };
 
   const handleInviteMedical = async () => {
-    setMedBusy(true); setMedErr(null);
+    setMedBusy(true);
+    setMedErr(null);
     try {
       const invite = await inviteMedicalExam(caseId);
       setMedLink(`${window.location.origin}${invite.link_path}`);
@@ -1189,7 +1764,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const handleWaiveMedical = async () => {
     const reason = window.prompt("Reason for waiving the medical requirement:");
     if (!reason) return;
-    setMedBusy(true); setMedErr(null);
+    setMedBusy(true);
+    setMedErr(null);
     try {
       setMedical(await waiveMedicalExam(caseId, reason));
       await fetchDetail();
@@ -1203,7 +1779,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
   };
 
   const handleRecordResults = async (results: Record<string, string>) => {
-    setMedBusy(true); setMedErr(null);
+    setMedBusy(true);
+    setMedErr(null);
     try {
       setMedical(await recordMedicalResult(caseId, { results }));
       setShowResultModal(false);
@@ -1227,7 +1804,17 @@ export default function CasePage({ params }: { params: { id: string } }) {
     fetchMedical();
     fetchRequirements();
     fetchVerificationFindings();
-  }, [fetchDetail, fetchArtifacts, fetchEApplication, fetchAcr, fetchIpp, fetchHistory, fetchMedical, fetchRequirements, fetchVerificationFindings]);
+  }, [
+    fetchDetail,
+    fetchArtifacts,
+    fetchEApplication,
+    fetchAcr,
+    fetchIpp,
+    fetchHistory,
+    fetchMedical,
+    fetchRequirements,
+    fetchVerificationFindings,
+  ]);
 
   useEffect(() => {
     const policyId = detail?.policy?.id || detail?.case?.policy_id;
@@ -1252,12 +1839,31 @@ export default function CasePage({ params }: { params: { id: string } }) {
     fetchCompliance();
     fetchRequirements();
     fetchVerificationFindings();
-  }, [fetchDetail, fetchArtifacts, fetchEApplication, fetchAcr, fetchIpp, fetchHistory, fetchMedical, fetchCompliance, fetchRequirements, fetchVerificationFindings]);
+  }, [
+    fetchDetail,
+    fetchArtifacts,
+    fetchEApplication,
+    fetchAcr,
+    fetchIpp,
+    fetchHistory,
+    fetchMedical,
+    fetchCompliance,
+    fetchRequirements,
+    fetchVerificationFindings,
+  ]);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin && event.origin !== parentOrigin()) return;
-      if (event.data?.source !== "insurance-ai-copilot" || event.data?.type !== "refresh") return;
+      if (
+        event.origin !== window.location.origin &&
+        event.origin !== parentOrigin()
+      )
+        return;
+      if (
+        event.data?.source !== "insurance-ai-copilot" ||
+        event.data?.type !== "refresh"
+      )
+        return;
       refreshCaseData();
     };
     window.addEventListener("message", onMessage);
@@ -1267,7 +1873,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
   // Poll every 3s while any artifact is still being OCR'd, so status/ocr_result
   // update without a manual refresh — same pattern as the /cases explorer.
   useEffect(() => {
-    if (!artifacts.some(a => a.status === "Processing")) return;
+    if (!artifacts.some((a) => a.status === "Processing")) return;
     const t = setTimeout(fetchArtifacts, 3000);
     return () => clearTimeout(t);
   }, [artifacts, fetchArtifacts]);
@@ -1291,13 +1897,17 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
   // A reconnect or the tab coming back into view may mean events were missed —
   // re-read rather than show a stale gate until someone refreshes.
-  useCaseEvents((evt: CaseEvent) => {
-    if (!evt.case_id || !relatedCaseIds.has(evt.case_id)) return;
-    if (!LIVE_CASE_EVENTS.has(evt.event_type)) return;
-    refreshCaseData();
-    const message = LIVE_CASE_EVENT_MESSAGES[evt.event_type];
-    if (message) notify(message, true);
-  }, true, refreshCaseData);
+  useCaseEvents(
+    (evt: CaseEvent) => {
+      if (!evt.case_id || !relatedCaseIds.has(evt.case_id)) return;
+      if (!LIVE_CASE_EVENTS.has(evt.event_type)) return;
+      refreshCaseData();
+      const message = LIVE_CASE_EVENT_MESSAGES[evt.event_type];
+      if (message) notify(message, true);
+    },
+    true,
+    refreshCaseData,
+  );
 
   // One-shot popup the moment every pre-underwriting prerequisite clears —
   // fires once per transition into "ready", not on every poll/re-render.
@@ -1307,18 +1917,35 @@ export default function CasePage({ params }: { params: { id: string } }) {
   useEffect(() => {
     if (!detail) return;
     const docsReady = (detail.document_checklist?.missing ?? []).length === 0;
-    const eAppReady = eApp?.status === "Submitted" || eApp?.status === "Verified";
+    const eAppReady =
+      eApp?.status === "Submitted" || eApp?.status === "Verified";
     const acrReady = acr?.status === "Submitted";
     const ippReady = ipp?.status === "Realized";
-    const pepReady = checks.length > 0 && checks.every((ck) => ck.status === "Passed");
+    const pepReady =
+      checks.length > 0 && checks.every((ck) => ck.status === "Passed");
     const historyReady = history?.status === "Clear";
-    const medicalReady = medical?.status === "Completed" || medical?.status === "NotRequired" || medical?.status === "Waived";
-    const allReady = docsReady && eAppReady && acrReady && ippReady && pepReady && historyReady && medicalReady;
+    const medicalReady =
+      medical?.status === "Completed" ||
+      medical?.status === "NotRequired" ||
+      medical?.status === "Waived";
+    const allReady =
+      docsReady &&
+      eAppReady &&
+      acrReady &&
+      ippReady &&
+      pepReady &&
+      historyReady &&
+      medicalReady;
 
     if (allReady) {
       if (!notifiedPreUnderwritingRef.current) {
         notifiedPreUnderwritingRef.current = true;
-        notify("✅ Pre-underwriting clearance complete — ready for AI risk assessment.", true);
+        notify(
+          tx(
+            "✅ Pre-underwriting clearance complete — ready for AI risk assessment.",
+          ),
+          true,
+        );
         notifyParentPortal("gates_cleared", { caseId });
       }
     } else {
@@ -1331,13 +1958,24 @@ export default function CasePage({ params }: { params: { id: string } }) {
   useEffect(() => {
     if (isGroup) return;
     const missingDocs = detail?.document_checklist?.missing ?? [];
-    const checksMissing = eApp?.status !== "Submitted" || acr?.status !== "Submitted" || ipp?.status !== "Realized";
+    const checksMissing =
+      eApp?.status !== "Submitted" ||
+      acr?.status !== "Submitted" ||
+      ipp?.status !== "Realized";
     // A family member is never assessed on their own as soon as their gates clear: the head and the insured spouse are
     // underwritten first, and the assessments run together afterwards (from the chat).
     const inFamily = (detail?.family_members?.length ?? 0) > 1;
-    if (detail && !loading && status === "idle" && !live.compositeScore && !detail.latest_assessment && missingDocs.length === 0 && !checksMissing) {
+    if (
+      detail &&
+      !loading &&
+      status === "idle" &&
+      !live.compositeScore &&
+      !detail.latest_assessment &&
+      missingDocs.length === 0 &&
+      !checksMissing
+    ) {
       if (autoRun === "true" && inFamily) {
-        router.replace(`/case/${caseId}`);            // drop the flag; the page waits for the family's assessment
+        router.replace(`/case/${caseId}`); // drop the flag; the page waits for the family's assessment
       } else if (autoRun === "true") {
         // Remove autoRun from URL so we don't re-trigger on refresh
         router.replace(`/case/${caseId}`);
@@ -1347,18 +1985,35 @@ export default function CasePage({ params }: { params: { id: string } }) {
         setTimeout(() => runUnderwriting(), 100);
       }
     }
-  }, [detail, loading, status, live.compositeScore, autoRun, caseId, router, isGroup, eApp?.status, acr?.status, ipp?.status]);
+  }, [
+    detail,
+    loading,
+    status,
+    live.compositeScore,
+    autoRun,
+    caseId,
+    router,
+    isGroup,
+    eApp?.status,
+    acr?.status,
+    ipp?.status,
+  ]);
 
   const summarizeDocuments = async () => {
-    const texts = artifacts.filter(a => a.ocr_result).map(a => a.ocr_result as string);
+    const texts = artifacts
+      .filter((a) => a.ocr_result)
+      .map((a) => a.ocr_result as string);
     if (texts.length === 0) return;
     setSummarizing(true);
     setSummarizeError(null);
     try {
-      const res = await summarizerApi.post<{ summary: string }>("/summarize/underwriting", { documents: texts });
+      const res = await summarizerApi.post<{ summary: string }>(
+        "/summarize/underwriting",
+        { documents: texts },
+      );
       setDocSummary(res.data.summary);
     } catch (err: any) {
-      setSummarizeError(err.message ?? "Failed to summarize documents.");
+      setSummarizeError(err.message ?? tx("Failed to summarize documents."));
     } finally {
       setSummarizing(false);
     }
@@ -1373,7 +2028,12 @@ export default function CasePage({ params }: { params: { id: string } }) {
     const missingDocs = detail.document_checklist?.missing ?? [];
     if (missingDocs.length > 0) {
       setStatus("idle");
-      setStreamError(`Required document(s) missing: ${missingDocs.join(", ")}. Upload them before running underwriting.`);
+      setStreamError(
+        tx(
+          "Required document(s) missing: {0}. Upload them before running underwriting.",
+          { 0: missingDocs.join(", ") },
+        ),
+      );
       return;
     }
 
@@ -1405,7 +2065,12 @@ export default function CasePage({ params }: { params: { id: string } }) {
         insurance_type: policy.insurance_type,
         coverage_amount: policy.coverage_amount,
         term_years: policy.term_years,
-        ...(policy.dependent_name ? { dependent_name: policy.dependent_name, dependent_dob: policy.dependent_dob } : {}),
+        ...(policy.dependent_name
+          ? {
+              dependent_name: policy.dependent_name,
+              dependent_dob: policy.dependent_dob,
+            }
+          : {}),
       },
       case_id: caseId,
       ...(docSummary ? { ai_summary: docSummary } : {}),
@@ -1414,14 +2079,21 @@ export default function CasePage({ params }: { params: { id: string } }) {
     try {
       const res = await fetch(`${API_BASE}/evaluate/stream`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Tenant-Id": tenantId },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Tenant-Id": tenantId,
+        },
         body: JSON.stringify(payload),
         signal: abort.signal,
       });
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(Array.isArray(body.detail) ? body.detail.map((d: any) => d.msg ?? d).join(", ") : body.detail ?? `Gateway returned ${res.status}`);
+        throw new Error(
+          Array.isArray(body.detail)
+            ? body.detail.map((d: any) => d.msg ?? d).join(", ")
+            : (body.detail ?? tx("Gateway returned {0}", { 0: res.status })),
+        );
       }
 
       const reader = res.body!.getReader();
@@ -1439,23 +2111,47 @@ export default function CasePage({ params }: { params: { id: string } }) {
           const line = part.trim();
           if (!line.startsWith("data: ")) continue;
           let evt: Record<string, any>;
-          try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+          try {
+            evt = JSON.parse(line.slice(6));
+          } catch {
+            continue;
+          }
 
           if (evt.type === "progress") {
             const node = evt.node as string;
             const data = evt.data as Record<string, any>;
-            setLive(prev => {
-              const next: LiveResult = { ...prev, completedNodes: prev.completedNodes.includes(node) ? prev.completedNodes : [...prev.completedNodes, node] };
-              if (node === "medical_scoring") { next.medicalScore = data.medical_score ?? null; next.medicalReasons = data.medical_reasons ?? []; }
-              else if (node === "financial_scoring") { next.financialScore = data.financial_score ?? null; next.financialReasons = data.financial_reasons ?? []; }
-              else if (node === "fraud_detection") { next.fraudProbability = data.fraud_probability ?? null; next.fraudReasons = data.fraud_reasons ?? []; }
-              else if (node === "decision_engine") { next.compositeScore = data.composite_risk_score ?? null; next.aiDecision = data.ai_decision ?? null; next.reasons = data.reasons ?? []; next.underwritingResults = data.underwriting_results ?? null; }
+            setLive((prev) => {
+              const next: LiveResult = {
+                ...prev,
+                completedNodes: prev.completedNodes.includes(node)
+                  ? prev.completedNodes
+                  : [...prev.completedNodes, node],
+              };
+              if (node === "medical_scoring") {
+                next.medicalScore = data.medical_score ?? null;
+                next.medicalReasons = data.medical_reasons ?? [];
+              } else if (node === "financial_scoring") {
+                next.financialScore = data.financial_score ?? null;
+                next.financialReasons = data.financial_reasons ?? [];
+              } else if (node === "fraud_detection") {
+                next.fraudProbability = data.fraud_probability ?? null;
+                next.fraudReasons = data.fraud_reasons ?? [];
+              } else if (node === "decision_engine") {
+                next.compositeScore = data.composite_risk_score ?? null;
+                next.aiDecision = data.ai_decision ?? null;
+                next.reasons = data.reasons ?? [];
+                next.underwritingResults = data.underwriting_results ?? null;
+              }
               return next;
             });
             if (node === "decision_engine") setStatus("done");
           } else if (evt.type === "invalid") {
             setStatus("error");
-            setStreamError(`Validation failed: ${(evt.errors as string[]).join("; ")}`);
+            setStreamError(
+              tx("Validation failed: {0}", {
+                0: (evt.errors as string[]).join("; "),
+              }),
+            );
             break outer;
           } else if (evt.type === "pending_requirements") {
             // The Requirements Engine found unmet mandatory items — risk-engine
@@ -1463,13 +2159,15 @@ export default function CasePage({ params }: { params: { id: string } }) {
             // than a generic failure.
             setStatus("error");
             setStreamError(
-              "Mandatory underwriting requirements are not yet satisfied — see the Requirements panel below."
+              tx(
+                "Mandatory underwriting requirements are not yet satisfied — see the Requirements panel below.",
+              ),
             );
             fetchDetail();
             break outer;
           } else if (evt.type === "error") {
             setStatus("error");
-            setStreamError(evt.message ?? "An unexpected error occurred.");
+            setStreamError(evt.message ?? tx("An unexpected error occurred."));
             break outer;
           } else if (evt.type === "saved") {
             // Case/Policy status may have auto-transitioned — refresh the case shell.
@@ -1480,7 +2178,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
     } catch (err: any) {
       if (err?.name === "AbortError") return;
       setStatus("error");
-      setStreamError(err.message ?? "Connection failed.");
+      setStreamError(err.message ?? tx("Connection failed."));
     }
   };
 
@@ -1488,149 +2186,201 @@ export default function CasePage({ params }: { params: { id: string } }) {
   // Same stream as runUnderwriting, but results are written into the per-plan
   // maps so several plans can be underwritten in parallel and viewed on switch.
 
-  const runGroupCase = useCallback(async (targetId: string, force = false) => {
-    if (!tenantId) return;
+  const runGroupCase = useCallback(
+    async (targetId: string, force = false) => {
+      if (!tenantId) return;
 
-    groupAbortsRef.current[targetId]?.abort();
-    const abort = new AbortController();
-    groupAbortsRef.current[targetId] = abort;
+      groupAbortsRef.current[targetId]?.abort();
+      const abort = new AbortController();
+      groupAbortsRef.current[targetId] = abort;
 
-    setGroupStatuses(s => ({ ...s, [targetId]: "streaming" }));
-    setGroupLive(s => ({ ...s, [targetId]: EMPTY_LIVE }));
-    setGroupErrors(s => ({ ...s, [targetId]: null }));
+      setGroupStatuses((s) => ({ ...s, [targetId]: "streaming" }));
+      setGroupLive((s) => ({ ...s, [targetId]: EMPTY_LIVE }));
+      setGroupErrors((s) => ({ ...s, [targetId]: null }));
 
-    try {
-      const dres = await api.get<CaseDetailResponse>(`/tenants/${tenantId}/cases/${targetId}/detail`);
-      const d = dres.data;
+      try {
+        const dres = await api.get<CaseDetailResponse>(
+          `/tenants/${tenantId}/cases/${targetId}/detail`,
+        );
+        const d = dres.data;
 
-      // Already underwritten — surface the persisted result instead of re-running.
-      if (!force && d.latest_assessment) {
-        setGroupStatuses(s => ({ ...s, [targetId]: "done" }));
-        if (targetId === currentCaseIdRef.current) setDetail(d);
-        return;
-      }
-      if (!d.customer || !d.policy) {
-        setGroupStatuses(s => ({ ...s, [targetId]: "error" }));
-        setGroupErrors(s => ({ ...s, [targetId]: "This case has no customer or policy to underwrite." }));
-        return;
-      }
+        // Already underwritten — surface the persisted result instead of re-running.
+        if (!force && d.latest_assessment) {
+          setGroupStatuses((s) => ({ ...s, [targetId]: "done" }));
+          if (targetId === currentCaseIdRef.current) setDetail(d);
+          return;
+        }
+        if (!d.customer || !d.policy) {
+          setGroupStatuses((s) => ({ ...s, [targetId]: "error" }));
+          setGroupErrors((s) => ({
+            ...s,
+            [targetId]: "This case has no customer or policy to underwrite.",
+          }));
+          return;
+        }
 
-      // Required documents must be uploaded before this plan can be underwritten
-      // — mirror the single-case guard so parallel runs don't slip through.
-      const missingDocs = d.document_checklist?.missing ?? [];
-      if (missingDocs.length > 0) {
-        setGroupStatuses(s => ({ ...s, [targetId]: "error" }));
-        setGroupErrors(s => ({ ...s, [targetId]: `Required document(s) missing: ${missingDocs.join(", ")}. Upload them before running underwriting.` }));
-        if (targetId === currentCaseIdRef.current) setDetail(d);
-        return;
-      }
+        // Required documents must be uploaded before this plan can be underwritten
+        // — mirror the single-case guard so parallel runs don't slip through.
+        const missingDocs = d.document_checklist?.missing ?? [];
+        if (missingDocs.length > 0) {
+          setGroupStatuses((s) => ({ ...s, [targetId]: "error" }));
+          setGroupErrors((s) => ({
+            ...s,
+            [targetId]: `Required document(s) missing: ${missingDocs.join(", ")}. Upload them before running underwriting.`,
+          }));
+          if (targetId === currentCaseIdRef.current) setDetail(d);
+          return;
+        }
 
-      const { customer, policy } = d;
-      const payload = {
-        customer: {
-          cnic: customer.cnic,
-          name: customer.name,
-          dob: customer.dob,
-          gender: customer.gender,
-          marital_status: customer.marital_status,
-          occupation: customer.occupation,
-          declared_income: customer.declared_income,
-          is_smoker: customer.is_smoker,
-          height_cm: customer.height_cm,
-          weight_kg: customer.weight_kg,
-          details: customer.details,
-        },
-        policy: {
-          product_name: policy.product_name,
-          insurance_type: policy.insurance_type,
-          coverage_amount: policy.coverage_amount,
-          term_years: policy.term_years,
-          ...(policy.dependent_name ? { dependent_name: policy.dependent_name, dependent_dob: policy.dependent_dob } : {}),
-        },
-        case_id: targetId,
-      };
+        const { customer, policy } = d;
+        const payload = {
+          customer: {
+            cnic: customer.cnic,
+            name: customer.name,
+            dob: customer.dob,
+            gender: customer.gender,
+            marital_status: customer.marital_status,
+            occupation: customer.occupation,
+            declared_income: customer.declared_income,
+            is_smoker: customer.is_smoker,
+            height_cm: customer.height_cm,
+            weight_kg: customer.weight_kg,
+            details: customer.details,
+          },
+          policy: {
+            product_name: policy.product_name,
+            insurance_type: policy.insurance_type,
+            coverage_amount: policy.coverage_amount,
+            term_years: policy.term_years,
+            ...(policy.dependent_name
+              ? {
+                  dependent_name: policy.dependent_name,
+                  dependent_dob: policy.dependent_dob,
+                }
+              : {}),
+          },
+          case_id: targetId,
+        };
 
-      const res = await fetch(`${API_BASE}/evaluate/stream`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Tenant-Id": tenantId },
-        body: JSON.stringify(payload),
-        signal: abort.signal,
-      });
+        const res = await fetch(`${API_BASE}/evaluate/stream`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Tenant-Id": tenantId,
+          },
+          body: JSON.stringify(payload),
+          signal: abort.signal,
+        });
 
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        const msg = Array.isArray(body.detail) ? body.detail.map((x: any) => x.msg ?? x).join(", ") : body.detail ?? `Gateway returned ${res.status}`;
-        setGroupStatuses(s => ({ ...s, [targetId]: "error" }));
-        setGroupErrors(s => ({ ...s, [targetId]: msg }));
-        return;
-      }
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          const msg = Array.isArray(body.detail)
+            ? body.detail.map((x: any) => x.msg ?? x).join(", ")
+            : (body.detail ?? `Gateway returned ${res.status}`);
+          setGroupStatuses((s) => ({ ...s, [targetId]: "error" }));
+          setGroupErrors((s) => ({ ...s, [targetId]: msg }));
+          return;
+        }
 
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
 
-      outer: while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() ?? "";
+        outer: while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() ?? "";
 
-        for (const part of parts) {
-          const line = part.trim();
-          if (!line.startsWith("data: ")) continue;
-          let evt: Record<string, any>;
-          try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+          for (const part of parts) {
+            const line = part.trim();
+            if (!line.startsWith("data: ")) continue;
+            let evt: Record<string, any>;
+            try {
+              evt = JSON.parse(line.slice(6));
+            } catch {
+              continue;
+            }
 
-          if (evt.type === "progress") {
-            const node = evt.node as string;
-            const data = evt.data as Record<string, any>;
-            setGroupLive(s => {
-              const prev = s[targetId] ?? EMPTY_LIVE;
-              const next: LiveResult = { ...prev, completedNodes: prev.completedNodes.includes(node) ? prev.completedNodes : [...prev.completedNodes, node] };
-              if (node === "medical_scoring") { next.medicalScore = data.medical_score ?? null; next.medicalReasons = data.medical_reasons ?? []; }
-              else if (node === "financial_scoring") { next.financialScore = data.financial_score ?? null; next.financialReasons = data.financial_reasons ?? []; }
-              else if (node === "fraud_detection") { next.fraudProbability = data.fraud_probability ?? null; next.fraudReasons = data.fraud_reasons ?? []; }
-              else if (node === "decision_engine") { next.compositeScore = data.composite_risk_score ?? null; next.aiDecision = data.ai_decision ?? null; next.reasons = data.reasons ?? []; next.underwritingResults = data.underwriting_results ?? null; }
-              return { ...s, [targetId]: next };
-            });
-            if (node === "decision_engine") setGroupStatuses(s => ({ ...s, [targetId]: "done" }));
-          } else if (evt.type === "invalid") {
-            setGroupStatuses(s => ({ ...s, [targetId]: "error" }));
-            setGroupErrors(s => ({ ...s, [targetId]: `Validation failed: ${(evt.errors as string[]).join("; ")}` }));
-            break outer;
-          } else if (evt.type === "pending_requirements") {
-            setGroupStatuses(s => ({ ...s, [targetId]: "error" }));
-            setGroupErrors(s => ({
-              ...s,
-              [targetId]: "Mandatory underwriting requirements are not yet satisfied — see the Requirements panel below.",
-            }));
-            if (targetId === currentCaseIdRef.current) fetchDetail();
-            break outer;
-          } else if (evt.type === "error") {
-            setGroupStatuses(s => ({ ...s, [targetId]: "error" }));
-            setGroupErrors(s => ({ ...s, [targetId]: evt.message ?? "An unexpected error occurred." }));
-            break outer;
-          } else if (evt.type === "saved") {
-            // Refresh the case shell only if this plan is the one on screen.
-            if (targetId === currentCaseIdRef.current) fetchDetail();
+            if (evt.type === "progress") {
+              const node = evt.node as string;
+              const data = evt.data as Record<string, any>;
+              setGroupLive((s) => {
+                const prev = s[targetId] ?? EMPTY_LIVE;
+                const next: LiveResult = {
+                  ...prev,
+                  completedNodes: prev.completedNodes.includes(node)
+                    ? prev.completedNodes
+                    : [...prev.completedNodes, node],
+                };
+                if (node === "medical_scoring") {
+                  next.medicalScore = data.medical_score ?? null;
+                  next.medicalReasons = data.medical_reasons ?? [];
+                } else if (node === "financial_scoring") {
+                  next.financialScore = data.financial_score ?? null;
+                  next.financialReasons = data.financial_reasons ?? [];
+                } else if (node === "fraud_detection") {
+                  next.fraudProbability = data.fraud_probability ?? null;
+                  next.fraudReasons = data.fraud_reasons ?? [];
+                } else if (node === "decision_engine") {
+                  next.compositeScore = data.composite_risk_score ?? null;
+                  next.aiDecision = data.ai_decision ?? null;
+                  next.reasons = data.reasons ?? [];
+                  next.underwritingResults = data.underwriting_results ?? null;
+                }
+                return { ...s, [targetId]: next };
+              });
+              if (node === "decision_engine")
+                setGroupStatuses((s) => ({ ...s, [targetId]: "done" }));
+            } else if (evt.type === "invalid") {
+              setGroupStatuses((s) => ({ ...s, [targetId]: "error" }));
+              setGroupErrors((s) => ({
+                ...s,
+                [targetId]: `Validation failed: ${(evt.errors as string[]).join("; ")}`,
+              }));
+              break outer;
+            } else if (evt.type === "pending_requirements") {
+              setGroupStatuses((s) => ({ ...s, [targetId]: "error" }));
+              setGroupErrors((s) => ({
+                ...s,
+                [targetId]:
+                  "Mandatory underwriting requirements are not yet satisfied — see the Requirements panel below.",
+              }));
+              if (targetId === currentCaseIdRef.current) fetchDetail();
+              break outer;
+            } else if (evt.type === "error") {
+              setGroupStatuses((s) => ({ ...s, [targetId]: "error" }));
+              setGroupErrors((s) => ({
+                ...s,
+                [targetId]: evt.message ?? "An unexpected error occurred.",
+              }));
+              break outer;
+            } else if (evt.type === "saved") {
+              // Refresh the case shell only if this plan is the one on screen.
+              if (targetId === currentCaseIdRef.current) fetchDetail();
+            }
           }
         }
+      } catch (err: any) {
+        if (err?.name === "AbortError") return;
+        setGroupStatuses((s) => ({ ...s, [targetId]: "error" }));
+        setGroupErrors((s) => ({
+          ...s,
+          [targetId]: err.message ?? "Connection failed.",
+        }));
       }
-    } catch (err: any) {
-      if (err?.name === "AbortError") return;
-      setGroupStatuses(s => ({ ...s, [targetId]: "error" }));
-      setGroupErrors(s => ({ ...s, [targetId]: err.message ?? "Connection failed." }));
-    }
-  }, [tenantId, fetchDetail]);
+    },
+    [tenantId, fetchDetail],
+  );
 
   // Kick off underwriting for every plan in the group in parallel, exactly once.
   useEffect(() => {
     if (!isGroup || !tenantId) return;
-    const sig = planGroup.map(p => p.caseId).join(",");
+    const sig = planGroup.map((p) => p.caseId).join(",");
     if (groupStartedRef.current === sig) return;
     groupStartedRef.current = sig;
-    planGroup.forEach(p => runGroupCase(p.caseId));
+    planGroup.forEach((p) => runGroupCase(p.caseId));
   }, [isGroup, planGroup, tenantId, runGroupCase]);
 
   // ── Manual override (writes to the real CaseHistory audit trail) ────────────
@@ -1639,16 +2389,20 @@ export default function CasePage({ params }: { params: { id: string } }) {
     if (!tenantId) return;
     setOverriding(newStatus);
     try {
-      await api.patch(`/tenants/${tenantId}/cases/${caseId}/status`, { status: newStatus });
+      await api.patch(`/tenants/${tenantId}/cases/${caseId}/status`, {
+        status: newStatus,
+      });
       await fetchDetail();
       if (newStatus === "Approved") {
-        setSuccessMessage("Case successfully approved and forwarded to Issuance Queue.");
+        setSuccessMessage(
+          tx("Case successfully approved and forwarded to Issuance Queue."),
+        );
         if (!isGroup) {
           setTimeout(() => router.push("/policy-issuance"), 1200);
         }
       }
     } catch (err: any) {
-      setError(err.message ?? "Failed to update case status.");
+      setError(err.message ?? tx("Failed to update case status."));
     } finally {
       setOverriding(null);
     }
@@ -1661,10 +2415,13 @@ export default function CasePage({ params }: { params: { id: string } }) {
     setGeneratingNote(true);
     setNoteGenError(null);
     try {
-      const res = await summarizerApi.post<{ summary: string }>("/summarize/underwriter-note", { context });
+      const res = await summarizerApi.post<{ summary: string }>(
+        "/summarize/underwriter-note",
+        { context },
+      );
       setNote(res.data.summary.trim());
     } catch (err: any) {
-      setNoteGenError(err.message ?? "Failed to generate note.");
+      setNoteGenError(err.message ?? tx("Failed to generate note."));
     } finally {
       setGeneratingNote(false);
     }
@@ -1685,7 +2442,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
       composite_risk_score: compositeScore,
       ai_decision: aiDecision ?? "Pending",
       suggested_loading: suggestedLoading,
-      reasons: hasLive ? [...medicalReasons, ...financialReasons, ...fraudReasons] : (assessment?.reasons ?? []),
+      reasons: hasLive
+        ? [...medicalReasons, ...financialReasons, ...fraudReasons]
+        : (assessment?.reasons ?? []),
       ai_summary: docSummary ?? null,
       product_name: policy?.product_name ?? null,
     });
@@ -1705,7 +2464,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
       setNoteSent(true);
       setTimeout(() => setNoteSent(false), 3000);
     } catch (err: any) {
-      setError(err.message ?? "Failed to post note.");
+      setError(err.message ?? tx("Failed to post note."));
     } finally {
       setPostingNote(false);
     }
@@ -1720,7 +2479,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
       const { generateApplicationPDF } = await import("@/lib/application-pdf");
       await generateApplicationPDF(detail as any);
     } catch (err: any) {
-      setError(err.message ?? "Failed to generate application PDF.");
+      setError(err.message ?? tx("Failed to generate application PDF."));
     } finally {
       setDownloadingApp(false);
     }
@@ -1732,7 +2491,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
     return (
       <div className="max-w-screen-2xl mx-auto px-6 py-20 flex flex-col items-center justify-center gap-2">
         <div className="animate-spin h-7 w-7 text-blue-500 rounded-full border-2 border-slate-100 border-t-blue-500" />
-        <span className="text-xs text-slate-400">Loading case…</span>
+        <span className="text-xs text-slate-400">{tx("Loading case…")}</span>
       </div>
     );
   }
@@ -1741,7 +2500,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
     return (
       <div className="max-w-screen-2xl mx-auto px-6 py-10">
         <div className="bg-red-50 border border-red-200 rounded-xl p-5">
-          <p className="text-sm font-bold text-red-700 mb-1">Failed to load case</p>
+          <p className="text-sm font-bold text-red-700 mb-1">
+            {tx("Failed to load case")}
+          </p>
           <p className="text-xs text-red-600">{error}</p>
         </div>
       </div>
@@ -1753,18 +2514,26 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const { case: c, customer, policy, document_checklist: docs } = detail;
 
   // Underwriting requires every mandatory document to be uploaded AND
-  // all initial checks to be completed — the Run / Re-run buttons stay 
+  // all initial checks to be completed — the Run / Re-run buttons stay
   // disabled until the checklist has nothing missing.
   const missingRequiredDocs = docs?.missing ?? [];
   const missingPreChecks: string[] = [];
-  if (missingRequiredDocs.length > 0) missingPreChecks.push(`Docs: ${missingRequiredDocs.join(", ")}`);
-  if (eApp?.status !== "Submitted" && eApp?.status !== "Verified") missingPreChecks.push("E-Application");
-  if (acr?.status !== "Submitted") missingPreChecks.push("Agent's Confidential Report");
-  if (ipp?.status !== "Realized") missingPreChecks.push("Initial Premium Payment");
+  if (missingRequiredDocs.length > 0)
+    missingPreChecks.push(`Docs: ${missingRequiredDocs.join(", ")}`);
+  if (eApp?.status !== "Submitted" && eApp?.status !== "Verified")
+    missingPreChecks.push("E-Application");
+  if (acr?.status !== "Submitted")
+    missingPreChecks.push("Agent's Confidential Report");
+  if (ipp?.status !== "Realized")
+    missingPreChecks.push("Initial Premium Payment");
 
-  const medicalDone = medical?.status === "Completed" || medical?.status === "NotRequired" || medical?.status === "Waived";
+  const medicalDone =
+    medical?.status === "Completed" ||
+    medical?.status === "NotRequired" ||
+    medical?.status === "Waived";
   const historyDone = history?.status === "Clear";
-  const pepDone = checks.length > 0 && checks.every((ck) => ck.status === "Passed");
+  const pepDone =
+    checks.length > 0 && checks.every((ck) => ck.status === "Passed");
 
   if (!pepDone) missingPreChecks.push("PEP & Sanctions Screening");
   if (!historyDone) missingPreChecks.push("Insurance History Clearance");
@@ -1775,11 +2544,18 @@ export default function CasePage({ params }: { params: { id: string } }) {
       id: "docs",
       title: "Mandatory Documents Checklist",
       done: missingRequiredDocs.length === 0,
-      statusLabel: missingRequiredDocs.length === 0 ? "Completed" : `Missing (${missingRequiredDocs.length})`,
-      description: missingRequiredDocs.length === 0 
-        ? "All required documents uploaded and processed by OCR." 
-        : `Missing required document(s): ${missingRequiredDocs.join(", ")}`,
-      actionLabel: missingRequiredDocs.length === 0 ? "Manage / Upload Docs" : "Upload Documents",
+      statusLabel:
+        missingRequiredDocs.length === 0
+          ? "Completed"
+          : `Missing (${missingRequiredDocs.length})`,
+      description:
+        missingRequiredDocs.length === 0
+          ? "All required documents uploaded and processed by OCR."
+          : `Missing required document(s): ${missingRequiredDocs.join(", ")}`,
+      actionLabel:
+        missingRequiredDocs.length === 0
+          ? "Manage / Upload Docs"
+          : "Upload Documents",
       onAction: () => setShowUpload(true),
     },
     {
@@ -1787,9 +2563,10 @@ export default function CasePage({ params }: { params: { id: string } }) {
       title: "Customer E-Application Questionnaire",
       done: eApp?.status === "Submitted" || eApp?.status === "Verified",
       statusLabel: eApp?.status ?? "Not Sent",
-      description: (eApp?.status === "Submitted" || eApp?.status === "Verified")
-        ? `Customer E-Application submitted (${eApp.status}).`
-        : "Customer health disclosures questionnaire pending submission or verification.",
+      description:
+        eApp?.status === "Submitted" || eApp?.status === "Verified"
+          ? `Customer E-Application submitted (${eApp.status}).`
+          : "Customer health disclosures questionnaire pending submission or verification.",
       actionLabel: "Open E-Application",
       actionHref: `/underwriting?tab=pre-underwriting&case=${caseId}&gate=eapp&returnTo=${encodeURIComponent(`/case/${caseId}`)}`,
     },
@@ -1797,25 +2574,47 @@ export default function CasePage({ params }: { params: { id: string } }) {
       id: "acr",
       title: "Agent's Confidential Report (ACR)",
       done: acr?.status === "Submitted",
-      statusLabel: acr?.status === "Submitted" ? "Submitted" : acr?.requested_at ? "Awaiting agent" : (acr?.status ?? "Not Started"),
-      description: acr?.status === "Submitted" 
-        ? `Moral hazard & financial standing report filed by field agent.${detail?.family_head_case ? ` Filed once for the whole family (recorded on the head's case ${detail.family_head_case.case_number}) — one proposer, one report.` : ""}`
-        : detail?.family_head_case ? `The agent's report on the proposer is filed once for the whole family — it is recorded on the head's case ${detail.family_head_case.case_number}.` : "Waiting for the agent to submit the confidential report from the agent app.",
+      statusLabel:
+        acr?.status === "Submitted"
+          ? "Submitted"
+          : acr?.requested_at
+            ? "Awaiting agent"
+            : (acr?.status ?? "Not Started"),
+      description:
+        acr?.status === "Submitted"
+          ? `Moral hazard & financial standing report filed by field agent.${detail?.family_head_case ? ` Filed once for the whole family (recorded on the head's case ${detail.family_head_case.case_number}) — one proposer, one report.` : ""}`
+          : detail?.family_head_case
+            ? `The agent's report on the proposer is filed once for the whole family — it is recorded on the head's case ${detail.family_head_case.case_number}.`
+            : "Waiting for the agent to submit the confidential report from the agent app.",
       // The report is the agent's own, filed from the app: staff can read it once it is in, and ask for it until then.
-      actionLabel: acr?.status === "Submitted" ? "View ACR" : acrRequesting ? "Asking…" : acr?.requested_at ? "Remind agent" : "Request from agent",
+      actionLabel:
+        acr?.status === "Submitted"
+          ? "View ACR"
+          : acrRequesting
+            ? "Asking…"
+            : acr?.requested_at
+              ? "Remind agent"
+              : "Request from agent",
       busy: acrRequesting,
-      onAction: acr?.status === "Submitted" ? () => setShowACRModal(true) : handleRequestAcr,
+      onAction:
+        acr?.status === "Submitted"
+          ? () => setShowACRModal(true)
+          : handleRequestAcr,
     },
     {
       id: "pep",
       title: "PEP & Sanctions Screening",
       done: pepDone,
-      statusLabel: pepDone ? "Passed" : checks.length > 0 ? "Flagged" : "Pending",
+      statusLabel: pepDone
+        ? "Passed"
+        : checks.length > 0
+          ? "Flagged"
+          : "Pending",
       description: pepDone
         ? "Compliance check cleared against SECP & OpenSanctions database."
         : checks.length > 0
-        ? "Screened and flagged for manual sign-off — clear it below once reviewed."
-        : "PEP & AML screening required.",
+          ? "Screened and flagged for manual sign-off — clear it below once reviewed."
+          : "PEP & AML screening required.",
       // Re-screening (screen_and_store) replaces every check row, wiping any
       // existing clearance — so once a check exists, the action here is to
       // clear it, not to run it again. Running again is still possible from
@@ -1826,11 +2625,16 @@ export default function CasePage({ params }: { params: { id: string } }) {
           ? "Clearing…"
           : "Screening…"
         : checks.length > 0
-        ? pepDone
-          ? "Cleared"
-          : "Clear Flagged Check"
-        : "Run PEP Check",
-      onAction: checks.length > 0 ? (pepDone ? undefined : handleClearAllCompliance) : handleRunCompliance,
+          ? pepDone
+            ? "Cleared"
+            : "Clear Flagged Check"
+          : "Run PEP Check",
+      onAction:
+        checks.length > 0
+          ? pepDone
+            ? undefined
+            : handleClearAllCompliance
+          : handleRunCompliance,
       busy: compBusy,
     },
     {
@@ -1838,10 +2642,14 @@ export default function CasePage({ params }: { params: { id: string } }) {
       title: "Initial Premium Payment (IPP)",
       done: ipp?.status === "Realized",
       statusLabel: ipp?.status ?? "Not Started",
-      description: ipp?.status === "Realized" 
-        ? `Section 30 initial premium payment realized.${detail?.family_head_case ? ` Paid once for the whole family policy (recorded on the head's case ${detail.family_head_case.case_number}).` : ""}`
-        : detail?.family_head_case ? `The family policy's premium is paid once for the whole family — it is recorded on the head's case ${detail.family_head_case.case_number}.` : "Initial premium payment collection or realization pending.",
-      actionLabel: ipp?.status === "Realized" ? "View Payment" : "Collect Premium",
+      description:
+        ipp?.status === "Realized"
+          ? `Section 30 initial premium payment realized.${detail?.family_head_case ? ` Paid once for the whole family policy (recorded on the head's case ${detail.family_head_case.case_number}).` : ""}`
+          : detail?.family_head_case
+            ? `The family policy's premium is paid once for the whole family — it is recorded on the head's case ${detail.family_head_case.case_number}.`
+            : "Initial premium payment collection or realization pending.",
+      actionLabel:
+        ipp?.status === "Realized" ? "View Payment" : "Collect Premium",
       onAction: () => setShowIPPModal(true),
     },
     {
@@ -1852,13 +2660,32 @@ export default function CasePage({ params }: { params: { id: string } }) {
       description: historyDone
         ? "Prior coverage & replacement history check clear."
         : history?.status === "Flagged"
-        // Running the screen again only flags it again — a flagged screen needs someone to accept it.
-        ? `Flagged: ${(history.findings ?? []).map((f) => f.message).slice(0, 2).join(" ") || "over-insurance or prior-history findings."} Review it, then accept the findings to continue.`
-        : "Prior policy coverage & over-insurance history check required.",
-      actionLabel: histBusy ? "Working…" : history?.status === "Flagged" ? "Accept Findings & Clear" : "Run History Check",
-      onAction: history?.status === "Flagged"
-        ? () => { if (window.confirm("Accept the flagged insurance-history findings and clear this gate? This is recorded as an underwriter override.")) handleHistoryOverride(true); }
-        : handleRunHistory,
+          ? // Running the screen again only flags it again — a flagged screen needs someone to accept it.
+            `Flagged: ${
+              (history.findings ?? [])
+                .map((f) => f.message)
+                .slice(0, 2)
+                .join(" ") || "over-insurance or prior-history findings."
+            } Review it, then accept the findings to continue.`
+          : "Prior policy coverage & over-insurance history check required.",
+      actionLabel: histBusy
+        ? "Working…"
+        : history?.status === "Flagged"
+          ? "Accept Findings & Clear"
+          : "Run History Check",
+      onAction:
+        history?.status === "Flagged"
+          ? () => {
+              if (
+                window.confirm(
+                  tx(
+                    "Accept the flagged insurance-history findings and clear this gate? This is recorded as an underwriter override.",
+                  ),
+                )
+              )
+                handleHistoryOverride(true);
+            }
+          : handleRunHistory,
       busy: histBusy,
     },
     {
@@ -1866,11 +2693,18 @@ export default function CasePage({ params }: { params: { id: string } }) {
       title: "Medical Examination / NML Grid",
       done: medicalDone,
       statusLabel: medical?.status ?? "Not Assessed",
-      description: medicalDone 
-        ? `Medical examination status: ${medical?.status}` 
+      description: medicalDone
+        ? `Medical examination status: ${medical?.status}`
         : "Non-medical limit grid or panel diagnostic check required.",
-      actionLabel: medBusy ? "Assessing…" : (medical?.status === "Scheduled" ? "Record Lab Results" : "Assess Medical"),
-      onAction: medical?.status === "Scheduled" ? () => setShowResultModal(true) : handleAssessMedical,
+      actionLabel: medBusy
+        ? "Assessing…"
+        : medical?.status === "Scheduled"
+          ? "Record Lab Results"
+          : "Assess Medical",
+      onAction:
+        medical?.status === "Scheduled"
+          ? () => setShowResultModal(true)
+          : handleAssessMedical,
       busy: medBusy,
     },
   ];
@@ -1878,7 +2712,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const requiredDocsMissing = missingPreChecks.length > 0;
   // A required underwriting requirement that is neither satisfied nor waived blocks the AI run. Waiving it (or the
   // item arriving and a resubmit marking it satisfied) lifts the block. Nothing is blocked until requirements exist.
-  const openRequirements = requirements.filter((r) => r.required && r.status !== "Satisfied" && r.status !== "Waived");
+  const openRequirements = requirements.filter(
+    (r) => r.required && r.status !== "Satisfied" && r.status !== "Waived",
+  );
   const requirementsOpen = openRequirements.length > 0;
   const requirementsOpenText = `Open requirements: ${openRequirements.map((r) => r.code.replace(/_/g, " ").toLowerCase()).join(", ")}. Satisfy or waive them first.`;
 
@@ -1886,7 +2722,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
   // maps; otherwise fall back to the single-case state. Everything below renders
   // whichever plan is currently on screen.
   const effStreamError = isGroup ? (groupErrors[caseId] ?? null) : streamError;
-  const handleRun = () => (isGroup ? runGroupCase(caseId, true) : runUnderwriting());
+  const handleRun = () =>
+    isGroup ? runGroupCase(caseId, true) : runUnderwriting();
 
   // Prefer the live (just-streamed) result for this session; fall back to the
   // last persisted assessment. Live gives per-category reasons; persisted only
@@ -1895,34 +2732,77 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const assessment = detail.latest_assessment;
   const hasAny = hasLive || assessment !== null;
 
-  const medicalScore = hasLive ? effLive.medicalScore! : assessment?.medical_score ?? 0;
-  const financialScore = hasLive ? effLive.financialScore! : assessment?.financial_score ?? 0;
-  const fraudProbability = hasLive ? effLive.fraudProbability! : assessment?.fraud_probability ?? 0;
-  const compositeScore = hasLive ? effLive.compositeScore! : assessment?.composite_risk_score ?? 0;
-  const aiDecision = (hasLive ? effLive.aiDecision : assessment?.ai_decision) ?? null;
-  const suggestedLoading = hasLive ? null : assessment?.suggested_loading ?? null;
-  const underwritingResults: UnderwritingResults | null =
-    hasLive ? effLive.underwritingResults : (assessment?.underwriting_results ?? null);
+  const medicalScore = hasLive
+    ? effLive.medicalScore!
+    : (assessment?.medical_score ?? 0);
+  const financialScore = hasLive
+    ? effLive.financialScore!
+    : (assessment?.financial_score ?? 0);
+  const fraudProbability = hasLive
+    ? effLive.fraudProbability!
+    : (assessment?.fraud_probability ?? 0);
+  const compositeScore = hasLive
+    ? effLive.compositeScore!
+    : (assessment?.composite_risk_score ?? 0);
+  const aiDecision =
+    (hasLive ? effLive.aiDecision : assessment?.ai_decision) ?? null;
+  const suggestedLoading = hasLive
+    ? null
+    : (assessment?.suggested_loading ?? null);
+  const underwritingResults: UnderwritingResults | null = hasLive
+    ? effLive.underwritingResults
+    : (assessment?.underwriting_results ?? null);
   const fraudPct = +((fraudProbability ?? 0) * 100).toFixed(1);
 
   // Per-category explainability reasons — from the live stream when available,
   // otherwise from the persisted assessment. Rendering the same Medical /
   // Financial / Fraud breakdown for every plan (single or multi, live or saved)
   // keeps the Explainability Report format identical across the board.
-  const medicalReasons = hasLive ? effLive.medicalReasons : (assessment?.medical_reasons ?? []);
-  const financialReasons = hasLive ? effLive.financialReasons : (assessment?.financial_reasons ?? []);
-  const fraudReasons = hasLive ? effLive.fraudReasons : (assessment?.fraud_reasons ?? []);
+  const medicalReasons = hasLive
+    ? effLive.medicalReasons
+    : (assessment?.medical_reasons ?? []);
+  const financialReasons = hasLive
+    ? effLive.financialReasons
+    : (assessment?.financial_reasons ?? []);
+  const fraudReasons = hasLive
+    ? effLive.fraudReasons
+    : (assessment?.fraud_reasons ?? []);
   // Legacy assessments predate the per-category columns; fall back to the flat
   // merged list only when no categorized reasons exist at all.
   const hasCategorizedReasons =
-    hasLive || medicalReasons.length + financialReasons.length + fraudReasons.length > 0;
+    hasLive ||
+    medicalReasons.length + financialReasons.length + fraudReasons.length > 0;
 
   // Single source of truth for the AI Analysis — both the list and table views
   // render from this so the two stay perfectly in sync.
   const reasonSections: ReasonSection[] = [
-    { label: "Medical Risk Factors", short: "Medical", icon: "🩺", score: medicalScore, scoreLabel: `${medicalScore}%`, reasons: medicalReasons, accentColor: "text-slate-800" },
-    { label: "Financial Risk Factors", short: "Financial", icon: "💰", score: financialScore, scoreLabel: `${financialScore}%`, reasons: financialReasons, accentColor: "text-slate-800" },
-    { label: "Fraud Risk Factors", short: "Fraud", icon: "🛡️", score: fraudPct, scoreLabel: `${fraudPct}%`, reasons: fraudReasons, accentColor: "text-slate-800" },
+    {
+      label: "Medical Risk Factors",
+      short: "Medical",
+      icon: "🩺",
+      score: medicalScore,
+      scoreLabel: `${medicalScore}%`,
+      reasons: medicalReasons,
+      accentColor: "text-slate-800",
+    },
+    {
+      label: "Financial Risk Factors",
+      short: "Financial",
+      icon: "💰",
+      score: financialScore,
+      scoreLabel: `${financialScore}%`,
+      reasons: financialReasons,
+      accentColor: "text-slate-800",
+    },
+    {
+      label: "Fraud Risk Factors",
+      short: "Fraud",
+      icon: "🛡️",
+      score: fraudPct,
+      scoreLabel: `${fraudPct}%`,
+      reasons: fraudReasons,
+      accentColor: "text-slate-800",
+    },
   ];
 
   // Compact case context handed to the AI note generator — mirrors what the
@@ -1930,23 +2810,42 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const buildNoteContext = (): string => {
     const lines: string[] = [];
     if (customer) {
-      const age = customer.dob ? Math.floor((Date.now() - new Date(customer.dob).getTime()) / 31557600000) : null;
-      lines.push(`Applicant: ${customer.name}${age ? `, age ${age}` : ""}, ${customer.gender}${customer.occupation ? `, ${customer.occupation}` : ""}.`);
-      lines.push(`Smoker: ${customer.is_smoker ? "Yes" : "No"}. Declared income: ${customer.declared_income ? fmtIncome(customer.declared_income) : "unknown"}.`);
+      const age = customer.dob
+        ? Math.floor(
+            (Date.now() - new Date(customer.dob).getTime()) / 31557600000,
+          )
+        : null;
+      lines.push(
+        `Applicant: ${customer.name}${age ? `, age ${age}` : ""}, ${customer.gender}${customer.occupation ? `, ${customer.occupation}` : ""}.`,
+      );
+      lines.push(
+        `Smoker: ${customer.is_smoker ? "Yes" : "No"}. Declared income: ${customer.declared_income ? fmtIncome(customer.declared_income) : "unknown"}.`,
+      );
     }
     if (policy) {
-      lines.push(`Policy: ${INSURANCE_TYPE_LABELS[policy.insurance_type] ?? policy.product_name}, coverage ${fmtCoverage(policy.coverage_amount)}, term ${policy.term_years} years.`);
+      lines.push(
+        `Policy: ${INSURANCE_TYPE_LABELS[policy.insurance_type] ?? policy.product_name}, coverage ${fmtCoverage(policy.coverage_amount)}, term ${policy.term_years} years.`,
+      );
     }
     if (hasAny) {
-      lines.push(`Risk scores — Medical ${medicalScore}%, Financial ${financialScore}%, Fraud ${fraudPct}%, Composite ${compositeScore}%.`);
-      if (aiDecision) lines.push(`AI recommended decision: ${aiDecision}${suggestedLoading ? ` with suggested loading ${suggestedLoading}%` : ""}.`);
+      lines.push(
+        `Risk scores — Medical ${medicalScore}%, Financial ${financialScore}%, Fraud ${fraudPct}%, Composite ${compositeScore}%.`,
+      );
+      if (aiDecision)
+        lines.push(
+          `AI recommended decision: ${aiDecision}${suggestedLoading ? ` with suggested loading ${suggestedLoading}%` : ""}.`,
+        );
       const factorLines = reasonSections
-        .filter(s => s.reasons.length > 0)
-        .map(s => `${s.short} factors: ${s.reasons.join("; ")}.`);
+        .filter((s) => s.reasons.length > 0)
+        .map((s) => `${s.short} factors: ${s.reasons.join("; ")}.`);
       if (factorLines.length) lines.push(...factorLines);
-      else if (assessment?.reasons?.length) lines.push(`Key factors: ${assessment.reasons.join("; ")}.`);
+      else if (assessment?.reasons?.length)
+        lines.push(`Key factors: ${assessment.reasons.join("; ")}.`);
     }
-    if (docSummary) lines.push(`Document summary: ${docSummary.replace(/[#*]/g, "").replace(/\s+/g, " ").trim().slice(0, 600)}`);
+    if (docSummary)
+      lines.push(
+        `Document summary: ${docSummary.replace(/[#*]/g, "").replace(/\s+/g, " ").trim().slice(0, 600)}`,
+      );
     return lines.join("\n");
   };
 
@@ -1957,38 +2856,67 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const prereqsIncomplete = missingPreChecks.length > 0;
   const decisionButtons =
     c.caseStatus !== "Approved" && c.caseStatus !== "Rejected" ? (
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-4">
+        {prereqsIncomplete && (
+          <p className="mr-auto text-xs text-slate-500">
+            {tx("Override: Proceed unlocks when all 7 steps above are done (")}
+            {7 - missingPreChecks.length} {tx("of 7 so far).")}
+          </p>
+        )}
         <button
           onClick={() => overrideStatus("Pending Documents")}
           disabled={overriding !== null || userRole === "Agent"}
-          title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : undefined}
+          title={
+            userRole === "Agent"
+              ? tx("Currently, you have no access to do this, ask your manager")
+              : undefined
+          }
           className={`px-4 py-2 text-sm font-semibold text-slate-700 border border-slate-300 rounded-lg transition-colors ${userRole === "Agent" ? "opacity-50 cursor-not-allowed bg-slate-100" : "hover:bg-slate-50"}`}
         >
-          {overriding === "Pending Documents" ? <Spinner className="w-3.5 h-3.5 border-slate-400 border-t-slate-700" /> : "Request Info"}
+          {overriding === "Pending Documents" ? (
+            <Spinner className="w-3.5 h-3.5 border-slate-400 border-t-slate-700" />
+          ) : (
+            tx("Request Info")
+          )}
         </button>
         <button
           onClick={() => overrideStatus("Rejected")}
           disabled={overriding !== null || userRole === "Agent"}
-          title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : undefined}
+          title={
+            userRole === "Agent"
+              ? tx("Currently, you have no access to do this, ask your manager")
+              : undefined
+          }
           className={`px-4 py-2 text-sm font-semibold text-red-700 border border-red-200 bg-red-50 rounded-lg transition-colors ${userRole === "Agent" ? "opacity-50 cursor-not-allowed" : "hover:bg-red-100"}`}
         >
-          {overriding === "Rejected" ? <Spinner className="w-3.5 h-3.5 border-red-300 border-t-red-700" /> : "Override: Decline"}
+          {overriding === "Rejected" ? (
+            <Spinner className="w-3.5 h-3.5 border-red-300 border-t-red-700" />
+          ) : (
+            tx("Override: Decline")
+          )}
         </button>
         <button
           onClick={() => overrideStatus("Approved")}
-          disabled={overriding !== null || !hasAny || prereqsIncomplete || userRole === "Agent"}
+          disabled={
+            overriding !== null ||
+            !hasAny ||
+            prereqsIncomplete ||
+            userRole === "Agent"
+          }
           title={
             userRole === "Agent"
-              ? "Currently, you have no access to do this, ask your manager"
+              ? tx("Currently, you have no access to do this, ask your manager")
               : prereqsIncomplete
-                ? `Complete all 7 steps first. Still missing: ${missingPreChecks.join("; ")}`
+                ? tx("Complete all 7 steps first. Still missing: {0}", {
+                    0: missingPreChecks.join("; "),
+                  })
                 : !hasAny
-                  ? "Run AI Underwriting before approving"
+                  ? tx("Run AI Underwriting before approving")
                   : undefined
           }
           className={`px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg transition-colors shadow-sm ${userRole === "Agent" || prereqsIncomplete || !hasAny ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-700"}`}
         >
-          {overriding === "Approved" ? <Spinner /> : "Override: Proceed"}
+          {overriding === "Approved" ? <Spinner /> : tx("Override: Proceed")}
         </button>
       </div>
     ) : null;
@@ -1997,36 +2925,71 @@ export default function CasePage({ params }: { params: { id: string } }) {
   triggerNotesRef.current = () => generateNote(buildNoteContext());
 
   return (
-    <div className="max-w-screen-2xl mx-auto px-6 pb-6 space-y-5" style={{ ["--case-head" as any]: `${headHeight}px` }}>
+    <div
+      className="max-w-screen-2xl mx-auto px-6 pb-6 space-y-5"
+      style={{ ["--case-head" as any]: `${headHeight}px` }}
+    >
       {successMessage && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 z-50 animate-in slide-in-from-top-5">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-5 h-5 text-blue-100">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            className="w-5 h-5 text-blue-100"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M5 13l4 4L19 7"
+            />
           </svg>
           <div className="font-semibold text-sm">{successMessage}</div>
         </div>
       )}
 
       {/* ── Breadcrumb & case header ──────────────────────────────────────── */}
-      <div ref={headRef} className="sticky top-0 z-20 -mx-6 flex flex-col gap-4 border-b border-slate-200/70 bg-slate-50 px-6 pb-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
+      <div
+        ref={headRef}
+        className="sticky top-0 z-20 -mx-6 flex flex-col gap-4 border-b border-slate-200/70 bg-slate-50 px-6 pb-3 pt-6 sm:flex-row sm:items-center sm:justify-between"
+      >
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <Link href="/" className="text-xs text-slate-500 hover:text-blue-700 font-medium transition-colors">← Dashboard</Link>
+            <Link
+              href="/"
+              className="text-xs text-slate-500 hover:text-blue-700 font-medium transition-colors"
+            >
+              {tx("← Dashboard")}
+            </Link>
             <span className="text-slate-300">/</span>
-            <span className="text-xs text-slate-400">Cases</span>
+            <span className="text-xs text-slate-400">{tx("Cases")}</span>
             <span className="text-slate-300">/</span>
-            <span className="text-xs text-slate-700 font-semibold">{c.caseNumber}</span>
+            <span className="text-xs text-slate-700 font-semibold">
+              {c.caseNumber}
+            </span>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">{customer?.name ?? "Unknown Customer"}</h1>
+            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+              {customer?.name ?? tx("Unknown Customer")}
+            </h1>
             {aiDecision && <StatusBadge decision={aiDecision} size="lg" />}
-            <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border ${CASE_STATUS_STYLE[c.caseStatus] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>
+            <span
+              className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border ${CASE_STATUS_STYLE[c.caseStatus] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}
+            >
               {c.caseStatus}
             </span>
           </div>
           <p className="text-sm text-slate-500 mt-1">
-            {c.caseNumber} &nbsp;·&nbsp; Opened {new Date(c.createdAt).toLocaleDateString()} via {c.sourceChannel}
-            {policy && <>&nbsp;·&nbsp; {policy.product_name} &nbsp;·&nbsp; {fmtCoverage(policy.coverage_amount)} coverage</>}
+            {c.caseNumber} {tx("·  Opened")}{" "}
+            {new Date(c.createdAt).toLocaleDateString()} {tx("via")}{" "}
+            {c.sourceChannel}
+            {policy && (
+              <>
+                {" "}
+                {tx("·")} {policy.product_name} {tx("·")}{" "}
+                {fmtCoverage(policy.coverage_amount)} {tx("coverage")}
+              </>
+            )}
           </p>
         </div>
 
@@ -2036,83 +2999,161 @@ export default function CasePage({ params }: { params: { id: string } }) {
           <button
             onClick={downloadApplication}
             disabled={downloadingApp}
-            title={hasAny ? "Download the complete application dossier (PDF)" : "Best generated after underwriting — includes whatever detail is available"}
+            title={
+              hasAny
+                ? tx("Download the complete application dossier (PDF)")
+                : tx(
+                    "Best generated after underwriting — includes whatever detail is available",
+                  )
+            }
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-blue-700 rounded-lg hover:bg-blue-800 disabled:opacity-50 transition-colors shadow-sm"
           >
-            {downloadingApp ? <Spinner /> : (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3" />
+            {downloadingApp ? (
+              <Spinner />
+            ) : (
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                className="w-4 h-4"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3"
+                />
               </svg>
             )}
-            {downloadingApp ? "Generating…" : "Download Application"}
+            {downloadingApp ? tx("Generating…") : tx("Download Application")}
           </button>
         </div>
       </div>
 
       {/* ── Plan switcher (multi-plan underwriting group) ─────────────────── */}
-      {isGroup && (() => {
-        const doneCount = planGroup.filter((p) => groupStatuses[p.caseId] === "done").length;
-        const runningCount = planGroup.filter((p) => groupStatuses[p.caseId] === "streaming").length;
-        const glyph = (st?: StreamStatus) => (st === "done" ? "✓" : st === "streaming" ? "⏳" : st === "error" ? "⚠" : "•");
-        return (
-          <div className="card px-4 sm:px-5 py-3.5 flex flex-col sm:flex-row sm:items-center gap-3 border-blue-200 bg-blue-50/40">
-            <div className="flex items-center gap-2.5 min-w-0 sm:flex-1">
-              <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex-shrink-0">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-                  <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
-                  <rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
-                </svg>
-              </span>
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-slate-700 truncate">
-                  Underwriting {planGroup.length} plans for {customer?.name ?? "this customer"}
-                </p>
-                <p className="text-[11px] text-slate-500 truncate">
-                  {runningCount > 0
-                    ? `${doneCount} of ${planGroup.length} done · ${runningCount} running in parallel`
-                    : `${doneCount} of ${planGroup.length} plans underwritten`}
-                </p>
+      {isGroup &&
+        (() => {
+          const doneCount = planGroup.filter(
+            (p) => groupStatuses[p.caseId] === "done",
+          ).length;
+          const runningCount = planGroup.filter(
+            (p) => groupStatuses[p.caseId] === "streaming",
+          ).length;
+          const glyph = (st?: StreamStatus) =>
+            st === "done"
+              ? "✓"
+              : st === "streaming"
+                ? "⏳"
+                : st === "error"
+                  ? "⚠"
+                  : "•";
+          return (
+            <div className="card px-4 sm:px-5 py-3.5 flex flex-col sm:flex-row sm:items-center gap-3 border-blue-200 bg-blue-50/40">
+              <div className="flex items-center gap-2.5 min-w-0 sm:flex-1">
+                <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex-shrink-0">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="w-4 h-4"
+                  >
+                    <rect x="3" y="3" width="7" height="7" />
+                    <rect x="14" y="3" width="7" height="7" />
+                    <rect x="14" y="14" width="7" height="7" />
+                    <rect x="3" y="14" width="7" height="7" />
+                  </svg>
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-slate-700 truncate">
+                    {tx("Underwriting")} {planGroup.length} {tx("plans for")}{" "}
+                    {customer?.name ?? tx("this customer")}
+                  </p>
+                  <p className="text-[11px] text-slate-500 truncate">
+                    {runningCount > 0
+                      ? tx("{0} of {1} done · {2} running in parallel", {
+                          0: doneCount,
+                          1: planGroup.length,
+                          2: runningCount,
+                        })
+                      : tx("{0} of {1} plans underwritten", {
+                          0: doneCount,
+                          1: planGroup.length,
+                        })}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 min-w-0 sm:flex-shrink-0">
+                <span className="text-[11px] font-medium text-slate-400 flex-shrink-0 hidden sm:inline">
+                  {tx("Viewing")}
+                </span>
+                <select
+                  value={caseId}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (next !== caseId) router.push(`/case/${next}`);
+                  }}
+                  className="w-full sm:w-72 min-w-0 truncate bg-white border border-slate-200 rounded-lg pl-3 pr-8 py-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer"
+                >
+                  {planGroup.map((p, i) => (
+                    <option key={p.caseId} value={p.caseId}>
+                      {glyph(groupStatuses[p.caseId])} {i + 1}. {p.planLabel}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
-            <div className="flex items-center gap-2 min-w-0 sm:flex-shrink-0">
-              <span className="text-[11px] font-medium text-slate-400 flex-shrink-0 hidden sm:inline">Viewing</span>
-              <select
-                value={caseId}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  if (next !== caseId) router.push(`/case/${next}`);
-                }}
-                className="w-full sm:w-72 min-w-0 truncate bg-white border border-slate-200 rounded-lg pl-3 pr-8 py-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer"
-              >
-                {planGroup.map((p, i) => (
-                  <option key={p.caseId} value={p.caseId}>
-                    {glyph(groupStatuses[p.caseId])}  {i + 1}. {p.planLabel}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        );
-      })()}
+          );
+        })()}
 
       {/* ── Family: one tab per insured member (head, fully insured spouse) ───────────── */}
       {(detail?.family_members?.length ?? 0) > 1 && (
-        <div className="flex items-end gap-1 border-b border-slate-200 overflow-x-auto" role="tablist" aria-label="Insured family members">
-          {[...(detail?.family_members ?? [])].sort((a, b) => Number(/^self$/i.test(String(b.relationship))) - Number(/^self$/i.test(String(a.relationship)))).map((m) => {
-            const role = m.relationship === "SELF" || m.relationship === "Self" ? "Head" : m.relationship ? m.relationship[0] + m.relationship.slice(1).toLowerCase() : "";
-            const active = m.case_id === detail?.case.caseld;
-            return (
-              <button
-                key={m.case_id} type="button" role="tab" aria-selected={active}
-                onClick={() => { if (!active) router.push(`/case/${m.case_id}`); }}
-                className={`px-4 py-2.5 text-xs font-semibold border-b-2 whitespace-nowrap transition-colors ${active ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}
-              >
-                {m.name}
-                {role && <span className="ml-1.5 font-normal text-slate-400">· {role}</span>}
-                <span className={`ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${m.case_status === "Approved" || m.case_status === "Closed" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-500 border-slate-200"}`}>{m.case_status}</span>
-              </button>
-            );
-          })}
+        <div
+          className="flex items-end gap-1 border-b border-slate-200 overflow-x-auto"
+          role="tablist"
+          aria-label={tx("Insured family members")}
+        >
+          {[...(detail?.family_members ?? [])]
+            .sort(
+              (a, b) =>
+                Number(/^self$/i.test(String(b.relationship))) -
+                Number(/^self$/i.test(String(a.relationship))),
+            )
+            .map((m) => {
+              const role =
+                m.relationship === "SELF" || m.relationship === "Self"
+                  ? "Head"
+                  : m.relationship
+                    ? m.relationship[0] + m.relationship.slice(1).toLowerCase()
+                    : "";
+              const active = m.case_id === detail?.case.caseld;
+              return (
+                <button
+                  key={m.case_id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => {
+                    if (!active) router.push(`/case/${m.case_id}`);
+                  }}
+                  className={`px-4 py-2.5 text-xs font-semibold border-b-2 whitespace-nowrap transition-colors ${active ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}
+                >
+                  {m.name}
+                  {role && (
+                    <span className="ml-1.5 font-normal text-slate-400">
+                      · {role}
+                    </span>
+                  )}
+                  <span
+                    className={`ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${m.case_status === "Approved" || m.case_status === "Closed" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-500 border-slate-200"}`}
+                  >
+                    {m.case_status}
+                  </span>
+                </button>
+              );
+            })}
         </div>
       )}
 
@@ -2124,44 +3165,76 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
       {/* ── Main grid: 3 cols ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-
         {/* ── LEFT COLUMN: Customer + Policy ─────────────────────────────── */}
         {/* Stays in view while the right column scrolls; if it is taller than the screen it scrolls on its own. */}
         <div className="lg:col-span-1 space-y-4 lg:sticky lg:top-[calc(var(--case-head,8rem)+0.75rem)] lg:self-start lg:max-h-[calc(100vh-var(--case-head,8rem)-7.25rem)] lg:overflow-y-auto lg:pr-1 [scrollbar-width:thin]">
-
           {customer && (
             <div className="card p-5">
               <div className="flex items-center gap-3 mb-4 pb-4 border-b border-slate-100">
-                <InitialsAvatar name={!detail?.is_principal_participant && detail?.principal_participant_name ? detail.principal_participant_name : customer.name} />
+                <InitialsAvatar
+                  name={
+                    !detail?.is_principal_participant &&
+                    detail?.principal_participant_name
+                      ? detail.principal_participant_name
+                      : customer.name
+                  }
+                />
                 <div>
                   <p className="font-bold text-slate-900 leading-tight">
-                    {!detail?.is_principal_participant && detail?.principal_participant_name ? detail.principal_participant_name : customer.name}
+                    {!detail?.is_principal_participant &&
+                    detail?.principal_participant_name
+                      ? detail.principal_participant_name
+                      : customer.name}
                   </p>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    {detail?.principal_participant_name || detail?.is_principal_participant ? "Principal Participant" : customer.gender}
+                    {detail?.principal_participant_name ||
+                    detail?.is_principal_participant
+                      ? tx("Principal Participant")
+                      : customer.gender}
                   </p>
-                  <p className="text-xs text-blue-600 font-mono mt-0.5">{(!detail?.principal_participant_name || detail?.is_principal_participant) ? customer.cnic : "Family Group Owner"}</p>
+                  <p className="text-xs text-blue-600 font-mono mt-0.5">
+                    {!detail?.principal_participant_name ||
+                    detail?.is_principal_participant
+                      ? customer.cnic
+                      : tx("Family Group Owner")}
+                  </p>
                 </div>
               </div>
-              {!detail?.is_principal_participant && detail?.principal_participant_name && (
-                <div className="mb-4 bg-blue-50 border border-blue-100 rounded-lg p-3">
-                  <p className="text-xs font-semibold text-blue-800">Dependent Member</p>
-                  <p className="text-xs text-blue-600 mt-0.5 leading-snug">
-                    <span className="font-bold">{customer.name}</span> ({detail.family_relationship || "Dependent"}) belongs to <span className="font-bold">{detail.principal_participant_name}</span>'s family policy.
-                  </p>
-                </div>
-              )}
+              {!detail?.is_principal_participant &&
+                detail?.principal_participant_name && (
+                  <div className="mb-4 bg-blue-50 border border-blue-100 rounded-lg p-3">
+                    <p className="text-xs font-semibold text-blue-800">
+                      {tx("Dependent Member")}
+                    </p>
+                    <p className="text-xs text-blue-600 mt-0.5 leading-snug">
+                      <span className="font-bold">{customer.name}</span> (
+                      {detail.family_relationship || tx("Dependent")}
+                      {tx(") belongs to")}{" "}
+                      <span className="font-bold">
+                        {detail.principal_participant_name}
+                      </span>
+                      {tx("'s family policy.")}
+                    </p>
+                  </div>
+                )}
               {detail?.family_members && detail.family_members.length > 1 && (
                 <div className="mb-4 bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-2">
                   <p className="text-xs font-semibold text-indigo-700">
-                    Family: <span className="font-bold">{detail.principal_participant_name || customer.name}'s Family</span>
+                    {tx("Family:")}{" "}
+                    <span className="font-bold">
+                      {detail.principal_participant_name || customer.name}
+                      {tx("'s Family")}
+                    </span>
                   </p>
-                  <label className="block text-[11px] font-semibold text-indigo-500">Switch to another family member</label>
+                  <label className="block text-[11px] font-semibold text-indigo-500">
+                    {tx("Switch to another family member")}
+                  </label>
                   <select
                     value={detail.case.caseld ?? ""}
                     onChange={(e) => {
                       const target = e.target.value;
-                      if (target && target !== detail.case.caseld) router.push(`/case/${target}`);
+                      if (target && target !== detail.case.caseld)
+                        router.push(`/case/${target}`);
                     }}
                     className="w-full bg-white border border-indigo-200 rounded-lg px-2.5 py-1.5 text-xs"
                   >
@@ -2175,25 +3248,47 @@ export default function CasePage({ params }: { params: { id: string } }) {
               )}
               {detail?.family_head_case && (
                 <div className="mb-4 bg-blue-50 border border-blue-100 rounded-lg p-3">
-                  <p className="text-xs font-semibold text-blue-800">The policy is issued to the head</p>
+                  <p className="text-xs font-semibold text-blue-800">
+                    {tx("The policy is issued to the head")}
+                  </p>
                   <p className="text-[11px] text-blue-700 mt-0.5 leading-snug">
-                    This is an insured spouse&apos;s case. Pre-issuance, issuance and payment run on the head&apos;s case —
-                    <button type="button" onClick={() => router.push(`/case/${detail.family_head_case!.case_id}`)} className="ml-1 font-bold underline">
-                      {detail.family_head_case.name} · {detail.family_head_case.case_number}
-                    </button>.
+                    {tx(
+                      "This is an insured spouse's case. Pre-issuance, issuance and payment run on the head's case —",
+                    )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        router.push(`/case/${detail.family_head_case!.case_id}`)
+                      }
+                      className="ml-1 font-bold underline"
+                    >
+                      {detail.family_head_case.name} ·{" "}
+                      {detail.family_head_case.case_number}
+                    </button>
+                    .
                   </p>
                 </div>
               )}
               {(detail?.family_underwriting_pending?.length ?? 0) > 0 && (
                 <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1.5">
-                  <p className="text-xs font-semibold text-amber-800">The family policy is waiting on another insured life</p>
+                  <p className="text-xs font-semibold text-amber-800">
+                    {tx("The family policy is waiting on another insured life")}
+                  </p>
                   <p className="text-[11px] text-amber-700 leading-snug">
-                    A fully insured spouse is underwritten in their own case. The policy can only be approved and issued once every insured member&apos;s case is approved.
+                    {tx(
+                      "A fully insured spouse is underwritten in their own case. The policy can only be approved and issued once every insured member's case is approved.",
+                    )}
                   </p>
                   {(detail.family_underwriting_pending ?? []).map((m) => (
-                    <button key={m.case_id} type="button" onClick={() => router.push(`/case/${m.case_id}`)}
-                      className="block w-full text-left text-xs font-semibold text-amber-900 hover:underline">
-                      {m.name}{m.relationship ? ` (${m.relationship})` : ""} — {m.case_number} · {m.case_status} →
+                    <button
+                      key={m.case_id}
+                      type="button"
+                      onClick={() => router.push(`/case/${m.case_id}`)}
+                      className="block w-full text-left text-xs font-semibold text-amber-900 hover:underline"
+                    >
+                      {m.name}
+                      {m.relationship ? ` (${m.relationship})` : ""} —{" "}
+                      {m.case_number} · {m.case_status} →
                     </button>
                   ))}
                 </div>
@@ -2201,16 +3296,23 @@ export default function CasePage({ params }: { params: { id: string } }) {
               {detail?.organization_name && (
                 <div className="mb-4 bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
                   <p className="text-xs font-semibold text-slate-700">
-                    Company: <span className="font-bold">{detail.organization_name}</span>
+                    {tx("Company:")}{" "}
+                    <span className="font-bold">
+                      {detail.organization_name}
+                    </span>
                   </p>
-                  {detail.organization_members && detail.organization_members.length > 1 ? (
+                  {detail.organization_members &&
+                  detail.organization_members.length > 1 ? (
                     <>
-                      <label className="block text-[11px] font-semibold text-slate-500">Switch to another member of this company</label>
+                      <label className="block text-[11px] font-semibold text-slate-500">
+                        {tx("Switch to another member of this company")}
+                      </label>
                       <select
                         value={detail.case.caseld ?? ""}
                         onChange={(e) => {
                           const target = e.target.value;
-                          if (target && target !== detail.case.caseld) router.push(`/case/${target}`);
+                          if (target && target !== detail.case.caseld)
+                            router.push(`/case/${target}`);
                         }}
                         className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs"
                       >
@@ -2222,68 +3324,173 @@ export default function CasePage({ params }: { params: { id: string } }) {
                       </select>
                     </>
                   ) : (
-                    <p className="text-xs text-slate-500">No other company members are currently in underwriting.</p>
+                    <p className="text-xs text-slate-500">
+                      {tx(
+                        "No other company members are currently in underwriting.",
+                      )}
+                    </p>
                   )}
                 </div>
               )}
 
-              <Accordion title="Customer Details">
+              <Accordion title={tx("Customer Details")}>
                 {detail?.principal_participant_name && (
-                  <DataRow label="Member Name" value={customer.name} />
+                  <DataRow label={tx("Member Name")} value={customer.name} />
                 )}
                 {detail?.is_principal_participant && (
-                  <DataRow label="Family Role" value="Principal Participant" />
+                  <DataRow
+                    label={tx("Family Role")}
+                    value="Principal Participant"
+                  />
                 )}
-                <DataRow label="Date of Birth" value={fmtDob(customer.dob)} />
-                <DataRow label="Gender" value={customer.gender} />
-                <DataRow label="Marital Status" value={customer.marital_status || <span className="text-slate-400 italic">Missing</span>} />
-                <DataRow label="Occupation" value={customer.occupation || <span className="text-slate-400 italic">Missing</span>} />
-                <DataRow label="Declared Annual Income" value={customer.declared_income ? fmtIncome(customer.declared_income) : <span className="text-slate-400 italic">Missing</span>} />
-              </Accordion>
-
-              <Accordion title="Contact Information">
                 <DataRow
-                  label="Address"
+                  label={tx("Date of Birth")}
+                  value={fmtDob(customer.dob)}
+                />
+                <DataRow label={tx("Gender")} value={customer.gender} />
+                <DataRow
+                  label={tx("Marital Status")}
                   value={
-                    (() => {
-                      const addr = customer.details?.address;
-                      if (!addr) return <span className="text-slate-400 italic">Missing</span>;
-                      if (typeof addr === "string") return addr;
-                      const str = [addr.street_address, addr.area, addr.city, addr.province].filter(Boolean).join(", ");
-                      return str || <span className="text-slate-400 italic">Missing</span>;
-                    })()
+                    customer.marital_status || (
+                      <span className="text-slate-400 italic">Missing</span>
+                    )
                   }
                 />
-                <DataRow label="City" value={customer.details?.address?.city || customer.details?.city || <span className="text-slate-400 italic">Missing</span>} />
-                <DataRow label="Phone" value={customer.details?.phone || <span className="text-slate-400 italic">Missing</span>} />
-                <DataRow label="Email" value={customer.details?.email || <span className="text-slate-400 italic">Missing</span>} />
+                <DataRow
+                  label={tx("Occupation")}
+                  value={
+                    customer.occupation || (
+                      <span className="text-slate-400 italic">Missing</span>
+                    )
+                  }
+                />
+                <DataRow
+                  label={tx("Declared Annual Income")}
+                  value={
+                    customer.declared_income ? (
+                      fmtIncome(customer.declared_income)
+                    ) : (
+                      <span className="text-slate-400 italic">Missing</span>
+                    )
+                  }
+                />
               </Accordion>
 
-              <Accordion title="Medical & Lifestyle">
-                <DataRow label="Smoker" value={customer.is_smoker ? "Yes" : "No"} />
-                <DataRow label="Height" value={customer.height_cm ? `${customer.height_cm} cm` : <span className="text-slate-400 italic">Missing</span>} />
-                <DataRow label="Weight" value={customer.weight_kg ? `${customer.weight_kg} kg` : <span className="text-slate-400 italic">Missing</span>} />
+              <Accordion title={tx("Contact Information")}>
+                <DataRow
+                  label={tx("Address")}
+                  value={(() => {
+                    const addr = customer.details?.address;
+                    if (!addr)
+                      return (
+                        <span className="text-slate-400 italic">Missing</span>
+                      );
+                    if (typeof addr === "string") return addr;
+                    const str = [
+                      addr.street_address,
+                      addr.area,
+                      addr.city,
+                      addr.province,
+                    ]
+                      .filter(Boolean)
+                      .join(", ");
+                    return (
+                      str || (
+                        <span className="text-slate-400 italic">Missing</span>
+                      )
+                    );
+                  })()}
+                />
+                <DataRow
+                  label={tx("City")}
+                  value={
+                    customer.details?.address?.city ||
+                    customer.details?.city || (
+                      <span className="text-slate-400 italic">Missing</span>
+                    )
+                  }
+                />
+                <DataRow
+                  label={tx("Phone")}
+                  value={
+                    customer.details?.phone || (
+                      <span className="text-slate-400 italic">Missing</span>
+                    )
+                  }
+                />
+                <DataRow
+                  label={tx("Email")}
+                  value={
+                    customer.details?.email || (
+                      <span className="text-slate-400 italic">Missing</span>
+                    )
+                  }
+                />
               </Accordion>
 
-              <Accordion title="Lead Generated By">
+              <Accordion title={tx("Medical & Lifestyle")}>
+                <DataRow
+                  label={tx("Smoker")}
+                  value={customer.is_smoker ? "Yes" : "No"}
+                />
+                <DataRow
+                  label={tx("Height")}
+                  value={
+                    customer.height_cm ? (
+                      `${customer.height_cm} cm`
+                    ) : (
+                      <span className="text-slate-400 italic">Missing</span>
+                    )
+                  }
+                />
+                <DataRow
+                  label={tx("Weight")}
+                  value={
+                    customer.weight_kg ? (
+                      `${customer.weight_kg} kg`
+                    ) : (
+                      <span className="text-slate-400 italic">Missing</span>
+                    )
+                  }
+                />
+              </Accordion>
+
+              <Accordion title={tx("Lead Generated By")}>
                 {customer.acquisition_source ? (
                   <>
-                    <DataRow label="Source" value={customer.acquisition_source.name} />
                     <DataRow
-                      label="Channel"
+                      label={tx("Source")}
+                      value={customer.acquisition_source.name}
+                    />
+                    <DataRow
+                      label={tx("Channel")}
                       value={
                         <span className="inline-flex px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                          {SOURCE_TYPE_LABELS[customer.acquisition_source.source_type] ?? customer.acquisition_source.source_type}
+                          {SOURCE_TYPE_LABELS[
+                            customer.acquisition_source.source_type
+                          ] ?? customer.acquisition_source.source_type}
                         </span>
                       }
                     />
                     {customer.acquisition_source.partner_name && (
-                      <DataRow label="Partner" value={customer.acquisition_source.partner_name} />
+                      <DataRow
+                        label={tx("Partner")}
+                        value={customer.acquisition_source.partner_name}
+                      />
                     )}
-                    <DataRow label="Producer Code" value={<span className="font-mono text-xs">{customer.acquisition_source.code}</span>} />
+                    <DataRow
+                      label={tx("Producer Code")}
+                      value={
+                        <span className="font-mono text-xs">
+                          {customer.acquisition_source.code}
+                        </span>
+                      }
+                    />
                   </>
                 ) : (
-                  <p className="text-xs text-slate-400 italic">Not recorded</p>
+                  <p className="text-xs text-slate-400 italic">
+                    {tx("Not recorded")}
+                  </p>
                 )}
               </Accordion>
             </div>
@@ -2291,76 +3498,97 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
           {policy && (
             <div className="card p-5 space-y-4">
-              <Accordion title="Policy Details" defaultOpen={true}>
-                <DataRow label="Product" value={INSURANCE_TYPE_LABELS[policy.insurance_type] ?? policy.product_name} />
-                <DataRow label="Coverage Amount" value={fmtCoverage(policy.coverage_amount)} />
-                <DataRow label="Policy Term" value={`${policy.term_years} years`} />
+              <Accordion title={tx("Policy Details")} defaultOpen={true}>
+                <DataRow
+                  label={tx("Product")}
+                  value={
+                    INSURANCE_TYPE_LABELS[policy.insurance_type] ??
+                    policy.product_name
+                  }
+                />
+                <DataRow
+                  label={tx("Coverage Amount")}
+                  value={fmtCoverage(policy.coverage_amount)}
+                />
+                <DataRow
+                  label={tx("Policy Term")}
+                  value={`${policy.term_years} years`}
+                />
                 {customer && (
-                  <DataRow label="Coverage-to-Income Ratio" value={`${(policy.coverage_amount / customer.declared_income).toFixed(1)}×`} />
+                  <DataRow
+                    label={tx("Coverage-to-Income Ratio")}
+                    value={`${(policy.coverage_amount / customer.declared_income).toFixed(1)}×`}
+                  />
                 )}
-                <DataRow label="Policy Status" value={policy.status} />
+                <DataRow label={tx("Policy Status")} value={policy.status} />
               </Accordion>
 
-              <Accordion title="Case">
-                <DataRow label="Case Number" value={c.caseNumber} />
-                <DataRow label="Type" value={c.caseType} />
-                <DataRow label="Priority" value={c.priorityLevel} />
-                <DataRow label="Channel" value={c.sourceChannel} />
+              <Accordion title={tx("Case")}>
+                <DataRow label={tx("Case Number")} value={c.caseNumber} />
+                <DataRow label={tx("Type")} value={c.caseType} />
+                <DataRow label={tx("Priority")} value={c.priorityLevel} />
+                <DataRow label={tx("Channel")} value={c.sourceChannel} />
               </Accordion>
             </div>
           )}
 
-
-
           <ModalPortal>
-          {showResultModal && medical && (
-            <MedicalResultModal
-              order={medical}
-              busy={medBusy}
-              onClose={() => setShowResultModal(false)}
-              onSubmit={handleRecordResults}
-            />
-          )}
+            {showResultModal && medical && (
+              <MedicalResultModal
+                order={medical}
+                busy={medBusy}
+                onClose={() => setShowResultModal(false)}
+                onSubmit={handleRecordResults}
+              />
+            )}
 
-          {showAssessModal && medical && (
-            <MedicalAssessModal
-              order={medical}
-              link={medLink}
-              customerName={customer?.name}
-              busy={medBusy}
-              onClose={() => setShowAssessModal(false)}
-              onMarkCompleted={async () => {
-                await handleRecordResults({
-                  standard_panel: "normal", fasting_blood_sugar: "normal", urinalysis: "normal",
-                });
-                setShowAssessModal(false);
-              }}
-            />
-          )}
+            {showAssessModal && medical && (
+              <MedicalAssessModal
+                order={medical}
+                link={medLink}
+                customerName={customer?.name}
+                busy={medBusy}
+                onClose={() => setShowAssessModal(false)}
+                onMarkCompleted={async () => {
+                  await handleRecordResults({
+                    standard_panel: "normal",
+                    fasting_blood_sugar: "normal",
+                    urinalysis: "normal",
+                  });
+                  setShowAssessModal(false);
+                }}
+              />
+            )}
 
-          {showACRModal && (
-            <ACRModal
-              caseId={caseId}
-              initial={acr}
-              onClose={() => setShowACRModal(false)}
-              onDone={() => { setShowACRModal(false); fetchAcr(); }}
-            />
-          )}
+            {showACRModal && (
+              <ACRModal
+                caseId={caseId}
+                initial={acr}
+                onClose={() => setShowACRModal(false)}
+                onDone={() => {
+                  setShowACRModal(false);
+                  fetchAcr();
+                }}
+              />
+            )}
 
-          {showIPPModal && (
-            <IPPModal
-              caseId={caseId}
-              customerName={customer?.name}
-              onClose={() => setShowIPPModal(false)}
-              onConfirmed={() => { setShowIPPModal(false); fetchIpp(); }}
-            />
-          )}
+            {showIPPModal && (
+              <IPPModal
+                caseId={caseId}
+                customerName={customer?.name}
+                onClose={() => setShowIPPModal(false)}
+                onConfirmed={() => {
+                  setShowIPPModal(false);
+                  fetchIpp();
+                }}
+              />
+            )}
           </ModalPortal>
 
           {/* Document checklist + upload */}
           <div className="card p-5">
             <Accordion
-              title="Documents"
+              title={tx("Documents")}
               action={
                 <button
                   disabled={userRole === "Agent"}
@@ -2368,7 +3596,11 @@ export default function CasePage({ params }: { params: { id: string } }) {
                     if (userRole === "Agent") return;
                     setShowUpload(true);
                   }}
-                  title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : undefined}
+                  title={
+                    userRole === "Agent"
+                      ? "Currently, you have no access to do this, ask your manager"
+                      : undefined
+                  }
                   className={`text-xs font-semibold ${userRole === "Agent" ? "text-slate-400 opacity-50 cursor-not-allowed" : "text-blue-600 hover:text-blue-700"}`}
                 >
                   + Upload
@@ -2376,15 +3608,28 @@ export default function CasePage({ params }: { params: { id: string } }) {
               }
             >
               {docs.required.length === 0 ? (
-                <p className="text-xs text-slate-400">No documents required for this plan type.</p>
+                <p className="text-xs text-slate-400">
+                  {tx("No documents required for this plan type.")}
+                </p>
               ) : (
                 <ul className="space-y-1.5 mb-3">
-                  {docs.required.map(d => {
+                  {docs.required.map((d) => {
                     const got = docs.received.includes(d);
                     return (
-                      <li key={d} className="flex items-center justify-between text-xs">
-                        <span className={got ? "text-slate-700" : "text-slate-400"}>{d}</span>
-                        <span className={`font-semibold ${got ? "text-blue-600" : "text-amber-600"}`}>{got ? "Received" : "Missing"}</span>
+                      <li
+                        key={d}
+                        className="flex items-center justify-between text-xs"
+                      >
+                        <span
+                          className={got ? "text-slate-700" : "text-slate-400"}
+                        >
+                          {d}
+                        </span>
+                        <span
+                          className={`font-semibold ${got ? "text-blue-600" : "text-amber-600"}`}
+                        >
+                          {got ? tx("Received") : tx("Missing")}
+                        </span>
                       </li>
                     );
                   })}
@@ -2413,24 +3658,36 @@ export default function CasePage({ params }: { params: { id: string } }) {
           {/* Quick score summary */}
           {hasAny && (
             <div className="card p-5">
-              <Accordion title="Score Summary">
+              <Accordion title={tx("Score Summary")}>
                 <div className="space-y-3">
                   <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-500">Medical Risk</span>
-                    <span className="font-bold text-slate-900">{medicalScore}%</span>
+                    <span className="text-slate-500">{tx("Medical Risk")}</span>
+                    <span className="font-bold text-slate-900">
+                      {medicalScore}%
+                    </span>
                   </div>
                   <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-500">Financial Risk</span>
-                    <span className="font-bold text-slate-900">{financialScore}%</span>
+                    <span className="text-slate-500">
+                      {tx("Financial Risk")}
+                    </span>
+                    <span className="font-bold text-slate-900">
+                      {financialScore}%
+                    </span>
                   </div>
                   <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-500">Fraud Risk</span>
-                    <span className="font-bold text-slate-900">{fraudPct}%</span>
+                    <span className="text-slate-500">{tx("Fraud Risk")}</span>
+                    <span className="font-bold text-slate-900">
+                      {fraudPct}%
+                    </span>
                   </div>
                   <div className="h-px bg-slate-100 my-1" />
                   <div className="flex justify-between items-center text-sm">
-                    <span className="font-semibold text-slate-700">Composite Score</span>
-                    <span className="font-extrabold text-slate-900">{compositeScore}%</span>
+                    <span className="font-semibold text-slate-700">
+                      {tx("Composite Score")}
+                    </span>
+                    <span className="font-extrabold text-slate-900">
+                      {compositeScore}%
+                    </span>
                   </div>
                 </div>
               </Accordion>
@@ -2440,27 +3697,55 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
         {/* ── RIGHT COLUMN: Risk assessment + Recommendation ────────────── */}
         <div className="lg:col-span-2 space-y-4">
-
           {/* Document summary — categorized medical/financial/occupational read
               of the uploaded paperwork, generated before underwriting runs. */}
           <div className="card p-5 space-y-3">
             <div className="flex items-center justify-between">
-              <p className="section-label">Document Summary (AI)</p>
+              <p className="section-label">{tx("Document Summary (AI)")}</p>
               <button
                 onClick={summarizeDocuments}
-                disabled={summarizing || artifacts.filter(a => a.ocr_result).length === 0 || userRole === "Agent"}
-                title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : undefined}
+                disabled={
+                  summarizing ||
+                  artifacts.filter((a) => a.ocr_result).length === 0 ||
+                  userRole === "Agent"
+                }
+                title={
+                  userRole === "Agent"
+                    ? tx(
+                        "Currently, you have no access to do this, ask your manager",
+                      )
+                    : undefined
+                }
                 className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {summarizing ? <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" /> : null}
-                {summarizing ? "Summarizing…" : docSummary ? "Re-summarize" : "Summarize Documents"}
+                {summarizing ? (
+                  <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" />
+                ) : null}
+                {summarizing
+                  ? tx("Summarizing…")
+                  : docSummary
+                    ? tx("Re-summarize")
+                    : tx("Summarize Documents")}
               </button>
             </div>
-            {artifacts.filter(a => a.ocr_result).length === 0 && !docSummary && (
-              <p className="text-xs text-slate-400">Upload and OCR document(s) to generate a medical / financial / occupational summary.</p>
+            {artifacts.filter((a) => a.ocr_result).length === 0 &&
+              !docSummary && (
+                <p className="text-xs text-slate-400">
+                  {tx(
+                    "Upload and OCR document(s) to generate a medical / financial / occupational summary.",
+                  )}
+                </p>
+              )}
+            {summarizeError && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {summarizeError}
+              </p>
             )}
-            {summarizeError && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{summarizeError}</p>}
-            {docSummary && <ReactMarkdown components={MD_COMPONENTS}>{docSummary}</ReactMarkdown>}
+            {docSummary && (
+              <ReactMarkdown components={MD_COMPONENTS}>
+                {docSummary}
+              </ReactMarkdown>
+            )}
           </div>
 
           {!hasAny ? (
@@ -2468,31 +3753,68 @@ export default function CasePage({ params }: { params: { id: string } }) {
               <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center">
                 <span className="text-2xl">🩺</span>
               </div>
-              <p className="text-sm font-semibold text-slate-700">This case hasn't been underwritten yet</p>
+              <p className="text-sm font-semibold text-slate-700">
+                {tx("This case hasn't been underwritten yet")}
+              </p>
               <p className="text-xs text-slate-400 max-w-sm">
-                Run the AI underwriting pipeline to score medical, financial, and fraud risk and get a decision recommendation.
+                {tx(
+                  "Run the AI underwriting pipeline to score medical, financial, and fraud risk and get a decision recommendation.",
+                )}
               </p>
               <button
                 onClick={handleRun}
-                disabled={effStatus === "streaming" || !policy || !customer || requiredDocsMissing || requirementsOpen || userRole === "Agent"}
-                title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : requirementsOpen ? requirementsOpenText : (requiredDocsMissing ? `Complete missing requirements first: ${missingPreChecks.join("; ")}` : undefined)}
+                disabled={
+                  effStatus === "streaming" ||
+                  !policy ||
+                  !customer ||
+                  requiredDocsMissing ||
+                  requirementsOpen ||
+                  userRole === "Agent"
+                }
+                title={
+                  userRole === "Agent"
+                    ? tx(
+                        "Currently, you have no access to do this, ask your manager",
+                      )
+                    : requirementsOpen
+                      ? requirementsOpenText
+                      : requiredDocsMissing
+                        ? tx("Complete missing requirements first: {0}", {
+                            0: missingPreChecks.join("; "),
+                          })
+                        : undefined
+                }
                 className="mt-2 flex items-center gap-2 px-5 py-2.5 bg-blue-700 text-white rounded-lg text-sm font-semibold hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
               >
                 {effStatus === "streaming" ? <Spinner /> : null}
-                {effStatus === "streaming" ? "Running…" : "Run AI Underwriting"}
+                {effStatus === "streaming"
+                  ? tx("Running…")
+                  : tx("Run AI Underwriting")}
               </button>
               {requirementsOpen && !requiredDocsMissing && (
                 <div className="flex flex-col items-center gap-2 text-center">
-                  <p className="max-w-md text-xs text-amber-700">{requirementsOpenText}</p>
+                  <p className="max-w-md text-xs text-amber-700">
+                    {requirementsOpenText}
+                  </p>
                   <button
                     type="button"
                     onClick={runDetermineRequirements}
                     disabled={requirementsBusy || userRole === "Agent"}
-                    title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : "Re-check the requirements once the missing item has been added"}
+                    title={
+                      userRole === "Agent"
+                        ? tx(
+                            "Currently, you have no access to do this, ask your manager",
+                          )
+                        : tx(
+                            "Re-check the requirements once the missing item has been added",
+                          )
+                    }
                     className="flex items-center gap-2 rounded-lg border border-blue-200 bg-white px-4 py-2 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-50 disabled:opacity-50"
                   >
-                    {requirementsBusy ? <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" /> : null}
-                    {requirementsBusy ? "Checking…" : "Resubmit"}
+                    {requirementsBusy ? (
+                      <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" />
+                    ) : null}
+                    {requirementsBusy ? tx("Checking…") : tx("Resubmit")}
                   </button>
                 </div>
               )}
@@ -2505,22 +3827,30 @@ export default function CasePage({ params }: { params: { id: string } }) {
                       </div>
                       <div>
                         <h4 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">
-                          Pre-Underwriting Prerequisites Checklist
+                          {tx("Pre-Underwriting Prerequisites Checklist")}
                         </h4>
                         <p className="text-[11px] text-slate-500 mt-0.5">
-                          Complete all required workflow steps below to enable Risk Engine execution
+                          {tx(
+                            "Complete all required workflow steps below to enable Risk Engine execution",
+                          )}
                         </p>
                       </div>
                     </div>
                     <span className="text-xs font-bold font-mono px-3 py-1 rounded-full bg-white text-slate-700 border border-slate-200/90 shadow-2xs">
-                      <span className="text-emerald-600 font-extrabold">{prereqSteps.filter((s) => s.done).length}</span> / {prereqSteps.length} Steps Ready
+                      <span className="text-emerald-600 font-extrabold">
+                        {prereqSteps.filter((s) => s.done).length}
+                      </span>{" "}
+                      / {prereqSteps.length} {tx("Steps Ready")}
                     </span>
                   </div>
 
                   {/* Vertical Thread Stepper */}
                   <div className="relative pl-7 space-y-4 before:absolute before:left-3 before:top-3 before:bottom-3 before:w-0.5 before:bg-slate-200">
                     {prereqSteps.map((step, idx) => (
-                      <div key={step.id} className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-3 group">
+                      <div
+                        key={step.id}
+                        className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
+                      >
                         {/* Thread Node Circle */}
                         <div
                           className={`absolute -left-7 w-6 h-6 rounded-full border-2 flex items-center justify-center text-[10px] font-bold transition-all z-10 ${
@@ -2535,7 +3865,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
                         {/* Step Details */}
                         <div className="min-w-0 flex-1 pl-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`text-xs ${step.done ? "font-bold text-slate-800" : "font-extrabold text-slate-900"}`}>
+                            <span
+                              className={`text-xs ${step.done ? "font-bold text-slate-800" : "font-extrabold text-slate-900"}`}
+                            >
                               {step.title}
                             </span>
                             <span
@@ -2567,14 +3899,22 @@ export default function CasePage({ params }: { params: { id: string } }) {
                             <button
                               onClick={step.onAction}
                               disabled={step.busy || userRole === "Agent"}
-                              title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : undefined}
+                              title={
+                                userRole === "Agent"
+                                  ? tx(
+                                      "Currently, you have no access to do this, ask your manager",
+                                    )
+                                  : undefined
+                              }
                               className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-all flex items-center gap-1.5 ${
                                 step.done
                                   ? "bg-white hover:bg-slate-100 text-slate-700 border-slate-200/90"
                                   : "bg-blue-600 hover:bg-blue-700 text-white border-blue-600 shadow-2xs"
                               } ${userRole === "Agent" ? "opacity-50 cursor-not-allowed" : ""}`}
                             >
-                              {step.busy ? <Spinner className="w-3 h-3 border-white border-t-transparent" /> : null}
+                              {step.busy ? (
+                                <Spinner className="w-3 h-3 border-white border-t-transparent" />
+                              ) : null}
                               <span>{step.actionLabel}</span>
                             </button>
                           ) : null}
@@ -2584,16 +3924,32 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   </div>
                 </div>
               )}
-              {effStreamError && !requiredDocsMissing && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-2">{effStreamError}</p>}
+              {effStreamError && !requiredDocsMissing && (
+                <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-2">
+                  {effStreamError}
+                </p>
+              )}
             </div>
           ) : (
             <>
               {/* Risk Assessment Scores */}
-              <SectionCard title="AI Risk Assessment">
+              <SectionCard title={tx("AI Risk Assessment")}>
                 <div className="space-y-5">
-                  <RiskScoreBar label="Medical Risk Score" score={medicalScore} valueLabel={`${medicalScore}%`} />
-                  <RiskScoreBar label="Financial Risk Score" score={financialScore} valueLabel={`${financialScore}%`} />
-                  <RiskScoreBar label="Fraud Risk Score" score={fraudPct} valueLabel={`${fraudPct}%`} />
+                  <RiskScoreBar
+                    label={tx("Medical Risk Score")}
+                    score={medicalScore}
+                    valueLabel={`${medicalScore}%`}
+                  />
+                  <RiskScoreBar
+                    label={tx("Financial Risk Score")}
+                    score={financialScore}
+                    valueLabel={`${financialScore}%`}
+                  />
+                  <RiskScoreBar
+                    label={tx("Fraud Risk Score")}
+                    score={fraudPct}
+                    valueLabel={`${fraudPct}%`}
+                  />
                   <div className="pt-2 border-t border-slate-100">
                     <CompositeScoreRing score={compositeScore} />
                   </div>
@@ -2602,42 +3958,84 @@ export default function CasePage({ params }: { params: { id: string } }) {
                     <div className="pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-3">
                       {underwritingResults.medical && (
                         <div className="bg-slate-50 rounded-lg p-3">
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Medical</p>
-                          <p className="text-sm font-bold text-slate-800">{underwritingResults.medical.risk_class}</p>
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                            {tx("Medical")}
+                          </p>
+                          <p className="text-sm font-bold text-slate-800">
+                            {underwritingResults.medical.risk_class}
+                          </p>
                           {underwritingResults.medical.loading_percentage ? (
-                            <p className="text-xs text-amber-700 mt-0.5">+{underwritingResults.medical.loading_percentage}% loading</p>
+                            <p className="text-xs text-amber-700 mt-0.5">
+                              +{underwritingResults.medical.loading_percentage}
+                              {tx("% loading")}
+                            </p>
                           ) : null}
-                          {underwritingResults.medical.requires_human_review && (
-                            <p className="text-[11px] text-blue-600 mt-0.5">Requires human review</p>
+                          {underwritingResults.medical
+                            .requires_human_review && (
+                            <p className="text-[11px] text-blue-600 mt-0.5">
+                              {tx("Requires human review")}
+                            </p>
                           )}
                         </div>
                       )}
                       {underwritingResults.financial && (
                         <div className="bg-slate-50 rounded-lg p-3">
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Financial</p>
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                            {tx("Financial")}
+                          </p>
                           <p className="text-sm font-bold text-slate-800">
-                            {underwritingResults.financial.financially_justified ? "Justified" : "Not Justified"}
+                            {underwritingResults.financial.financially_justified
+                              ? tx("Justified")
+                              : tx("Not Justified")}
                           </p>
                           <p className="text-[11px] text-slate-500 mt-0.5">
-                            Ratio {underwritingResults.financial.coverage_to_income_ratio.toFixed(1)}x
-                            {underwritingResults.financial.maximum_supported_cover != null && (
-                              <> · Max cover {fmtCoverage(underwritingResults.financial.maximum_supported_cover)}</>
+                            {tx("Ratio")}{" "}
+                            {underwritingResults.financial.coverage_to_income_ratio.toFixed(
+                              1,
+                            )}
+                            x
+                            {underwritingResults.financial
+                              .maximum_supported_cover != null && (
+                              <>
+                                {" "}
+                                {tx("· Max cover")}{" "}
+                                {fmtCoverage(
+                                  underwritingResults.financial
+                                    .maximum_supported_cover,
+                                )}
+                              </>
                             )}
                           </p>
-                          {underwritingResults.financial.verified_income != null && (
-                            <p className="text-[11px] text-slate-500">Verified income: {fmtIncome(underwritingResults.financial.verified_income)}</p>
+                          {underwritingResults.financial.verified_income !=
+                            null && (
+                            <p className="text-[11px] text-slate-500">
+                              {tx("Verified income:")}{" "}
+                              {fmtIncome(
+                                underwritingResults.financial.verified_income,
+                              )}
+                            </p>
                           )}
                         </div>
                       )}
                       {underwritingResults.fraud && (
                         <div className="bg-slate-50 rounded-lg p-3">
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Fraud</p>
-                          <p className="text-sm font-bold text-slate-800">{underwritingResults.fraud.severity}</p>
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                            {tx("Fraud")}
+                          </p>
+                          <p className="text-sm font-bold text-slate-800">
+                            {underwritingResults.fraud.severity}
+                          </p>
                           <p className="text-[11px] text-slate-500 mt-0.5">
-                            Probability {(underwritingResults.fraud.probability * 100).toFixed(0)}%
+                            {tx("Probability")}{" "}
+                            {(
+                              underwritingResults.fraud.probability * 100
+                            ).toFixed(0)}
+                            %
                           </p>
                           {underwritingResults.fraud.investigation_required && (
-                            <p className="text-[11px] text-purple-600 mt-0.5">Investigation required</p>
+                            <p className="text-[11px] text-purple-600 mt-0.5">
+                              {tx("Investigation required")}
+                            </p>
                           )}
                         </div>
                       )}
@@ -2649,46 +4047,89 @@ export default function CasePage({ params }: { params: { id: string } }) {
               {/* AI Recommendation */}
               <div className="card p-5 space-y-4">
                 <div className="flex items-center justify-between">
-                  <p className="section-label">AI Recommendation</p>
+                  <p className="section-label">{tx("AI Recommendation")}</p>
                   <button
                     onClick={handleRun}
-                    disabled={effStatus === "streaming" || requiredDocsMissing || requirementsOpen || userRole === "Agent"}
-                    title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : requirementsOpen ? requirementsOpenText : (requiredDocsMissing ? `Complete missing requirements first: ${missingPreChecks.join("; ")}` : undefined)}
+                    disabled={
+                      effStatus === "streaming" ||
+                      requiredDocsMissing ||
+                      requirementsOpen ||
+                      userRole === "Agent"
+                    }
+                    title={
+                      userRole === "Agent"
+                        ? tx(
+                            "Currently, you have no access to do this, ask your manager",
+                          )
+                        : requirementsOpen
+                          ? requirementsOpenText
+                          : requiredDocsMissing
+                            ? tx("Complete missing requirements first: {0}", {
+                                0: missingPreChecks.join("; "),
+                              })
+                            : undefined
+                    }
                     className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {effStatus === "streaming" ? <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" /> : null}
+                    {effStatus === "streaming" ? (
+                      <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" />
+                    ) : null}
                     {/* {effStatus === "streaming" ? "Re-running…" : "Re-run Underwriting"} */}
                   </button>
                 </div>
 
                 {aiDecision && <DecisionBanner decision={aiDecision} />}
-                {effStreamError && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{effStreamError}</p>}
-
-
+                {effStreamError && (
+                  <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                    {effStreamError}
+                  </p>
+                )}
 
                 {/* Explainability report — list (grouped) or table (compact) view */}
                 <div className="pt-2 border-t border-slate-100">
                   <div className="flex items-center justify-between mb-4">
-                    <p className="text-sm font-bold uppercase tracking-widest text-slate-700">AI Analysis</p>
+                    <p className="text-sm font-bold uppercase tracking-widest text-slate-700">
+                      {tx("AI Analysis")}
+                    </p>
                     {hasCategorizedReasons && (
                       <div className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
                         <button
                           onClick={() => setAnalysisView("list")}
                           className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${analysisView === "list" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
                         >
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                          <svg
+                            className="w-3.5 h-3.5"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M4 6h16M4 12h16M4 18h16"
+                            />
                           </svg>
-                          List
+                          {tx("List")}
                         </button>
                         <button
                           onClick={() => setAnalysisView("table")}
                           className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${analysisView === "table" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
                         >
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18M12 4v16M4 4h16v16H4z" />
+                          <svg
+                            className="w-3.5 h-3.5"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M3 10h18M3 14h18M12 4v16M4 4h16v16H4z"
+                            />
                           </svg>
-                          Table
+                          {tx("Table")}
                         </button>
                       </div>
                     )}
@@ -2696,8 +4137,14 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   {hasCategorizedReasons ? (
                     analysisView === "list" ? (
                       <div className="space-y-5">
-                        {reasonSections.map(s => (
-                          <ReasonGroup key={s.label} label={s.label} scoreLabel={s.scoreLabel} reasons={s.reasons} accentColor={s.accentColor} />
+                        {reasonSections.map((s) => (
+                          <ReasonGroup
+                            key={s.label}
+                            label={s.label}
+                            scoreLabel={s.scoreLabel}
+                            reasons={s.reasons}
+                            accentColor={s.accentColor}
+                          />
                         ))}
                       </div>
                     ) : (
@@ -2707,8 +4154,12 @@ export default function CasePage({ params }: { params: { id: string } }) {
                     <ul className="space-y-1.5">
                       {(assessment?.reasons ?? []).map((reason, i) => (
                         <li key={i} className="flex items-start gap-2">
-                          <span className="text-slate-300 mt-0.5 flex-shrink-0">•</span>
-                          <span className="text-xs text-slate-600 leading-relaxed">{reason}</span>
+                          <span className="text-slate-300 mt-0.5 flex-shrink-0">
+                            •
+                          </span>
+                          <span className="text-xs text-slate-600 leading-relaxed">
+                            {reason}
+                          </span>
                         </li>
                       ))}
                     </ul>
@@ -2721,10 +4172,20 @@ export default function CasePage({ params }: { params: { id: string } }) {
                         onClick={downloadPDF}
                         className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors shadow-sm"
                       >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3" />
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          className="w-3.5 h-3.5"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3"
+                          />
                         </svg>
-                        Download PDF Report
+                        {tx("Download PDF Report")}
                       </button>
                     </div>
                   )}
@@ -2737,60 +4198,92 @@ export default function CasePage({ params }: { params: { id: string } }) {
               requirements engine + cross-document verification findings. */}
           <div className="card p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <p className="section-label">Underwriting Requirements</p>
+              <p className="section-label">{tx("Underwriting Requirements")}</p>
               <button
                 onClick={runDetermineRequirements}
                 disabled={requirementsBusy || userRole === "Agent"}
                 className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {requirementsBusy ? <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" /> : null}
-                {requirementsBusy ? "Determining…" : "Determine Requirements"}
+                {requirementsBusy ? (
+                  <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" />
+                ) : null}
+                {requirementsBusy
+                  ? tx("Determining…")
+                  : tx("Determine Requirements")}
               </button>
             </div>
             {requirementsError && (
-              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{requirementsError}</p>
+              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {requirementsError}
+              </p>
             )}
             {requirements.length === 0 ? (
               <p className="text-xs text-slate-400 italic">
-                No requirements determined yet — click &quot;Determine Requirements&quot; to run the Requirements Engine for this case.
+                {tx(
+                  'No requirements determined yet — click "Determine Requirements" to run the Requirements Engine for this case.',
+                )}
               </p>
             ) : (
               <ul className="space-y-2">
                 {requirements.map((req) => {
-                  const statusStyle: Record<CaseRequirement["status"], string> = {
-                    Missing: "bg-red-50 text-red-700 border-red-200",
-                    Requested: "bg-amber-50 text-amber-700 border-amber-200",
-                    Submitted: "bg-blue-50 text-blue-700 border-blue-200",
-                    Satisfied: "bg-emerald-50 text-emerald-700 border-emerald-200",
-                    Waived: "bg-slate-100 text-slate-500 border-slate-200",
-                    Invalid: "bg-red-50 text-red-700 border-red-200",
-                  };
+                  const statusStyle: Record<CaseRequirement["status"], string> =
+                    {
+                      Missing: "bg-red-50 text-red-700 border-red-200",
+                      Requested: "bg-amber-50 text-amber-700 border-amber-200",
+                      Submitted: "bg-blue-50 text-blue-700 border-blue-200",
+                      Satisfied:
+                        "bg-emerald-50 text-emerald-700 border-emerald-200",
+                      Waived: "bg-slate-100 text-slate-500 border-slate-200",
+                      Invalid: "bg-red-50 text-red-700 border-red-200",
+                    };
                   return (
-                    <li key={req.id} className="flex items-start justify-between gap-3 border border-slate-100 rounded-lg px-3 py-2">
+                    <li
+                      key={req.id}
+                      className="flex items-start justify-between gap-3 border border-slate-100 rounded-lg px-3 py-2"
+                    >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-slate-700">{req.code.replace(/_/g, " ")}</span>
-                          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{req.category}</span>
-                          {req.required && <span className="text-[10px] font-semibold text-red-500">Required</span>}
+                          <span className="text-xs font-bold text-slate-700">
+                            {req.code.replace(/_/g, " ")}
+                          </span>
+                          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">
+                            {req.category}
+                          </span>
+                          {req.required && (
+                            <span className="text-[10px] font-semibold text-red-500">
+                              {tx("Required")}
+                            </span>
+                          )}
                         </div>
-                        {req.reason && <p className="text-xs text-slate-500 mt-0.5">{req.reason}</p>}
+                        {req.reason && (
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {req.reason}
+                          </p>
+                        )}
                         {req.satisfied_by_artifact_id && (
-                          <p className="text-[11px] text-blue-600 mt-0.5">Linked document: {req.satisfied_by_artifact_id.slice(0, 8)}…</p>
+                          <p className="text-[11px] text-blue-600 mt-0.5">
+                            {tx("Linked document:")}{" "}
+                            {req.satisfied_by_artifact_id.slice(0, 8)}…
+                          </p>
                         )}
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border ${statusStyle[req.status]}`}>
+                        <span
+                          className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border ${statusStyle[req.status]}`}
+                        >
                           {req.status}
                         </span>
-                        {req.status !== "Waived" && req.status !== "Satisfied" && userRole !== "Agent" && (
-                          <button
-                            onClick={() => waiveRequirement(req.id)}
-                            className="text-[11px] font-semibold text-slate-400 hover:text-slate-600"
-                            title="Waive this requirement"
-                          >
-                            Waive
-                          </button>
-                        )}
+                        {req.status !== "Waived" &&
+                          req.status !== "Satisfied" &&
+                          userRole !== "Agent" && (
+                            <button
+                              onClick={() => waiveRequirement(req.id)}
+                              className="text-[11px] font-semibold text-slate-400 hover:text-slate-600"
+                              title={tx("Waive this requirement")}
+                            >
+                              {tx("Waive")}
+                            </button>
+                          )}
                       </div>
                     </li>
                   );
@@ -2800,25 +4293,42 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
             {verificationFindings.length > 0 && (
               <div className="pt-3 border-t border-slate-100">
-                <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-2">Verification Findings</p>
+                <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-2">
+                  {tx("Verification Findings")}
+                </p>
                 <ul className="space-y-2">
                   {verificationFindings.map((f) => {
-                    const severityStyle: Record<VerificationFinding["severity"], string> = {
+                    const severityStyle: Record<
+                      VerificationFinding["severity"],
+                      string
+                    > = {
                       Info: "bg-slate-100 text-slate-500 border-slate-200",
                       Low: "bg-blue-50 text-blue-700 border-blue-200",
                       Medium: "bg-amber-50 text-amber-700 border-amber-200",
                       High: "bg-red-50 text-red-700 border-red-200",
                     };
                     return (
-                      <li key={f.id} className="flex items-start justify-between gap-3 border border-slate-100 rounded-lg px-3 py-2">
+                      <li
+                        key={f.id}
+                        className="flex items-start justify-between gap-3 border border-slate-100 rounded-lg px-3 py-2"
+                      >
                         <div className="min-w-0">
-                          <span className="text-xs font-bold text-slate-700">{f.field.replace(/_/g, " ")}</span>
-                          <p className="text-xs text-slate-500 mt-0.5">{f.explanation}</p>
+                          <span className="text-xs font-bold text-slate-700">
+                            {f.field.replace(/_/g, " ")}
+                          </span>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {f.explanation}
+                          </p>
                           <p className="text-[11px] text-slate-400 mt-0.5">
-                            Declared: {JSON.stringify(f.declared_value) ?? "—"} &nbsp;·&nbsp; Observed: {JSON.stringify(f.observed_value) ?? "—"}
+                            {tx("Declared:")}{" "}
+                            {JSON.stringify(f.declared_value) ?? "—"}{" "}
+                            {tx("·  Observed:")}{" "}
+                            {JSON.stringify(f.observed_value) ?? "—"}
                           </p>
                         </div>
-                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border flex-shrink-0 ${severityStyle[f.severity]}`}>
+                        <span
+                          className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border flex-shrink-0 ${severityStyle[f.severity]}`}
+                        >
                           {f.severity}
                         </span>
                       </li>
@@ -2832,40 +4342,81 @@ export default function CasePage({ params }: { params: { id: string } }) {
           {/* Underwriter notes */}
           <div className="card p-5">
             <div className="flex items-center justify-between mb-3">
-              <p className="section-label">Underwriter Notes</p>
+              <p className="section-label">{tx("Underwriter Notes")}</p>
               <button
                 onClick={() => generateNote(buildNoteContext())}
                 disabled={generatingNote || !hasAny || userRole === "Agent"}
-                title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : (hasAny ? "Draft a note from the case details with AI" : "Run underwriting first to generate a note")}
+                title={
+                  userRole === "Agent"
+                    ? tx(
+                        "Currently, you have no access to do this, ask your manager",
+                      )
+                    : hasAny
+                      ? tx("Draft a note from the case details with AI")
+                      : tx("Run underwriting first to generate a note")
+                }
                 className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {generatingNote
-                  ? <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" />
-                  : <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>}
-                {generatingNote ? "Generating…" : "Generate with AI"}
+                {generatingNote ? (
+                  <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" />
+                ) : (
+                  <svg
+                    className="w-3.5 h-3.5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"
+                    />
+                  </svg>
+                )}
+                {generatingNote ? tx("Generating…") : tx("Generate with AI")}
               </button>
             </div>
-            {noteGenError && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{noteGenError}</p>}
+            {noteGenError && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+                {noteGenError}
+              </p>
+            )}
             <textarea
               value={note}
-              onChange={e => setNote(e.target.value)}
+              onChange={(e) => setNote(e.target.value)}
               disabled={userRole === "Agent"}
               className="w-full h-24 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 resize-none placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition disabled:opacity-50 disabled:cursor-not-allowed"
-              placeholder={userRole === "Agent" ? "Notes disabled for Agent role." : "Add case notes, override justification, or referral comments here — or click Generate with AI for a draft…"}
+              placeholder={
+                userRole === "Agent"
+                  ? tx("Notes disabled for Agent role.")
+                  : tx(
+                      "Add case notes, override justification, or referral comments here — or click Generate with AI for a draft…",
+                    )
+              }
             />
             <div className="flex items-center justify-end gap-2 mt-3">
-              {noteSent && <span className="text-xs text-blue-600 font-semibold mr-auto">✓ Posted</span>}
+              {noteSent && (
+                <span className="text-xs text-blue-600 font-semibold mr-auto">
+                  {tx("✓ Posted")}
+                </span>
+              )}
               <button
                 onClick={submitNote}
                 disabled={postingNote || !note.trim() || userRole === "Agent"}
-                title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : undefined}
+                title={
+                  userRole === "Agent"
+                    ? tx(
+                        "Currently, you have no access to do this, ask your manager",
+                      )
+                    : undefined
+                }
                 className="px-3 py-1.5 text-xs font-semibold text-white bg-blue-700 rounded-md hover:bg-blue-800 disabled:opacity-50 transition-colors"
               >
-                {postingNote ? "Posting…" : "Post Note"}
+                {postingNote ? tx("Posting…") : tx("Post Note")}
               </button>
             </div>
           </div>
-
         </div>
       </div>
 
@@ -2882,7 +4433,10 @@ export default function CasePage({ params }: { params: { id: string } }) {
             fetchDetail();
             // OCR runs asynchronously; a short delay gives the worker a
             // chance to finish before re-checking requirement status.
-            setTimeout(() => { fetchRequirements(); fetchVerificationFindings(); }, 4000);
+            setTimeout(() => {
+              fetchRequirements();
+              fetchVerificationFindings();
+            }, 4000);
             notifyParentPortal("document_uploaded", { caseId });
           }}
         />
@@ -2892,51 +4446,82 @@ export default function CasePage({ params }: { params: { id: string } }) {
       {showReportModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 lg:p-8 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 my-auto">
-
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
               <div className="flex items-center gap-4">
-                <img src="/rizvi.png" alt="Rizviz" className="h-8" />
+                <img src="/rizvi.png" alt={tx("Rizviz")} className="h-8" />
                 <div className="h-6 w-px bg-slate-300"></div>
                 <div>
-                  <h2 className="text-lg font-bold text-slate-900 tracking-tight">AI Underwriting Assessment</h2>
-                  <p className="text-xs text-slate-500 font-medium mt-0.5">Applicant: {customer?.name} &nbsp;·&nbsp; Case: {c.caseNumber}</p>
+                  <h2 className="text-lg font-bold text-slate-900 tracking-tight">
+                    {tx("AI Underwriting Assessment")}
+                  </h2>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    {tx("Applicant:")} {customer?.name} {tx("·  Case:")}{" "}
+                    {c.caseNumber}
+                  </p>
                 </div>
               </div>
-              <button onClick={() => setShowReportModal(false)} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-full transition-colors focus:outline-none">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+              <button
+                onClick={() => setShowReportModal(false)}
+                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-full transition-colors focus:outline-none"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
               </button>
             </div>
 
             {/* Body */}
             <div className="p-6 md:p-8 space-y-8 bg-white overflow-y-auto max-h-[75vh]">
-
               {/* Hero Decision Section */}
               <div className="flex flex-col items-center justify-center text-center space-y-3 pb-8 border-b border-slate-100">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Final AI Decision</h3>
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                  {tx("Final AI Decision")}
+                </h3>
                 {aiDecision ? (
                   <div className="scale-125 transform-origin-center my-1">
                     <StatusBadge decision={aiDecision} size="lg" />
                   </div>
                 ) : (
-                  <span className="text-xl font-bold text-slate-400 my-1">Pending</span>
+                  <span className="text-xl font-bold text-slate-400 my-1">
+                    {tx("Pending")}
+                  </span>
                 )}
                 {suggestedLoading !== null && (
                   <p className="text-sm font-semibold text-amber-800 bg-amber-50 px-4 py-1.5 rounded-full border border-amber-200/50 mt-2 shadow-sm">
-                    Suggested Loading: +{suggestedLoading}%
+                    {tx("Suggested Loading: +")}
+                    {suggestedLoading}%
                   </p>
                 )}
 
                 <div className="w-full max-w-lg mt-8">
                   <div className="flex justify-between items-end mb-2">
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Composite Risk</span>
-                    <span className="text-3xl font-black text-slate-900 tracking-tighter">{compositeScore}%</span>
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      {tx("Composite Risk")}
+                    </span>
+                    <span className="text-3xl font-black text-slate-900 tracking-tighter">
+                      {compositeScore}%
+                    </span>
                   </div>
                   <div className="h-3.5 w-full bg-slate-100 rounded-full overflow-hidden shadow-inner">
                     <div
-                      className={`h-full rounded-full transition-all duration-1000 ${compositeScore <= 30 ? "bg-blue-500" :
-                        compositeScore <= 70 ? "bg-amber-500" : "bg-red-500"
-                        }`}
+                      className={`h-full rounded-full transition-all duration-1000 ${
+                        compositeScore <= 30
+                          ? "bg-blue-500"
+                          : compositeScore <= 70
+                            ? "bg-amber-500"
+                            : "bg-red-500"
+                      }`}
                       style={{ width: `${compositeScore}%` }}
                     />
                   </div>
@@ -2946,55 +4531,91 @@ export default function CasePage({ params }: { params: { id: string } }) {
               {/* Metrics Grid */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {reasonSections.map((section, idx) => (
-                  <div key={idx} className="bg-slate-50/80 rounded-2xl border border-slate-200/60 p-6 flex flex-col text-left shadow-sm">
+                  <div
+                    key={idx}
+                    className="bg-slate-50/80 rounded-2xl border border-slate-200/60 p-6 flex flex-col text-left shadow-sm"
+                  >
                     <div className="flex justify-between items-start mb-4">
-                      <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-widest">{section.label}</span>
-                      <span className={`text-2xl font-black ${section.accentColor}`}>{section.scoreLabel}</span>
+                      <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-widest">
+                        {section.label}
+                      </span>
+                      <span
+                        className={`text-2xl font-black ${section.accentColor}`}
+                      >
+                        {section.scoreLabel}
+                      </span>
                     </div>
 
                     <ul className="w-full space-y-2.5">
                       {section.reasons.length > 0 ? (
                         section.reasons.map((r, rIdx) => {
                           const isObj = typeof r === "object" && r !== null;
-                          const text = isObj ? `${r.parameter || r.factor}: ${r.observation || r.reason}` : (r as string);
+                          const text = isObj
+                            ? `${r.parameter || r.factor}: ${r.observation || r.reason}`
+                            : (r as string);
                           return (
-                            <li key={rIdx} className="text-[13px] text-slate-700 flex items-start gap-2.5 leading-relaxed">
-                              <span className={`mt-[3px] font-bold ${section.accentColor}`}>•</span> {text.replace(/\*\*/g, "")}
+                            <li
+                              key={rIdx}
+                              className="text-[13px] text-slate-700 flex items-start gap-2.5 leading-relaxed"
+                            >
+                              <span
+                                className={`mt-[3px] font-bold ${section.accentColor}`}
+                              >
+                                •
+                              </span>{" "}
+                              {text.replace(/\*\*/g, "")}
                             </li>
                           );
                         })
                       ) : (
-                        <li className="text-[13px] text-slate-400 italic py-2">No significant risk factors flagged.</li>
+                        <li className="text-[13px] text-slate-400 italic py-2">
+                          {tx("No significant risk factors flagged.")}
+                        </li>
                       )}
                     </ul>
                   </div>
                 ))}
               </div>
-
             </div>
 
             {/* Footer */}
             <div className="flex items-center justify-between px-6 py-4 bg-slate-50 border-t border-slate-200/80">
               <span className="text-xs text-slate-500 font-medium">
-                Generated {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                {tx("Generated")}{" "}
+                {new Date().toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
               </span>
               <div className="flex items-center gap-3">
                 <button
                   onClick={downloadPDF}
                   className="px-5 py-2.5 text-[13px] font-bold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 shadow-sm transition-all flex items-center gap-2 focus:ring-2 focus:ring-slate-200"
                 >
-                  <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                  Save PDF
+                  <svg
+                    className="w-4 h-4 text-slate-500"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2.5"
+                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                    ></path>
+                  </svg>
+                  {tx("Save PDF")}
                 </button>
                 <button
                   onClick={() => setShowReportModal(false)}
                   className="px-6 py-2.5 text-[13px] font-bold text-white bg-blue-600 border border-transparent rounded-xl hover:bg-blue-700 shadow-sm shadow-blue-600/20 transition-all focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
                 >
-                  Done
+                  {tx("Done")}
                 </button>
               </div>
             </div>
-
           </div>
         </div>
       )}
@@ -3009,7 +4630,12 @@ export default function CasePage({ params }: { params: { id: string } }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function MedicalAssessModal({
-  order, link, customerName, busy, onClose, onMarkCompleted,
+  order,
+  link,
+  customerName,
+  busy,
+  onClose,
+  onMarkCompleted,
 }: Readonly<{
   order: MedicalExamOrder;
   link: string | null;
@@ -3023,27 +4649,39 @@ function MedicalAssessModal({
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
           <div>
-            <h3 className="font-bold text-slate-900 text-sm">Medical Requirement — Non-Medical Limit</h3>
+            <h3 className="font-bold text-slate-900 text-sm">
+              {tx("Medical Requirement — Non-Medical Limit")}
+            </h3>
             <p className="text-xs text-slate-500">{customerName ?? "—"}</p>
           </div>
-          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-            order.status === "NotRequired"
-              ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-              : "bg-amber-100 text-amber-800 border border-amber-200"
-          }`}>
+          <span
+            className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+              order.status === "NotRequired"
+                ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                : "bg-amber-100 text-amber-800 border border-amber-200"
+            }`}
+          >
             {order.status}
           </span>
         </div>
         <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto text-xs">
           <div className="grid grid-cols-2 gap-2.5">
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
-              <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Sum at risk</p>
-              <p className="font-bold text-slate-800 mt-0.5">{fmtCoverage(order.sum_assured_at_risk)}</p>
+              <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
+                {tx("Sum at risk")}
+              </p>
+              <p className="font-bold text-slate-800 mt-0.5">
+                {fmtCoverage(order.sum_assured_at_risk)}
+              </p>
             </div>
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
-              <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Non-medical limit (age {order.applicant_age ?? "—"})</p>
+              <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
+                {tx("Non-medical limit (age")} {order.applicant_age ?? "—"})
+              </p>
               <p className="font-bold text-slate-800 mt-0.5">
-                {order.non_medical_limit != null ? fmtCoverage(order.non_medical_limit) : "—"}
+                {order.non_medical_limit != null
+                  ? fmtCoverage(order.non_medical_limit)
+                  : "—"}
               </p>
             </div>
           </div>
@@ -3051,37 +4689,52 @@ function MedicalAssessModal({
           {(order.trigger_reasons ?? []).length > 0 && (
             <div className="space-y-1">
               {order.trigger_reasons.map((r, i) => (
-                <p key={i} className="border-l-2 border-amber-400 pl-2.5 py-1 text-[11px] text-amber-800">{r}</p>
+                <p
+                  key={i}
+                  className="border-l-2 border-amber-400 pl-2.5 py-1 text-[11px] text-amber-800"
+                >
+                  {r}
+                </p>
               ))}
             </div>
           )}
 
           {order.status === "NotRequired" ? (
             <p className="text-slate-600 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
-              This proposal is within the non-medical limit — it can be underwritten on the
-              E-Application alone. No panel examination is needed.
+              {tx(
+                "This proposal is within the non-medical limit — it can be underwritten on the E-Application alone. No panel examination is needed.",
+              )}
             </p>
           ) : (
             <>
               <div className="border border-slate-200 rounded-xl overflow-hidden">
                 <div className="bg-slate-50 px-3 py-2 flex items-center justify-between">
                   <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
-                    Mandated panel — {(order.required_tests ?? []).length} tests
+                    {tx("Mandated panel —")}{" "}
+                    {(order.required_tests ?? []).length} {tx("tests")}
                   </span>
                   <span className="text-[11px] font-bold text-slate-700 font-mono">
-                    PKR {Math.round(order.estimated_cost ?? 0).toLocaleString()}
+                    {tx("PKR")}{" "}
+                    {Math.round(order.estimated_cost ?? 0).toLocaleString()}
                   </span>
                 </div>
                 <ul className="divide-y divide-slate-50">
                   {(order.required_tests ?? []).map((t) => (
-                    <li key={t.code} className="px-3 py-1.5 flex items-center justify-between gap-2">
+                    <li
+                      key={t.code}
+                      className="px-3 py-1.5 flex items-center justify-between gap-2"
+                    >
                       <div>
-                        <p className="font-semibold text-slate-800 text-[11px]">{t.name}</p>
-                        <p className="text-[10px] text-slate-400">{t.category}</p>
+                        <p className="font-semibold text-slate-800 text-[11px]">
+                          {t.name}
+                        </p>
+                        <p className="text-[10px] text-slate-400">
+                          {t.category}
+                        </p>
                       </div>
                       {t.fasting && (
                         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 shrink-0">
-                          FASTING
+                          {tx("FASTING")}
                         </span>
                       )}
                     </li>
@@ -3092,14 +4745,22 @@ function MedicalAssessModal({
               {link && (
                 <div>
                   <p className="text-[11px] text-slate-500 mb-1">
-                    Send this link to the customer — they pick a panel clinic and an appointment slot:
+                    {tx(
+                      "Send this link to the customer — they pick a panel clinic and an appointment slot:",
+                    )}
                   </p>
                   <div className="flex items-center gap-1.5">
-                    <input readOnly value={link} onFocus={(e) => e.currentTarget.select()}
-                      className="text-[10px] border border-slate-200 rounded px-2 py-1.5 w-full font-mono text-slate-600 bg-white" />
-                    <button onClick={() => navigator.clipboard.writeText(link)}
-                      className="text-[10px] font-bold text-blue-700 px-2.5 py-1.5 bg-blue-50 border border-blue-200/60 rounded shrink-0 hover:bg-blue-100">
-                      Copy
+                    <input
+                      readOnly
+                      value={link}
+                      onFocus={(e) => e.currentTarget.select()}
+                      className="text-[10px] border border-slate-200 rounded px-2 py-1.5 w-full font-mono text-slate-600 bg-white"
+                    />
+                    <button
+                      onClick={() => navigator.clipboard.writeText(link)}
+                      className="text-[10px] font-bold text-blue-700 px-2.5 py-1.5 bg-blue-50 border border-blue-200/60 rounded shrink-0 hover:bg-blue-100"
+                    >
+                      {tx("Copy")}
                     </button>
                   </div>
                 </div>
@@ -3115,12 +4776,15 @@ function MedicalAssessModal({
                 disabled={busy}
                 className="text-xs font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 shadow-2xs"
               >
-                {busy ? "Completing…" : "✓ Mark Examination Completed"}
+                {busy ? tx("Completing…") : tx("✓ Mark Examination Completed")}
               </button>
             )}
           </div>
-          <button onClick={onClose} className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold">
-            Close
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold"
+          >
+            {tx("Close")}
           </button>
         </div>
       </div>
@@ -3151,7 +4815,10 @@ const QUALITATIVE_HINTS: Record<string, string> = {
 };
 
 function MedicalResultModal({
-  order, busy, onClose, onSubmit,
+  order,
+  busy,
+  onClose,
+  onSubmit,
 }: Readonly<{
   order: MedicalExamOrder;
   busy: boolean;
@@ -3171,14 +4838,29 @@ function MedicalResultModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="bg-slate-800 px-5 py-3">
-          <p className="text-white/70 text-[11px] font-semibold uppercase tracking-wider">Panel Clinic Report</p>
-          <h2 className="text-white text-lg font-bold">Record Medical Results</h2>
+          <p className="text-white/70 text-[11px] font-semibold uppercase tracking-wider">
+            {tx("Panel Clinic Report")}
+          </p>
+          <h2 className="text-white text-lg font-bold">
+            {tx("Record Medical Results")}
+          </h2>
           <p className="text-white/70 text-xs">
-            {order.clinic?.name ?? "Panel clinic"}
-            {order.completed_at ? ` · reported ${new Date(order.completed_at).toLocaleDateString()}` : ""}
+            {order.clinic?.name ?? tx("Panel clinic")}
+            {order.completed_at
+              ? " " +
+                tx("· reported {0}", {
+                  0: new Date(order.completed_at).toLocaleDateString(),
+                })
+              : ""}
           </p>
         </div>
 
@@ -3187,36 +4869,44 @@ function MedicalResultModal({
             <div key={t.code}>
               <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
                 {t.name}
-                <span className="text-[9px] font-mono text-slate-400 normal-case">{t.code}</span>
+                <span className="text-[9px] font-mono text-slate-400 normal-case">
+                  {t.code}
+                </span>
               </label>
               <input
                 value={values[t.code] ?? ""}
-                onChange={(e) => setValues((s) => ({ ...s, [t.code]: e.target.value }))}
-                placeholder={QUALITATIVE_HINTS[t.code] ?? "Reported value"}
+                onChange={(e) =>
+                  setValues((s) => ({ ...s, [t.code]: e.target.value }))
+                }
+                placeholder={QUALITATIVE_HINTS[t.code] ?? tx("Reported value")}
                 className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2"
               />
             </div>
           ))}
           <p className="text-[11px] text-slate-400 pt-1">
-            Leave a test blank if the lab has not reported it yet — it will be listed as outstanding
-            rather than rated. Values are graded against the underwriting manual on save.
+            {tx(
+              "Leave a test blank if the lab has not reported it yet — it will be listed as outstanding rather than rated. Values are graded against the underwriting manual on save.",
+            )}
           </p>
         </div>
 
         <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
           <span className="text-[11px] text-slate-500 font-medium">
-            {filled} of {order.required_tests.length} reported
+            {filled} {tx("of")} {order.required_tests.length} {tx("reported")}
           </span>
           <div className="flex gap-2">
-            <button onClick={onClose} className="px-3 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700">
-              Cancel
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700"
+            >
+              {tx("Cancel")}
             </button>
             <button
               onClick={submit}
               disabled={busy || filled === 0}
               className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-slate-800 hover:bg-slate-900 text-white disabled:opacity-40"
             >
-              {busy ? "Saving…" : "Save & rate"}
+              {busy ? tx("Saving…") : tx("Save & rate")}
             </button>
           </div>
         </div>

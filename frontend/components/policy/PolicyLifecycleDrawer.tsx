@@ -14,6 +14,7 @@ import { fmtCoverage } from "@/lib/mock-data";
 import { LifecycleStepper } from "./LifecycleStepper";
 import { StageAPanel } from "./StageAPanel";
 import { ISSUANCE_STAGES, currentStageIndex, normStatus } from "./lifecycle";
+import { tx } from "@/lib/i18n/tx";
 
 // Statuses where the Stage A pre-issuance checklist is relevant.
 const PRE_ISSUANCE_STATUSES = new Set([
@@ -114,7 +115,7 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
       setDetail(d);
       setEvents(e);
     } catch (err: any) {
-      setError(err?.response?.data?.detail ?? err?.message ?? "Failed to load policy.");
+      setError(err?.response?.data?.detail ?? err?.message ?? tx("Failed to load policy."));
     }
   }, [policyId]);
 
@@ -134,16 +135,16 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-      <button className="flex-1 cursor-default" aria-label="Close" onClick={onClose} />
+      <button className="flex-1 cursor-default" aria-label={tx("Close")} onClick={onClose} />
       <div className="w-full max-w-xl h-full bg-white shadow-2xl overflow-y-auto animate-in slide-in-from-right duration-300">
         {/* Header */}
         <div className="sticky top-0 z-20 bg-white border-b border-slate-100 px-6 py-4 flex items-start justify-between">
           <div>
             <h2 className="text-lg font-bold text-slate-900 tracking-tight">
-              {detail?.customer_name ?? fallbackName ?? "Policy"}
+              {detail?.customer_name ?? fallbackName ?? tx("Policy")}
             </h2>
             <p className="text-xs text-slate-500 font-mono mt-0.5">
-              {detail?.policy_number ?? "Not yet issued"}
+              {detail?.policy_number ?? tx("Not yet issued")}
               {detail?.product_name ? ` · ${detail.product_name}` : ""}
             </p>
           </div>
@@ -166,7 +167,7 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
         ) : detail ? (
           <div className="px-6 py-5 space-y-7">
             {/* Journey stepper */}
-            <Section title="Lifecycle Journey">
+            <Section title={tx("Lifecycle Journey")}>
               <div className="bg-slate-50 rounded-xl p-4">
                 <LifecycleStepper status={status} />
                 {currentStage && (
@@ -180,13 +181,13 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
 
             {/* Stage A — pre-issuance checklist */}
             {PRE_ISSUANCE_STATUSES.has(normStatus(status)) && (
-              <Section title="Stage A — Pre-Issuance">
+              <Section title={tx("Stage A — Pre-Issuance")}>
                 <StageAPanel policyId={policyId} onChanged={reload} />
               </Section>
             )}
 
             {/* Key facts */}
-            <Section title="Contract">
+            <Section title={tx("Contract")}>
               <div className="grid grid-cols-2 gap-x-4 gap-y-3">
                 {[
                   ["Sum Assured", fmtCoverage(detail.coverage_amount)],
@@ -205,17 +206,17 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
             </Section>
 
             {/* Premium schedule */}
-            <Section title={`Premium Schedule (${detail.premium_schedules.length})`}>
+            <Section title={tx("Premium Schedule ({0})", { 0: detail.premium_schedules.length })}>
               {detail.premium_schedules.length === 0 ? (
-                <p className="text-xs text-slate-400 italic">No installments yet — created when the policy is drafted.</p>
+                <p className="text-xs text-slate-400 italic">{tx("No installments yet — created when the policy is drafted.")}</p>
               ) : (
                 <div className="border border-slate-100 rounded-lg overflow-hidden divide-y divide-slate-50">
                   {detail.premium_schedules.map((s) => (
                     <div key={s.id} className="flex items-center justify-between px-3 py-2.5">
                       <div>
-                        <p className="text-xs font-semibold text-slate-700">Due {s.due_date}</p>
+                        <p className="text-xs font-semibold text-slate-700">{tx("Due")}{" "}{s.due_date}</p>
                         <p className="text-[10px] text-slate-400">
-                          Paid {fmtPKR(s.amount_paid)} of {fmtPKR(s.amount_due)}
+                          {tx("Paid")}{" "}{fmtPKR(s.amount_paid)}{" "}{tx("of")}{" "}{fmtPKR(s.amount_due)}
                         </p>
                       </div>
                       <span
@@ -232,9 +233,9 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
             </Section>
 
             {/* Documents */}
-            <Section title={`Documents (${detail.documents.length})`}>
+            <Section title={tx("Documents ({0})", { 0: detail.documents.length })}>
               {detail.documents.length === 0 ? (
-                <p className="text-xs text-slate-400 italic">No documents generated yet.</p>
+                <p className="text-xs text-slate-400 italic">{tx("No documents generated yet.")}</p>
               ) : (
                 <div className="space-y-1.5">
                   {detail.documents.map((d) => (
@@ -245,13 +246,13 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
                       <p className="text-xs font-medium text-slate-700 flex-1 truncate">{d.document_name}</p>
                       {d.is_stub && (
                         <span className="text-[9px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded mr-2">
-                          STUB
+                          {tx("STUB")}
                         </span>
                       )}
                       {!d.is_stub && (
                         <button
                           onClick={() => downloadDocument(policyId, d.id).catch(err => alert("Failed to download document: " + err.message))}
-                          title="Download Document"
+                          title={tx("Download Document")}
                           className="text-slate-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-blue-50"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
@@ -268,14 +269,14 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
             </Section>
 
             {/* Event timeline — the audit trail */}
-            <Section title={`Lifecycle Events (${events.length})`}>
+            <Section title={tx("Lifecycle Events ({0})", { 0: events.length })}>
               <div 
                 className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 cursor-pointer hover:bg-slate-100 transition-all hover:shadow-sm" 
                 onClick={() => setShowEvents(!showEvents)}
               >
                 <div>
-                  <p className="text-sm font-bold text-slate-800">View Audit Trail</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">Immutable record of all policy modifications and state transitions.</p>
+                  <p className="text-sm font-bold text-slate-800">{tx("View Audit Trail")}</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">{tx("Immutable record of all policy modifications and state transitions.")}</p>
                 </div>
                 <div className={`p-1.5 rounded-full ${showEvents ? "bg-blue-100 text-blue-600" : "bg-white border border-slate-200 text-slate-400"}`}>
                   <svg className={`w-4 h-4 transition-transform duration-300 ${showEvents ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -287,7 +288,7 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
               <div className={`overflow-hidden transition-all duration-300 ease-in-out ${showEvents ? "max-h-[1000px] opacity-100 mt-4" : "max-h-0 opacity-0 mt-0"}`}>
                 <div className="bg-slate-50/50 rounded-xl p-5 border border-slate-100">
                   {events.length === 0 ? (
-                    <p className="text-xs text-slate-400 italic">No lifecycle events recorded yet.</p>
+                    <p className="text-xs text-slate-400 italic">{tx("No lifecycle events recorded yet.")}</p>
                   ) : (
                     <ol className="relative border-l border-slate-200 ml-2 space-y-6">
                       {events.map((evt) => {
@@ -309,7 +310,7 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
                                   <span className="mx-1.5 text-slate-300">·</span>
                                 </>
                               ) : null}
-                              by <span className="font-medium text-slate-700">{evt.actor}</span>
+                              {tx("by")}{" "}<span className="font-medium text-slate-700">{evt.actor}</span>
                             </p>
                             <p className="text-[10px] uppercase tracking-widest text-slate-400 mt-1">{fmtDateTime(evt.created_at)}</p>
                           </li>
@@ -323,15 +324,15 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
 
             {/* Stage B — post-issuance management (full page) */}
             {POST_ISSUANCE_STATUSES.has(normStatus(status)) && (
-              <Section title="Stage B — Post-Issuance">
+              <Section title={tx("Stage B — Post-Issuance")}>
                 <Link
                   href={`/post-issuance/${policyId}`}
                   className="flex items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50/60 px-4 py-3 hover:bg-blue-50 transition-colors group"
                 >
                   <div>
-                    <p className="text-sm font-semibold text-blue-800">Manage this policy</p>
+                    <p className="text-sm font-semibold text-blue-800">{tx("Manage this policy")}</p>
                     <p className="text-[11px] text-blue-700/80 mt-0.5">
-                      Free-look, servicing, renewals & claims.
+                      {tx("Free-look, servicing, renewals & claims.")}
                     </p>
                   </div>
                   <span className="text-blue-600 group-hover:translate-x-0.5 transition-transform" aria-hidden>→</span>

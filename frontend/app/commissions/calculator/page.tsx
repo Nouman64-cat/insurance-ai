@@ -2,6 +2,7 @@
 import React, { useState, useCallback, useEffect } from "react";
 import CalculatorTab from "../../../components/commissions/CalculatorTab";
 import { CommissionPayee, listPayees } from "../../services/commissions";
+import { tx } from "@/lib/i18n/tx";
 
 export default function CalculatorPage() {
   const [notification, setNotification] = useState<{ msg: string; type: "success" | "error" } | null>(null);
@@ -19,7 +20,7 @@ export default function CalculatorPage() {
       const payeeData = await listPayees();
       setPayees([...payeeData]);
     } catch (err) {
-      notify("Could not load payees.", false);
+      notify(tx("Could not load payees."), false);
     } finally {
       setLoading(false);
     }
@@ -40,13 +41,13 @@ export default function CalculatorPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900">Calculator</h1>
+            <h1 className="text-xl font-semibold tracking-tight text-slate-900">{tx("Calculator")}</h1>
             {/* <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">Commission Simulator</span> */}
           </div>
         </div>
       </div>
       {loading && payees.length === 0 ? (
-         <div className="px-5 py-12 text-center text-xs text-slate-400 bg-white rounded-xl shadow-sm border border-slate-200">Loading calculator...</div>
+         <div className="px-5 py-12 text-center text-xs text-slate-400 bg-white rounded-xl shadow-sm border border-slate-200">{tx("Loading calculator...")}</div>
       ) : (
          <CalculatorTab payees={payees} onAccrued={() => { window.location.href = "/commission-ops/ledger"; }} notify={notify} />
       )}

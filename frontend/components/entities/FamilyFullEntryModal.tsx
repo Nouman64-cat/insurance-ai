@@ -18,6 +18,7 @@ import { notifyParentPortal } from "@/lib/agent/portalMessage";
 import DemoFillButton from "@/components/DemoFillButton";
 import { demoFamilyExtraction } from "@/lib/demoData";
 import FamilyMembersEditor, { FamilyRow, NOMINEE_RELATIONSHIPS, blankRow, buildMembersPayload, checkRows, formatCNIC, isInsured, startRows } from "@/components/family/FamilyMembersEditor";
+import { tx } from "@/lib/i18n/tx";
 
 interface Props {
   open: boolean;
@@ -195,11 +196,11 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
           try { parsed = JSON.parse(xhr.responseText); } catch { /* non-JSON error body */ }
           resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data: parsed });
         };
-        xhr.onerror = () => reject(new Error("Could not reach the document reader."));
+        xhr.onerror = () => reject(new Error(tx("Could not reach the document reader.")));
         xhr.send(body);
       });
       setProgress(100);
-      if (!ok) throw new Error(data.detail || `Extraction failed (${status}).`);
+      if (!ok) throw new Error(data.detail || tx("Extraction failed ({0}).", { 0: status }));
 
       applyExtracted(data, file.name);
     } catch (err: any) {
@@ -225,9 +226,9 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
 
   const submit = async () => {
     setError("");
-    if (!name.trim()) { setTab("family"); setError("Family name is required."); return; }
-    if (!(parseInt(term) > 0) || !effective) { setTab("policy"); setError("The policy needs a term and an effective date."); return; }
-    if (rows.length < 2) { setTab("members"); setError("A family needs at least 2 members."); return; }
+    if (!name.trim()) { setTab("family"); setError(tx("Family name is required.")); return; }
+    if (!(parseInt(term) > 0) || !effective) { setTab("policy"); setError(tx("The policy needs a term and an effective date.")); return; }
+    if (rows.length < 2) { setTab("members"); setError(tx("A family needs at least 2 members.")); return; }
     // Check the rows before anything is created, so a typo doesn't leave a family and policy with no members.
     const { problems, flagged: bad } = checkRows(rows, isBundle);
     if (problems.length) {
@@ -264,7 +265,7 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
       } catch (err: any) {
         // The family and policy now exist; say so, so the user knows only the members need fixing.
         setTab("members");
-        setError(`The family and its policy were created, but the members were not enrolled: ${readError(err, "Failed to enrol the members.")} Fix the rows and press the button again.`);
+        setError(tx("The family and its policy were created, but the members were not enrolled: {0} Fix the rows and press the button again.", { 0: readError(err, "Failed to enrol the members.") }));
         return;
       }
 
@@ -299,8 +300,8 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <div>
-            <h3 className="text-base font-bold text-slate-900">Add New Family</h3>
-            <p className="text-xs text-slate-500 mt-0.5">Household, policy and members in one place — or upload a document to fill all three tabs.</p>
+            <h3 className="text-base font-bold text-slate-900">{tx("Add New Family")}</h3>
+            <p className="text-xs text-slate-500 mt-0.5">{tx("Household, policy and members in one place — or upload a document to fill all three tabs.")}</p>
           </div>
           <div className="flex items-center gap-3">
             <DemoFillButton
@@ -315,7 +316,7 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
             <input ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} />
             <button type="button" onClick={() => fileRef.current?.click()} disabled={extracting || saving}
-              title="Upload a PDF, PNG or JPG (max 10 MB) to fill the form automatically"
+              title={tx("Upload a PDF, PNG or JPG (max 10 MB) to fill the form automatically")}
               className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-blue-200 bg-white text-blue-700 hover:bg-blue-50 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 transition-colors">
               {extracting ? (
                 <>
@@ -327,16 +328,16 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
                     </svg>
                     <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold tabular-nums text-blue-800">{progress}%</span>
                   </span>
-                  {progress < 50 ? "Uploading…" : "Reading document…"}
+                  {progress < 50 ? tx("Uploading…") : tx("Reading document…")}
                 </>
               ) : (
                 <>
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>
-                  Upload document
+                  {tx("Upload document")}
                 </>
               )}
             </button>
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600" aria-label="Close">✕</button>
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600" aria-label={tx("Close")}>✕</button>
           </div>
         </div>
 
@@ -346,7 +347,7 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
             <button key={t.id} type="button" onClick={() => setTab(t.id)}
               className={`px-4 py-3 text-xs font-semibold border-b-2 transition-all ${tab === t.id ? "border-blue-600 text-blue-600" : "border-transparent text-slate-400 hover:text-slate-600"}`}>
               {t.label}
-              {tabHasMissing[t.id] && <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-amber-500" title="Fields to fill in on this tab" />}
+              {tabHasMissing[t.id] && <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-amber-500" title={tx("Fields to fill in on this tab")} />}
             </button>
           ))}
         </div>
@@ -369,30 +370,30 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
           {tab === "family" && (
             <div className="space-y-4 max-w-3xl">
               <div className="space-y-1.5">
-                <label className={label}>Family Name *</label>
-                <input className={`${INPUT} ${hi("name", name)}`} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Rehman Family" />
+                <label className={label}>{tx("Family Name *")}</label>
+                <input className={`${INPUT} ${hi("name", name)}`} value={name} onChange={(e) => setName(e.target.value)} placeholder={tx("e.g. Rehman Family")} />
               </div>
               <div className="space-y-1.5">
-                <label className={label}>Contact Person (Proposer)</label>
-                <input className={`${INPUT} ${hi("contact_person", contactPerson)}`} value={contactPerson} onChange={(e) => setContactPerson(e.target.value)} placeholder="e.g. Asad Rehman" />
+                <label className={label}>{tx("Contact Person (Proposer)")}</label>
+                <input className={`${INPUT} ${hi("contact_person", contactPerson)}`} value={contactPerson} onChange={(e) => setContactPerson(e.target.value)} placeholder={tx("e.g. Asad Rehman")} />
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5"><label className={label}>Contact Email</label>
-                  <input type="email" className={`${INPUT} ${hi("contact_email", contactEmail)}`} value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="family@example.com" /></div>
-                <div className="space-y-1.5"><label className={label}>Contact Phone</label>
+                <div className="space-y-1.5"><label className={label}>{tx("Contact Email")}</label>
+                  <input type="email" className={`${INPUT} ${hi("contact_email", contactEmail)}`} value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder={tx("family@example.com")} /></div>
+                <div className="space-y-1.5"><label className={label}>{tx("Contact Phone")}</label>
                   <input className={`${INPUT} ${hi("contact_phone", contactPhone)}`} value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} placeholder="+92 300 1234567" /></div>
               </div>
               <div className="space-y-1.5">
-                <label className={label}>Household Annual Income (PKR)</label>
+                <label className={label}>{tx("Household Annual Income (PKR)")}</label>
                 <input type="number" className={`${INPUT} ${hi("household_income", householdIncome)}`} value={householdIncome} onChange={(e) => setHouseholdIncome(e.target.value)} placeholder="2400000" />
-                <p className="text-[11px] text-slate-400">Used for the floater&apos;s income-eligibility check — children and non-earning members don&apos;t have their own income.</p>
+                <p className="text-[11px] text-slate-400">{tx("Used for the floater's income-eligibility check — children and non-earning members don't have their own income.")}</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5"><label className={label}>City</label>
-                  <input className={`${INPUT} ${hi("city", city)}`} value={city} onChange={(e) => setCity(e.target.value)} placeholder="e.g. Lahore" /></div>
-                <div className="space-y-1.5"><label className={label}>Province</label>
+                <div className="space-y-1.5"><label className={label}>{tx("City")}</label>
+                  <input className={`${INPUT} ${hi("city", city)}`} value={city} onChange={(e) => setCity(e.target.value)} placeholder={tx("e.g. Lahore")} /></div>
+                <div className="space-y-1.5"><label className={label}>{tx("Province")}</label>
                   <select className={`${INPUT} ${hi("province", province)}`} value={province} onChange={(e) => setProvince(e.target.value)}>
-                    <option value="">Select province</option>
+                    <option value="">{tx("Select province")}</option>
                     {PAKISTAN_PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
                   </select></div>
               </div>
@@ -427,15 +428,15 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
               </div>
               <div className="grid grid-cols-3 gap-4">
                 {isBundle ? (
-                  <div className="space-y-1.5"><label className={label}>Bundle discount (%)</label>
+                  <div className="space-y-1.5"><label className={label}>{tx("Bundle discount (%)")}</label>
                     <input type="number" className={`${INPUT} ${hi("discount", discount)}`} value={discount} onChange={(e) => setDiscount(e.target.value)} /></div>
                 ) : (
-                  <div className="space-y-1.5"><label className={label}>Total sum insured (PKR) *</label>
+                  <div className="space-y-1.5"><label className={label}>{tx("Total sum insured (PKR) *")}</label>
                     <input type="number" className={`${INPUT} ${hi("sum_insured", sumInsured)}`} value={sumInsured} onChange={(e) => setSumInsured(e.target.value)} /></div>
                 )}
-                <div className="space-y-1.5"><label className={label}>Term (years) *</label>
+                <div className="space-y-1.5"><label className={label}>{tx("Term (years) *")}</label>
                   <input type="number" min="1" className={`${INPUT} ${hi("term", term)}`} value={term} onChange={(e) => setTerm(e.target.value)} /></div>
-                <div className="space-y-1.5"><label className={label}>Effective date *</label>
+                <div className="space-y-1.5"><label className={label}>{tx("Effective date *")}</label>
                   <input type="date" className={`${INPUT} ${hi("effective", effective)}`} value={effective} onChange={(e) => setEffective(e.target.value)} /></div>
               </div>
             </div>
@@ -449,14 +450,14 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
 
         {/* Footer */}
         <div className="px-6 py-3 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-3">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 bg-white rounded-lg hover:bg-slate-50">Cancel</button>
+          <button type="button" onClick={onClose} className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 bg-white rounded-lg hover:bg-slate-50">{tx("Cancel")}</button>
           <div className="flex items-center gap-2">
-            {tab !== "family" && <button type="button" onClick={() => setTab(tab === "members" ? "policy" : "family")} className="px-4 py-2 text-xs font-semibold text-slate-700 border border-slate-200 bg-white rounded-lg hover:bg-slate-50">Back</button>}
+            {tab !== "family" && <button type="button" onClick={() => setTab(tab === "members" ? "policy" : "family")} className="px-4 py-2 text-xs font-semibold text-slate-700 border border-slate-200 bg-white rounded-lg hover:bg-slate-50">{tx("Back")}</button>}
             {tab !== "members" ? (
-              <button type="button" onClick={() => setTab(tab === "family" ? "policy" : "members")} className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg">Next</button>
+              <button type="button" onClick={() => setTab(tab === "family" ? "policy" : "members")} className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg">{tx("Next")}</button>
             ) : (
               <button type="button" onClick={submit} disabled={saving || extracting} className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg">
-                {saving ? "Creating…" : "Create family & enrol"}
+                {saving ? tx("Creating…") : tx("Create family & enrol")}
               </button>
             )}
           </div>

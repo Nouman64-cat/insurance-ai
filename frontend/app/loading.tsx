@@ -1,9 +1,10 @@
+import { tx } from "@/lib/i18n/tx";
 // Shown instantly inside the dashboard shell while the next page loads. Having a
 // loading boundary also lets Next prefetch up to this point for every <Link>,
 // so clicks swap content immediately instead of waiting on the server.
 export default function Loading() {
   return (
-    <div className="animate-pulse space-y-6 p-6" role="status" aria-label="Loading page">
+    <div className="animate-pulse space-y-6 p-6" role="status" aria-label={tx("Loading page")}>
       <div className="space-y-2">
         <div className="h-6 w-56 rounded-md bg-slate-200" />
         <div className="h-4 w-80 max-w-full rounded-md bg-slate-200/70" />

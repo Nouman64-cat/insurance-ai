@@ -1,8 +1,15 @@
 // Urdu for page text, keyed by the exact English wording the page passes to `tx()` (see I18nProvider).
 // Wording missing here simply stays English, so a page can be translated a piece at a time. {name} placeholders
 // must appear in both the English key and the Urdu text. Grouped by where the wording is used; a phrase shared by
-// several pages is kept once, in "Shared".
+// several pages is kept once, in "Shared". Each area's own wording lives in ur-text/<area>.ts.
+import admin from "./ur-text/admin";
+import cases from "./ur-text/cases";
+import claims from "./ur-text/claims";
+
 const urText: Record<string, string> = {
+  ...admin,
+  ...cases,
+  ...claims,
   // ── Shared ────────────────────────────────────────────────────────────────
   "Apply": "لاگو کریں",
   "Applying…": "لاگو ہو رہا ہے…",

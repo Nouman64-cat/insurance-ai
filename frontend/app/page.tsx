@@ -26,6 +26,7 @@ import {
   type CommissionLedgerEntry,
   type IncentiveQualification,
 } from "@/app/services/commissions";
+import { tx } from "@/lib/i18n/tx";
 
 const REFRESH_INTERVAL_MS = 60_000;
 
@@ -178,7 +179,7 @@ export default function DashboardPage() {
       {/* ── Executive Navigation Header Bar ───────────────────────────────── */}
       <div className="flex flex-row justify-between items-center gap-3 bg-white px-4 py-3 rounded-2xl border border-slate-200/80 shadow-xs">
         <div className="flex items-center gap-2.5 shrink-0">
-          <h1 className="text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap">Executive Overview</h1>
+          <h1 className="text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap">{tx("Executive Overview")}</h1>
           {/* <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Live AI Suite Active
           </span> */}
@@ -213,7 +214,7 @@ export default function DashboardPage() {
               policies={filteredPolicies}
               claims={filteredClaims}
               ledger={filteredLedger}
-              title="Revenue & Loss Trends"
+              title={tx("Revenue & Loss Trends")}
             />
           </div>
 
@@ -257,10 +258,10 @@ export default function DashboardPage() {
 
       {/* ── Footer Disclaimer ─────────────────────────────────────────────── */}
       <p className="text-center text-[10px] text-slate-400 pb-2 leading-relaxed">
-        Metrics are computed live from claims, policies and commission data for the selected filters.
-        {lastRefreshed && ` Last refreshed ${lastRefreshed.toLocaleTimeString()} · refreshes every 60 seconds.`}
-        &nbsp;·&nbsp; Model suite: <span className="font-mono">insurance-ai v0.1.0-proto</span>
-        &nbsp;·&nbsp; Executive Dashboard — Internal Use Only
+        {tx("Metrics are computed live from claims, policies and commission data for the selected filters.")}
+        {lastRefreshed && " " + tx("Last refreshed {0} · refreshes every 60 seconds.", { 0: lastRefreshed.toLocaleTimeString() })}
+        {" "}{tx("·  Model suite:")}{" "}<span className="font-mono">{tx("insurance-ai v0.1.0-proto")}</span>
+        {" "}{tx("·  Executive Dashboard — Internal Use Only")}
       </p>
 
     </div>

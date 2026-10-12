@@ -1,4 +1,5 @@
 "use client";
+import { tx } from "@/lib/i18n/tx";
 
 interface NarrativeHeaderProps {
   text: string;
@@ -15,7 +16,7 @@ export function NarrativeHeader({ text }: NarrativeHeaderProps) {
         </svg>
       </span>
       <p className="text-[12.5px] leading-snug text-slate-700">
-        <span className="font-bold text-slate-900">Portfolio snapshot — </span>
+        <span className="font-bold text-slate-900">{tx("Portfolio snapshot —")}{" "}</span>
         {text}
       </p>
     </div>

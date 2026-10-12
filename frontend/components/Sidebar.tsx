@@ -9,6 +9,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 
 import { useEffect, useState } from "react";
+import { tx } from "@/lib/i18n/tx";
 
 
 
@@ -878,7 +879,7 @@ export function Sidebar() {
         <div className={`flex items-center hover:bg-white rounded-xl transition-colors p-2 ${collapsed ? "justify-center" : "gap-3"}`}>
           <Link href="/profile" className="flex items-center gap-3 flex-1 min-w-0" title={t("sidebar.profile")}>
             <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-sm flex-shrink-0 ring-2 ring-white">
-              {userName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "SR"}
+              {userName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || tx("SR")}
             </div>
             {!collapsed && (
               <div className="flex-1 min-w-0">

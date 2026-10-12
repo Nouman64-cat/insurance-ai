@@ -6,6 +6,7 @@ import { listAgents, Agent } from "@/app/services/agents";
 import SourcePicker, { pickDemoAgent, useAcquisitionSources } from "./SourcePicker";
 import DemoFillButton from "@/components/DemoFillButton";
 import { demoQuickLead } from "@/lib/demoData";
+import { tx } from "@/lib/i18n/tx";
 
 interface Props {
   open: boolean;
@@ -82,7 +83,7 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved, default
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!firstName.trim()) {
-      setError("First Name is required for Quick Lead.");
+      setError(tx("First Name is required for Quick Lead."));
       return;
     }
     setSaving(true);
@@ -107,7 +108,7 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved, default
       onSaved(`Lead '${fullName}' added successfully!`);
       onClose();
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to create quick lead.");
+      setError(err.response?.data?.detail || tx("Failed to create quick lead."));
     } finally {
       setSaving(false);
     }
@@ -119,10 +120,10 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved, default
         <div className="px-6 py-5 bg-gradient-to-r from-blue-600 to-blue-700 text-white flex items-center justify-between">
           <div>
             <h3 className="text-base font-bold flex items-center gap-2">
-              <span>🚀</span> Quick Lead Entry
+              <span>🚀</span>{" "}{tx("Quick Lead Entry")}
             </h3>
             <p className="text-xs text-blue-100 mt-0.5">
-              Capture initial contact info. Diagnostic medical & financial details can be filled later.
+              {tx("Capture initial contact info. Diagnostic medical & financial details can be filled later.")}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -152,12 +153,12 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved, default
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-              First Name <span className="text-red-500">*</span>
+              {tx("First Name")}{" "}<span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               required
-              placeholder="e.g. Tariq"
+              placeholder={tx("e.g. Tariq")}
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -166,11 +167,11 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved, default
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-              Last Name
+              {tx("Last Name")}
             </label>
             <input
               type="text"
-              placeholder="e.g. Mahmood"
+              placeholder={tx("e.g. Mahmood")}
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -179,7 +180,7 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved, default
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-              Phone Number
+              {tx("Phone Number")}
             </label>
             <input
               type="text"
@@ -208,14 +209,14 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved, default
               onClick={onClose}
               className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
             >
-              Cancel
+              {tx("Cancel")}
             </button>
             <button
               type="submit"
               disabled={saving}
               className="px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all shadow-md disabled:opacity-50"
             >
-              {saving ? "Capturing..." : "Register Lead"}
+              {saving ? tx("Capturing...") : tx("Register Lead")}
             </button>
           </div>
         </form>

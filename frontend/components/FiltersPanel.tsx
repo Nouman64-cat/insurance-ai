@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Branch } from "@/app/services/branches";
 import { Agent } from "@/app/services/agents";
 import { PAKISTAN_PROVINCES } from "@/lib/pakistanProvinces";
+import { tx } from "@/lib/i18n/tx";
 
 export default function FiltersPanel({
   dateFrom,
@@ -136,7 +137,7 @@ export default function FiltersPanel({
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
           <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
         </svg>
-        Filters
+        {tx("Filters")}
         {activeCount > 0 && (
           <span className="inline-flex items-center justify-center min-w-[1.25rem] h-[1.25rem] px-1.5 rounded-full bg-blue-600 text-white text-[10px] font-bold shadow-sm">
             {activeCount}
@@ -151,14 +152,14 @@ export default function FiltersPanel({
         >
           {(onDateFromChange || onDateToChange) && (
             <div>
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Date Range</p>
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">{tx("Date Range")}</p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[11px] font-semibold text-slate-500">From</label>
+                  <label className="text-[11px] font-semibold text-slate-500">{tx("From")}</label>
                   <input type="date" value={dateFrom || ""} onChange={(e) => onDateFromChange?.(e.target.value)} className={inputClass} />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[11px] font-semibold text-slate-500">To</label>
+                  <label className="text-[11px] font-semibold text-slate-500">{tx("To")}</label>
                   <input type="date" value={dateTo || ""} onChange={(e) => onDateToChange?.(e.target.value)} className={inputClass} />
                 </div>
               </div>
@@ -167,9 +168,9 @@ export default function FiltersPanel({
 
           {statusOptions && onStatusChange && (
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Status</label>
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{tx("Status")}</label>
               <select value={statusFilter || ""} onChange={(e) => onStatusChange(e.target.value)} className={inputClass}>
-                <option value="ALL">All Statuses</option>
+                <option value="ALL">{tx("All Statuses")}</option>
                 {statusOptions.map((s) => (
                   <option key={s.value} value={s.value}>{s.label}</option>
                 ))}
@@ -179,9 +180,9 @@ export default function FiltersPanel({
 
           {typeOptions && onTypeChange && (
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Type</label>
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{tx("Type")}</label>
               <select value={typeFilter || ""} onChange={(e) => onTypeChange(e.target.value)} className={inputClass}>
-                <option value="ALL">All Types</option>
+                <option value="ALL">{tx("All Types")}</option>
                 {typeOptions.map((t) => (
                   <option key={t.value} value={t.value}>{t.label}</option>
                 ))}
@@ -191,12 +192,12 @@ export default function FiltersPanel({
 
           {onCityInputChange && (
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">City</label>
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{tx("City")}</label>
               <input
                 type="text"
                 value={cityInput || ""}
                 onChange={(e) => onCityInputChange(e.target.value)}
-                placeholder="e.g. Lahore"
+                placeholder={tx("e.g. Lahore")}
                 className={inputClass}
               />
             </div>
@@ -204,9 +205,9 @@ export default function FiltersPanel({
 
           {onProvinceChange && (
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Province</label>
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{tx("Province")}</label>
               <select value={provinceFilter || ""} onChange={(e) => onProvinceChange(e.target.value)} className={inputClass}>
-                <option value="">All Provinces</option>
+                <option value="">{tx("All Provinces")}</option>
                 {PAKISTAN_PROVINCES.map((p) => (
                   <option key={p} value={p}>{p}</option>
                 ))}
@@ -216,9 +217,9 @@ export default function FiltersPanel({
 
           {branchOptions && onBranchChange && (
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Branch</label>
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{tx("Branch")}</label>
               <select value={branchFilter || ""} onChange={(e) => onBranchChange(e.target.value)} className={inputClass}>
-                <option value="">All Branches</option>
+                <option value="">{tx("All Branches")}</option>
                 {branchOptions.map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
@@ -228,9 +229,9 @@ export default function FiltersPanel({
 
           {sourceOptions && onSourceChange && (
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Sources</label>
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{tx("Sources")}</label>
               <select value={sourceFilter || ""} onChange={(e) => onSourceChange(e.target.value)} className={inputClass}>
-                <option value="">All Sources</option>
+                <option value="">{tx("All Sources")}</option>
                 {sourceOptions.map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
@@ -240,9 +241,9 @@ export default function FiltersPanel({
 
           {agentOptions && onAgentChange && (
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Assigned Agent</label>
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{tx("Assigned Agent")}</label>
               <select value={agentFilter || ""} onChange={(e) => onAgentChange(e.target.value)} className={inputClass}>
-                <option value="">All Agents</option>
+                <option value="">{tx("All Agents")}</option>
                 {agentOptions.map((a) => (
                   <option key={a.id} value={a.id}>{a.full_name}</option>
                 ))}
@@ -255,7 +256,7 @@ export default function FiltersPanel({
               onClick={onClearAll}
               className="w-full text-center text-xs font-semibold text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg py-2 transition-colors border border-transparent hover:border-blue-100"
             >
-              Clear all filters
+              {tx("Clear all filters")}
             </button>
           )}
         </div>

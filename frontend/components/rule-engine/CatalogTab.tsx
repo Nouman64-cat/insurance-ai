@@ -7,6 +7,7 @@ import HierarchyTree from "./HierarchyTree";
 import RuleSetList from "./RuleSetList";
 import RuleSetDrawer from "./RuleSetDrawer";
 import { useRuleSets } from "./useRuleSets";
+import { tx } from "@/lib/i18n/tx";
 
 export default function CatalogTab({ tenantId }: { tenantId: string }) {
   const {
@@ -71,7 +72,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
   const handleCodeChange = (v: string) => {
     setNewSetCode(v);
     if (v && !RULE_CODE_REGEX.test(v)) {
-      setCodeError('Format: lowercase.dotted_code (e.g. medical.nml_grid)');
+      setCodeError(tx("Format: lowercase.dotted_code (e.g. medical.nml_grid)"));
     } else {
       setCodeError("");
     }
@@ -86,7 +87,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
           {/* Panel header */}
           <div className="mb-3">
             <div className="flex items-center justify-between mb-2">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">Navigation</h2>
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">{tx("Navigation")}</h2>
               {(filter.categoryCode || filter.subcategoryCode || navSearch) && (
                 <button
                   onClick={() => {
@@ -95,7 +96,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                   }}
                   className="text-xs font-semibold text-blue-600 hover:underline"
                 >
-                  Reset Filter
+                  {tx("Reset Filter")}
                 </button>
               )}
             </div>
@@ -109,7 +110,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                 type="text"
                 value={navSearch}
                 onChange={(e) => setNavSearch(e.target.value)}
-                placeholder="Search categories or rule sets..."
+                placeholder={tx("Search categories or rule sets...")}
                 className="w-full pl-8 pr-7 py-1.5 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
               />
               {navSearch && (
@@ -137,7 +138,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                Categories
+                {tx("Categories")}
               </button>
               <button
                 type="button"
@@ -148,7 +149,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                Subcategories
+                {tx("Subcategories")}
               </button>
               <button
                 type="button"
@@ -159,7 +160,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                All Rule Sets
+                {tx("All Rule Sets")}
               </button>
             </div>
           </div>
@@ -262,9 +263,9 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
           >
             <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-slate-900">Add New Rule Set</h2>
+                <h2 className="text-base font-bold text-slate-900">{tx("Add New Rule Set")}</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Group related decision rules under a category scope.
+                  {tx("Group related decision rules under a category scope.")}
                 </p>
               </div>
               <button
@@ -281,7 +282,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
             <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Category & SubCategory Scope <span className="text-red-500">*</span>
+                  {tx("Category & SubCategory Scope")}{" "}<span className="text-red-500">*</span>
                 </label>
                 <HierarchyTree
                   categories={categories}
@@ -293,12 +294,12 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Rule Set Code <span className="text-red-500">*</span>
+                  {tx("Rule Set Code")}{" "}<span className="text-red-500">*</span>
                 </label>
                 <input
                   value={newSetCode}
                   onChange={(e) => handleCodeChange(e.target.value)}
-                  placeholder="e.g. medical.nml_grid"
+                  placeholder={tx("e.g. medical.nml_grid")}
                   className={`w-full border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 transition ${
                     codeError ? "border-red-300 focus:ring-red-400" : "border-slate-200 focus:ring-blue-500 focus:border-blue-400"
                   }`}
@@ -307,30 +308,30 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                 {codeError ? (
                   <p className="text-[11px] text-red-500 mt-1">{codeError}</p>
                 ) : (
-                  <p className="text-[11px] text-slate-400 mt-1">Format: lowercase.dotted_code</p>
+                  <p className="text-[11px] text-slate-400 mt-1">{tx("Format: lowercase.dotted_code")}</p>
                 )}
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Name <span className="text-red-500">*</span>
+                  {tx("Name")}{" "}<span className="text-red-500">*</span>
                 </label>
                 <input
                   value={newSetName}
                   onChange={(e) => setNewSetName(e.target.value)}
-                  placeholder="e.g. Non-Medical Limit Underwriting Grid"
+                  placeholder={tx("e.g. Non-Medical Limit Underwriting Grid")}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Description</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">{tx("Description")}</label>
                 <textarea
                   value={newSetDesc}
                   onChange={(e) => setNewSetDesc(e.target.value)}
                   rows={2}
-                  placeholder="Brief description of what this rule set governs…"
+                  placeholder={tx("Brief description of what this rule set governs…")}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition resize-none"
                 />
               </div>
@@ -342,14 +343,14 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                 onClick={() => setShowCreateSet(false)}
                 className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
               >
-                Cancel
+                {tx("Cancel")}
               </button>
               <button
                 type="submit"
                 disabled={!!codeError}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg shadow-sm transition"
               >
-                Create Rule Set
+                {tx("Create Rule Set")}
               </button>
             </div>
           </form>
@@ -371,9 +372,9 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
           >
             <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-slate-900">Add New Category</h2>
+                <h2 className="text-base font-bold text-slate-900">{tx("Add New Category")}</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Create a top-level rule category (e.g., UNDERWRITING, CLAIMS).
+                  {tx("Create a top-level rule category (e.g., UNDERWRITING, CLAIMS).")}
                 </p>
               </div>
               <button
@@ -390,38 +391,38 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
             <div className="px-6 py-5 space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Category Code <span className="text-red-500">*</span>
+                  {tx("Category Code")}{" "}<span className="text-red-500">*</span>
                 </label>
                 <input
                   value={newCatCode}
                   onChange={(e) => setNewCatCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ""))}
-                  placeholder="e.g. CLAIMS_MANAGEMENT"
+                  placeholder={tx("e.g. CLAIMS_MANAGEMENT")}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono uppercase focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition"
                   required
                 />
-                <p className="text-[11px] text-slate-400 mt-1">Unique uppercase code (e.g. UNDERWRITING_GATES)</p>
+                <p className="text-[11px] text-slate-400 mt-1">{tx("Unique uppercase code (e.g. UNDERWRITING_GATES)")}</p>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Category Name <span className="text-red-500">*</span>
+                  {tx("Category Name")}{" "}<span className="text-red-500">*</span>
                 </label>
                 <input
                   value={newCatName}
                   onChange={(e) => setNewCatName(e.target.value)}
-                  placeholder="e.g. Claims Management & Settlement"
+                  placeholder={tx("e.g. Claims Management & Settlement")}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Description</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">{tx("Description")}</label>
                 <textarea
                   value={newCatDesc}
                   onChange={(e) => setNewCatDesc(e.target.value)}
                   rows={2}
-                  placeholder="Brief description of what this domain governs…"
+                  placeholder={tx("Brief description of what this domain governs…")}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition resize-none"
                 />
               </div>
@@ -433,13 +434,13 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                 onClick={() => setShowCreateCategory(false)}
                 className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
               >
-                Cancel
+                {tx("Cancel")}
               </button>
               <button
                 type="submit"
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
               >
-                Create Category
+                {tx("Create Category")}
               </button>
             </div>
           </form>
@@ -461,9 +462,9 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
           >
             <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-slate-900">Add New Sub Category</h2>
+                <h2 className="text-base font-bold text-slate-900">{tx("Add New Sub Category")}</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Create a sub-domain under an existing parent category.
+                  {tx("Create a sub-domain under an existing parent category.")}
                 </p>
               </div>
               <button
@@ -480,7 +481,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
             <div className="px-6 py-5 space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Parent Category <span className="text-red-500">*</span>
+                  {tx("Parent Category")}{" "}<span className="text-red-500">*</span>
                 </label>
                 <select
                   value={newSubCategoryId}
@@ -488,7 +489,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition bg-white"
                   required
                 >
-                  <option value="" disabled>Select Parent Category...</option>
+                  <option value="" disabled>{tx("Select Parent Category...")}</option>
                   {categories.map((cat) => (
                     <option key={cat.id} value={cat.id}>
                       {cat.name} ({cat.code})
@@ -499,26 +500,26 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  SubCategory Code <span className="text-red-500">*</span>
+                  {tx("SubCategory Code")}{" "}<span className="text-red-500">*</span>
                 </label>
                 <input
                   value={newSubCode}
                   onChange={(e) => setNewSubCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ""))}
-                  placeholder="e.g. DEATH_CLAIMS"
+                  placeholder={tx("e.g. DEATH_CLAIMS")}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono uppercase focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition"
                   required
                 />
-                <p className="text-[11px] text-slate-400 mt-1">Unique uppercase code (e.g. ACCIDENTAL_DEATH)</p>
+                <p className="text-[11px] text-slate-400 mt-1">{tx("Unique uppercase code (e.g. ACCIDENTAL_DEATH)")}</p>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  SubCategory Name <span className="text-red-500">*</span>
+                  {tx("SubCategory Name")}{" "}<span className="text-red-500">*</span>
                 </label>
                 <input
                   value={newSubName}
                   onChange={(e) => setNewSubName(e.target.value)}
-                  placeholder="e.g. Death Benefit Claims"
+                  placeholder={tx("e.g. Death Benefit Claims")}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition"
                   required
                 />
@@ -531,14 +532,14 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                 onClick={() => setShowCreateSubCategory(false)}
                 className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
               >
-                Cancel
+                {tx("Cancel")}
               </button>
               <button
                 type="submit"
                 disabled={!newSubCategoryId}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg shadow-sm transition"
               >
-                Create SubCategory
+                {tx("Create SubCategory")}
               </button>
             </div>
           </form>
@@ -558,14 +559,14 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
             className="bg-white w-full max-w-sm rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
           >
             <div className="px-6 py-5 border-b border-slate-100">
-              <h2 className="text-base font-bold text-slate-900">Confirm Deletion</h2>
+              <h2 className="text-base font-bold text-slate-900">{tx("Confirm Deletion")}</h2>
               <p className="text-xs text-slate-500 mt-2">
-                Are you sure you want to delete the {deletePrompt.type} <strong>{deletePrompt.name}</strong>?
-                {deletePrompt.type === 'ruleset' && " All associated versions and rules will also be deleted."}
-                {deletePrompt.type === 'category' && " Make sure it has no subcategories."}
-                {deletePrompt.type === 'subcategory' && " Make sure it has no rule sets."}
+                {tx("Are you sure you want to delete the")}{" "}{deletePrompt.type} <strong>{deletePrompt.name}</strong>?
+                {deletePrompt.type === 'ruleset' && " " + tx("All associated versions and rules will also be deleted.")}
+                {deletePrompt.type === 'category' && " " + tx("Make sure it has no subcategories.")}
+                {deletePrompt.type === 'subcategory' && " " + tx("Make sure it has no rule sets.")}
               </p>
-              <p className="text-xs text-red-500 mt-1 font-semibold">This action cannot be undone.</p>
+              <p className="text-xs text-red-500 mt-1 font-semibold">{tx("This action cannot be undone.")}</p>
             </div>
             <div className="px-6 py-4 flex justify-end gap-2 bg-slate-50/60">
               <button
@@ -573,7 +574,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                 onClick={() => setDeletePrompt(null)}
                 className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
               >
-                Cancel
+                {tx("Cancel")}
               </button>
               <button
                 type="button"
@@ -585,7 +586,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                 }}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
               >
-                Delete {deletePrompt.type}
+                {tx("Delete")}{" "}{deletePrompt.type}
               </button>
             </div>
           </div>

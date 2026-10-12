@@ -31,6 +31,7 @@ import {
   fmtPKRCompact,
   StatusPill,
 } from "../../../components/commissions/shared";
+import { tx } from "@/lib/i18n/tx";
 
 // ── Icons for visual diversity ──────────────────────────────────────────────
 const BankIcon = (
@@ -166,7 +167,7 @@ export default function CommissionsPage() {
       setStats(statsData);
     } catch (err) {
       console.error(err);
-      notify("Could not load the commission data.", false);
+      notify(tx("Could not load the commission data."), false);
     } finally {
       setLoading(false);
     }
@@ -220,7 +221,7 @@ export default function CommissionsPage() {
       {/* ── Executive Header & Filter Bar ─────────────────────────────────── */}
       <div className="flex flex-row justify-between items-center gap-3 bg-white px-4 py-3 rounded-2xl border border-slate-200/80 shadow-xs">
         <div className="flex items-center gap-2.5 shrink-0">
-          <h1 className="text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap">Commission Dashboard</h1>
+          <h1 className="text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap">{tx("Commission Dashboard")}</h1>
           {/* <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Live Engine Active
           </span> */}
@@ -255,7 +256,7 @@ export default function CommissionsPage() {
                 policies={policies}
                 claims={claims}
                 ledger={filteredLedger}
-                title="Commission Expense & Payout Trends"
+                title={tx("Commission Expense & Payout Trends")}
               />
             </div>
 
@@ -263,10 +264,10 @@ export default function CommissionsPage() {
             <div className="xl:col-span-4 bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 space-y-3 flex flex-col justify-between">
               <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
-                  Commission Breakdown
+                  {tx("Commission Breakdown")}
                 </h3>
                 <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
-                  {filteredStats.byPayeeType.length} Roles
+                  {filteredStats.byPayeeType.length}{" "}{tx("Roles")}
                 </span>
               </div>
 
@@ -306,12 +307,12 @@ export default function CommissionsPage() {
                     ⚡
                   </div>
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
-                    Release Pipeline Lifecycle
+                    {tx("Release Pipeline Lifecycle")}
                   </h3>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
-                    {stageTotals.tranches} Active Policies
+                    {stageTotals.tranches}{" "}{tx("Active Policies")}
                   </span>
                 </div>
               </div>
@@ -333,12 +334,12 @@ export default function CommissionsPage() {
                         {fmtPKRCompact(totalStageNet)}
                       </div>
                       <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden flex">
-                        <div className="bg-emerald-500 h-full" style={{ width: `${s.dueNet + s.releasedNet > 0 ? (s.releasedNet / (s.dueNet + s.releasedNet)) * 100 : 0}%` }} title="Paid" />
-                        <div className="bg-blue-500 h-full" style={{ width: `${s.dueNet + s.releasedNet > 0 ? (s.dueNet / (s.dueNet + s.releasedNet)) * 100 : 0}%` }} title="Due Now" />
+                        <div className="bg-emerald-500 h-full" style={{ width: `${s.dueNet + s.releasedNet > 0 ? (s.releasedNet / (s.dueNet + s.releasedNet)) * 100 : 0}%` }} title={tx("Paid")} />
+                        <div className="bg-blue-500 h-full" style={{ width: `${s.dueNet + s.releasedNet > 0 ? (s.dueNet / (s.dueNet + s.releasedNet)) * 100 : 0}%` }} title={tx("Due Now")} />
                       </div>
                       <div className="flex justify-between text-[9px] text-slate-500 font-medium">
-                        <span>Paid: {fmtPKRCompact(s.releasedNet)}</span>
-                        <span>Due: {fmtPKRCompact(s.dueNet)}</span>
+                        <span>{tx("Paid:")}{" "}{fmtPKRCompact(s.releasedNet)}</span>
+                        <span>{tx("Due:")}{" "}{fmtPKRCompact(s.dueNet)}</span>
                       </div>
                     </div>
                   );
@@ -351,15 +352,15 @@ export default function CommissionsPage() {
                   <RingGauge
                     value={vestedPct}
                     strokeHex="#1d4ed8"
-                    label="Released Ratio"
+                    label={tx("Released Ratio")}
                     sublabel="Vested"
                     valueLabel={`${vestedPct}%`}
                     size={60}
                     strokeW={6}
                   />
                   <div>
-                    <div className="text-xs font-bold text-slate-800">Total Vested Ratio</div>
-                    <div className="text-[10px] text-slate-500">{fmtPKRCompact(stageTotals.released)} released</div>
+                    <div className="text-xs font-bold text-slate-800">{tx("Total Vested Ratio")}</div>
+                    <div className="text-[10px] text-slate-500">{fmtPKRCompact(stageTotals.released)}{" "}{tx("released")}</div>
                   </div>
                 </div>
                 <div className="h-8 w-px bg-slate-200" />
@@ -367,15 +368,15 @@ export default function CommissionsPage() {
                   <RingGauge
                     value={duePct}
                     strokeHex="#3b82f6"
-                    label="Ready to Pay"
+                    label={tx("Ready to Pay")}
                     sublabel="Due"
                     valueLabel={`${duePct}%`}
                     size={60}
                     strokeW={6}
                   />
                   <div>
-                    <div className="text-xs font-bold text-slate-800">Ready for Disbursement</div>
-                    <div className="text-[10px] text-slate-500">{fmtPKRCompact(stageTotals.due)} payout ready</div>
+                    <div className="text-xs font-bold text-slate-800">{tx("Ready for Disbursement")}</div>
+                    <div className="text-[10px] text-slate-500">{fmtPKRCompact(stageTotals.due)}{" "}{tx("payout ready")}</div>
                   </div>
                 </div>
               </div>
@@ -385,34 +386,34 @@ export default function CommissionsPage() {
             <div className="xl:col-span-4 bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 space-y-3 flex flex-col justify-between">
               <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
-                  Financial Reserves &amp; Liabilities
+                  {tx("Financial Reserves & Liabilities")}
                 </h3>
-                <span className="text-[10px] font-bold text-slate-400">Live Accruals</span>
+                <span className="text-[10px] font-bold text-slate-400">{tx("Live Accruals")}</span>
               </div>
 
               <div className="grid grid-cols-2 gap-2.5 text-xs flex-1 items-center">
                 <div className="p-3 bg-blue-50/60 border border-blue-100 rounded-xl space-y-0.5">
-                  <div className="text-[10px] font-bold text-blue-900 uppercase tracking-wide">Processing Payments</div>
+                  <div className="text-[10px] font-bold text-blue-900 uppercase tracking-wide">{tx("Processing Payments")}</div>
                   <div className="text-sm font-extrabold text-blue-800 font-mono">{fmtPKRCompact(filteredStats.totalInRun)}</div>
-                  <div className="text-[9px] text-blue-600">Active payout runs</div>
+                  <div className="text-[9px] text-blue-600">{tx("Active payout runs")}</div>
                 </div>
 
                 <div className="p-3 bg-amber-50/60 border border-amber-100 rounded-xl space-y-0.5">
-                  <div className="text-[10px] font-bold text-amber-900 uppercase tracking-wide">Withheld Tax</div>
+                  <div className="text-[10px] font-bold text-amber-900 uppercase tracking-wide">{tx("Withheld Tax")}</div>
                   <div className="text-sm font-extrabold text-amber-800 font-mono">{fmtPKRCompact(filteredStats.totalWithheldTax)}</div>
-                  <div className="text-[9px] text-amber-600">Tax withheld for FBR</div>
+                  <div className="text-[9px] text-amber-600">{tx("Tax withheld for FBR")}</div>
                 </div>
 
                 <div className="p-3 bg-purple-50/60 border border-purple-100 rounded-xl space-y-0.5">
-                  <div className="text-[10px] font-bold text-purple-900 uppercase tracking-wide">Team Overrides</div>
+                  <div className="text-[10px] font-bold text-purple-900 uppercase tracking-wide">{tx("Team Overrides")}</div>
                   <div className="text-sm font-extrabold text-purple-800 font-mono">{fmtPKRCompact(filteredStats.overrideTotal)}</div>
-                  <div className="text-[9px] text-purple-600">Manager overrides</div>
+                  <div className="text-[9px] text-purple-600">{tx("Manager overrides")}</div>
                 </div>
 
                 <div className="p-3 bg-rose-50/60 border border-rose-100 rounded-xl space-y-0.5">
-                  <div className="text-[10px] font-bold text-rose-900 uppercase tracking-wide">Clawbacks</div>
+                  <div className="text-[10px] font-bold text-rose-900 uppercase tracking-wide">{tx("Clawbacks")}</div>
                   <div className="text-sm font-extrabold text-rose-800 font-mono">{fmtPKRCompact(filteredStats.totalClawbacks)}</div>
-                  <div className="text-[9px] text-rose-600">Lapse reversals</div>
+                  <div className="text-[9px] text-rose-600">{tx("Lapse reversals")}</div>
                 </div>
               </div>
             </div>
@@ -422,10 +423,10 @@ export default function CommissionsPage() {
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 space-y-3">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
-                Distribution Channel Performance
+                {tx("Distribution Channel Performance")}
               </h3>
               <span className="text-[10px] font-bold text-slate-400">
-                {filteredStats.byChannel.length} Active Channels
+                {filteredStats.byChannel.length}{" "}{tx("Active Channels")}
               </span>
             </div>
 
@@ -434,19 +435,19 @@ export default function CommissionsPage() {
                 <RingGauge
                   value={topChannelPct}
                   strokeHex="#2563eb"
-                  label="Top Channel"
+                  label={tx("Top Channel")}
                   sublabel="Mix"
                   valueLabel={`${topChannelPct}%`}
                   size={64}
                   strokeW={6}
                 />
                 <div>
-                  <div className="text-[10px] font-bold uppercase text-slate-400">Dominant Channel</div>
+                  <div className="text-[10px] font-bold uppercase text-slate-400">{tx("Dominant Channel")}</div>
                   <div className="text-sm font-extrabold text-slate-900">
                     {topChannel ? CHANNEL_LABELS[topChannel.channel] || topChannel.channel : "—"}
                   </div>
                   <div className="text-xs font-semibold text-blue-600 mt-0.5">
-                    {fmtPKRCompact(topChannel?.net || 0)} Total Net
+                    {fmtPKRCompact(topChannel?.net || 0)}{" "}{tx("Total Net")}
                   </div>
                 </div>
               </div>
@@ -481,9 +482,8 @@ export default function CommissionsPage() {
 
       {/* Footer Disclaimer */}
       <p className="text-center text-[10px] text-slate-400 pb-2 leading-relaxed">
-        Commission metrics are computed live from real-time calculation engine datasets for the selected filters.
-        &nbsp;·&nbsp; Model suite: <span className="font-mono">insurance-ai v0.1.0-commissions</span>
-        &nbsp;·&nbsp; Commission Dashboard — Internal Use Only
+        {tx("Commission metrics are computed live from real-time calculation engine datasets for the selected filters.  ·  Model suite:")}{" "}<span className="font-mono">{tx("insurance-ai v0.1.0-commissions")}</span>
+        {" "}{tx("·  Commission Dashboard — Internal Use Only")}
       </p>
     </div>
   );

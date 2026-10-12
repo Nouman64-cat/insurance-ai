@@ -6,6 +6,7 @@ import { PROVINCE_SHAPES, MAP_VIEWBOX } from "@/lib/pakistanGeo";
 import type { PolicyListItem } from "@/app/services/policies";
 import type { Claim } from "@/app/services/claims";
 import type { CommissionLedgerEntry } from "@/app/services/commissions";
+import { tx } from "@/lib/i18n/tx";
 
 interface InteractiveMapCardProps {
   policies: PolicyListItem[];
@@ -162,7 +163,7 @@ export function InteractiveMapCard({
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.782V8.018a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
         </svg>
       }
-      title="Regional Map"
+      title={tx("Regional Map")}
       barClass="bg-blue-600"
       iconBg="bg-blue-50"
       iconColor="text-blue-600"
@@ -173,28 +174,28 @@ export function InteractiveMapCard({
           <div className="flex items-center gap-2.5 flex-wrap">
             {/* Metric Dropdown */}
             <div className="flex items-center gap-1.5 bg-slate-100/90 border border-slate-200 rounded-xl px-2.5 py-1 text-xs">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Metric:</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{tx("Metric:")}</span>
               <select
                 value={metricMode}
                 onChange={(e) => setMetricMode(e.target.value as MapMetricMode)}
                 className="bg-transparent font-bold text-blue-700 text-xs cursor-pointer focus:outline-none"
               >
-                <option value="gwp">GWP (Premium)</option>
-                <option value="claims">Claims Paid</option>
-                <option value="lossRatio">Loss Ratio %</option>
-                <option value="policies">Policy Volume</option>
+                <option value="gwp">{tx("GWP (Premium)")}</option>
+                <option value="claims">{tx("Claims Paid")}</option>
+                <option value="lossRatio">{tx("Loss Ratio %")}</option>
+                <option value="policies">{tx("Policy Volume")}</option>
               </select>
             </div>
 
             {/* Province / Region Dropdown */}
             <div className="flex items-center gap-1.5 bg-slate-100/90 border border-slate-200 rounded-xl px-2.5 py-1 text-xs">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Region:</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{tx("Region:")}</span>
               <select
                 value={selectedRegion}
                 onChange={(e) => onSelectRegion(e.target.value)}
                 className="bg-transparent font-bold text-slate-800 text-xs cursor-pointer focus:outline-none max-w-[170px] truncate"
               >
-                <option value="ALL">All Regions (7)</option>
+                <option value="ALL">{tx("All Regions (7)")}</option>
                 {Object.values(regionStatsMap).map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name} ({fmtCompact(r.gwp)})
@@ -210,7 +211,7 @@ export function InteractiveMapCard({
               onClick={() => onSelectRegion("ALL")}
               className="text-xs font-bold text-blue-600 hover:text-blue-800 underline"
             >
-              Reset Filter
+              {tx("Reset Filter")}
             </button>
           )}
         </div>
@@ -269,7 +270,7 @@ export function InteractiveMapCard({
                         ? fmtCompact(stats.claimsPaid)
                         : metricMode === "lossRatio"
                         ? `${stats.lossRatio.toFixed(0)}%`
-                        : `${stats.policyCount} pols`}
+                        : tx("{0} pols", { 0: stats.policyCount })}
                     </text>
                   )}
                 </g>
@@ -282,18 +283,18 @@ export function InteractiveMapCard({
             <div className="absolute top-3 left-3 bg-slate-900/90 text-white p-3 rounded-xl shadow-xl text-xs backdrop-blur-md border border-slate-700 pointer-events-none z-20 space-y-1 animate-in fade-in zoom-in-95 duration-150">
               <p className="font-bold text-blue-300 text-sm">{hoveredRegion}</p>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] pt-1 border-t border-slate-700">
-                <span className="text-slate-400">GWP Premium:</span>
+                <span className="text-slate-400">{tx("GWP Premium:")}</span>
                 <span className="font-mono font-bold text-right">{fmtCompact(regionStatsMap[hoveredRegion].gwp)}</span>
-                <span className="text-slate-400">Claims Paid:</span>
+                <span className="text-slate-400">{tx("Claims Paid:")}</span>
                 <span className="font-mono font-bold text-right">{fmtCompact(regionStatsMap[hoveredRegion].claimsPaid)}</span>
-                <span className="text-slate-400">Loss Ratio:</span>
+                <span className="text-slate-400">{tx("Loss Ratio:")}</span>
                 <span className="font-mono font-bold text-right text-emerald-400">
                   {regionStatsMap[hoveredRegion].lossRatio.toFixed(1)}%
                 </span>
-                <span className="text-slate-400">Active Policies:</span>
+                <span className="text-slate-400">{tx("Active Policies:")}</span>
                 <span className="font-mono font-bold text-right">{regionStatsMap[hoveredRegion].policyCount}</span>
               </div>
-              <p className="text-[9px] text-blue-400 pt-1 italic">Click region to filter entire dashboard</p>
+              <p className="text-[9px] text-blue-400 pt-1 italic">{tx("Click region to filter entire dashboard")}</p>
             </div>
           )}
         </div>
@@ -321,7 +322,7 @@ export function InteractiveMapCard({
                   <p className="text-[10px] font-bold text-slate-800 truncate">{r.shortName}</p>
                 </div>
                 <p className="text-[11px] font-extrabold font-mono text-slate-900 mt-0.5">{fmtCompact(r.gwp)}</p>
-                <p className="text-[9px] text-slate-500 font-semibold">LR: {r.lossRatio.toFixed(0)}%</p>
+                <p className="text-[9px] text-slate-500 font-semibold">{tx("LR:")}{" "}{r.lossRatio.toFixed(0)}%</p>
               </div>
             );
           })}

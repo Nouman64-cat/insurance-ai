@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { SecpRegulatoryMetric, listSecpMetrics } from "../../services/commissions";
 import DemoDataBanner from "@/components/DemoDataBanner";
+import { tx } from "@/lib/i18n/tx";
 
 export default function SECPExpenseCapPage() {
   const [metrics, setMetrics] = useState<SecpRegulatoryMetric[]>([]);
@@ -29,7 +30,7 @@ export default function SECPExpenseCapPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900">SECP Expense Cap Monitor</h1>
+            <h1 className="text-xl font-semibold tracking-tight text-slate-900">{tx("SECP Expense Cap Monitor")}</h1>
             {/* <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">Risk & Regulatory</span> */}
           </div>
           {/* <p className="text-xs text-slate-500 mt-1">
@@ -40,9 +41,9 @@ export default function SECPExpenseCapPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {loading ? (
-          <div className="col-span-3 py-12 text-center text-slate-400 text-xs bg-white rounded-xl shadow-sm border border-slate-200">Loading statutory metrics...</div>
+          <div className="col-span-3 py-12 text-center text-slate-400 text-xs bg-white rounded-xl shadow-sm border border-slate-200">{tx("Loading statutory metrics...")}</div>
         ) : metrics.length === 0 ? (
-          <div className="col-span-3 py-12 text-center text-slate-400 text-xs bg-white rounded-xl shadow-sm border border-slate-200">No data available.</div>
+          <div className="col-span-3 py-12 text-center text-slate-400 text-xs bg-white rounded-xl shadow-sm border border-slate-200">{tx("No data available.")}</div>
         ) : (
           metrics.map((m) => (
             <div key={m.productLine} className={`bg-white rounded-xl shadow-sm border p-6 flex flex-col justify-between ${m.complianceStatus === 'BREACHED' ? 'border-rose-300' :
@@ -55,11 +56,11 @@ export default function SECPExpenseCapPage() {
                 <div className="flex justify-between items-end mb-2">
                   <div>
                     <div className="text-3xl font-bold text-slate-900">{m.currentExpenseRatio.toFixed(2)}%</div>
-                    <div className="text-[10px] text-slate-500 font-medium uppercase tracking-wide">Current Expense Ratio</div>
+                    <div className="text-[10px] text-slate-500 font-medium uppercase tracking-wide">{tx("Current Expense Ratio")}</div>
                   </div>
                   <div className="text-right">
                     <div className="text-sm font-bold text-slate-400">{m.secpStatutoryCapRatio.toFixed(2)}%</div>
-                    <div className="text-[10px] text-slate-400 uppercase tracking-wide">SECP Cap</div>
+                    <div className="text-[10px] text-slate-400 uppercase tracking-wide">{tx("SECP Cap")}</div>
                   </div>
                 </div>
 
@@ -69,15 +70,15 @@ export default function SECPExpenseCapPage() {
 
                 <div className="space-y-3">
                   <div className="flex justify-between text-xs border-b border-slate-100 pb-2">
-                    <span className="text-slate-500">Gross Premium (FY)</span>
-                    <span className="font-semibold text-slate-800">Rs. {(m.totalGrossPremiumCollected / 1000000).toFixed(2)}M</span>
+                    <span className="text-slate-500">{tx("Gross Premium (FY)")}</span>
+                    <span className="font-semibold text-slate-800">{tx("Rs.")}{" "}{(m.totalGrossPremiumCollected / 1000000).toFixed(2)}M</span>
                   </div>
                   <div className="flex justify-between text-xs border-b border-slate-100 pb-2">
-                    <span className="text-slate-500">Distribution Expense</span>
-                    <span className="font-semibold text-slate-800">Rs. {(m.totalDistributionExpense / 1000000).toFixed(2)}M</span>
+                    <span className="text-slate-500">{tx("Distribution Expense")}</span>
+                    <span className="font-semibold text-slate-800">{tx("Rs.")}{" "}{(m.totalDistributionExpense / 1000000).toFixed(2)}M</span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">Variance to Cap</span>
+                    <span className="text-slate-500">{tx("Variance to Cap")}</span>
                     <span className={`font-semibold ${m.variancePercentage < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
                       {m.variancePercentage > 0 ? '+' : ''}{m.variancePercentage.toFixed(2)}%
                     </span>
@@ -93,7 +94,7 @@ export default function SECPExpenseCapPage() {
                   {m.complianceStatus.replace(/_/g, ' ')}
                 </span>
                 {m.complianceStatus !== 'COMPLIANT' && (
-                  <button className="text-[10px] font-bold text-slate-500 hover:text-slate-800 underline">View Audit Guardrails</button>
+                  <button className="text-[10px] font-bold text-slate-500 hover:text-slate-800 underline">{tx("View Audit Guardrails")}</button>
                 )}
               </div>
             </div>

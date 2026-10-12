@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { tx } from "@/lib/i18n/tx";
 
 export interface FilterOption {
   value: string;
@@ -50,7 +51,7 @@ export function FilterDropdown({ value, options, onChange, className = "", place
       >
         <span className="flex items-center gap-2 truncate">
           {selectedOption?.icon}
-          {selectedOption ? selectedOption.label : (placeholder || "Select...")}
+          {selectedOption ? selectedOption.label : (placeholder || tx("Select..."))}
         </span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={`w-4 h-4 flex-shrink-0 transition-transform duration-300 ${isOpen ? "rotate-180 text-blue-500" : "text-slate-400"}`}>
           <polyline points="6 9 12 15 18 9" />

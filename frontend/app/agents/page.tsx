@@ -2,6 +2,7 @@
 
 import { MetricCard } from "@/components/MetricCard";
 import { Pagination, usePagination } from "@/components/Pagination";
+import { tx } from "@/lib/i18n/tx";
 
 const KPIS = [
   { title: "Active Agents", value: "156", subtitle: "across all branches", accent: "blue" as const },
@@ -41,8 +42,8 @@ export default function AgentsPage() {
   return (
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full">
       <div>
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight">Agents</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Agent intelligence — sales quality, persistency performance, complaint ratio, and AI-driven commission calculations.</p>
+        <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Agents")}</h1>
+        <p className="text-sm text-slate-500 mt-0.5">{tx("Agent intelligence — sales quality, persistency performance, complaint ratio, and AI-driven commission calculations.")}</p>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -68,24 +69,24 @@ export default function AgentsPage() {
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-          <p className="text-sm font-semibold text-slate-700">Agent Performance Register</p>
-          <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">Commission: Score ≥90 = 18% · 80–89 = 15% · 70–79 = 12% · &lt;70 = 10%</span>
+          <p className="text-sm font-semibold text-slate-700">{tx("Agent Performance Register")}</p>
+          <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">{tx("Commission: Score ≥90 = 18% · 80–89 = 15% · 70–79 = 12% · <70 = 10%")}</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                <th className="px-5 py-3 text-left">Agent ID</th>
-                <th className="px-5 py-3 text-left">Name</th>
-                <th className="px-5 py-3 text-left">Branch</th>
-                <th className="px-4 py-3 text-right">Policies</th>
-                <th className="px-5 py-3 text-right">Premium Written</th>
-                <th className="px-5 py-3 text-left">Quality Score</th>
-                <th className="px-4 py-3 text-right">Complaints</th>
-                <th className="px-4 py-3 text-right">Persistency</th>
-                <th className="px-5 py-3 text-right">Commission Rate</th>
-                <th className="px-5 py-3 text-right">Commission Earned</th>
-                <th className="px-5 py-3 text-left">Bonus</th>
+                <th className="px-5 py-3 text-left">{tx("Agent ID")}</th>
+                <th className="px-5 py-3 text-left">{tx("Name")}</th>
+                <th className="px-5 py-3 text-left">{tx("Branch")}</th>
+                <th className="px-4 py-3 text-right">{tx("Policies")}</th>
+                <th className="px-5 py-3 text-right">{tx("Premium Written")}</th>
+                <th className="px-5 py-3 text-left">{tx("Quality Score")}</th>
+                <th className="px-4 py-3 text-right">{tx("Complaints")}</th>
+                <th className="px-4 py-3 text-right">{tx("Persistency")}</th>
+                <th className="px-5 py-3 text-right">{tx("Commission Rate")}</th>
+                <th className="px-5 py-3 text-right">{tx("Commission Earned")}</th>
+                <th className="px-5 py-3 text-left">{tx("Bonus")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -109,7 +110,7 @@ export default function AgentsPage() {
             </tbody>
           </table>
         </div>
-          <Pagination pagination={pagination} noun="agents" inline />
+          <Pagination pagination={pagination} noun={tx("agents")} inline />
       </div>
     </div>
   );

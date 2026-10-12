@@ -16,6 +16,7 @@ import { listAcquisitionSources, AcquisitionSource } from "../services/acquisiti
 import { updateCustomer } from "../services/customers";
 import { Pagination, usePagination } from "@/components/Pagination";
 import { useI18n } from "@/lib/i18n/I18nProvider";
+import { tx } from "@/lib/i18n/tx";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -507,7 +508,7 @@ export default function QuotePage() {
     setBulkProceedSuccess(null);
     try {
       const tenantId = localStorage.getItem("tenant_id");
-      if (!tenantId) throw new Error("Tenant ID not found");
+      if (!tenantId) throw new Error(tx("Tenant ID not found"));
 
       if (selectedQuotes.length === 1) {
         const q = selectedQuotes[0];
@@ -933,7 +934,7 @@ export default function QuotePage() {
         </div>
         <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold tracking-wide font-mono shrink-0">
           <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-          GET /quotes
+          {tx("GET /quotes")}
         </span>
       </div>
 
@@ -2071,25 +2072,23 @@ function QuoteDetailModal({
               ) : (
                 <>
                   <p className="text-sm text-slate-700 leading-relaxed">
-                    We are pleased to present the following insurance proposal for{" "}
-                    <span className="font-semibold text-slate-900">{detail.customer_name}</span>. Based on the
-                    information provided, we propose a{" "}
+                    {tx("We are pleased to present the following insurance proposal for")}{" "}
+                    <span className="font-semibold text-slate-900">{detail.customer_name}</span>{tx(". Based on the information provided, we propose a")}{" "}
                     <span className="font-semibold text-slate-900">
                       {INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type}
                     </span>{" "}
-                    policy under the{" "}
+                    {tx("policy under the")}{" "}
                     <span className="font-semibold text-slate-900">{detail.plan_label}</span>{" "}
-                    plan, providing a sum assured of{" "}
+                    {tx("plan, providing a sum assured of")}{" "}
                     <span className="font-semibold text-slate-900">{formatPKR(detail.coverage_amount)}</span>{" "}
-                    over a term of{" "}
-                    <span className="font-semibold text-slate-900">{detail.term_years} years</span>.
+                    {tx("over a term of")}{" "}
+                    <span className="font-semibold text-slate-900">{detail.term_years}{" "}{tx("years")}</span>.
                   </p>
                   <p className="text-sm text-slate-700 leading-relaxed">
-                    The total annual premium for this coverage is{" "}
+                    {tx("The total annual premium for this coverage is")}{" "}
                     <span className="font-bold text-slate-900">{formatPKR(detail.total_premium)}</span>{" "}
-                    (expected premium of {formatPKR(detail.base_premium)} plus a risk of{" "}
-                    {formatPKR(detail.loading_applied)}). This proposal is valid subject to
-                    satisfactory underwriting assessment and is generated as of{" "}
+                    {tx("(expected premium of")}{" "}{formatPKR(detail.base_premium)}{" "}{tx("plus a risk of")}{" "}
+                    {formatPKR(detail.loading_applied)}{tx("). This proposal is valid subject to satisfactory underwriting assessment and is generated as of")}{" "}
                     <span className="font-medium text-slate-800">{formatDate(detail.created_at)}</span>.
                   </p>
                 </>
@@ -2132,18 +2131,18 @@ function QuoteDetailModal({
             <section>
               <SectionLabel>{tx("Customer")}</SectionLabel>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <DetailField label="Date of Birth" value={`${formatDate(detail.customer_dob)} (${tx("{age} yrs", { age: detail.customer_age })})`} />
-                <DetailField label="Gender" value={detail.customer_gender} />
-                <DetailField label="Occupation" value={detail.customer_occupation} />
-                <DetailField label="Annual Income" value={formatPKR(detail.customer_declared_income)} />
-                <DetailField label="Smoker" value={detail.customer_is_smoker ? tx("Yes") : tx("No")} />
+                <DetailField label={tx("Date of Birth")} value={`${formatDate(detail.customer_dob)} (${tx("{age} yrs", { age: detail.customer_age })})`} />
+                <DetailField label={tx("Gender")} value={detail.customer_gender} />
+                <DetailField label={tx("Occupation")} value={detail.customer_occupation} />
+                <DetailField label={tx("Annual Income")} value={formatPKR(detail.customer_declared_income)} />
+                <DetailField label={tx("Smoker")} value={detail.customer_is_smoker ? tx("Yes") : tx("No")} />
                 <DetailField
-                  label="Height / Weight"
+                  label={tx("Height / Weight")}
                   value={`${detail.customer_height_cm} cm / ${detail.customer_weight_kg} kg${detail.customer_bmi ? ` (BMI ${detail.customer_bmi})` : ""}`}
                 />
                 {detail.acquisition_source_name && (
                   <DetailField
-                    label="Lead Generated By"
+                    label={tx("Lead Generated By")}
                     value={`${detail.acquisition_source_name} (${tx(SOURCE_TYPE_LABELS[detail.acquisition_source_type ?? ""] ?? detail.acquisition_source_type ?? "")})${detail.acquisition_source_partner ? ` — ${detail.acquisition_source_partner}` : ""}`}
                   />
                 )}
@@ -2154,16 +2153,16 @@ function QuoteDetailModal({
             <section>
               <SectionLabel>{tx("Policy")}</SectionLabel>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <DetailField label="Plan" value={detail.plan_label} />
-                <DetailField label="Type" value={tx(INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type)} />
-                <DetailField label="Coverage" value={formatPKR(detail.coverage_amount)} />
-                <DetailField label="Term" value={tx("{years} years", { years: detail.term_years })} />
-                {detail.organization_name && <DetailField label="Organization" value={detail.organization_name} />}
-                {detail.master_policy_label && <DetailField label="Master Policy" value={detail.master_policy_label} />}
-                {detail.family_group_name && <DetailField label="Family" value={detail.family_group_name} />}
-                {detail.family_policy_label && <DetailField label="Family Policy" value={detail.family_policy_label} />}
-                {detail.nominee_name && <DetailField label="Nominee" value={`${detail.nominee_name}${detail.nominee_relationship ? ` (${detail.nominee_relationship})` : ""}`} />}
-                {detail.dependent_name && <DetailField label="Dependent" value={`${detail.dependent_name}${detail.dependent_dob ? ` — b. ${formatDate(detail.dependent_dob)}` : ""}`} />}
+                <DetailField label={tx("Plan")} value={detail.plan_label} />
+                <DetailField label={tx("Type")} value={tx(INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type)} />
+                <DetailField label={tx("Coverage")} value={formatPKR(detail.coverage_amount)} />
+                <DetailField label={tx("Term")} value={tx("{years} years", { years: detail.term_years })} />
+                {detail.organization_name && <DetailField label={tx("Organization")} value={detail.organization_name} />}
+                {detail.master_policy_label && <DetailField label={tx("Master Policy")} value={detail.master_policy_label} />}
+                {detail.family_group_name && <DetailField label={tx("Family")} value={detail.family_group_name} />}
+                {detail.family_policy_label && <DetailField label={tx("Family Policy")} value={detail.family_policy_label} />}
+                {detail.nominee_name && <DetailField label={tx("Nominee")} value={`${detail.nominee_name}${detail.nominee_relationship ? ` (${detail.nominee_relationship})` : ""}`} />}
+                {detail.dependent_name && <DetailField label={tx("Dependent")} value={`${detail.dependent_name}${detail.dependent_dob ? ` — b. ${formatDate(detail.dependent_dob)}` : ""}`} />}
               </div>
             </section>
 
@@ -2171,10 +2170,10 @@ function QuoteDetailModal({
             <section>
               <SectionLabel>{tx("Premium Breakdown")}</SectionLabel>
               <div className="grid grid-cols-3 gap-3">
-                <StatTile label="Premium" value={formatPKR(detail.base_premium)} />
+                <StatTile label={tx("Premium")} value={formatPKR(detail.base_premium)} />
                 {/* <StatTile label="Risk" value={formatPKR(detail.loading_applied)} /> */}
                 <StatTile
-                  label="Total Payable"
+                  label={tx("Total Payable")}
                   value={
                     <span>
                       {formatPKR(detail.total_premium)}{" "}

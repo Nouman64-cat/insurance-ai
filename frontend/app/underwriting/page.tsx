@@ -1,26 +1,56 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState, Suspense } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  Suspense,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MetricCard } from "@/components/MetricCard";
 import { StatusBadge } from "@/components/StatusBadge";
-import { SegmentDropdown, SegmentFilter, SEGMENT_LABEL, SEGMENT_BADGE_STYLE } from "@/components/SegmentDropdown";
+import {
+  SegmentDropdown,
+  SegmentFilter,
+  SEGMENT_LABEL,
+  SEGMENT_BADGE_STYLE,
+} from "@/components/SegmentDropdown";
 import { useNotify } from "@/components/NotificationContext";
 import { fmtCoverage } from "@/lib/mock-data";
-import { listCases, runCaseCompliance, clearComplianceCheck, type CaseQueueItem } from "@/app/services/cases";
-import { getEApplication, inviteEApplication, type EApplication } from "@/app/services/eApplication";
-import { getACR, requestACR, type AgentConfidentialReport } from "@/app/services/agentConfidentialReport";
+import {
+  listCases,
+  runCaseCompliance,
+  clearComplianceCheck,
+  type CaseQueueItem,
+} from "@/app/services/cases";
+import {
+  getEApplication,
+  inviteEApplication,
+  type EApplication,
+} from "@/app/services/eApplication";
+import {
+  getACR,
+  requestACR,
+  type AgentConfidentialReport,
+} from "@/app/services/agentConfidentialReport";
 import { ACRModal } from "@/components/entities/ACRModal";
 import { IPPModal } from "@/components/entities/IPPModal";
 import CustomizeEAppModal from "@/components/entities/CustomizeEAppModal";
 import VerifyEAppModal from "@/components/entities/VerifyEAppModal";
 import { createCounterOffer } from "@/app/services/preIssuance";
 import { runInsuranceHistory } from "@/app/services/insuranceHistory";
-import { assessMedicalExam, inviteMedicalExam, recordMedicalResult, MEDICAL_CLEARED } from "@/app/services/medicalExam";
+import {
+  assessMedicalExam,
+  inviteMedicalExam,
+  recordMedicalResult,
+  MEDICAL_CLEARED,
+} from "@/app/services/medicalExam";
 import api from "@/app/services/api";
 import { useCaseEvents } from "@/lib/agent/useCaseEvents";
 import FiltersPanel from "@/components/FiltersPanel";
 import { Pagination, usePagination } from "@/components/Pagination";
+import { tx } from "@/lib/i18n/tx";
 
 const CASE_STATUS_STYLE: Record<string, string> = {
   New: "bg-slate-100 text-slate-600 border-slate-200",
@@ -32,7 +62,12 @@ const CASE_STATUS_STYLE: Record<string, string> = {
   Closed: "bg-slate-200 text-slate-700 border-slate-300",
 };
 
-const ACTIVE_STATUSES = new Set(["New", "InProgress", "Pending Documents", "Under Review"]);
+const ACTIVE_STATUSES = new Set([
+  "New",
+  "InProgress",
+  "Pending Documents",
+  "Under Review",
+]);
 
 interface CustomerFolder {
   customer_id: string;
@@ -42,41 +77,78 @@ interface CustomerFolder {
   cases: CaseQueueItem[];
 }
 
-function StatusPill({ done, pending, label, locked }: { done: boolean; pending: string; label: string; locked?: boolean }) {
+function StatusPill({
+  done,
+  pending,
+  label,
+  locked,
+}: {
+  done: boolean;
+  pending: string;
+  label: string;
+  locked?: boolean;
+}) {
   if (locked) {
     return (
       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide bg-slate-100 text-slate-400 border border-slate-200/80">
         <span className="text-[9px]">🔒</span>
-        <span>Locked</span>
+        <span>{tx("Locked")}</span>
       </span>
     );
   }
 
   const isVerified = pending === "Verified" || done;
   const isSubmitted = pending === "Submitted";
-  const isStarted = pending && pending !== "Not Started" && pending !== "NotSent" && pending !== "Draft" && pending !== "NotStarted";
+  const isStarted =
+    pending &&
+    pending !== "Not Started" &&
+    pending !== "NotSent" &&
+    pending !== "Draft" &&
+    pending !== "NotStarted";
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide border transition-all ${isVerified
+      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide border transition-all ${
+        isVerified
           ? "bg-emerald-50 text-emerald-700 border-emerald-200/80 shadow-2xs"
           : isSubmitted
             ? "bg-amber-50 text-amber-800 border-amber-300 shadow-2xs animate-pulse"
             : isStarted
               ? "bg-blue-50 text-blue-700 border-blue-200/80"
               : "bg-slate-100 text-slate-600 border-slate-200/80"
-        }`}
+      }`}
     >
-      <span className="text-[9px]">{isVerified ? "✓" : isSubmitted ? "●" : "○"}</span>
-      <span>{isVerified ? label : isSubmitted ? "Submitted (Needs Review)" : pending}</span>
+      <span className="text-[9px]">
+        {isVerified ? "✓" : isSubmitted ? "●" : "○"}
+      </span>
+      <span>
+        {isVerified
+          ? label
+          : isSubmitted
+            ? tx("Submitted (Needs Review)")
+            : pending}
+      </span>
     </span>
   );
 }
 
-function GateStepItem({ step, isLast, isExpanded, onToggle, readOnly = false }: { step: any; isLast: boolean; isExpanded: boolean; onToggle: () => void; readOnly?: boolean }) {
-
+function GateStepItem({
+  step,
+  isLast,
+  isExpanded,
+  onToggle,
+  readOnly = false,
+}: {
+  step: any;
+  isLast: boolean;
+  isExpanded: boolean;
+  onToggle: () => void;
+  readOnly?: boolean;
+}) {
   return (
-    <div className={`relative flex gap-4 transition-all duration-300 group ${isExpanded ? "pb-6" : "pb-2"} last:pb-1`}>
+    <div
+      className={`relative flex gap-4 transition-all duration-300 group ${isExpanded ? "pb-6" : "pb-2"} last:pb-1`}
+    >
       {/* Continuous Vertical Progress Line Track */}
       {!isLast && (
         <div
@@ -84,14 +156,14 @@ function GateStepItem({ step, isLast, isExpanded, onToggle, readOnly = false }: 
             step.isDone
               ? "bg-emerald-500"
               : step.isNextActive
-              ? "bg-gradient-to-b from-blue-500 to-slate-200"
-              : "bg-slate-200"
+                ? "bg-gradient-to-b from-blue-500 to-slate-200"
+                : "bg-slate-200"
           }`}
         />
       )}
 
       {/* Progress Node Circle */}
-      <div 
+      <div
         className="relative z-10 shrink-0 cursor-pointer transition-transform active:scale-95"
         onClick={onToggle}
       >
@@ -116,11 +188,11 @@ function GateStepItem({ step, isLast, isExpanded, onToggle, readOnly = false }: 
           step.isDone
             ? "bg-emerald-50/30 border-emerald-200/80 hover:border-emerald-300"
             : step.isNextActive
-            ? "bg-white border-blue-300/90 shadow-xs ring-1 ring-blue-200/50"
-            : "bg-slate-50/50 border-slate-200/70 opacity-75 hover:opacity-100"
+              ? "bg-white border-blue-300/90 shadow-xs ring-1 ring-blue-200/50"
+              : "bg-slate-50/50 border-slate-200/70 opacity-75 hover:opacity-100"
         }`}
       >
-        <div 
+        <div
           className={`cursor-pointer flex flex-col justify-center transition-all duration-300 ${isExpanded ? "p-3.5" : "px-3.5 py-2"}`}
           onClick={onToggle}
         >
@@ -133,23 +205,23 @@ function GateStepItem({ step, isLast, isExpanded, onToggle, readOnly = false }: 
                   step.isDone
                     ? "text-emerald-950"
                     : step.isNextActive
-                    ? "text-blue-950"
-                    : "text-slate-600"
+                      ? "text-blue-950"
+                      : "text-slate-600"
                 }`}
               >
-                Gate {step.num}: {step.title}
+                {tx("Gate")} {step.num}: {step.title}
               </h4>
-              
-              <span className={`text-[10px] text-slate-400 font-mono transition-all duration-300 hidden sm:inline-block ${isExpanded ? "opacity-100 max-w-full ml-1" : "opacity-0 max-w-0 overflow-hidden m-0"}`}>
+
+              <span
+                className={`text-[10px] text-slate-400 font-mono transition-all duration-300 hidden sm:inline-block ${isExpanded ? "opacity-100 max-w-full ml-1" : "opacity-0 max-w-0 overflow-hidden m-0"}`}
+              >
                 • {step.law}
               </span>
-              
-              <div className="scale-95 sm:scale-100 ml-1">
-                {step.badge}
-              </div>
+
+              <div className="scale-95 sm:scale-100 ml-1">{step.badge}</div>
             </div>
-            
-            <div 
+
+            <div
               className={`shrink-0 p-1 rounded-full hover:bg-black/5 transition-colors ${
                 isExpanded ? "text-slate-500" : "text-slate-400"
               }`}
@@ -162,14 +234,21 @@ function GateStepItem({ step, isLast, isExpanded, onToggle, readOnly = false }: 
                 viewBox="0 0 24 24"
                 stroke="currentColor"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 9l-7 7-7-7"
+                />
               </svg>
             </div>
           </div>
-          
-          <div 
+
+          <div
             className={`grid transition-[grid-template-rows,opacity,margin] duration-300 ease-in-out ${
-              isExpanded ? "grid-rows-[1fr] opacity-100 mt-3" : "grid-rows-[0fr] opacity-0 mt-0"
+              isExpanded
+                ? "grid-rows-[1fr] opacity-100 mt-3"
+                : "grid-rows-[0fr] opacity-0 mt-0"
             }`}
           >
             <div className="overflow-hidden">
@@ -177,15 +256,14 @@ function GateStepItem({ step, isLast, isExpanded, onToggle, readOnly = false }: 
                 <p className="text-xs text-slate-500 leading-relaxed">
                   {step.desc}
                 </p>
-                <div 
-                  className="shrink-0"
-                  onClick={(e) => e.stopPropagation()}
-                >
+                <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
                   {readOnly ? (
                     // View only: every button and field inside is natively disabled
                     <fieldset
                       disabled
-                      title="Currently, you have no access to do this, ask your manager"
+                      title={tx(
+                        "Currently, you have no access to do this, ask your manager",
+                      )}
                       className="m-0 min-w-0 cursor-not-allowed border-0 p-0 opacity-50 [&_*]:pointer-events-none"
                     >
                       {step.action}
@@ -211,14 +289,23 @@ function UnderwritingMainContent() {
   const focusCase = searchParams.get("case");
   const focusGate = searchParams.get("gate");
   const rawReturn = searchParams.get("returnTo");
-  const returnTo = rawReturn && rawReturn.startsWith("/") && !rawReturn.startsWith("//") ? rawReturn : null;
+  const returnTo =
+    rawReturn && rawReturn.startsWith("/") && !rawReturn.startsWith("//")
+      ? rawReturn
+      : null;
   const { notify } = useNotify();
 
-  const initialTab = (searchParams.get("tab") as "pre-underwriting" | "risk-engine") || "pre-underwriting";
+  const initialTab =
+    (searchParams.get("tab") as "pre-underwriting" | "risk-engine") ||
+    "pre-underwriting";
 
-  const [activeTab, setActiveTab] = useState<"pre-underwriting" | "risk-engine">(initialTab);
+  const [activeTab, setActiveTab] = useState<
+    "pre-underwriting" | "risk-engine"
+  >(initialTab);
   const [cases, setCases] = useState<CaseQueueItem[]>([]);
-  const [expandedGates, setExpandedGates] = useState<Record<string, number>>({});
+  const [expandedGates, setExpandedGates] = useState<Record<string, number>>(
+    {},
+  );
   const [showAllGates, setShowAllGates] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -238,55 +325,98 @@ function UnderwritingMainContent() {
   const [linkBusyFor, setLinkBusyFor] = useState<string | null>(null);
   // The invite link only exists in plain form when it is generated (the server keeps just a
   // hash), so keep it for the session to let "Open link" work after a page refresh.
-  const [generatedLinks, setGeneratedLinks] = useState<Record<string, string>>(() => {
-    if (typeof window === "undefined") return {};
-    try { return JSON.parse(sessionStorage.getItem("eapp_links") || "{}"); } catch { return {}; }
-  });
+  const [generatedLinks, setGeneratedLinks] = useState<Record<string, string>>(
+    () => {
+      if (typeof window === "undefined") return {};
+      try {
+        return JSON.parse(sessionStorage.getItem("eapp_links") || "{}");
+      } catch {
+        return {};
+      }
+    },
+  );
   useEffect(() => {
-    try { sessionStorage.setItem("eapp_links", JSON.stringify(generatedLinks)); } catch { /* storage unavailable */ }
+    try {
+      sessionStorage.setItem("eapp_links", JSON.stringify(generatedLinks));
+    } catch {
+      /* storage unavailable */
+    }
   }, [generatedLinks]);
   const [refreshingFor, setRefreshingFor] = useState<string | null>(null);
   const [linkErr, setLinkErr] = useState<string | null>(null);
   const [compBusyFor, setCompBusyFor] = useState<string | null>(null);
-  const [compModal, setCompModal] = useState<{ caseId: string; customerName?: string; data: any } | null>(null);
+  const [compModal, setCompModal] = useState<{
+    caseId: string;
+    customerName?: string;
+    data: any;
+  } | null>(null);
 
   const [forceProceedBusy, setForceProceedBusy] = useState(false);
 
   const handleForceProceedCompliance = async (checks: any[]) => {
     setForceProceedBusy(true);
     try {
-      const flaggedChecks = checks.filter(c => c.status === "Flagged");
+      const flaggedChecks = checks.filter((c) => c.status === "Flagged");
       for (const chk of flaggedChecks) {
         await clearComplianceCheck(tenantId, chk.id);
       }
       setCompModal(null);
       await loadData();
-      notify("Compliance check override successful", true);
+      notify(tx("Compliance check override successful"), true);
     } catch (e: any) {
-      notify(e?.message ?? "Failed to force proceed", false);
+      notify(e?.message ?? tx("Failed to force proceed"), false);
     } finally {
       setForceProceedBusy(false);
     }
   };
 
   const [histBusyFor, setHistBusyFor] = useState<string | null>(null);
-  const [histModal, setHistModal] = useState<{ caseId: string; customerName?: string; data: any } | null>(null);
+  const [histModal, setHistModal] = useState<{
+    caseId: string;
+    customerName?: string;
+    data: any;
+  } | null>(null);
   const [medBusyFor, setMedBusyFor] = useState<string | null>(null);
-  const [medModal, setMedModal] = useState<{ caseId: string; customerName?: string; data: any; link: string | null } | null>(null);
-  const [acrModal, setAcrModal] = useState<{ caseId: string; initial: AgentConfidentialReport | null } | null>(null);
+  const [medModal, setMedModal] = useState<{
+    caseId: string;
+    customerName?: string;
+    data: any;
+    link: string | null;
+  } | null>(null);
+  const [acrModal, setAcrModal] = useState<{
+    caseId: string;
+    initial: AgentConfidentialReport | null;
+  } | null>(null);
   const [acrLoadingFor, setAcrLoadingFor] = useState<string | null>(null);
-  const [ippModal, setIppModal] = useState<{ caseId: string; customerName?: string } | null>(null);
-  const [customizeModal, setCustomizeModal] = useState<{ caseId: string; customerName?: string } | null>(null);
-  const [verifyModal, setVerifyModal] = useState<{ caseId: string; customerName?: string; eApp: EApplication } | null>(null);
+  const [ippModal, setIppModal] = useState<{
+    caseId: string;
+    customerName?: string;
+  } | null>(null);
+  const [customizeModal, setCustomizeModal] = useState<{
+    caseId: string;
+    customerName?: string;
+  } | null>(null);
+  const [verifyModal, setVerifyModal] = useState<{
+    caseId: string;
+    customerName?: string;
+    eApp: EApplication;
+  } | null>(null);
   const [verifyLoadingFor, setVerifyLoadingFor] = useState<string | null>(null);
 
   const handleOpenVerifyModal = async (c: CaseQueueItem) => {
     setVerifyLoadingFor(c.caseld);
     try {
       const eApp = await getEApplication(c.caseld);
-      setVerifyModal({ caseId: c.caseld, customerName: c.customer_name ?? undefined, eApp });
+      setVerifyModal({
+        caseId: c.caseld,
+        customerName: c.customer_name ?? undefined,
+        eApp,
+      });
     } catch (e: any) {
-      notify(e?.message || "Failed to fetch customer E-Application details", false);
+      notify(
+        e?.message || tx("Failed to fetch customer E-Application details"),
+        false,
+      );
     } finally {
       setVerifyLoadingFor(null);
     }
@@ -298,21 +428,30 @@ function UnderwritingMainContent() {
   const [filterStatus, setFilterStatus] = useState<string>("ALL");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
+  const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(
+    null,
+  );
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
-  const [counterOfferCase, setCounterOfferCase] = useState<CaseQueueItem | null>(null);
+  const [counterOfferCase, setCounterOfferCase] =
+    useState<CaseQueueItem | null>(null);
 
-  const tenantId = typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
+  const tenantId =
+    typeof window !== "undefined"
+      ? (localStorage.getItem("tenant_id") ?? "")
+      : "";
 
   const loadData = useCallback(async () => {
-    if (!tenantId) { setLoading(false); return; }
+    if (!tenantId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const data = await listCases(tenantId);
       setCases(data);
     } catch (err: any) {
-      setError(err.message ?? "Failed to load cases");
+      setError(err.message ?? tx("Failed to load cases"));
     } finally {
       setLoading(false);
     }
@@ -328,31 +467,61 @@ function UnderwritingMainContent() {
   // Re-read the queue without the page-level spinner. Tells the user when an e-application
   // they were waiting on has just been submitted.
   const casesRef = React.useRef<CaseQueueItem[]>([]);
-  useEffect(() => { casesRef.current = cases; }, [cases]);
+  useEffect(() => {
+    casesRef.current = cases;
+  }, [cases]);
   const silentRefresh = useCallback(async () => {
     if (!tenantId) return;
     try {
       const data = await listCases(tenantId);
       for (const c of data) {
-        const before = casesRef.current.find((x) => x.caseld === c.caseld)?.e_application_status;
-        if (before && before !== "Submitted" && c.e_application_status === "Submitted") {
-          notify(`${c.customer_name ?? "Applicant"} submitted the e-application — ready to review & verify`, true);
+        const before = casesRef.current.find(
+          (x) => x.caseld === c.caseld,
+        )?.e_application_status;
+        if (
+          before &&
+          before !== "Submitted" &&
+          c.e_application_status === "Submitted"
+        ) {
+          notify(
+            tx("{0} submitted the e-application — ready to review & verify", {
+              0: c.customer_name ?? "Applicant",
+            }),
+            true,
+          );
         }
-        const acrBefore = casesRef.current.find((x) => x.caseld === c.caseld)?.acr_status;
-        if (acrBefore && acrBefore !== "Submitted" && c.acr_status === "Submitted") {
-          notify(`The agent submitted ${c.customer_name ?? "the applicant"}'s confidential report (ACR)`, true);
+        const acrBefore = casesRef.current.find(
+          (x) => x.caseld === c.caseld,
+        )?.acr_status;
+        if (
+          acrBefore &&
+          acrBefore !== "Submitted" &&
+          c.acr_status === "Submitted"
+        ) {
+          notify(
+            tx("The agent submitted {0}'s confidential report (ACR)", {
+              0: c.customer_name ?? "the applicant",
+            }),
+            true,
+          );
         }
       }
       setCases(data);
-    } catch { /* keep the last good list; the next tick retries */ }
+    } catch {
+      /* keep the last good list; the next tick retries */
+    }
   }, [tenantId, notify]);
 
   // Live: a gate cleared elsewhere (the agent filing the ACR from the mobile app, the applicant
   // submitting the e-application…) re-reads the queue, and so does a reconnect or the tab
   // coming back into view, in case events were missed meanwhile.
-  useCaseEvents((evt) => {
-    if (evt.case_id || evt.event_type === "DataChanged") silentRefresh();
-  }, true, silentRefresh);
+  useCaseEvents(
+    (evt) => {
+      if (evt.case_id || evt.event_type === "DataChanged") silentRefresh();
+    },
+    true,
+    silentRefresh,
+  );
 
   const handleRefreshGate1 = async (c: CaseQueueItem) => {
     setRefreshingFor(c.caseld);
@@ -363,11 +532,15 @@ function UnderwritingMainContent() {
   // Auto-fetch the submission status: poll while any invite is still waiting on the applicant,
   // and refresh as soon as the user comes back from the e-application tab.
   const waitingOnApplicant = cases.some(
-    (c) => c.e_application_status === "Sent" || c.e_application_status === "InProgress",
+    (c) =>
+      c.e_application_status === "Sent" ||
+      c.e_application_status === "InProgress",
   );
   useEffect(() => {
     if (!waitingOnApplicant) return;
-    const tick = () => { if (document.visibilityState === "visible") silentRefresh(); };
+    const tick = () => {
+      if (document.visibilityState === "visible") silentRefresh();
+    };
     const id = setInterval(tick, 10000);
     document.addEventListener("visibilitychange", tick);
     window.addEventListener("focus", tick);
@@ -384,7 +557,8 @@ function UnderwritingMainContent() {
     MEDICAL_CLEARED.has((c.medical_exam_status ?? "NotAssessed") as any);
 
   const isFullyReady = (c: CaseQueueItem) =>
-    (c.e_application_status === "Verified" || c.e_application_status === "Submitted") &&
+    (c.e_application_status === "Verified" ||
+      c.e_application_status === "Submitted") &&
     c.acr_status === "Submitted" &&
     c.compliance_status === "Passed" &&
     c.ipp_status === "Realized" &&
@@ -408,22 +582,40 @@ function UnderwritingMainContent() {
         const aDone = isFullyReady(a);
         const bDone = isFullyReady(b);
         if (aDone !== bDone) return aDone ? 1 : -1;
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        return (
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
       });
   }, [cases, preSearch, showCompleted, focusCase]);
 
   const preKpis = useMemo(() => {
     const active = cases.filter((c) => ACTIVE_STATUSES.has(c.caseStatus));
-    const missingEApp = active.filter((c) => c.e_application_status !== "Verified" && c.e_application_status !== "Submitted").length;
-    const missingAcr = active.filter((c) => c.acr_status !== "Submitted").length;
-    const missingComp = active.filter((c) => c.compliance_status !== "Passed").length;
+    const missingEApp = active.filter(
+      (c) =>
+        c.e_application_status !== "Verified" &&
+        c.e_application_status !== "Submitted",
+    ).length;
+    const missingAcr = active.filter(
+      (c) => c.acr_status !== "Submitted",
+    ).length;
+    const missingComp = active.filter(
+      (c) => c.compliance_status !== "Passed",
+    ).length;
     const missingIpp = active.filter((c) => c.ipp_status !== "Realized").length;
-    const missingHistory = active.filter((c) => c.insurance_history_status !== "Clear").length;
+    const missingHistory = active.filter(
+      (c) => c.insurance_history_status !== "Clear",
+    ).length;
     const missingMedical = active.filter((c) => !medicalCleared(c)).length;
     const ready = active.filter(isFullyReady).length;
     return {
-      total: active.length, missingEApp, missingAcr, missingComp, missingIpp,
-      missingHistory, missingMedical, ready,
+      total: active.length,
+      missingEApp,
+      missingAcr,
+      missingComp,
+      missingIpp,
+      missingHistory,
+      missingMedical,
+      ready,
     };
   }, [cases]);
 
@@ -432,12 +624,15 @@ function UnderwritingMainContent() {
     setLinkErr(null);
     try {
       const invite = await inviteEApplication(c.caseld);
-      setGeneratedLinks((prev) => ({ ...prev, [c.caseld]: `${window.location.origin}${invite.link_path}` }));
+      setGeneratedLinks((prev) => ({
+        ...prev,
+        [c.caseld]: `${window.location.origin}${invite.link_path}`,
+      }));
       await loadData();
-      notify("E-Application link generated successfully", true);
+      notify(tx("E-Application link generated successfully"), true);
     } catch (e: any) {
       setLinkErr(e?.message ?? "Failed to generate link");
-      notify(e?.message ?? "Failed to generate link", false);
+      notify(e?.message ?? tx("Failed to generate link"), false);
     } finally {
       setLinkBusyFor(null);
     }
@@ -449,14 +644,25 @@ function UnderwritingMainContent() {
       const res = await runCaseCompliance(tenantId, c.caseld);
       setCases((prev) =>
         prev.map((item) =>
-          item.caseld === c.caseld ? { ...item, compliance_status: res.overall_status } : item,
+          item.caseld === c.caseld
+            ? { ...item, compliance_status: res.overall_status }
+            : item,
         ),
       );
-      setCompModal({ caseId: c.caseld, customerName: c.customer_name ?? undefined, data: res });
+      setCompModal({
+        caseId: c.caseld,
+        customerName: c.customer_name ?? undefined,
+        data: res,
+      });
       await loadData();
-      notify("Compliance check processed", true);
+      notify(tx("Compliance check processed"), true);
     } catch (e: any) {
-      notify(e?.response?.data?.detail ?? e?.message ?? "Compliance check failed", false);
+      notify(
+        e?.response?.data?.detail ??
+          e?.message ??
+          tx("Compliance check failed"),
+        false,
+      );
     } finally {
       setCompBusyFor(null);
     }
@@ -466,11 +672,15 @@ function UnderwritingMainContent() {
     setHistBusyFor(c.caseld);
     try {
       const res = await runInsuranceHistory(c.caseld);
-      setHistModal({ caseId: c.caseld, customerName: c.customer_name ?? undefined, data: res });
+      setHistModal({
+        caseId: c.caseld,
+        customerName: c.customer_name ?? undefined,
+        data: res,
+      });
       await loadData();
-      notify("Insurance history verification completed", true);
+      notify(tx("Insurance history verification completed"), true);
     } catch (e: any) {
-      notify(e?.message ?? "Insurance history check failed", false);
+      notify(e?.message ?? tx("Insurance history check failed"), false);
     } finally {
       setHistBusyFor(null);
     }
@@ -483,7 +693,12 @@ function UnderwritingMainContent() {
     try {
       const order = await assessMedicalExam(c.caseld);
       if (order.status === "NotRequired") {
-        setMedModal({ caseId: c.caseld, customerName: c.customer_name ?? undefined, data: order, link: null });
+        setMedModal({
+          caseId: c.caseld,
+          customerName: c.customer_name ?? undefined,
+          data: order,
+          link: null,
+        });
       } else {
         const invite = await inviteMedicalExam(c.caseld);
         setMedModal({
@@ -494,9 +709,14 @@ function UnderwritingMainContent() {
         });
       }
       await loadData();
-      notify(order.status === "NotRequired" ? "Medical assessment completed: Not Required" : "Medical assessment completed: Referral Generated", true);
+      notify(
+        order.status === "NotRequired"
+          ? tx("Medical assessment completed: Not Required")
+          : tx("Medical assessment completed: Referral Generated"),
+        true,
+      );
     } catch (e: any) {
-      notify(e?.message ?? "Medical assessment failed", false);
+      notify(e?.message ?? tx("Medical assessment failed"), false);
     } finally {
       setMedBusyFor(null);
     }
@@ -506,9 +726,12 @@ function UnderwritingMainContent() {
     setAcrLoadingFor(c.caseld);
     try {
       const acr = await getACR(c.caseld);
-      setAcrModal({ caseId: c.caseld, initial: acr.status === "NotStarted" ? null : acr });
+      setAcrModal({
+        caseId: c.caseld,
+        initial: acr.status === "NotStarted" ? null : acr,
+      });
     } catch (e: any) {
-      notify("Failed to fetch Agent Confidential Report", false);
+      notify(tx("Failed to fetch Agent Confidential Report"), false);
       setAcrModal({ caseId: c.caseld, initial: null });
     } finally {
       setAcrLoadingFor(null);
@@ -520,10 +743,22 @@ function UnderwritingMainContent() {
     setAcrLoadingFor(c.caseld);
     try {
       const r = await requestACR(c.caseld);
-      notify(r.self_request ? "You are the agent on this case: file the report from the agent app." : r.already_requested ? `Already requested from ${r.recipient?.name ?? "the agent"}.` : `Asked ${r.recipient?.name ?? "the agent"} to file the ACR from the app.`, true);
+      notify(
+        r.self_request
+          ? "You are the agent on this case: file the report from the agent app."
+          : r.already_requested
+            ? `Already requested from ${r.recipient?.name ?? "the agent"}.`
+            : `Asked ${r.recipient?.name ?? "the agent"} to file the ACR from the app.`,
+        true,
+      );
       await loadData();
     } catch (e: any) {
-      notify(e?.response?.data?.detail ?? e?.message ?? "Couldn't send the ACR request.", false);
+      notify(
+        e?.response?.data?.detail ??
+          e?.message ??
+          "Couldn't send the ACR request.",
+        false,
+      );
     } finally {
       setAcrLoadingFor(null);
     }
@@ -535,7 +770,9 @@ function UnderwritingMainContent() {
   const segmentCases = useMemo(() => {
     let list = cases;
     if (segment !== "all") {
-      list = list.filter((c) => (c.customer_segment ?? "individual") === segment);
+      list = list.filter(
+        (c) => (c.customer_segment ?? "individual") === segment,
+      );
     }
     if (filterStatus !== "ALL") {
       list = list.filter((c) => c.caseStatus === filterStatus);
@@ -553,16 +790,25 @@ function UnderwritingMainContent() {
 
   const segmentCounts = useMemo(() => {
     const counts: Partial<Record<SegmentFilter, number>> = {};
-    const ind = cases.filter((c) => (c.customer_segment ?? "individual") === "individual");
+    const ind = cases.filter(
+      (c) => (c.customer_segment ?? "individual") === "individual",
+    );
     counts["individual"] = new Set(ind.map((c) => c.customer_id)).size;
 
     const org = cases.filter((c) => c.customer_segment === "organization");
-    counts["organization"] = new Set(org.map((c) => c.organization_id).filter(Boolean)).size;
+    counts["organization"] = new Set(
+      org.map((c) => c.organization_id).filter(Boolean),
+    ).size;
 
     const fam = cases.filter((c) => c.customer_segment === "family");
-    counts["family"] = new Set(fam.map((c) => c.family_group_id).filter(Boolean)).size;
+    counts["family"] = new Set(
+      fam.map((c) => c.family_group_id).filter(Boolean),
+    ).size;
 
-    counts["all"] = (counts["individual"] || 0) + (counts["organization"] || 0) + (counts["family"] || 0);
+    counts["all"] =
+      (counts["individual"] || 0) +
+      (counts["organization"] || 0) +
+      (counts["family"] || 0);
 
     return counts;
   }, [cases]);
@@ -571,11 +817,11 @@ function UnderwritingMainContent() {
     const q = riskSearch.trim().toLowerCase();
     const filteredList = q
       ? segmentCases.filter(
-        (c) =>
-          (c.customer_name ?? "").toLowerCase().includes(q) ||
-          (c.customer_cnic ?? "").toLowerCase().includes(q) ||
-          c.caseNumber.toLowerCase().includes(q),
-      )
+          (c) =>
+            (c.customer_name ?? "").toLowerCase().includes(q) ||
+            (c.customer_cnic ?? "").toLowerCase().includes(q) ||
+            c.caseNumber.toLowerCase().includes(q),
+        )
       : segmentCases;
 
     const grouped = new Map<string, CustomerFolder>();
@@ -594,9 +840,12 @@ function UnderwritingMainContent() {
             c.customer_segment === "organization"
               ? "Corporate Account"
               : c.customer_segment === "family"
-                ? c.family_group_name ?? `${c.customer_name} & Family`
-                : c.customer_name ?? "Unknown Customer",
-          customer_cnic: c.customer_segment === "individual" ? c.customer_cnic ?? "—" : "Multiple",
+                ? (c.family_group_name ?? `${c.customer_name} & Family`)
+                : (c.customer_name ?? "Unknown Customer"),
+          customer_cnic:
+            c.customer_segment === "individual"
+              ? (c.customer_cnic ?? "—")
+              : "Multiple",
           customer_segment: c.customer_segment ?? "individual",
           cases: [],
         });
@@ -606,16 +855,22 @@ function UnderwritingMainContent() {
     return Array.from(grouped.values());
   }, [segmentCases, riskSearch]);
 
-  const handleDownloadReport = async (c: CaseQueueItem, e: React.MouseEvent) => {
+  const handleDownloadReport = async (
+    c: CaseQueueItem,
+    e: React.MouseEvent,
+  ) => {
     e.stopPropagation();
     try {
       if (!tenantId) return;
-      const res = await api.get(`/tenants/${tenantId}/cases/${c.caseld}/detail`, {
-        headers: { "X-Tenant-Id": tenantId },
-      });
+      const res = await api.get(
+        `/tenants/${tenantId}/cases/${c.caseld}/detail`,
+        {
+          headers: { "X-Tenant-Id": tenantId },
+        },
+      );
       const { customer, latest_assessment, policy } = res.data;
       if (!latest_assessment) {
-        alert("No AI assessment available to download for this case.");
+        alert(tx("No AI assessment available to download for this case."));
         return;
       }
 
@@ -637,7 +892,7 @@ function UnderwritingMainContent() {
       });
     } catch (err) {
       console.error("Failed to download report:", err);
-      alert("Failed to download report.");
+      alert(tx("Failed to download report."));
     }
   };
 
@@ -658,21 +913,41 @@ function UnderwritingMainContent() {
     }
 
     return [
-      { title: "Folders", value: folders.length, subtitle: "active customer groups", accent: "slate" as const },
-      { title: "Awaiting Documents", value: pendingDocs, subtitle: "intake pending", accent: "slate" as const },
-      { title: "In Underwriting", value: underReview, subtitle: "under evaluation", accent: "slate" as const },
-      { title: "Approved", value: approved, subtitle: "cleared for issuance", accent: "slate" as const },
+      {
+        title: "Folders",
+        value: folders.length,
+        subtitle: "active customer groups",
+        accent: "slate" as const,
+      },
+      {
+        title: "Awaiting Documents",
+        value: pendingDocs,
+        subtitle: "intake pending",
+        accent: "slate" as const,
+      },
+      {
+        title: "In Underwriting",
+        value: underReview,
+        subtitle: "under evaluation",
+        accent: "slate" as const,
+      },
+      {
+        title: "Approved",
+        value: approved,
+        subtitle: "cleared for issuance",
+        accent: "slate" as const,
+      },
     ];
   }, [folders]);
 
   // Both lists are paged: the pre-underwriting proposals queue and the risk-engine folders.
-  const { pageItems: pagedPre, pagination: prePagination } = usePagination(preFiltered);
-  const { pageItems: pagedFolders, pagination: folderPagination } = usePagination(folders);
+  const { pageItems: pagedPre, pagination: prePagination } =
+    usePagination(preFiltered);
+  const { pageItems: pagedFolders, pagination: folderPagination } =
+    usePagination(folders);
 
   return (
     <div className="px-6 py-4 space-y-4 max-w-screen-2xl mx-auto w-full">
-
-
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl text-xs font-semibold">
           {error}
@@ -687,100 +962,176 @@ function UnderwritingMainContent() {
               onClick={() => router.push(returnTo)}
               className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-700 hover:text-blue-900"
             >
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M15 18l-6-6 6-6" /></svg>
-              Back to case
+              <svg
+                className="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+              >
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+              {tx("Back to case")}
             </button>
           )}
           {userRole === "Agent" && (
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-              <span className="font-semibold text-slate-700">View only.</span> Pre-underwriting is handled by your underwriting team. You can follow each case&apos;s progress here, but the gate actions are disabled for the Agent role.
+              <span className="font-semibold text-slate-700">
+                {tx("View only.")}
+              </span>{" "}
+              {tx(
+                "Pre-underwriting is handled by your underwriting team. You can follow each case's progress here, but the gate actions are disabled for the Agent role.",
+              )}
             </div>
           )}
           {/* Executive 4-Card Metric Suite */}
           {!focusCase && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <MetricCard
-              title="Active Proposals"
-              value={preKpis.total}
-              subtitle="intake pipeline total"
-              accent="blue"
-              icon={
-                <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              }
-            />
-            <MetricCard
-              title="Clearance In Progress"
-              value={preKpis.total - preKpis.ready}
-              subtitle="proposals undergoing gate checks"
-              accent="sky"
-              icon={
-                <svg className="w-5 h-5 text-sky-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              }
-            />
-            <MetricCard
-              title="Fully Cleared"
-              value={preKpis.ready}
-              subtitle="all 6 gates settled — ready for risk engine"
-              accent="emerald"
-              icon={
-                <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              }
-            />
-            <MetricCard
-              title="Diagnostics & PEP"
-              value={preKpis.missingMedical + preKpis.missingComp}
-              subtitle="medical exam & sanctions pending"
-              accent="blue"
-              icon={
-                <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                </svg>
-              }
-            />
-          </div>
-
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <MetricCard
+                title={tx("Active Proposals")}
+                value={preKpis.total}
+                subtitle={tx("intake pipeline total")}
+                accent="blue"
+                icon={
+                  <svg
+                    className="w-5 h-5 text-blue-600"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                    />
+                  </svg>
+                }
+              />
+              <MetricCard
+                title={tx("Clearance In Progress")}
+                value={preKpis.total - preKpis.ready}
+                subtitle={tx("proposals undergoing gate checks")}
+                accent="sky"
+                icon={
+                  <svg
+                    className="w-5 h-5 text-sky-600"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                }
+              />
+              <MetricCard
+                title={tx("Fully Cleared")}
+                value={preKpis.ready}
+                subtitle={tx("all 6 gates settled — ready for risk engine")}
+                accent="emerald"
+                icon={
+                  <svg
+                    className="w-5 h-5 text-emerald-600"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                }
+              />
+              <MetricCard
+                title={tx("Diagnostics & PEP")}
+                value={preKpis.missingMedical + preKpis.missingComp}
+                subtitle={tx("medical exam & sanctions pending")}
+                accent="blue"
+                icon={
+                  <svg
+                    className="w-5 h-5 text-blue-600"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
+                    />
+                  </svg>
+                }
+              />
+            </div>
           )}
 
           {/* Controls Bar */}
           {!focusCase && (
-          <div className="flex items-center justify-between gap-3 flex-wrap bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-xs">
-            <div className="flex items-center gap-3 flex-1 min-w-0">
-              <div className="relative w-full max-w-xs">
-                <input
-                  type="text"
-                  placeholder="Search customer, CNIC, or case number…"
-                  value={preSearch}
-                  onChange={(e) => setPreSearch(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-slate-50"
-                />
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2">
-                  <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-                </svg>
+            <div className="flex items-center justify-between gap-3 flex-wrap bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-xs">
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="relative w-full max-w-xs">
+                  <input
+                    type="text"
+                    placeholder={tx("Search customer, CNIC, or case number…")}
+                    value={preSearch}
+                    onChange={(e) => setPreSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-slate-50"
+                  />
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"
+                  >
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                </div>
+                {linkErr && (
+                  <p className="text-xs text-red-600 font-semibold">
+                    {linkErr}
+                  </p>
+                )}
               </div>
-              {linkErr && <p className="text-xs text-red-600 font-semibold">{linkErr}</p>}
-            </div>
 
-            <label className="flex items-center gap-2 text-xs font-semibold text-slate-600 cursor-pointer select-none bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
-              <input type="checkbox" checked={showCompleted} onChange={(e) => setShowCompleted(e.target.checked)} className="rounded text-blue-600 focus:ring-blue-500" />
-              Show fully-cleared proposals
-            </label>
-          </div>
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-600 cursor-pointer select-none bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
+                <input
+                  type="checkbox"
+                  checked={showCompleted}
+                  onChange={(e) => setShowCompleted(e.target.checked)}
+                  className="rounded text-blue-600 focus:ring-blue-500"
+                />
+                {tx("Show fully-cleared proposals")}
+              </label>
+            </div>
           )}
 
           {/* Proposals Queue */}
           <div className="space-y-4">
             {loading ? (
-              <div className="py-16 bg-white rounded-xl border border-slate-200 text-center"><div className="animate-spin h-6 w-6 rounded-full border-2 border-slate-200 border-t-blue-600 mx-auto" /></div>
+              <div className="py-16 bg-white rounded-xl border border-slate-200 text-center">
+                <div className="animate-spin h-6 w-6 rounded-full border-2 border-slate-200 border-t-blue-600 mx-auto" />
+              </div>
             ) : preFiltered.length === 0 ? (
               <div className="py-16 bg-white rounded-xl border border-slate-200 text-center px-4">
-                <p className="text-sm font-bold text-slate-700">No proposals requiring intake attention right now.</p>
-                <p className="text-xs text-slate-400 mt-1">Check "Show fully-cleared proposals" or try another search.</p>
+                <p className="text-sm font-bold text-slate-700">
+                  {tx("No proposals requiring intake attention right now.")}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  {tx(
+                    'Check "Show fully-cleared proposals" or try another search.',
+                  )}
+                </p>
               </div>
             ) : (
               pagedPre.map((c) => {
@@ -804,19 +1155,24 @@ function UnderwritingMainContent() {
                 return (
                   <div
                     key={c.caseld}
-                    className={`bg-white rounded-2xl border transition-all duration-300 overflow-hidden ${cleared
+                    className={`bg-white rounded-2xl border transition-all duration-300 overflow-hidden ${
+                      cleared
                         ? "border-emerald-300/80 shadow-xs bg-gradient-to-b from-emerald-50/10 via-white to-white"
                         : "border-slate-200/90 shadow-xs hover:shadow-md hover:border-slate-300"
-                      }`}
+                    }`}
                   >
                     {/* Card Header */}
                     <div className="px-5 py-4 bg-slate-50/70 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div className="flex items-center gap-3.5">
-                        <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-xs tracking-wider shadow-xs ${cleared
-                            ? "bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-emerald-500/20"
-                            : "bg-gradient-to-br from-blue-700 to-indigo-800 text-white shadow-blue-900/10"
-                          }`}>
-                          {c.customer_name?.slice(0, 2).toUpperCase() ?? "CA"}
+                        <div
+                          className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-xs tracking-wider shadow-xs ${
+                            cleared
+                              ? "bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-emerald-500/20"
+                              : "bg-gradient-to-br from-blue-700 to-indigo-800 text-white shadow-blue-900/10"
+                          }`}
+                        >
+                          {c.customer_name?.slice(0, 2).toUpperCase() ??
+                            tx("CA")}
                         </div>
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
@@ -830,18 +1186,26 @@ function UnderwritingMainContent() {
                               {c.caseNumber}
                             </span>
                             {c.customer_segment && (
-                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider border ${SEGMENT_BADGE_STYLE[c.customer_segment]}`}>
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider border ${SEGMENT_BADGE_STYLE[c.customer_segment]}`}
+                              >
                                 {SEGMENT_LABEL[c.customer_segment]}
                               </span>
                             )}
                           </div>
                           <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap">
                             <span className="inline-flex items-center gap-1 font-mono text-[11px]">
-                              <span className="text-slate-400 font-sans font-medium">CNIC:</span> {c.customer_cnic ?? "—"}
+                              <span className="text-slate-400 font-sans font-medium">
+                                {tx("CNIC:")}
+                              </span>{" "}
+                              {c.customer_cnic ?? "—"}
                             </span>
                             <span className="text-slate-300">•</span>
                             <span className="inline-flex items-center gap-1 text-[11px] text-slate-600">
-                              <span className="text-slate-400 font-medium">Product:</span> {c.product_name ?? "Standard Plan"}
+                              <span className="text-slate-400 font-medium">
+                                {tx("Product:")}
+                              </span>{" "}
+                              {c.product_name ?? tx("Standard Plan")}
                             </span>
                           </div>
                         </div>
@@ -851,8 +1215,12 @@ function UnderwritingMainContent() {
                       <div className="flex items-center gap-4 border-t md:border-t-0 pt-3 md:pt-0 border-slate-200/60">
                         <div className="flex flex-col items-end min-w-[130px]">
                           <div className="flex items-center gap-1.5 mb-1">
-                            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Gate Progress</span>
-                            <span className={`text-xs font-black font-mono ${cleared ? "text-emerald-700" : "text-slate-800"}`}>
+                            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                              {tx("Gate Progress")}
+                            </span>
+                            <span
+                              className={`text-xs font-black font-mono ${cleared ? "text-emerald-700" : "text-slate-800"}`}
+                            >
                               {stepCount}/6
                             </span>
                           </div>
@@ -861,10 +1229,13 @@ function UnderwritingMainContent() {
                             {[1, 2, 3, 4, 5, 6].map((step) => (
                               <div
                                 key={step}
-                                className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${step <= stepCount
-                                    ? cleared ? "bg-emerald-500" : "bg-blue-600"
+                                className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
+                                  step <= stepCount
+                                    ? cleared
+                                      ? "bg-emerald-500"
+                                      : "bg-blue-600"
                                     : "bg-slate-200"
-                                  }`}
+                                }`}
                               />
                             ))}
                           </div>
@@ -875,16 +1246,32 @@ function UnderwritingMainContent() {
                             onClick={() => router.push(`/case/${c.caseld}`)}
                             className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold shadow-sm hover:shadow transition-all flex items-center gap-1.5 active:scale-[0.98]"
                           >
-                            <span>Trigger Risk Engine</span>
-                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+                            <span>{tx("Trigger Risk Engine")}</span>
+                            <svg
+                              className="w-3.5 h-3.5"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2.5"
+                            >
+                              <path d="M5 12h14M12 5l7 7-7 7" />
+                            </svg>
                           </button>
                         ) : (
                           <button
                             onClick={() => router.push(`/case/${c.caseld}`)}
                             className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-xs hover:shadow transition-all flex items-center gap-1.5 active:scale-[0.98]"
                           >
-                            <span>View Case Detail</span>
-                            <svg className="w-3.5 h-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6" /></svg>
+                            <span>{tx("View Case Detail")}</span>
+                            <svg
+                              className="w-3.5 h-3.5 text-slate-400"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <path d="M9 18l6-6-6-6" />
+                            </svg>
                           </button>
                         )}
                       </div>
@@ -893,7 +1280,8 @@ function UnderwritingMainContent() {
                     {/* Pre-Underwriting Operational Progression Timeline — Vertical Progress Lines */}
                     {(() => {
                       const g1Done = c.e_application_status === "Verified";
-                      const g1Submitted = c.e_application_status === "Submitted";
+                      const g1Submitted =
+                        c.e_application_status === "Submitted";
                       const g2Unlocked = g1Done;
                       const g2Done = c.acr_status === "Submitted";
                       const g3Unlocked = g2Done;
@@ -914,21 +1302,58 @@ function UnderwritingMainContent() {
                           <button
                             onClick={() => handleRefreshGate1(c)}
                             disabled={refreshingFor === c.caseld}
-                            title="Fetch the latest e-application status"
+                            title={tx("Fetch the latest e-application status")}
                             className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-xs rounded-lg border border-slate-200 shadow-2xs transition-all flex items-center gap-1.5 disabled:opacity-60"
                           >
-                            <svg className={`w-3.5 h-3.5 ${refreshingFor === c.caseld ? "animate-spin" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></svg>
-                            Refresh
+                            <svg
+                              className={`w-3.5 h-3.5 ${refreshingFor === c.caseld ? "animate-spin" : ""}`}
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                              <path d="M21 3v6h-6" />
+                            </svg>
+                            {tx("Refresh")}
                           </button>
                           {!g1Done && (
                             <button
-                              onClick={() => window.open(g1Link, "_blank", "noopener,noreferrer")}
+                              onClick={() =>
+                                window.open(
+                                  g1Link,
+                                  "_blank",
+                                  "noopener,noreferrer",
+                                )
+                              }
                               disabled={!g1Link}
-                              title={g1Link ? "Open the e-application link in a new tab" : "The link is only shown when generated — use Resend Link to get a new one (it replaces the old link)"}
+                              title={
+                                g1Link
+                                  ? tx(
+                                      "Open the e-application link in a new tab",
+                                    )
+                                  : tx(
+                                      "The link is only shown when generated — use Resend Link to get a new one (it replaces the old link)",
+                                    )
+                              }
                               className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-xs rounded-lg border border-slate-200 shadow-2xs transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><path d="M15 3h6v6" /><path d="M10 14 21 3" /></svg>
-                              Open link
+                              <svg
+                                className="w-3.5 h-3.5"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                <path d="M15 3h6v6" />
+                                <path d="M10 14 21 3" />
+                              </svg>
+                              {tx("Open link")}
                             </button>
                           )}
                         </div>
@@ -943,52 +1368,87 @@ function UnderwritingMainContent() {
                           isDone: g1Done,
                           isLocked: false,
                           isNextActive: !g1Done,
-                          badge: <StatusPill done={g1Done} pending={c.e_application_status ?? "NotSent"} label="Verified" />,
+                          badge: (
+                            <StatusPill
+                              done={g1Done}
+                              pending={c.e_application_status ?? "NotSent"}
+                              label={tx("Verified")}
+                            />
+                          ),
                           action: (
                             <div className="flex items-center gap-2 flex-wrap justify-end">
                               {g1Done ? (
-                            <div className="flex items-center gap-2">
-                              <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                                <span>✓ Verified</span>
-                              </span>
-                              <button
-                                onClick={() => handleOpenVerifyModal(c)}
-                                className="text-[11px] font-bold text-blue-800 hover:text-blue-950 underline px-2.5 py-1 bg-blue-50/80 rounded-lg border border-blue-200/80"
-                              >
-                                View Form →
-                              </button>
-                            </div>
-                          ) : g1Submitted ? (
-                            <button
-                              onClick={() => handleOpenVerifyModal(c)}
-                              disabled={verifyLoadingFor === c.caseld}
-                              className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5"
-                            >
-                              {verifyLoadingFor === c.caseld ? "Loading Details…" : "👁️ Review & Verify Submission →"}
-                            </button>
-                          ) : (
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <button
-                                onClick={() => setCustomizeModal({ caseId: c.caseld, customerName: c.customer_name ?? undefined })}
-                                className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-xs rounded-lg border border-slate-200 shadow-2xs transition-all flex items-center gap-1"
-                              >
-                                <span>⚙️ Customize</span>
-                              </button>
-                              <button
-                                onClick={() => handleGenerateLink(c)}
-                                disabled={linkBusyFor === c.caseld}
-                                className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5 disabled:opacity-50"
-                              >
-                                {linkBusyFor === c.caseld ? "Generating…" : c.e_application_status && c.e_application_status !== "NotSent" ? "Resend Link" : "Generate & Send Link"}
-                              </button>
-                              {generatedLinks[c.caseld] && (
-                                <div className="flex items-center gap-1">
-                                  <input readOnly value={generatedLinks[c.caseld]} onFocus={(e) => e.currentTarget.select()} className="text-[10px] border border-slate-200 rounded px-2 py-1 max-w-[120px] font-mono text-slate-600 bg-white" />
-                                  <button onClick={() => navigator.clipboard.writeText(generatedLinks[c.caseld])} className="text-[10px] font-bold text-blue-700 px-2 py-1 bg-blue-50 border border-blue-200/60 rounded hover:bg-blue-100">Copy</button>
+                                <div className="flex items-center gap-2">
+                                  <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                                    <span>{tx("✓ Verified")}</span>
+                                  </span>
+                                  <button
+                                    onClick={() => handleOpenVerifyModal(c)}
+                                    className="text-[11px] font-bold text-blue-800 hover:text-blue-950 underline px-2.5 py-1 bg-blue-50/80 rounded-lg border border-blue-200/80"
+                                  >
+                                    {tx("View Form →")}
+                                  </button>
+                                </div>
+                              ) : g1Submitted ? (
+                                <button
+                                  onClick={() => handleOpenVerifyModal(c)}
+                                  disabled={verifyLoadingFor === c.caseld}
+                                  className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5"
+                                >
+                                  {verifyLoadingFor === c.caseld
+                                    ? tx("Loading Details…")
+                                    : tx("👁️ Review & Verify Submission →")}
+                                </button>
+                              ) : (
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <button
+                                    onClick={() =>
+                                      setCustomizeModal({
+                                        caseId: c.caseld,
+                                        customerName:
+                                          c.customer_name ?? undefined,
+                                      })
+                                    }
+                                    className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-xs rounded-lg border border-slate-200 shadow-2xs transition-all flex items-center gap-1"
+                                  >
+                                    <span>{tx("⚙️ Customize")}</span>
+                                  </button>
+                                  <button
+                                    onClick={() => handleGenerateLink(c)}
+                                    disabled={linkBusyFor === c.caseld}
+                                    className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5 disabled:opacity-50"
+                                  >
+                                    {linkBusyFor === c.caseld
+                                      ? tx("Generating…")
+                                      : c.e_application_status &&
+                                          c.e_application_status !== "NotSent"
+                                        ? tx("Resend Link")
+                                        : tx("Generate & Send Link")}
+                                  </button>
+                                  {generatedLinks[c.caseld] && (
+                                    <div className="flex items-center gap-1">
+                                      <input
+                                        readOnly
+                                        value={generatedLinks[c.caseld]}
+                                        onFocus={(e) =>
+                                          e.currentTarget.select()
+                                        }
+                                        className="text-[10px] border border-slate-200 rounded px-2 py-1 max-w-[120px] font-mono text-slate-600 bg-white"
+                                      />
+                                      <button
+                                        onClick={() =>
+                                          navigator.clipboard.writeText(
+                                            generatedLinks[c.caseld],
+                                          )
+                                        }
+                                        className="text-[10px] font-bold text-blue-700 px-2 py-1 bg-blue-50 border border-blue-200/60 rounded hover:bg-blue-100"
+                                      >
+                                        {tx("Copy")}
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
                               )}
-                            </div>
-                          )}
                               {g1Tools}
                             </div>
                           ),
@@ -997,63 +1457,100 @@ function UnderwritingMainContent() {
                           num: 2,
                           title: "Agent's Confidential Report (ACR)",
                           law: "Moral Hazard & Financial Standing",
-                          desc: !g2Unlocked ? "Requires completion of Gate 1: E-App Verification before proceeding." : "Moral hazard, KYC witness, and financial standing report submitted by field agent.",
+                          desc: !g2Unlocked
+                            ? "Requires completion of Gate 1: E-App Verification before proceeding."
+                            : "Moral hazard, KYC witness, and financial standing report submitted by field agent.",
                           isDone: g2Done,
                           isLocked: !g2Unlocked,
                           isNextActive: g2Unlocked && !g2Done,
                           // Filed by the agent before Gate 1 cleared: show it, so the update is never invisible
-                          badge: !g2Unlocked ? (g2Done ? <StatusPill done pending="Submitted" label="Submitted" /> : null) : <StatusPill done={g2Done} pending={c.acr_status ?? "Not Started"} label="Submitted" />,
+                          badge: !g2Unlocked ? (
+                            g2Done ? (
+                              <StatusPill
+                                done
+                                pending="Submitted"
+                                label={tx("Submitted")}
+                              />
+                            ) : null
+                          ) : (
+                            <StatusPill
+                              done={g2Done}
+                              pending={c.acr_status ?? "Not Started"}
+                              label={tx("Submitted")}
+                            />
+                          ),
                           action: !g2Unlocked ? (
-                            g2Done
-                              ? <span className="text-xs font-semibold text-emerald-700">✓ Report already filed by the agent, waiting on Gate 1</span>
-                              : <span className="text-xs text-slate-400 font-medium italic">Prerequisite: Complete Gate 1 first</span>
+                            g2Done ? (
+                              <span className="text-xs font-semibold text-emerald-700">
+                                {tx(
+                                  "✓ Report already filed by the agent, waiting on Gate 1",
+                                )}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-400 font-medium italic">
+                                {tx("Prerequisite: Complete Gate 1 first")}
+                              </span>
+                            )
                           ) : g2Done ? (
                             <div className="flex items-center gap-2">
                               <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                                <span>✓ Report Filed</span>
+                                <span>{tx("✓ Report Filed")}</span>
                               </span>
                               <button
                                 onClick={() => openAcrModal(c)}
                                 className="text-[11px] font-bold text-blue-800 hover:text-blue-950 underline px-2 py-1 bg-blue-50/80 rounded-lg border border-blue-200/80"
                               >
-                                View ACR →
+                                {tx("View ACR →")}
                               </button>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-slate-500 font-medium italic">Waiting for the agent to submit it from the app</span>
-                              <button
-                                disabled={!canFileAcr || acrLoadingFor === c.caseld}
-                                onClick={() => askAgentForAcr(c)}
-                                className="px-3 py-1.5 bg-white hover:bg-slate-50 text-blue-700 font-bold text-xs rounded-lg border border-slate-200 shadow-xs disabled:opacity-50"
-                              >
-                                {acrLoadingFor === c.caseld ? "Asking…" : c.acr_status === "Requested" ? "Remind agent" : "Request from agent"}
-                              </button>
-                            </div>
+                            <button
+                              disabled={
+                                !canFileAcr || acrLoadingFor === c.caseld
+                              }
+                              onClick={() => openAcrModal(c)}
+                              className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5 disabled:opacity-50"
+                            >
+                              {acrLoadingFor === c.caseld
+                                ? tx("Loading…")
+                                : c.acr_status === "Draft"
+                                  ? tx("Continue ACR →")
+                                  : tx("File ACR →")}
+                            </button>
                           ),
                         },
                         {
                           num: 3,
                           title: "PEP / Sanctions Screening",
                           law: "OpenSanctions & SECP AML Rules",
-                          desc: !g3Unlocked ? "Requires completion of Gate 2: ACR Submission before proceeding." : "Anti-money laundering, PEP watchlist, and UN/NACTA sanctions screening check.",
+                          desc: !g3Unlocked
+                            ? "Requires completion of Gate 2: ACR Submission before proceeding."
+                            : "Anti-money laundering, PEP watchlist, and UN/NACTA sanctions screening check.",
                           isDone: g3Done,
                           isLocked: !g3Unlocked,
                           isNextActive: g3Unlocked && !g3Done,
-                          badge: !g3Unlocked ? null : <StatusPill done={g3Done} pending={c.compliance_status ?? "Not Started"} label="Passed" />,
+                          badge: !g3Unlocked ? null : (
+                            <StatusPill
+                              done={g3Done}
+                              pending={c.compliance_status ?? "Not Started"}
+                              label={tx("Passed")}
+                            />
+                          ),
                           action: !g3Unlocked ? (
-                            <span className="text-xs text-slate-400 font-medium italic">Prerequisite: Complete Gate 2 first</span>
+                            <span className="text-xs text-slate-400 font-medium italic">
+                              {tx("Prerequisite: Complete Gate 2 first")}
+                            </span>
                           ) : g3Done ? (
                             <div className="flex items-center gap-2">
                               <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                                <span>✓ Screening Passed</span>
+                                <span>{tx("✓ Screening Passed")}</span>
                               </span>
                               <button
                                 onClick={() => handleRunCompliance(c)}
                                 disabled={compBusyFor === c.caseld}
                                 className="text-[11px] font-bold text-blue-800 hover:text-blue-950 underline px-2 py-1 bg-blue-50/80 rounded-lg border border-blue-200/80"
                               >
-                                Re-Screen →
+                                {tx("Re-Screen →")}
                               </button>
                             </div>
                           ) : (
@@ -1065,10 +1562,15 @@ function UnderwritingMainContent() {
                               {compBusyFor === c.caseld ? (
                                 <>
                                   <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                  <span>Screening…</span>
+                                  <span>{tx("Screening…")}</span>
                                 </>
                               ) : (
-                                <span>{c.compliance_status && c.compliance_status !== "NotStarted" ? "Re-Screen PEP →" : "Run Screening →"}</span>
+                                <span>
+                                  {c.compliance_status &&
+                                  c.compliance_status !== "NotStarted"
+                                    ? tx("Re-Screen PEP →")
+                                    : tx("Run Screening →")}
+                                </span>
                               )}
                             </button>
                           ),
@@ -1077,23 +1579,42 @@ function UnderwritingMainContent() {
                           num: 4,
                           title: "Initial Premium Payment (IPP)",
                           law: "Section 30 Insurance Act 1938",
-                          desc: !g4Unlocked ? "Requires completion of Gate 3: PEP Screening before proceeding." : "Section 30 statutory advance payment requirement & premium realization verification.",
+                          desc: !g4Unlocked
+                            ? "Requires completion of Gate 3: PEP Screening before proceeding."
+                            : "Section 30 statutory advance payment requirement & premium realization verification.",
                           isDone: g4Done,
                           isLocked: !g4Unlocked,
                           isNextActive: g4Unlocked && !g4Done,
-                          badge: !g4Unlocked ? null : <StatusPill done={g4Done} pending={c.ipp_status ?? "Not Started"} label="Cleared" />,
+                          badge: !g4Unlocked ? null : (
+                            <StatusPill
+                              done={g4Done}
+                              pending={c.ipp_status ?? "Not Started"}
+                              label={tx("Cleared")}
+                            />
+                          ),
                           action: !g4Unlocked ? (
-                            <span className="text-xs text-slate-400 font-medium italic">Prerequisite: Complete Gate 3 first</span>
+                            <span className="text-xs text-slate-400 font-medium italic">
+                              {tx("Prerequisite: Complete Gate 3 first")}
+                            </span>
                           ) : g4Done ? (
                             <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                              <span>✓ Premium Realized</span>
+                              <span>{tx("✓ Premium Realized")}</span>
                             </span>
                           ) : (
                             <button
-                              onClick={() => setIppModal({ caseId: c.caseld, customerName: c.customer_name ?? undefined })}
+                              onClick={() =>
+                                setIppModal({
+                                  caseId: c.caseld,
+                                  customerName: c.customer_name ?? undefined,
+                                })
+                              }
                               className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5"
                             >
-                              <span>{c.ipp_status === "Initiated" ? "Complete Payment →" : "Collect Payment →"}</span>
+                              <span>
+                                {c.ipp_status === "Initiated"
+                                  ? tx("Complete Payment →")
+                                  : tx("Collect Payment →")}
+                              </span>
                             </button>
                           ),
                         },
@@ -1101,24 +1622,36 @@ function UnderwritingMainContent() {
                           num: 5,
                           title: "Industry Insurance History",
                           law: "CII Shared Database Standard",
-                          desc: !g5Unlocked ? "Requires completion of Gate 4: IPP Clearance before proceeding." : "Prior and other-insurer cover verification, cumulative exposure, over-insurance, and replacement.",
+                          desc: !g5Unlocked
+                            ? "Requires completion of Gate 4: IPP Clearance before proceeding."
+                            : "Prior and other-insurer cover verification, cumulative exposure, over-insurance, and replacement.",
                           isDone: g5Done,
                           isLocked: !g5Unlocked,
                           isNextActive: g5Unlocked && !g5Done,
-                          badge: !g5Unlocked ? null : <StatusPill done={g5Done} pending={c.insurance_history_status ?? "Not Started"} label="Clear" />,
+                          badge: !g5Unlocked ? null : (
+                            <StatusPill
+                              done={g5Done}
+                              pending={
+                                c.insurance_history_status ?? "Not Started"
+                              }
+                              label={tx("Clear")}
+                            />
+                          ),
                           action: !g5Unlocked ? (
-                            <span className="text-xs text-slate-400 font-medium italic">Prerequisite: Complete Gate 4 first</span>
+                            <span className="text-xs text-slate-400 font-medium italic">
+                              {tx("Prerequisite: Complete Gate 4 first")}
+                            </span>
                           ) : g5Done ? (
                             <div className="flex items-center gap-2">
                               <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                                <span>✓ History Clear</span>
+                                <span>{tx("✓ History Clear")}</span>
                               </span>
                               <button
                                 onClick={() => handleRunHistory(c)}
                                 disabled={histBusyFor === c.caseld}
                                 className="text-[11px] font-bold text-blue-800 hover:text-blue-950 underline px-2 py-1 bg-blue-50/80 rounded-lg border border-blue-200/80"
                               >
-                                Re-check →
+                                {tx("Re-check →")}
                               </button>
                             </div>
                           ) : (
@@ -1130,10 +1663,15 @@ function UnderwritingMainContent() {
                               {histBusyFor === c.caseld ? (
                                 <>
                                   <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                  <span>Checking…</span>
+                                  <span>{tx("Checking…")}</span>
                                 </>
                               ) : (
-                                <span>{c.insurance_history_status && c.insurance_history_status !== "NotStarted" ? "Re-check History →" : "Run History Check →"}</span>
+                                <span>
+                                  {c.insurance_history_status &&
+                                  c.insurance_history_status !== "NotStarted"
+                                    ? tx("Re-check History →")
+                                    : tx("Run History Check →")}
+                                </span>
                               )}
                             </button>
                           ),
@@ -1142,24 +1680,45 @@ function UnderwritingMainContent() {
                           num: 6,
                           title: "Medical Examination & NML",
                           law: "Non-Medical Limit Matrix",
-                          desc: !g6Unlocked ? "Requires completion of Gate 5: Insurance History Check before proceeding." : "Non-medical limit grid verification and panel-clinic diagnostics appointment.",
+                          desc: !g6Unlocked
+                            ? "Requires completion of Gate 5: Insurance History Check before proceeding."
+                            : "Non-medical limit grid verification and panel-clinic diagnostics appointment.",
                           isDone: g6Done,
                           isLocked: !g6Unlocked,
                           isNextActive: g6Unlocked && !g6Done,
-                          badge: !g6Unlocked ? null : <StatusPill done={g6Done} pending={c.medical_exam_status ?? "Not Assessed"} label={c.medical_exam_status === "NotRequired" ? "Within NML" : "Completed"} />,
+                          badge: !g6Unlocked ? null : (
+                            <StatusPill
+                              done={g6Done}
+                              pending={c.medical_exam_status ?? "Not Assessed"}
+                              label={
+                                c.medical_exam_status === "NotRequired"
+                                  ? tx("Within NML")
+                                  : tx("Completed")
+                              }
+                            />
+                          ),
                           action: !g6Unlocked ? (
-                            <span className="text-xs text-slate-400 font-medium italic">Prerequisite: Complete Gate 5 first</span>
+                            <span className="text-xs text-slate-400 font-medium italic">
+                              {tx("Prerequisite: Complete Gate 5 first")}
+                            </span>
                           ) : g6Done ? (
                             <div className="flex items-center gap-2">
                               <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                                <span>✓ {c.medical_exam_status === "NotRequired" ? "No Exam Required" : c.medical_exam_status === "Waived" ? "Waived" : "Results Received"}</span>
+                                <span>
+                                  ✓{" "}
+                                  {c.medical_exam_status === "NotRequired"
+                                    ? tx("No Exam Required")
+                                    : c.medical_exam_status === "Waived"
+                                      ? tx("Waived")
+                                      : tx("Results Received")}
+                                </span>
                               </span>
                               <button
                                 onClick={() => handleMedical(c)}
                                 disabled={medBusyFor === c.caseld}
                                 className="text-[11px] font-bold text-blue-800 hover:text-blue-950 underline px-2 py-1 bg-blue-50/80 rounded-lg border border-blue-200/80"
                               >
-                                Re-Apply NML →
+                                {tx("Re-Apply NML →")}
                               </button>
                             </div>
                           ) : (
@@ -1171,17 +1730,17 @@ function UnderwritingMainContent() {
                               {medBusyFor === c.caseld ? (
                                 <>
                                   <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                  <span>Applying NML…</span>
+                                  <span>{tx("Applying NML…")}</span>
                                 </>
                               ) : (
                                 <span>
                                   {c.medical_exam_status === "Scheduled"
-                                    ? "View Appointment →"
+                                    ? tx("View Appointment →")
                                     : c.medical_exam_status === "Invited"
-                                    ? "Resend Booking Link →"
-                                    : c.medical_exam_status === "Required"
-                                    ? "Invite for Checkup →"
-                                    : "Apply NML Grid →"}
+                                      ? tx("Resend Booking Link →")
+                                      : c.medical_exam_status === "Required"
+                                        ? tx("Invite for Checkup →")
+                                        : tx("Apply NML Grid →")}
                                 </span>
                               )}
                             </button>
@@ -1194,92 +1753,159 @@ function UnderwritingMainContent() {
                           <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
                             <div className="flex items-center gap-2">
                               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                                Operational Progression Timeline
+                                {tx("Operational Progression Timeline")}
                               </span>
                               <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200/60 font-mono">
-                                Sequential Gating 1 → 6
+                                {tx("Sequential Gating 1 → 6")}
                               </span>
                             </div>
                             <span className="text-xs text-slate-500">
-                              Completed <strong className="text-slate-900 font-mono">{stepCount}</strong> of 6 verification milestones
+                              {tx("Completed")}{" "}
+                              <strong className="text-slate-900 font-mono">
+                                {stepCount}
+                              </strong>{" "}
+                              {tx("of 6 verification milestones")}
                             </span>
                           </div>
 
                           <div className="relative pl-2">
                             {(() => {
-                              const isShowingAll = showAllGates[c.caseld] || false;
-                              const defaultActive = gateSteps.find(s => s.isNextActive)?.num || gateSteps[gateSteps.length - 1].num;
-                              const activeNum = expandedGates[c.caseld] !== undefined ? expandedGates[c.caseld] : defaultActive;
-                              const onlyEApp = focusCase === c.caseld && focusGate === "eapp";
-                              const visibleSteps = onlyEApp ? [gateSteps[0]] : isShowingAll ? gateSteps : [gateSteps.find(s => s.num === defaultActive) || gateSteps[0]];
-                              
+                              const isShowingAll =
+                                showAllGates[c.caseld] || false;
+                              const defaultActive =
+                                gateSteps.find((s) => s.isNextActive)?.num ||
+                                gateSteps[gateSteps.length - 1].num;
+                              const activeNum =
+                                expandedGates[c.caseld] !== undefined
+                                  ? expandedGates[c.caseld]
+                                  : defaultActive;
+                              const onlyEApp =
+                                focusCase === c.caseld && focusGate === "eapp";
+                              const visibleSteps = onlyEApp
+                                ? [gateSteps[0]]
+                                : isShowingAll
+                                  ? gateSteps
+                                  : [
+                                      gateSteps.find(
+                                        (s) => s.num === defaultActive,
+                                      ) || gateSteps[0],
+                                    ];
+
                               return (
                                 <>
-                                  {!onlyEApp && !isShowingAll && defaultActive > 1 && (
-                                    <div 
-                                      className="relative flex gap-4 transition-all duration-300 pb-2 cursor-pointer group"
-                                      onClick={() => setShowAllGates(prev => ({ ...prev, [c.caseld]: true }))}
-                                    >
-                                      <div className="absolute top-8 left-[17px] -ml-px w-0.5 h-[calc(100%-20px)] bg-emerald-500" />
-                                      <div className="relative z-10 shrink-0 w-9 h-9 rounded-full bg-slate-50 text-slate-400 border border-slate-200 flex items-center justify-center text-xs font-bold group-hover:bg-emerald-50 group-hover:text-emerald-600 group-hover:border-emerald-200 transition-colors shadow-sm">
-                                        <span className="tracking-[0.1em] -ml-0.5">•••</span>
+                                  {!onlyEApp &&
+                                    !isShowingAll &&
+                                    defaultActive > 1 && (
+                                      <div
+                                        className="relative flex gap-4 transition-all duration-300 pb-2 cursor-pointer group"
+                                        onClick={() =>
+                                          setShowAllGates((prev) => ({
+                                            ...prev,
+                                            [c.caseld]: true,
+                                          }))
+                                        }
+                                      >
+                                        <div className="absolute top-8 left-[17px] -ml-px w-0.5 h-[calc(100%-20px)] bg-emerald-500" />
+                                        <div className="relative z-10 shrink-0 w-9 h-9 rounded-full bg-slate-50 text-slate-400 border border-slate-200 flex items-center justify-center text-xs font-bold group-hover:bg-emerald-50 group-hover:text-emerald-600 group-hover:border-emerald-200 transition-colors shadow-sm">
+                                          <span className="tracking-[0.1em] -ml-0.5">
+                                            •••
+                                          </span>
+                                        </div>
+                                        <div className="flex-1 flex flex-col justify-center">
+                                          <span className="text-[11px] font-semibold text-slate-400 group-hover:text-emerald-600 transition-colors">
+                                            {tx("Show")} {defaultActive - 1}{" "}
+                                            {tx("previous stage")}
+                                            {defaultActive - 1 > 1 ? "s" : ""}
+                                          </span>
+                                        </div>
                                       </div>
-                                      <div className="flex-1 flex flex-col justify-center">
-                                        <span className="text-[11px] font-semibold text-slate-400 group-hover:text-emerald-600 transition-colors">
-                                          Show {defaultActive - 1} previous stage{defaultActive - 1 > 1 ? "s" : ""}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  )}
+                                    )}
 
                                   {visibleSteps.map((step, idx) => {
-                                    const isLast = isShowingAll ? false : defaultActive === gateSteps.length;
+                                    const isLast = isShowingAll
+                                      ? false
+                                      : defaultActive === gateSteps.length;
                                     return (
-                                      <GateStepItem 
-                                        key={step.num} 
-                                        step={step} 
-                                        isLast={isLast} 
+                                      <GateStepItem
+                                        key={step.num}
+                                        step={step}
+                                        isLast={isLast}
                                         isExpanded={activeNum === step.num}
                                         readOnly={userRole === "Agent"}
                                         onToggle={() => {
-                                          setExpandedGates(prev => ({
+                                          setExpandedGates((prev) => ({
                                             ...prev,
-                                            [c.caseld]: prev[c.caseld] === step.num ? -1 : step.num
+                                            [c.caseld]:
+                                              prev[c.caseld] === step.num
+                                                ? -1
+                                                : step.num,
                                           }));
                                         }}
                                       />
                                     );
                                   })}
 
-                                  {!onlyEApp && !isShowingAll && defaultActive < gateSteps.length && (
-                                    <div 
-                                      className="relative flex gap-4 transition-all duration-300 pb-2 pt-1 cursor-pointer group"
-                                      onClick={() => setShowAllGates(prev => ({ ...prev, [c.caseld]: true }))}
-                                    >
-                                      <div className="relative z-10 shrink-0 w-9 h-9 rounded-full bg-slate-50 text-slate-400 border border-slate-200 flex items-center justify-center text-xs font-bold group-hover:bg-slate-100 group-hover:text-slate-600 group-hover:border-slate-300 transition-colors shadow-sm">
-                                        <span className="tracking-[0.1em] -ml-0.5">•••</span>
+                                  {!onlyEApp &&
+                                    !isShowingAll &&
+                                    defaultActive < gateSteps.length && (
+                                      <div
+                                        className="relative flex gap-4 transition-all duration-300 pb-2 pt-1 cursor-pointer group"
+                                        onClick={() =>
+                                          setShowAllGates((prev) => ({
+                                            ...prev,
+                                            [c.caseld]: true,
+                                          }))
+                                        }
+                                      >
+                                        <div className="relative z-10 shrink-0 w-9 h-9 rounded-full bg-slate-50 text-slate-400 border border-slate-200 flex items-center justify-center text-xs font-bold group-hover:bg-slate-100 group-hover:text-slate-600 group-hover:border-slate-300 transition-colors shadow-sm">
+                                          <span className="tracking-[0.1em] -ml-0.5">
+                                            •••
+                                          </span>
+                                        </div>
+                                        <div className="flex-1 flex flex-col justify-center">
+                                          <span className="text-[11px] font-semibold text-slate-400 group-hover:text-slate-600 transition-colors">
+                                            {tx("Show")}{" "}
+                                            {gateSteps.length - defaultActive}{" "}
+                                            {tx("remaining stage")}
+                                            {gateSteps.length - defaultActive >
+                                            1
+                                              ? "s"
+                                              : ""}
+                                          </span>
+                                        </div>
                                       </div>
-                                      <div className="flex-1 flex flex-col justify-center">
-                                        <span className="text-[11px] font-semibold text-slate-400 group-hover:text-slate-600 transition-colors">
-                                          Show {gateSteps.length - defaultActive} remaining stage{gateSteps.length - defaultActive > 1 ? "s" : ""}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  )}
+                                    )}
 
                                   {!onlyEApp && isShowingAll && (
-                                    <div 
+                                    <div
                                       className="relative flex gap-4 transition-all duration-300 pb-2 pt-1 cursor-pointer group"
-                                      onClick={() => setShowAllGates(prev => ({ ...prev, [c.caseld]: false }))}
+                                      onClick={() =>
+                                        setShowAllGates((prev) => ({
+                                          ...prev,
+                                          [c.caseld]: false,
+                                        }))
+                                      }
                                     >
                                       <div className="relative z-10 shrink-0 w-9 h-9 rounded-full bg-slate-50 text-slate-500 border border-slate-200 flex items-center justify-center text-xs font-bold group-hover:bg-slate-200 group-hover:text-slate-700 group-hover:border-slate-300 transition-colors shadow-sm">
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                        <svg
+                                          className="w-4 h-4"
+                                          fill="none"
+                                          viewBox="0 0 24 24"
+                                          stroke="currentColor"
+                                        >
+                                          <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M5 15l7-7 7 7"
+                                          />
                                         </svg>
                                       </div>
                                       <div className="flex-1 flex flex-col justify-center">
                                         <span className="text-[11px] font-semibold text-slate-500 group-hover:text-slate-700 transition-colors">
-                                          Collapse timeline (view active only)
+                                          {tx(
+                                            "Collapse timeline (view active only)",
+                                          )}
                                         </span>
                                       </div>
                                     </div>
@@ -1295,7 +1921,9 @@ function UnderwritingMainContent() {
                 );
               })
             )}
-            {!loading && <Pagination pagination={prePagination} noun="proposals" />}
+            {!loading && (
+              <Pagination pagination={prePagination} noun={tx("proposals")} />
+            )}
           </div>
         </div>
       )}
@@ -1315,12 +1943,16 @@ function UnderwritingMainContent() {
             <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
               <input
                 type="text"
-                placeholder="Search customer, CNIC, or case number…"
+                placeholder={tx("Search customer, CNIC, or case number…")}
                 value={riskSearch}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full max-w-xs px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-white"
               />
-              <SegmentDropdown value={segment} onChange={setSegment} counts={segmentCounts} />
+              <SegmentDropdown
+                value={segment}
+                onChange={setSegment}
+                counts={segmentCounts}
+              />
 
               <FiltersPanel
                 dateFrom={dateFrom}
@@ -1338,7 +1970,10 @@ function UnderwritingMainContent() {
                   { value: "Rejected", label: "Rejected" },
                   { value: "Closed", label: "Closed" },
                 ]}
-                activeCount={[filterStatus !== "ALL", dateFrom || dateTo].filter(Boolean).length}
+                activeCount={
+                  [filterStatus !== "ALL", dateFrom || dateTo].filter(Boolean)
+                    .length
+                }
                 onClearAll={() => {
                   setFilterStatus("ALL");
                   setDateFrom("");
@@ -1352,13 +1987,34 @@ function UnderwritingMainContent() {
                 onClick={() => setViewMode("list")}
                 className={`p-1.5 rounded-lg transition-all ${viewMode === "list" ? "bg-white text-blue-600 shadow-xs" : "text-slate-500 hover:text-slate-700"}`}
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  className="w-4 h-4"
+                >
+                  <line x1="3" y1="6" x2="21" y2="6" />
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                  <line x1="3" y1="18" x2="21" y2="18" />
+                </svg>
               </button>
               <button
                 onClick={() => setViewMode("grid")}
                 className={`p-1.5 rounded-lg transition-all ${viewMode === "grid" ? "bg-white text-blue-600 shadow-xs" : "text-slate-500 hover:text-slate-700"}`}
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  className="w-4 h-4"
+                >
+                  <rect x="3" y="3" width="7" height="7" />
+                  <rect x="14" y="3" width="7" height="7" />
+                  <rect x="14" y="14" width="7" height="7" />
+                  <rect x="3" y="14" width="7" height="7" />
+                </svg>
               </button>
             </div>
           </div>
@@ -1366,51 +2022,104 @@ function UnderwritingMainContent() {
           {/* Customer Group Folders */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
             {loading ? (
-              <div className="py-16 flex justify-center"><div className="animate-spin h-6 w-6 rounded-full border-2 border-slate-100 border-t-blue-600" /></div>
+              <div className="py-16 flex justify-center">
+                <div className="animate-spin h-6 w-6 rounded-full border-2 border-slate-100 border-t-blue-600" />
+              </div>
             ) : folders.length === 0 ? (
               <div className="py-16 flex flex-col items-center justify-center text-center px-4">
-                <p className="text-sm font-bold text-slate-700">No underwriting case folders match your criteria.</p>
-                <p className="text-xs text-slate-400 mt-1">Cases open automatically when a quotation is proceeded.</p>
+                <p className="text-sm font-bold text-slate-700">
+                  {tx("No underwriting case folders match your criteria.")}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  {tx(
+                    "Cases open automatically when a quotation is proceeded.",
+                  )}
+                </p>
               </div>
             ) : (
-              <div className={viewMode === "grid" ? "p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" : "p-4 flex flex-col gap-3"}>
+              <div
+                className={
+                  viewMode === "grid"
+                    ? "p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+                    : "p-4 flex flex-col gap-3"
+                }
+              >
                 {pagedFolders.map((folder) => {
                   const isExpanded = expandedCustomerId === folder.customer_id;
-                  const decidedCount = folder.cases.filter((c) => c.latest_ai_decision).length;
+                  const decidedCount = folder.cases.filter(
+                    (c) => c.latest_ai_decision,
+                  ).length;
                   return (
                     <div
                       key={folder.customer_id}
-                      className={`flex flex-col border rounded-xl overflow-hidden transition-all duration-200 ${isExpanded ? "border-blue-300 shadow-md ring-1 ring-blue-500/20" : "border-slate-200 shadow-xs hover:shadow-md hover:border-blue-200 bg-white"
-                        }`}
+                      className={`flex flex-col border rounded-xl overflow-hidden transition-all duration-200 ${
+                        isExpanded
+                          ? "border-blue-300 shadow-md ring-1 ring-blue-500/20"
+                          : "border-slate-200 shadow-xs hover:shadow-md hover:border-blue-200 bg-white"
+                      }`}
                     >
                       <div
-                        onClick={() => setExpandedCustomerId(isExpanded ? null : folder.customer_id)}
+                        onClick={() =>
+                          setExpandedCustomerId(
+                            isExpanded ? null : folder.customer_id,
+                          )
+                        }
                         className={`flex items-start justify-between cursor-pointer select-none p-4 ${isExpanded ? "bg-blue-50/40" : "bg-white"}`}
                       >
                         <div className="flex items-start gap-3 flex-1 min-w-0">
-                          <div className={`w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-xl ${isExpanded ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-500"}`}>
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
+                          <div
+                            className={`w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-xl ${isExpanded ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-500"}`}
+                          >
+                            <svg
+                              width="18"
+                              height="18"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                            </svg>
                           </div>
                           <div className="min-w-0 flex-1">
-                            <h3 className="text-sm font-bold text-slate-900 truncate">{folder.customer_name}</h3>
-                            <p className="text-[11px] text-slate-500 font-mono mt-0.5">{folder.customer_cnic}</p>
+                            <h3 className="text-sm font-bold text-slate-900 truncate">
+                              {folder.customer_name}
+                            </h3>
+                            <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                              {folder.customer_cnic}
+                            </p>
                             <div className="flex flex-wrap gap-1.5 mt-2">
-                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold border uppercase tracking-wide ${SEGMENT_BADGE_STYLE[folder.customer_segment]}`}>
+                              <span
+                                className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold border uppercase tracking-wide ${SEGMENT_BADGE_STYLE[folder.customer_segment]}`}
+                              >
                                 {SEGMENT_LABEL[folder.customer_segment]}
                               </span>
                               {decidedCount > 0 && (
                                 <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">
-                                  {decidedCount} evaluated
+                                  {decidedCount} {tx("evaluated")}
                                 </span>
                               )}
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                                {folder.cases.length} {folder.cases.length === 1 ? "Case" : "Cases"}
+                                {folder.cases.length}{" "}
+                                {folder.cases.length === 1
+                                  ? tx("Case")
+                                  : tx("Cases")}
                               </span>
                             </div>
                           </div>
                         </div>
                         <div className="pt-1">
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`text-slate-400 transition-transform ${isExpanded ? "rotate-180 text-blue-500" : ""}`}><polyline points="6 9 12 15 18 9" /></svg>
+                          <svg
+                            width="18"
+                            height="18"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            className={`text-slate-400 transition-transform ${isExpanded ? "rotate-180 text-blue-500" : ""}`}
+                          >
+                            <polyline points="6 9 12 15 18 9" />
+                          </svg>
                         </div>
                       </div>
 
@@ -1419,46 +2128,97 @@ function UnderwritingMainContent() {
                           <table className="w-full text-xs">
                             <thead>
                               <tr className="border-b border-slate-100 bg-slate-50 font-semibold uppercase tracking-wider text-slate-400">
-                                <th className="px-4 py-2.5 text-left">Case</th>
-                                <th className="px-4 py-2.5 text-left">Product</th>
-                                <th className="px-4 py-2.5 text-right">Sum Assured</th>
-                                <th className="px-4 py-2.5 text-left">Status</th>
-                                <th className="px-4 py-2.5 text-left">AI Decision</th>
+                                <th className="px-4 py-2.5 text-left">
+                                  {tx("Case")}
+                                </th>
+                                <th className="px-4 py-2.5 text-left">
+                                  {tx("Product")}
+                                </th>
+                                <th className="px-4 py-2.5 text-right">
+                                  {tx("Sum Assured")}
+                                </th>
+                                <th className="px-4 py-2.5 text-left">
+                                  {tx("Status")}
+                                </th>
+                                <th className="px-4 py-2.5 text-left">
+                                  {tx("AI Decision")}
+                                </th>
                                 <th className="px-4 py-2.5 text-right" />
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-50">
                               {folder.cases.map((c) => (
-                                <tr key={c.caseld} onClick={() => router.push(`/case/${c.caseld}`)} className="hover:bg-slate-50 cursor-pointer transition-colors">
+                                <tr
+                                  key={c.caseld}
+                                  onClick={() =>
+                                    router.push(`/case/${c.caseld}`)
+                                  }
+                                  className="hover:bg-slate-50 cursor-pointer transition-colors"
+                                >
                                   <td className="px-4 py-2.5">
-                                    <p className="font-semibold text-slate-900">{c.customer_name}</p>
-                                    <p className="font-mono text-[10px] text-slate-500 mt-0.5">{c.caseNumber}</p>
+                                    <p className="font-semibold text-slate-900">
+                                      {c.customer_name}
+                                    </p>
+                                    <p className="font-mono text-[10px] text-slate-500 mt-0.5">
+                                      {c.caseNumber}
+                                    </p>
                                   </td>
-                                  <td className="px-4 py-2.5 text-slate-600">{c.product_name ?? "—"}</td>
-                                  <td className="px-4 py-2.5 text-right font-semibold text-slate-700">{c.coverage_amount != null ? fmtCoverage(c.coverage_amount) : "—"}</td>
+                                  <td className="px-4 py-2.5 text-slate-600">
+                                    {c.product_name ?? "—"}
+                                  </td>
+                                  <td className="px-4 py-2.5 text-right font-semibold text-slate-700">
+                                    {c.coverage_amount != null
+                                      ? fmtCoverage(c.coverage_amount)
+                                      : "—"}
+                                  </td>
                                   <td className="px-4 py-2.5">
-                                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border ${CASE_STATUS_STYLE[c.caseStatus] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>
+                                    <span
+                                      className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border ${CASE_STATUS_STYLE[c.caseStatus] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}
+                                    >
                                       {c.caseStatus}
                                     </span>
                                   </td>
                                   <td className="px-4 py-2.5">
-                                    {c.latest_ai_decision ? <StatusBadge decision={c.latest_ai_decision} /> : <span className="text-[10px] text-slate-400 italic">Not evaluated</span>}
+                                    {c.latest_ai_decision ? (
+                                      <StatusBadge
+                                        decision={c.latest_ai_decision}
+                                      />
+                                    ) : (
+                                      <span className="text-[10px] text-slate-400 italic">
+                                        {tx("Not evaluated")}
+                                      </span>
+                                    )}
                                   </td>
                                   <td className="px-4 py-2.5 text-right">
                                     <div className="flex items-center justify-end gap-2">
                                       {c.latest_ai_decision && (
-                                        <button onClick={(e) => handleDownloadReport(c, e)} className="text-xs font-semibold text-slate-500 hover:text-slate-800">Report</button>
-                                      )}
-                                      {c.policy_id && c.caseStatus !== "Approved" && c.caseStatus !== "Rejected" && (
                                         <button
-                                          disabled={userRole === "Agent"}
-                                          onClick={(e) => { e.stopPropagation(); if (userRole !== "Agent") setCounterOfferCase(c); }}
-                                          className={`text-xs font-semibold ${userRole === "Agent" ? "text-slate-300 cursor-not-allowed" : "text-amber-600 hover:text-amber-700"}`}
+                                          onClick={(e) =>
+                                            handleDownloadReport(c, e)
+                                          }
+                                          className="text-xs font-semibold text-slate-500 hover:text-slate-800"
                                         >
-                                          Counter-offer
+                                          {tx("Report")}
                                         </button>
                                       )}
-                                      <span className="text-xs font-bold text-blue-600">Open →</span>
+                                      {c.policy_id &&
+                                        c.caseStatus !== "Approved" &&
+                                        c.caseStatus !== "Rejected" && (
+                                          <button
+                                            disabled={userRole === "Agent"}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              if (userRole !== "Agent")
+                                                setCounterOfferCase(c);
+                                            }}
+                                            className={`text-xs font-semibold ${userRole === "Agent" ? "text-slate-300 cursor-not-allowed" : "text-amber-600 hover:text-amber-700"}`}
+                                          >
+                                            {tx("Counter-offer")}
+                                          </button>
+                                        )}
+                                      <span className="text-xs font-bold text-blue-600">
+                                        {tx("Open →")}
+                                      </span>
                                     </div>
                                   </td>
                                 </tr>
@@ -1472,7 +2232,12 @@ function UnderwritingMainContent() {
                 })}
               </div>
             )}
-            {!loading && <Pagination pagination={folderPagination} noun="customer folders" />}
+            {!loading && (
+              <Pagination
+                pagination={folderPagination}
+                noun={tx("customer folders")}
+              />
+            )}
           </div>
         </div>
       )}
@@ -1483,7 +2248,10 @@ function UnderwritingMainContent() {
           caseId={acrModal.caseId}
           initial={acrModal.initial}
           onClose={() => setAcrModal(null)}
-          onDone={() => { setAcrModal(null); loadData(); }}
+          onDone={() => {
+            setAcrModal(null);
+            loadData();
+          }}
         />
       )}
 
@@ -1493,7 +2261,10 @@ function UnderwritingMainContent() {
           caseId={ippModal.caseId}
           customerName={ippModal.customerName}
           onClose={() => setIppModal(null)}
-          onConfirmed={() => { setIppModal(null); loadData(); }}
+          onConfirmed={() => {
+            setIppModal(null);
+            loadData();
+          }}
         />
       )}
 
@@ -1503,32 +2274,68 @@ function UnderwritingMainContent() {
           <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <div>
-                <h3 className="font-bold text-slate-900 text-sm">Compliance Screening Results</h3>
-                <p className="text-xs text-slate-500">{compModal.customerName ?? compModal.caseId}</p>
+                <h3 className="font-bold text-slate-900 text-sm">
+                  {tx("Compliance Screening Results")}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {compModal.customerName ?? compModal.caseId}
+                </p>
               </div>
-              <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${compModal.data.overall_status === "Passed" ? "bg-emerald-100 text-emerald-800 border border-emerald-200" :
-                  compModal.data.overall_status === "Flagged" ? "bg-amber-100 text-amber-800 border border-amber-200" : "bg-red-100 text-red-800 border border-red-200"
-                }`}>
+              <span
+                className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                  compModal.data.overall_status === "Passed"
+                    ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                    : compModal.data.overall_status === "Flagged"
+                      ? "bg-amber-100 text-amber-800 border border-amber-200"
+                      : "bg-red-100 text-red-800 border border-red-200"
+                }`}
+              >
                 {compModal.data.overall_status}
               </span>
             </div>
             <div className="p-5 space-y-3 max-h-[60vh] overflow-y-auto">
               {compModal.data.checks?.map((chk: any) => (
-                <div key={chk.id || chk.check_type} className="border border-slate-200 rounded-xl p-3.5 space-y-1.5 bg-slate-50/50 text-xs">
+                <div
+                  key={chk.id || chk.check_type}
+                  className="border border-slate-200 rounded-xl p-3.5 space-y-1.5 bg-slate-50/50 text-xs"
+                >
                   <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-800">{chk.check_type} Check</span>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${chk.status === "Passed" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
-                        chk.status === "Flagged" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-red-50 text-red-700 border border-red-200"
-                      }`}>
+                    <span className="font-semibold text-slate-800">
+                      {chk.check_type} {tx("Check")}
+                    </span>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        chk.status === "Passed"
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          : chk.status === "Flagged"
+                            ? "bg-amber-50 text-amber-700 border border-amber-200"
+                            : "bg-red-50 text-red-700 border border-red-200"
+                      }`}
+                    >
                       {chk.status}
                     </span>
                   </div>
                   {chk.details && (
                     <div className="text-[11px] text-slate-600 bg-white p-2.5 rounded-lg border border-slate-100 space-y-1">
-                      {chk.details.note && <p className="font-medium text-slate-700">{chk.details.note}</p>}
-                      {chk.details.cnic && <p className="font-mono text-[10px] text-slate-500">CNIC: {chk.details.cnic}</p>}
-                      {chk.details.list && <p className="text-slate-500">List: {chk.details.list}</p>}
-                      {chk.details.reasons && chk.details.reasons.map((r: string, idx: number) => <p key={idx}>{r}</p>)}
+                      {chk.details.note && (
+                        <p className="font-medium text-slate-700">
+                          {chk.details.note}
+                        </p>
+                      )}
+                      {chk.details.cnic && (
+                        <p className="font-mono text-[10px] text-slate-500">
+                          {tx("CNIC:")} {chk.details.cnic}
+                        </p>
+                      )}
+                      {chk.details.list && (
+                        <p className="text-slate-500">
+                          {tx("List:")} {chk.details.list}
+                        </p>
+                      )}
+                      {chk.details.reasons &&
+                        chk.details.reasons.map((r: string, idx: number) => (
+                          <p key={idx}>{r}</p>
+                        ))}
                     </div>
                   )}
                 </div>
@@ -1537,15 +2344,22 @@ function UnderwritingMainContent() {
             <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
               {compModal.data.overall_status === "Flagged" && (
                 <button
-                  onClick={() => handleForceProceedCompliance(compModal.data.checks)}
+                  onClick={() =>
+                    handleForceProceedCompliance(compModal.data.checks)
+                  }
                   disabled={forceProceedBusy}
                   className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50"
                 >
-                  {forceProceedBusy ? "Proceeding..." : "Proceed Anyway"}
+                  {forceProceedBusy
+                    ? tx("Proceeding...")
+                    : tx("Proceed Anyway")}
                 </button>
               )}
-              <button onClick={() => setCompModal(null)} className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold">
-                Close &amp; Continue
+              <button
+                onClick={() => setCompModal(null)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold"
+              >
+                {tx("Close & Continue")}
               </button>
             </div>
           </div>
@@ -1558,72 +2372,125 @@ function UnderwritingMainContent() {
           <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <div>
-                <h3 className="font-bold text-slate-900 text-sm">Insurance History Screen</h3>
-                <p className="text-xs text-slate-500">{histModal.customerName ?? histModal.caseId}</p>
+                <h3 className="font-bold text-slate-900 text-sm">
+                  {tx("Insurance History Screen")}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {histModal.customerName ?? histModal.caseId}
+                </p>
               </div>
-              <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${histModal.data.status === "Clear" ? "bg-emerald-100 text-emerald-800 border border-emerald-200" :
-                  histModal.data.status === "Flagged" ? "bg-amber-100 text-amber-800 border border-amber-200" :
-                    "bg-red-100 text-red-800 border border-red-200"
-                }`}>
+              <span
+                className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                  histModal.data.status === "Clear"
+                    ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                    : histModal.data.status === "Flagged"
+                      ? "bg-amber-100 text-amber-800 border border-amber-200"
+                      : "bg-red-100 text-red-800 border border-red-200"
+                }`}
+              >
                 {histModal.data.status}
               </span>
             </div>
             <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto">
               <div className="grid grid-cols-2 gap-2.5 text-xs">
                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
-                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Aggregate cover</p>
-                  <p className="font-bold text-slate-800 mt-0.5">{fmtCoverage(histModal.data.aggregate_sum_assured)}</p>
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
+                    {tx("Aggregate cover")}
+                  </p>
+                  <p className="font-bold text-slate-800 mt-0.5">
+                    {fmtCoverage(histModal.data.aggregate_sum_assured)}
+                  </p>
                 </div>
                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
-                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Human Life Value cap</p>
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
+                    {tx("Human Life Value cap")}
+                  </p>
                   <p className="font-bold text-slate-800 mt-0.5">
-                    {histModal.data.hlv_limit != null ? fmtCoverage(histModal.data.hlv_limit) : "Unknown — no income"}
+                    {histModal.data.hlv_limit != null
+                      ? fmtCoverage(histModal.data.hlv_limit)
+                      : tx("Unknown — no income")}
                     {histModal.data.hlv_ratio != null && (
-                      <span className={`ml-1.5 font-mono text-[10px] ${histModal.data.hlv_ratio > 1 ? "text-red-600" : "text-emerald-600"}`}>
+                      <span
+                        className={`ml-1.5 font-mono text-[10px] ${histModal.data.hlv_ratio > 1 ? "text-red-600" : "text-emerald-600"}`}
+                      >
                         {histModal.data.hlv_ratio}×
                       </span>
                     )}
                   </p>
                 </div>
                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
-                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">This insurer, in force</p>
-                  <p className="font-bold text-slate-800 mt-0.5">{fmtCoverage(histModal.data.internal_inforce_sum_assured)}</p>
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
+                    {tx("This insurer, in force")}
+                  </p>
+                  <p className="font-bold text-slate-800 mt-0.5">
+                    {fmtCoverage(histModal.data.internal_inforce_sum_assured)}
+                  </p>
                 </div>
                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
-                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Other insurers, declared</p>
-                  <p className="font-bold text-slate-800 mt-0.5">{fmtCoverage(histModal.data.external_declared_sum_assured)}</p>
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
+                    {tx("Other insurers, declared")}
+                  </p>
+                  <p className="font-bold text-slate-800 mt-0.5">
+                    {fmtCoverage(histModal.data.external_declared_sum_assured)}
+                  </p>
                 </div>
               </div>
 
               <div className="space-y-1.5">
                 {(histModal.data.findings ?? []).map((f: any, i: number) => (
-                  <div key={i} className={`border-l-2 pl-2.5 py-1 text-[11px] ${f.severity === "critical" ? "border-red-400 text-red-800"
-                      : f.severity === "warning" ? "border-amber-400 text-amber-800"
-                        : "border-slate-300 text-slate-600"
-                    }`}>
+                  <div
+                    key={i}
+                    className={`border-l-2 pl-2.5 py-1 text-[11px] ${
+                      f.severity === "critical"
+                        ? "border-red-400 text-red-800"
+                        : f.severity === "warning"
+                          ? "border-amber-400 text-amber-800"
+                          : "border-slate-300 text-slate-600"
+                    }`}
+                  >
                     {f.message}
                   </div>
                 ))}
               </div>
 
-              {(histModal.data.internal_policies?.length > 0 || histModal.data.external_policies?.length > 0) && (
+              {(histModal.data.internal_policies?.length > 0 ||
+                histModal.data.external_policies?.length > 0) && (
                 <div className="border border-slate-200 rounded-xl overflow-hidden">
                   <table className="w-full text-[11px]">
                     <thead className="bg-slate-50 text-slate-400 uppercase tracking-wider font-bold text-[9px]">
                       <tr>
-                        <th className="px-2.5 py-1.5 text-left">Insurer</th>
-                        <th className="px-2.5 py-1.5 text-left">Product</th>
-                        <th className="px-2.5 py-1.5 text-right">Sum Assured</th>
-                        <th className="px-2.5 py-1.5 text-left">Status</th>
+                        <th className="px-2.5 py-1.5 text-left">
+                          {tx("Insurer")}
+                        </th>
+                        <th className="px-2.5 py-1.5 text-left">
+                          {tx("Product")}
+                        </th>
+                        <th className="px-2.5 py-1.5 text-right">
+                          {tx("Sum Assured")}
+                        </th>
+                        <th className="px-2.5 py-1.5 text-left">
+                          {tx("Status")}
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {[...(histModal.data.internal_policies ?? []), ...(histModal.data.external_policies ?? [])].map((p: any, i: number) => (
+                      {[
+                        ...(histModal.data.internal_policies ?? []),
+                        ...(histModal.data.external_policies ?? []),
+                      ].map((p: any, i: number) => (
                         <tr key={i}>
-                          <td className="px-2.5 py-1.5 text-slate-700 font-medium">{p.insurer}</td>
-                          <td className="px-2.5 py-1.5 text-slate-500">{p.product ?? "—"}</td>
-                          <td className="px-2.5 py-1.5 text-right font-mono text-slate-700">{fmtCoverage(p.sum_assured)}</td>
-                          <td className="px-2.5 py-1.5 text-slate-500">{p.status}</td>
+                          <td className="px-2.5 py-1.5 text-slate-700 font-medium">
+                            {p.insurer}
+                          </td>
+                          <td className="px-2.5 py-1.5 text-slate-500">
+                            {p.product ?? "—"}
+                          </td>
+                          <td className="px-2.5 py-1.5 text-right font-mono text-slate-700">
+                            {fmtCoverage(p.sum_assured)}
+                          </td>
+                          <td className="px-2.5 py-1.5 text-slate-500">
+                            {p.status}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -1632,11 +2499,17 @@ function UnderwritingMainContent() {
               )}
             </div>
             <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
-              <button onClick={() => router.push(`/case/${histModal.caseId}`)} className="text-xs font-semibold text-blue-600 hover:text-blue-700">
-                Open case to clear or reject →
+              <button
+                onClick={() => router.push(`/case/${histModal.caseId}`)}
+                className="text-xs font-semibold text-blue-600 hover:text-blue-700"
+              >
+                {tx("Open case to clear or reject →")}
               </button>
-              <button onClick={() => setHistModal(null)} className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold">
-                Close
+              <button
+                onClick={() => setHistModal(null)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold"
+              >
+                {tx("Close")}
               </button>
             </div>
           </div>
@@ -1649,26 +2522,42 @@ function UnderwritingMainContent() {
           <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <div>
-                <h3 className="font-bold text-slate-900 text-sm">Medical Requirement — Non-Medical Limit</h3>
-                <p className="text-xs text-slate-500">{medModal.customerName ?? medModal.caseId}</p>
+                <h3 className="font-bold text-slate-900 text-sm">
+                  {tx("Medical Requirement — Non-Medical Limit")}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {medModal.customerName ?? medModal.caseId}
+                </p>
               </div>
-              <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${medModal.data.status === "NotRequired"
-                  ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                  : "bg-amber-100 text-amber-800 border border-amber-200"
-                }`}>
+              <span
+                className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                  medModal.data.status === "NotRequired"
+                    ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                    : "bg-amber-100 text-amber-800 border border-amber-200"
+                }`}
+              >
                 {medModal.data.status}
               </span>
             </div>
             <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto text-xs">
               <div className="grid grid-cols-2 gap-2.5">
                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
-                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Sum at risk</p>
-                  <p className="font-bold text-slate-800 mt-0.5">{fmtCoverage(medModal.data.sum_assured_at_risk)}</p>
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
+                    {tx("Sum at risk")}
+                  </p>
+                  <p className="font-bold text-slate-800 mt-0.5">
+                    {fmtCoverage(medModal.data.sum_assured_at_risk)}
+                  </p>
                 </div>
                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
-                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Non-medical limit (age {medModal.data.applicant_age ?? "—"})</p>
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
+                    {tx("Non-medical limit (age")}{" "}
+                    {medModal.data.applicant_age ?? "—"})
+                  </p>
                   <p className="font-bold text-slate-800 mt-0.5">
-                    {medModal.data.non_medical_limit != null ? fmtCoverage(medModal.data.non_medical_limit) : "—"}
+                    {medModal.data.non_medical_limit != null
+                      ? fmtCoverage(medModal.data.non_medical_limit)
+                      : "—"}
                   </p>
                 </div>
               </div>
@@ -1676,37 +2565,55 @@ function UnderwritingMainContent() {
               {(medModal.data.trigger_reasons ?? []).length > 0 && (
                 <div className="space-y-1">
                   {medModal.data.trigger_reasons.map((r: string, i: number) => (
-                    <p key={i} className="border-l-2 border-amber-400 pl-2.5 py-1 text-[11px] text-amber-800">{r}</p>
+                    <p
+                      key={i}
+                      className="border-l-2 border-amber-400 pl-2.5 py-1 text-[11px] text-amber-800"
+                    >
+                      {r}
+                    </p>
                   ))}
                 </div>
               )}
 
               {medModal.data.status === "NotRequired" ? (
                 <p className="text-slate-600 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
-                  This proposal is within the non-medical limit — it can be underwritten on the
-                  E-Application alone. No panel examination is needed.
+                  {tx(
+                    "This proposal is within the non-medical limit — it can be underwritten on the E-Application alone. No panel examination is needed.",
+                  )}
                 </p>
               ) : (
                 <>
                   <div className="border border-slate-200 rounded-xl overflow-hidden">
                     <div className="bg-slate-50 px-3 py-2 flex items-center justify-between">
                       <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
-                        Mandated panel — {(medModal.data.required_tests ?? []).length} tests
+                        {tx("Mandated panel —")}{" "}
+                        {(medModal.data.required_tests ?? []).length}{" "}
+                        {tx("tests")}
                       </span>
                       <span className="text-[11px] font-bold text-slate-700 font-mono">
-                        PKR {Math.round(medModal.data.estimated_cost ?? 0).toLocaleString()}
+                        {tx("PKR")}{" "}
+                        {Math.round(
+                          medModal.data.estimated_cost ?? 0,
+                        ).toLocaleString()}
                       </span>
                     </div>
                     <ul className="divide-y divide-slate-50">
                       {(medModal.data.required_tests ?? []).map((t: any) => (
-                        <li key={t.code} className="px-3 py-1.5 flex items-center justify-between gap-2">
+                        <li
+                          key={t.code}
+                          className="px-3 py-1.5 flex items-center justify-between gap-2"
+                        >
                           <div>
-                            <p className="font-semibold text-slate-800 text-[11px]">{t.name}</p>
-                            <p className="text-[10px] text-slate-400">{t.category}</p>
+                            <p className="font-semibold text-slate-800 text-[11px]">
+                              {t.name}
+                            </p>
+                            <p className="text-[10px] text-slate-400">
+                              {t.category}
+                            </p>
                           </div>
                           {t.fasting && (
                             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 shrink-0">
-                              FASTING
+                              {tx("FASTING")}
                             </span>
                           )}
                         </li>
@@ -1717,14 +2624,24 @@ function UnderwritingMainContent() {
                   {medModal.link && (
                     <div>
                       <p className="text-[11px] text-slate-500 mb-1">
-                        Send this link to the customer — they pick a panel clinic and an appointment slot:
+                        {tx(
+                          "Send this link to the customer — they pick a panel clinic and an appointment slot:",
+                        )}
                       </p>
                       <div className="flex items-center gap-1.5">
-                        <input readOnly value={medModal.link} onFocus={(e) => e.currentTarget.select()}
-                          className="text-[10px] border border-slate-200 rounded px-2 py-1.5 w-full font-mono text-slate-600 bg-white" />
-                        <button onClick={() => navigator.clipboard.writeText(medModal.link!)}
-                          className="text-[10px] font-bold text-blue-700 px-2.5 py-1.5 bg-blue-50 border border-blue-200/60 rounded shrink-0 hover:bg-blue-100">
-                          Copy
+                        <input
+                          readOnly
+                          value={medModal.link}
+                          onFocus={(e) => e.currentTarget.select()}
+                          className="text-[10px] border border-slate-200 rounded px-2 py-1.5 w-full font-mono text-slate-600 bg-white"
+                        />
+                        <button
+                          onClick={() =>
+                            navigator.clipboard.writeText(medModal.link!)
+                          }
+                          className="text-[10px] font-bold text-blue-700 px-2.5 py-1.5 bg-blue-50 border border-blue-200/60 rounded shrink-0 hover:bg-blue-100"
+                        >
+                          {tx("Copy")}
                         </button>
                       </div>
                     </div>
@@ -1734,36 +2651,52 @@ function UnderwritingMainContent() {
             </div>
             <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex flex-wrap justify-between items-center gap-2">
               <div className="flex items-center gap-3">
-                <button onClick={() => router.push(`/case/${medModal.caseId}`)} className="text-xs font-semibold text-blue-600 hover:text-blue-700">
-                  Open case →
+                <button
+                  onClick={() => router.push(`/case/${medModal.caseId}`)}
+                  className="text-xs font-semibold text-blue-600 hover:text-blue-700"
+                >
+                  {tx("Open case →")}
                 </button>
-                {medModal.data.status !== "NotRequired" && medModal.data.status !== "Completed" && (
-                  <button
-                    onClick={async () => {
-                      if (!medModal) return;
-                      setMedBusyFor(medModal.caseId);
-                      try {
-                        await recordMedicalResult(medModal.caseId, {
-                          results: { standard_panel: "normal", fasting_blood_sugar: "normal", urinalysis: "normal" },
-                          reported_by: "Panel Diagnostic Center",
-                        });
-                        setMedModal(null);
-                        await loadData();
-                      } catch (e: any) {
-                        alert(e?.message ?? "Failed to complete medical examination");
-                      } finally {
-                        setMedBusyFor(null);
-                      }
-                    }}
-                    disabled={medBusyFor === medModal.caseId}
-                    className="text-xs font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 shadow-2xs"
-                  >
-                    {medBusyFor === medModal.caseId ? "Completing…" : "✓ Mark Examination Completed"}
-                  </button>
-                )}
+                {medModal.data.status !== "NotRequired" &&
+                  medModal.data.status !== "Completed" && (
+                    <button
+                      onClick={async () => {
+                        if (!medModal) return;
+                        setMedBusyFor(medModal.caseId);
+                        try {
+                          await recordMedicalResult(medModal.caseId, {
+                            results: {
+                              standard_panel: "normal",
+                              fasting_blood_sugar: "normal",
+                              urinalysis: "normal",
+                            },
+                            reported_by: "Panel Diagnostic Center",
+                          });
+                          setMedModal(null);
+                          await loadData();
+                        } catch (e: any) {
+                          alert(
+                            e?.message ??
+                              "Failed to complete medical examination",
+                          );
+                        } finally {
+                          setMedBusyFor(null);
+                        }
+                      }}
+                      disabled={medBusyFor === medModal.caseId}
+                      className="text-xs font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 shadow-2xs"
+                    >
+                      {medBusyFor === medModal.caseId
+                        ? tx("Completing…")
+                        : tx("✓ Mark Examination Completed")}
+                    </button>
+                  )}
               </div>
-              <button onClick={() => setMedModal(null)} className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold">
-                Close
+              <button
+                onClick={() => setMedModal(null)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold"
+              >
+                {tx("Close")}
               </button>
             </div>
           </div>
@@ -1794,7 +2727,12 @@ function UnderwritingMainContent() {
             setVerifyModal(null);
             // Opened from a case's checklist for this one gate — go back to that case once it's
             // approved. A rejection stays here, since the gate isn't cleared.
-            if (action === "approve" && focusCase && focusGate === "eapp" && returnTo) {
+            if (
+              action === "approve" &&
+              focusCase &&
+              focusGate === "eapp" &&
+              returnTo
+            ) {
               router.push(returnTo);
               return;
             }
@@ -1820,18 +2758,34 @@ function UnderwritingMainContent() {
 
 export default function UnderwritingPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center text-slate-500">Loading Underwriting Hub…</div>}>
+    <Suspense
+      fallback={
+        <div className="p-8 text-center text-slate-500">
+          Loading Underwriting Hub…
+        </div>
+      }
+    >
       <UnderwritingMainContent />
     </Suspense>
   );
 }
 
 function CounterOfferModal({
-  caseItem, onClose, onDone,
-}: Readonly<{ caseItem: CaseQueueItem; onClose: () => void; onDone: () => void }>) {
-  const [offerType, setOfferType] = useState<"Loading" | "Exclusion" | "ReducedSumAssured" | "PlanSubstitution">("Loading");
+  caseItem,
+  onClose,
+  onDone,
+}: Readonly<{
+  caseItem: CaseQueueItem;
+  onClose: () => void;
+  onDone: () => void;
+}>) {
+  const [offerType, setOfferType] = useState<
+    "Loading" | "Exclusion" | "ReducedSumAssured" | "PlanSubstitution"
+  >("Loading");
   const [loadingPct, setLoadingPct] = useState(25);
-  const [revisedCoverage, setRevisedCoverage] = useState<number>(caseItem.coverage_amount ?? 0);
+  const [revisedCoverage, setRevisedCoverage] = useState<number>(
+    caseItem.coverage_amount ?? 0,
+  );
   const [revisedProduct, setRevisedProduct] = useState("");
   const [exclusions, setExclusions] = useState("");
   const [reason, setReason] = useState("");
@@ -1840,16 +2794,25 @@ function CounterOfferModal({
 
   const submit = async () => {
     if (!caseItem.policy_id) return;
-    setBusy(true); setErr(null);
+    setBusy(true);
+    setErr(null);
     try {
       await createCounterOffer(caseItem.policy_id, {
         offer_type: offerType,
         reason: reason || undefined,
         created_by: "underwriter",
         revised_loading_pct: offerType === "Loading" ? loadingPct : undefined,
-        revised_coverage_amount: offerType === "ReducedSumAssured" ? revisedCoverage : undefined,
-        revised_product_name: offerType === "PlanSubstitution" ? revisedProduct : undefined,
-        exclusions: offerType === "Exclusion" ? exclusions.split(",").map(s => s.trim()).filter(Boolean) : undefined,
+        revised_coverage_amount:
+          offerType === "ReducedSumAssured" ? revisedCoverage : undefined,
+        revised_product_name:
+          offerType === "PlanSubstitution" ? revisedProduct : undefined,
+        exclusions:
+          offerType === "Exclusion"
+            ? exclusions
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean)
+            : undefined,
       });
       onDone();
     } catch (e: any) {
@@ -1860,63 +2823,122 @@ function CounterOfferModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="bg-amber-500 px-5 py-3">
-          <p className="text-white/80 text-[11px] font-semibold uppercase tracking-wider">Revised Terms</p>
-          <h2 className="text-white text-lg font-bold">Send Counter-Offer</h2>
-          <p className="text-white/80 text-xs">{caseItem.customer_name} · {caseItem.product_name}</p>
+          <p className="text-white/80 text-[11px] font-semibold uppercase tracking-wider">
+            {tx("Revised Terms")}
+          </p>
+          <h2 className="text-white text-lg font-bold">
+            {tx("Send Counter-Offer")}
+          </h2>
+          <p className="text-white/80 text-xs">
+            {caseItem.customer_name} · {caseItem.product_name}
+          </p>
         </div>
         <div className="p-5 space-y-3">
           <div>
-            <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Type</label>
-            <select value={offerType} onChange={(e) => setOfferType(e.target.value as any)}
-              className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2">
-              <option value="Loading">Accept with Loading</option>
-              <option value="Exclusion">Exclusion</option>
-              <option value="ReducedSumAssured">Reduced Sum Assured</option>
-              <option value="PlanSubstitution">Plan Substitution</option>
+            <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+              {tx("Type")}
+            </label>
+            <select
+              value={offerType}
+              onChange={(e) => setOfferType(e.target.value as any)}
+              className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2"
+            >
+              <option value="Loading">{tx("Accept with Loading")}</option>
+              <option value="Exclusion">{tx("Exclusion")}</option>
+              <option value="ReducedSumAssured">
+                {tx("Reduced Sum Assured")}
+              </option>
+              <option value="PlanSubstitution">
+                {tx("Plan Substitution")}
+              </option>
             </select>
           </div>
           {offerType === "Loading" && (
             <div>
-              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Premium loading %</label>
-              <input type="number" value={loadingPct} onChange={(e) => setLoadingPct(Number(e.target.value))}
-                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2" />
+              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                {tx("Premium loading %")}
+              </label>
+              <input
+                type="number"
+                value={loadingPct}
+                onChange={(e) => setLoadingPct(Number(e.target.value))}
+                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2"
+              />
             </div>
           )}
           {offerType === "ReducedSumAssured" && (
             <div>
-              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Revised sum assured (PKR)</label>
-              <input type="number" value={revisedCoverage} onChange={(e) => setRevisedCoverage(Number(e.target.value))}
-                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2" />
+              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                {tx("Revised sum assured (PKR)")}
+              </label>
+              <input
+                type="number"
+                value={revisedCoverage}
+                onChange={(e) => setRevisedCoverage(Number(e.target.value))}
+                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2"
+              />
             </div>
           )}
           {offerType === "PlanSubstitution" && (
             <div>
-              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Substitute product</label>
-              <input value={revisedProduct} onChange={(e) => setRevisedProduct(e.target.value)} placeholder="e.g. Health Gold"
-                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2" />
+              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                {tx("Substitute product")}
+              </label>
+              <input
+                value={revisedProduct}
+                onChange={(e) => setRevisedProduct(e.target.value)}
+                placeholder={tx("e.g. Health Gold")}
+                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2"
+              />
             </div>
           )}
           {offerType === "Exclusion" && (
             <div>
-              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Exclusions (comma-separated)</label>
-              <input value={exclusions} onChange={(e) => setExclusions(e.target.value)} placeholder="e.g. Pre-existing cardiac conditions"
-                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2" />
+              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                {tx("Exclusions (comma-separated)")}
+              </label>
+              <input
+                value={exclusions}
+                onChange={(e) => setExclusions(e.target.value)}
+                placeholder={tx("e.g. Pre-existing cardiac conditions")}
+                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2"
+              />
             </div>
           )}
           <div>
-            <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Reason</label>
-            <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2}
-              className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2" />
+            <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+              {tx("Reason")}
+            </label>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={2}
+              className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2"
+            />
           </div>
           {err && <p className="text-xs text-red-600">{err}</p>}
           <div className="flex justify-end gap-2 pt-1">
-            <button onClick={onClose} className="px-3 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
-            <button onClick={submit} disabled={busy}
-              className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-40">
-              {busy ? "Sending…" : "Send counter-offer"}
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700"
+            >
+              {tx("Cancel")}
+            </button>
+            <button
+              onClick={submit}
+              disabled={busy}
+              className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-40"
+            >
+              {busy ? tx("Sending…") : tx("Send counter-offer")}
             </button>
           </div>
         </div>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import api from "@/app/services/api";
+import { tx } from "@/lib/i18n/tx";
 
 interface Me {
   id: string;
@@ -68,7 +69,7 @@ export default function ProfilePage() {
       setDesignation(resp.data.designation ?? "");
       setDateOfJoining(resp.data.date_of_joining ?? "");
     } catch (err: any) {
-      setError(err.message ?? "Failed to load your profile.");
+      setError(err.message ?? tx("Failed to load your profile."));
     } finally {
       setLoading(false);
     }
@@ -92,9 +93,9 @@ export default function ProfilePage() {
       });
       setMe(resp.data);
       localStorage.setItem("user_name", resp.data.full_name);
-      setSuccess("Profile updated successfully!");
+      setSuccess(tx("Profile updated successfully!"));
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to update profile.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to update profile."));
     } finally {
       setProfileFormLoading(false);
     }
@@ -106,7 +107,7 @@ export default function ProfilePage() {
     setPasswordSuccess("");
 
     if (newPassword !== confirmPassword) {
-      setPasswordError("New password and confirmation do not match.");
+      setPasswordError(tx("New password and confirmation do not match."));
       return;
     }
 
@@ -116,12 +117,12 @@ export default function ProfilePage() {
         current_password: currentPassword,
         new_password: newPassword,
       });
-      setPasswordSuccess("Password changed successfully!");
+      setPasswordSuccess(tx("Password changed successfully!"));
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
     } catch (err: any) {
-      setPasswordError(err.response?.data?.detail ?? err.message ?? "Failed to change password.");
+      setPasswordError(err.response?.data?.detail ?? err.message ?? tx("Failed to change password."));
     } finally {
       setPasswordFormLoading(false);
     }
@@ -134,7 +135,7 @@ export default function ProfilePage() {
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
         </svg>
-        <span className="text-xs text-slate-400">Loading your profile...</span>
+        <span className="text-xs text-slate-400">{tx("Loading your profile...")}</span>
       </div>
     );
   }
@@ -205,7 +206,7 @@ export default function ProfilePage() {
                     : "bg-slate-100 text-slate-500 border-slate-200"
                 }`}
               >
-                {me?.status ?? (me?.is_active ? "Active" : "Inactive")}
+                {me?.status ?? (me?.is_active ? tx("Active") : tx("Inactive"))}
               </span>
             </div>
             {me?.designation && (
@@ -228,7 +229,7 @@ export default function ProfilePage() {
           {/* Personal Details */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
             <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
-              <p className="text-sm font-semibold text-slate-700">Personal Details</p>
+              <p className="text-sm font-semibold text-slate-700">{tx("Personal Details")}</p>
             </div>
 
             {error && (
@@ -245,35 +246,35 @@ export default function ProfilePage() {
             <form onSubmit={handleSaveProfile}>
               <div className="p-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
-                  <label className={labelCls}>First Name *</label>
+                  <label className={labelCls}>{tx("First Name *")}</label>
                   <input type="text" required value={firstName} onChange={(e) => setFirstName(e.target.value)} className={inputCls} />
                 </div>
                 <div className="space-y-1.5">
-                  <label className={labelCls}>Last Name</label>
+                  <label className={labelCls}>{tx("Last Name")}</label>
                   <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} className={inputCls} />
                 </div>
                 <div className="space-y-1.5">
-                  <label className={labelCls}>Phone</label>
+                  <label className={labelCls}>{tx("Phone")}</label>
                   <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="e.g. +923001234567" className={inputCls} />
                 </div>
                 <div className="space-y-1.5">
-                  <label className={labelCls}>Department</label>
-                  <input type="text" value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="e.g. Underwriting" className={inputCls} />
+                  <label className={labelCls}>{tx("Department")}</label>
+                  <input type="text" value={department} onChange={(e) => setDepartment(e.target.value)} placeholder={tx("e.g. Underwriting")} className={inputCls} />
                 </div>
                 <div className="space-y-1.5">
-                  <label className={labelCls}>Designation</label>
-                  <input type="text" value={designation} onChange={(e) => setDesignation(e.target.value)} placeholder="e.g. Senior Underwriter" className={inputCls} />
+                  <label className={labelCls}>{tx("Designation")}</label>
+                  <input type="text" value={designation} onChange={(e) => setDesignation(e.target.value)} placeholder={tx("e.g. Senior Underwriter")} className={inputCls} />
                 </div>
                 <div className="space-y-1.5">
-                  <label className={labelCls}>Employee ID</label>
-                  <input type="text" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} placeholder="e.g. EMP-1049" className={inputCls} />
+                  <label className={labelCls}>{tx("Employee ID")}</label>
+                  <input type="text" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} placeholder={tx("e.g. EMP-1049")} className={inputCls} />
                 </div>
                 <div className="space-y-1.5">
-                  <label className={labelCls}>Date of Joining</label>
+                  <label className={labelCls}>{tx("Date of Joining")}</label>
                   <input type="date" value={dateOfJoining} onChange={(e) => setDateOfJoining(e.target.value)} className={inputCls} />
                 </div>
                 <div className="space-y-1.5">
-                  <label className={labelCls}>Email (Read Only)</label>
+                  <label className={labelCls}>{tx("Email (Read Only)")}</label>
                   <input type="email" disabled value={me?.email ?? ""} className="w-full bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-500 cursor-not-allowed focus:outline-none" />
                 </div>
               </div>
@@ -290,7 +291,7 @@ export default function ProfilePage() {
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                   </svg>
                   )}
-                  Save Changes
+                  {tx("Save Changes")}
                 </button>
               </div>
             </form>
@@ -299,7 +300,7 @@ export default function ProfilePage() {
           {/* Change Password */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
             <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
-              <p className="text-sm font-semibold text-slate-700">Change Password</p>
+              <p className="text-sm font-semibold text-slate-700">{tx("Change Password")}</p>
             </div>
 
             {passwordError && (
@@ -316,7 +317,7 @@ export default function ProfilePage() {
             <form onSubmit={handleChangePassword}>
               <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
-                  <label className={labelCls}>Current Password *</label>
+                  <label className={labelCls}>{tx("Current Password *")}</label>
                   <div className="relative">
                     <input
                       type={showCurrentPassword ? "text" : "password"}
@@ -328,7 +329,7 @@ export default function ProfilePage() {
                     <button
                       type="button"
                       onClick={() => setShowCurrentPassword((prev) => !prev)}
-                      aria-label={showCurrentPassword ? "Hide password" : "Show password"}
+                      aria-label={showCurrentPassword ? tx("Hide password") : tx("Show password")}
                       className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 transition-colors"
                     >
                       {showCurrentPassword ? (
@@ -346,7 +347,7 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className={labelCls}>New Password *</label>
+                  <label className={labelCls}>{tx("New Password *")}</label>
                   <div className="relative">
                     <input
                       type={showNewPassword ? "text" : "password"}
@@ -354,13 +355,13 @@ export default function ProfilePage() {
                       minLength={8}
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="Minimum 8 characters"
+                      placeholder={tx("Minimum 8 characters")}
                       className={`${inputCls} pr-10`}
                     />
                     <button
                       type="button"
                       onClick={() => setShowNewPassword((prev) => !prev)}
-                      aria-label={showNewPassword ? "Hide password" : "Show password"}
+                      aria-label={showNewPassword ? tx("Hide password") : tx("Show password")}
                       className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 transition-colors"
                     >
                       {showNewPassword ? (
@@ -378,14 +379,14 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className={labelCls}>Confirm New Password *</label>
+                  <label className={labelCls}>{tx("Confirm New Password *")}</label>
                   <input
                     type={showNewPassword ? "text" : "password"}
                     required
                     minLength={8}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Re-enter new password"
+                    placeholder={tx("Re-enter new password")}
                     className={inputCls}
                   />
                 </div>
@@ -403,7 +404,7 @@ export default function ProfilePage() {
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                   </svg>
                   )}
-                  Update Password
+                  {tx("Update Password")}
                 </button>
               </div>
             </form>

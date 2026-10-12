@@ -1,5 +1,6 @@
 import { Bar, PillarCard, Divider } from "./shared";
 import type { CommissionLedgerEntry, IncentiveQualification, CommissionPayee } from "@/app/services/commissions";
+import { tx } from "@/lib/i18n/tx";
 
 function UserCheckIcon() {
   return (
@@ -57,7 +58,7 @@ export function AgentCard({ payees, ledger, qualifications, className = "" }: Ag
   return (
     <PillarCard
       icon={<UserCheckIcon />}
-      title="Agent Performance"
+      title={tx("Agent Performance")}
       barClass="bg-amber-500"
       iconBg="bg-amber-50"
       iconColor="text-amber-600"
@@ -67,20 +68,20 @@ export function AgentCard({ payees, ledger, qualifications, className = "" }: Ag
         {/* Commission Strip */}
         <div className="bg-amber-50/80 border border-amber-100/80 rounded-lg px-2 py-1 flex items-center justify-between">
           <div>
-            <p className="text-[8px] font-bold uppercase tracking-widest text-amber-500">Commission Earned</p>
+            <p className="text-[8px] font-bold uppercase tracking-widest text-amber-500">{tx("Commission Earned")}</p>
             <p className="text-xs font-extrabold text-amber-700 leading-tight">{fmtCompact(commissionEarned)}</p>
           </div>
           <div className="text-right">
-            <p className="text-[8px] font-bold uppercase tracking-widest text-amber-500">Active Agents</p>
-            <p className="text-[11px] font-extrabold text-amber-700">{activeAgents.length} active</p>
+            <p className="text-[8px] font-bold uppercase tracking-widest text-amber-500">{tx("Active Agents")}</p>
+            <p className="text-[11px] font-extrabold text-amber-700">{activeAgents.length}{" "}{tx("active")}</p>
           </div>
         </div>
 
         {/* Progress Bars for Quality Metrics */}
         <div className="space-y-0.5">
-          <Bar label="13m Persistency" pct={avgPersistency} color="bg-amber-500" badge={`${avgPersistency.toFixed(0)}%`} />
-          <Bar label="Licence Compliance" pct={licenceCompliancePct} color="bg-blue-500" badge={`${licenceCompliancePct.toFixed(0)}%`} />
-          <Bar label="Bonus Qualified" pct={bonusRatePct} color="bg-emerald-500" badge={`${bonusRatePct.toFixed(0)}%`} />
+          <Bar label={tx("13m Persistency")} pct={avgPersistency} color="bg-amber-500" badge={`${avgPersistency.toFixed(0)}%`} />
+          <Bar label={tx("Licence Compliance")} pct={licenceCompliancePct} color="bg-blue-500" badge={`${licenceCompliancePct.toFixed(0)}%`} />
+          <Bar label={tx("Bonus Qualified")} pct={bonusRatePct} color="bg-emerald-500" badge={`${bonusRatePct.toFixed(0)}%`} />
         </div>
 
         <Divider className="my-1" />
@@ -88,12 +89,12 @@ export function AgentCard({ payees, ledger, qualifications, className = "" }: Ag
         {/* Key stats footer */}
         <div className="grid grid-cols-2 gap-1 text-center">
           <div>
-            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">Top Performer</p>
+            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">{tx("Top Performer")}</p>
             <p className="text-xs font-bold text-slate-800 truncate">{topAgents[0]?.name || "—"}</p>
           </div>
           <div>
-            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">Bonus Eligible</p>
-            <p className="text-xs font-extrabold text-emerald-600 truncate">{uniqueBonusAgents.size} agents</p>
+            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">{tx("Bonus Eligible")}</p>
+            <p className="text-xs font-extrabold text-emerald-600 truncate">{uniqueBonusAgents.size}{" "}{tx("agents")}</p>
           </div>
         </div>
       </div>

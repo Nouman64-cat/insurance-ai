@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { PolicyListItem } from "@/app/services/policies";
 import { ISSUANCE_STAGES, normStatus } from "./lifecycle";
+import { tx } from "@/lib/i18n/tx";
 
 interface RailProps {
   policies: PolicyListItem[];
@@ -35,7 +36,7 @@ export function PolicyProcessRail({ policies }: Readonly<RailProps>) {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 text-blue-600">
             <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
           </svg>
-          <span className="text-sm font-semibold text-slate-700">How policy issuance works</span>
+          <span className="text-sm font-semibold text-slate-700">{tx("How policy issuance works")}</span>
         </div>
         <svg
           viewBox="0 0 24 24"

@@ -16,6 +16,7 @@ import {
 import { DateRangeFilter, resolvePreset, type DatePreset, type DateRange } from "./DateRangeFilter";
 import { Card, EmptyState, Field, PayeeTypeBadge, fmtPKR, inputClass, selectClass } from "./shared";
 import { Pagination, usePagination } from "../Pagination";
+import { tx } from "@/lib/i18n/tx";
 
 type IncentiveSubTab = "schemes" | "qualified" | "shortfall";
 const PAYEE_TYPES = Object.keys(PAYEE_TYPE_LABELS) as PayeeType[];
@@ -63,20 +64,20 @@ export default function IncentivesTab({
   const award = async (q: IncentiveQualification) => {
     try {
       await awardIncentive(q);
-      notify(`${q.scheme.name} bonus of ${fmtPKR(q.awardAmount)} added to ${q.payee.name}'s payout ledger.`);
+      notify(tx("{0} bonus of {1} added to {2}'s payout ledger.", { 0: q.scheme.name, 1: fmtPKR(q.awardAmount), 2: q.payee.name }));
       onChanged();
     } catch (err) {
-      notify(err instanceof Error ? err.message : "Could not process bonus payout", false);
+      notify(err instanceof Error ? err.message : tx("Could not process bonus payout"), false);
     }
   };
 
   const handleToggleActive = async (scheme: IncentiveScheme) => {
     try {
       const updated = await toggleIncentiveSchemeActive(scheme.id);
-      notify(`Bonus plan '${scheme.name}' is now ${updated.active ? "Active" : "Inactive"}.`);
+      notify(tx("Bonus plan '{0}' is now {1}.", { 0: scheme.name, 1: updated.active ? "Active" : "Inactive" }));
       onChanged();
     } catch (err) {
-      notify(err instanceof Error ? err.message : "Could not toggle plan status", false);
+      notify(err instanceof Error ? err.message : tx("Could not toggle plan status"), false);
     }
   };
 
@@ -147,7 +148,7 @@ export default function IncentivesTab({
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search agent, payee, or bonus plan..."
+                placeholder={tx("Search agent, payee, or bonus plan...")}
                 className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden focus:border-blue-500 text-slate-800 placeholder-slate-400"
               />
               {search && (
@@ -176,7 +177,7 @@ export default function IncentivesTab({
                 }}
                 className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold shrink-0 transition-colors"
               >
-                + Add Bonus Plan
+                {tx("+ Add Bonus Plan")}
               </button>
             )}
           </div>
@@ -185,7 +186,7 @@ export default function IncentivesTab({
 
       {subTab === "schemes" && (
         <Card
-          title="Bonus Plans & Rules"
+          title={tx("Bonus Plans & Rules")}
           actions={
             <button
               onClick={() => {
@@ -202,14 +203,14 @@ export default function IncentivesTab({
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50/80 text-slate-500 font-medium uppercase tracking-wider text-[10px] border-b border-slate-200">
                 <tr>
-                  <th className="p-3">Bonus Plan</th>
-                  <th className="p-3">Eligible Roles</th>
-                  <th className="p-3">Target Metric</th>
-                  <th className="p-3">Required Goal</th>
-                  <th className="p-3">Bonus Reward</th>
-                  <th className="p-3">Evaluation Period</th>
-                  <th className="p-3 text-center">Status</th>
-                  <th className="p-3 text-right">Actions</th>
+                  <th className="p-3">{tx("Bonus Plan")}</th>
+                  <th className="p-3">{tx("Eligible Roles")}</th>
+                  <th className="p-3">{tx("Target Metric")}</th>
+                  <th className="p-3">{tx("Required Goal")}</th>
+                  <th className="p-3">{tx("Bonus Reward")}</th>
+                  <th className="p-3">{tx("Evaluation Period")}</th>
+                  <th className="p-3 text-center">{tx("Status")}</th>
+                  <th className="p-3 text-right">{tx("Actions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -230,20 +231,20 @@ export default function IncentivesTab({
                     <td className="p-3 text-slate-700 font-semibold">{s.metric}</td>
                     <td className="p-3 font-semibold tabular-nums text-slate-900">{s.thresholdLabel}</td>
                     <td className="p-3 font-mono font-bold text-blue-700">
-                      {s.rewardAmount !== null ? fmtPKR(s.rewardAmount) : `${s.rewardPct}% of 1st-Year Earnings`}
+                      {s.rewardAmount !== null ? fmtPKR(s.rewardAmount) : tx("{0}% of 1st-Year Earnings", { 0: s.rewardPct })}
                     </td>
                     <td className="p-3 text-[10px] text-slate-500">{s.measuredAt}</td>
                     <td className="p-3 text-center">
                       <button
                         onClick={() => handleToggleActive(s)}
-                        title="Click to toggle Active/Inactive"
+                        title={tx("Click to toggle Active/Inactive")}
                         className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors ${
                           s.active
                             ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
                             : "bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200"
                         }`}
                       >
-                        {s.active ? "Active" : "Inactive"}
+                        {s.active ? tx("Active") : tx("Inactive")}
                       </button>
                     </td>
                     <td className="p-3 text-right">
@@ -254,7 +255,7 @@ export default function IncentivesTab({
                             setModalMode("edit");
                           }}
                           className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-blue-600 hover:bg-blue-50 hover:border-blue-200 transition-colors"
-                          title="Edit bonus plan"
+                          title={tx("Edit bonus plan")}
                         >
                           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path
@@ -267,7 +268,7 @@ export default function IncentivesTab({
                         <button
                           onClick={() => setDeletingScheme(s)}
                           className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-200 transition-colors"
-                          title="Delete bonus plan"
+                          title={tx("Delete bonus plan")}
                         >
                           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path
@@ -284,26 +285,26 @@ export default function IncentivesTab({
               </tbody>
             </table>
           </div>
-          <Pagination pagination={schemePagination} noun="bonus plans" inline />
+          <Pagination pagination={schemePagination} noun={tx("bonus plans")} inline />
         </Card>
       )}
 
       {subTab === "qualified" && (
-        <Card title="Earned Bonuses (Ready to Pay)">
+        <Card title={tx("Earned Bonuses (Ready to Pay)")}>
           {filteredQualified.length === 0 ? (
-            <EmptyState message="No agents currently qualify for an uncollected bonus." />
+            <EmptyState message={tx("No agents currently qualify for an uncollected bonus.")} />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50/80 text-slate-500 font-medium uppercase tracking-wider text-[10px] border-b border-slate-200">
                   <tr>
-                    <th className="p-3">Payee</th>
-                    <th className="p-3">Role</th>
-                    <th className="p-3">Bonus Plan</th>
-                    <th className="p-3 text-right">Achieved Value</th>
-                    <th className="p-3 text-right">Required Goal</th>
-                    <th className="p-3 text-right">Bonus Reward</th>
-                    <th className="p-3 text-right">Action</th>
+                    <th className="p-3">{tx("Payee")}</th>
+                    <th className="p-3">{tx("Role")}</th>
+                    <th className="p-3">{tx("Bonus Plan")}</th>
+                    <th className="p-3 text-right">{tx("Achieved Value")}</th>
+                    <th className="p-3 text-right">{tx("Required Goal")}</th>
+                    <th className="p-3 text-right">{tx("Bonus Reward")}</th>
+                    <th className="p-3 text-right">{tx("Action")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -330,7 +331,7 @@ export default function IncentivesTab({
                           onClick={() => award(q)}
                           className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-[10px] rounded-lg shadow-xs transition-colors"
                         >
-                          Add to Earnings →
+                          {tx("Add to Earnings →")}
                         </button>
                       </td>
                     </tr>
@@ -339,25 +340,25 @@ export default function IncentivesTab({
               </table>
             </div>
           )}
-          {filteredQualified.length > 0 && <Pagination pagination={qualifiedPagination} noun="qualified payees" inline />}
+          {filteredQualified.length > 0 && <Pagination pagination={qualifiedPagination} noun={tx("qualified payees")} inline />}
         </Card>
       )}
 
       {subTab === "shortfall" && (
-        <Card title="In-Progress Sales & Retention Goals">
+        <Card title={tx("In-Progress Sales & Retention Goals")}>
           {filteredShortfall.length === 0 ? (
-            <EmptyState message="All active agents have reached their bonus targets." />
+            <EmptyState message={tx("All active agents have reached their bonus targets.")} />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50/80 text-slate-500 font-medium uppercase tracking-wider text-[10px] border-b border-slate-200">
                   <tr>
-                    <th className="p-3">Payee</th>
-                    <th className="p-3">Role</th>
-                    <th className="p-3">Bonus Plan</th>
-                    <th className="p-3 text-right">Current Achievement</th>
-                    <th className="p-3 text-right">Required Goal</th>
-                    <th className="p-3">Completion Progress</th>
+                    <th className="p-3">{tx("Payee")}</th>
+                    <th className="p-3">{tx("Role")}</th>
+                    <th className="p-3">{tx("Bonus Plan")}</th>
+                    <th className="p-3 text-right">{tx("Current Achievement")}</th>
+                    <th className="p-3 text-right">{tx("Required Goal")}</th>
+                    <th className="p-3">{tx("Completion Progress")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -382,7 +383,7 @@ export default function IncentivesTab({
                           <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
                             <div className="h-full rounded-full bg-blue-500" style={{ width: `${pct}%` }} />
                           </div>
-                          <p className="text-[10px] text-slate-400 mt-1">{pct.toFixed(0)}% reached</p>
+                          <p className="text-[10px] text-slate-400 mt-1">{pct.toFixed(0)}{tx("% reached")}</p>
                         </td>
                       </tr>
                     );
@@ -391,7 +392,7 @@ export default function IncentivesTab({
               </table>
             </div>
           )}
-          {filteredShortfall.length > 0 && <Pagination pagination={shortfallPagination} noun="payees" inline />}
+          {filteredShortfall.length > 0 && <Pagination pagination={shortfallPagination} noun={tx("payees")} inline />}
         </Card>
       )}
 
@@ -472,11 +473,11 @@ function AddEditSchemeModal({
 
   const save = async () => {
     if (!form.name.trim() || !form.code.trim()) {
-      notify("Plan Name and Code are required.", false);
+      notify(tx("Plan Name and Code are required."), false);
       return;
     }
     if (form.payeeTypes.length === 0) {
-      notify("Select at least one eligible role.", false);
+      notify(tx("Select at least one eligible role."), false);
       return;
     }
 
@@ -507,7 +508,7 @@ function AddEditSchemeModal({
       }
       onSaved(form.name.trim());
     } catch (err) {
-      notify(err instanceof Error ? err.message : "Could not save bonus plan", false);
+      notify(err instanceof Error ? err.message : tx("Could not save bonus plan"), false);
     }
   };
 
@@ -517,10 +518,10 @@ function AddEditSchemeModal({
         <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between text-slate-900">
           <div>
             <h3 className="font-bold text-sm text-slate-900">
-              {mode === "add" ? "Create New Bonus Plan" : `Edit Bonus Plan: ${scheme?.name}`}
+              {mode === "add" ? tx("Create New Bonus Plan") : tx("Edit Bonus Plan: {0}", { 0: scheme?.name })}
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Define production thresholds, retention goals, and reward payout terms.
+              {tx("Define production thresholds, retention goals, and reward payout terms.")}
             </p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg font-bold">
@@ -529,55 +530,55 @@ function AddEditSchemeModal({
         </div>
 
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Field label="Plan Code">
+          <Field label={tx("Plan Code")}>
             <input
               value={form.code}
               onChange={(e) => setForm({ ...form, code: e.target.value })}
-              placeholder="e.g. BONUS-RET-13M"
+              placeholder={tx("e.g. BONUS-RET-13M")}
               className={`${inputClass} font-mono`}
             />
           </Field>
 
-          <Field label="Plan Name">
+          <Field label={tx("Plan Name")}>
             <input
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="e.g. 1-Year Policy Retention Bonus"
+              placeholder={tx("e.g. 1-Year Policy Retention Bonus")}
               className={inputClass}
             />
           </Field>
 
-          <Field label="Bonus Category">
+          <Field label={tx("Bonus Category")}>
             <select
               value={form.kind}
               onChange={(e) => setForm({ ...form, kind: e.target.value as IncentiveScheme["kind"] })}
               className={selectClass}
             >
-              <option value="PERSISTENCY_BONUS">Persistency &amp; Retention Bonus</option>
-              <option value="PRODUCTION_BONUS">Production &amp; Volume Bonus</option>
-              <option value="CLUB_QUALIFICATION">Club &amp; Leadership Qualification</option>
+              <option value="PERSISTENCY_BONUS">{tx("Persistency & Retention Bonus")}</option>
+              <option value="PRODUCTION_BONUS">{tx("Production & Volume Bonus")}</option>
+              <option value="CLUB_QUALIFICATION">{tx("Club & Leadership Qualification")}</option>
             </select>
           </Field>
 
-          <Field label="Evaluation Metric">
+          <Field label={tx("Evaluation Metric")}>
             <input
               value={form.metric}
               onChange={(e) => setForm({ ...form, metric: e.target.value })}
-              placeholder="e.g. 1-Year Policy Retention"
+              placeholder={tx("e.g. 1-Year Policy Retention")}
               className={inputClass}
             />
           </Field>
 
-          <Field label="Goal Threshold Label">
+          <Field label={tx("Goal Threshold Label")}>
             <input
               value={form.thresholdLabel}
               onChange={(e) => setForm({ ...form, thresholdLabel: e.target.value })}
-              placeholder="e.g. ≥ 85% Active"
+              placeholder={tx("e.g. ≥ 85% Active")}
               className={inputClass}
             />
           </Field>
 
-          <Field label="Threshold Numeric Value">
+          <Field label={tx("Threshold Numeric Value")}>
             <input
               type="number"
               value={form.threshold}
@@ -586,19 +587,19 @@ function AddEditSchemeModal({
             />
           </Field>
 
-          <Field label="Reward Model">
+          <Field label={tx("Reward Model")}>
             <select
               value={form.rewardType}
               onChange={(e) => setForm({ ...form, rewardType: e.target.value })}
               className={selectClass}
             >
-              <option value="percentage">Percentage (% of 1st-Year Earnings)</option>
-              <option value="flat">Flat Cash Amount (PKR)</option>
+              <option value="percentage">{tx("Percentage (% of 1st-Year Earnings)")}</option>
+              <option value="flat">{tx("Flat Cash Amount (PKR)")}</option>
             </select>
           </Field>
 
           {form.rewardType === "percentage" ? (
-            <Field label="Bonus Reward (%)">
+            <Field label={tx("Bonus Reward (%)")}>
               <input
                 type="number"
                 step="0.5"
@@ -608,7 +609,7 @@ function AddEditSchemeModal({
               />
             </Field>
           ) : (
-            <Field label="Flat Cash Reward (PKR)">
+            <Field label={tx("Flat Cash Reward (PKR)")}>
               <input
                 type="number"
                 value={form.rewardAmount}
@@ -618,21 +619,21 @@ function AddEditSchemeModal({
             </Field>
           )}
 
-          <Field label="Evaluation Timing">
+          <Field label={tx("Evaluation Timing")}>
             <input
               value={form.measuredAt}
               onChange={(e) => setForm({ ...form, measuredAt: e.target.value })}
-              placeholder="e.g. End of Quarter, After 13 Months"
+              placeholder={tx("e.g. End of Quarter, After 13 Months")}
               className={inputClass}
             />
           </Field>
 
           <div className="md:col-span-2">
-            <Field label="Description">
+            <Field label={tx("Description")}>
               <input
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
-                placeholder="Details on qualification requirements and payout conditions"
+                placeholder={tx("Details on qualification requirements and payout conditions")}
                 className={inputClass}
               />
             </Field>
@@ -640,7 +641,7 @@ function AddEditSchemeModal({
 
           <div className="md:col-span-2">
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-2">
-              Eligible Payee Roles
+              {tx("Eligible Payee Roles")}
             </label>
             <div className="flex flex-wrap gap-2 p-3 bg-slate-50 border border-slate-200 rounded-xl">
               {PAYEE_TYPES.map((pt) => {
@@ -672,7 +673,7 @@ function AddEditSchemeModal({
                 onChange={(e) => setForm({ ...form, active: e.target.checked })}
                 className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
               />
-              Plan Active &amp; Evaluated for Agent Qualifications
+              {tx("Plan Active & Evaluated for Agent Qualifications")}
             </label>
           </div>
         </div>
@@ -682,10 +683,10 @@ function AddEditSchemeModal({
             onClick={onClose}
             className="px-4 py-2 bg-white border border-slate-300 font-bold rounded-xl text-slate-700 text-xs hover:bg-slate-100"
           >
-            Cancel
+            {tx("Cancel")}
           </button>
           <button onClick={save} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs shadow-md">
-            {mode === "add" ? "Create Bonus Plan" : "Save Changes"}
+            {mode === "add" ? tx("Create Bonus Plan") : tx("Save Changes")}
           </button>
         </div>
       </div>
@@ -709,7 +710,7 @@ function DeleteSchemeModal({
       await deleteIncentiveScheme(scheme.id);
       onDeleted();
     } catch (err) {
-      notify(err instanceof Error ? err.message : "Could not delete bonus plan", false);
+      notify(err instanceof Error ? err.message : tx("Could not delete bonus plan"), false);
     }
   };
 
@@ -721,7 +722,7 @@ function DeleteSchemeModal({
             <span className="w-6 h-6 rounded-full bg-rose-200 text-rose-700 flex items-center justify-center text-xs font-bold">
               !
             </span>
-            <h3 className="font-bold text-sm text-rose-900">Delete Bonus Plan</h3>
+            <h3 className="font-bold text-sm text-rose-900">{tx("Delete Bonus Plan")}</h3>
           </div>
           <button onClick={onClose} className="text-rose-400 hover:text-rose-600 text-lg font-bold">
             ✕
@@ -730,14 +731,14 @@ function DeleteSchemeModal({
 
         <div className="p-6 space-y-3">
           <p className="text-xs text-slate-700 leading-relaxed">
-            Are you sure you want to delete bonus plan{" "}
+            {tx("Are you sure you want to delete bonus plan")}{" "}
             <span className="font-bold text-slate-900">{scheme.name}</span> (
             <span className="font-mono text-slate-600">{scheme.code}</span>)?
           </p>
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-900 space-y-1">
-            <p className="font-bold">Impact Notice:</p>
+            <p className="font-bold">{tx("Impact Notice:")}</p>
             <p>
-              Deleting this bonus plan will prevent agents from qualifying for this reward in future incentive evaluation cycles.
+              {tx("Deleting this bonus plan will prevent agents from qualifying for this reward in future incentive evaluation cycles.")}
             </p>
           </div>
         </div>
@@ -747,13 +748,13 @@ function DeleteSchemeModal({
             onClick={onClose}
             className="px-4 py-2 bg-white border border-slate-300 font-bold rounded-xl text-slate-700 text-xs hover:bg-slate-100"
           >
-            Cancel
+            {tx("Cancel")}
           </button>
           <button
             onClick={confirmDelete}
             className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs shadow-md"
           >
-            Confirm Delete
+            {tx("Confirm Delete")}
           </button>
         </div>
       </div>

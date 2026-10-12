@@ -6,6 +6,7 @@ import api from "@/app/services/api";
 import { notifyParentPortal } from "@/lib/agent/portalMessage";
 import FamilyMembersEditor, { FamilyRow, blankRow, buildMembersPayload, checkRows, isBlankRow, startRows } from "@/components/family/FamilyMembersEditor";
 import { listInsurancePlans, InsurancePlan } from "@/app/services/insurancePlans";
+import { tx } from "@/lib/i18n/tx";
 
 interface FamilyGroup {
   id: string;
@@ -321,7 +322,7 @@ export default function FamilyDetailPage() {
       setLifePlans(plansResp.filter((p) => (p.insurance_type === "TERM_LIFE" || p.insurance_type === "WHOLE_LIFE") && p.is_active));
       if (fpResp.data.length > 0 && !selectedPolicyId) setSelectedPolicyId(fpResp.data[0].id);
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to load family.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to load family."));
     } finally {
       setLoading(false);
     }
@@ -356,10 +357,10 @@ export default function FamilyDetailPage() {
       });
       setFamilyPolicies((prev) => prev.map((p) => (p.id === resp.data.id ? resp.data : p)));
       setEditingPolicy(null);
-      setSuccess("Policy updated.");
+      setSuccess(tx("Policy updated."));
     } catch (err: any) {
       const detail = err.response?.data?.detail;
-      setError(Array.isArray(detail) ? detail.map((d: any) => d.msg ?? d).join(", ") : detail ?? err.message ?? "Failed to update the policy.");
+      setError(Array.isArray(detail) ? detail.map((d: any) => d.msg ?? d).join(", ") : detail ?? err.message ?? tx("Failed to update the policy."));
     } finally {
       setPolicyBusy(false);
     }
@@ -367,16 +368,16 @@ export default function FamilyDetailPage() {
 
   const handleDeletePolicy = async (fp: FamilyPolicy) => {
     const label = fp.plan_type === "Floater" ? "health floater" : "life bundle";
-    if (!window.confirm(`Remove this ${label} policy? Its proposal, cases and nominees are deleted too. The family members stay. This cannot be undone.`)) return;
+    if (!window.confirm(tx("Remove this {0} policy? Its proposal, cases and nominees are deleted too. The family members stay. This cannot be undone.", { 0: label }))) return;
     setError(""); setSuccess("");
     try {
       await api.delete(`/tenants/${tenantId}/families/${familyId}/family-policies/${fp.id}`);
-      setSuccess("Policy removed.");
+      setSuccess(tx("Policy removed."));
       if (fp.id === selectedPolicyId) setSelectedPolicyId("");
       await fetchAll();
     } catch (err: any) {
       const detail = err.response?.data?.detail;
-      setError(typeof detail === "string" ? detail : err.message ?? "Failed to remove the policy.");
+      setError(typeof detail === "string" ? detail : err.message ?? tx("Failed to remove the policy."));
     }
   };
 
@@ -405,26 +406,26 @@ export default function FamilyDetailPage() {
         share_pct: parseFloat(nomineeForm.share) || 0,
       });
       setEditingNominee(null);
-      setSuccess("Nominee updated.");
+      setSuccess(tx("Nominee updated."));
       await loadNominees(selectedPolicyId);
     } catch (err: any) {
       const detail = err.response?.data?.detail;
-      setError(Array.isArray(detail) ? detail.map((d: any) => d.msg ?? d).join(", ") : detail ?? err.message ?? "Failed to update the nominee.");
+      setError(Array.isArray(detail) ? detail.map((d: any) => d.msg ?? d).join(", ") : detail ?? err.message ?? tx("Failed to update the nominee."));
     } finally {
       setNomineeBusy(false);
     }
   };
 
   const handleDeleteNominee = async (n: NomineeShare) => {
-    if (!window.confirm(`Remove ${n.name} as a nominee? Their ${n.share_pct}% share becomes unallocated until you give it to someone else.`)) return;
+    if (!window.confirm(tx("Remove {0} as a nominee? Their {1}% share becomes unallocated until you give it to someone else.", { 0: n.name, 1: n.share_pct }))) return;
     setError(""); setSuccess("");
     try {
       await api.delete(`/tenants/${tenantId}/families/${familyId}/family-policies/${selectedPolicyId}/nominees/${n.id}`);
-      setSuccess(`${n.name} removed.`);
+      setSuccess(tx("{0} removed.", { 0: n.name }));
       await loadNominees(selectedPolicyId);
     } catch (err: any) {
       const detail = err.response?.data?.detail;
-      setError(typeof detail === "string" ? detail : err.message ?? "Failed to remove the nominee.");
+      setError(typeof detail === "string" ? detail : err.message ?? tx("Failed to remove the nominee."));
     }
   };
 
@@ -439,13 +440,13 @@ export default function FamilyDetailPage() {
         term_years: parseInt(floaterTermYears) || 0,
         effective_date: floaterEffectiveDate,
       });
-      setSuccess("Floater policy created. Add family members below.");
+      setSuccess(tx("Floater policy created. Add family members below."));
       setShowCreateFloater(false);
       setFamilyPolicies((prev) => [resp.data, ...prev]);
       setSelectedPolicyId(resp.data.id);
     } catch (err: any) {
       const detail = err.response?.data?.detail;
-      setError(Array.isArray(detail) ? detail.join(", ") : detail ?? err.message ?? "Failed to create floater policy.");
+      setError(Array.isArray(detail) ? detail.join(", ") : detail ?? err.message ?? tx("Failed to create floater policy."));
     } finally {
       setFloaterFormLoading(false);
     }
@@ -462,13 +463,13 @@ export default function FamilyDetailPage() {
         effective_date: lifeBundleEffectiveDate,
         discount_percentage: parseFloat(discountPercentage) || 0,
       });
-      setSuccess("Life bundle policy created. Add family members below.");
+      setSuccess(tx("Life bundle policy created. Add family members below."));
       setShowCreateLifeBundle(false);
       setFamilyPolicies((prev) => [resp.data, ...prev]);
       setSelectedPolicyId(resp.data.id);
     } catch (err: any) {
       const detail = err.response?.data?.detail;
-      setError(Array.isArray(detail) ? detail.join(", ") : detail ?? err.message ?? "Failed to create life bundle policy.");
+      setError(Array.isArray(detail) ? detail.join(", ") : detail ?? err.message ?? tx("Failed to create life bundle policy."));
     } finally {
       setLifeBundleFormLoading(false);
     }
@@ -503,7 +504,7 @@ export default function FamilyDetailPage() {
       );
       setValidationResult(resp.data);
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to validate members.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to validate members."));
     } finally {
       setMemberLoading(false);
     }
@@ -521,9 +522,9 @@ export default function FamilyDetailPage() {
       // Nothing new typed: the head and the nominees recorded earlier are already enrolled.
       if (hasHead && rowsToSend.length === 0) {
         if (Math.abs(nomineeInfo.total_share - 100) < 0.01) {
-          setSuccess("Everyone is already enrolled on this policy and the nominee shares total 100%. Add a row above to enrol someone else.");
+          setSuccess(tx("Everyone is already enrolled on this policy and the nominee shares total 100%. Add a row above to enrol someone else."));
         } else {
-          setError(`Nominee shares are at ${nomineeInfo.total_share}%. Add a nominee to bring them to 100%.`);
+          setError(tx("Nominee shares are at {0}%. Add a nominee to bring them to 100%.", { 0: nomineeInfo.total_share }));
         }
         return;
       }
@@ -548,7 +549,7 @@ export default function FamilyDetailPage() {
           .filter((c: any) => c.case_id && c.case_number),
       });
       setSuccess(
-        `${resp.data.members.length} insured member(s) and ${sent.length - resp.data.members.length} nominee(s) saved on the ${isLifeBundle ? "life bundle" : "floater"} policy.`
+        tx("{0} insured member(s) and {1} nominee(s) saved on the {2} policy.", { 0: resp.data.members.length, 1: sent.length - resp.data.members.length, 2: isLifeBundle ? "life bundle" : "floater" })
       );
       setConfirmResult(resp.data);
       setValidationResult(null);
@@ -562,7 +563,7 @@ export default function FamilyDetailPage() {
       if (err.response?.status === 422 && typeof detail === "object" && detail !== null && "is_valid" in detail) {
         setValidationResult(detail);
       } else {
-        setError(typeof detail === "object" ? JSON.stringify(detail) : detail ?? err.message ?? "Failed to confirm members.");
+        setError(typeof detail === "object" ? JSON.stringify(detail) : detail ?? err.message ?? tx("Failed to confirm members."));
       }
     } finally {
       setMemberLoading(false);
@@ -609,26 +610,26 @@ export default function FamilyDetailPage() {
         details: payloadDetails,
       };
       await api.put(`/tenants/${tenantId}/customers/${editingMember.id}`, payload);
-      setSuccess("Family member updated successfully.");
+      setSuccess(tx("Family member updated successfully."));
       setEditingMember(null);
       fetchAll();
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to update member.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to update member."));
     } finally {
       setEditMemberFormLoading(false);
     }
   };
 
   const handleDeleteMember = async (memberId: string, memberName: string) => {
-    if (!confirm(`Are you sure you want to delete ${memberName}? This will also delete their policy, quotes, and AI assessments.`)) return;
+    if (!confirm(tx("Are you sure you want to delete {0}? This will also delete their policy, quotes, and AI assessments.", { 0: memberName }))) return;
     setError("");
     setSuccess("");
     try {
       await api.delete(`/tenants/${tenantId}/families/${familyId}/members/${memberId}`);
-      setSuccess(`Family member ${memberName} deleted successfully.`);
+      setSuccess(tx("Family member {0} deleted successfully.", { 0: memberName }));
       fetchAll();
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to delete member.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to delete member."));
     }
   };
 
@@ -636,8 +637,8 @@ export default function FamilyDetailPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh] font-sans">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-8 text-center space-y-4">
-          <div className="text-red-500 font-bold">Unauthorized Access</div>
-          <p className="text-slate-400 text-sm">Administrative privileges required.</p>
+          <div className="text-red-500 font-bold">{tx("Unauthorized Access")}</div>
+          <p className="text-slate-400 text-sm">{tx("Administrative privileges required.")}</p>
         </div>
       </div>
     );
@@ -657,10 +658,10 @@ export default function FamilyDetailPage() {
           </svg>
         </button>
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{family?.name ?? "Loading..."}</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{family?.name ?? tx("Loading...")}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
             {family?.contact_person ?? "—"}
-            {family?.household_declared_income != null ? ` · Household income ${formatPKR(family.household_declared_income)}` : ""}
+            {family?.household_declared_income != null ? " " + tx("· Household income {0}", { 0: formatPKR(family.household_declared_income) }) : ""}
           </p>
         </div>
       </div>
@@ -677,7 +678,7 @@ export default function FamilyDetailPage() {
             if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].loc) {
               return (
                 <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600 font-medium space-y-1">
-                  <p className="font-bold mb-2">Invalid Data Format:</p>
+                  <p className="font-bold mb-2">{tx("Invalid Data Format:")}</p>
                   {parsed.map((e: any, i: number) => (
                     <p key={i}>• {e.loc.join(" -> ")}: {e.msg}</p>
                   ))}
@@ -688,10 +689,10 @@ export default function FamilyDetailPage() {
             if (missing.length > 0 || errs.length > 0 || dups.length > 0) {
               return (
                 <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600 font-medium space-y-1">
-                  <p className="font-bold mb-2">Please fix the following issues before enrolling:</p>
+                  <p className="font-bold mb-2">{tx("Please fix the following issues before enrolling:")}</p>
                   {missing.map((m: string, i: number) => <p key={`m-${i}`}>• {m}</p>)}
                   {errs.map((e: string, i: number) => <p key={`e-${i}`}>• {e}</p>)}
-                  {dups.length > 0 && <p>• Duplicate CNICs: {dups.join(", ")}</p>}
+                  {dups.length > 0 && <p>{tx("• Duplicate CNICs:")}{" "}{dups.join(", ")}</p>}
                 </div>
               );
             }
@@ -704,54 +705,54 @@ export default function FamilyDetailPage() {
       {loading ? (
         <div className="py-20 flex flex-col items-center justify-center gap-2">
           <div className="animate-spin h-7 w-7 text-blue-500 rounded-full border-2 border-slate-100 border-t-blue-500" />
-          <span className="text-xs text-slate-400">Loading...</span>
+          <span className="text-xs text-slate-400">{tx("Loading...")}</span>
         </div>
       ) : (
         <>
           {/* Family Policies */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-2 flex-wrap">
-              <p className="text-sm font-semibold text-slate-700">Family Policies</p>
+              <p className="text-sm font-semibold text-slate-700">{tx("Family Policies")}</p>
               <div className="flex gap-2">
                 <button onClick={() => setShowCreateFloater(true)} className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors">
-                  + New Floater Policy
+                  {tx("+ New Floater Policy")}
                 </button>
                 <span className="text-slate-300">|</span>
                 <button onClick={() => setShowCreateLifeBundle(true)} className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors">
-                  + New Life Bundle Policy
+                  {tx("+ New Life Bundle Policy")}
                 </button>
               </div>
             </div>
 
             {familyPolicies.length === 0 ? (
               <div className="py-10 text-center text-slate-400 text-sm">
-                No family policy yet — create a floater or life bundle to start enrolling members.
+                {tx("No family policy yet — create a floater or life bundle to start enrolling members.")}
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                      <th className="px-5 py-3 text-left">Type</th>
-                      <th className="px-5 py-3 text-left">Coverage / Discount</th>
-                      <th className="px-5 py-3 text-left">Term</th>
-                      <th className="px-5 py-3 text-left">Effective Date</th>
-                      <th className="px-5 py-3 text-left">Status</th>
-                      <th className="px-5 py-3 text-right">Actions</th>
+                      <th className="px-5 py-3 text-left">{tx("Type")}</th>
+                      <th className="px-5 py-3 text-left">{tx("Coverage / Discount")}</th>
+                      <th className="px-5 py-3 text-left">{tx("Term")}</th>
+                      <th className="px-5 py-3 text-left">{tx("Effective Date")}</th>
+                      <th className="px-5 py-3 text-left">{tx("Status")}</th>
+                      <th className="px-5 py-3 text-right">{tx("Actions")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {familyPolicies.map((fp) => (
                       <tr key={fp.id} className={fp.id === selectedPolicyId ? "bg-blue-50/40" : ""}>
                         <td className="px-5 py-3 font-semibold text-slate-800">
-                          {fp.plan_type === "Floater" ? "Health Floater" : "Life Bundle"}
+                          {fp.plan_type === "Floater" ? tx("Health Floater") : tx("Life Bundle")}
                         </td>
                         <td className="px-5 py-3 text-slate-600">
                           {fp.plan_type === "Floater"
                             ? fp.total_sum_insured != null ? formatPKR(fp.total_sum_insured) : "—"
-                            : `${fp.discount_percentage ?? 0}% discount`}
+                            : tx("{0}% discount", { 0: fp.discount_percentage ?? 0 })}
                         </td>
-                        <td className="px-5 py-3 text-slate-600">{fp.term_years} years</td>
+                        <td className="px-5 py-3 text-slate-600">{fp.term_years}{" "}{tx("years")}</td>
                         <td className="px-5 py-3 text-slate-600">{fp.effective_date}</td>
                         <td className="px-5 py-3">
                           <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border ${FAMILY_POLICY_STATUS_STYLE[fp.status] ?? "bg-slate-100 text-slate-700 border-slate-200"}`}>
@@ -759,11 +760,11 @@ export default function FamilyDetailPage() {
                           </span>
                         </td>
                         <td className="px-5 py-3 text-right whitespace-nowrap">
-                          <button onClick={() => startEditPolicy(fp)} className="text-xs font-semibold text-blue-600 hover:text-blue-800 mr-3">Edit</button>
+                          <button onClick={() => startEditPolicy(fp)} className="text-xs font-semibold text-blue-600 hover:text-blue-800 mr-3">{tx("Edit")}</button>
                           <button
                             onClick={() => handleDeletePolicy(fp)}
-                            title="Remove this policy"
-                            aria-label="Remove this policy"
+                            title={tx("Remove this policy")}
+                            aria-label={tx("Remove this policy")}
                             className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600 align-middle"
                           >
                             ✕
@@ -781,31 +782,31 @@ export default function FamilyDetailPage() {
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setEditingPolicy(null)}>
               <form onSubmit={handleSavePolicy} onClick={(e) => e.stopPropagation()} className="w-full max-w-sm space-y-4 rounded-2xl bg-white p-6 shadow-2xl">
                 <h3 className="text-sm font-bold text-slate-800">
-                  Edit {editingPolicy.plan_type === "Floater" ? "Health Floater" : "Life Bundle"}
+                  {tx("Edit")}{" "}{editingPolicy.plan_type === "Floater" ? tx("Health Floater") : tx("Life Bundle")}
                 </h3>
                 <label className="block text-xs font-semibold text-slate-600">
-                  {editingPolicy.plan_type === "Floater" ? "Total sum insured (PKR)" : "Bundle discount (%)"}
+                  {editingPolicy.plan_type === "Floater" ? tx("Total sum insured (PKR)") : tx("Bundle discount (%)")}
                   <input type="number" min="0" step="any" required value={policyForm.amount}
                     onChange={(e) => setPolicyForm((f) => ({ ...f, amount: e.target.value }))}
                     className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
                 </label>
                 <label className="block text-xs font-semibold text-slate-600">
-                  Term (years)
+                  {tx("Term (years)")}
                   <input type="number" min="1" max="40" required value={policyForm.term}
                     onChange={(e) => setPolicyForm((f) => ({ ...f, term: e.target.value }))}
                     className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
                 </label>
                 <label className="block text-xs font-semibold text-slate-600">
-                  Effective date
+                  {tx("Effective date")}
                   <input type="date" required value={policyForm.date}
                     onChange={(e) => setPolicyForm((f) => ({ ...f, date: e.target.value }))}
                     className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
                 </label>
-                <p className="text-[11px] text-slate-400">Terms can only be edited before anyone is enrolled on the policy. Otherwise remove it and create it again.</p>
+                <p className="text-[11px] text-slate-400">{tx("Terms can only be edited before anyone is enrolled on the policy. Otherwise remove it and create it again.")}</p>
                 <div className="flex justify-end gap-2">
-                  <button type="button" onClick={() => setEditingPolicy(null)} className="px-3 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
+                  <button type="button" onClick={() => setEditingPolicy(null)} className="px-3 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700">{tx("Cancel")}</button>
                   <button type="submit" disabled={policyBusy} className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
-                    {policyBusy ? "Saving…" : "Save"}
+                    {policyBusy ? tx("Saving…") : tx("Save")}
                   </button>
                 </div>
               </form>
@@ -816,7 +817,7 @@ export default function FamilyDetailPage() {
           {familyPolicies.length > 0 && (
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between flex-wrap gap-2">
-                <p className="text-sm font-semibold text-slate-700">Add Family Members</p>
+                <p className="text-sm font-semibold text-slate-700">{tx("Add Family Members")}</p>
                 <select
                   value={selectedPolicyId}
                   onChange={(e) => { setSelectedPolicyId(e.target.value); setValidationResult(null); }}
@@ -824,7 +825,7 @@ export default function FamilyDetailPage() {
                 >
                   {familyPolicies.map((fp) => (
                     <option key={fp.id} value={fp.id}>
-                      {fp.plan_type === "Floater" ? "Health Floater" : "Life Bundle"} · {fp.effective_date} ({fp.status})
+                      {fp.plan_type === "Floater" ? tx("Health Floater") : tx("Life Bundle")} · {fp.effective_date} ({fp.status})
                     </option>
                   ))}
                 </select>
@@ -842,10 +843,10 @@ export default function FamilyDetailPage() {
                     validationResult.is_valid ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-amber-50 border-amber-200 text-amber-700"
                   }`}>
                     <p className="font-bold">
-                      {validationResult.is_valid ? "✓ Members Valid" : "⚠ Members have issues"} — {validationResult.total} row(s)
+                      {validationResult.is_valid ? tx("✓ Members Valid") : tx("⚠ Members have issues")} — {validationResult.total}{" "}{tx("row(s)")}
                     </p>
                     {validationResult.errors.map((e, i) => <p key={i}>{e}</p>)}
-                    {validationResult.duplicate_cnics.length > 0 && <p>Duplicate CNICs: {validationResult.duplicate_cnics.join(", ")}</p>}
+                    {validationResult.duplicate_cnics.length > 0 && <p>{tx("Duplicate CNICs:")}{" "}{validationResult.duplicate_cnics.join(", ")}</p>}
                     {validationResult.missing_fields.map((m, i) => <p key={i}>{m}</p>)}
                   </div>
                 )}
@@ -855,7 +856,7 @@ export default function FamilyDetailPage() {
                     type="button" onClick={handleConfirmMembers} disabled={memberLoading}
                     className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/40 rounded-lg transition-colors"
                   >
-                    {memberLoading ? "Working..." : "Confirm & Enroll"}
+                    {memberLoading ? tx("Working...") : tx("Confirm & Enroll")}
                   </button>
                 </div>
               </div>
@@ -866,10 +867,10 @@ export default function FamilyDetailPage() {
           {confirmResult && (
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between flex-wrap gap-2">
-                <p className="text-sm font-semibold text-slate-700">Last Enrollment Result</p>
+                <p className="text-sm font-semibold text-slate-700">{tx("Last Enrollment Result")}</p>
                 {confirmResult.total_sum_insured != null && (
                   <span className="text-xs text-slate-500 font-medium">
-                    Shared Pool: {formatPKR(confirmResult.total_sum_insured)}
+                    {tx("Shared Pool:")}{" "}{formatPKR(confirmResult.total_sum_insured)}
                   </span>
                 )}
               </div>
@@ -877,10 +878,10 @@ export default function FamilyDetailPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                      <th className="px-5 py-3 text-left">Relationship</th>
-                      <th className="px-5 py-3 text-left">Outcome</th>
-                      <th className="px-5 py-3 text-right">Premium (Annual)</th>
-                      <th className="px-5 py-3 text-right">Suggested Loading</th>
+                      <th className="px-5 py-3 text-left">{tx("Relationship")}</th>
+                      <th className="px-5 py-3 text-left">{tx("Outcome")}</th>
+                      <th className="px-5 py-3 text-right">{tx("Premium (Annual)")}</th>
+                      <th className="px-5 py-3 text-right">{tx("Suggested Loading")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -892,7 +893,7 @@ export default function FamilyDetailPage() {
                             {m.status}
                           </span>
                           {m.risk_assessment_id && (
-                            <span className="ml-2 text-[11px] text-slate-400">AI-assessed</span>
+                            <span className="ml-2 text-[11px] text-slate-400">{tx("AI-assessed")}</span>
                           )}
                         </td>
                         <td className="px-5 py-3 text-right font-semibold text-slate-700">
@@ -913,17 +914,17 @@ export default function FamilyDetailPage() {
           {nomineeInfo.nominees.length > 0 && (
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between flex-wrap gap-2">
-                <p className="text-sm font-semibold text-slate-700">Nominees — share of the head&apos;s death benefit</p>
+                <p className="text-sm font-semibold text-slate-700">{tx("Nominees — share of the head's death benefit")}</p>
                 <span className={`text-xs font-semibold tabular-nums ${Math.abs(nomineeInfo.total_share - 100) < 0.01 ? "text-emerald-700" : "text-amber-700"}`}>
-                  {nomineeInfo.total_share}% allocated{nomineeInfo.base_amount ? ` of ${formatPKR(nomineeInfo.base_amount)}` : ""}
+                  {nomineeInfo.total_share}{tx("% allocated")}{nomineeInfo.base_amount ? " " + tx("of {0}", { 0: formatPKR(nomineeInfo.base_amount) }) : ""}
                 </span>
               </div>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                    <th className="px-5 py-3 text-left">Name</th><th className="px-5 py-3 text-left">Relationship</th>
-                    <th className="px-5 py-3 text-right">Share</th><th className="px-5 py-3 text-right">Amount</th><th className="px-5 py-3 text-left">Note</th>
-                    <th className="px-5 py-3 text-right">Actions</th>
+                    <th className="px-5 py-3 text-left">{tx("Name")}</th><th className="px-5 py-3 text-left">{tx("Relationship")}</th>
+                    <th className="px-5 py-3 text-right">{tx("Share")}</th><th className="px-5 py-3 text-right">{tx("Amount")}</th><th className="px-5 py-3 text-left">{tx("Note")}</th>
+                    <th className="px-5 py-3 text-right">{tx("Actions")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -933,13 +934,13 @@ export default function FamilyDetailPage() {
                       <td className="px-5 py-3 text-slate-600">{n.relationship}</td>
                       <td className="px-5 py-3 text-right tabular-nums">{n.share_pct}%</td>
                       <td className="px-5 py-3 text-right tabular-nums text-slate-700">{n.amount != null ? formatPKR(n.amount) : "—"}</td>
-                      <td className="px-5 py-3 text-xs text-slate-500">{n.is_minor ? `Minor${n.guardian_name ? ` — paid to ${n.guardian_name}` : ""}` : ""}</td>
+                      <td className="px-5 py-3 text-xs text-slate-500">{n.is_minor ? tx("Minor{0}", { 0: n.guardian_name ? ` — paid to ${n.guardian_name}` : "" }) : ""}</td>
                       <td className="px-5 py-3 text-right whitespace-nowrap">
-                        <button onClick={() => startEditNominee(n)} className="text-xs font-semibold text-blue-600 hover:text-blue-800 mr-3">Edit</button>
+                        <button onClick={() => startEditNominee(n)} className="text-xs font-semibold text-blue-600 hover:text-blue-800 mr-3">{tx("Edit")}</button>
                         <button
                           onClick={() => handleDeleteNominee(n)}
-                          title="Remove this nominee"
-                          aria-label="Remove this nominee"
+                          title={tx("Remove this nominee")}
+                          aria-label={tx("Remove this nominee")}
                           className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600 align-middle"
                         >
                           ✕
@@ -955,42 +956,42 @@ export default function FamilyDetailPage() {
           {editingNominee && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setEditingNominee(null)}>
               <form onSubmit={handleSaveNominee} onClick={(e) => e.stopPropagation()} className="w-full max-w-sm space-y-4 rounded-2xl bg-white p-6 shadow-2xl">
-                <h3 className="text-sm font-bold text-slate-800">Edit nominee</h3>
+                <h3 className="text-sm font-bold text-slate-800">{tx("Edit nominee")}</h3>
                 <label className="block text-xs font-semibold text-slate-600">
-                  Full name
+                  {tx("Full name")}
                   <input required value={nomineeForm.name} onChange={(e) => setNomineeForm((f) => ({ ...f, name: e.target.value }))}
                     className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
                 </label>
                 <div className="grid grid-cols-2 gap-3">
                   <label className="block text-xs font-semibold text-slate-600">
-                    Relationship
+                    {tx("Relationship")}
                     <select value={nomineeForm.relationship} onChange={(e) => setNomineeForm((f) => ({ ...f, relationship: e.target.value }))}
                       className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
                       {["Spouse", "Child", "Parent", "Sibling", "Other"].map((r) => <option key={r} value={r}>{r}</option>)}
                     </select>
                   </label>
                   <label className="block text-xs font-semibold text-slate-600">
-                    Share (%)
+                    {tx("Share (%)")}
                     <input type="number" min="0.01" max="100" step="any" required value={nomineeForm.share}
                       onChange={(e) => setNomineeForm((f) => ({ ...f, share: e.target.value }))}
                       className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
                   </label>
                 </div>
                 <label className="block text-xs font-semibold text-slate-600">
-                  CNIC (optional)
-                  <input value={nomineeForm.cnic} placeholder="XXXXX-XXXXXXX-X" onChange={(e) => setNomineeForm((f) => ({ ...f, cnic: e.target.value }))}
+                  {tx("CNIC (optional)")}
+                  <input value={nomineeForm.cnic} placeholder={tx("XXXXX-XXXXXXX-X")} onChange={(e) => setNomineeForm((f) => ({ ...f, cnic: e.target.value }))}
                     className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
                 </label>
                 <label className="block text-xs font-semibold text-slate-600">
-                  Date of birth (optional)
+                  {tx("Date of birth (optional)")}
                   <input type="date" value={nomineeForm.dob} onChange={(e) => setNomineeForm((f) => ({ ...f, dob: e.target.value }))}
                     className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
                 </label>
-                <p className="text-[11px] text-slate-400">A nominee under 18 is marked a minor and paid through the head. Shares can't total more than 100%.</p>
+                <p className="text-[11px] text-slate-400">{tx("A nominee under 18 is marked a minor and paid through the head. Shares can't total more than 100%.")}</p>
                 <div className="flex justify-end gap-2">
-                  <button type="button" onClick={() => setEditingNominee(null)} className="px-3 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
+                  <button type="button" onClick={() => setEditingNominee(null)} className="px-3 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700">{tx("Cancel")}</button>
                   <button type="submit" disabled={nomineeBusy} className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
-                    {nomineeBusy ? "Saving…" : "Save"}
+                    {nomineeBusy ? tx("Saving…") : tx("Save")}
                   </button>
                 </div>
               </form>
@@ -1000,24 +1001,24 @@ export default function FamilyDetailPage() {
           {/* Family Roster */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-              <p className="text-sm font-semibold text-slate-700">Family Roster</p>
-              <span className="text-xs text-slate-400 font-medium">Total: {members.length}</span>
+              <p className="text-sm font-semibold text-slate-700">{tx("Family Roster")}</p>
+              <span className="text-xs text-slate-400 font-medium">{tx("Total:")}{" "}{members.length}</span>
             </div>
             {members.length === 0 ? (
-              <div className="py-10 text-center text-slate-400 text-sm">No family members enrolled yet.</div>
+              <div className="py-10 text-center text-slate-400 text-sm">{tx("No family members enrolled yet.")}</div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                      <th className="px-5 py-3 text-left">CNIC</th>
-                      <th className="px-5 py-3 text-left">Full Name</th>
-                      <th className="px-5 py-3 text-left">Relationship</th>
-                      <th className="px-5 py-3 text-left">Age / Gender</th>
-                      <th className="px-5 py-3 text-left">Occupation</th>
-                      <th className="px-5 py-3 text-right">Income</th>
-                      <th className="px-5 py-3 text-left">Profile</th>
-                      <th className="px-5 py-3 text-right">Actions</th>
+                      <th className="px-5 py-3 text-left">{tx("CNIC")}</th>
+                      <th className="px-5 py-3 text-left">{tx("Full Name")}</th>
+                      <th className="px-5 py-3 text-left">{tx("Relationship")}</th>
+                      <th className="px-5 py-3 text-left">{tx("Age / Gender")}</th>
+                      <th className="px-5 py-3 text-left">{tx("Occupation")}</th>
+                      <th className="px-5 py-3 text-right">{tx("Income")}</th>
+                      <th className="px-5 py-3 text-left">{tx("Profile")}</th>
+                      <th className="px-5 py-3 text-right">{tx("Actions")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1027,26 +1028,26 @@ export default function FamilyDetailPage() {
                         <td className="px-5 py-3 font-semibold text-slate-800">{m.name}</td>
                         <td className="px-5 py-3 text-slate-600">{m.relationship ?? "—"}</td>
                         <td className="px-5 py-3 text-slate-600">
-                          {new Date().getFullYear() - new Date(m.dob).getFullYear()} yrs · {m.gender}
+                          {new Date().getFullYear() - new Date(m.dob).getFullYear()}{" "}{tx("yrs ·")}{" "}{m.gender}
                         </td>
                         <td className="px-5 py-3 text-slate-600">{m.occupation}</td>
-                        <td className="px-5 py-3 text-right font-semibold text-slate-700">PKR {m.declared_income.toLocaleString()}</td>
+                        <td className="px-5 py-3 text-right font-semibold text-slate-700">{tx("PKR")}{" "}{m.declared_income.toLocaleString()}</td>
                         <td className="px-5 py-3">
                           {memberHasFullDetails(m) ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
                               <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                              Full Details
+                              {tx("Full Details")}
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
                               <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                              Core Only
+                              {tx("Core Only")}
                             </span>
                           )}
                         </td>
                         <td className="px-5 py-3 text-right space-x-3">
-                          <button onClick={() => handleEditMember(m)} className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors">Edit</button>
-                          <button onClick={() => handleDeleteMember(m.id, m.name)} className="text-xs font-bold text-red-600 hover:text-red-800 transition-colors">Delete</button>
+                          <button onClick={() => handleEditMember(m)} className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors">{tx("Edit")}</button>
+                          <button onClick={() => handleDeleteMember(m.id, m.name)} className="text-xs font-bold text-red-600 hover:text-red-800 transition-colors">{tx("Delete")}</button>
                         </td>
                       </tr>
                     ))}
@@ -1063,12 +1064,12 @@ export default function FamilyDetailPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 my-8">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900">New Floater Policy</h3>
+              <h3 className="text-base font-bold text-slate-900">{tx("New Floater Policy")}</h3>
               <button onClick={() => setShowCreateFloater(false)} className="text-slate-400 hover:text-slate-600 transition-colors">✕</button>
             </div>
             <form onSubmit={handleCreateFloater} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Total Sum Insured (Shared Pool, PKR) *</label>
+                <label className="block text-xs font-semibold text-slate-600">{tx("Total Sum Insured (Shared Pool, PKR) *")}</label>
                 <input
                   type="number" required value={totalSumInsured} onChange={(e) => setTotalSumInsured(e.target.value)}
                   placeholder="5000000"
@@ -1076,23 +1077,23 @@ export default function FamilyDetailPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Term (Years) *</label>
+                <label className="block text-xs font-semibold text-slate-600">{tx("Term (Years) *")}</label>
                 <input type="number" required value={floaterTermYears} onChange={(e) => setFloaterTermYears(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
               </div>
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Effective Date *</label>
+                <label className="block text-xs font-semibold text-slate-600">{tx("Effective Date *")}</label>
                 <input type="date" required value={floaterEffectiveDate} onChange={(e) => setFloaterEffectiveDate(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
               </div>
               <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
                 <button type="button" onClick={() => setShowCreateFloater(false)}
                   className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
-                  Cancel
+                  {tx("Cancel")}
                 </button>
                 <button type="submit" disabled={floaterFormLoading}
                   className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg transition-colors">
-                  {floaterFormLoading ? "Creating..." : "Create Floater Policy"}
+                  {floaterFormLoading ? tx("Creating...") : tx("Create Floater Policy")}
                 </button>
               </div>
             </form>
@@ -1105,34 +1106,34 @@ export default function FamilyDetailPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 my-8">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900">New Life Bundle Policy</h3>
+              <h3 className="text-base font-bold text-slate-900">{tx("New Life Bundle Policy")}</h3>
               <button onClick={() => setShowCreateLifeBundle(false)} className="text-slate-400 hover:text-slate-600 transition-colors">✕</button>
             </div>
             <form onSubmit={handleCreateLifeBundle} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Term (Years) *</label>
+                <label className="block text-xs font-semibold text-slate-600">{tx("Term (Years) *")}</label>
                 <input type="number" required value={lifeBundleTermYears} onChange={(e) => setLifeBundleTermYears(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
               </div>
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Effective Date *</label>
+                <label className="block text-xs font-semibold text-slate-600">{tx("Effective Date *")}</label>
                 <input type="date" required value={lifeBundleEffectiveDate} onChange={(e) => setLifeBundleEffectiveDate(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
               </div>
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Family Bundling Discount (%)</label>
+                <label className="block text-xs font-semibold text-slate-600">{tx("Family Bundling Discount (%)")}</label>
                 <input type="number" step="0.1" min="0" max="50" value={discountPercentage} onChange={(e) => setDiscountPercentage(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
-                <p className="text-[11px] text-slate-400">Applied to each member&apos;s own plan rate. 0-50%.</p>
+                <p className="text-[11px] text-slate-400">{tx("Applied to each member's own plan rate. 0-50%.")}</p>
               </div>
               <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
                 <button type="button" onClick={() => setShowCreateLifeBundle(false)}
                   className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
-                  Cancel
+                  {tx("Cancel")}
                 </button>
                 <button type="submit" disabled={lifeBundleFormLoading}
                   className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg transition-colors">
-                  {lifeBundleFormLoading ? "Creating..." : "Create Life Bundle Policy"}
+                  {lifeBundleFormLoading ? tx("Creating...") : tx("Create Life Bundle Policy")}
                 </button>
               </div>
             </form>
@@ -1146,8 +1147,8 @@ export default function FamilyDetailPage() {
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden my-8">
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
               <div>
-                <h3 className="text-base font-bold text-slate-900">Edit Family Member — {editingMember.name}</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Same profile modules as an individual customer, feeds underwriting the same way.</p>
+                <h3 className="text-base font-bold text-slate-900">{tx("Edit Family Member —")}{" "}{editingMember.name}</h3>
+                <p className="text-xs text-slate-500 mt-0.5">{tx("Same profile modules as an individual customer, feeds underwriting the same way.")}</p>
               </div>
               <button onClick={() => setEditingMember(null)} className="text-slate-400 hover:text-slate-600 transition-colors">✕</button>
             </div>
@@ -1173,57 +1174,57 @@ export default function FamilyDetailPage() {
               {editMemberTab === "core" && (
                 <div className="space-y-4">
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">CNIC *</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("CNIC *")}</label>
                     <input type="text" required value={editMemberForm.cnic || ""} onChange={(e) => setEditMemberForm({ ...editMemberForm, cnic: formatCNIC(e.target.value) })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Full Name *</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Full Name *")}</label>
                     <input type="text" required value={editMemberForm.name || ""} onChange={(e) => setEditMemberForm({ ...editMemberForm, name: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">DOB *</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("DOB *")}</label>
                       <input type="date" required value={editMemberForm.dob || ""} onChange={(e) => setEditMemberForm({ ...editMemberForm, dob: e.target.value })}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Gender *</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Gender *")}</label>
                       <select required value={editMemberForm.gender || "Male"} onChange={(e) => setEditMemberForm({ ...editMemberForm, gender: e.target.value })}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm">
-                        <option value="Male">Male</option>
-                        <option value="Female">Female</option>
-                        <option value="Other">Other</option>
+                        <option value="Male">{tx("Male")}</option>
+                        <option value="Female">{tx("Female")}</option>
+                        <option value="Other">{tx("Other")}</option>
                       </select>
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Occupation *</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Occupation *")}</label>
                     <input type="text" required value={editMemberForm.occupation || ""} onChange={(e) => setEditMemberForm({ ...editMemberForm, occupation: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Declared Income (Annual) *</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Declared Income (Annual) *")}</label>
                     <input type="number" required value={editMemberForm.declared_income || ""} onChange={(e) => setEditMemberForm({ ...editMemberForm, declared_income: parseFloat(e.target.value) })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                   </div>
                   <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Smoker?</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Smoker?")}</label>
                       <select value={editMemberForm.is_smoker ? "true" : "false"} onChange={(e) => setEditMemberForm({ ...editMemberForm, is_smoker: e.target.value === "true" })}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm">
-                        <option value="false">No</option>
-                        <option value="true">Yes</option>
+                        <option value="false">{tx("No")}</option>
+                        <option value="true">{tx("Yes")}</option>
                       </select>
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Height (cm)</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Height (cm)")}</label>
                       <input type="number" value={editMemberForm.height_cm ?? ""} onChange={(e) => setEditMemberForm({ ...editMemberForm, height_cm: parseFloat(e.target.value) || undefined })}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Weight (kg)</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Weight (kg)")}</label>
                       <input type="number" value={editMemberForm.weight_kg ?? ""} onChange={(e) => setEditMemberForm({ ...editMemberForm, weight_kg: parseFloat(e.target.value) || undefined })}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                     </div>
@@ -1235,49 +1236,49 @@ export default function FamilyDetailPage() {
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Street Address</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Street Address")}</label>
                       <input type="text" value={editMemberDetails.address.street_address} onChange={(e) => updateMemberDetailField("address", "street_address", e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Area</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Area")}</label>
                       <input type="text" value={editMemberDetails.address.area} onChange={(e) => updateMemberDetailField("address", "area", e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">City</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("City")}</label>
                       <input type="text" value={editMemberDetails.address.city} onChange={(e) => updateMemberDetailField("address", "city", e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Province</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Province")}</label>
                       <input type="text" value={editMemberDetails.address.province} onChange={(e) => updateMemberDetailField("address", "province", e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Postal Code</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Postal Code")}</label>
                       <input type="text" value={editMemberDetails.address.postal_code} onChange={(e) => updateMemberDetailField("address", "postal_code", e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                     </div>
                   </div>
                   <div className="pt-3 border-t border-slate-100 grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Mobile Number</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Mobile Number")}</label>
                       <input type="text" value={editMemberDetails.contact.mobile_number} onChange={(e) => updateMemberDetailField("contact", "mobile_number", e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Email</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Email")}</label>
                       <input type="email" value={editMemberDetails.contact.email} onChange={(e) => updateMemberDetailField("contact", "email", e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Emergency Contact Name</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Emergency Contact Name")}</label>
                       <input type="text" value={editMemberDetails.contact.emergency_contact_name} onChange={(e) => updateMemberDetailField("contact", "emergency_contact_name", e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Emergency Contact Phone</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Emergency Contact Phone")}</label>
                       <input type="text" value={editMemberDetails.contact.emergency_contact_phone} onChange={(e) => updateMemberDetailField("contact", "emergency_contact_phone", e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                     </div>
@@ -1288,12 +1289,12 @@ export default function FamilyDetailPage() {
               {editMemberTab === "cnic_metadata" && (
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">CNIC Issue Date</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("CNIC Issue Date")}</label>
                     <input type="date" value={editMemberDetails.cnic_metadata.issue_date} onChange={(e) => updateMemberDetailField("cnic_metadata", "issue_date", e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">CNIC Expiry Date</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("CNIC Expiry Date")}</label>
                     <input type="date" value={editMemberDetails.cnic_metadata.expiry_date} onChange={(e) => updateMemberDetailField("cnic_metadata", "expiry_date", e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                   </div>
@@ -1304,52 +1305,52 @@ export default function FamilyDetailPage() {
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Job Title</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Job Title")}</label>
                       <input type="text" value={editMemberDetails.occupation_details.job_title} onChange={(e) => updateMemberDetailField("occupation_details", "job_title", e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Employer Name</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Employer Name")}</label>
                       <input type="text" value={editMemberDetails.occupation_details.employer_name} onChange={(e) => updateMemberDetailField("occupation_details", "employer_name", e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Employment Type</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Employment Type")}</label>
                       <select value={editMemberDetails.occupation_details.employment_type} onChange={(e) => updateMemberDetailField("occupation_details", "employment_type", e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm">
-                        <option value="Salaried">Salaried</option>
-                        <option value="Self-Employed">Self-Employed</option>
-                        <option value="Business Owner">Business Owner</option>
-                        <option value="Unemployed">Unemployed</option>
-                        <option value="Retired">Retired</option>
-                        <option value="Student">Student</option>
+                        <option value="Salaried">{tx("Salaried")}</option>
+                        <option value="Self-Employed">{tx("Self-Employed")}</option>
+                        <option value="Business Owner">{tx("Business Owner")}</option>
+                        <option value="Unemployed">{tx("Unemployed")}</option>
+                        <option value="Retired">{tx("Retired")}</option>
+                        <option value="Student">{tx("Student")}</option>
                       </select>
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Occupation Hazard Level</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Occupation Hazard Level")}</label>
                       <select value={editMemberDetails.occupation_details.occupation_hazard_level} onChange={(e) => updateMemberDetailField("occupation_details", "occupation_hazard_level", e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm">
-                        <option value="Low">Low</option>
-                        <option value="Medium">Medium</option>
-                        <option value="High">High</option>
+                        <option value="Low">{tx("Low")}</option>
+                        <option value="Medium">{tx("Medium")}</option>
+                        <option value="High">{tx("High")}</option>
                       </select>
                     </div>
                   </div>
                   <div className="pt-3 border-t border-slate-100 grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Monthly Income (PKR)</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Monthly Income (PKR)")}</label>
                       <input type="number" value={editMemberDetails.income_record.monthly_income} onChange={(e) => updateMemberDetailField("income_record", "monthly_income", parseFloat(e.target.value) || 0)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Income Source</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Income Source")}</label>
                       <select value={editMemberDetails.income_record.income_source} onChange={(e) => updateMemberDetailField("income_record", "income_source", e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm">
-                        <option value="Salary">Salary</option>
-                        <option value="Business">Business</option>
-                        <option value="Investments">Investments</option>
-                        <option value="Rental">Rental</option>
-                        <option value="Other">Other</option>
+                        <option value="Salary">{tx("Salary")}</option>
+                        <option value="Business">{tx("Business")}</option>
+                        <option value="Investments">{tx("Investments")}</option>
+                        <option value="Rental">{tx("Rental")}</option>
+                        <option value="Other">{tx("Other")}</option>
                       </select>
                     </div>
                   </div>
@@ -1367,61 +1368,61 @@ export default function FamilyDetailPage() {
                     ))}
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Surgical History</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Surgical History")}</label>
                     <textarea value={editMemberDetails.medical_history.surgical_history} onChange={(e) => updateMemberDetailField("medical_history", "surgical_history", e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" rows={2} />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Medical Notes</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Medical Notes")}</label>
                     <textarea value={editMemberDetails.medical_history.notes} onChange={(e) => updateMemberDetailField("medical_history", "notes", e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" rows={2} />
                   </div>
                   <div className="pt-3 border-t border-slate-100 grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Smoking Status</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Smoking Status")}</label>
                       <select value={editMemberDetails.lifestyle.smoking_status} onChange={(e) => updateMemberDetailField("lifestyle", "smoking_status", e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm">
-                        <option value="NonSmoker">Non-Smoker</option>
-                        <option value="Smoker">Smoker</option>
-                        <option value="FormerSmoker">Former Smoker</option>
+                        <option value="NonSmoker">{tx("Non-Smoker")}</option>
+                        <option value="Smoker">{tx("Smoker")}</option>
+                        <option value="FormerSmoker">{tx("Former Smoker")}</option>
                       </select>
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Alcohol Status</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Alcohol Status")}</label>
                       <select value={editMemberDetails.lifestyle.alcohol_status} onChange={(e) => updateMemberDetailField("lifestyle", "alcohol_status", e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm">
-                        <option value="None">None</option>
-                        <option value="Occasional">Occasional</option>
-                        <option value="Regular">Regular</option>
+                        <option value="None">{tx("None")}</option>
+                        <option value="Occasional">{tx("Occasional")}</option>
+                        <option value="Regular">{tx("Regular")}</option>
                       </select>
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Exercise Frequency</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Exercise Frequency")}</label>
                       <select value={editMemberDetails.lifestyle.exercise_frequency} onChange={(e) => updateMemberDetailField("lifestyle", "exercise_frequency", e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm">
-                        <option value="Sedentary">Sedentary</option>
-                        <option value="Light">Light</option>
-                        <option value="Moderate">Moderate</option>
-                        <option value="Active">Active</option>
+                        <option value="Sedentary">{tx("Sedentary")}</option>
+                        <option value="Light">{tx("Light")}</option>
+                        <option value="Moderate">{tx("Moderate")}</option>
+                        <option value="Active">{tx("Active")}</option>
                       </select>
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Diet Type</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Diet Type")}</label>
                       <select value={editMemberDetails.lifestyle.diet_type} onChange={(e) => updateMemberDetailField("lifestyle", "diet_type", e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm">
-                        <option value="Regular">Regular</option>
-                        <option value="Vegetarian">Vegetarian</option>
-                        <option value="Vegan">Vegan</option>
+                        <option value="Regular">{tx("Regular")}</option>
+                        <option value="Vegetarian">{tx("Vegetarian")}</option>
+                        <option value="Vegan">{tx("Vegan")}</option>
                       </select>
                     </div>
                   </div>
                   <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
                     <input type="checkbox" checked={!!editMemberDetails.lifestyle.has_hazardous_hobby} onChange={(e) => updateMemberDetailField("lifestyle", "has_hazardous_hobby", e.target.checked)} />
-                    Has a hazardous hobby
+                    {tx("Has a hazardous hobby")}
                   </label>
                   {editMemberDetails.lifestyle.has_hazardous_hobby && (
                     <input type="text" value={editMemberDetails.lifestyle.hazardous_hobby_details} onChange={(e) => updateMemberDetailField("lifestyle", "hazardous_hobby_details", e.target.value)}
-                      placeholder="e.g. Skydiving, scuba diving"
+                      placeholder={tx("e.g. Skydiving, scuba diving")}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                   )}
                 </div>
@@ -1430,12 +1431,12 @@ export default function FamilyDetailPage() {
               {editMemberTab === "habit_check" && (
                 <div className="space-y-4">
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Alcohol Consumption Frequency</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Alcohol Consumption Frequency")}</label>
                     <select value={editMemberDetails.habit_check.alcohol_consumption_frequency} onChange={(e) => updateMemberDetailField("habit_check", "alcohol_consumption_frequency", e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm">
-                      <option value="None">None</option>
-                      <option value="Occasional">Occasional</option>
-                      <option value="Regular">Regular</option>
+                      <option value="None">{tx("None")}</option>
+                      <option value="Occasional">{tx("Occasional")}</option>
+                      <option value="Regular">{tx("Regular")}</option>
                     </select>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -1453,22 +1454,22 @@ export default function FamilyDetailPage() {
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Bank Name</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Bank Name")}</label>
                       <input type="text" value={editMemberDetails.financial_records.bank_statement.bank_name} onChange={(e) => updateMemberDetailSubField("financial_records", "bank_statement", "bank_name", e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Average Monthly Balance (PKR)</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Average Monthly Balance (PKR)")}</label>
                       <input type="number" value={editMemberDetails.financial_records.bank_statement.average_monthly_balance} onChange={(e) => updateMemberDetailSubField("financial_records", "bank_statement", "average_monthly_balance", parseFloat(e.target.value) || 0)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Credit Score</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Credit Score")}</label>
                       <input type="number" value={editMemberDetails.financial_records.credit_bureau.credit_score} onChange={(e) => updateMemberDetailSubField("financial_records", "credit_bureau", "credit_score", parseFloat(e.target.value) || 0)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-600">Risk Grade</label>
+                      <label className="block text-xs font-semibold text-slate-600">{tx("Risk Grade")}</label>
                       <select value={editMemberDetails.financial_records.credit_bureau.risk_grade} onChange={(e) => updateMemberDetailSubField("financial_records", "credit_bureau", "risk_grade", e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm">
                         <option value="A">A</option>
@@ -1484,38 +1485,38 @@ export default function FamilyDetailPage() {
               {editMemberTab === "beneficiary" && (
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Nominee First Name</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Nominee First Name")}</label>
                     <input type="text" value={editMemberDetails.beneficiary.first_name} onChange={(e) => updateMemberDetailField("beneficiary", "first_name", e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Nominee Last Name</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Nominee Last Name")}</label>
                     <input type="text" value={editMemberDetails.beneficiary.last_name} onChange={(e) => updateMemberDetailField("beneficiary", "last_name", e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Nominee CNIC</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Nominee CNIC")}</label>
                     <input type="text" value={editMemberDetails.beneficiary.cnic_number} onChange={(e) => updateMemberDetailField("beneficiary", "cnic_number", formatCNIC(e.target.value))}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Relationship to Nominee</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Relationship to Nominee")}</label>
                     <select value={editMemberDetails.beneficiary.relationship} onChange={(e) => updateMemberDetailField("beneficiary", "relationship", e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm">
-                      <option value="Spouse">Spouse</option>
-                      <option value="Child">Child</option>
-                      <option value="Parent">Parent</option>
-                      <option value="Sibling">Sibling</option>
-                      <option value="Other">Other</option>
+                      <option value="Spouse">{tx("Spouse")}</option>
+                      <option value="Child">{tx("Child")}</option>
+                      <option value="Parent">{tx("Parent")}</option>
+                      <option value="Sibling">{tx("Sibling")}</option>
+                      <option value="Other">{tx("Other")}</option>
                     </select>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Share Percentage</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Share Percentage")}</label>
                     <input type="number" min="0" max="100" value={editMemberDetails.beneficiary.share_percentage} onChange={(e) => updateMemberDetailField("beneficiary", "share_percentage", parseFloat(e.target.value) || 0)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Nominee Phone</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Nominee Phone")}</label>
                     <input type="text" value={editMemberDetails.beneficiary.phone} onChange={(e) => updateMemberDetailField("beneficiary", "phone", e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
                   </div>
@@ -1526,11 +1527,11 @@ export default function FamilyDetailPage() {
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50 shrink-0">
               <button type="button" onClick={() => setEditingMember(null)}
                 className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-white transition-colors">
-                Cancel
+                {tx("Cancel")}
               </button>
               <button type="submit" form="edit-member-form" disabled={editMemberFormLoading}
                 className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg transition-colors">
-                {editMemberFormLoading ? "Saving..." : "Save Changes"}
+                {editMemberFormLoading ? tx("Saving...") : tx("Save Changes")}
               </button>
             </div>
           </div>

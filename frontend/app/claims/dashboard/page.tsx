@@ -17,32 +17,33 @@ import { MetricCard } from "@/components/MetricCard";
 import { InteractiveMapCard } from "@/components/dashboard/InteractiveMapCard";
 import { TimeTrendChartCard } from "@/components/dashboard/TimeTrendChartCard";
 import { listCommissionLedger, type CommissionLedgerEntry } from "@/app/services/commissions";
+import { tx } from "@/lib/i18n/tx";
 
 function RiskBadge({ prob, flag }: { prob: number; flag: boolean }) {
   if (flag) {
     return (
       <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
-        DUPLICATE
+        {tx("DUPLICATE")}
       </span>
     );
   }
   if (prob >= 0.7) {
     return (
       <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200">
-        HIGH RISK ({(prob * 100).toFixed(0)}%)
+        {tx("HIGH RISK (")}{(prob * 100).toFixed(0)}%)
       </span>
     );
   }
   if (prob >= 0.3) {
     return (
       <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
-        MEDIUM ({(prob * 100).toFixed(0)}%)
+        {tx("MEDIUM (")}{(prob * 100).toFixed(0)}%)
       </span>
     );
   }
   return (
     <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
-      LOW ({(prob * 100).toFixed(0)}%)
+      {tx("LOW (")}{(prob * 100).toFixed(0)}%)
     </span>
   );
 }
@@ -143,7 +144,7 @@ export default function ClaimsDashboardPage() {
       const data = await listClaims();
       setClaims(data);
     } catch {
-      setLoadError("Could not load claims. Data below may be cached or offline.");
+      setLoadError(tx("Could not load claims. Data below may be cached or offline."));
     } finally {
       setLoading(false);
     }
@@ -171,7 +172,7 @@ export default function ClaimsDashboardPage() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.policy_id) {
-      setErrorMsg("Please select a policy.");
+      setErrorMsg(tx("Please select a policy."));
       return;
     }
     setSubmitting(true);
@@ -195,7 +196,7 @@ export default function ClaimsDashboardPage() {
       });
       fetchData();
     } catch (err: any) {
-      setErrorMsg(err?.response?.data?.detail ?? "Failed to create claim.");
+      setErrorMsg(err?.response?.data?.detail ?? tx("Failed to create claim."));
     } finally {
       setSubmitting(false);
     }
@@ -296,7 +297,7 @@ export default function ClaimsDashboardPage() {
       {/* ── Executive Navigation Header Bar ───────────────────────────────── */}
       <div className="flex flex-row justify-between items-center gap-3 bg-white px-4 py-3 rounded-2xl border border-slate-200/80 shadow-xs">
         <div className="flex items-center gap-2.5 shrink-0">
-          <h1 className="text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap">Claims Dashboard</h1>
+          <h1 className="text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap">{tx("Claims Dashboard")}</h1>
           {/* <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Live Claims AI Active
           </span> */}
@@ -318,7 +319,7 @@ export default function ClaimsDashboardPage() {
             <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
             </svg>
-            <span>Register</span>
+            <span>{tx("Register")}</span>
           </Link>
           <button
             onClick={() => setShowModal(true)}
@@ -327,7 +328,7 @@ export default function ClaimsDashboardPage() {
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-            <span>FNOL Claim</span>
+            <span>{tx("FNOL Claim")}</span>
           </button>
         </div>
       </div>
@@ -336,7 +337,7 @@ export default function ClaimsDashboardPage() {
         <div className="px-4 py-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center justify-between gap-3">
           <span>{loadError}</span>
           <button onClick={fetchData} className="px-2.5 py-1 rounded-lg bg-rose-600 text-white text-[11px] font-bold hover:bg-rose-700 shrink-0">
-            Retry
+            {tx("Retry")}
           </button>
         </div>
       )}
@@ -360,7 +361,7 @@ export default function ClaimsDashboardPage() {
               policies={policies}
               claims={filteredClaims}
               ledger={ledger}
-              title="Claims Outflow & Loss Trends"
+              title={tx("Claims Outflow & Loss Trends")}
             />
           </div>
 
@@ -371,35 +372,35 @@ export default function ClaimsDashboardPage() {
             <div className="lg:col-span-6 bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 flex flex-col justify-between">
               <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">Fraud Risk</h3>
-                  <p className="text-[11px] text-slate-500">Claims by risk score</p>
+                  <h3 className="text-sm font-bold text-slate-900">{tx("Fraud Risk")}</h3>
+                  <p className="text-[11px] text-slate-500">{tx("Claims by risk score")}</p>
                 </div>
                 <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
-                  Real-Time Monitor
+                  {tx("Real-Time Monitor")}
                 </span>
               </div>
 
               <div className="space-y-2.5 my-auto py-2">
                 <div className="p-2.5 bg-emerald-50/50 border border-emerald-100 rounded-xl flex items-center justify-between">
                   <div>
-                    <div className="font-bold text-emerald-900 text-xs">Low Risk (&lt; 30%)</div>
-                    <div className="text-[10px] text-emerald-700">Auto-triage eligible claims</div>
+                    <div className="font-bold text-emerald-900 text-xs">{tx("Low Risk (< 30%)")}</div>
+                    <div className="text-[10px] text-emerald-700">{tx("Auto-triage eligible claims")}</div>
                   </div>
                   <div className="text-base font-extrabold text-emerald-700">{lowRiskCount}</div>
                 </div>
 
                 <div className="p-2.5 bg-amber-50/50 border border-amber-100 rounded-xl flex items-center justify-between">
                   <div>
-                    <div className="font-bold text-amber-900 text-xs">Medium Risk (30% - 69%)</div>
-                    <div className="text-[10px] text-amber-700">Requires manual document review</div>
+                    <div className="font-bold text-amber-900 text-xs">{tx("Medium Risk (30% - 69%)")}</div>
+                    <div className="text-[10px] text-amber-700">{tx("Requires manual document review")}</div>
                   </div>
                   <div className="text-base font-extrabold text-amber-700">{mediumRiskCount}</div>
                 </div>
 
                 <div className="p-2.5 bg-rose-50/50 border border-rose-100 rounded-xl flex items-center justify-between">
                   <div>
-                    <div className="font-bold text-rose-900 text-xs">High Risk (&ge; 70%) / Duplicate</div>
-                    <div className="text-[10px] text-rose-700">Escalated for SIU fraud audit</div>
+                    <div className="font-bold text-rose-900 text-xs">{tx("High Risk (≥ 70%) / Duplicate")}</div>
+                    <div className="text-[10px] text-rose-700">{tx("Escalated for SIU fraud audit")}</div>
                   </div>
                   <div className="text-base font-extrabold text-rose-700">{highRiskCount}</div>
                 </div>
@@ -410,28 +411,28 @@ export default function ClaimsDashboardPage() {
             <div className="lg:col-span-6 bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 flex flex-col justify-between">
               <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">Processing Speed</h3>
-                  <p className="text-[11px] text-slate-500">Adjudication time &amp; triage</p>
+                  <h3 className="text-sm font-bold text-slate-900">{tx("Processing Speed")}</h3>
+                  <p className="text-[11px] text-slate-500">{tx("Adjudication time & triage")}</p>
                 </div>
                 <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
-                  SLA Target: 24h
+                  {tx("SLA Target: 24h")}
                 </span>
               </div>
 
               <div className="space-y-2.5 my-auto py-2">
                 <div className="p-2.5 bg-blue-50/40 border border-blue-100 rounded-xl space-y-1">
                   <div className="flex justify-between font-bold text-xs text-slate-800">
-                    <span>Avg Adjudication Time</span>
+                    <span>{tx("Avg Adjudication Time")}</span>
                     <span className="text-blue-700">
                       {avgAdjudicationHours !== null
                         ? avgAdjudicationHours >= 48
-                          ? `${(avgAdjudicationHours / 24).toFixed(1)} Days`
-                          : `${avgAdjudicationHours.toFixed(1)} Hours`
+                          ? tx("{0} Days", { 0: (avgAdjudicationHours / 24).toFixed(1) })
+                          : tx("{0} Hours", { 0: avgAdjudicationHours.toFixed(1) })
                         : "—"}
                     </span>
                   </div>
                   <div className="text-[10px] text-slate-500">
-                    Target SLA: &lt; {SLA_TARGET_HOURS}.0h {slaCompliancePct !== null ? `(${slaCompliancePct.toFixed(0)}% compliant)` : ""}
+                    {tx("Target SLA: <")}{" "}{SLA_TARGET_HOURS}.0h {slaCompliancePct !== null ? tx("({0}% compliant)", { 0: slaCompliancePct.toFixed(0) }) : ""}
                   </div>
                   <div className="h-1.5 w-full bg-blue-100 rounded-full overflow-hidden">
                     <div className="h-full bg-blue-600 rounded-full" style={{ width: `${slaCompliancePct ?? 0}%` }}></div>
@@ -440,10 +441,10 @@ export default function ClaimsDashboardPage() {
 
                 <div className="p-2.5 bg-emerald-50/40 border border-emerald-100 rounded-xl space-y-1">
                   <div className="flex justify-between font-bold text-xs text-slate-800">
-                    <span>Auto-Triage Rate</span>
+                    <span>{tx("Auto-Triage Rate")}</span>
                     <span className="text-emerald-700">{autoTriageRate !== null ? `${autoTriageRate.toFixed(1)}%` : "—"}</span>
                   </div>
-                  <div className="text-[10px] text-slate-500">Resolved claims skipping manual investigation</div>
+                  <div className="text-[10px] text-slate-500">{tx("Resolved claims skipping manual investigation")}</div>
                   <div className="h-1.5 w-full bg-emerald-100 rounded-full overflow-hidden">
                     <div className="h-full bg-emerald-600 rounded-full" style={{ width: `${autoTriageRate ?? 0}%` }}></div>
                   </div>
@@ -451,10 +452,10 @@ export default function ClaimsDashboardPage() {
 
                 <div className="p-2.5 bg-purple-50/40 border border-purple-100 rounded-xl space-y-1">
                   <div className="flex justify-between font-bold text-xs text-slate-800">
-                    <span>Reinsurance Treaty Flag Rate</span>
+                    <span>{tx("Reinsurance Treaty Flag Rate")}</span>
                     <span className="text-purple-700">{reinsuranceFlagRate !== null ? `${reinsuranceFlagRate.toFixed(1)}%` : "—"}</span>
                   </div>
-                  <div className="text-[10px] text-slate-500">Reinsurance desk referral rate</div>
+                  <div className="text-[10px] text-slate-500">{tx("Reinsurance desk referral rate")}</div>
                   <div className="h-1.5 w-full bg-purple-100 rounded-full overflow-hidden">
                     <div className="h-full bg-purple-600 rounded-full" style={{ width: `${reinsuranceFlagRate ?? 0}%` }}></div>
                   </div>
@@ -472,8 +473,8 @@ export default function ClaimsDashboardPage() {
           {/* Claim Status Distribution */}
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 flex flex-col space-y-3">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Status Distribution</h3>
-              <span className="text-[10px] font-bold text-slate-400">Total: {totalClaimsCount}</span>
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{tx("Status Distribution")}</h3>
+              <span className="text-[10px] font-bold text-slate-400">{tx("Total:")}{" "}{totalClaimsCount}</span>
             </div>
 
             <div className="space-y-2 text-xs flex-1 flex flex-col justify-around">
@@ -503,13 +504,13 @@ export default function ClaimsDashboardPage() {
           {/* Claim Type Distribution */}
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 flex flex-col space-y-3">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Claim Types</h3>
-              <span className="text-[10px] font-bold text-slate-400">By Product</span>
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{tx("Claim Types")}</h3>
+              <span className="text-[10px] font-bold text-slate-400">{tx("By Product")}</span>
             </div>
 
             <div className="space-y-2 text-xs flex-1 flex flex-col justify-around">
               {Object.keys(typeCounts).length === 0 ? (
-                <div className="text-slate-400 text-center py-4 text-[11px]">No claim type data available</div>
+                <div className="text-slate-400 text-center py-4 text-[11px]">{tx("No claim type data available")}</div>
               ) : (
                 Object.entries(typeCounts).slice(0, 4).map(([type, count]) => {
                   const pct = totalClaimsCount > 0 ? (count / totalClaimsCount) * 100 : 0;
@@ -517,7 +518,7 @@ export default function ClaimsDashboardPage() {
                     <div key={type} className="p-2 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
                       <div className="flex justify-between items-center text-[11px]">
                         <span className="font-bold text-slate-800 truncate">{type}</span>
-                        <span className="font-extrabold text-slate-900 shrink-0">{count} claims</span>
+                        <span className="font-extrabold text-slate-900 shrink-0">{count}{" "}{tx("claims")}</span>
                       </div>
                       <div className="h-1 w-full bg-slate-200 rounded-full overflow-hidden">
                         <div className="h-full bg-slate-900 rounded-full" style={{ width: `${pct}%` }}></div>
@@ -532,16 +533,16 @@ export default function ClaimsDashboardPage() {
           {/* SIU Watchlist Quick Preview */}
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 flex flex-col space-y-3">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">SIU Risk Watchlist</h3>
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{tx("SIU Risk Watchlist")}</h3>
               <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
-                {highRiskCount} Flagged
+                {highRiskCount}{" "}{tx("Flagged")}
               </span>
             </div>
 
             <div className="space-y-2 flex-1 flex flex-col justify-around">
               {filteredClaims.filter((c) => c.fraud_probability >= 0.3 || c.duplicate_flag).length === 0 ? (
                 <div className="text-slate-400 text-center py-4 text-[11px]">
-                  No risk flags detected in current range.
+                  {tx("No risk flags detected in current range.")}
                 </div>
               ) : (
                 filteredClaims
@@ -560,7 +561,7 @@ export default function ClaimsDashboardPage() {
                         href={`/claims/${c.id}`}
                         className="px-2 py-1 rounded-lg bg-blue-600 text-white font-bold text-[10px] hover:bg-blue-700 shrink-0"
                       >
-                        Review
+                        {tx("Review")}
                       </Link>
                     </div>
                   ))
@@ -575,9 +576,8 @@ export default function ClaimsDashboardPage() {
 
       {/* ── Footer Disclaimer ─────────────────────────────────────────────── */}
       <p className="text-center text-[10px] text-slate-400 pb-2 leading-relaxed">
-        Claims metrics are computed live from real-time adjudication datasets for the selected filters.
-        &nbsp;·&nbsp; Model suite: <span className="font-mono">insurance-ai v0.1.0-claims</span>
-        &nbsp;·&nbsp; Claims Dashboard — Internal Use Only
+        {tx("Claims metrics are computed live from real-time adjudication datasets for the selected filters.  ·  Model suite:")}{" "}<span className="font-mono">{tx("insurance-ai v0.1.0-claims")}</span>
+        {" "}{tx("·  Claims Dashboard — Internal Use Only")}
       </p>
 
       {/* ── FNOL Claim Modal ────────────────────────────────────────────────── */}
@@ -586,10 +586,10 @@ export default function ClaimsDashboardPage() {
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl max-h-[90vh] flex flex-col relative my-auto">
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/90 rounded-t-2xl shrink-0">
               <div>
-                <h3 className="text-sm font-bold text-slate-900">File First Notice of Loss (FNOL)</h3>
-                <p className="text-[11px] text-slate-500">Step {step} of 2 — {step === 1 ? "Select Policy" : "Claim Details"}</p>
+                <h3 className="text-sm font-bold text-slate-900">{tx("File First Notice of Loss (FNOL)")}</h3>
+                <p className="text-[11px] text-slate-500">{tx("Step")}{" "}{step}{" "}{tx("of 2 —")}{" "}{step === 1 ? tx("Select Policy") : tx("Claim Details")}</p>
               </div>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 text-lg font-bold">&times;</button>
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 text-lg font-bold">{tx("×")}</button>
             </div>
 
             <form onSubmit={handleCreate} className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
@@ -603,11 +603,11 @@ export default function ClaimsDashboardPage() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
-                      Select Policy ({policies.length} Available)
+                      {tx("Select Policy (")}{policies.length}{" "}{tx("Available)")}
                     </label>
                     {selectedPolicy && (
                       <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200/80">
-                        Selected: {selectedPolicy.customer_name}
+                        {tx("Selected:")}{" "}{selectedPolicy.customer_name}
                       </span>
                     )}
                   </div>
@@ -616,7 +616,7 @@ export default function ClaimsDashboardPage() {
                     <input
                       type="text"
                       autoFocus
-                      placeholder="Type customer name, policy #, or product to filter..."
+                      placeholder={tx("Type customer name, policy #, or product to filter...")}
                       value={policySearch}
                       onChange={(e) => setPolicySearch(e.target.value)}
                       className="w-full text-xs px-3.5 py-2.5 pl-9 pr-8 rounded-xl border border-slate-200 focus:outline-hidden focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 bg-white font-medium text-slate-800 placeholder-slate-400 shadow-2xs"
@@ -630,7 +630,7 @@ export default function ClaimsDashboardPage() {
                         onClick={() => setPolicySearch("")}
                         className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 text-xs font-bold w-4 h-4 flex items-center justify-center rounded-full hover:bg-slate-100"
                       >
-                        &times;
+                        {tx("×")}
                       </button>
                     )}
                   </div>
@@ -638,7 +638,7 @@ export default function ClaimsDashboardPage() {
                   <div className="max-h-72 sm:max-h-80 overflow-y-auto divide-y divide-slate-100 border border-slate-200/90 rounded-xl bg-white shadow-2xs">
                     {filteredPolicies.length === 0 ? (
                       <div className="p-6 text-center text-slate-400 text-xs font-medium">
-                        No policies found matching &quot;{policySearch}&quot;
+                        {tx("No policies found matching \"")}{policySearch}{tx("\"")}
                       </div>
                     ) : (
                       filteredPolicies.map((p) => {
@@ -664,11 +664,11 @@ export default function ClaimsDashboardPage() {
                             </div>
                             {isSelected ? (
                               <span className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-blue-600 text-white shrink-0 shadow-2xs">
-                                Selected ✓
+                                {tx("Selected ✓")}
                               </span>
                             ) : (
                               <span className="text-[11px] text-slate-400 font-medium shrink-0">
-                                Select &rarr;
+                                {tx("Select →")}
                               </span>
                             )}
                           </button>
@@ -683,7 +683,7 @@ export default function ClaimsDashboardPage() {
                       onClick={() => setShowModal(false)}
                       className="px-3.5 py-1.5 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50"
                     >
-                      Cancel
+                      {tx("Cancel")}
                     </button>
                     <button
                       type="button"
@@ -697,7 +697,7 @@ export default function ClaimsDashboardPage() {
                       }}
                       className="px-4 py-1.5 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700"
                     >
-                      Next Step &rarr;
+                      {tx("Next Step →")}
                     </button>
                   </div>
                 </div>
@@ -720,21 +720,21 @@ export default function ClaimsDashboardPage() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-slate-700 font-bold mb-1">Claim Type</label>
+                      <label className="block text-slate-700 font-bold mb-1">{tx("Claim Type")}</label>
                       <select
                         value={form.claim_type}
                         onChange={(e) => setForm({ ...form, claim_type: e.target.value as any })}
                         className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-hidden focus:border-blue-500 bg-white font-medium text-slate-800"
                       >
-                        <option value="Hospitalization">Hospitalization</option>
-                        <option value="Surgery">Surgery</option>
-                        <option value="Death Claim">Death Claim</option>
-                        <option value="Reimbursement">Reimbursement</option>
+                        <option value="Hospitalization">{tx("Hospitalization")}</option>
+                        <option value="Surgery">{tx("Surgery")}</option>
+                        <option value="Death Claim">{tx("Death Claim")}</option>
+                        <option value="Reimbursement">{tx("Reimbursement")}</option>
                       </select>
                     </div>
 
                     <div>
-                      <label className="block text-slate-700 font-bold mb-1">Incident Date</label>
+                      <label className="block text-slate-700 font-bold mb-1">{tx("Incident Date")}</label>
                       <input
                         type="date"
                         value={form.incident_date}
@@ -745,7 +745,7 @@ export default function ClaimsDashboardPage() {
                   </div>
 
                   <div>
-                    <label className="block text-slate-700 font-bold mb-1">Submitted Amount (PKR)</label>
+                    <label className="block text-slate-700 font-bold mb-1">{tx("Submitted Amount (PKR)")}</label>
                     <input
                       type="number"
                       value={form.submitted_amount}
@@ -755,12 +755,12 @@ export default function ClaimsDashboardPage() {
                   </div>
 
                   <div>
-                    <label className="block text-slate-700 font-bold mb-1">Adjuster Notes / Description</label>
+                    <label className="block text-slate-700 font-bold mb-1">{tx("Adjuster Notes / Description")}</label>
                     <textarea
                       rows={3}
                       value={form.notes}
                       onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                      placeholder="Brief details regarding FNOL submission..."
+                      placeholder={tx("Brief details regarding FNOL submission...")}
                       className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-hidden focus:border-blue-500 bg-white font-medium text-slate-800 placeholder-slate-400"
                     />
                   </div>
@@ -771,7 +771,7 @@ export default function ClaimsDashboardPage() {
                       onClick={() => setStep(1)}
                       className="px-3.5 py-1.5 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50"
                     >
-                      &larr; Back
+                      {tx("← Back")}
                     </button>
                     <div className="flex gap-2">
                       <button
@@ -779,14 +779,14 @@ export default function ClaimsDashboardPage() {
                         onClick={() => setShowModal(false)}
                         className="px-3.5 py-1.5 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50"
                       >
-                        Cancel
+                        {tx("Cancel")}
                       </button>
                       <button
                         type="submit"
                         disabled={submitting}
                         className="px-4 py-1.5 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 disabled:opacity-50"
                       >
-                        {submitting ? "Submitting..." : "Submit Claim"}
+                        {submitting ? tx("Submitting...") : tx("Submit Claim")}
                       </button>
                     </div>
                   </div>

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { tx } from "@/lib/i18n/tx";
 
 // ── SVG Ring Gauge ───────────────────────────────────────────────────────────
 
@@ -172,13 +173,13 @@ export function PillarCard({
         <div className="flex items-center gap-1.5">
           {alertCount !== undefined && alertCount > 0 && (
             <span className="text-[9px] font-bold text-red-700 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded-full">
-              {alertCount} alerts
+              {alertCount}{" "}{tx("alerts")}
             </span>
           )}
           {!hideLive && (
             <span className="flex items-center gap-1 text-[9px] font-semibold text-blue-600">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse inline-block" />
-              Live
+              {tx("Live")}
             </span>
           )}
         </div>

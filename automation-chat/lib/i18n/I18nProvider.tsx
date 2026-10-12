@@ -48,7 +48,11 @@ export function I18nProvider({
   const dir = localeDir(locale);
   const t = useCallback((key: string, vars?: Vars) => {
     const text = lookup(MESSAGES[locale], key) ?? lookup(en, key) ?? key;
-    const filled = vars ? text.replace(/\{(\w+)\}/g, (match, name) => (name in vars ? String(vars[name]) : match)) : text;
+    // In right-to-left text each value is wrapped in a bidi isolate, so a value with its own direction (an English
+    // chat title ending in "?") keeps its punctuation in place.
+    const filled = vars
+      ? text.replace(/\{(\w+)\}/g, (match, name) => (name in vars ? (dir === "rtl" ? `\u2068${vars[name]}\u2069` : String(vars[name])) : match))
+      : text;
     // Each paragraph takes its direction from its first letter (globals.css), so an Urdu string that opens with a
     // Latin word ("LLM کنفیگریشن") would be laid out left-to-right: the invisible right-to-left mark prevents that.
     return dir === "rtl" ? `\u200F${filled}` : filled;

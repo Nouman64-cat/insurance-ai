@@ -1,4 +1,5 @@
 import { MetricCard } from "@/components/MetricCard";
+import { tx } from "@/lib/i18n/tx";
 
 const KPIS = [
   { title: "Premium Collected MTD", value: "PKR 143M", subtitle: "month-to-date collections", accent: "emerald" as const, trend: { value: "+12.3% vs last month", direction: "up" as const } },
@@ -32,8 +33,8 @@ export default function FinancialPage() {
   return (
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full">
       <div>
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight">Financial Underwriting</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Dynamic commission calculations, quality incentives, premium forecasting, and portfolio financial risk analysis.</p>
+        <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Financial Underwriting")}</h1>
+        <p className="text-sm text-slate-500 mt-0.5">{tx("Dynamic commission calculations, quality incentives, premium forecasting, and portfolio financial risk analysis.")}</p>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -43,8 +44,8 @@ export default function FinancialPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-5 py-3 border-b border-slate-100">
-            <p className="text-sm font-semibold text-slate-700">Premium Trend (PKR M)</p>
-            <p className="text-xs text-slate-400 mt-0.5">Jan – Jun 2026</p>
+            <p className="text-sm font-semibold text-slate-700">{tx("Premium Trend (PKR M)")}</p>
+            <p className="text-xs text-slate-400 mt-0.5">{tx("Jan – Jun 2026")}</p>
           </div>
           <div className="p-5">
             <div className="flex items-end gap-3 h-36">
@@ -76,16 +77,16 @@ export default function FinancialPage() {
 
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-5 py-3 border-b border-slate-100">
-            <p className="text-sm font-semibold text-slate-700">Commission Matrix by Scenario</p>
+            <p className="text-sm font-semibold text-slate-700">{tx("Commission Matrix by Scenario")}</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                  <th className="px-4 py-2.5 text-left">Tier</th>
-                  <th className="px-3 py-2.5 text-right">Rate</th>
-                  <th className="px-3 py-2.5 text-right">Cases</th>
-                  <th className="px-4 py-2.5 text-right">Paid Out</th>
+                  <th className="px-4 py-2.5 text-left">{tx("Tier")}</th>
+                  <th className="px-3 py-2.5 text-right">{tx("Rate")}</th>
+                  <th className="px-3 py-2.5 text-right">{tx("Cases")}</th>
+                  <th className="px-4 py-2.5 text-right">{tx("Paid Out")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">

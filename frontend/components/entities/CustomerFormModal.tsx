@@ -27,6 +27,7 @@ import {
   Customer,
   Policy,
 } from "./customerShared";
+import { tx } from "@/lib/i18n/tx";
 
 interface Props {
   open: boolean;
@@ -496,11 +497,11 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
           try { parsed = JSON.parse(xhr.responseText); } catch { /* non-JSON error body */ }
           resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data: parsed });
         };
-        xhr.onerror = () => reject(new Error("Could not reach the document reader."));
+        xhr.onerror = () => reject(new Error(tx("Could not reach the document reader.")));
         xhr.send(body);
       });
       setExtractProgress(100);
-      if (!ok) throw new Error(data.detail || `Extraction failed (${status}).`);
+      if (!ok) throw new Error(data.detail || tx("Extraction failed ({0}).", { 0: status }));
 
       await applyExtracted(data, file.name);
     } catch (err: any) {
@@ -676,7 +677,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
       setValue("policyTerm", data.suggested_term);
       setSuggestedReasoning(data.reasoning);
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to suggest plan.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to suggest plan."));
     } finally {
       setIsSuggestingPlan(false);
     }
@@ -688,7 +689,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
     setFormLoading(true);
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId) {
-      setError("No active tenant found.");
+      setError(tx("No active tenant found."));
       setFormLoading(false);
       return;
     }
@@ -704,7 +705,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
 
       if (inChatPanel && !(data.selectedPlanId && data.policyCoverage && data.policyTerm)) {
         setFormTab("insurance_plan");
-        setError("Please choose an insurance plan, coverage amount and term — the proposal is created from them.");
+        setError(tx("Please choose an insurance plan, coverage amount and term — the proposal is created from them."));
         setFormLoading(false);
         return;
       }
@@ -780,7 +781,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
       });
       onClose();
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to register customer.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to register customer."));
     } finally {
       setFormLoading(false);
     }
@@ -792,7 +793,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
     setFormLoading(true);
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId || !customer) {
-      setError("No active context found.");
+      setError(tx("No active context found."));
       setFormLoading(false);
       return;
     }
@@ -878,7 +879,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
       onSaved("Customer profile updated successfully!");
       onClose();
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to update customer.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to update customer."));
     } finally {
       setFormLoading(false);
     }
@@ -895,8 +896,8 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <div>
-            <h3 className="text-base font-bold text-slate-900">{isCreate ? "Add New Customer" : "Edit Customer"}</h3>
-            <p className="text-xs text-slate-500 mt-0.5">Please populate the structured underwriting variables below.</p>
+            <h3 className="text-base font-bold text-slate-900">{isCreate ? tx("Add New Customer") : tx("Edit Customer")}</h3>
+            <p className="text-xs text-slate-500 mt-0.5">{tx("Please populate the structured underwriting variables below.")}</p>
           </div>
           <div className="flex items-center gap-3">
             {isCreate && <DemoFillButton onFill={handleDemoFill} />}
@@ -914,7 +915,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={extracting || formLoading}
-              title="Upload a PDF, PNG or JPG (max 10 MB) to fill the form automatically"
+              title={tx("Upload a PDF, PNG or JPG (max 10 MB) to fill the form automatically")}
               className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-blue-200 bg-white text-blue-700 hover:bg-blue-50 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 transition-colors"
             >
               {extracting ? (
@@ -933,12 +934,12 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       {extractProgress}%
                     </span>
                   </span>
-                  {extractProgress < 50 ? "Uploading…" : "Reading document…"}
+                  {extractProgress < 50 ? tx("Uploading…") : tx("Reading document…")}
                 </>
               ) : (
                 <>
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>
-                  Upload document
+                  {tx("Upload document")}
                 </>
               )}
             </button>
@@ -960,7 +961,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
             >
               {tab.label}
               {missingInTab(tab.id) && (
-                <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-amber-500" title="Fields to fill in on this tab" />
+                <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-amber-500" title={tx("Fields to fill in on this tab")} />
               )}
               {tab.id === "insurance_plan" && selectedPlanId && (
                 <span className="ml-1.5 inline-flex items-center justify-center w-1.5 h-1.5 rounded-full bg-blue-500" />
@@ -979,7 +980,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                 type="button"
                 onClick={() => setError("")}
                 className="text-red-400 hover:text-red-700 font-bold ml-3 text-xs leading-none cursor-pointer hover:bg-red-100 p-1 rounded-md transition-colors"
-                title="Close"
+                title={tx("Close")}
               >
                 ✕
               </button>
@@ -992,7 +993,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                 type="button"
                 onClick={() => setSuccess("")}
                 className="text-blue-400 hover:text-blue-700 font-bold ml-3 text-xs leading-none cursor-pointer hover:bg-blue-100 p-1 rounded-md transition-colors"
-                title="Close"
+                title={tx("Close")}
               >
                 ✕
               </button>
@@ -1010,7 +1011,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               }`}
             >
               <span>{extractNotice.text}</span>
-              <button type="button" onClick={() => setExtractNotice(null)} className="opacity-60 hover:opacity-100 leading-none" title="Close">✕</button>
+              <button type="button" onClick={() => setExtractNotice(null)} className="opacity-60 hover:opacity-100 leading-none" title={tx("Close")}>✕</button>
             </div>
           )}
 
@@ -1018,10 +1019,10 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
           {formTab === "demographics" && (
             <div className="space-y-6">
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Core Identity Parameters</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Core Identity Parameters")}</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className={`${hl("firstName")}`}>
-                    <label className="text-xs font-semibold text-slate-600">First Name *</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("First Name *")}</label>
                     <input
                       type="text"
                       {...register("firstName")}
@@ -1030,7 +1031,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     {errors.firstName && <span className="text-[10px] text-red-500">{errors.firstName.message}</span>}
                   </div>
                   <div className={`${hl("lastName")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Last Name *</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Last Name *")}</label>
                     <input
                       type="text"
                       {...register("lastName")}
@@ -1039,7 +1040,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     {errors.lastName && <span className="text-[10px] text-red-500">{errors.lastName.message}</span>}
                   </div>
                   <div className={`${hl("cnic")}`}>
-                    <label className="text-xs font-semibold text-slate-600">CNIC (Optional for Lead)</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("CNIC (Optional for Lead)")}</label>
                     <input
                       type="text"
                       {...register("cnic", {
@@ -1047,14 +1048,14 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                           e.target.value = formatCNIC(e.target.value);
                         }
                       })}
-                      placeholder="35201-XXXXXXX-X"
+                      placeholder={tx("35201-XXXXXXX-X")}
                       maxLength={15}
                       className={`w-full bg-slate-50 border ${errors.cnic ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                     />
                     {errors.cnic && <span className="text-[10px] text-red-500">{errors.cnic.message}</span>}
                   </div>
                   <div className={`${hl("dob")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Date of Birth *</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Date of Birth *")}</label>
                     <input
                       type="date"
                       {...register("dob")}
@@ -1063,29 +1064,29 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     {errors.dob && <span className="text-[10px] text-red-500">{errors.dob.message}</span>}
                   </div>
                   <div className={`${hl("gender")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Gender *</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Gender *")}</label>
                     <select
                       {...register("gender")}
                       className={`w-full bg-slate-50 border ${errors.gender ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                     >
-                      <option value="">Select gender</option>
-                      <option value="Male">Male</option>
-                      <option value="Female">Female</option>
-                      <option value="Other">Other</option>
+                      <option value="">{tx("Select gender")}</option>
+                      <option value="Male">{tx("Male")}</option>
+                      <option value="Female">{tx("Female")}</option>
+                      <option value="Other">{tx("Other")}</option>
                     </select>
                     {errors.gender && <span className="text-[10px] text-red-500">{errors.gender.message}</span>}
                   </div>
                   <div className={`${hl("maritalStatus")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Marital Status</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Marital Status")}</label>
                     <select
                       {...register("maritalStatus")}
                       className={`w-full bg-slate-50 border ${errors.maritalStatus ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                     >
-                      <option value="">Select status</option>
-                      <option value="Single">Single</option>
-                      <option value="Married">Married</option>
-                      <option value="Divorced">Divorced</option>
-                      <option value="Widowed">Widowed</option>
+                      <option value="">{tx("Select status")}</option>
+                      <option value="Single">{tx("Single")}</option>
+                      <option value="Married">{tx("Married")}</option>
+                      <option value="Divorced">{tx("Divorced")}</option>
+                      <option value="Widowed">{tx("Widowed")}</option>
                     </select>
                     {errors.maritalStatus && <span className="text-[10px] text-red-500">{errors.maritalStatus.message}</span>}
                   </div>
@@ -1095,10 +1096,10 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <hr className="border-slate-100" />
 
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Contact Details</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Contact Details")}</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className={`${hl("mobile")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Mobile Number</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Mobile Number")}</label>
                     <input
                       type="text"
                       value={details.contact.mobile_number}
@@ -1107,7 +1108,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                   </div>
                   <div className={`${hl("email")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Email Address</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Email Address")}</label>
                     <input
                       type="email"
                       value={details.contact.email}
@@ -1116,7 +1117,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                   </div>
                   <div className={`${hl("emergency")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Emergency Contact Name</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Emergency Contact Name")}</label>
                     <input
                       type="text"
                       value={details.contact.emergency_contact_name}
@@ -1130,10 +1131,10 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <hr className="border-slate-100" />
 
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Address Information</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Address Information")}</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className={`${hl("street")} md:col-span-3`}>
-                    <label className="text-xs font-semibold text-slate-600">Street Address</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Street Address")}</label>
                     <input
                       type="text"
                       value={details.address.street_address}
@@ -1142,30 +1143,30 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                   </div>
                   <div className={`${hl("city")}`}>
-                    <label className="text-xs font-semibold text-slate-600">City</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("City")}</label>
                     <input
                       type="text"
                       value={city}
                       onChange={(e) => setCity(e.target.value)}
-                      placeholder="e.g. Lahore"
+                      placeholder={tx("e.g. Lahore")}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
                   <div className={`${hl("province")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Province</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Province")}</label>
                     <select
                       value={province}
                       onChange={(e) => setProvince(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900"
                     >
-                      <option value="">Select province</option>
+                      <option value="">{tx("Select province")}</option>
                       {PAKISTAN_PROVINCES.map((p) => (
                         <option key={p} value={p}>{p}</option>
                       ))}
                     </select>
                   </div>
                   <div className={`${hl("postal")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Postal Code</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Postal Code")}</label>
                     <input
                       type="text"
                       value={details.address.postal_code}
@@ -1179,7 +1180,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <hr className="border-slate-100" />
 
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Assignment</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Assignment")}</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <SourcePicker
                     sources={sources}
@@ -1202,10 +1203,10 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
           {formTab === "cnic" && (
             <div className="space-y-6">
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">CNIC Metadata (Module 2)</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("CNIC Metadata (Module 2)")}</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className={`${hl("cnicIssueDate")}`}>
-                    <label className="text-xs font-semibold text-slate-600">CNIC Issue Date</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("CNIC Issue Date")}</label>
                     <input
                       type="date"
                       value={details.cnic_metadata.issue_date}
@@ -1214,7 +1215,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                   </div>
                   <div className={`${hl("cnicExpiryDate")}`}>
-                    <label className="text-xs font-semibold text-slate-600">CNIC Expiry Date</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("CNIC Expiry Date")}</label>
                     <input
                       type="date"
                       value={details.cnic_metadata.expiry_date}
@@ -1223,16 +1224,16 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                   </div>
                   <div className={`${hl("validationStatus")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Validation Status</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Validation Status")}</label>
                     <select
                       value={details.cnic_metadata.validation_status}
                       onChange={(e) => updateField("cnic_metadata", "validation_status", e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     >
-                      <option value="Valid">Valid</option>
-                      <option value="Invalid">Invalid</option>
-                      <option value="Expired">Expired</option>
-                      <option value="Unverifiable">Unverifiable</option>
+                      <option value="Valid">{tx("Valid")}</option>
+                      <option value="Invalid">{tx("Invalid")}</option>
+                      <option value="Expired">{tx("Expired")}</option>
+                      <option value="Unverifiable">{tx("Unverifiable")}</option>
                     </select>
                   </div>
                 </div>
@@ -1241,10 +1242,10 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <hr className="border-slate-100" />
 
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Document Uploads</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Document Uploads")}</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-600">CNIC Front Image</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("CNIC Front Image")}</label>
                     <input
                       type="file"
                       accept="image/*"
@@ -1254,10 +1255,10 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       }}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition-all cursor-pointer"
                     />
-                    {details.cnic_metadata.front_image_url && <p className="text-[10px] text-blue-600 mt-1 font-semibold">Image selected for upload</p>}
+                    {details.cnic_metadata.front_image_url && <p className="text-[10px] text-blue-600 mt-1 font-semibold">{tx("Image selected for upload")}</p>}
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-600">CNIC Back Image</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("CNIC Back Image")}</label>
                     <input
                       type="file"
                       accept="image/*"
@@ -1267,7 +1268,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       }}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition-all cursor-pointer"
                     />
-                    {details.cnic_metadata.back_image_url && <p className="text-[10px] text-blue-600 mt-1 font-semibold">Image selected for upload</p>}
+                    {details.cnic_metadata.back_image_url && <p className="text-[10px] text-blue-600 mt-1 font-semibold">{tx("Image selected for upload")}</p>}
                   </div>
                 </div>
               </div>
@@ -1278,25 +1279,25 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
           {formTab === "employment" && (
             <div className="space-y-6">
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Employment Details</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Employment Details")}</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className={`${hl("employmentType")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Employment Type</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Employment Type")}</label>
                     <select
                       value={details.occupation_details.employment_type}
                       onChange={(e) => updateField("occupation_details", "employment_type", e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     >
-                      <option value="Salaried">Salaried</option>
-                      <option value="Self-Employed">Self-Employed</option>
-                      <option value="Business">Business</option>
-                      <option value="Unemployed">Unemployed</option>
-                      <option value="Retired">Retired</option>
-                      <option value="Student">Student</option>
+                      <option value="Salaried">{tx("Salaried")}</option>
+                      <option value="Self-Employed">{tx("Self-Employed")}</option>
+                      <option value="Business">{tx("Business")}</option>
+                      <option value="Unemployed">{tx("Unemployed")}</option>
+                      <option value="Retired">{tx("Retired")}</option>
+                      <option value="Student">{tx("Student")}</option>
                     </select>
                   </div>
                   <div className={`${hl("occupation")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Occupation *</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Occupation *")}</label>
                     <input
                       type="text"
                       {...register("occupation")}
@@ -1305,7 +1306,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     {errors.occupation && <span className="text-[10px] text-red-500">{errors.occupation.message}</span>}
                   </div>
                   <div className={`${hl("employerName")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Employer Name</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Employer Name")}</label>
                     <input
                       type="text"
                       value={details.occupation_details.employer_name}
@@ -1314,17 +1315,17 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                   </div>
                   <div className={`${hl("industry")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Industry Sector</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Industry Sector")}</label>
                     <input
                       type="text"
                       value={details.occupation_details.industry}
                       onChange={(e) => updateField("occupation_details", "industry", e.target.value)}
-                      placeholder="e.g. IT, Healthcare"
+                      placeholder={tx("e.g. IT, Healthcare")}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
                   <div className={`${hl("yearsOfExperience")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Years of Experience</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Years of Experience")}</label>
                     <input
                       type="number"
                       value={details.occupation_details.years_of_experience}
@@ -1333,16 +1334,16 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                   </div>
                   <div className={`${hl("occupationHazardLevel")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Occupation Hazard Level</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Occupation Hazard Level")}</label>
                     <select
                       value={details.occupation_details.occupation_hazard_level}
                       onChange={(e) => updateField("occupation_details", "occupation_hazard_level", e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     >
-                      <option value="Low">Low</option>
-                      <option value="Medium">Medium</option>
-                      <option value="High">High</option>
-                      <option value="VeryHigh">Very High</option>
+                      <option value="Low">{tx("Low")}</option>
+                      <option value="Medium">{tx("Medium")}</option>
+                      <option value="High">{tx("High")}</option>
+                      <option value="VeryHigh">{tx("Very High")}</option>
                     </select>
                   </div>
                 </div>
@@ -1351,10 +1352,10 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <hr className="border-slate-100" />
 
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Income & Financial Parameters</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Income & Financial Parameters")}</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className={`${hl("declaredIncome")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Declared Annual Income (PKR) *</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Declared Annual Income (PKR) *")}</label>
                     <input
                       type="number"
                       {...register("declaredIncome")}
@@ -1363,7 +1364,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     {errors.declaredIncome && <span className="text-[10px] text-red-500">{errors.declaredIncome.message}</span>}
                   </div>
                   <div className={`${hl("monthlyIncome")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Monthly Income Equivalent</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Monthly Income Equivalent")}</label>
                     <input
                       type="number"
                       value={details.income_record.monthly_income}
@@ -1372,7 +1373,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                   </div>
                   <div className={`${hl("incomeStabilityScore")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Income Stability Score (1-100)</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Income Stability Score (1-100)")}</label>
                     <input
                       type="number"
                       min="1"
@@ -1391,7 +1392,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
           {formTab === "medical" && (
             <div className="space-y-6">
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Medical History Indicators</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Medical History Indicators")}</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer">
                     <input
@@ -1400,7 +1401,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       onChange={(e) => updateField("medical_history", "has_pre_existing_conditions", e.target.checked)}
                       className="rounded text-blue-600"
                     />
-                    Pre-Existing Conditions
+                    {tx("Pre-Existing Conditions")}
                   </label>
                   <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer">
                     <input
@@ -1409,7 +1410,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       onChange={(e) => updateField("medical_history", "is_smoker", e.target.checked)}
                       className="rounded text-blue-600"
                     />
-                    Active Smoker
+                    {tx("Active Smoker")}
                   </label>
                   <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer">
                     <input
@@ -1418,7 +1419,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       onChange={(e) => updateField("medical_history", "is_diabetic", e.target.checked)}
                       className="rounded text-blue-600"
                     />
-                    Diabetic Profile
+                    {tx("Diabetic Profile")}
                   </label>
                 </div>
               </div>
@@ -1426,12 +1427,12 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <hr className="border-slate-100" />
 
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">Medical Conditions List</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">{tx("Medical Conditions List")}</h4>
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4 space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <input
                       type="text"
-                      placeholder="Condition Name (e.g. Asthma)"
+                      placeholder={tx("Condition Name (e.g. Asthma)")}
                       value={newCondition.condition_name}
                       onChange={(e) => setNewCondition({ ...newCondition, condition_name: e.target.value })}
                       className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs"
@@ -1441,29 +1442,29 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       onChange={(e) => setNewCondition({ ...newCondition, severity: e.target.value })}
                       className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs"
                     >
-                      <option value="Mild">Mild</option>
-                      <option value="Moderate">Moderate</option>
-                      <option value="Severe">Severe</option>
+                      <option value="Mild">{tx("Mild")}</option>
+                      <option value="Moderate">{tx("Moderate")}</option>
+                      <option value="Severe">{tx("Severe")}</option>
                     </select>
                     <button
                       type="button"
                       onClick={addCondition}
                       className="bg-blue-600 text-white font-semibold text-xs py-1.5 rounded-lg hover:bg-blue-700 transition-colors"
                     >
-                      + Add Condition
+                      {tx("+ Add Condition")}
                     </button>
                   </div>
                   {details.conditions.length > 0 && (
                     <div className="pt-2 divide-y divide-slate-200/60 max-h-40 overflow-y-auto">
                       {details.conditions.map((c, i) => (
                         <div key={i} className="py-2 text-xs flex justify-between items-center text-slate-700">
-                          <span><strong>{c.condition_name}</strong> - Severity: {c.severity}</span>
+                          <span><strong>{c.condition_name}</strong>{" "}{tx("- Severity:")}{" "}{c.severity}</span>
                           <button
                             type="button"
                             onClick={() => setDetails(prev => ({ ...prev, conditions: prev.conditions.filter((_, idx) => idx !== i) }))}
                             className="text-red-500 font-bold hover:underline"
                           >
-                            Remove
+                            {tx("Remove")}
                           </button>
                         </div>
                       ))}
@@ -1475,10 +1476,10 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <hr className="border-slate-100" />
 
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Lifestyle & BMI metrics</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Lifestyle & BMI metrics")}</h4>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div className={`${hl("heightCm")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Height (cm)</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Height (cm)")}</label>
                     <input
                       type="number"
                       value={details.lifestyle.height_cm}
@@ -1487,7 +1488,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                   </div>
                   <div className={`${hl("weightKg")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Weight (kg)</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Weight (kg)")}</label>
                     <input
                       type="number"
                       value={details.lifestyle.weight_kg}
@@ -1496,7 +1497,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-600">Calculated BMI</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Calculated BMI")}</label>
                     <input
                       type="number"
                       readOnly
@@ -1505,17 +1506,17 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                   </div>
                   <div className={`${hl("exerciseFrequency")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Exercise Frequency</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Exercise Frequency")}</label>
                     <select
                       value={details.lifestyle.exercise_frequency}
                       onChange={(e) => updateField("lifestyle", "exercise_frequency", e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     >
-                      <option value="Sedentary">Sedentary</option>
-                      <option value="Light">Light</option>
-                      <option value="Moderate">Moderate</option>
-                      <option value="Active">Active</option>
-                      <option value="VeryActive">Very Active</option>
+                      <option value="Sedentary">{tx("Sedentary")}</option>
+                      <option value="Light">{tx("Light")}</option>
+                      <option value="Moderate">{tx("Moderate")}</option>
+                      <option value="Active">{tx("Active")}</option>
+                      <option value="VeryActive">{tx("Very Active")}</option>
                     </select>
                   </div>
                 </div>
@@ -1534,37 +1535,37 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     </svg>
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-slate-800">Substance Consumption</h4>
-                    <p className="text-[11px] text-slate-400">Critical fields for mortality pricing & risk assessment.</p>
+                    <h4 className="text-sm font-bold text-slate-800">{tx("Substance Consumption")}</h4>
+                    <p className="text-[11px] text-slate-400">{tx("Critical fields for mortality pricing & risk assessment.")}</p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className={`${hl("smokingStatus")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Smoking Status</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Smoking Status")}</label>
                     <select
                       value={details.habit_check.smoking_status}
                       onChange={(e) => updateField("habit_check", "smoking_status", e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
                     >
-                      <option value="Non-smoker">Non-smoker</option>
-                      <option value="Occasional">Occasional</option>
-                      <option value="Heavy Smoker">Heavy Smoker</option>
-                      <option value="Vaper">Vaper</option>
-                      <option value="Chewing Tobacco">Chewing Tobacco</option>
+                      <option value="Non-smoker">{tx("Non-smoker")}</option>
+                      <option value="Occasional">{tx("Occasional")}</option>
+                      <option value="Heavy Smoker">{tx("Heavy Smoker")}</option>
+                      <option value="Vaper">{tx("Vaper")}</option>
+                      <option value="Chewing Tobacco">{tx("Chewing Tobacco")}</option>
                     </select>
                   </div>
                   <div className={`${hl("alcoholConsumptionFrequency")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Alcohol Consumption Frequency</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Alcohol Consumption Frequency")}</label>
                     <select
                       value={details.habit_check.alcohol_consumption_frequency}
                       onChange={(e) => updateField("habit_check", "alcohol_consumption_frequency", e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
                     >
-                      <option value="None">None</option>
-                      <option value="Occasional">Occasional</option>
-                      <option value="Moderate">Moderate</option>
-                      <option value="Heavy">Heavy</option>
+                      <option value="None">{tx("None")}</option>
+                      <option value="Occasional">{tx("Occasional")}</option>
+                      <option value="Moderate">{tx("Moderate")}</option>
+                      <option value="Heavy">{tx("Heavy")}</option>
                     </select>
                   </div>
                 </div>
@@ -1578,8 +1579,8 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="rounded text-blue-600 focus:ring-blue-500"
                     />
                     <div>
-                      <span>Recreational Drug Use History (Past 3-5 Years)</span>
-                      <span className="block text-[10px] text-slate-400 font-normal">Check if the customer has used illegal or non-prescribed substances.</span>
+                      <span>{tx("Recreational Drug Use History (Past 3-5 Years)")}</span>
+                      <span className="block text-[10px] text-slate-400 font-normal">{tx("Check if the customer has used illegal or non-prescribed substances.")}</span>
                     </div>
                   </label>
                 </div>
@@ -1593,8 +1594,8 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     </svg>
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-slate-800">High-Risk Hobbies (Avocations)</h4>
-                    <p className="text-[11px] text-slate-400">Identifies activities with high fatality rates.</p>
+                    <h4 className="text-sm font-bold text-slate-800">{tx("High-Risk Hobbies (Avocations)")}</h4>
+                    <p className="text-[11px] text-slate-400">{tx("Identifies activities with high fatality rates.")}</p>
                   </div>
                 </div>
 
@@ -1617,8 +1618,8 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="rounded text-blue-600 focus:ring-blue-500 mt-0.5"
                     />
                     <div>
-                      <span>Participates in Extreme Sports</span>
-                      <span className="block text-[10px] text-slate-400 font-normal">Trigger flag for adventure/high-risk sports.</span>
+                      <span>{tx("Participates in Extreme Sports")}</span>
+                      <span className="block text-[10px] text-slate-400 font-normal">{tx("Trigger flag for adventure/high-risk sports.")}</span>
                     </div>
                   </label>
 
@@ -1630,15 +1631,15 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="rounded text-blue-600 focus:ring-blue-500 mt-0.5"
                     />
                     <div>
-                      <span>Private Aviation</span>
-                      <span className="block text-[10px] text-slate-400 font-normal">Flies private aircraft or experimental planes (commercial passengers exempt).</span>
+                      <span>{tx("Private Aviation")}</span>
+                      <span className="block text-[10px] text-slate-400 font-normal">{tx("Flies private aircraft or experimental planes (commercial passengers exempt).")}</span>
                     </div>
                   </label>
                 </div>
 
                 {details.habit_check.participates_in_extreme_sports && (
                   <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-2">
-                    <span className="text-xs font-bold text-slate-700 block">Select Extreme Sports:</span>
+                    <span className="text-xs font-bold text-slate-700 block">{tx("Select Extreme Sports:")}</span>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                       {["Skydiving", "Scuba Diving (past 100ft)", "Bungee Jumping", "Rock/Ice Climbing", "Motorsports/Racing"].map((sport) => {
                         const isChecked = details.habit_check.extreme_sports_details.includes(sport);
@@ -1672,8 +1673,8 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     </svg>
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-slate-800">Travel & Location Risks</h4>
-                    <p className="text-[11px] text-slate-400">Underwriting travel to politically unstable or disease outbreak zones.</p>
+                    <h4 className="text-sm font-bold text-slate-800">{tx("Travel & Location Risks")}</h4>
+                    <p className="text-[11px] text-slate-400">{tx("Underwriting travel to politically unstable or disease outbreak zones.")}</p>
                   </div>
                 </div>
 
@@ -1686,18 +1687,18 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="rounded text-blue-600 focus:ring-blue-500 mt-0.5"
                     />
                     <div>
-                      <span>Frequent High-Risk Travel</span>
-                      <span className="block text-[10px] text-slate-400 font-normal">Travel planned or taken to politically unstable regions, active war zones, or severe outbreak areas.</span>
+                      <span>{tx("Frequent High-Risk Travel")}</span>
+                      <span className="block text-[10px] text-slate-400 font-normal">{tx("Travel planned or taken to politically unstable regions, active war zones, or severe outbreak areas.")}</span>
                     </div>
                   </label>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-semibold text-slate-600 block">Travel Destinations (Past/Next 12 Months)</label>
+                  <label className="text-xs font-semibold text-slate-600 block">{tx("Travel Destinations (Past/Next 12 Months)")}</label>
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      placeholder="e.g. Iraq, Somalia, Ukraine"
+                      placeholder={tx("e.g. Iraq, Somalia, Ukraine")}
                       value={newDestination}
                       onChange={(e) => setNewDestination(e.target.value)}
                       onKeyDown={(e) => {
@@ -1727,7 +1728,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       }}
                       className="bg-blue-600 text-white font-bold text-xs px-4 py-1.5 rounded-lg hover:bg-blue-700 transition-colors"
                     >
-                      + Add
+                      {tx("+ Add")}
                     </button>
                   </div>
 
@@ -1743,7 +1744,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                             }}
                             className="text-blue-500 hover:text-blue-800 font-bold"
                           >
-                            &times;
+                            {tx("×")}
                           </button>
                         </span>
                       ))}
@@ -1760,14 +1761,14 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     </svg>
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-slate-800">Behavioral & Legal History</h4>
-                    <p className="text-[11px] text-slate-400">Assessing general recklessness & legal risks.</p>
+                    <h4 className="text-sm font-bold text-slate-800">{tx("Behavioral & Legal History")}</h4>
+                    <p className="text-[11px] text-slate-400">{tx("Assessing general recklessness & legal risks.")}</p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-600">Moving Violations (Past 3 Years)</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Moving Violations (Past 3 Years)")}</label>
                     <input
                       type="number"
                       min="0"
@@ -1784,7 +1785,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                         onChange={(e) => updateField("habit_check", "dui_dwi_history", e.target.checked)}
                         className="rounded text-blue-600 focus:ring-blue-500"
                       />
-                      DUI / DWI History
+                      {tx("DUI / DWI History")}
                     </label>
                   </div>
                 </div>
@@ -1798,8 +1799,8 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="rounded text-blue-600 focus:ring-blue-500 mt-0.5"
                     />
                     <div>
-                      <span>Criminal Record</span>
-                      <span className="block text-[10px] text-slate-400 font-normal">Check if the customer has felony convictions or pending criminal charges.</span>
+                      <span>{tx("Criminal Record")}</span>
+                      <span className="block text-[10px] text-slate-400 font-normal">{tx("Check if the customer has felony convictions or pending criminal charges.")}</span>
                     </div>
                   </label>
                 </div>
@@ -1811,10 +1812,10 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
           {formTab === "financial" && (
             <div className="space-y-6">
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Credit Bureau & Bank details</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Credit Bureau & Bank details")}</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className={`${hl("creditScore")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Credit Score</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Credit Score")}</label>
                     <input
                       type="number"
                       value={details.financial_records.credit_bureau.credit_score}
@@ -1823,7 +1824,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                   </div>
                   <div className={`${hl("delinquencyCount")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Delinquencies count</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Delinquencies count")}</label>
                     <input
                       type="number"
                       value={details.financial_records.credit_bureau.delinquency_count}
@@ -1832,18 +1833,18 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                   </div>
                   <div className={`${hl("riskGrade")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Credit Bureau Risk Grade</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Credit Bureau Risk Grade")}</label>
                     <select
                       value={details.financial_records.credit_bureau.risk_grade}
                       onChange={(e) => updateSubField("financial_records", "credit_bureau", "risk_grade", e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     >
-                      <option value="A">Grade A</option>
-                      <option value="B">Grade B</option>
-                      <option value="C">Grade C</option>
-                      <option value="D">Grade D</option>
-                      <option value="E">Grade E</option>
-                      <option value="F">Grade F</option>
+                      <option value="A">{tx("Grade A")}</option>
+                      <option value="B">{tx("Grade B")}</option>
+                      <option value="C">{tx("Grade C")}</option>
+                      <option value="D">{tx("Grade D")}</option>
+                      <option value="E">{tx("Grade E")}</option>
+                      <option value="F">{tx("Grade F")}</option>
                     </select>
                   </div>
                 </div>
@@ -1852,10 +1853,10 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <hr className="border-slate-100" />
 
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Dependents Info</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Dependents Info")}</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className={`${hl("numberOfDependents")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Number of Dependents</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Number of Dependents")}</label>
                     <input
                       type="number"
                       value={details.financial_records.dependents.number_of_dependents}
@@ -1864,17 +1865,17 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                   </div>
                   <div className={`${hl("dependentType")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Primary Dependent Type</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Primary Dependent Type")}</label>
                     <select
                       value={details.financial_records.dependents.dependent_type}
                       onChange={(e) => updateSubField("financial_records", "dependents", "dependent_type", e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     >
-                      <option value="Spouse">Spouse</option>
-                      <option value="Child">Child</option>
-                      <option value="Parent">Parent</option>
-                      <option value="Sibling">Sibling</option>
-                      <option value="Other">Other</option>
+                      <option value="Spouse">{tx("Spouse")}</option>
+                      <option value="Child">{tx("Child")}</option>
+                      <option value="Parent">{tx("Parent")}</option>
+                      <option value="Sibling">{tx("Sibling")}</option>
+                      <option value="Other">{tx("Other")}</option>
                     </select>
                   </div>
                 </div>
@@ -1886,10 +1887,10 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
           {formTab === "beneficiary" && (
             <div className="space-y-6">
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Primary Beneficiary (Section 7)</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Primary Beneficiary (Section 7)")}</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className={`${hl("beneficiaryFirstName")}`}>
-                    <label className="text-xs font-semibold text-slate-600">First Name</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("First Name")}</label>
                     <input
                       type="text"
                       value={details.beneficiary.first_name}
@@ -1898,7 +1899,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                   </div>
                   <div className={`${hl("beneficiaryLastName")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Last Name</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Last Name")}</label>
                     <input
                       type="text"
                       value={details.beneficiary.last_name}
@@ -1907,33 +1908,33 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                   </div>
                   <div className={`${hl("beneficiaryCnic")}`}>
-                    <label className="text-xs font-semibold text-slate-600">CNIC Number</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("CNIC Number")}</label>
                     <input
                       type="text"
                       value={details.beneficiary.cnic_number}
                       onChange={(e) => updateField("beneficiary", "cnic_number", formatCNIC(e.target.value))}
-                      placeholder="35201-XXXXXXX-X"
+                      placeholder={tx("35201-XXXXXXX-X")}
                       maxLength={15}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
                   <div className={`${hl("beneficiaryRelationship")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Relationship</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Relationship")}</label>
                     <select
                       value={details.beneficiary.relationship}
                       onChange={(e) => updateField("beneficiary", "relationship", e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     >
-                      <option value="Spouse">Spouse</option>
-                      <option value="Parent">Parent</option>
-                      <option value="Child">Child</option>
-                      <option value="Sibling">Sibling</option>
-                      <option value="Guardian">Guardian</option>
-                      <option value="Other">Other</option>
+                      <option value="Spouse">{tx("Spouse")}</option>
+                      <option value="Parent">{tx("Parent")}</option>
+                      <option value="Child">{tx("Child")}</option>
+                      <option value="Sibling">{tx("Sibling")}</option>
+                      <option value="Guardian">{tx("Guardian")}</option>
+                      <option value="Other">{tx("Other")}</option>
                     </select>
                   </div>
                   <div className={`${hl("beneficiaryShare")}`}>
-                    <label className="text-xs font-semibold text-slate-600">Share Percentage (%)</label>
+                    <label className="text-xs font-semibold text-slate-600">{tx("Share Percentage (%)")}</label>
                     <input
                       type="number"
                       value={details.beneficiary.share_percentage}
@@ -1950,16 +1951,16 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
           {formTab === "insurance_plan" && !isCreate && (
             <div className="space-y-6">
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">Insurance Plans</h4>
-                <p className="text-xs text-slate-400 mb-5">Existing policies for this customer. You can assign an additional plan below.</p>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">{tx("Insurance Plans")}</h4>
+                <p className="text-xs text-slate-400 mb-5">{tx("Existing policies for this customer. You can assign an additional plan below.")}</p>
 
                 {viewPoliciesLoading ? (
                   <div className="flex items-center gap-2 py-6 justify-center">
                     <div className="animate-spin h-5 w-5 rounded-full border-2 border-slate-100 border-t-blue-500" />
-                    <span className="text-xs text-slate-400">Loading policies...</span>
+                    <span className="text-xs text-slate-400">{tx("Loading policies...")}</span>
                   </div>
                 ) : customerPolicies.length === 0 ? (
-                  <div className="text-center py-8 text-sm text-slate-400 italic">No policies assigned yet.</div>
+                  <div className="text-center py-8 text-sm text-slate-400 italic">{tx("No policies assigned yet.")}</div>
                 ) : (
                   <div className="space-y-3 mb-6">
                     {customerPolicies.map((pol) => {
@@ -1984,7 +1985,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                               }
                             }}
                             className="absolute -top-1.5 -right-1.5 flex items-center justify-center w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white text-[10px] font-bold shadow-md transition-colors z-20 cursor-pointer"
-                            title="Remove Policy"
+                            title={tx("Remove Policy")}
                           >
                             ✕
                           </button>
@@ -1995,20 +1996,20 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                                 {INSURANCE_TYPE_LABELS[pol.insurance_type] ?? pol.insurance_type}
                               </p>
                             </div>
-                            <span className={`shrink-0 text-xs font-bold px-2.5 py-1 rounded-full ${textClass} bg-white/70`}>{pol.term_years} yr</span>
+                            <span className={`shrink-0 text-xs font-bold px-2.5 py-1 rounded-full ${textClass} bg-white/70`}>{pol.term_years}{" "}{tx("yr")}</span>
                           </div>
                           <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                             <div>
-                              <span className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Coverage</span>
-                              <span className="font-bold text-slate-800">PKR {pol.coverage_amount.toLocaleString()}</span>
+                              <span className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">{tx("Coverage")}</span>
+                              <span className="font-bold text-slate-800">{tx("PKR")}{" "}{pol.coverage_amount.toLocaleString()}</span>
                             </div>
                             <div>
-                              <span className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Assigned</span>
+                              <span className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">{tx("Assigned")}</span>
                               <span className="text-slate-600">{new Date(pol.created_at).toLocaleDateString()}</span>
                             </div>
                             {pol.dependent_name && (
                               <div className="col-span-2">
-                                <span className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Dependent</span>
+                                <span className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">{tx("Dependent")}</span>
                                 <span className="text-slate-600">{pol.dependent_name} · {pol.dependent_dob}</span>
                               </div>
                             )}
@@ -2025,12 +2026,12 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     onClick={() => setEditAddingPolicy(true)}
                     className="w-full py-3 border-2 border-dashed border-slate-200 rounded-xl text-xs font-semibold text-slate-500 hover:border-blue-300 hover:text-blue-600 transition-colors"
                   >
-                    + Assign New Insurance Plan
+                    {tx("+ Assign New Insurance Plan")}
                   </button>
                 ) : (
                   <div className="border border-slate-200 rounded-xl p-5 space-y-5 bg-slate-50">
                     <div className="flex items-center justify-between">
-                      <h5 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Assign New Plan</h5>
+                      <h5 className="text-xs font-bold text-slate-800 uppercase tracking-wider">{tx("Assign New Plan")}</h5>
                       <button
                         type="button"
                         onClick={() => {
@@ -2044,13 +2045,13 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                         }}
                         className="text-xs text-slate-400 hover:text-slate-600"
                       >
-                        Cancel
+                        {tx("Cancel")}
                       </button>
                     </div>
 
                     {availablePlans.length === 0 ? (
                       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700 font-medium">
-                        No active plans found. Create plans from the Insurance Plans page first.
+                        {tx("No active plans found. Create plans from the Insurance Plans page first.")}
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -2093,7 +2094,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                                       setValue("policyTerm", "");
                                     }}
                                     className="absolute -top-1.5 -right-1.5 flex items-center justify-center w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white text-[10px] font-bold shadow-md transition-colors z-20 cursor-pointer"
-                                    title="Deselect Plan"
+                                    title={tx("Deselect Plan")}
                                   >
                                     ✕
                                   </button>
@@ -2104,9 +2105,9 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                                 {INSURANCE_TYPE_LABELS[plan.insurance_type] ?? plan.insurance_type}
                               </p>
                               <div className="flex gap-3 mt-2 text-[10px] font-semibold text-slate-500">
-                                <span>Age {plan.entry_age_min}–{plan.entry_age_max}</span>
+                                <span>{tx("Age")}{" "}{plan.entry_age_min}–{plan.entry_age_max}</span>
                                 <span>·</span>
-                                <span>Term {plan.term_min_years}–{plan.term_max_years} yrs</span>
+                                <span>{tx("Term")}{" "}{plan.term_min_years}–{plan.term_max_years}{" "}{tx("yrs")}</span>
                               </div>
                             </button>
                           );
@@ -2149,7 +2150,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className={`${hl("policyCoverage")}`}>
-                              <label className="text-xs font-semibold text-slate-600">Coverage Amount (PKR) *</label>
+                              <label className="text-xs font-semibold text-slate-600">{tx("Coverage Amount (PKR) *")}</label>
                               <input
                                 type="number" min={0}
                                 value={editPolicyCoverage}
@@ -2162,16 +2163,16 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                               />
                               {isCoverageOverLimit ? (
                                 <span className="block text-[11px] font-semibold text-red-600 mt-1">
-                                  ❌ Exceeds max limit of PKR {maxIncomeCoverage!.toLocaleString()} ({plan.max_income_multiple}× declared income)
+                                  {tx("❌ Exceeds max limit of PKR")}{" "}{maxIncomeCoverage!.toLocaleString()} ({plan.max_income_multiple}{tx("× declared income)")}
                                 </span>
                               ) : (
                                 <p className="text-[10px] text-slate-400">
-                                  {maxIncomeCoverage ? `Max allowed: PKR ${maxIncomeCoverage.toLocaleString()} (${plan.max_income_multiple}× declared income)` : `Max ${plan.max_income_multiple}× declared income`}
+                                  {maxIncomeCoverage ? tx("Max allowed: PKR {0} ({1}× declared income)", { 0: maxIncomeCoverage.toLocaleString(), 1: plan.max_income_multiple }) : tx("Max {0}× declared income", { 0: plan.max_income_multiple })}
                                 </p>
                               )}
                             </div>
                             <div className={`${hl("policyTerm")}`}>
-                              <label className="text-xs font-semibold text-slate-600">Policy Term (Years) *</label>
+                              <label className="text-xs font-semibold text-slate-600">{tx("Policy Term (Years) *")}</label>
                               <input
                                 type="number"
                                 min={plan.term_min_years} max={plan.term_max_years}
@@ -2184,17 +2185,17 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                               />
                               {isTermOutOfRange ? (
                                 <span className="block text-[11px] font-semibold text-red-600 mt-1">
-                                  ❌ Invalid term: Must be between {plan.term_min_years}–{plan.term_max_years} yrs
+                                  {tx("❌ Invalid term: Must be between")}{" "}{plan.term_min_years}–{plan.term_max_years}{" "}{tx("yrs")}
                                 </span>
                               ) : (
-                                <p className="text-[10px] text-slate-400">Allowed range: {plan.term_min_years}–{plan.term_max_years} yrs</p>
+                                <p className="text-[10px] text-slate-400">{tx("Allowed range:")}{" "}{plan.term_min_years}–{plan.term_max_years}{" "}{tx("yrs")}</p>
                               )}
                             </div>
                           </div>
                           {plan.insurance_type === "CHILD_EDUCATION_MARRIAGE" && (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div className="space-y-1">
-                                <label className="text-xs font-semibold text-slate-600">Dependent Name *</label>
+                                <label className="text-xs font-semibold text-slate-600">{tx("Dependent Name *")}</label>
                                 <input
                                   type="text"
                                   value={editPolicyDependentName}
@@ -2202,12 +2203,12 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                                     setEditPolicyDependentName(e.target.value);
                                     setValue("policyDependentName", e.target.value);
                                   }}
-                                  placeholder="Child's full name"
+                                  placeholder={tx("Child's full name")}
                                   className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                                 />
                               </div>
                               <div className="space-y-1">
-                                <label className="text-xs font-semibold text-slate-600">Dependent Date of Birth</label>
+                                <label className="text-xs font-semibold text-slate-600">{tx("Dependent Date of Birth")}</label>
                                 <input
                                   type="date"
                                   value={editPolicyDependentDob}
@@ -2277,7 +2278,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                             }}
                             className="w-full py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed rounded-lg transition-colors"
                           >
-                            {editPolicyLoading ? "Assigning..." : "Confirm & Assign Policy"}
+                            {editPolicyLoading ? tx("Assigning...") : tx("Confirm & Assign Policy")}
                           </button>
                         </div>
                       );
@@ -2292,10 +2293,10 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
           {formTab === "insurance_plan" && isCreate && (
             <div className="space-y-6">
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">Select Insurance Plan</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">{tx("Select Insurance Plan")}</h4>
 
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-                  <p className="text-xs text-slate-400">Choose a plan from your tenant catalog. Coverage and term are required.</p>
+                  <p className="text-xs text-slate-400">{tx("Choose a plan from your tenant catalog. Coverage and term are required.")}</p>
                   <button
                     type="button"
                     onClick={handleSuggestPlan}
@@ -2305,14 +2306,14 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     {isSuggestingPlan ? (
                       <>
                         <div className="animate-spin h-3.5 w-3.5 rounded-full border-2 border-blue-200 border-t-white" />
-                        Analyzing Profile...
+                        {tx("Analyzing Profile...")}
                       </>
                     ) : (
                       <>
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                         </svg>
-                        Suggest Plan with AI
+                        {tx("Suggest Plan with AI")}
                       </>
                     )}
                   </button>
@@ -2325,7 +2326,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                       </svg>
                       <div>
-                        <h5 className="text-xs font-bold text-blue-900 mb-1">AI Recommendation</h5>
+                        <h5 className="text-xs font-bold text-blue-900 mb-1">{tx("AI Recommendation")}</h5>
                         <p className="text-xs text-blue-800 leading-relaxed">{suggestedReasoning}</p>
                       </div>
                     </div>
@@ -2335,11 +2336,11 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                 {plansLoading ? (
                   <div className="flex items-center gap-2 py-6 justify-center">
                     <div className="animate-spin h-5 w-5 rounded-full border-2 border-slate-100 border-t-blue-500" />
-                    <span className="text-xs text-slate-400">Loading plans...</span>
+                    <span className="text-xs text-slate-400">{tx("Loading plans...")}</span>
                   </div>
                 ) : availablePlans.length === 0 ? (
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700 font-medium">
-                    No active insurance plans found for this tenant. Please create plans first from the Insurance Plans page.
+                    {tx("No active insurance plans found for this tenant. Please create plans first from the Insurance Plans page.")}
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
@@ -2375,7 +2376,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                                   setValue("policyTerm", undefined);
                                 }}
                                 className="absolute -top-1.5 -right-1.5 flex items-center justify-center w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white text-[10px] font-bold shadow-md transition-colors z-20 cursor-pointer"
-                                title="Deselect Plan"
+                                title={tx("Deselect Plan")}
                               >
                                 ✕
                               </button>
@@ -2387,9 +2388,9 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                           </p>
                           <p className="text-xs text-slate-500 mt-2 line-clamp-2">{plan.description}</p>
                           <div className="flex gap-3 mt-3 text-[10px] font-semibold text-slate-500">
-                            <span>Age {plan.entry_age_min}–{plan.entry_age_max}</span>
+                            <span>{tx("Age")}{" "}{plan.entry_age_min}–{plan.entry_age_max}</span>
                             <span>·</span>
-                            <span>Term {plan.term_min_years}–{plan.term_max_years} yrs</span>
+                            <span>{tx("Term")}{" "}{plan.term_min_years}–{plan.term_max_years}{" "}{tx("yrs")}</span>
                           </div>
                         </button>
                       );
@@ -2427,7 +2428,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
 
                   return (
                     <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
-                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Plan Configuration</h4>
+                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">{tx("Plan Configuration")}</h4>
 
                       {ageNotice && (
                         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 font-medium flex items-center gap-2">
@@ -2438,7 +2439,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className={`${hl("policyCoverage")}`}>
                           <label className="text-xs font-semibold text-slate-600">
-                            Coverage Amount (PKR) *
+                            {tx("Coverage Amount (PKR) *")}
                           </label>
                           <input
                             type="number"
@@ -2449,19 +2450,19 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                           />
                           {isCoverageOverLimit ? (
                             <span className="block text-[11px] font-semibold text-red-600 mt-1">
-                              ❌ Exceeds max limit of PKR {maxIncomeCoverage!.toLocaleString()} ({plan.max_income_multiple}× declared income)
+                              {tx("❌ Exceeds max limit of PKR")}{" "}{maxIncomeCoverage!.toLocaleString()} ({plan.max_income_multiple}{tx("× declared income)")}
                             </span>
                           ) : errors.policyCoverage ? (
                             <span className="text-[10px] text-red-500">{errors.policyCoverage.message}</span>
                           ) : (
                             <p className="text-[10px] text-slate-400">
-                              {maxIncomeCoverage ? `Max limit: PKR ${maxIncomeCoverage.toLocaleString()} (${plan.max_income_multiple}× declared income)` : `Max ${plan.max_income_multiple}× declared income`}
+                              {maxIncomeCoverage ? tx("Max limit: PKR {0} ({1}× declared income)", { 0: maxIncomeCoverage.toLocaleString(), 1: plan.max_income_multiple }) : tx("Max {0}× declared income", { 0: plan.max_income_multiple })}
                             </p>
                           )}
                         </div>
                         <div className={`${hl("policyTerm")}`}>
                           <label className="text-xs font-semibold text-slate-600">
-                            Policy Term (Years) *
+                            {tx("Policy Term (Years) *")}
                           </label>
                           <input
                             type="number"
@@ -2472,13 +2473,13 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                           />
                           {isTermOutOfRange ? (
                             <span className="block text-[11px] font-semibold text-red-600 mt-1">
-                              ❌ Invalid term: Must be between {plan.term_min_years}–{plan.term_max_years} yrs
+                              {tx("❌ Invalid term: Must be between")}{" "}{plan.term_min_years}–{plan.term_max_years}{" "}{tx("yrs")}
                             </span>
                           ) : errors.policyTerm ? (
                             <span className="text-[10px] text-red-500">{errors.policyTerm.message}</span>
                           ) : (
                             <p className="text-[10px] text-slate-400">
-                              Allowed range: {plan.term_min_years}–{plan.term_max_years} years
+                              {tx("Allowed range:")}{" "}{plan.term_min_years}–{plan.term_max_years}{" "}{tx("years")}
                             </p>
                           )}
                         </div>
@@ -2487,20 +2488,20 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       {plan.insurance_type === "CHILD_EDUCATION_MARRIAGE" && (
                         <>
                           <hr className="border-slate-200" />
-                          <h5 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Dependent / Child Details</h5>
+                          <h5 className="text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("Dependent / Child Details")}</h5>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-1">
-                              <label className="text-xs font-semibold text-slate-600">Dependent Name *</label>
+                              <label className="text-xs font-semibold text-slate-600">{tx("Dependent Name *")}</label>
                               <input
                                 type="text"
                                 {...register("policyDependentName")}
-                                placeholder="Child's full name"
+                                placeholder={tx("Child's full name")}
                                 className={`w-full bg-white border ${errors.policyDependentName ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                               />
                               {errors.policyDependentName && <span className="text-[10px] text-red-500">{errors.policyDependentName.message}</span>}
                             </div>
                             <div className="space-y-1">
-                              <label className="text-xs font-semibold text-slate-600">Dependent Date of Birth</label>
+                              <label className="text-xs font-semibold text-slate-600">{tx("Dependent Date of Birth")}</label>
                               <input
                                 type="date"
                                 {...register("policyDependentDob")}
@@ -2516,7 +2517,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                 })()}
 
                 {!selectedPlanId && availablePlans.length > 0 && (
-                  <p className="text-xs text-slate-400 text-center mt-2 italic">No plan selected — you can skip this step and assign a plan later.</p>
+                  <p className="text-xs text-slate-400 text-center mt-2 italic">{tx("No plan selected — you can skip this step and assign a plan later.")}</p>
                 )}
               </div>
             </div>
@@ -2532,7 +2533,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               onClick={onClose}
               className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700"
             >
-              Cancel
+              {tx("Cancel")}
             </button>
           </div>
           <div className="flex gap-3">
@@ -2546,7 +2547,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       onClick={() => setFormTab(customerTabs[currentIdx - 1].id)}
                       className="px-5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg"
                     >
-                      Previous
+                      {tx("Previous")}
                     </button>
                   )}
                   {currentIdx < customerTabs.length - 1 ? (
@@ -2556,7 +2557,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                         onClick={() => setFormTab(customerTabs[currentIdx + 1].id)}
                         className="px-5 py-2 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-900 rounded-lg"
                       >
-                        Next Step
+                        {tx("Next Step")}
                       </button>
                       <button
                         type="button"
@@ -2564,7 +2565,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                         disabled={formLoading}
                         className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 rounded-lg shadow-sm cursor-pointer"
                       >
-                        {formLoading ? "Saving..." : isCreate ? "Register Customer" : "Update Profile"}
+                        {formLoading ? tx("Saving...") : isCreate ? tx("Register Customer") : tx("Update Profile")}
                       </button>
                     </div>
                   ) : (
@@ -2574,7 +2575,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       disabled={formLoading}
                       className="px-6 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 rounded-lg shadow-sm cursor-pointer"
                     >
-                      {formLoading ? "Saving Profile..." : isCreate ? "Register Customer" : "Update Profile"}
+                      {formLoading ? tx("Saving Profile...") : isCreate ? tx("Register Customer") : tx("Update Profile")}
                     </button>
                   )}
                 </>

@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { Category, RuleSetSummary } from "@/app/services/ruleEngine";
+import { tx } from "@/lib/i18n/tx";
 
 export interface HierarchySelection {
   categoryCode: string | null;
@@ -214,7 +215,7 @@ export default function HierarchyTree({
   if (filteredCategories.length === 0) {
     return (
       <div className="border border-dashed border-slate-200 rounded-xl p-6 text-center text-xs text-slate-500 italic bg-white">
-        No matching categories or rule sets found.
+        {tx("No matching categories or rule sets found.")}
       </div>
     );
   }
@@ -272,7 +273,7 @@ export default function HierarchyTree({
                     className={`p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded transition-colors ${
                       activeMenuId === cat.id ? "block text-slate-700 bg-slate-200" : "hidden group-hover:block"
                     }`}
-                    title="Options"
+                    title={tx("Options")}
                   >
                     <IconDots />
                   </button>
@@ -283,14 +284,14 @@ export default function HierarchyTree({
                         className="w-full text-left px-3 py-2 text-xs font-medium hover:bg-slate-50 text-slate-700 transition"
                         onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('category', 'rename', cat.id, cat.name); }}
                       >
-                        Rename
+                        {tx("Rename")}
                       </button>
                       <button
                         type="button"
                         className="w-full text-left px-3 py-2 text-xs font-medium hover:bg-red-50 text-red-600 transition border-t border-slate-100"
                         onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('category', 'delete', cat.id, cat.name); }}
                       >
-                        Delete
+                        {tx("Delete")}
                       </button>
                     </div>
                   )}
@@ -359,7 +360,7 @@ export default function HierarchyTree({
                             className={`p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded transition-colors ${
                               activeMenuId === sub.id ? "block text-slate-700 bg-slate-200" : "hidden group-hover:block"
                             }`}
-                            title="Options"
+                            title={tx("Options")}
                           >
                             <IconDots />
                           </button>
@@ -370,14 +371,14 @@ export default function HierarchyTree({
                                 className="w-full text-left px-3 py-2 text-xs font-medium hover:bg-slate-50 text-slate-700 transition"
                                 onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('subcategory', 'rename', sub.id, sub.name); }}
                               >
-                                Rename
+                                {tx("Rename")}
                               </button>
                               <button
                                 type="button"
                                 className="w-full text-left px-3 py-2 text-xs font-medium hover:bg-red-50 text-red-600 transition border-t border-slate-100"
                                 onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('subcategory', 'delete', sub.id, sub.name); }}
                               >
-                                Delete
+                                {tx("Delete")}
                               </button>
                             </div>
                           )}
@@ -435,7 +436,7 @@ export default function HierarchyTree({
                                 className={`p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded transition-colors ${
                                   activeMenuId === rs.id ? "block text-slate-700 bg-slate-200" : "hidden group-hover:block"
                                 }`}
-                                title="Options"
+                                title={tx("Options")}
                               >
                                 <IconDots />
                               </button>
@@ -446,14 +447,14 @@ export default function HierarchyTree({
                                     className="w-full text-left px-3 py-2 text-xs font-medium hover:bg-slate-50 text-slate-700 transition"
                                     onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('ruleset', 'rename', rs.id, rs.name); }}
                                   >
-                                    Rename
+                                    {tx("Rename")}
                                   </button>
                                   <button
                                     type="button"
                                     className="w-full text-left px-3 py-2 text-xs font-medium hover:bg-red-50 text-red-600 transition border-t border-slate-100"
                                     onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('ruleset', 'delete', rs.id, rs.name); }}
                                   >
-                                    Delete
+                                    {tx("Delete")}
                                   </button>
                                 </div>
                               )}

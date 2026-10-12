@@ -1,6 +1,7 @@
 import { RingGauge, Stat, PillarCard, Divider } from "./shared";
 import type { Claim } from "@/app/services/claims";
 import type { PolicyListItem, PolicyStats } from "@/app/services/policies";
+import { tx } from "@/lib/i18n/tx";
 
 function ShieldIcon() {
   return (
@@ -55,7 +56,7 @@ export function UnderwritingCard({ policies, claims, policyStats, riskIndex }: U
   return (
     <PillarCard
       icon={<ShieldIcon />}
-      title="Underwriting Risk"
+      title={tx("Underwriting Risk")}
       barClass="bg-blue-600"
       iconBg="bg-blue-50"
       iconColor="text-blue-600"
@@ -67,13 +68,13 @@ export function UnderwritingCard({ policies, claims, policyStats, riskIndex }: U
 
           {/* Gauges */}
           <div className="flex gap-4 flex-shrink-0">
-            <RingGauge value={riskIndex} strokeHex="#1d4ed8" label="Portfolio Risk" sublabel="/ 100" size={68} strokeW={8} />
-            <RingGauge value={issuanceRatePct} strokeHex="#3b82f6" label="Issuance Rate" sublabel="%" valueLabel={`${issuanceRatePct}%`} size={68} strokeW={8} />
+            <RingGauge value={riskIndex} strokeHex="#1d4ed8" label={tx("Portfolio Risk")} sublabel="/ 100" size={68} strokeW={8} />
+            <RingGauge value={issuanceRatePct} strokeHex="#3b82f6" label={tx("Issuance Rate")} sublabel="%" valueLabel={`${issuanceRatePct}%`} size={68} strokeW={8} />
           </div>
 
           {/* Policy Status Mix — Vertical Bar Chart */}
           <div className="flex-1">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">Policy Status Mix — Selected Range</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">{tx("Policy Status Mix — Selected Range")}</p>
 
             {/* Chart: fixed height container, bars bottom-aligned */}
             <div className="grid grid-cols-4 gap-2 h-[76px] items-end">

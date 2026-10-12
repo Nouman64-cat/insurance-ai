@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import api from "@/app/services/api";
 import { AcquisitionSource, SOURCE_TYPE_LABELS, SOURCE_TYPE_ORDER } from "./customerShared";
+import { tx } from "@/lib/i18n/tx";
 
 /** The tenant's acquisition sources (agents, brokers, bank desks...), loaded whenever a form opens. */
 export function useAcquisitionSources(open: boolean): AcquisitionSource[] {
@@ -71,13 +72,13 @@ export default function SourcePicker({ sources, sourceId, onChange, labelClass, 
   return (
     <>
       <div className={fieldClass}>
-        <label className={labelClass}>Lead source type</label>
+        <label className={labelClass}>{tx("Lead source type")}</label>
         <select
           value={type}
           onChange={(e) => { setType(e.target.value); if (selected && selected.source_type !== e.target.value) onChange(null); }}
           className={selectClass}
         >
-          <option value="">-- Direct / Unassigned --</option>
+          <option value="">{tx("-- Direct / Unassigned --")}</option>
           {kinds.map((t) => (
             <option key={t} value={t}>{SOURCE_TYPE_LABELS[t] ?? t}</option>
           ))}
@@ -92,7 +93,7 @@ export default function SourcePicker({ sources, sourceId, onChange, labelClass, 
             onChange={(e) => onChange(sources.find((s) => s.id === e.target.value) ?? null)}
             className={selectClass}
           >
-            <option value="">{ofType.length ? `-- Choose ${(SOURCE_TYPE_LABELS[type] ?? type).toLowerCase()} --` : `-- No ${(SOURCE_TYPE_LABELS[type] ?? type).toLowerCase()} sources yet --`}</option>
+            <option value="">{ofType.length ? tx("-- Choose {0} --", { 0: (SOURCE_TYPE_LABELS[type] ?? type).toLowerCase() }) : tx("-- No {0} sources yet --", { 0: (SOURCE_TYPE_LABELS[type] ?? type).toLowerCase() })}</option>
             {ofType.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}{s.partner_name ? ` — ${s.partner_name}` : ""} ({s.code})

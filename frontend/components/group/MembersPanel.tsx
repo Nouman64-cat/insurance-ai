@@ -5,6 +5,7 @@ import api from "@/app/services/api";
 import { Pagination, usePagination } from "@/components/Pagination";
 import CensusUpload from "./CensusUpload";
 import { Chip, GroupMember, PanelProps, errMsg, mpBase, pkr } from "./groupShared";
+import { tx } from "@/lib/i18n/tx";
 
 const DEPENDENTS_EDITABLE = ["Pending", "Proposed", "Quoted", "Declined"];
 
@@ -44,38 +45,38 @@ export default function MembersPanel(props: PanelProps) {
       {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 font-medium">{error}</div>}
       {pending > 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 font-medium">
-          {pending} member{pending === 1 ? " is" : "s are"} above the Free Cover Limit and awaiting an underwriting decision — the scheme can&apos;t be quoted until they&apos;re decided.
+          {pending}{" "}{tx("member")}{pending === 1 ? " " + tx("is") : tx("s are")}{" "}{tx("above the Free Cover Limit and awaiting an underwriting decision — the scheme can't be quoted until they're decided.")}
         </div>
       )}
       {missingNominee > 0 && (
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-          {missingNominee} member{missingNominee === 1 ? " has" : "s have"} no nominee recorded yet.
+          {missingNominee}{" "}{tx("member")}{missingNominee === 1 ? " " + tx("has") : tx("s have")}{" "}{tx("no nominee recorded yet.")}
         </div>
       )}
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-3 flex-wrap">
-          <p className="text-sm font-semibold text-slate-700">Insured members ({members.length})</p>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, CNIC, certificate…"
+          <p className="text-sm font-semibold text-slate-700">{tx("Insured members (")}{members.length})</p>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={tx("Search name, CNIC, certificate…")}
             className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 w-64 bg-white" />
         </div>
         {loading ? (
-          <div className="py-12 text-center text-sm text-slate-400">Loading…</div>
+          <div className="py-12 text-center text-sm text-slate-400">{tx("Loading…")}</div>
         ) : filtered.length === 0 ? (
-          <div className="py-12 text-center text-sm text-slate-400">{members.length ? "No members match." : "No members yet — upload a census above."}</div>
+          <div className="py-12 text-center text-sm text-slate-400">{members.length ? tx("No members match.") : tx("No members yet — upload a census above.")}</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  <th className="px-5 py-3 text-left">Member</th>
-                  <th className="px-5 py-3 text-left">Class</th>
-                  <th className="px-5 py-3 text-right">Cover</th>
-                  <th className="px-5 py-3 text-right">Annual share</th>
-                  <th className="px-5 py-3 text-left">Underwriting</th>
-                  <th className="px-5 py-3 text-left">Certificate</th>
-                  <th className="px-5 py-3 text-center">Dep.</th>
-                  <th className="px-5 py-3 text-center">Nominee</th>
+                  <th className="px-5 py-3 text-left">{tx("Member")}</th>
+                  <th className="px-5 py-3 text-left">{tx("Class")}</th>
+                  <th className="px-5 py-3 text-right">{tx("Cover")}</th>
+                  <th className="px-5 py-3 text-right">{tx("Annual share")}</th>
+                  <th className="px-5 py-3 text-left">{tx("Underwriting")}</th>
+                  <th className="px-5 py-3 text-left">{tx("Certificate")}</th>
+                  <th className="px-5 py-3 text-center">{tx("Dep.")}</th>
+                  <th className="px-5 py-3 text-center">{tx("Nominee")}</th>
                   <th className="px-5 py-3 w-16" />
                 </tr>
               </thead>
@@ -83,21 +84,21 @@ export default function MembersPanel(props: PanelProps) {
                 {pageItems.map((m) => (
                   <tr key={m.id}>
                     <td className="px-5 py-3"><div className="font-semibold text-slate-800">{m.name}</div><div className="text-xs text-slate-400 font-mono">{m.cnic ?? "—"}</div></td>
-                    <td className="px-5 py-3 text-slate-600">{m.benefit_class ?? "Standard"}</td>
+                    <td className="px-5 py-3 text-slate-600">{m.benefit_class ?? tx("Standard")}</td>
                     <td className="px-5 py-3 text-right tabular-nums text-slate-800">{pkr(m.coverage_amount)}</td>
                     <td className="px-5 py-3 text-right tabular-nums text-slate-600">{pkr(m.annual_premium)}</td>
                     <td className="px-5 py-3">{m.underwriting_basis ? <Chip status={m.underwriting_basis}>{m.underwriting_basis}</Chip> : "—"}</td>
                     <td className="px-5 py-3 text-xs text-slate-600">{m.certificate_number ? <><span className="font-mono">{m.certificate_number}</span> <Chip status={m.status}>{m.status}</Chip></> : <Chip status={m.status}>{m.status}</Chip>}</td>
                     <td className="px-5 py-3 text-center text-slate-600 tabular-nums">{m.dependents || "—"}</td>
                     <td className="px-5 py-3 text-center">{m.nominations ? <span className="text-emerald-600">✓</span> : <span className="text-slate-300">—</span>}</td>
-                    <td className="px-5 py-3 text-right"><button onClick={() => setOpen(m)} className="text-xs font-semibold text-blue-600 hover:text-blue-800">Manage</button></td>
+                    <td className="px-5 py-3 text-right"><button onClick={() => setOpen(m)} className="text-xs font-semibold text-blue-600 hover:text-blue-800">{tx("Manage")}</button></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
-        <Pagination pagination={pagination} noun="members" />
+        <Pagination pagination={pagination} noun={tx("members")} />
       </div>
 
       {open && <MemberDrawer {...props} member={open} onClose={() => setOpen(null)} onChanged={async () => { await load(); await reload(); }} />}
@@ -147,7 +148,7 @@ function MemberDrawer({ tenantId, orgId, mp, member, onClose, onChanged }: Panel
         })),
         change_reason: "Updated from the group scheme Members tab",
       });
-      setNotice("Nominees saved."); await onChanged();
+      setNotice(tx("Nominees saved.")); await onChanged();
     } catch (err: any) { setError(errMsg(err, "Could not save the nominees.")); }
   };
 
@@ -158,7 +159,7 @@ function MemberDrawer({ tenantId, orgId, mp, member, onClose, onChanged }: Panel
         <div className="flex items-start justify-between">
           <div>
             <h3 className="text-base font-bold text-slate-900">{member.name}</h3>
-            <p className="text-xs text-slate-500">{member.benefit_class ?? "Standard"} · {pkr(member.coverage_amount)}{member.certificate_number ? ` · ${member.certificate_number}` : ""}</p>
+            <p className="text-xs text-slate-500">{member.benefit_class ?? tx("Standard")} · {pkr(member.coverage_amount)}{member.certificate_number ? ` · ${member.certificate_number}` : ""}</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
         </div>
@@ -166,44 +167,44 @@ function MemberDrawer({ tenantId, orgId, mp, member, onClose, onChanged }: Panel
         {notice && <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700 font-medium">{notice}</div>}
 
         <section className="space-y-3">
-          <p className="text-sm font-semibold text-slate-700">Covered dependants</p>
-          <p className="text-[11px] text-slate-400">Only people listed here are covered — naming someone as a nominee doesn&apos;t cover them.</p>
-          {deps.length === 0 && <p className="text-xs text-slate-400">None.</p>}
+          <p className="text-sm font-semibold text-slate-700">{tx("Covered dependants")}</p>
+          <p className="text-[11px] text-slate-400">{tx("Only people listed here are covered — naming someone as a nominee doesn't cover them.")}</p>
+          {deps.length === 0 && <p className="text-xs text-slate-400">{tx("None.")}</p>}
           {deps.map((d) => (
             <div key={d.id} className="flex items-center justify-between text-sm border border-slate-100 rounded-lg px-3 py-2">
               <span><strong>{d.name}</strong> · {d.relationship}{d.dob ? ` · b. ${d.dob}` : ""} · {pkr(d.covered_amount)}</span>
-              {depEditable && <button onClick={() => removeDependent(d)} className="text-xs font-semibold text-red-600">Remove</button>}
+              {depEditable && <button onClick={() => removeDependent(d)} className="text-xs font-semibold text-red-600">{tx("Remove")}</button>}
             </div>
           ))}
           {depEditable ? (
             <form onSubmit={addDependent} className="grid grid-cols-2 gap-2">
-              <input required className={field} placeholder="Name" value={dep.name} onChange={(e) => setDep({ ...dep, name: e.target.value })} />
+              <input required className={field} placeholder={tx("Name")} value={dep.name} onChange={(e) => setDep({ ...dep, name: e.target.value })} />
               <select className={field} value={dep.relationship} onChange={(e) => setDep({ ...dep, relationship: e.target.value })}>
-                <option>Spouse</option><option>Child</option><option>Parent</option>
+                <option>{tx("Spouse")}</option><option>{tx("Child")}</option><option>{tx("Parent")}</option>
               </select>
               <input required type="date" className={field} value={dep.dob} onChange={(e) => setDep({ ...dep, dob: e.target.value })} />
-              <input required type="number" min="1" className={field} placeholder="Cover (PKR)" value={dep.covered} onChange={(e) => setDep({ ...dep, covered: e.target.value })} />
-              <button type="submit" className="col-span-2 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg">Add dependant</button>
+              <input required type="number" min="1" className={field} placeholder={tx("Cover (PKR)")} value={dep.covered} onChange={(e) => setDep({ ...dep, covered: e.target.value })} />
+              <button type="submit" className="col-span-2 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg">{tx("Add dependant")}</button>
             </form>
-          ) : <p className="text-xs text-slate-400">Dependants are locked once the quote is accepted.</p>}
+          ) : <p className="text-xs text-slate-400">{tx("Dependants are locked once the quote is accepted.")}</p>}
         </section>
 
         <section className="space-y-3">
-          <p className="text-sm font-semibold text-slate-700">Nominees (death benefit)</p>
+          <p className="text-sm font-semibold text-slate-700">{tx("Nominees (death benefit)")}</p>
           {nominees.map((n, i) => (
             <div key={i} className="grid grid-cols-[1fr_1fr_5rem_auto] gap-2 items-center">
-              <input className={field} placeholder="Name" value={n.name} onChange={(e) => setNominees((p) => p.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
-              <input className={field} placeholder="Relationship" value={n.relationship} onChange={(e) => setNominees((p) => p.map((x, j) => (j === i ? { ...x, relationship: e.target.value } : x)))} />
+              <input className={field} placeholder={tx("Name")} value={n.name} onChange={(e) => setNominees((p) => p.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
+              <input className={field} placeholder={tx("Relationship")} value={n.relationship} onChange={(e) => setNominees((p) => p.map((x, j) => (j === i ? { ...x, relationship: e.target.value } : x)))} />
               <input className={field} type="number" min="0" max="100" placeholder="%" value={n.share_pct} onChange={(e) => setNominees((p) => p.map((x, j) => (j === i ? { ...x, share_pct: e.target.value } : x)))} />
               <button onClick={() => setNominees((p) => p.filter((_, j) => j !== i))} className="text-xs text-slate-400 hover:text-red-600">✕</button>
             </div>
           ))}
           <div className="flex items-center justify-between">
-            <button onClick={() => setNominees((p) => [...p, { name: "", relationship: "Spouse", share_pct: "" }])} className="text-xs font-semibold text-blue-600 hover:text-blue-800">+ Add nominee</button>
-            <span className={`text-xs font-semibold ${Math.abs(total - 100) < 0.01 ? "text-emerald-600" : "text-amber-600"}`}>Total {total}%</span>
+            <button onClick={() => setNominees((p) => [...p, { name: "", relationship: "Spouse", share_pct: "" }])} className="text-xs font-semibold text-blue-600 hover:text-blue-800">{tx("+ Add nominee")}</button>
+            <span className={`text-xs font-semibold ${Math.abs(total - 100) < 0.01 ? "text-emerald-600" : "text-amber-600"}`}>{tx("Total")}{" "}{total}%</span>
           </div>
           <button onClick={saveNominees} disabled={nominees.length === 0 || Math.abs(total - 100) > 0.01}
-            className="px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg">Save nominees</button>
+            className="px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg">{tx("Save nominees")}</button>
         </section>
       </div>
     </div>

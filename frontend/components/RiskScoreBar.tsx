@@ -1,3 +1,4 @@
+import { tx } from "@/lib/i18n/tx";
 interface RiskScoreBarProps {
   label: string;
   score: number;    // 0–100 (always normalised — pass fraudProbability * 100 for fraud)
@@ -107,7 +108,7 @@ export function CompositeScoreRing({ score }: { score: number }) {
       </div>
       <div>
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-          Composite Risk Score
+          {tx("Composite Risk Score")}
         </p>
         <p className={`text-lg font-bold mt-0.5 ${tier.color}`}>{tier.label}</p>
 

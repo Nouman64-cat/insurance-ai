@@ -16,6 +16,7 @@ import {
   type ReinsuranceView, type ReinsurerDecision,
 } from "@/app/services/reinsurance";
 import { ReinsurancePanel } from "@/components/policy/ReinsurancePanel";
+import { tx } from "@/lib/i18n/tx";
 
 // Statuses during which Stage A mutations are legal (mirrors the backend
 // PRE_ISSUANCE_STATUSES guard). Outside this set the contract is drafted/bound
@@ -171,72 +172,72 @@ export function StageAPanel({ policyId, onChanged }: StageAPanelProps) {
         <div className="rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-xs text-slate-600 space-y-1">
           <p className="font-semibold flex items-center gap-2">
             <span aria-hidden>🔒</span>
-            Stage A is finalized (policy is <b>{readiness.status}</b>). These steps are read-only - mid-term changes now go through a Stage B endorsement.
+            {tx("Stage A is finalized (policy is")}{" "}<b>{readiness.status}</b>{tx("). These steps are read-only - mid-term changes now go through a Stage B endorsement.")}
           </p>
           {freeLookEnd && (
             <p className="text-[11px] text-slate-500 pl-6">
-              Free-look period ends <b className="text-slate-700">{freeLookEnd}</b> - cancel by then for a full refund.
+              {tx("Free-look period ends")}{" "}<b className="text-slate-700">{freeLookEnd}</b>{" "}{tx("- cancel by then for a full refund.")}
             </p>
           )}
         </div>
       ) : (
         <div className={`rounded-lg border px-3 py-2 text-xs font-semibold ${readiness.ready_to_issue ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-amber-50 border-amber-200 text-amber-800"}`}>
           {readiness.ready_to_issue
-            ? "✓ All pre-issuance gates cleared - ready to issue."
-            : `${readiness.blockers.length} gate(s) remaining before issuance.`}
+            ? tx("✓ All pre-issuance gates cleared - ready to issue.")
+            : tx("{0} gate(s) remaining before issuance.", { 0: readiness.blockers.length })}
         </div>
       )}
 
       {/* Demo-bypass audit - mandatory gates waved through in demo mode */}
       {bypass && bypass !== "NotFlagged" && (
         <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-800">
-          <span className="font-semibold">⚠ Demo bypass:</span> {BYPASS_LABEL[bypass] ?? bypass}. Blocked in production - backfill before this contract is treated as production-grade.
+          <span className="font-semibold">{tx("⚠ Demo bypass:")}</span> {BYPASS_LABEL[bypass] ?? bypass}{tx(". Blocked in production - backfill before this contract is treated as production-grade.")}
         </div>
       )}
       {err && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2">{err}</div>}
 
       <div className="space-y-5">
         {/* 1 - Revised terms */}
-        <StepShell n={1} title="Accept Revised Terms" state={termState}
+        <StepShell n={1} title={tx("Accept Revised Terms")} state={termState}
           hint={s.revised_terms.status.replace("_", " ")}>
           {offer && offer.status === "Pending" ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 space-y-2">
               <p className="text-xs text-slate-600">{offer.reason}</p>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="bg-white rounded p-2 border border-slate-100">
-                  <p className="text-[10px] uppercase text-slate-400 font-semibold">Original</p>
-                  <p className="font-semibold text-slate-700">{fmtPKR(offer.original_premium)}/yr</p>
-                  <p className="text-slate-500">{fmtPKR(offer.original_coverage_amount)} cover</p>
+                  <p className="text-[10px] uppercase text-slate-400 font-semibold">{tx("Original")}</p>
+                  <p className="font-semibold text-slate-700">{fmtPKR(offer.original_premium)}{tx("/yr")}</p>
+                  <p className="text-slate-500">{fmtPKR(offer.original_coverage_amount)}{" "}{tx("cover")}</p>
                 </div>
                 <div className="bg-white rounded p-2 border border-blue-200">
-                  <p className="text-[10px] uppercase text-blue-500 font-semibold">Revised</p>
-                  <p className="font-semibold text-slate-800">{fmtPKR(offer.revised_premium)}/yr</p>
+                  <p className="text-[10px] uppercase text-blue-500 font-semibold">{tx("Revised")}</p>
+                  <p className="font-semibold text-slate-800">{fmtPKR(offer.revised_premium)}{tx("/yr")}</p>
                   <p className="text-slate-500">
-                    {offer.offer_type === "Loading" && `+${offer.revised_loading_pct}% loading`}
-                    {offer.offer_type === "ReducedSumAssured" && `${fmtPKR(offer.revised_coverage_amount)} cover`}
+                    {offer.offer_type === "Loading" && tx("+{0}% loading", { 0: offer.revised_loading_pct })}
+                    {offer.offer_type === "ReducedSumAssured" && tx("{0} cover", { 0: fmtPKR(offer.revised_coverage_amount) })}
                     {offer.offer_type === "PlanSubstitution" && offer.revised_product_name}
-                    {offer.offer_type === "Exclusion" && (offer.exclusions?.join(", ") ?? "exclusions")}
+                    {offer.offer_type === "Exclusion" && (offer.exclusions?.join(", ") ?? tx("exclusions"))}
                   </p>
                 </div>
               </div>
-              <p className="text-[10px] text-slate-400">Valid until {offer.valid_until}</p>
+              <p className="text-[10px] text-slate-400">{tx("Valid until")}{" "}{offer.valid_until}</p>
               <div className="flex gap-2">
-                <Btn tone="emerald" disabled={locked} onClick={() => run(() => acceptCounterOffer(policyId))}>Accept terms</Btn>
-                <Btn tone="red" disabled={locked} onClick={() => run(() => declineCounterOffer(policyId))}>Decline</Btn>
+                <Btn tone="emerald" disabled={locked} onClick={() => run(() => acceptCounterOffer(policyId))}>{tx("Accept terms")}</Btn>
+                <Btn tone="red" disabled={locked} onClick={() => run(() => declineCounterOffer(policyId))}>{tx("Decline")}</Btn>
               </div>
             </div>
           ) : offer ? (
-            <p className="text-xs text-slate-500">Counter-offer <b>{offer.status.toLowerCase()}</b>{offer.responded_at ? ` on ${offer.responded_at.slice(0, 10)}` : ""}.</p>
+            <p className="text-xs text-slate-500">{tx("Counter-offer")}{" "}<b>{offer.status.toLowerCase()}</b>{offer.responded_at ? " " + tx("on {0}", { 0: offer.responded_at.slice(0, 10) }) : ""}.</p>
           ) : (
-            <p className="text-xs text-slate-400 italic">Clean approval - no revised terms to accept.</p>
+            <p className="text-xs text-slate-400 italic">{tx("Clean approval - no revised terms to accept.")}</p>
           )}
         </StepShell>
 
         {/* 2 - Requirements */}
-        <StepShell n={2} title="Clear Pending Requirements" state={reqState}
-          hint={reqs.length ? `${s.requirements.cleared}/${s.requirements.total}` : "none"}>
+        <StepShell n={2} title={tx("Clear Pending Requirements")} state={reqState}
+          hint={reqs.length ? `${s.requirements.cleared}/${s.requirements.total}` : tx("none")}>
           {reqs.length === 0 ? (
-            <Btn disabled={locked} onClick={() => run(() => seedRequirements(policyId))}>Create requirement checklist</Btn>
+            <Btn disabled={locked} onClick={() => run(() => seedRequirements(policyId))}>{tx("Create requirement checklist")}</Btn>
           ) : (
             <div className="space-y-1.5">
               {reqs.map((r) => (
@@ -247,8 +248,8 @@ export function StageAPanel({ policyId, onChanged }: StageAPanelProps) {
                   </div>
                   {r.status !== "Verified" && r.status !== "Waived" && (
                     <div className="flex gap-1.5 flex-shrink-0">
-                      <Btn tone="emerald" disabled={locked} onClick={() => run(() => actOnRequirement(r.id, "verify", "officer"))}>Verify</Btn>
-                      <Btn tone="slate" disabled={locked} onClick={() => run(() => actOnRequirement(r.id, "waive", "officer"))}>Waive</Btn>
+                      <Btn tone="emerald" disabled={locked} onClick={() => run(() => actOnRequirement(r.id, "verify", "officer"))}>{tx("Verify")}</Btn>
+                      <Btn tone="slate" disabled={locked} onClick={() => run(() => actOnRequirement(r.id, "waive", "officer"))}>{tx("Waive")}</Btn>
                     </div>
                   )}
                 </div>
@@ -258,20 +259,20 @@ export function StageAPanel({ policyId, onChanged }: StageAPanelProps) {
         </StepShell>
 
         {/* 3 - First premium */}
-        <StepShell n={3} title="Collect First Premium" state={premState}
+        <StepShell n={3} title={tx("Collect First Premium")} state={premState}
           hint={s.premium.status}>
           <p className="text-xs text-slate-400 italic">
             {s.premium.status === "none"
-              ? "Created when the policy is drafted; collected via Confirm Payment after issuance."
-              : `${s.premium.paid}/${s.premium.total} installment(s) paid.`}
+              ? tx("Created when the policy is drafted; collected via Confirm Payment after issuance.")
+              : tx("{0}/{1} installment(s) paid.", { 0: s.premium.paid, 1: s.premium.total })}
           </p>
         </StepShell>
 
         {/* 4 - Compliance */}
-        <StepShell n={4} title="Compliance Checks" state={compState} hint={s.compliance.status.replace("_", " ")}>
+        <StepShell n={4} title={tx("Compliance Checks")} state={compState} hint={s.compliance.status.replace("_", " ")}>
           <div className="space-y-1.5">
             {checks.length === 0 ? (
-              <Btn disabled={locked} onClick={() => run(() => runCompliance(policyId))}>Run AML / Sanctions / SECP</Btn>
+              <Btn disabled={locked} onClick={() => run(() => runCompliance(policyId))}>{tx("Run AML / Sanctions / SECP")}</Btn>
             ) : (
               <>
                 {checks.map((c) => {
@@ -286,21 +287,21 @@ export function StageAPanel({ policyId, onChanged }: StageAPanelProps) {
                         <div>
                           <p className="text-xs font-medium text-slate-700">{c.check_type}
                             <span className={`ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded border ${tone}`}>
-                              {c.status === "Flagged" ? "Pending" : c.status}
+                              {c.status === "Flagged" ? tx("Pending") : c.status}
                             </span>
                             {c.check_type === "Sanctions" && (
                               <span className={`ml-1.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${isLive ? "bg-blue-100 text-blue-700" : "bg-slate-200 text-slate-500"}`}
-                                title={isLive ? "Screened against OpenSanctions (PEP + NACTA + global sanctions)" : "OPENSANCTIONS_API_KEY not configured — internal watchlist only"}>
-                                {isLive ? "Live PEP/Sanctions" : "Internal only"}
+                                title={isLive ? tx("Screened against OpenSanctions (PEP + NACTA + global sanctions)") : tx("OPENSANCTIONS_API_KEY not configured — internal watchlist only")}>
+                                {isLive ? tx("Live PEP/Sanctions") : tx("Internal only")}
                               </span>
                             )}
                           </p>
-                          {c.score != null && <p className="text-[10px] text-slate-400">score {c.score}</p>}
+                          {c.score != null && <p className="text-[10px] text-slate-400">{tx("score")}{" "}{c.score}</p>}
                         </div>
                         {c.status === "Flagged" && (
                           <div className="flex gap-1.5 flex-shrink-0">
-                            <Btn tone="emerald" disabled={busy} onClick={() => run(() => clearCompliance(c.id, "Cleared after review — false positive", "officer"))}>Approve</Btn>
-                            <Btn tone="red" disabled={busy} onClick={() => run(() => failCompliance(c.id, "Failed after review — confirmed match", "officer"))}>Reject</Btn>
+                            <Btn tone="emerald" disabled={busy} onClick={() => run(() => clearCompliance(c.id, "Cleared after review — false positive", "officer"))}>{tx("Approve")}</Btn>
+                            <Btn tone="red" disabled={busy} onClick={() => run(() => failCompliance(c.id, "Failed after review — confirmed match", "officer"))}>{tx("Reject")}</Btn>
                           </div>
                         )}
                       </div>
@@ -309,7 +310,7 @@ export function StageAPanel({ policyId, onChanged }: StageAPanelProps) {
                           {details.matched.map((m: any, i: number) => (
                             <div key={i} className="text-[10px] text-slate-500 border-l-2 border-amber-300 pl-2">
                               <span className="font-semibold text-slate-700">{m.matched_name ?? m}</span>
-                              {m.score != null && <span className="ml-1">· {m.score}% match</span>}
+                              {m.score != null && <span className="ml-1">· {m.score}{tx("% match")}</span>}
                               {m.topics && m.topics.length > 0 && <span className="ml-1">· {m.topics.join(", ")}</span>}
                               {m.datasets && m.datasets.length > 0 && <span className="ml-1 text-slate-400">({m.datasets.join(", ")})</span>}
                             </div>
@@ -320,7 +321,7 @@ export function StageAPanel({ policyId, onChanged }: StageAPanelProps) {
                   );
                 })}
                 <button onClick={() => run(() => runCompliance(policyId))} disabled={locked}
-                  className="text-[11px] text-slate-500 hover:text-slate-700 underline">Re-run screening</button>
+                  className="text-[11px] text-slate-500 hover:text-slate-700 underline">{tx("Re-run screening")}</button>
               </>
             )}
           </div>
@@ -393,33 +394,33 @@ export function StageAPanel({ policyId, onChanged }: StageAPanelProps) {
 
 
         {/* 6 - Documents */}
-        <StepShell n={5} title="Generate & Validate Documents" state={docState}
-          hint={docs.length ? `${s.documents.generated}/${s.documents.total}` : "none"}>
+        <StepShell n={5} title={tx("Generate & Validate Documents")} state={docState}
+          hint={docs.length ? `${s.documents.generated}/${s.documents.total}` : tx("none")}>
           <div className="space-y-1.5">
             {docs.length === 0 ? (
-              <p className="text-xs text-slate-400 italic">Generated automatically when the policy is issued.</p>
+              <p className="text-xs text-slate-400 italic">{tx("Generated automatically when the policy is issued.")}</p>
             ) : (
               docs.map((d) => (
                 <div key={d.id} className="flex items-center justify-between gap-2 bg-slate-50 rounded-md px-2.5 py-1.5">
                   <p className="text-xs font-medium text-slate-700 truncate">{d.document_name}</p>
                   {d.is_stub ? (
-                    <span className="text-[10px] text-amber-600 font-semibold">stub</span>
+                    <span className="text-[10px] text-amber-600 font-semibold">{tx("stub")}</span>
                   ) : (
                     <a href={documentDownloadUrl(policyId, d.id)} target="_blank" rel="noreferrer"
-                      className="text-[11px] font-semibold text-blue-600 hover:text-blue-700">Download PDF</a>
+                      className="text-[11px] font-semibold text-blue-600 hover:text-blue-700">{tx("Download PDF")}</a>
                   )}
                 </div>
               ))
             )}
             {docs.length > 0 && (
               <button onClick={() => run(() => generateDocuments(policyId))} disabled={locked}
-                className="text-[11px] text-slate-500 hover:text-slate-700 underline">Regenerate documents</button>
+                className="text-[11px] text-slate-500 hover:text-slate-700 underline">{tx("Regenerate documents")}</button>
             )}
           </div>
         </StepShell>
 
         {/* 7 - Facultative Reinsurance Referral */}
-        <StepShell n={6} title="Facultative Reinsurance Referral" state="idle" hint="reinsurance panel">
+        <StepShell n={6} title={tx("Facultative Reinsurance Referral")} state="idle" hint={tx("reinsurance panel")}>
           <div className="mt-2">
             <ReinsurancePanel policyId={policyId} onChanged={load} />
           </div>

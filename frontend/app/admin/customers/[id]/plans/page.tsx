@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import api from "@/app/services/api";
+import { tx } from "@/lib/i18n/tx";
 
 interface Customer {
   id: string;
@@ -81,7 +82,7 @@ export default function CustomerPlansPage() {
     setError("");
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId) {
-      setError("No active organization tenant found.");
+      setError(tx("No active organization tenant found."));
       setLoading(false);
       return;
     }
@@ -93,14 +94,14 @@ export default function CustomerPlansPage() {
       setCustomer(customerResp.data);
       setPolicies(policiesResp.data);
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to load plan details.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to load plan details."));
     } finally {
       setLoading(false);
     }
   };
 
   const handleDeletePolicy = async (policyId: string) => {
-    if (!confirm("Are you sure you want to delete this policy?")) return;
+    if (!confirm(tx("Are you sure you want to delete this policy?"))) return;
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId) return;
     try {
@@ -109,7 +110,7 @@ export default function CustomerPlansPage() {
       const res = await api.get<Policy[]>(`/tenants/${tenantId}/customers/${customerId}/policies`);
       setPolicies(res.data);
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to delete policy.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to delete policy."));
     }
   };
 
@@ -133,7 +134,7 @@ export default function CustomerPlansPage() {
       const res = await api.get<Policy[]>(`/tenants/${tenantId}/customers/${customerId}/policies`);
       setPolicies(res.data);
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to update policy.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to update policy."));
     } finally {
       setSubmitting(false);
     }
@@ -143,8 +144,8 @@ export default function CustomerPlansPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh] font-sans">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-8 text-center space-y-4">
-          <div className="text-red-500 font-bold">Unauthorized Access</div>
-          <p className="text-slate-400 text-sm">Administrative privileges required.</p>
+          <div className="text-red-500 font-bold">{tx("Unauthorized Access")}</div>
+          <p className="text-slate-400 text-sm">{tx("Administrative privileges required.")}</p>
         </div>
       </div>
     );
@@ -165,10 +166,10 @@ export default function CustomerPlansPage() {
         </button>
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-            Plan Details {customer ? `— ${customer.name}` : ""}
+            {tx("Plan Details")}{" "}{customer ? `— ${customer.name}` : ""}
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            {customer ? `CNIC ${customer.cnic}` : "Loading customer..."}
+            {customer ? tx("CNIC {0}", { 0: customer.cnic }) : tx("Loading customer...")}
           </p>
         </div>
       </div>
@@ -180,11 +181,11 @@ export default function CustomerPlansPage() {
       {loading ? (
         <div className="py-20 flex flex-col items-center justify-center gap-2">
           <div className="animate-spin h-7 w-7 text-blue-500 rounded-full border-2 border-slate-100 border-t-blue-500" />
-          <span className="text-xs text-slate-400">Loading plan details...</span>
+          <span className="text-xs text-slate-400">{tx("Loading plan details...")}</span>
         </div>
       ) : policies.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm py-20 text-center text-slate-400">
-          <p className="text-sm">No plans have been evaluated for this customer yet.</p>
+          <p className="text-sm">{tx("No plans have been evaluated for this customer yet.")}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -195,7 +196,7 @@ export default function CustomerPlansPage() {
                 <div className="flex items-center gap-2">
                   {i === 0 && (
                     <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-800 text-white">
-                      LATEST
+                      {tx("LATEST")}
                     </span>
                   )}
                   <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${INSURANCE_TYPE_COLORS[policy.insurance_type] ?? "bg-slate-100 text-slate-700 border-slate-200"}`}>
@@ -208,7 +209,7 @@ export default function CustomerPlansPage() {
                 <div className="p-5 space-y-4 bg-slate-50 border-t border-slate-100">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Coverage Amount (PKR)</label>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{tx("Coverage Amount (PKR)")}</label>
                       <input
                         type="number"
                         value={editCoverage}
@@ -219,7 +220,7 @@ export default function CustomerPlansPage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Term (Years)</label>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{tx("Term (Years)")}</label>
                       <input
                         type="number"
                         value={editTerm}
@@ -233,17 +234,17 @@ export default function CustomerPlansPage() {
                     {policy.insurance_type === "CHILD_EDUCATION_MARRIAGE" && (
                       <>
                         <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dependent Name</label>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{tx("Dependent Name")}</label>
                           <input
                             type="text"
                             value={editDepName}
                             onChange={(e) => setEditDepName(e.target.value)}
                             className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-slate-800 font-medium"
-                            placeholder="Dependent Full Name"
+                            placeholder={tx("Dependent Full Name")}
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dependent Date of Birth</label>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{tx("Dependent Date of Birth")}</label>
                           <input
                             type="date"
                             value={editDepDob}
@@ -262,7 +263,7 @@ export default function CustomerPlansPage() {
                       onClick={() => setEditingPolicyId(null)}
                       className="px-3.5 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
                     >
-                      Cancel
+                      {tx("Cancel")}
                     </button>
                     <button
                       type="button"
@@ -270,7 +271,7 @@ export default function CustomerPlansPage() {
                       onClick={() => handleSaveEdit(policy)}
                       className="px-3.5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors"
                     >
-                      {submitting ? "Saving..." : "Save Changes"}
+                      {submitting ? tx("Saving...") : tx("Save Changes")}
                     </button>
                   </div>
                 </div>
@@ -278,29 +279,29 @@ export default function CustomerPlansPage() {
                 <>
                   <div className="p-5 grid grid-cols-2 gap-y-4 gap-x-6">
                     <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Coverage Amount</span>
-                      <span className="text-sm font-bold text-slate-800">PKR {policy.coverage_amount.toLocaleString()}</span>
+                      <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">{tx("Coverage Amount")}</span>
+                      <span className="text-sm font-bold text-slate-800">{tx("PKR")}{" "}{policy.coverage_amount.toLocaleString()}</span>
                     </div>
                     <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Term</span>
-                      <span className="text-sm font-medium text-slate-800">{policy.term_years} years</span>
+                      <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">{tx("Term")}</span>
+                      <span className="text-sm font-medium text-slate-800">{policy.term_years}{" "}{tx("years")}</span>
                     </div>
 
                     {policy.insurance_type === "CHILD_EDUCATION_MARRIAGE" && (
                       <>
                         <div>
-                          <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Dependent Name</span>
+                          <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">{tx("Dependent Name")}</span>
                           <span className="text-sm font-medium text-slate-800">{policy.dependent_name || "—"}</span>
                         </div>
                         <div>
-                          <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Dependent Date of Birth</span>
+                          <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">{tx("Dependent Date of Birth")}</span>
                           <span className="text-sm font-medium text-slate-800">{policy.dependent_dob || "—"}</span>
                         </div>
                       </>
                     )}
 
                     <div className="col-span-2">
-                      <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Evaluated On</span>
+                      <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">{tx("Evaluated On")}</span>
                       <span className="text-sm font-medium text-slate-600">
                         {new Date(policy.created_at).toLocaleString(undefined, {
                           year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
@@ -320,13 +321,13 @@ export default function CustomerPlansPage() {
                       }}
                       className="px-3 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg transition-colors"
                     >
-                      Edit
+                      {tx("Edit")}
                     </button>
                     <button
                       onClick={() => handleDeletePolicy(policy.id)}
                       className="px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50 border border-red-200 rounded-lg transition-colors"
                     >
-                      Delete
+                      {tx("Delete")}
                     </button>
                   </div>
                 </>

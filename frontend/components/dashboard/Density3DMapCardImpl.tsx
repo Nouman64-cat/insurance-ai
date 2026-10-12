@@ -11,6 +11,7 @@ import type { PolicyListItem } from "@/app/services/policies";
 import type { Claim } from "@/app/services/claims";
 import type { CommissionLedgerEntry } from "@/app/services/commissions";
 import type { LeadGeoRecord } from "@/app/services/customers";
+import { tx } from "@/lib/i18n/tx";
 
 interface Density3DMapCardProps {
   policies: PolicyListItem[];
@@ -377,7 +378,7 @@ export function Density3DMapCardImpl({
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.782V8.018a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
         </svg>
       }
-      title="Regional Distribution"
+      title={tx("Regional Distribution")}
       barClass="bg-blue-600"
       iconBg="bg-blue-50"
       iconColor="text-blue-600"
@@ -406,7 +407,7 @@ export function Density3DMapCardImpl({
               onClick={() => onSelectRegion("ALL")}
               className="text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2.5 py-1 rounded-lg transition-colors shadow-sm"
             >
-              ✕ Reset
+              {tx("✕ Reset")}
             </button>
           )}
         </div>
@@ -467,13 +468,13 @@ export function Density3DMapCardImpl({
                   <span className="text-slate-500 font-normal text-[9px] uppercase tracking-wider">{hoveredCity.province}</span>
                 </p>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] pt-1 border-t border-white/10">
-                  <span className="text-slate-400">Leads</span>
+                  <span className="text-slate-400">{tx("Leads")}</span>
                   <span className="font-mono font-bold text-right text-emerald-400">{hoveredCity.leadsCount}</span>
-                  <span className="text-slate-400">Policyholders</span>
+                  <span className="text-slate-400">{tx("Policyholders")}</span>
                   <span className="font-mono font-bold text-right text-sky-400">{hoveredCity.policiesCount}</span>
-                  <span className="text-slate-400">Premiums</span>
+                  <span className="text-slate-400">{tx("Premiums")}</span>
                   <span className="font-mono font-bold text-right text-violet-400">{fmtCompact(hoveredCity.premiumTotal)}</span>
-                  <span className="text-slate-400">Claims</span>
+                  <span className="text-slate-400">{tx("Claims")}</span>
                   <span className="font-mono font-bold text-right text-amber-400">{fmtCompact(hoveredCity.claimsPaid)}</span>
                 </div>
               </div>
@@ -482,7 +483,7 @@ export function Density3DMapCardImpl({
 
           {/* Map branding badge */}
           <div className="absolute bottom-2 right-2 bg-slate-950/60 text-slate-400 text-[8px] px-1.5 py-0.5 rounded backdrop-blur-sm pointer-events-none">
-            Pakistan · Regional Distribution
+            {tx("Pakistan · Regional Distribution")}
           </div>
 
           {/* Live activity badge — only shown when there's something to point at */}
@@ -492,14 +493,14 @@ export function Density3DMapCardImpl({
                 <span className="absolute inline-flex w-full h-full rounded-full bg-rose-400 opacity-75 animate-ping" />
                 <span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-rose-400" />
               </span>
-              {recentCities.length} {recentCities.length === 1 ? "city" : "cities"} with claims in the last 24h
+              {recentCities.length} {recentCities.length === 1 ? tx("city") : tx("cities")}{" "}{tx("with claims in the last 24h")}
             </div>
           )}
         </div>
 
         {/* By Province — selectable region leaderboard */}
         <div className="space-y-1.5 pt-1">
-          <h4 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">By Province — {METRIC_LABELS[metricMode]}</h4>
+          <h4 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">{tx("By Province —")}{" "}{METRIC_LABELS[metricMode]}</h4>
           <div className="space-y-1">
             {provinceStats.map((p) => {
               const share = maxProvinceValue > 0 ? (p.value / maxProvinceValue) * 100 : 0;
@@ -554,8 +555,8 @@ export function Density3DMapCardImpl({
         {/* Top Cities Leaderboard */}
         <div className="space-y-1.5 pt-1">
           <div className="flex justify-between items-center">
-            <h4 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Top Cities — {METRIC_LABELS[metricMode]}</h4>
-            <span className="text-[10px] text-slate-400 font-semibold">{topCities.length} cities</span>
+            <h4 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">{tx("Top Cities —")}{" "}{METRIC_LABELS[metricMode]}</h4>
+            <span className="text-[10px] text-slate-400 font-semibold">{topCities.length}{" "}{tx("cities")}</span>
           </div>
 
           {topCities.length > 0 ? (
@@ -592,12 +593,12 @@ export function Density3DMapCardImpl({
               </div>
             </div>
           ) : (
-            <p className="text-[11px] text-slate-400 italic px-1">No geographic data available for this metric yet.</p>
+            <p className="text-[11px] text-slate-400 italic px-1">{tx("No geographic data available for this metric yet.")}</p>
           )}
 
           {unmatchedLeads > 0 && (
             <p className="text-[9px] text-slate-400 italic px-1">
-              {unmatchedLeads} lead{unmatchedLeads === 1 ? "" : "s"} with unrecognized city names.
+              {unmatchedLeads}{" "}{tx("lead")}{unmatchedLeads === 1 ? "" : "s"}{" "}{tx("with unrecognized city names.")}
             </p>
           )}
         </div>

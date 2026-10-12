@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import CatalogTab from "@/components/rule-engine/CatalogTab";
 import SimulatorTab from "@/components/rule-engine/SimulatorTab";
 import LogsTab from "@/components/rule-engine/LogsTab";
+import { tx } from "@/lib/i18n/tx";
 
 type Tab = "catalog" | "simulator" | "logs";
 
@@ -42,7 +43,7 @@ export default function RuleEnginePage() {
     if (tid) {
       setTenantId(tid);
     } else {
-      setError("No active organization tenant found. Please log in.");
+      setError(tx("No active organization tenant found. Please log in."));
     }
   }, []);
 
@@ -63,13 +64,13 @@ export default function RuleEnginePage() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-black text-slate-900 tracking-tight">Business Rule Engine</h1>
+              <h1 className="text-xl font-black text-slate-900 tracking-tight">{tx("Business Rule Engine")}</h1>
               <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
                 v2.0
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Automated underwriting, pricing, and compliance rule management.
+              {tx("Automated underwriting, pricing, and compliance rule management.")}
             </p>
           </div>
         </div>
@@ -107,7 +108,7 @@ export default function RuleEnginePage() {
           {error}
         </div>
       ) : !tenantId ? (
-        <div className="p-12 text-center text-xs text-slate-400 font-medium">Loading workspace tenant...</div>
+        <div className="p-12 text-center text-xs text-slate-400 font-medium">{tx("Loading workspace tenant...")}</div>
       ) : (
         <div>
           {activeTab === "catalog" && <CatalogTab tenantId={tenantId} />}

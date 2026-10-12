@@ -2,6 +2,7 @@
 
 import { MetricCard } from "@/components/MetricCard";
 import { Pagination, usePagination } from "@/components/Pagination";
+import { tx } from "@/lib/i18n/tx";
 
 const KPIS = [
   { title: "Pending Submissions", value: "14", subtitle: "awaiting underwriter review", accent: "blue" as const, trend: { value: "+3 since yesterday", direction: "up" as const } },
@@ -38,11 +39,11 @@ export default function SubmissionsPage() {
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Submissions</h1>
-          <p className="text-sm text-slate-500 mt-0.5">New proposals and cases pending underwriter assignment and review.</p>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Submissions")}</h1>
+          <p className="text-sm text-slate-500 mt-0.5">{tx("New proposals and cases pending underwriter assignment and review.")}</p>
         </div>
         <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-blue-600 text-white shadow">
-          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /> Live Queue
+          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />{" "}{tx("Live Queue")}
         </span>
       </div>
 
@@ -52,20 +53,20 @@ export default function SubmissionsPage() {
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-          <p className="text-sm font-semibold text-slate-700">Pending Queue</p>
-          <p className="text-xs text-slate-400">Sorted by submission time · oldest first</p>
+          <p className="text-sm font-semibold text-slate-700">{tx("Pending Queue")}</p>
+          <p className="text-xs text-slate-400">{tx("Sorted by submission time · oldest first")}</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                <th className="px-5 py-3 text-left">Reference</th>
-                <th className="px-5 py-3 text-left">Customer / Company</th>
-                <th className="px-5 py-3 text-left">Product</th>
-                <th className="px-5 py-3 text-right">Sum Assured</th>
-                <th className="px-5 py-3 text-left">Submitted</th>
-                <th className="px-5 py-3 text-left">Priority</th>
-                <th className="px-5 py-3 text-left">Status</th>
+                <th className="px-5 py-3 text-left">{tx("Reference")}</th>
+                <th className="px-5 py-3 text-left">{tx("Customer / Company")}</th>
+                <th className="px-5 py-3 text-left">{tx("Product")}</th>
+                <th className="px-5 py-3 text-right">{tx("Sum Assured")}</th>
+                <th className="px-5 py-3 text-left">{tx("Submitted")}</th>
+                <th className="px-5 py-3 text-left">{tx("Priority")}</th>
+                <th className="px-5 py-3 text-left">{tx("Status")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -87,7 +88,7 @@ export default function SubmissionsPage() {
             </tbody>
           </table>
         </div>
-          <Pagination pagination={pagination} noun="submissions" inline />
+          <Pagination pagination={pagination} noun={tx("submissions")} inline />
       </div>
     </div>
   );

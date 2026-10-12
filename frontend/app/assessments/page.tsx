@@ -10,6 +10,7 @@ import { MetricCard } from "@/components/MetricCard";
 import { SegmentDropdown, SegmentFilter, SEGMENT_LABEL, SEGMENT_BADGE_STYLE } from "@/components/SegmentDropdown";
 import type { AIDecision } from "@/lib/mock-data";
 import { Pagination, usePagination } from "@/components/Pagination";
+import { tx } from "@/lib/i18n/tx";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -138,7 +139,7 @@ function DetailPanel({
       <div className="flex items-start justify-between p-5 border-b border-slate-100 bg-slate-50/50 flex-shrink-0">
         <div>
           <p className="text-base font-bold text-slate-800">{item.customer_name}</p>
-          <p className="text-xs text-slate-500 mt-0.5 font-medium">CNIC {item.customer_cnic}</p>
+          <p className="text-xs text-slate-500 mt-0.5 font-medium">{tx("CNIC")}{" "}{item.customer_cnic}</p>
           <p className="text-[10px] text-slate-400 mt-1 font-semibold">{fmt(item.created_at)}</p>
         </div>
         <button
@@ -161,7 +162,7 @@ function DetailPanel({
             </svg>
           </div>
         ) : !detail ? (
-          <p className="text-xs text-slate-500 text-center py-10">Failed to load assessment details.</p>
+          <p className="text-xs text-slate-500 text-center py-10">{tx("Failed to load assessment details.")}</p>
         ) : (
           <>
             {/* Decision + composite */}
@@ -171,7 +172,7 @@ function DetailPanel({
                 <StatusBadge decision={decision} size="lg" />
                 {detail.suggested_loading != null && (
                   <p className="text-xs text-slate-600">
-                    Suggested loading: <span className="text-amber-600 font-semibold">+{detail.suggested_loading}%</span>
+                    {tx("Suggested loading:")}{" "}<span className="text-amber-600 font-semibold">+{detail.suggested_loading}%</span>
                   </p>
                 )}
                 {detail.case_id && (
@@ -179,7 +180,7 @@ function DetailPanel({
                     href={`/case/${detail.case_id}`}
                     className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 hover:text-blue-700"
                   >
-                    Open underwriting folder <span className="font-mono text-blue-400">{detail.case_id.slice(0, 8)}…</span> →
+                    {tx("Open underwriting folder")}{" "}<span className="font-mono text-blue-400">{detail.case_id.slice(0, 8)}…</span> →
                   </Link>
                 )}
               </div>
@@ -187,11 +188,11 @@ function DetailPanel({
 
             {/* Score bars */}
             <div className="space-y-3">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Scores</p>
-              <RiskScoreBar label="Medical Score" score={detail.medical_score} />
-              <RiskScoreBar label="Financial Score" score={detail.financial_score} />
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{tx("Scores")}</p>
+              <RiskScoreBar label={tx("Medical Score")} score={detail.medical_score} />
+              <RiskScoreBar label={tx("Financial Score")} score={detail.financial_score} />
               <RiskScoreBar
-                label="Fraud Probability"
+                label={tx("Fraud Probability")}
                 score={Math.round(detail.fraud_probability * 100)}
                 valueLabel={`${Math.round(detail.fraud_probability * 100)}%`}
               />
@@ -200,7 +201,7 @@ function DetailPanel({
             {/* Reasons */}
             {detail.reasons.length > 0 && (
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Assessment Reasons</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">{tx("Assessment Reasons")}</p>
                 <ul className="space-y-1.5">
                   {detail.reasons.map((r: any, i) => {
                     const text = typeof r === "string" ? r : (r.reason || r.observation || JSON.stringify(r));
@@ -218,7 +219,7 @@ function DetailPanel({
             {/* AI Summary */}
             {detail.ai_summary ? (
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">AI Case Summary</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">{tx("AI Case Summary")}</p>
                 <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 prose-sm max-w-none shadow-inner">
                   <ReactMarkdown components={MD as Record<string, React.ComponentType>}>
                     {detail.ai_summary}
@@ -227,7 +228,7 @@ function DetailPanel({
               </div>
             ) : (
               <div className="rounded-xl border border-slate-200/60 bg-slate-50/40 p-4 text-center">
-                <p className="text-xs text-slate-500">No AI summary — this assessment was run without case documents.</p>
+                <p className="text-xs text-slate-500">{tx("No AI summary — this assessment was run without case documents.")}</p>
               </div>
             )}
           </>
@@ -244,7 +245,7 @@ function DetailPanel({
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3" />
             </svg>
-            Download PDF Report
+            {tx("Download PDF Report")}
           </button>
         </div>
       )}
@@ -303,7 +304,7 @@ export default function AssessmentHistoryPage() {
       setSkip(offset + data.length);
       setHasMore(data.length === LIMIT);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to load assessments.");
+      setError(e instanceof Error ? e.message : tx("Failed to load assessments."));
     } finally {
       setLoading(false);
     }
@@ -365,8 +366,8 @@ export default function AssessmentHistoryPage() {
     <div className="flex-1 flex flex-col min-h-0 bg-slate-50/50">
       {/* Page header */}
       <div className="border-b border-slate-200 px-6 py-4 flex-shrink-0 bg-white shadow-sm">
-        <h1 className="text-lg font-bold text-slate-800">Assessment History</h1>
-        <p className="text-xs text-slate-500 mt-0.5">All stored risk evaluations for this tenant</p>
+        <h1 className="text-lg font-bold text-slate-800">{tx("Assessment History")}</h1>
+        <p className="text-xs text-slate-500 mt-0.5">{tx("All stored risk evaluations for this tenant")}</p>
       </div>
 
       {/* Stats */}
@@ -415,7 +416,7 @@ export default function AssessmentHistoryPage() {
           </svg>
           <input
             type="text"
-            placeholder="Search name or CNIC…"
+            placeholder={tx("Search name or CNIC…")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 w-52"
@@ -426,7 +427,7 @@ export default function AssessmentHistoryPage() {
           onClick={() => { setSkip(0); load(true); loadStats(); }}
           disabled={loading}
           className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-40"
-          title="Refresh"
+          title={tx("Refresh")}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}>
             <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
@@ -447,12 +448,12 @@ export default function AssessmentHistoryPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
             <p className="text-sm font-semibold">
-              {assessments.length === 0 ? "No assessments found" : "No assessments match your filters"}
+              {assessments.length === 0 ? tx("No assessments found") : tx("No assessments match your filters")}
             </p>
             <p className="text-xs mt-1 opacity-70">
               {assessments.length === 0
-                ? "Run an evaluation from Live Evaluation or Case Summarizer"
-                : "Try a different segment, decision, or search term."}
+                ? tx("Run an evaluation from Live Evaluation or Case Summarizer")
+                : tx("Try a different segment, decision, or search term.")}
             </p>
           </div>
         )}
@@ -462,14 +463,14 @@ export default function AssessmentHistoryPage() {
           <table className="w-full text-xs bg-white">
             <thead className="sticky top-0 bg-slate-50/90 backdrop-blur border-b border-slate-200 z-10">
               <tr>
-                <th className="text-left px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">Customer</th>
-                <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">Decision</th>
-                <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">Composite</th>
-                <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">Med</th>
-                <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">Fin</th>
-                <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">Fraud</th>
-                <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">Summary</th>
-                <th className="text-right px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">Date</th>
+                <th className="text-left px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">{tx("Customer")}</th>
+                <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">{tx("Decision")}</th>
+                <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">{tx("Composite")}</th>
+                <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">{tx("Med")}</th>
+                <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">{tx("Fin")}</th>
+                <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">{tx("Fraud")}</th>
+                <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">{tx("Summary")}</th>
+                <th className="text-right px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">{tx("Date")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -554,7 +555,7 @@ export default function AssessmentHistoryPage() {
                     {/* Has AI summary */}
                     <td className="px-4 py-3.5 text-center">
                       {a.has_summary ? (
-                        <span title="Has AI summary" className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-50 text-blue-600 border border-blue-100">
+                        <span title={tx("Has AI summary")} className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-50 text-blue-600 border border-blue-100">
                           <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3">
                             <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                           </svg>
@@ -573,7 +574,7 @@ export default function AssessmentHistoryPage() {
               })}
             </tbody>
           </table>
-          <Pagination pagination={pagination} noun="assessments" inline />
+          <Pagination pagination={pagination} noun={tx("assessments")} inline />
           </>
         )}
 
@@ -584,7 +585,7 @@ export default function AssessmentHistoryPage() {
               onClick={() => load(false)}
               className="text-xs text-slate-600 hover:text-slate-800 border border-slate-200 hover:border-slate-300 bg-white px-5 py-2 rounded-lg transition-colors shadow-sm font-semibold"
             >
-              Load more
+              {tx("Load more")}
             </button>
           </div>
         )}

@@ -1,5 +1,6 @@
 import { PillarCard } from "./shared";
 import type { CommissionPayee, CommissionLedgerEntry } from "@/app/services/commissions";
+import { tx } from "@/lib/i18n/tx";
 
 function TrophyIcon() {
   return (
@@ -47,14 +48,14 @@ export function TopAgentsLeaderboard({ payees, ledger }: TopAgentsLeaderboardPro
   return (
     <PillarCard
       icon={<TrophyIcon />}
-      title="Top Agents"
+      title={tx("Top Agents")}
       barClass="bg-amber-500"
       iconBg="bg-amber-50"
       iconColor="text-amber-600"
       headerExtra={<span className="text-[10px] font-semibold text-slate-400">Selected range</span>}
     >
       {ranked.length === 0 ? (
-        <p className="text-xs text-slate-400 py-2">No commission activity yet in the selected range.</p>
+        <p className="text-xs text-slate-400 py-2">{tx("No commission activity yet in the selected range.")}</p>
       ) : (
         <div className="space-y-1">
           {ranked.map((r, i) => {
@@ -73,7 +74,7 @@ export function TopAgentsLeaderboard({ payees, ledger }: TopAgentsLeaderboardPro
                     <p className="text-xs font-extrabold text-slate-900 font-mono tabular-nums shrink-0">{fmtCompact(r.commission)}</p>
                   </div>
                   <div className="flex items-center justify-between gap-2 mt-1">
-                    <p className="text-[10px] text-slate-400 truncate">{r.payee.branch || "Unassigned branch"}</p>
+                    <p className="text-[10px] text-slate-400 truncate">{r.payee.branch || tx("Unassigned branch")}</p>
                   </div>
                   <div className="h-1 rounded-full bg-slate-100 overflow-hidden mt-1">
                     <div className="h-full rounded-full bg-amber-500 transition-all duration-500" style={{ width: `${widthPct}%` }} />

@@ -5,6 +5,7 @@ import api from "@/app/services/api";
 import CustomerFormModal from "@/components/entities/CustomerFormModal";
 import FamilyFormModal from "@/components/entities/FamilyFormModal";
 import OrganizationFormModal from "@/components/entities/OrganizationFormModal";
+import { tx } from "@/lib/i18n/tx";
 
 type EntityType = "INDIVIDUAL" | "FAMILY" | "CORPORATE";
 
@@ -46,7 +47,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
       fetchDetails();
       if (onSaved) onSaved();
     } catch (err: any) {
-      setError(err.message || "Failed to update status to DRAFT.");
+      setError(err.message || tx("Failed to update status to DRAFT."));
       setLoading(false);
     }
   };
@@ -57,7 +58,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
     setError("");
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId) {
-      setError("No active tenant found.");
+      setError(tx("No active tenant found."));
       setLoading(false);
       return;
     }
@@ -71,7 +72,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
       const res = await api.get(endpoint);
       setData(res.data);
     } catch (err: any) {
-      setError(err.message || "Failed to load details.");
+      setError(err.message || tx("Failed to load details."));
     } finally {
       setLoading(false);
     }
@@ -99,7 +100,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
             </div>
             <div>
               <h2 className="text-xl font-bold text-slate-800 tracking-tight">
-                {loading ? "Loading..." : data?.name || "Unknown Profile"}
+                {loading ? tx("Loading...") : data?.name || tx("Unknown Profile")}
               </h2>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
@@ -123,7 +124,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                 onClick={() => window.location.href = `/admin/customers/${entityId}/plans`}
                 className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors shadow-sm"
               >
-                Manage Policies & Plans
+                {tx("Manage Policies & Plans")}
               </button>
             )}
             {entityType === "FAMILY" && (
@@ -131,7 +132,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                 onClick={() => window.location.href = `/admin/families/${entityId}`}
                 className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors shadow-sm"
               >
-                Manage Family & Roster
+                {tx("Manage Family & Roster")}
               </button>
             )}
             {entityType === "CORPORATE" && (
@@ -139,7 +140,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                 onClick={() => window.location.href = `/admin/organizations/${entityId}`}
                 className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors shadow-sm"
               >
-                Manage Corporate & Census
+                {tx("Manage Corporate & Census")}
               </button>
             )}
 
@@ -148,7 +149,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                 onClick={handleSendToDraft}
                 className="text-xs font-semibold text-fuchsia-700 bg-fuchsia-50 border border-fuchsia-200 hover:bg-fuchsia-100 px-4 py-2 rounded-lg transition-colors shadow-sm"
               >
-                Send to Draft
+                {tx("Send to Draft")}
               </button>
             )}
             <button 
@@ -156,7 +157,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
 
               className="text-xs font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 px-4 py-2 rounded-lg transition-colors shadow-sm"
             >
-              Open Full Details Form
+              {tx("Open Full Details Form")}
             </button>
             <button 
               onClick={onClose}
@@ -172,7 +173,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
           {loading ? (
             <div className="flex flex-col items-center justify-center h-64 gap-4">
               <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-              <p className="text-sm font-medium text-slate-500">Retrieving profile data...</p>
+              <p className="text-sm font-medium text-slate-500">{tx("Retrieving profile data...")}</p>
             </div>
           ) : error ? (
             <div className="p-6 bg-red-50 text-red-600 rounded-xl border border-red-200 font-medium">
@@ -186,26 +187,26 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                 
                 {/* Profile Card */}
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
-                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Contact & Identification</h3>
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">{tx("Contact & Identification")}</h3>
                   
                   <div className="space-y-4">
                     {entityType === 'INDIVIDUAL' && (
                       <>
                         <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">CNIC</p>
-                          <p className="text-sm font-medium text-slate-800 font-mono mt-0.5">{data.cnic || "Not provided"}</p>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("CNIC")}</p>
+                          <p className="text-sm font-medium text-slate-800 font-mono mt-0.5">{data.cnic || tx("Not provided")}</p>
                         </div>
                         <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Phone</p>
-                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.details?.phone || "Not provided"}</p>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("Phone")}</p>
+                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.details?.phone || tx("Not provided")}</p>
                         </div>
                         <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Email</p>
-                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.details?.email || "Not provided"}</p>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("Email")}</p>
+                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.details?.email || tx("Not provided")}</p>
                         </div>
                         <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Date of Birth</p>
-                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.date_of_birth ? new Date(data.date_of_birth).toLocaleDateString() : "Not provided"}</p>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("Date of Birth")}</p>
+                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.date_of_birth ? new Date(data.date_of_birth).toLocaleDateString() : tx("Not provided")}</p>
                         </div>
                       </>
                     )}
@@ -213,16 +214,16 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                     {entityType === 'FAMILY' && (
                       <>
                         <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Primary Contact Phone</p>
-                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.contact_phone || "Not provided"}</p>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("Primary Contact Phone")}</p>
+                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.contact_phone || tx("Not provided")}</p>
                         </div>
                         <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Primary Contact Email</p>
-                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.contact_email || "Not provided"}</p>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("Primary Contact Email")}</p>
+                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.contact_email || tx("Not provided")}</p>
                         </div>
                         <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Head of Family ID</p>
-                          <p className="text-sm font-medium text-slate-800 font-mono mt-0.5">{data.head_of_family_customer_id || "None assigned"}</p>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("Head of Family ID")}</p>
+                          <p className="text-sm font-medium text-slate-800 font-mono mt-0.5">{data.head_of_family_customer_id || tx("None assigned")}</p>
                         </div>
                       </>
                     )}
@@ -230,40 +231,40 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                     {entityType === 'CORPORATE' && (
                       <>
                         <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Registration Number</p>
-                          <p className="text-sm font-medium text-slate-800 font-mono mt-0.5">{data.registration_number || "Not provided"}</p>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("Registration Number")}</p>
+                          <p className="text-sm font-medium text-slate-800 font-mono mt-0.5">{data.registration_number || tx("Not provided")}</p>
                         </div>
                         <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Industry</p>
-                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.industry_type || "Not specified"}</p>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("Industry")}</p>
+                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.industry_type || tx("Not specified")}</p>
                         </div>
                         <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Contact Phone</p>
-                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.contact_phone || "Not provided"}</p>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("Contact Phone")}</p>
+                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.contact_phone || tx("Not provided")}</p>
                         </div>
                         <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Address</p>
-                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.address || "Not provided"}</p>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("Address")}</p>
+                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.address || tx("Not provided")}</p>
                         </div>
                       </>
                     )}
                     
                     <div className="pt-4 border-t border-slate-100">
-                      <p className="text-[10px] text-slate-400 font-medium">Created: {new Date(data.created_at).toLocaleString()}</p>
+                      <p className="text-[10px] text-slate-400 font-medium">{tx("Created:")}{" "}{new Date(data.created_at).toLocaleString()}</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Automation Quick Actions */}
                 <div className="bg-gradient-to-br from-blue-50 to-blue-50 p-5 rounded-2xl border border-blue-100 shadow-sm">
-                  <h3 className="text-xs font-bold text-blue-800 uppercase tracking-wider mb-3">AI Quick Actions</h3>
+                  <h3 className="text-xs font-bold text-blue-800 uppercase tracking-wider mb-3">{tx("AI Quick Actions")}</h3>
                   <div className="space-y-2">
                     <button className="w-full flex items-center justify-between p-3 bg-white hover:bg-blue-50 rounded-xl border border-blue-200 text-sm font-semibold text-blue-700 transition-colors shadow-sm">
-                      <span>Analyze Risk Profile</span>
+                      <span>{tx("Analyze Risk Profile")}</span>
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
                     </button>
                     <button className="w-full flex items-center justify-between p-3 bg-white hover:bg-blue-50 rounded-xl border border-blue-200 text-sm font-semibold text-blue-700 transition-colors shadow-sm">
-                      <span>Generate Proposal</span>
+                      <span>{tx("Generate Proposal")}</span>
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                     </button>
                   </div>
@@ -277,8 +278,8 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                 {entityType === 'INDIVIDUAL' && data.underwriting_score !== undefined && data.underwriting_score !== null && (
                   <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
                     <div>
-                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Underwriting AI Score</h3>
-                      <p className="text-sm text-slate-600 font-medium">Auto-generated via risk engine parameters.</p>
+                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{tx("Underwriting AI Score")}</h3>
+                      <p className="text-sm text-slate-600 font-medium">{tx("Auto-generated via risk engine parameters.")}</p>
                     </div>
                     <div className="text-center px-6 py-3 bg-slate-50 rounded-xl border border-slate-100">
                       <span className={`text-3xl font-black ${data.underwriting_score >= 80 ? 'text-blue-500' : data.underwriting_score >= 50 ? 'text-amber-500' : 'text-red-500'}`}>
@@ -292,20 +293,20 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                 {/* Relationship / Roster Data */}
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 min-h-[300px]">
                   <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">
-                    {entityType === 'INDIVIDUAL' ? 'Policy Portfolio' : entityType === 'FAMILY' ? 'Family Roster & Coverage' : 'Employee Census'}
+                    {entityType === 'INDIVIDUAL' ? tx("Policy Portfolio") : entityType === 'FAMILY' ? tx("Family Roster & Coverage") : tx("Employee Census")}
                   </h3>
                   
                   <div className="flex flex-col items-center justify-center h-48 text-center bg-slate-50/50 rounded-xl border border-slate-100 border-dashed p-4">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-12 h-12 text-slate-300 mb-3">
                       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                     </svg>
-                    <p className="text-sm font-semibold text-slate-700">Detailed View Protected</p>
+                    <p className="text-sm font-semibold text-slate-700">{tx("Detailed View Protected")}</p>
                     <p className="text-xs text-slate-500 mt-1 mb-4 max-w-sm">
                       {entityType === 'INDIVIDUAL' 
-                        ? "To view and manage this customer's policies, coverage options, and plan evaluations, go to the plan details page."
+                        ? tx("To view and manage this customer's policies, coverage options, and plan evaluations, go to the plan details page.")
                         : entityType === 'FAMILY'
-                        ? "To view and manage this family's roster, members, relationships, and health floaters, go to the family management page."
-                        : "To view and manage this organization's employee census, departments, and master policy, go to the organization management page."
+                        ? tx("To view and manage this family's roster, members, relationships, and health floaters, go to the family management page.")
+                        : tx("To view and manage this organization's employee census, departments, and master policy, go to the organization management page.")
                       }
                     </p>
                     {entityType === "INDIVIDUAL" && (
@@ -313,7 +314,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                         onClick={() => window.location.href = `/admin/customers/${entityId}/plans`}
                         className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm"
                       >
-                        Manage Policies & Plans →
+                        {tx("Manage Policies & Plans →")}
                       </button>
                     )}
                     {entityType === "FAMILY" && (
@@ -321,7 +322,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                         onClick={() => window.location.href = `/admin/families/${entityId}`}
                         className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm"
                       >
-                        Manage Family Roster →
+                        {tx("Manage Family Roster →")}
                       </button>
                     )}
                     {entityType === "CORPORATE" && (
@@ -329,7 +330,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                         onClick={() => window.location.href = `/admin/organizations/${entityId}`}
                         className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm"
                       >
-                        Manage Employee Census →
+                        {tx("Manage Employee Census →")}
                       </button>
                     )}
                   </div>

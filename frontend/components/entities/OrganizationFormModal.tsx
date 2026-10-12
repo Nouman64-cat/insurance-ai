@@ -9,6 +9,7 @@ import { PAKISTAN_PROVINCES } from "@/lib/pakistanProvinces";
 import OrganizationFullEntryModal from "./OrganizationFullEntryModal";
 import DemoFillButton from "@/components/DemoFillButton";
 import { demoCompanyQuick } from "@/lib/demoData";
+import { tx } from "@/lib/i18n/tx";
 
 export interface OrganizationFormValue {
   id: string;
@@ -121,7 +122,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
   const handleQuickSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      setError("Company name is required.");
+      setError(tx("Company name is required."));
       return;
     }
     setSaving(true);
@@ -140,7 +141,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
       onSaved(`Organization "${name.trim()}" added — set up its master policy when ready.`, { id: resp.data?.id, isNew: true });
       onClose();
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to add organization.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to add organization."));
     } finally {
       setSaving(false);
     }
@@ -174,7 +175,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
       }
       onClose();
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to save organization.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to save organization."));
     } finally {
       setSaving(false);
     }
@@ -185,7 +186,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-sm w-full p-6 space-y-4 my-8">
           <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-            <h3 className="text-base font-bold text-slate-900">Quick Organization</h3>
+            <h3 className="text-base font-bold text-slate-900">{tx("Quick Organization")}</h3>
             <DemoFillButton
               className="ml-auto mr-3"
               onFill={() => {
@@ -205,23 +206,23 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
           {error && <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-600 font-medium">{error}</div>}
           <form onSubmit={handleQuickSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-slate-600">Company Name *</label>
+              <label className="block text-xs font-semibold text-slate-600">{tx("Company Name *")}</label>
               <input
                 type="text" required value={name} onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. TechPak Solutions"
+                placeholder={tx("e.g. TechPak Solutions")}
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               />
             </div>
             <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-slate-600">Contact Person</label>
+              <label className="block text-xs font-semibold text-slate-600">{tx("Contact Person")}</label>
               <input
                 type="text" value={contactPerson} onChange={(e) => setContactPerson(e.target.value)}
-                placeholder="e.g. Ali Raza (HR Manager)"
+                placeholder={tx("e.g. Ali Raza (HR Manager)")}
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               />
             </div>
             <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-slate-600">Contact Phone</label>
+              <label className="block text-xs font-semibold text-slate-600">{tx("Contact Phone")}</label>
               <input
                 type="text" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)}
                 placeholder="+92 300 1234567"
@@ -241,20 +242,20 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
               selectClass="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
             />
             <p className="text-[11px] text-slate-400">
-              Adds the account now — fill in registration/industry details and set up its master policy later via "Complete Detail" or the Manage page.
+              {tx("Adds the account now — fill in registration/industry details and set up its master policy later via \"Complete Detail\" or the Manage page.")}
             </p>
             <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
               <button
                 type="button" onClick={onClose}
                 className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
               >
-                Cancel
+                {tx("Cancel")}
               </button>
               <button
                 type="submit" disabled={saving}
                 className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg transition-colors"
               >
-                {saving ? "Saving…" : "Add Organization"}
+                {saving ? tx("Saving…") : tx("Add Organization")}
               </button>
             </div>
           </form>
@@ -267,7 +268,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-5 my-8">
         <div className="flex justify-between items-center border-b border-slate-100 pb-4">
-          <h3 className="text-lg font-bold text-slate-900">{editingId ? "Edit Organization" : "Add New Organization"}</h3>
+          <h3 className="text-lg font-bold text-slate-900">{editingId ? tx("Edit Organization") : tx("Add New Organization")}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-full p-1 transition-colors">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -279,17 +280,17 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
 
         <form onSubmit={handleFullSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">Company Name *</label>
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("Company Name *")}</label>
             <input
               type="text" required value={name} onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. TechPak Solutions"
+              placeholder={tx("e.g. TechPak Solutions")}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">Registration No. (NTN)</label>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("Registration No. (NTN)")}</label>
               <input
                 type="text" value={registrationNumber} onChange={(e) => setRegistrationNumber(e.target.value)}
                 placeholder="e.g. 1234567-8"
@@ -297,35 +298,35 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
               />
             </div>
             <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">Industry</label>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("Industry")}</label>
               <input
                 type="text" value={industry} onChange={(e) => setIndustry(e.target.value)}
-                placeholder="e.g. Textiles"
+                placeholder={tx("e.g. Textiles")}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               />
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">Contact Person</label>
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("Contact Person")}</label>
             <input
               type="text" value={contactPerson} onChange={(e) => setContactPerson(e.target.value)}
-              placeholder="e.g. Ali Raza (HR Manager)"
+              placeholder={tx("e.g. Ali Raza (HR Manager)")}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">Contact Email</label>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("Contact Email")}</label>
               <input
                 type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)}
-                placeholder="hr@company.com"
+                placeholder={tx("hr@company.com")}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               />
             </div>
             <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">Contact Phone</label>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("Contact Phone")}</label>
               <input
                 type="text" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)}
                 placeholder="+92 300 1234567"
@@ -336,20 +337,20 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">City</label>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("City")}</label>
               <input
                 type="text" value={city} onChange={(e) => setCity(e.target.value)}
-                placeholder="e.g. Karachi"
+                placeholder={tx("e.g. Karachi")}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               />
             </div>
             <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">Province</label>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("Province")}</label>
               <select
                 value={province} onChange={(e) => setProvince(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               >
-                <option value="">Select province</option>
+                <option value="">{tx("Select province")}</option>
                 {PAKISTAN_PROVINCES.map((p) => (
                   <option key={p} value={p}>{p}</option>
                 ))}
@@ -377,7 +378,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
               type="button" onClick={onClose}
               className="px-5 py-2.5 text-sm font-bold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors"
             >
-              Cancel
+              {tx("Cancel")}
             </button>
             <button
               type="submit" disabled={saving}
@@ -389,7 +390,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
               )}
-              {editingId ? "Update Organization" : "Create Organization"}
+              {editingId ? tx("Update Organization") : tx("Create Organization")}
             </button>
           </div>
         </form>

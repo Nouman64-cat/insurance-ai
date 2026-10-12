@@ -3,6 +3,7 @@
 import { ActuarialImpactDetail, ImpactType } from "@/app/services/ruleEngine";
 import { IMPACT_TYPE_CONFIG, MEDICAL_PROFILE_OPTIONS, EXCLUSION_RIDER_OPTIONS } from "./constants";
 import MultiTagSelector from "./MultiTagSelector";
+import { tx } from "@/lib/i18n/tx";
 
 interface Props {
   impactType: ImpactType;
@@ -83,7 +84,7 @@ export default function ImpactForm({ impactType, impactData, onChange }: Props) 
       {/* Dense Impact Type Selector — Compact Grid */}
       <div>
         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-          Underwriting Impact
+          {tx("Underwriting Impact")}
         </label>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {IMPACT_TYPES.map((type) => {
@@ -120,7 +121,7 @@ export default function ImpactForm({ impactType, impactData, onChange }: Props) 
             onChange={(e) => setField("is_terminal", e.target.checked)}
             className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
           />
-          Terminal Rule (Stop evaluation on match)
+          {tx("Terminal Rule (Stop evaluation on match)")}
         </label>
       </div>
 
@@ -151,12 +152,12 @@ export default function ImpactForm({ impactType, impactData, onChange }: Props) 
       {/* Medical Test Codes */}
       {(impactType === "REQUIRE_MEDICAL" || impactType === "REFER_TO_UNDERWRITER") && (
         <div>
-          <label className="block text-xs font-bold text-slate-700 mb-1.5">Medical Test Codes</label>
+          <label className="block text-xs font-bold text-slate-700 mb-1.5">{tx("Medical Test Codes")}</label>
           <MultiTagSelector
             selected={impactData.medical_profile_codes || []}
             onChange={(items) => setField("medical_profile_codes", items)}
             options={MEDICAL_PROFILE_OPTIONS}
-            placeholder="Select medical tests (e.g. MER, FBS, ECG)..."
+            placeholder={tx("Select medical tests (e.g. MER, FBS, ECG)...")}
           />
         </div>
       )}
@@ -164,12 +165,12 @@ export default function ImpactForm({ impactType, impactData, onChange }: Props) 
       {/* Exclusion Riders */}
       {(impactType === "EXCLUSION_CLAUSE" || impactType === "APPLY_LOADING") && (
         <div>
-          <label className="block text-xs font-bold text-slate-700 mb-1.5">Exclusion Riders</label>
+          <label className="block text-xs font-bold text-slate-700 mb-1.5">{tx("Exclusion Riders")}</label>
           <MultiTagSelector
             selected={impactData.exclusion_riders || []}
             onChange={(items) => setField("exclusion_riders", items)}
             options={EXCLUSION_RIDER_OPTIONS}
-            placeholder="Select exclusion clauses (e.g. Aviation Exclusion)..."
+            placeholder={tx("Select exclusion clauses (e.g. Aviation Exclusion)...")}
           />
         </div>
       )}

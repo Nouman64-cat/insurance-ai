@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
 import { ADMIN_TOUR_STEPS, fillLead, type TourContext } from "@/lib/tour/adminTour";
 import { TOUR_LEAD_EVENT, type TourLead } from "@/lib/tour/events";
+import { tx } from "@/lib/i18n/tx";
 
 // Welcome tour for an Admin's first sign-in. The login page sets `tour_pending` (to the user's email) when the
 // server says it was their first ever sign-in.
@@ -297,23 +298,23 @@ export default function AdminTour() {
         ref={cardRef}
         data-tour-ui
         role="dialog"
-        aria-label={`Tour step ${index + 1} of ${steps.length}: ${fillLead(step.title, ctx)}`}
+        aria-label={tx("Tour step {0} of {1}: {2}", { 0: index + 1, 1: steps.length, 2: fillLead(step.title, ctx) })}
         className="fixed z-[9999] rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
         style={cardStyle}
       >
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-bold uppercase tracking-widest text-blue-600">
-            Step {index + 1} of {steps.length}
+            {tx("Step")}{" "}{index + 1}{" "}{tx("of")}{" "}{steps.length}
           </span>
           <button type="button" onClick={finish} className="text-xs font-semibold text-slate-400 hover:text-slate-600">
-            Skip tour
+            {tx("Skip tour")}
           </button>
         </div>
 
         <h3 className="mt-2 text-lg font-bold tracking-tight text-slate-900">{fillLead(step.title, ctx)}</h3>
         <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{fillLead(step.summary, ctx)}</p>
 
-        <p className="mt-4 text-[11px] font-bold uppercase tracking-widest text-slate-400">What to do here</p>
+        <p className="mt-4 text-[11px] font-bold uppercase tracking-widest text-slate-400">{tx("What to do here")}</p>
         <ol className="mt-1.5 space-y-1.5">
           {step.todo.map((t, i) => (
             <li key={t} className="flex gap-2.5 text-[13px] leading-snug text-slate-700">
@@ -360,14 +361,14 @@ export default function AdminTour() {
               disabled={index === 0}
               className="rounded-lg border border-slate-200 px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
             >
-              Previous
+              {tx("Previous")}
             </button>
             <button
               type="button"
               onClick={() => (last ? finish() : goTo(index + 1))}
               className="rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
             >
-              {last ? "Finish" : step.waitHint && !doneNote ? "Skip step" : "Next"}
+              {last ? tx("Finish") : step.waitHint && !doneNote ? tx("Skip step") : tx("Next")}
             </button>
           </div>
         </div>

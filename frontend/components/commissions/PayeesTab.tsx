@@ -25,6 +25,7 @@ import {
   selectClass,
 } from "./shared";
 import { Pagination, usePagination } from "../Pagination";
+import { tx } from "@/lib/i18n/tx";
 
 const PAYEE_TYPES = Object.keys(PAYEE_TYPE_LABELS) as PayeeType[];
 const CHANNELS = Object.keys(CHANNEL_LABELS) as DistributionChannel[];
@@ -88,10 +89,10 @@ export default function PayeesTab({
     const next = payee.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
     try {
       await updatePayee(payee.id, { status: next });
-      notify(`${payee.name} is now ${next.toLowerCase()}. Existing entries re-gate on the next refresh.`);
+      notify(tx("{0} is now {1}. Existing entries re-gate on the next refresh.", { 0: payee.name, 1: next.toLowerCase() }));
       onChanged();
     } catch (err) {
-      notify(err instanceof Error ? err.message : "Could not update the payee", false);
+      notify(err instanceof Error ? err.message : tx("Could not update the payee"), false);
     }
   };
 
@@ -121,7 +122,7 @@ export default function PayeesTab({
       </div>
 
       <Card
-        title="Payees"
+        title={tx("Payees")}
         // subtitle="List of all agents, managers, banks, and partners entitled to receive commissions"
         actions={
           <>
@@ -152,7 +153,7 @@ export default function PayeesTab({
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name, code, branch, or licence…"
+            placeholder={tx("Search name, code, branch, or licence…")}
             className="flex-1 min-w-[240px] bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs focus:outline-hidden focus:border-blue-500"
           />
           <DateRangeFilter
@@ -167,7 +168,7 @@ export default function PayeesTab({
             onChange={(e) => setChannelFilter(e.target.value as DistributionChannel | "all")}
             className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700"
           >
-            <option value="all">All Channels</option>
+            <option value="all">{tx("All Channels")}</option>
             {CHANNELS.map((c) => (
               <option key={c} value={c}>
                 {CHANNEL_LABELS[c]}
@@ -179,7 +180,7 @@ export default function PayeesTab({
             onChange={(e) => setTypeFilter(e.target.value as PayeeType | "all")}
             className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700"
           >
-            <option value="all">All Roles</option>
+            <option value="all">{tx("All Roles")}</option>
             {PAYEE_TYPES.map((t) => (
               <option key={t} value={t}>
                 {PAYEE_TYPE_LABELS[t]}
@@ -191,18 +192,18 @@ export default function PayeesTab({
         {/* view === "hierarchy" ? (
           <HierarchyView payees={filtered} allPayees={payees} />
         ) : */} {filtered.length === 0 ? (
-          <EmptyState message="No payees match these filters." />
+          <EmptyState message={tx("No payees match these filters.")} />
         ) : (
           <>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50/80 text-slate-500 font-medium uppercase tracking-wider text-[10px] border-b border-slate-200">
                 <tr>
-                  <th className="p-3">PAYEE NAME</th>
-                  <th className="p-3">TYPE</th>
-                  <th className="p-3">SOURCE</th>
-                  <th className="p-3">PAYEE LIC. REF.</th>
-                  <th className="p-3 text-center">PAYEE STATUS</th>
+                  <th className="p-3">{tx("PAYEE NAME")}</th>
+                  <th className="p-3">{tx("TYPE")}</th>
+                  <th className="p-3">{tx("SOURCE")}</th>
+                  <th className="p-3">{tx("PAYEE LIC. REF.")}</th>
+                  <th className="p-3 text-center">{tx("PAYEE STATUS")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-800">
@@ -226,7 +227,7 @@ export default function PayeesTab({
                       <td className="p-3 text-center">
                         <button
                           onClick={() => toggleStatus(p)}
-                          title="Suspending a payee blocks every payout to them"
+                          title={tx("Suspending a payee blocks every payout to them")}
                           className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border ${p.status === "ACTIVE"
                               ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                               : "bg-amber-50 text-amber-800 border-amber-200"
@@ -241,7 +242,7 @@ export default function PayeesTab({
               </tbody>
             </table>
           </div>
-          <Pagination pagination={payeePagination} noun="payees" inline />
+          <Pagination pagination={payeePagination} noun={tx("payees")} inline />
           </>
         )}
       </Card>
@@ -332,12 +333,12 @@ function HierarchyView({ payees, allPayees }: { payees: CommissionPayee[]; allPa
           <div className="flex items-center gap-2 shrink-0">
             {children.length > 0 && (
               <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200">
-                {children.length} {children.length === 1 ? "Direct Report" : "Direct Reports"}
+                {children.length} {children.length === 1 ? tx("Direct Report") : tx("Direct Reports")}
               </span>
             )}
             {payee.recoveryBalance > 0 && (
               <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200">
-                Recovery: {fmtPKR(payee.recoveryBalance)}
+                {tx("Recovery:")}{" "}{fmtPKR(payee.recoveryBalance)}
               </span>
             )}
             <span
@@ -365,22 +366,22 @@ function HierarchyView({ payees, allPayees }: { payees: CommissionPayee[]; allPa
       <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-          <span className="font-bold text-slate-800">Team &amp; Channel Tree</span>
+          <span className="font-bold text-slate-800">{tx("Team & Channel Tree")}</span>
           <span className="text-slate-400">|</span>
-          <span>Commission overrides flow upward to direct managers</span>
+          <span>{tx("Commission overrides flow upward to direct managers")}</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[10px] font-mono font-semibold text-slate-700">
-            {allPayees.length} Total Payees
+            {allPayees.length}{" "}{tx("Total Payees")}
           </span>
           <span className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[10px] font-mono font-semibold text-slate-700">
-            {roots.length} Channel Groups
+            {roots.length}{" "}{tx("Channel Groups")}
           </span>
         </div>
       </div>
 
       {roots.length === 0 ? (
-        <EmptyState message="No payees match these filters." />
+        <EmptyState message={tx("No payees match these filters.")} />
       ) : (
         <div className="space-y-6">
           {roots.map((root) => {
@@ -395,14 +396,14 @@ function HierarchyView({ payees, allPayees }: { payees: CommissionPayee[]; allPa
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
                     <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider">
-                      {CHANNEL_LABELS[root.channel]} Team
+                      {CHANNEL_LABELS[root.channel]}{" "}{tx("Team")}
                     </h4>
                     <span className="text-[10px] text-slate-400 font-medium">
-                      · Main Head: <span className="font-semibold text-slate-700">{root.name}</span>
+                      {tx("· Main Head:")}{" "}<span className="font-semibold text-slate-700">{root.name}</span>
                     </span>
                   </div>
                   <span className="text-[10px] font-mono text-slate-400 bg-white px-2 py-0.5 rounded border border-slate-200">
-                    Channel Head
+                    {tx("Channel Head")}
                   </span>
                 </div>
                 {nodeContent}
@@ -444,7 +445,7 @@ function AddPayeeModal({
 
   const save = async () => {
     if (!form.name.trim() || !form.code.trim()) {
-      notify("Name and code are required.", false);
+      notify(tx("Name and code are required."), false);
       return;
     }
     try {
@@ -467,7 +468,7 @@ function AddPayeeModal({
       });
       onSaved(form.name.trim());
     } catch (err) {
-      notify(err instanceof Error ? err.message : "Could not add the payee", false);
+      notify(err instanceof Error ? err.message : tx("Could not add the payee"), false);
     }
   };
 
@@ -476,9 +477,9 @@ function AddPayeeModal({
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 overflow-hidden">
         <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between text-slate-900">
           <div>
-            <h3 className="font-bold text-sm text-slate-900">Add New Payee</h3>
+            <h3 className="font-bold text-sm text-slate-900">{tx("Add New Payee")}</h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Register a new agent, manager, bank, or partner.
+              {tx("Register a new agent, manager, bank, or partner.")}
             </p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg font-bold">
@@ -487,13 +488,13 @@ function AddPayeeModal({
         </div>
 
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Field label="Name">
+          <Field label={tx("Name")}>
             <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputClass} />
           </Field>
-          <Field label="Code">
+          <Field label={tx("Code")}>
             <input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} className={inputClass} />
           </Field>
-          <Field label="Role / Category">
+          <Field label={tx("Role / Category")}>
             <select
               value={form.type}
               onChange={(e) => setForm({ ...form, type: e.target.value as PayeeType })}
@@ -506,7 +507,7 @@ function AddPayeeModal({
               ))}
             </select>
           </Field>
-          <Field label="Source Channel">
+          <Field label={tx("Source Channel")}>
             <select
               value={form.channel}
               onChange={(e) => setForm({ ...form, channel: e.target.value as DistributionChannel })}
@@ -519,13 +520,13 @@ function AddPayeeModal({
               ))}
             </select>
           </Field>
-          <Field label="Reports To (Manager)">
+          <Field label={tx("Reports To (Manager)")}>
             <select
               value={form.parentPayeeId}
               onChange={(e) => setForm({ ...form, parentPayeeId: e.target.value })}
               className={selectClass}
             >
-              <option value="">— None (Top Manager) —</option>
+              <option value="">{tx("— None (Top Manager) —")}</option>
               {payees.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name} ({PAYEE_TYPE_LABELS[p.type]})
@@ -533,18 +534,18 @@ function AddPayeeModal({
               ))}
             </select>
           </Field>
-          <Field label="Branch">
+          <Field label={tx("Branch")}>
             <input value={form.branch} onChange={(e) => setForm({ ...form, branch: e.target.value })} className={inputClass} />
           </Field>
-          <Field label="Licence Number">
+          <Field label={tx("Licence Number")}>
             <input
               value={form.licenceNo}
               onChange={(e) => setForm({ ...form, licenceNo: e.target.value })}
-              placeholder="Required for agents, agencies, brokers and banks"
+              placeholder={tx("Required for agents, agencies, brokers and banks")}
               className={inputClass}
             />
           </Field>
-          <Field label="Licence Expiry Date">
+          <Field label={tx("Licence Expiry Date")}>
             <input
               type="date"
               value={form.licenceExpiry}
@@ -552,33 +553,33 @@ function AddPayeeModal({
               className={inputClass}
             />
           </Field>
-          <Field label="Tax Category">
+          <Field label={tx("Tax Category")}>
             <select
               value={form.isCorporate ? "corporate" : "individual"}
               onChange={(e) => setForm({ ...form, isCorporate: e.target.value === "corporate" })}
               className={selectClass}
             >
-              <option value="individual">Individual Agent</option>
-              <option value="corporate">Company / Bank</option>
+              <option value="individual">{tx("Individual Agent")}</option>
+              <option value="corporate">{tx("Company / Bank")}</option>
             </select>
           </Field>
-          <Field label="Tax Filer Status">
+          <Field label={tx("Tax Filer Status")}>
             <select
               value={form.taxFilerStatus}
               onChange={(e) => setForm({ ...form, taxFilerStatus: e.target.value as TaxFilerStatus })}
               className={selectClass}
             >
-              <option value="FILER">Tax Filer (Lower Tax Rate)</option>
-              <option value="NON_FILER">Non-Filer (Standard Tax Rate)</option>
+              <option value="FILER">{tx("Tax Filer (Lower Tax Rate)")}</option>
+              <option value="NON_FILER">{tx("Non-Filer (Standard Tax Rate)")}</option>
             </select>
           </Field>
-          <Field label="Tax ID / CNIC">
+          <Field label={tx("Tax ID / CNIC")}>
             <input value={form.taxId} onChange={(e) => setForm({ ...form, taxId: e.target.value })} className={inputClass} />
           </Field>
-          <Field label="Bank Name">
+          <Field label={tx("Bank Name")}>
             <input value={form.bankName} onChange={(e) => setForm({ ...form, bankName: e.target.value })} className={inputClass} />
           </Field>
-          <Field label="Account Number / IBAN">
+          <Field label={tx("Account Number / IBAN")}>
             <input
               value={form.bankAccount}
               onChange={(e) => setForm({ ...form, bankAccount: e.target.value })}
@@ -592,10 +593,10 @@ function AddPayeeModal({
             onClick={onClose}
             className="px-4 py-2 bg-white border border-slate-300 font-bold rounded-xl text-slate-700 text-xs hover:bg-slate-100"
           >
-            Cancel
+            {tx("Cancel")}
           </button>
           <button onClick={save} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs shadow-md">
-            Add Payee
+            {tx("Add Payee")}
           </button>
         </div>
       </div>

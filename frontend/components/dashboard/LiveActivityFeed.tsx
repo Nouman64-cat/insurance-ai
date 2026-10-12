@@ -1,6 +1,7 @@
 import { PillarCard } from "./shared";
 import type { PolicyListItem } from "@/app/services/policies";
 import type { Claim } from "@/app/services/claims";
+import { tx } from "@/lib/i18n/tx";
 
 function BoltIcon() {
   return (
@@ -63,7 +64,7 @@ export function LiveActivityFeed({ policies, claims, limit = 8 }: LiveActivityFe
   return (
     <PillarCard
       icon={<BoltIcon />}
-      title="Live Activity"
+      title={tx("Live Activity")}
       barClass="bg-emerald-500"
       iconBg="bg-emerald-50"
       iconColor="text-emerald-600"
@@ -78,7 +79,7 @@ export function LiveActivityFeed({ policies, claims, limit = 8 }: LiveActivityFe
       }
     >
       {events.length === 0 ? (
-        <p className="text-xs text-slate-400 py-2">No activity yet in the selected range.</p>
+        <p className="text-xs text-slate-400 py-2">{tx("No activity yet in the selected range.")}</p>
       ) : (
         <div className="space-y-0.5">
           {events.map((e) => (

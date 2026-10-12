@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { globalSearch, type SearchResult, type SearchResultType } from "@/app/services/search";
+import { tx } from "@/lib/i18n/tx";
 
 function SearchIcon() {
   return (
@@ -171,7 +172,7 @@ export default function GlobalSearch() {
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => term.length >= MIN_CHARS && setOpen(true)}
           onKeyDown={onInputKeyDown}
-          placeholder="Search cases, policies…"
+          placeholder={tx("Search cases, policies…")}
           role="combobox"
           aria-expanded={showPanel}
           aria-controls="global-search-results"
@@ -187,7 +188,7 @@ export default function GlobalSearch() {
         >
           {flat.length === 0 && !loading && (
             <p className="px-3 py-4 text-xs text-slate-400 text-center">
-              No matches for “{term}”
+              {tx("No matches for “")}{term}”
             </p>
           )}
 

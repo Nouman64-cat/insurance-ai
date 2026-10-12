@@ -3,6 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import { tx } from "@/lib/i18n/tx";
 
 // Extracted from app/ClientLayout.tsx's previously-local ToastMsg/ToastBanner/
 // showToast (and the near-identical copy in app/cases/page.tsx) so any
@@ -85,7 +86,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 export function useNotify() {
   const ctx = useContext(NotificationContext);
   if (ctx === undefined) {
-    throw new Error("useNotify must be used within a NotificationProvider");
+    throw new Error(tx("useNotify must be used within a NotificationProvider"));
   }
   return ctx;
 }

@@ -13,6 +13,7 @@ import {
   type DatePreset,
   type DateRange,
 } from "../../../components/commissions/DateRangeFilter";
+import { tx } from "@/lib/i18n/tx";
 
 export default function LedgerPage() {
   const [datePreset, setDatePreset] = useState<DatePreset>("30d");
@@ -32,7 +33,7 @@ export default function LedgerPage() {
       const ledgerData = await listCommissionLedger();
       setLedger([...ledgerData]);
     } catch (err) {
-      notify("Could not load ledger.", false);
+      notify(tx("Could not load ledger."), false);
     } finally {
       setLoading(false);
     }
@@ -51,10 +52,10 @@ export default function LedgerPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900">Accrual Feed</h1>
+            <h1 className="text-xl font-semibold tracking-tight text-slate-900">{tx("Accrual Feed")}</h1>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Real-time ledger of policy accruals, status changes, and disburse triggers
+            {tx("Real-time ledger of policy accruals, status changes, and disburse triggers")}
           </p>
         </div>
         <DateRangeFilter
@@ -68,7 +69,7 @@ export default function LedgerPage() {
         />
       </div>
       {loading && ledger.length === 0 ? (
-         <div className="px-5 py-12 text-center text-xs text-slate-400 bg-white rounded-xl shadow-sm border border-slate-200">Loading ledger...</div>
+         <div className="px-5 py-12 text-center text-xs text-slate-400 bg-white rounded-xl shadow-sm border border-slate-200">{tx("Loading ledger...")}</div>
       ) : (
          <LedgerTab
            ledger={ledger}

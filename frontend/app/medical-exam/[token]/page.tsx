@@ -11,6 +11,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { tx } from "@/lib/i18n/tx";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -114,7 +115,7 @@ export default function MedicalExamBookingPage({ params }: { params: { token: st
         if (status === 410) setLoadState("expired");
         else if (status === 404) setLoadState("not_found");
         else setLoadState("error");
-        setErrorMsg(e?.response?.data?.detail ?? "Something went wrong loading your appointment page.");
+        setErrorMsg(e?.response?.data?.detail ?? tx("Something went wrong loading your appointment page."));
       }
     })();
   }, [token]);
@@ -187,11 +188,11 @@ export default function MedicalExamBookingPage({ params }: { params: { token: st
     }
   };
 
-  if (loadState === "loading") return <CenteredMessage title="Loading your appointment page…" />;
+  if (loadState === "loading") return <CenteredMessage title={tx("Loading your appointment page…")} />;
   if (loadState === "not_found" || loadState === "error") {
     return (
       <CenteredMessage
-        title="We couldn't find this appointment"
+        title={tx("We couldn't find this appointment")}
         body={errorMsg ?? "The link may be invalid. Please contact your agent for a new one."}
         tone="error"
       />
@@ -200,7 +201,7 @@ export default function MedicalExamBookingPage({ params }: { params: { token: st
   if (loadState === "expired") {
     return (
       <CenteredMessage
-        title="This booking link has expired"
+        title={tx("This booking link has expired")}
         body="Please contact your agent or the branch to have a new link sent to you."
         tone="error"
       />
@@ -209,14 +210,14 @@ export default function MedicalExamBookingPage({ params }: { params: { token: st
   if (loadState === "done") {
     return (
       <CenteredMessage
-        title="Your medical examination is complete"
+        title={tx("Your medical examination is complete")}
         body="Your insurer has received the results. No further action is needed from you at this time."
         tone="success"
       />
     );
   }
 
-  if (!view) return <CenteredMessage title="Loading…" />;
+  if (!view) return <CenteredMessage title={tx("Loading…")} />;
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -228,12 +229,12 @@ export default function MedicalExamBookingPage({ params }: { params: { token: st
               🛡️
             </div>
             <div>
-              <span className="font-extrabold text-slate-900 text-sm tracking-tight block">Adamjee Life</span>
-              <span className="text-[10px] font-semibold text-slate-500 block uppercase tracking-wider">Health Diagnostics Portal</span>
+              <span className="font-extrabold text-slate-900 text-sm tracking-tight block">{tx("Adamjee Life")}</span>
+              <span className="text-[10px] font-semibold text-slate-500 block uppercase tracking-wider">{tx("Health Diagnostics Portal")}</span>
             </div>
           </div>
           <span className="text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-full uppercase tracking-wider">
-            Official Portal
+            {tx("Official Portal")}
           </span>
         </div>
       </header>
@@ -242,14 +243,13 @@ export default function MedicalExamBookingPage({ params }: { params: { token: st
         <div className="max-w-2xl mx-auto space-y-6">
           <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-2xs">
             <p className="text-[11px] font-extrabold uppercase tracking-wider text-blue-600">
-              Life Insurance — Health Examination Booking
+              {tx("Life Insurance — Health Examination Booking")}
             </p>
             <h1 className="text-xl font-extrabold text-slate-900 mt-1">
-              Hi {view.customer_name || "there"}, let's book your health checkup
+              {tx("Hi")}{" "}{view.customer_name || tx("there")}{tx(", let's book your health checkup")}
             </h1>
             <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-              Your proposed insurance cover requires a short medical examination before policy issuance.
-              This examination is arranged and <strong className="text-slate-700">fully paid for by the insurer</strong> — there is no fee for you to pay.
+              {tx("Your proposed insurance cover requires a short medical examination before policy issuance. This examination is arranged and")}{" "}<strong className="text-slate-700">{tx("fully paid for by the insurer")}</strong>{" "}{tx("— there is no fee for you to pay.")}
             </p>
           </div>
 
@@ -259,23 +259,23 @@ export default function MedicalExamBookingPage({ params }: { params: { token: st
             <div className="flex items-center justify-between flex-wrap gap-2">
               <p className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                Appointment confirmed
+                {tx("Appointment confirmed")}
               </p>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                Scheduled at Clinic
+                {tx("Scheduled at Clinic")}
               </span>
             </div>
             <h2 className="text-base font-bold text-slate-800 mt-2">{view.booked_clinic.name}</h2>
             <p className="text-sm text-slate-600 mt-0.5">{view.booked_clinic.address}</p>
             {view.booked_clinic.phone && (
-              <p className="text-xs text-slate-500 mt-0.5">Tel: {view.booked_clinic.phone}</p>
+              <p className="text-xs text-slate-500 mt-0.5">{tx("Tel:")}{" "}{view.booked_clinic.phone}</p>
             )}
             <p className="text-sm font-semibold text-slate-800 mt-3">
-              {view.appointment_at ? `${fmtDay(view.appointment_at)} at ${fmtTime(view.appointment_at)}` : "—"}
+              {view.appointment_at ? tx("{0} at {1}", { 0: fmtDay(view.appointment_at), 1: fmtTime(view.appointment_at) }) : "—"}
             </p>
             {view.home_sampling && (
               <p className="text-xs text-emerald-700 font-medium mt-1">
-                A phlebotomist will visit you at home for sample collection.
+                {tx("A phlebotomist will visit you at home for sample collection.")}
               </p>
             )}
 
@@ -290,7 +290,7 @@ export default function MedicalExamBookingPage({ params }: { params: { token: st
                 onClick={() => setLoadState("ready")}
                 className="text-xs font-semibold text-emerald-800 hover:text-emerald-950 underline underline-offset-2"
               >
-                Change my appointment
+                {tx("Change my appointment")}
               </button>
 
               <button
@@ -301,12 +301,12 @@ export default function MedicalExamBookingPage({ params }: { params: { token: st
                 {completing ? (
                   <>
                     <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Updating Status…</span>
+                    <span>{tx("Updating Status…")}</span>
                   </>
                 ) : (
                   <>
                     <span>✓</span>
-                    <span>Mark Examination as Completed (Done)</span>
+                    <span>{tx("Mark Examination as Completed (Done)")}</span>
                   </>
                 )}
               </button>
@@ -318,7 +318,7 @@ export default function MedicalExamBookingPage({ params }: { params: { token: st
         {/* Tests */}
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
           <h2 className="text-sm font-bold text-slate-800">
-            Tests requested ({view.tests.length})
+            {tx("Tests requested (")}{view.tests.length})
           </h2>
           <ul className="mt-3 divide-y divide-slate-100">
             {view.tests.map((t) => (
@@ -329,7 +329,7 @@ export default function MedicalExamBookingPage({ params }: { params: { token: st
                 </div>
                 {t.fasting && (
                   <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                    FASTING
+                    {tx("FASTING")}
                   </span>
                 )}
               </li>
@@ -339,7 +339,7 @@ export default function MedicalExamBookingPage({ params }: { params: { token: st
 
         {/* Preparation */}
         <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-5">
-          <h2 className="text-sm font-bold text-slate-800">How to prepare</h2>
+          <h2 className="text-sm font-bold text-slate-800">{tx("How to prepare")}</h2>
           <ul className="mt-2 space-y-1.5">
             {view.preparation_notes.map((n, i) => (
               <li key={i} className="text-xs text-slate-600 leading-relaxed flex gap-2">
@@ -355,13 +355,13 @@ export default function MedicalExamBookingPage({ params }: { params: { token: st
             {/* Clinic */}
             <div className="rounded-2xl border border-slate-200 bg-white p-5">
               <div className="flex items-center justify-between gap-3 flex-wrap">
-                <h2 className="text-sm font-bold text-slate-800">Choose a collection centre</h2>
+                <h2 className="text-sm font-bold text-slate-800">{tx("Choose a collection centre")}</h2>
                 <select
                   value={cityFilter}
                   onChange={(e) => { setCityFilter(e.target.value); setClinicId(""); }}
                   className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-600"
                 >
-                  <option value="all">All cities</option>
+                  <option value="all">{tx("All cities")}</option>
                   {cities.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
@@ -369,7 +369,7 @@ export default function MedicalExamBookingPage({ params }: { params: { token: st
               <div className="mt-3 space-y-2">
                 {visibleClinics.length === 0 ? (
                   <p className="text-xs text-slate-400">
-                    No panel centre listed in that city — switch to "All cities" to see the full panel.
+                    {tx("No panel centre listed in that city — switch to \"All cities\" to see the full panel.")}
                   </p>
                 ) : visibleClinics.map((c) => (
                   <button
@@ -386,13 +386,13 @@ export default function MedicalExamBookingPage({ params }: { params: { token: st
                         <p className="text-sm font-semibold text-slate-800 truncate">{c.name}</p>
                         <p className="text-xs text-slate-500 truncate">{c.address}</p>
                         <p className="text-[11px] text-slate-400 mt-0.5">
-                          {c.city} · results in ~{c.turnaround_hours}h
+                          {c.city}{" "}{tx("· results in ~")}{c.turnaround_hours}h
                           {c.phone ? ` · ${c.phone}` : ""}
                         </p>
                       </div>
                       {c.home_sampling && (
                         <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          HOME VISIT
+                          {tx("HOME VISIT")}
                         </span>
                       )}
                     </div>
@@ -408,18 +408,17 @@ export default function MedicalExamBookingPage({ params }: { params: { token: st
                     onChange={(e) => setHomeSampling(e.target.checked)}
                     className="rounded text-blue-600 focus:ring-blue-500"
                   />
-                  Collect my samples at home instead of at the centre
+                  {tx("Collect my samples at home instead of at the centre")}
                 </label>
               )}
             </div>
 
             {/* Slot */}
             <div className="rounded-2xl border border-slate-200 bg-white p-5">
-              <h2 className="text-sm font-bold text-slate-800">Pick a date and time</h2>
+              <h2 className="text-sm font-bold text-slate-800">{tx("Pick a date and time")}</h2>
               {view.fasting_required && (
                 <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mt-2">
-                  Your tests require fasting, so only morning appointments are offered — a fasting
-                  sample cannot be drawn in the afternoon.
+                  {tx("Your tests require fasting, so only morning appointments are offered — a fasting sample cannot be drawn in the afternoon.")}
                 </p>
               )}
 
@@ -466,14 +465,14 @@ export default function MedicalExamBookingPage({ params }: { params: { token: st
 
             <div className="flex items-center justify-between gap-3 pb-8">
               <p className="text-[11px] text-slate-400">
-                {view.expires_at && `This link is valid until ${new Date(view.expires_at).toLocaleDateString()}.`}
+                {view.expires_at && tx("This link is valid until {0}.", { 0: new Date(view.expires_at).toLocaleDateString() })}
               </p>
               <button
                 onClick={book}
                 disabled={!clinicId || !slot || submitting}
                 className="px-5 py-2.5 rounded-xl text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {submitting ? "Confirming…" : "Confirm appointment"}
+                {submitting ? tx("Confirming…") : tx("Confirm appointment")}
               </button>
             </div>
           </>

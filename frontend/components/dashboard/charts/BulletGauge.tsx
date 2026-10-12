@@ -1,4 +1,5 @@
 "use client";
+import { tx } from "@/lib/i18n/tx";
 
 interface BulletGaugeProps {
   label: string;
@@ -38,7 +39,7 @@ export function BulletGauge({ label, value, target, max, formatValue, color = "b
         <div
           className="absolute top-1/2 -translate-y-1/2 w-0.5 h-4 bg-slate-700 rounded-full"
           style={{ left: `${targetPct}%` }}
-          title={`Target: ${fmt(target)}`}
+          title={tx("Target: {0}", { 0: fmt(target) })}
         />
       </div>
       {sublabel && <p className="text-[10px] text-slate-400">{sublabel}</p>}

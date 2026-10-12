@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { saveCustomQuestions, CustomQuestion } from "@/app/services/eApplication";
+import { tx } from "@/lib/i18n/tx";
 
 interface CustomizeEAppModalProps {
   caseId: string;
@@ -66,10 +67,10 @@ export default function CustomizeEAppModal({
         <div className="px-6 py-4 bg-gradient-to-r from-blue-900 to-indigo-900 text-white flex items-center justify-between">
           <div>
             <span className="text-[10px] font-bold uppercase tracking-wider text-blue-300">
-              E-Application Questionnaire Customization
+              {tx("E-Application Questionnaire Customization")}
             </span>
             <h3 className="text-base font-bold text-white">
-              Add Custom Questions {customerName ? `for ${customerName}` : ""}
+              {tx("Add Custom Questions")}{" "}{customerName ? tx("for {0}", { 0: customerName }) : ""}
             </h3>
           </div>
           <button
@@ -83,13 +84,13 @@ export default function CustomizeEAppModal({
         {/* Content */}
         <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
           <p className="text-xs text-slate-500 leading-relaxed">
-            Customize the questionnaire before generating or sending the E-Application link to the customer. Any custom questions added here will be included in the form for the applicant to complete.
+            {tx("Customize the questionnaire before generating or sending the E-Application link to the customer. Any custom questions added here will be included in the form for the applicant to complete.")}
           </p>
 
           {/* Standard sections overview */}
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-1.5">
             <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-              Standard Form Sections (Included)
+              {tx("Standard Form Sections (Included)")}
             </p>
             <div className="flex flex-wrap gap-1.5 pt-1">
               {[
@@ -116,7 +117,7 @@ export default function CustomizeEAppModal({
           {/* Add custom question builder */}
           <div className="border border-blue-100 bg-blue-50/50 rounded-xl p-4 space-y-3">
             <p className="text-xs font-bold text-blue-900 uppercase tracking-wide">
-              + Add Additional Custom Question
+              {tx("+ Add Additional Custom Question")}
             </p>
 
             <div className="space-y-2">
@@ -124,20 +125,20 @@ export default function CustomizeEAppModal({
                 type="text"
                 value={newQuestion}
                 onChange={(e) => setNewQuestion(e.target.value)}
-                placeholder="Enter custom question (e.g., Do you engage in high-altitude mountaineering?)"
+                placeholder={tx("Enter custom question (e.g., Do you engage in high-altitude mountaineering?)")}
                 className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2 bg-white text-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-slate-600">Answer Type:</span>
+                  <span className="text-xs font-semibold text-slate-600">{tx("Answer Type:")}</span>
                   <select
                     value={newType}
                     onChange={(e) => setNewType(e.target.value as any)}
                     className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none"
                   >
-                    <option value="yes_no">Yes / No with details</option>
-                    <option value="text">Free text response</option>
-                    <option value="number">Numeric value</option>
+                    <option value="yes_no">{tx("Yes / No with details")}</option>
+                    <option value="text">{tx("Free text response")}</option>
+                    <option value="number">{tx("Numeric value")}</option>
                   </select>
                 </div>
                 <button
@@ -145,7 +146,7 @@ export default function CustomizeEAppModal({
                   disabled={!newQuestion.trim()}
                   className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors"
                 >
-                  Add Question
+                  {tx("Add Question")}
                 </button>
               </div>
             </div>
@@ -154,11 +155,11 @@ export default function CustomizeEAppModal({
           {/* List of custom questions */}
           <div className="space-y-2">
             <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-              Configured Custom Questions ({questions.length})
+              {tx("Configured Custom Questions (")}{questions.length})
             </p>
             {questions.length === 0 ? (
               <p className="text-xs text-slate-400 italic bg-slate-50 border border-slate-200 rounded-lg p-3 text-center">
-                No custom questions added yet. The standard questionnaire will be sent.
+                {tx("No custom questions added yet. The standard questionnaire will be sent.")}
               </p>
             ) : (
               <div className="space-y-2">
@@ -169,7 +170,7 @@ export default function CustomizeEAppModal({
                   >
                     <div className="space-y-1">
                       <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 uppercase">
-                        Q{idx + 1} · {q.type === "yes_no" ? "Yes/No" : q.type}
+                        Q{idx + 1} · {q.type === "yes_no" ? tx("Yes/No") : q.type}
                       </span>
                       <p className="text-xs font-semibold text-slate-800 leading-snug">
                         {q.question}
@@ -178,7 +179,7 @@ export default function CustomizeEAppModal({
                     <button
                       onClick={() => handleRemoveQuestion(q.id)}
                       className="text-slate-400 hover:text-red-600 p-1 text-xs font-bold transition-colors"
-                      title="Remove question"
+                      title={tx("Remove question")}
                     >
                       ✕
                     </button>
@@ -201,14 +202,14 @@ export default function CustomizeEAppModal({
             onClick={onClose}
             className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800"
           >
-            Cancel
+            {tx("Cancel")}
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
             className="px-5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-40 transition-all flex items-center gap-2"
           >
-            {saving ? "Saving Customization..." : "Save Questionnaire & Apply"}
+            {saving ? tx("Saving Customization...") : tx("Save Questionnaire & Apply")}
           </button>
         </div>
       </div>

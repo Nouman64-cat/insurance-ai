@@ -1,6 +1,7 @@
 "use client";
 
 import { RuleSetSummary } from "@/app/services/ruleEngine";
+import { tx } from "@/lib/i18n/tx";
 
 interface Props {
   ruleSets: RuleSetSummary[];
@@ -48,12 +49,12 @@ export default function RuleSetList({
           </svg>
         </div>
         <h3 className="text-sm font-bold text-slate-800">
-          {isFiltered ? "No rule sets in this category" : "No rule sets found"}
+          {isFiltered ? tx("No rule sets in this category") : tx("No rule sets found")}
         </h3>
         <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
           {isFiltered
-            ? "Try selecting another category or clearing the current navigation filter."
-            : "Create your first rule set to begin configuring automated decision logic."}
+            ? tx("Try selecting another category or clearing the current navigation filter.")
+            : tx("Create your first rule set to begin configuring automated decision logic.")}
         </p>
 
         <div className="flex items-center justify-center gap-2.5 mt-4 flex-wrap">
@@ -62,7 +63,7 @@ export default function RuleSetList({
               onClick={onClearFilter}
               className="px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition"
             >
-              Clear Navigation Filter
+              {tx("Clear Navigation Filter")}
             </button>
           )}
           {onCreateCategory && (
@@ -73,7 +74,7 @@ export default function RuleSetList({
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
               </svg>
-              Add New Category
+              {tx("Add New Category")}
             </button>
           )}
           {onCreateSubCategory && (
@@ -84,7 +85,7 @@ export default function RuleSetList({
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
               </svg>
-              Add New Sub Category
+              {tx("Add New Sub Category")}
             </button>
           )}
           <button
@@ -94,7 +95,7 @@ export default function RuleSetList({
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-            Add New Rule Set
+            {tx("Add New Rule Set")}
           </button>
         </div>
       </div>
@@ -106,7 +107,7 @@ export default function RuleSetList({
       {/* Header bar */}
       <div className="flex items-center justify-between px-1 mb-1 gap-2 flex-wrap">
         <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-          Rule Sets ({ruleSets.length})
+          {tx("Rule Sets (")}{ruleSets.length})
         </span>
         <div className="flex items-center gap-2 flex-wrap">
           {onCreateCategory && (
@@ -117,7 +118,7 @@ export default function RuleSetList({
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
               </svg>
-              Add New Category
+              {tx("Add New Category")}
             </button>
           )}
           {onCreateSubCategory && (
@@ -128,7 +129,7 @@ export default function RuleSetList({
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
               </svg>
-              Add New Sub Category
+              {tx("Add New Sub Category")}
             </button>
           )}
           <button
@@ -138,7 +139,7 @@ export default function RuleSetList({
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-            Add New Rule Set
+            {tx("Add New Rule Set")}
           </button>
         </div>
       </div>
@@ -168,13 +169,13 @@ export default function RuleSetList({
                   </span>
                 </div>
                 <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
-                  <span>Scope: <span className="font-semibold text-slate-700">{rs.scope_type}</span></span>
+                  <span>{tx("Scope:")}{" "}<span className="font-semibold text-slate-700">{rs.scope_type}</span></span>
                   <span>·</span>
-                  <span>{rs.rule_count} {rs.rule_count === 1 ? "rule" : "rules"}</span>
+                  <span>{rs.rule_count} {rs.rule_count === 1 ? tx("rule") : tx("rules")}</span>
                   {rs.updated_at && (
                     <>
                       <span>·</span>
-                      <span>Updated {formatDate(rs.updated_at)}</span>
+                      <span>{tx("Updated")}{" "}{formatDate(rs.updated_at)}</span>
                     </>
                   )}
                 </div>
@@ -184,11 +185,11 @@ export default function RuleSetList({
                 {/* Active version badge - fixed v— bug */}
                 {rs.active_version_number ? (
                   <span className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-1 rounded-md">
-                    v{rs.active_version_number} Live
+                    v{rs.active_version_number}{" "}{tx("Live")}
                   </span>
                 ) : (
                   <span className="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-300 px-2.5 py-1 rounded-md">
-                    No active version
+                    {tx("No active version")}
                   </span>
                 )}
 

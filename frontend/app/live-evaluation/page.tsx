@@ -5,6 +5,7 @@ import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
 import { StatusBadge } from "@/components/StatusBadge";
 import type { AIDecision } from "@/lib/mock-data";
 import { CNIC_PATTERN, formatCnic } from "@/lib/cnic";
+import { tx } from "@/lib/i18n/tx";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
 
@@ -142,7 +143,7 @@ export default function LiveEvaluationPage() {
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId) {
       setStatus("error");
-      setError("No active tenant session found. Please log in again.");
+      setError(tx("No active tenant session found. Please log in again."));
       return;
     }
 
@@ -182,7 +183,7 @@ export default function LiveEvaluationPage() {
         throw new Error(
           Array.isArray(body.detail)
             ? body.detail.map((d: { msg?: string }) => d.msg ?? d).join(", ")
-            : body.detail ?? `Gateway returned ${res.status}`,
+            : body.detail ?? tx("Gateway returned {0}", { 0: res.status }),
         );
       }
 
@@ -241,12 +242,12 @@ export default function LiveEvaluationPage() {
           } else if (type === "invalid") {
             setResult(prev => ({ ...prev, validationErrors: (evt.errors as string[]) ?? [] }));
             setStatus("error");
-            setError("Validation failed — see errors below.");
+            setError(tx("Validation failed — see errors below."));
             break outer;
 
           } else if (type === "error") {
             setStatus("error");
-            setError((evt.message as string) ?? "An unexpected error occurred.");
+            setError((evt.message as string) ?? tx("An unexpected error occurred."));
             break outer;
 
           }
@@ -257,7 +258,7 @@ export default function LiveEvaluationPage() {
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") return;
       setStatus("error");
-      setError(err instanceof Error ? err.message : "Connection failed.");
+      setError(err instanceof Error ? err.message : tx("Connection failed."));
     }
   };
 
@@ -371,13 +372,13 @@ export default function LiveEvaluationPage() {
       {/* Page header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Live Evaluation</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Live Evaluation")}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Submit a proposal and watch the LangGraph nodes fire in real-time via SSE stream.
+            {tx("Submit a proposal and watch the LangGraph nodes fire in real-time via SSE stream.")}
           </p>
         </div>
         <span className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold tracking-wide">
-          POST /evaluate/stream
+          {tx("POST /evaluate/stream")}
         </span>
       </div>
 
@@ -389,8 +390,8 @@ export default function LiveEvaluationPage() {
           className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
         >
           <div className="px-5 py-3 border-b border-slate-100">
-            <p className="text-sm font-semibold text-slate-700">Proposal Form</p>
-            <p className="text-xs text-slate-400 mt-0.5">Fields forwarded directly to the Risk Engine</p>
+            <p className="text-sm font-semibold text-slate-700">{tx("Proposal Form")}</p>
+            <p className="text-xs text-slate-400 mt-0.5">{tx("Fields forwarded directly to the Risk Engine")}</p>
           </div>
 
           <div className="p-5 space-y-5">
@@ -398,34 +399,34 @@ export default function LiveEvaluationPage() {
 
             {/* Customer */}
             <section>
-              <SectionLabel>Customer</SectionLabel>
+              <SectionLabel>{tx("Customer")}</SectionLabel>
               <div className="space-y-3">
-                <InputField label="CNIC"            placeholder="35201-1234567-1"   value={form.cnic}           onChange={v => setField("cnic", formatCnic(v))} inputMode="numeric" maxLength={15} pattern={CNIC_PATTERN} title="Format: 35201-1234567-1" />
-                <InputField label="Full Name"        placeholder="Muhammad Ali Khan" value={form.name}           onChange={v => setField("name", v)} />
-                <InputField label="Date of Birth"    type="date"                    value={form.dob}            onChange={v => setField("dob", v)} />
+                <InputField label={tx("CNIC")}            placeholder="35201-1234567-1"   value={form.cnic}           onChange={v => setField("cnic", formatCnic(v))} inputMode="numeric" maxLength={15} pattern={CNIC_PATTERN} title={tx("Format: 35201-1234567-1")} />
+                <InputField label={tx("Full Name")}        placeholder={tx("Muhammad Ali Khan")} value={form.name}           onChange={v => setField("name", v)} />
+                <InputField label={tx("Date of Birth")}    type="date"                    value={form.dob}            onChange={v => setField("dob", v)} />
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Gender</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">{tx("Gender")}</label>
                   <select
                     value={form.gender}
                     onChange={e => setField("gender", e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
                   >
-                    <option>Male</option>
-                    <option>Female</option>
-                    <option>Other</option>
+                    <option>{tx("Male")}</option>
+                    <option>{tx("Female")}</option>
+                    <option>{tx("Other")}</option>
                   </select>
                 </div>
-                <InputField label="Occupation"        placeholder="Software Engineer" value={form.occupation}      onChange={v => setField("occupation", v)} />
-                <InputField label="Annual Income (PKR)" type="number" placeholder="1200000" value={form.declaredIncome} onChange={v => setField("declaredIncome", v)} />
+                <InputField label={tx("Occupation")}        placeholder={tx("Software Engineer")} value={form.occupation}      onChange={v => setField("occupation", v)} />
+                <InputField label={tx("Annual Income (PKR)")} type="number" placeholder="1200000" value={form.declaredIncome} onChange={v => setField("declaredIncome", v)} />
               </div>
             </section>
 
             {/* Policy */}
             <section>
-              <SectionLabel>Policy</SectionLabel>
+              <SectionLabel>{tx("Policy")}</SectionLabel>
               <div className="space-y-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Insurance Type</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">{tx("Insurance Type")}</label>
                   <select
                     value={form.insuranceType}
                     onChange={e => setField("insuranceType", e.target.value)}
@@ -436,12 +437,12 @@ export default function LiveEvaluationPage() {
                     ))}
                   </select>
                 </div>
-                <InputField label="Coverage Amount (PKR)" type="number" placeholder="5000000" value={form.coverageAmount} onChange={v => setField("coverageAmount", v)} />
-                <InputField label="Term (Years)"           type="number" placeholder="20"      value={form.termYears}     onChange={v => setField("termYears", v)} />
+                <InputField label={tx("Coverage Amount (PKR)")} type="number" placeholder="5000000" value={form.coverageAmount} onChange={v => setField("coverageAmount", v)} />
+                <InputField label={tx("Term (Years)")}           type="number" placeholder="20"      value={form.termYears}     onChange={v => setField("termYears", v)} />
                 {form.insuranceType === "CHILD_EDUCATION_MARRIAGE" && (
                   <>
-                    <InputField label="Dependent Name" placeholder="Child's full name" value={form.dependentName} onChange={v => setField("dependentName", v)} />
-                    <InputField label="Dependent Date of Birth" type="date" value={form.dependentDob} onChange={v => setField("dependentDob", v)} />
+                    <InputField label={tx("Dependent Name")} placeholder={tx("Child's full name")} value={form.dependentName} onChange={v => setField("dependentName", v)} />
+                    <InputField label={tx("Dependent Date of Birth")} type="date" value={form.dependentDob} onChange={v => setField("dependentDob", v)} />
                   </>
                 )}
               </div>
@@ -461,9 +462,9 @@ export default function LiveEvaluationPage() {
               {isRunning ? (
                 <span className="flex items-center justify-center gap-2">
                   <span className="w-3.5 h-3.5 rounded-full border-2 border-slate-400 border-t-transparent animate-spin" />
-                  Evaluating…
+                  {tx("Evaluating…")}
                 </span>
-              ) : "Run Evaluation"}
+              ) : tx("Run Evaluation")}
             </button>
           </div>
         </form>
@@ -474,17 +475,17 @@ export default function LiveEvaluationPage() {
           {/* Pipeline stepper */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-              <p className="text-sm font-semibold text-slate-700">LangGraph Pipeline</p>
+              <p className="text-sm font-semibold text-slate-700">{tx("LangGraph Pipeline")}</p>
               {isRunning && (
                 <span className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-600">
                   <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
-                  Streaming
+                  {tx("Streaming")}
                 </span>
               )}
               {status === "done" && (
                 <span className="text-[10px] font-semibold text-blue-600 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                  Complete
+                  {tx("Complete")}
                 </span>
               )}
             </div>
@@ -526,7 +527,7 @@ export default function LiveEvaluationPage() {
           {result.validationErrors.length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-4">
               <p className="text-xs font-bold text-red-700 uppercase tracking-widest mb-2">
-                Validation Errors
+                {tx("Validation Errors")}
               </p>
               <ul className="space-y-1">
                 {result.validationErrors.map((msg, i) => (
@@ -542,7 +543,7 @@ export default function LiveEvaluationPage() {
           {/* Stream / connection error */}
           {status === "error" && error && result.validationErrors.length === 0 && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-              <p className="text-xs font-bold text-red-700 uppercase tracking-widest mb-1">Error</p>
+              <p className="text-xs font-bold text-red-700 uppercase tracking-widest mb-1">{tx("Error")}</p>
               <p className="text-xs text-red-600">{error}</p>
             </div>
           )}
@@ -551,20 +552,20 @@ export default function LiveEvaluationPage() {
           {(result.medicalScore !== null || result.financialScore !== null || result.fraudProbability !== null) && (
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="px-5 py-3 border-b border-slate-100">
-                <p className="text-sm font-semibold text-slate-700">Risk Scores</p>
+                <p className="text-sm font-semibold text-slate-700">{tx("Risk Scores")}</p>
               </div>
               <div className="p-5 space-y-5">
 
                 {result.medicalScore !== null && (
                   <div>
-                    <RiskScoreBar label="Medical Score" score={result.medicalScore} />
+                    <RiskScoreBar label={tx("Medical Score")} score={result.medicalScore} />
                     <ReasonList reasons={result.medicalReasons} accent="text-blue-400" />
                   </div>
                 )}
 
                 {result.financialScore !== null && (
                   <div>
-                    <RiskScoreBar label="Financial Score" score={result.financialScore} />
+                    <RiskScoreBar label={tx("Financial Score")} score={result.financialScore} />
                     <ReasonList reasons={result.financialReasons} accent="text-blue-400" />
                   </div>
                 )}
@@ -572,7 +573,7 @@ export default function LiveEvaluationPage() {
                 {result.fraudProbability !== null && (
                   <div>
                     <RiskScoreBar
-                      label="Fraud Probability"
+                      label={tx("Fraud Probability")}
                       score={Math.round(result.fraudProbability * 100)}
                       valueLabel={result.fraudProbability.toFixed(2)}
                     />
@@ -588,7 +589,7 @@ export default function LiveEvaluationPage() {
           {result.compositeScore !== null && decision && (
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="px-5 py-3 border-b border-slate-100">
-                <p className="text-sm font-semibold text-slate-700">Underwriting Decision</p>
+                <p className="text-sm font-semibold text-slate-700">{tx("Underwriting Decision")}</p>
               </div>
               <div className="p-5 space-y-5">
 
@@ -597,7 +598,7 @@ export default function LiveEvaluationPage() {
                   <CompositeScoreRing score={result.compositeScore} />
                   <div className="space-y-2">
                     <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-                      AI Decision
+                      {tx("AI Decision")}
                     </p>
                     <StatusBadge decision={decision} size="lg" />
                   </div>
@@ -607,7 +608,7 @@ export default function LiveEvaluationPage() {
                 {result.reasons.length > 0 && (
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">
-                      XAI Reasons
+                      {tx("XAI Reasons")}
                     </p>
                     <ul className="space-y-1.5">
                       {result.reasons.map((r, i) => {
@@ -647,7 +648,7 @@ export default function LiveEvaluationPage() {
                 <polyline points="7 10 12 15 17 10" />
                 <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
-              Download PDF Report
+              {tx("Download PDF Report")}
             </button>
           )}
 
@@ -657,10 +658,9 @@ export default function LiveEvaluationPage() {
               <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3">
                 <span className="text-2xl">⚡</span>
               </div>
-              <p className="text-sm font-semibold text-slate-600">Ready to evaluate</p>
+              <p className="text-sm font-semibold text-slate-600">{tx("Ready to evaluate")}</p>
               <p className="text-xs text-slate-400 mt-1.5 max-w-xs leading-relaxed">
-                Fill in the proposal form and click <strong>Run Evaluation</strong>.
-                Scores will appear here in real-time as each LangGraph node completes.
+                {tx("Fill in the proposal form and click")}{" "}<strong>{tx("Run Evaluation")}</strong>{tx(". Scores will appear here in real-time as each LangGraph node completes.")}
               </p>
             </div>
           )}

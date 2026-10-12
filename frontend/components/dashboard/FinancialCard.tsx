@@ -1,6 +1,7 @@
 import { Bar, PillarCard, Divider } from "./shared";
 import type { Claim } from "@/app/services/claims";
 import type { CommissionLedgerEntry } from "@/app/services/commissions";
+import { tx } from "@/lib/i18n/tx";
 
 function TrendingUpIcon() {
   return (
@@ -86,7 +87,7 @@ export function FinancialCard({ ledger, claims }: FinancialCardProps) {
   return (
     <PillarCard
       icon={<TrendingUpIcon />}
-      title="Financial Summary"
+      title={tx("Financial Summary")}
       barClass="bg-blue-700"
       iconBg="bg-blue-50"
       iconColor="text-blue-700"
@@ -97,19 +98,19 @@ export function FinancialCard({ ledger, claims }: FinancialCardProps) {
         <div className="flex-1 space-y-2">
           <div className="bg-blue-50/80 border border-blue-100/80 rounded-lg px-2.5 py-1.5">
             <div className="flex items-center justify-between">
-              <p className="text-[9px] font-bold uppercase tracking-widest text-blue-500">Collected Premium — This Month</p>
-              <p className="text-[9px] font-bold text-blue-500">{momChangePct >= 0 ? "↑" : "↓"} {Math.abs(momChangePct).toFixed(1)}% vs last mo</p>
+              <p className="text-[9px] font-bold uppercase tracking-widest text-blue-500">{tx("Collected Premium — This Month")}</p>
+              <p className="text-[9px] font-bold text-blue-500">{momChangePct >= 0 ? "↑" : "↓"} {Math.abs(momChangePct).toFixed(1)}{tx("% vs last mo")}</p>
             </div>
-            <p className="text-lg font-extrabold text-blue-800 mt-0.5 leading-tight">PKR {thisMonthPremium.toFixed(1)}M</p>
+            <p className="text-lg font-extrabold text-blue-800 mt-0.5 leading-tight">{tx("PKR")}{" "}{thisMonthPremium.toFixed(1)}M</p>
             <div className="mt-1">
               <Sparkline points={premiumByMonth.map((m) => m.total)} color="#2563eb" />
-              <p className="text-[8px] text-slate-400 mt-0.5 text-right">6-month trend (PKR M)</p>
+              <p className="text-[8px] text-slate-400 mt-0.5 text-right">{tx("6-month trend (PKR M)")}</p>
             </div>
           </div>
 
           {/* Portfolio metrics */}
           <div className="space-y-1">
-            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Key Ratios</p>
+            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">{tx("Key Ratios")}</p>
             {PORTFOLIO_METRICS.map((m) => (
               <Bar key={m.label} label={m.label} pct={m.pct} color={m.color} badge={m.badge} />
             ))}
@@ -121,7 +122,7 @@ export function FinancialCard({ ledger, claims }: FinancialCardProps) {
         {/* Right: Portfolio risk analysis */}
         <div className="sm:w-44 flex-shrink-0 space-y-2">
           <div>
-            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Claims Risk Bands</p>
+            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">{tx("Claims Risk Bands")}</p>
             <div className="space-y-1">
               {RISK_BANDS.map((b) => (
                 <Bar key={b.label} label={b.label} pct={b.pct} color={b.color} badge={`${b.pct.toFixed(0)}%`} />
@@ -133,12 +134,12 @@ export function FinancialCard({ ledger, claims }: FinancialCardProps) {
 
           <div className="space-y-1.5">
             <div>
-              <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-widest">Gross Written Premium</p>
+              <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-widest">{tx("Gross Written Premium")}</p>
               <p className="text-sm font-extrabold text-slate-800 mt-0.5">{fmtCompact(totalPremium)}</p>
-              <p className="text-[8px] text-slate-400">selected range</p>
+              <p className="text-[8px] text-slate-400">{tx("selected range")}</p>
             </div>
             <div>
-              <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-widest">Portfolio Health</p>
+              <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-widest">{tx("Portfolio Health")}</p>
               <span className={`inline-flex items-center gap-1 mt-0.5 text-[10px] font-bold border px-2 py-0.5 rounded-full ${healthClass}`}>
                 {healthLabel}
               </span>

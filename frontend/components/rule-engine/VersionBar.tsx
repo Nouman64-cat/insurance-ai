@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { RuleVersionDetail } from "@/app/services/ruleEngine";
+import { tx } from "@/lib/i18n/tx";
 
 interface Props {
   versions: RuleVersionDetail[];
@@ -51,7 +52,7 @@ export default function VersionBar({
   if (versions.length === 0) {
     return (
       <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl">
-        <span className="text-xs text-slate-500 italic">No versions yet.</span>
+        <span className="text-xs text-slate-500 italic">{tx("No versions yet.")}</span>
         <button
           onClick={onCreateVersion}
           className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
@@ -59,7 +60,7 @@ export default function VersionBar({
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Create First Version
+          {tx("Create First Version")}
         </button>
       </div>
     );
@@ -71,7 +72,7 @@ export default function VersionBar({
         {/* Version pills row */}
         <div className="flex items-center gap-2 px-4 py-2.5 overflow-x-auto border-b border-slate-100 bg-slate-50/70">
           <span className="text-xs font-bold uppercase tracking-wider text-slate-500 shrink-0 mr-1">
-            Versions
+            {tx("Versions")}
           </span>
           {versions.map((v) => (
             <button
@@ -91,12 +92,12 @@ export default function VersionBar({
           <button
             onClick={onCreateVersion}
             className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 border border-dashed border-slate-300 hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50/50 transition shrink-0"
-            title="Create new draft version"
+            title={tx("Create new draft version")}
           >
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-            New Draft
+            {tx("New Draft")}
           </button>
         </div>
 
@@ -106,18 +107,18 @@ export default function VersionBar({
             <div className="flex items-center gap-2 text-xs text-slate-600 flex-wrap font-medium">
               {current.effective_from && (
                 <span>
-                  Effective: <span className="font-mono text-slate-800">{formatEffectiveDate(current.effective_from)}</span>
+                  {tx("Effective:")}{" "}<span className="font-mono text-slate-800">{formatEffectiveDate(current.effective_from)}</span>
                   {current.effective_to && <span> – <span className="font-mono text-slate-800">{formatEffectiveDate(current.effective_to)}</span></span>}
                 </span>
               )}
               {current.authored_by && (
-                <span>Authored by: <span className="font-semibold text-slate-800">{current.authored_by}</span></span>
+                <span>{tx("Authored by:")}{" "}<span className="font-semibold text-slate-800">{current.authored_by}</span></span>
               )}
               {current.approved_by && (
-                <span className="text-emerald-700">· Approved by: <span className="font-semibold">{current.approved_by}</span></span>
+                <span className="text-emerald-700">{tx("· Approved by:")}{" "}<span className="font-semibold">{current.approved_by}</span></span>
               )}
               <span className="text-slate-400">·</span>
-              <span className="text-slate-500">{current.rules?.length || 0} rules</span>
+              <span className="text-slate-500">{current.rules?.length || 0}{" "}{tx("rules")}</span>
             </div>
 
             {current.status === "DRAFT" && (
@@ -130,7 +131,7 @@ export default function VersionBar({
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
-                {isDeploying ? "Deploying..." : "Deploy to Active"}
+                {isDeploying ? tx("Deploying...") : tx("Deploy to Active")}
               </button>
             )}
 
@@ -139,7 +140,7 @@ export default function VersionBar({
                 <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                Active Production Version
+                {tx("Active Production Version")}
               </span>
             )}
           </div>
@@ -165,23 +166,23 @@ export default function VersionBar({
                 </svg>
               </div>
               <div>
-                <h3 className="text-base font-bold text-slate-900">Deploy Version v{current.version_number}</h3>
-                <p className="text-xs text-amber-800 font-medium">Production Release Confirmation</p>
+                <h3 className="text-base font-bold text-slate-900">{tx("Deploy Version v")}{current.version_number}</h3>
+                <p className="text-xs text-amber-800 font-medium">{tx("Production Release Confirmation")}</p>
               </div>
             </div>
 
             <div className="px-6 py-5 space-y-3 text-xs text-slate-700">
               <p>
-                You are about to activate <span className="font-bold text-slate-900">Draft v{current.version_number}</span> ({current.rules?.length || 0} rules).
+                {tx("You are about to activate")}{" "}<span className="font-bold text-slate-900">{tx("Draft v")}{current.version_number}</span> ({current.rules?.length || 0}{" "}{tx("rules).")}
               </p>
               {activeVersion && (
                 <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                  <p className="text-slate-500 text-[11px]">Current Active Version:</p>
+                  <p className="text-slate-500 text-[11px]">{tx("Current Active Version:")}</p>
                   <p className="font-semibold text-slate-800">
-                    v{activeVersion.version_number} (Live since {activeVersion.effective_from ? formatEffectiveDate(activeVersion.effective_from) : "creation"})
+                    v{activeVersion.version_number}{" "}{tx("(Live since")}{" "}{activeVersion.effective_from ? formatEffectiveDate(activeVersion.effective_from) : tx("creation")})
                   </p>
                   <p className="text-slate-500 text-[11px] mt-1">
-                    Deploying will archive v{activeVersion.version_number} and immediately enforce v{current.version_number} in live underwriting evaluations.
+                    {tx("Deploying will archive v")}{activeVersion.version_number}{" "}{tx("and immediately enforce v")}{current.version_number}{" "}{tx("in live underwriting evaluations.")}
                   </p>
                 </div>
               )}
@@ -193,7 +194,7 @@ export default function VersionBar({
                 onClick={() => setShowConfirmDeploy(false)}
                 className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
               >
-                Cancel
+                {tx("Cancel")}
               </button>
               <button
                 type="button"
@@ -201,7 +202,7 @@ export default function VersionBar({
                 onClick={handleConfirmDeploy}
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
               >
-                {isDeploying ? "Deploying..." : "Confirm & Deploy to Production"}
+                {isDeploying ? tx("Deploying...") : tx("Confirm & Deploy to Production")}
               </button>
             </div>
           </div>

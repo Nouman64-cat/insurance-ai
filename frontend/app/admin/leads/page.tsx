@@ -23,6 +23,7 @@ import OrganizationFormModal from "@/components/entities/OrganizationFormModal";
 import { MetricCard } from "@/components/MetricCard";
 import { announceTourLead } from "@/lib/tour/events";
 import LeadProgress, { leadStage } from "@/components/LeadProgress";
+import { tx } from "@/lib/i18n/tx";
 
 type EntityType = "INDIVIDUAL" | "FAMILY" | "CORPORATE";
 type ProfileStatus = "LEAD" | "PROSPECT" | "UNDERWRITING_READY" | "NOT_INTERESTED" | "POLICYHOLDER";
@@ -65,7 +66,7 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
  */
 function AgentCell({ lead, compact = false }: { lead: UnifiedLead; compact?: boolean }) {
   const primary = lead.sourceName || lead.assignedAgentName;
-  if (!primary) return <span className={compact ? "text-slate-400 italic" : "text-xs text-slate-400 italic"}>Unassigned</span>;
+  if (!primary) return <span className={compact ? "text-slate-400 italic" : "text-xs text-slate-400 italic"}>{tx("Unassigned")}</span>;
   const typeLabel = lead.sourceName
     ? SOURCE_TYPE_LABELS[lead.sourceType ?? ""] ?? lead.sourceType ?? null
     : "Agent";
@@ -80,7 +81,7 @@ function AgentCell({ lead, compact = false }: { lead: UnifiedLead; compact?: boo
         </span>
       )}
       <span className={`truncate max-w-full ${compact ? "text-slate-600" : "text-xs font-medium text-slate-700"}`}>{primary}</span>
-      {alsoAssigned && <span className="text-[10px] text-slate-400 truncate max-w-full">Assigned to {alsoAssigned}</span>}
+      {alsoAssigned && <span className="text-[10px] text-slate-400 truncate max-w-full">{tx("Assigned to")}{" "}{alsoAssigned}</span>}
     </div>
   );
 }
@@ -278,7 +279,7 @@ export default function LeadsHubPage() {
     const tenantId = localStorage.getItem("tenant_id");
 
     if (!tenantId) {
-      setError("No active tenant found.");
+      setError(tx("No active tenant found."));
       setLoading(false);
       return;
     }
@@ -457,7 +458,7 @@ export default function LeadsHubPage() {
       }
       setLeads(unified);
     } catch (err: any) {
-      setError(err.message || "Failed to load leads");
+      setError(err.message || tx("Failed to load leads"));
     } finally {
       setLoading(false);
     }
@@ -487,8 +488,8 @@ export default function LeadsHubPage() {
 
     notify(
       fresh.length === 1
-        ? `New lead: ${fresh[0].name}${fresh[0].assignedAgentName ? ` — added by ${fresh[0].assignedAgentName}` : ""}`
-        : `${fresh.length} new leads added`,
+        ? tx("New lead: {0}{1}", { 0: fresh[0].name, 1: fresh[0].assignedAgentName ? ` — added by ${fresh[0].assignedAgentName}` : "" })
+        : tx("{0} new leads added", { 0: fresh.length }),
       true,
     );
 
@@ -602,7 +603,7 @@ export default function LeadsHubPage() {
       setNotice(successMsg);
       await fetchLeads();
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to update status.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to update status."));
     } finally {
       setActionBusyId(null);
     }
@@ -618,17 +619,17 @@ export default function LeadsHubPage() {
     changeLeadStatus(lead, "LEAD", `"${lead.name}" reactivated.`);
 
   const handleDeleteLead = async (lead: UnifiedLead) => {
-    if (!confirm(`Delete this ${lead.type.toLowerCase()} "${lead.name}"? This action cannot be undone.`)) return;
+    if (!confirm(tx("Delete this {0} \"{1}\"? This action cannot be undone.", { 0: lead.type.toLowerCase(), 1: lead.name }))) return;
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId) return;
     setActionBusyId(lead.id);
     setError("");
     try {
       await api.delete(`/tenants/${tenantId}/${entityBase(lead.type)}/${lead.id}`);
-      setNotice(`"${lead.name}" deleted.`);
+      setNotice(tx("\"{0}\" deleted.", { 0: lead.name }));
       await fetchLeads();
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to delete.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to delete."));
     } finally {
       setActionBusyId(null);
     }
@@ -651,9 +652,9 @@ export default function LeadsHubPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Leads</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Leads")}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            {isAgent ? "Add leads and take them as far as a submitted proposal." : "Manage & track your prospects across all segments."}
+            {isAgent ? tx("Add leads and take them as far as a submitted proposal.") : tx("Manage & track your prospects across all segments.")}
           </p>
         </div>
         <div className="flex items-center gap-2 self-start">
@@ -667,25 +668,25 @@ export default function LeadsHubPage() {
               <line x1="9" y1="13" x2="15" y2="13" />
               <line x1="9" y1="17" x2="13" y2="17" />
             </svg>
-            Insurance Plans
+            {tx("Insurance Plans")}
           </button>
           <button
             onClick={() => setChooserType("INDIVIDUAL")}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow active:scale-95"
           >
-            + Add Individual
+            {tx("+ Add Individual")}
           </button>
           <button
             onClick={() => setChooserType("FAMILY")}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow active:scale-95"
           >
-            + Add Family
+            {tx("+ Add Family")}
           </button>
           <button
             onClick={() => setChooserType("CORPORATE")}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow active:scale-95"
           >
-            + Add Corporate
+            {tx("+ Add Corporate")}
           </button>
         </div>
       </div>
@@ -693,25 +694,25 @@ export default function LeadsHubPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
-          title="Total Leads"
+          title={tx("Total Leads")}
           value={statsLeads.length}
           accent="blue"
           icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" /></svg>}
         />
         <MetricCard
-          title="Individual"
+          title={tx("Individual")}
           value={statsLeads.filter(l => l.type === "INDIVIDUAL").length}
           accent="blue"
           icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>}
         />
         <MetricCard
-          title="Family"
+          title={tx("Family")}
           value={statsLeads.filter(l => l.type === "FAMILY").length}
           accent="blue"
           icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M12 3l9 7-9 7-9-7 9-7z" /><circle cx="8" cy="17" r="2" /><circle cx="16" cy="17" r="2" /><path d="M8 15v-2a4 4 0 018 0v2" /></svg>}
         />
         <MetricCard
-          title="Corporate"
+          title={tx("Corporate")}
           value={statsLeads.filter(l => l.type === "CORPORATE").length}
           accent="blue"
           icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M6 22V4a2 2 0 012-2h8a2 2 0 012 2v18z" /><path d="M6 12H4a2 2 0 00-2 2v8h4" /><path d="M18 9h2a2 2 0 012 2v11h-4" /></svg>}
@@ -731,7 +732,7 @@ export default function LeadsHubPage() {
                   : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
                   }`}
               >
-                {ft === "ALL" ? "All" : ft === "INDIVIDUAL" ? "Individual" : ft === "FAMILY" ? "Family" : "Corporate"}
+                {ft === "ALL" ? tx("All") : ft === "INDIVIDUAL" ? tx("Individual") : ft === "FAMILY" ? tx("Family") : tx("Corporate")}
               </button>
             ))}
           </div>
@@ -744,7 +745,7 @@ export default function LeadsHubPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, contact, identifier..."
+              placeholder={tx("Search by name, contact, identifier...")}
               className="w-full pl-9 pr-8 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-shadow"
             />
             {search && (
@@ -785,7 +786,7 @@ export default function LeadsHubPage() {
             <button
               type="button"
               onClick={() => setViewMode("kanban")}
-              title="Kanban Board"
+              title={tx("Kanban Board")}
               className={`p-2 rounded-lg transition-all ${viewMode === "kanban"
                 ? "bg-white text-blue-600 shadow-sm"
                 : "text-slate-500 hover:text-slate-700"
@@ -801,7 +802,7 @@ export default function LeadsHubPage() {
             <button
               type="button"
               onClick={() => setViewMode("table")}
-              title="Tabular View"
+              title={tx("Tabular View")}
               className={`p-2 rounded-lg transition-all ${viewMode === "table"
                 ? "bg-white text-blue-600 shadow-sm"
                 : "text-slate-500 hover:text-slate-700"
@@ -840,7 +841,7 @@ export default function LeadsHubPage() {
             { id: "DEAD", label: "Not interested", dot: "bg-slate-300" },
           ];
           return (
-            <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Lead stage">
+            <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label={tx("Lead stage")}>
               {stages.map((st) => {
                 const count = base.filter((l) => matchesStatus(l, st.id)).length;
                 const on = statusFilter === st.id;
@@ -882,7 +883,7 @@ export default function LeadsHubPage() {
               </span>
             ))}
             <button onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-blue-600 hover:underline ml-1">
-              Clear all
+              {tx("Clear all")}
             </button>
           </div>
         )}
@@ -923,9 +924,9 @@ export default function LeadsHubPage() {
                     <div className="flex items-center justify-between px-2 pb-1 border-b-2 border-amber-300">
                       <h3 className="font-bold text-slate-700 flex items-center gap-2">
                         <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
-                        Leads
+                        {tx("Leads")}
                       </h3>
-                      <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full" title={`Showing ${paginated.filter(l => l.status === "LEAD").length} of ${filtered.filter(l => l.status === "LEAD").length}`}>
+                      <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full" title={tx("Showing {0} of {1}", { 0: paginated.filter(l => l.status === "LEAD").length, 1: filtered.filter(l => l.status === "LEAD").length })}>
                         {filtered.filter(l => l.status === "LEAD").length}
                       </span>
                     </div>
@@ -948,9 +949,9 @@ export default function LeadsHubPage() {
                     <div className="flex items-center justify-between px-2 pb-1 border-b-2 border-blue-400">
                       <h3 className="font-bold text-slate-700 flex items-center gap-2">
                         <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
-                        In Progress
+                        {tx("In Progress")}
                       </h3>
-                      <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full" title={`Showing ${paginated.filter(l => l.status === "PROSPECT" || l.status === "UNDERWRITING_READY").length} of ${filtered.filter(l => l.status === "PROSPECT" || l.status === "UNDERWRITING_READY").length}`}>
+                      <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full" title={tx("Showing {0} of {1}", { 0: paginated.filter(l => l.status === "PROSPECT" || l.status === "UNDERWRITING_READY").length, 1: filtered.filter(l => l.status === "PROSPECT" || l.status === "UNDERWRITING_READY").length })}>
                         {filtered.filter(l => l.status === "PROSPECT" || l.status === "UNDERWRITING_READY").length}
                       </span>
                     </div>
@@ -974,9 +975,9 @@ export default function LeadsHubPage() {
                     <div className="flex items-center justify-between px-2 pb-1 border-b-2 border-fuchsia-400">
                       <h3 className="font-bold text-slate-700 flex items-center gap-2">
                         <span className="w-2.5 h-2.5 rounded-full bg-fuchsia-500"></span>
-                        Draft
+                        {tx("Draft")}
                       </h3>
-                      <span className="bg-fuchsia-100 text-fuchsia-700 text-xs font-bold px-2 py-0.5 rounded-full" title={`Showing ${paginated.filter(l => l.status === "DRAFT").length} of ${filtered.filter(l => l.status === "DRAFT").length}`}>
+                      <span className="bg-fuchsia-100 text-fuchsia-700 text-xs font-bold px-2 py-0.5 rounded-full" title={tx("Showing {0} of {1}", { 0: paginated.filter(l => l.status === "DRAFT").length, 1: filtered.filter(l => l.status === "DRAFT").length })}>
                         {filtered.filter(l => l.status === "DRAFT").length}
                       </span>
                     </div>
@@ -999,9 +1000,9 @@ export default function LeadsHubPage() {
                     <div className="flex items-center justify-between px-2 pb-1 border-b-2 border-slate-300">
                       <h3 className="font-bold text-slate-700 flex items-center gap-2">
                         <span className="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
-                        Dead Leads
+                        {tx("Dead Leads")}
                       </h3>
-                      <span className="bg-slate-200 text-slate-600 text-xs font-bold px-2 py-0.5 rounded-full" title={`Showing ${paginated.filter(l => l.status === "NOT_INTERESTED").length} of ${filtered.filter(l => l.status === "NOT_INTERESTED").length}`}>
+                      <span className="bg-slate-200 text-slate-600 text-xs font-bold px-2 py-0.5 rounded-full" title={tx("Showing {0} of {1}", { 0: paginated.filter(l => l.status === "NOT_INTERESTED").length, 1: filtered.filter(l => l.status === "NOT_INTERESTED").length })}>
                         {filtered.filter(l => l.status === "NOT_INTERESTED").length}
                       </span>
                     </div>
@@ -1027,28 +1028,28 @@ export default function LeadsHubPage() {
                       <svg className="w-12 h-12 mx-auto text-slate-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                       </svg>
-                      <p>No leads or customers found.</p>
+                      <p>{tx("No leads or customers found.")}</p>
                     </div>
                   ) : (
                     <div className="overflow-x-auto w-full">
                       <table className="w-full min-w-[1000px] text-left text-sm whitespace-nowrap">
                         <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-100">
                           <tr>
-                            <th className="px-6 py-4">Lead ID</th>
+                            <th className="px-6 py-4">{tx("Lead ID")}</th>
                             <th className="px-6 py-4">
-                              {filterType === "INDIVIDUAL" ? "Lead/Individual Name" :
-                                filterType === "FAMILY" ? "Lead/Family Member Name" :
-                                  filterType === "CORPORATE" ? "Lead/Corporate Name" :
-                                    "All Leads"}
+                              {filterType === "INDIVIDUAL" ? tx("Lead/Individual Name") :
+                                filterType === "FAMILY" ? tx("Lead/Family Member Name") :
+                                  filterType === "CORPORATE" ? tx("Lead/Corporate Name") :
+                                    tx("All Leads")}
                             </th>
-                            <th className="px-6 py-4">Type</th>
-                            <th className="px-6 py-4">Agent</th>
-                            <th className="px-6 py-4">Contact</th>
-                            <th className="px-6 py-4">CNIC</th>
-                            <th className="px-6 py-4">Date Added</th>
-                            <th className="px-6 py-4">Progress</th>
+                            <th className="px-6 py-4">{tx("Type")}</th>
+                            <th className="px-6 py-4">{tx("Agent")}</th>
+                            <th className="px-6 py-4">{tx("Contact")}</th>
+                            <th className="px-6 py-4">{tx("CNIC")}</th>
+                            <th className="px-6 py-4">{tx("Date Added")}</th>
+                            <th className="px-6 py-4">{tx("Progress")}</th>
                             <th className="px-4 py-4 w-10"></th>
-                            <th className="px-6 py-4 text-right">Actions</th>
+                            <th className="px-6 py-4 text-right">{tx("Actions")}</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -1089,7 +1090,7 @@ export default function LeadsHubPage() {
                                   <button
                                     onClick={(e) => { e.stopPropagation(); handleOpenEditForm(lead); }}
                                     className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-                                    title="View Applicant Form"
+                                    title={tx("View Applicant Form")}
                                   >
                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><circle cx="12" cy="12" r="1.5" /><circle cx="19" cy="12" r="1.5" /><circle cx="5" cy="12" r="1.5" /></svg>
                                   </button>
@@ -1102,7 +1103,7 @@ export default function LeadsHubPage() {
                                         onClick={() => handleReactivate(lead)}
                                         className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
                                       >
-                                        Reactivate
+                                        {tx("Reactivate")}
                                       </button>
                                     ) : (
                                       <>
@@ -1112,7 +1113,7 @@ export default function LeadsHubPage() {
                                             onClick={() => handleMoveInProgress(lead)}
                                             className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
                                           >
-                                            In Progress
+                                            {tx("In Progress")}
                                           </button>
                                         )}
                                         <button
@@ -1120,7 +1121,7 @@ export default function LeadsHubPage() {
                                           onClick={() => handleMarkNotInterested(lead)}
                                           className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors"
                                         >
-                                          Not Interested
+                                          {tx("Not Interested")}
                                         </button>
                                       </>
                                     )}
@@ -1130,7 +1131,7 @@ export default function LeadsHubPage() {
                                       onClick={() => handleDeleteLead(lead)}
                                       className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-white border border-red-100 text-red-600 hover:bg-red-50 transition-colors"
                                     >
-                                      Delete
+                                      {tx("Delete")}
                                     </button>
                                     )}
                                   </div>
@@ -1149,7 +1150,7 @@ export default function LeadsHubPage() {
               {totalItems > 0 && (
                 <div className="bg-slate-50 px-6 py-4 border border-slate-200 rounded-xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 w-full">
                   <div className="text-xs text-slate-500">
-                    Showing <span className="font-semibold text-slate-700">{Math.min(totalItems, (currentPage - 1) * itemsPerPage + 1)}-{Math.min(totalItems, currentPage * itemsPerPage)}</span> of <span className="font-semibold text-slate-700">{totalItems}</span> leads
+                    {tx("Showing")}{" "}<span className="font-semibold text-slate-700">{Math.min(totalItems, (currentPage - 1) * itemsPerPage + 1)}-{Math.min(totalItems, currentPage * itemsPerPage)}</span>{" "}{tx("of")}{" "}<span className="font-semibold text-slate-700">{totalItems}</span>{" "}{tx("leads")}
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -1157,17 +1158,17 @@ export default function LeadsHubPage() {
                       disabled={currentPage === 1}
                       className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
                     >
-                      Previous
+                      {tx("Previous")}
                     </button>
                     <div className="text-xs font-semibold text-slate-700 px-2">
-                      Page {currentPage} of {totalPages}
+                      {tx("Page")}{" "}{currentPage}{" "}{tx("of")}{" "}{totalPages}
                     </div>
                     <button
                       onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                       disabled={currentPage === totalPages}
                       className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
                     >
-                      Next
+                      {tx("Next")}
                     </button>
                   </div>
                 </div>
@@ -1359,36 +1360,36 @@ function LeadCard({
 
       {lead.primaryIdentifier && (
         <div className="text-[11px] text-slate-400 font-mono mt-1">
-          CNIC: {lead.primaryIdentifier}
+          {tx("CNIC:")}{" "}{lead.primaryIdentifier}
         </div>
       )}
 
       <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between items-center text-[10px] text-slate-400">
-        <span>Added {new Date(lead.created_at).toLocaleDateString()}</span>
-        <span className="text-blue-600 font-semibold group-hover:underline">View Details →</span>
+        <span>{tx("Added")}{" "}{new Date(lead.created_at).toLocaleDateString()}</span>
+        <span className="text-blue-600 font-semibold group-hover:underline">{tx("View Details →")}</span>
       </div>
 
       {/* Contextual actions — depend on the lead's current pipeline stage */}
       <div className="mt-2.5 pt-2.5 border-t border-slate-100 flex flex-wrap items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
         {isDead ? (
           <button disabled={busy} onClick={act(onReactivate)} className={`${btnBase} text-blue-700 bg-blue-50 hover:bg-blue-100`}>
-            Reactivate
+            {tx("Reactivate")}
           </button>
         ) : (
           <>
             {isLead && (
               <button disabled={busy} onClick={act(onMoveInProgress)} className={`${btnBase} text-blue-700 bg-blue-50 hover:bg-blue-100`}>
-                In Progress
+                {tx("In Progress")}
               </button>
             )}
             <button disabled={busy} onClick={act(onMarkNotInterested)} className={`${btnBase} text-rose-600 bg-rose-50 hover:bg-rose-100`}>
-              Not Interested
+              {tx("Not Interested")}
             </button>
           </>
         )}
         {onDelete && (
           <button disabled={busy} onClick={act(onDelete)} className={`${btnBase} text-red-600 bg-white border border-red-100 hover:bg-red-50 ml-auto`}>
-            Delete
+            {tx("Delete")}
           </button>
         )}
       </div>

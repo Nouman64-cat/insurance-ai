@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { tx } from "@/lib/i18n/tx";
 
 export interface CardVisibilityItem {
   id: string;
@@ -49,14 +50,14 @@ export function CardVisibilityMenu({ items, isVisible, onToggle }: CardVisibilit
         type="button"
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 transition-all"
-        title="Show / hide cards"
+        title={tx("Show / hide cards")}
       >
         <SlidersIcon />
-        <span className="hidden sm:inline">Customize</span>
+        <span className="hidden sm:inline">{tx("Customize")}</span>
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1.5 w-56 bg-white border border-slate-200 rounded-xl shadow-lg z-30 p-2">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 py-1">Visible Cards</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 py-1">{tx("Visible Cards")}</p>
           <div className="max-h-64 overflow-y-auto">
             {items.map((item) => (
               <label

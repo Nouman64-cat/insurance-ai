@@ -96,7 +96,7 @@ function IssuanceModal({ policy, onClose, onIssued, userRole }: IssuanceModalPro
         const p = await getIssuancePreview(policy.id);
         if (alive) setPreview(p);
       } catch (e: any) {
-        if (alive) setError(e?.response?.data?.detail ?? "Failed to load issuance preview.");
+        if (alive) setError(e?.response?.data?.detail ?? tx("Failed to load issuance preview."));
       } finally {
         if (alive) setLoadingPreview(false);
       }
@@ -108,7 +108,7 @@ function IssuanceModal({ policy, onClose, onIssued, userRole }: IssuanceModalPro
     setIssuing(true); setError(null);
     try {
       const result = await issuePolicy(policy.id);
-      notify("Policy issued successfully!", true);
+      notify(tx("Policy issued successfully!"), true);
       onIssued(result, policy.id);
     } catch (e: any) {
       const msg = e?.response?.data?.detail ?? "Failed to issue policy.";
@@ -130,7 +130,7 @@ function IssuanceModal({ policy, onClose, onIssued, userRole }: IssuanceModalPro
         {/* Header + stepper */}
         <div className="bg-gradient-to-r from-blue-600 to-blue-600 px-6 py-4 flex items-center justify-between">
           <div>
-            <h2 className="text-white text-lg font-bold">Issue Policy</h2>
+            <h2 className="text-white text-lg font-bold">{tx("Issue Policy")}</h2>
             <div className="mt-2"><IssueStepper current={0} /></div>
           </div>
           <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
@@ -142,53 +142,53 @@ function IssuanceModal({ policy, onClose, onIssued, userRole }: IssuanceModalPro
           {loadingPreview ? (
             <div className="py-12 flex justify-center"><div className="w-7 h-7 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>
           ) : !preview ? (
-            <p className="text-sm text-red-600">{error ?? "Preview unavailable."}</p>
+            <p className="text-sm text-red-600">{error ?? tx("Preview unavailable.")}</p>
           ) : (
             <>
               {/* Readiness banner */}
               {ready ? (
-                <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs font-semibold text-blue-700">✓ All pre-issuance gates cleared — ready to bind.</div>
+                <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs font-semibold text-blue-700">{tx("✓ All pre-issuance gates cleared — ready to bind.")}</div>
               ) : (
                 <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-                  <p className="text-xs font-bold text-red-700">{blockers.length} gate(s) block issuance</p>
+                  <p className="text-xs font-bold text-red-700">{blockers.length}{" "}{tx("gate(s) block issuance")}</p>
                   <ul className="mt-1 space-y-0.5">{blockers.map((b) => <li key={b} className="text-[11px] text-red-600">• {b}</li>)}</ul>
                 </div>
               )}
               {warnings.length > 0 && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-                  <p className="text-xs font-bold text-amber-700">Demo bypass — required in production</p>
+                  <p className="text-xs font-bold text-amber-700">{tx("Demo bypass — required in production")}</p>
                   <ul className="mt-1 space-y-0.5">{warnings.map((w) => <li key={w} className="text-[11px] text-amber-700">• {w}</li>)}</ul>
                 </div>
               )}
 
               {/* Insured */}
               <div>
-                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">Insured</p>
+                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">{tx("Insured")}</p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 rounded-xl p-4">
-                  <Field label="Name" value={preview.insured.name} />
-                  <Field label="CNIC" value={preview.insured.cnic ?? "—"} />
-                  <Field label="Date of birth" value={preview.insured.dob ?? "—"} />
-                  <Field label="Smoker" value={preview.insured.is_smoker ? "Yes" : "No"} />
+                  <Field label={tx("Name")} value={preview.insured.name} />
+                  <Field label={tx("CNIC")} value={preview.insured.cnic ?? "—"} />
+                  <Field label={tx("Date of birth")} value={preview.insured.dob ?? "—"} />
+                  <Field label={tx("Smoker")} value={preview.insured.is_smoker ? "Yes" : "No"} />
                 </div>
               </div>
 
               {/* Contract terms */}
               <div>
-                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">Contract terms</p>
+                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">{tx("Contract terms")}</p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 bg-slate-50 rounded-xl p-4">
-                  <Field label="Product" value={preview.contract.product_name} />
-                  <Field label="Sum assured" value={fmtCoverage(preview.contract.coverage_amount)} />
-                  <Field label="Insurance Terms" value={`${preview.contract.term_years} years`} />
-                  <Field label="Commencement" value={preview.contract.effective_date} />
-                  <Field label="Maturity date" value={<span className="text-blue-700">{preview.contract.maturity_date}</span>} />
-                  <Field label="Billing" value={preview.contract.billing_frequency} />
+                  <Field label={tx("Product")} value={preview.contract.product_name} />
+                  <Field label={tx("Sum assured")} value={fmtCoverage(preview.contract.coverage_amount)} />
+                  <Field label={tx("Insurance Terms")} value={`${preview.contract.term_years} years`} />
+                  <Field label={tx("Commencement")} value={preview.contract.effective_date} />
+                  <Field label={tx("Maturity date")} value={<span className="text-blue-700">{preview.contract.maturity_date}</span>} />
+                  <Field label={tx("Billing")} value={preview.contract.billing_frequency} />
                 </div>
               </div>
 
               {/* Premium breakdown */}
               {pb && (
                 <div>
-                  <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">Premium breakdown</p>
+                  <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">{tx("Premium breakdown")}</p>
                   <div className="rounded-xl border border-slate-200 divide-y divide-slate-50">
                     {[
                       ["Base premium", pb.base_premium],
@@ -202,7 +202,7 @@ function IssuanceModal({ policy, onClose, onIssued, userRole }: IssuanceModalPro
                       </div>
                     ))}
                     <div className="flex justify-between px-4 py-2.5 bg-blue-50/50">
-                      <span className="text-sm font-bold text-slate-900">Total annual premium</span>
+                      <span className="text-sm font-bold text-slate-900">{tx("Total annual premium")}</span>
                       <span className="text-sm font-bold text-blue-700">{fmtPKR(pb.total_premium)}</span>
                     </div>
                   </div>
@@ -211,9 +211,9 @@ function IssuanceModal({ policy, onClose, onIssued, userRole }: IssuanceModalPro
 
               {/* Beneficiaries */}
               <div>
-                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">Beneficiaries</p>
+                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">{tx("Beneficiaries")}</p>
                 {preview.beneficiaries.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">None captured.</p>
+                  <p className="text-xs text-slate-400 italic">{tx("None captured.")}</p>
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {preview.beneficiaries.map((b) => (
@@ -226,7 +226,7 @@ function IssuanceModal({ policy, onClose, onIssued, userRole }: IssuanceModalPro
               </div>
 
               <p className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                Issuing mints the policy number and drafts the contract, then moves to <b>Pending Payment</b>. Cover activates once the first premium is confirmed.
+                {tx("Issuing mints the policy number and drafts the contract, then moves to")}{" "}<b>{tx("Pending Payment")}</b>{tx(". Cover activates once the first premium is confirmed.")}
               </p>
             </>
           )}
@@ -236,11 +236,11 @@ function IssuanceModal({ policy, onClose, onIssued, userRole }: IssuanceModalPro
 
         {/* Footer actions */}
         <div className="border-t border-slate-100 px-6 py-4 flex gap-3">
-          <button onClick={onClose} className="flex-1 px-4 py-2.5 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">Cancel</button>
+          <button onClick={onClose} className="flex-1 px-4 py-2.5 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">{tx("Cancel")}</button>
           <button onClick={handleIssue} disabled={issuing || loadingPreview || !ready || userRole === "Agent"}
-            title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : (!ready ? "Clear the blocking gates first" : undefined)}
+            title={userRole === "Agent" ? tx("Currently, you have no access to do this, ask your manager") : (!ready ? tx("Clear the blocking gates first") : undefined)}
             className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-600 rounded-xl hover:from-blue-700 hover:to-blue-700 disabled:opacity-50 transition-all shadow-sm">
-            {issuing ? "Binding…" : "Issue & bind →"}
+            {issuing ? tx("Binding…") : tx("Issue & bind →")}
           </button>
         </div>
       </div>
@@ -262,9 +262,9 @@ function SuccessModal({ result, policyName, onClose }: SuccessModalProps) {
         <div className="px-6 py-5 bg-gradient-to-r from-blue-600 to-blue-600">
           <div className="flex justify-center mb-3"><IssueStepper current={1} /></div>
           <div className="text-center">
-            <h2 className="text-white text-xl font-bold">{isPending ? "Policy Drafted & Number Assigned" : "Policy Issued!"}</h2>
+            <h2 className="text-white text-xl font-bold">{isPending ? tx("Policy Drafted & Number Assigned") : tx("Policy Issued!")}</h2>
             <p className="text-sm mt-1 text-blue-100">
-              {policyName}{isPending ? " — next: collect the first premium" : ""}
+              {policyName}{isPending ? " " + tx("— next: collect the first premium") : ""}
             </p>
           </div>
         </div>
@@ -284,10 +284,10 @@ function SuccessModal({ result, policyName, onClose }: SuccessModalProps) {
           ))}
           <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5 mt-1">
             <span aria-hidden>📄</span>
-            <p className="text-[11px] text-blue-800">The Policy Schedule, Certificate & Wording are generated and become downloadable once the first premium is confirmed (Bind & Pay).</p>
+            <p className="text-[11px] text-blue-800">{tx("The Policy Schedule, Certificate & Wording are generated and become downloadable once the first premium is confirmed (Bind & Pay).")}</p>
           </div>
           <button onClick={onClose} className="w-full mt-1 px-4 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-600 rounded-xl hover:from-blue-700 hover:to-blue-700 transition-all shadow-sm">
-            {isPending ? "Continue to payment →" : "Done"}
+            {isPending ? tx("Continue to payment →") : tx("Done")}
           </button>
         </div>
       </div>
@@ -331,7 +331,7 @@ function PaymentModal({ policy, onClose, onConfirmed, userRole }: PaymentModalPr
         const notice = docs.find(d => d.document_type === "PremiumNotice");
         if (notice) setPremiumNoticeId(notice.id);
       } catch (e: any) {
-        if (alive) setError(e?.response?.data?.detail ?? "Failed to load payment details.");
+        if (alive) setError(e?.response?.data?.detail ?? tx("Failed to load payment details."));
       } finally {
         if (alive) setLoading(false);
       }
@@ -344,7 +344,7 @@ function PaymentModal({ policy, onClose, onConfirmed, userRole }: PaymentModalPr
     setError(null);
     try {
       const result = await confirmPayment(policy.id, { method: selected, reference });
-      notify("Payment confirmed successfully!", true);
+      notify(tx("Payment confirmed successfully!"), true);
       onConfirmed(result, policy.id);
     } catch (e: any) {
       const msg = e?.response?.data?.detail ?? "Payment confirmation failed.";
@@ -361,10 +361,10 @@ function PaymentModal({ policy, onClose, onConfirmed, userRole }: PaymentModalPr
     setError(null);
     try {
       await downloadDocument(policy.id, premiumNoticeId);
-      notify("Notice downloaded successfully.", true);
+      notify(tx("Notice downloaded successfully."), true);
     } catch (e: any) {
-      setError("Failed to download Premium Notice.");
-      notify("Failed to download Premium Notice.", false);
+      setError(tx("Failed to download Premium Notice."));
+      notify(tx("Failed to download Premium Notice."), false);
     } finally {
       setDownloading(false);
     }
@@ -376,8 +376,8 @@ function PaymentModal({ policy, onClose, onConfirmed, userRole }: PaymentModalPr
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-blue-100 text-xs font-medium uppercase tracking-widest">First Premium Collection</p>
-              <h2 className="text-white text-lg font-bold mt-0.5">Confirm Payment</h2>
+              <p className="text-blue-100 text-xs font-medium uppercase tracking-widest">{tx("First Premium Collection")}</p>
+              <h2 className="text-white text-lg font-bold mt-0.5">{tx("Confirm Payment")}</h2>
             </div>
             <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
@@ -389,20 +389,20 @@ function PaymentModal({ policy, onClose, onConfirmed, userRole }: PaymentModalPr
 
         <div className="px-6 py-5 space-y-5">
           <div className="bg-slate-50 rounded-xl p-4 space-y-1.5">
-            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Policy Awaiting Payment</p>
+            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">{tx("Policy Awaiting Payment")}</p>
             <p className="text-sm font-bold text-slate-900">{policy.customer_name}</p>
             <p className="text-xs text-slate-500 font-mono">{policy.policy_number ?? "—"} · {policy.product_name}</p>
           </div>
 
           <div className="flex items-center justify-between border-y border-slate-100 py-3">
-            <p className="text-sm font-semibold text-slate-700">Amount Due</p>
+            <p className="text-sm font-semibold text-slate-700">{tx("Amount Due")}</p>
             <p className="text-lg font-bold text-blue-700">
               {loading ? "…" : amountDue != null ? fmtPKR(amountDue) : "—"}
             </p>
           </div>
 
           <div>
-            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">Payment Channel</p>
+            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">{tx("Payment Channel")}</p>
             <div className="grid grid-cols-2 gap-2">
               {methods.map(m => (
                 <button
@@ -417,14 +417,14 @@ function PaymentModal({ policy, onClose, onConfirmed, userRole }: PaymentModalPr
           </div>
 
           {reference && (
-            <p className="text-[11px] text-slate-400 font-mono">Reference: {reference}</p>
+            <p className="text-[11px] text-slate-400 font-mono">{tx("Reference:")}{" "}{reference}</p>
           )}
 
           <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5">
               <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
-            <p className="text-xs text-blue-700">Settlement is simulated via a mock gateway. Confirming realizes the first premium and activates coverage.</p>
+            <p className="text-xs text-blue-700">{tx("Settlement is simulated via a mock gateway. Confirming realizes the first premium and activates coverage.")}</p>
           </div>
 
           {error && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
@@ -440,21 +440,21 @@ function PaymentModal({ policy, onClose, onConfirmed, userRole }: PaymentModalPr
                 <polyline points="7 10 12 15 17 10" />
                 <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
-              {downloading ? "Downloading..." : "Download Premium Notice (PDF)"}
+              {downloading ? tx("Downloading...") : tx("Download Premium Notice (PDF)")}
             </button>
           )}
 
           <div className="flex gap-3 pt-1">
             <button onClick={onClose} className="flex-1 px-4 py-2.5 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
-              Cancel
+              {tx("Cancel")}
             </button>
             <button
               onClick={handleConfirm}
               disabled={loading || confirming || !selected || userRole === "Agent"}
-              title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : undefined}
+              title={userRole === "Agent" ? tx("Currently, you have no access to do this, ask your manager") : undefined}
               className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 transition-all shadow-sm"
             >
-              {confirming ? "Confirming…" : "Confirm & Activate"}
+              {confirming ? tx("Confirming…") : tx("Confirm & Activate")}
             </button>
           </div>
         </div>
@@ -466,6 +466,7 @@ function PaymentModal({ policy, onClose, onConfirmed, userRole }: PaymentModalPr
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { Pagination, usePagination } from "@/components/Pagination";
+import { tx } from "@/lib/i18n/tx";
 
 function PolicyIssuanceContent() {
   const searchParams = useSearchParams();
@@ -617,7 +618,7 @@ function PolicyIssuanceContent() {
   const handleConfirmed = (result: PaymentConfirmResult, policyId: string) => {
     const pol = policies.find(p => p.id === policyId);
     setPaymentPolicy(null);
-    setActivatedMsg(`${pol?.customer_name ?? "Policy"} — ${result.policy_number} is now Active.`);
+    setActivatedMsg(tx("{0} — {1} is now Active.", { 0: pol?.customer_name ?? "Policy", 1: result.policy_number }));
     load();
     goToPostIssuance();
     setTimeout(() => setActivatedMsg(null), 6000);
@@ -636,13 +637,13 @@ function PolicyIssuanceContent() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-slate-900 tracking-tight">Policy Issuance Hub</h1>
+              <h1 className="text-lg font-bold text-slate-900 tracking-tight">{tx("Policy Issuance Hub")}</h1>
               <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 text-[10px] font-semibold uppercase tracking-wider">
-                Unified Portal
+                {tx("Unified Portal")}
               </span>
             </div>
             <p className="text-xs text-slate-500">
-              Bind approved proposals, verify pre-issuance gates, collect premiums &amp; manage active contracts.
+              {tx("Bind approved proposals, verify pre-issuance gates, collect premiums & manage active contracts.")}
             </p>
           </div>
         </div>
@@ -652,7 +653,7 @@ function PolicyIssuanceContent() {
 
       {errorMsg && (
         <div className="bg-red-50 text-red-700 p-4 rounded-lg border border-red-200">
-          <p className="font-bold">Error loading data:</p>
+          <p className="font-bold">{tx("Error loading data:")}</p>
           <p>{errorMsg}</p>
         </div>
       )}
@@ -681,7 +682,7 @@ function PolicyIssuanceContent() {
         <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
           <input
             type="text"
-            placeholder="Search customer, policy, product…"
+            placeholder={tx("Search customer, policy, product…")}
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full max-w-xs px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-slate-50"
@@ -724,7 +725,7 @@ function PolicyIssuanceContent() {
             </span>
           ))}
           <button onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-blue-600 hover:underline ml-1">
-            Clear all
+            {tx("Clear all")}
           </button>
         </div>
       )}
@@ -739,10 +740,10 @@ function PolicyIssuanceContent() {
               <span className="text-2xl">📋</span>
             </div>
             <p className="text-sm font-semibold text-slate-600">
-              {tab === "queue" ? "No policies awaiting issuance" : "No active policies"}
+              {tab === "queue" ? tx("No policies awaiting issuance") : tx("No active policies")}
             </p>
             <p className="text-xs text-slate-400 mt-1 max-w-xs">
-              {tab === "queue" ? "Approved cases from underwriting will appear here." : "Issued policies will appear here once bound."}
+              {tab === "queue" ? tx("Approved cases from underwriting will appear here.") : tx("Issued policies will appear here once bound.")}
             </p>
           </div>
         ) : (
@@ -751,15 +752,15 @@ function PolicyIssuanceContent() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  <th className="px-5 py-3 text-left">Customer</th>
-                  {tab === "queue" && <th className="px-5 py-3 text-left">Case No</th>}
-                  {tab === "active" && <th className="px-5 py-3 text-left">Policy No</th>}
-                  <th className="px-5 py-3 text-left">Product</th>
-                  <th className="px-5 py-3 text-right">Sum Assured</th>
-                  <th className="px-5 py-3 text-left">Status</th>
-                  {tab === "queue" && <th className="px-5 py-3 text-left w-56">Stage</th>}
-                  {tab === "active" && <th className="px-5 py-3 text-left">Expiry</th>}
-                  <th className="px-5 py-3 text-right">Action</th>
+                  <th className="px-5 py-3 text-left">{tx("Customer")}</th>
+                  {tab === "queue" && <th className="px-5 py-3 text-left">{tx("Case No")}</th>}
+                  {tab === "active" && <th className="px-5 py-3 text-left">{tx("Policy No")}</th>}
+                  <th className="px-5 py-3 text-left">{tx("Product")}</th>
+                  <th className="px-5 py-3 text-right">{tx("Sum Assured")}</th>
+                  <th className="px-5 py-3 text-left">{tx("Status")}</th>
+                  {tab === "queue" && <th className="px-5 py-3 text-left w-56">{tx("Stage")}</th>}
+                  {tab === "active" && <th className="px-5 py-3 text-left">{tx("Expiry")}</th>}
+                  <th className="px-5 py-3 text-right">{tx("Action")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -773,7 +774,7 @@ function PolicyIssuanceContent() {
                       <div>
                         <p className="font-semibold text-slate-800 text-xs">{p.customer_name}</p>
                         {tab === "queue" && (
-                          <p className="text-[10px] text-slate-400 mt-0.5">{p.term_years}yr term</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">{p.term_years}{tx("yr term")}</p>
                         )}
                       </div>
                     </td>
@@ -795,7 +796,7 @@ function PolicyIssuanceContent() {
                     <td className="px-5 py-3 text-right font-semibold text-slate-700 text-xs">{fmtCoverage(p.coverage_amount)}</td>
                     <td className="px-5 py-3">
                       <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border ${STATUS_BADGE[(p.status || "").toUpperCase()] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>
-                        {p.status === "Approved" || p.status === "AcceptedWithLoadings" ? "Pending Issuance" : p.status}
+                        {p.status === "Approved" || p.status === "AcceptedWithLoadings" ? tx("Pending Issuance") : p.status}
                       </span>
                     </td>
                     {tab === "queue" && (
@@ -818,7 +819,7 @@ function PolicyIssuanceContent() {
                               if (userRole === "Agent") return;
                               setPaymentPolicy(p);
                             }}
-                            title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : undefined}
+                            title={userRole === "Agent" ? tx("Currently, you have no access to do this, ask your manager") : undefined}
                             className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white rounded-lg shadow-sm whitespace-nowrap transition-all ${
                               userRole === "Agent"
                                 ? "bg-slate-400 opacity-50 cursor-not-allowed"
@@ -828,7 +829,7 @@ function PolicyIssuanceContent() {
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3">
                               <rect x="1" y="4" width="22" height="16" rx="2" /><line x1="1" y1="10" x2="23" y2="10" />
                             </svg>
-                            Confirm Payment
+                            {tx("Confirm Payment")}
                           </button>
                         ) : (
                           <button
@@ -838,7 +839,7 @@ function PolicyIssuanceContent() {
                               if (userRole === "Agent") return;
                               setSelectedPolicy(p);
                             }}
-                            title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : undefined}
+                            title={userRole === "Agent" ? tx("Currently, you have no access to do this, ask your manager") : undefined}
                             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-bold shadow-sm transition-colors ${
                               userRole === "Agent"
                                 ? "bg-slate-400 opacity-50 cursor-not-allowed"
@@ -848,7 +849,7 @@ function PolicyIssuanceContent() {
                             <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3">
                               <polygon points="5 3 19 12 5 21" />
                             </svg>
-                            Issue Policy
+                            {tx("Issue Policy")}
                           </button>
                         )
                       ) : (
@@ -859,7 +860,7 @@ function PolicyIssuanceContent() {
                           }}
                           className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors"
                         >
-                          View Details
+                          {tx("View Details")}
                         </button>
                       )}
                     </td>
@@ -868,7 +869,7 @@ function PolicyIssuanceContent() {
               </tbody>
             </table>
           </div>
-          <Pagination pagination={pagination} noun="policies" inline />
+          <Pagination pagination={pagination} noun={tx("policies")} inline />
           </>
         )}
       </div>

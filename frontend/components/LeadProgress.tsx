@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { tx } from "@/lib/i18n/tx";
 
 // Where a lead is on its way to a policy, readable at a glance in a list.
 //
@@ -86,8 +87,8 @@ const TEXT: Record<Tone, string> = {
 export default function LeadProgress({ lead }: { lead: LeadLike }) {
   const s = leadStage(lead);
   return (
-    <div className="min-w-[10.5rem]" title={`${s.label} · stage ${Math.max(s.step, 1)} of 5: ${LEAD_STAGES[Math.max(s.step, 1) - 1]}`}>
-      <div className="flex items-center gap-1" role="img" aria-label={`${s.label}, stage ${s.step} of 5`}>
+    <div className="min-w-[10.5rem]" title={tx("{0} · stage {1} of 5: {2}", { 0: s.label, 1: Math.max(s.step, 1), 2: LEAD_STAGES[Math.max(s.step, 1) - 1] })}>
+      <div className="flex items-center gap-1" role="img" aria-label={tx("{0}, stage {1} of 5", { 0: s.label, 1: s.step })}>
         {LEAD_STAGES.map((stage, i) => (
           <span
             key={stage}

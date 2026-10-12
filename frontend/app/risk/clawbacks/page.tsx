@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { ClawbackTransaction, listClawbacks } from "../../services/commissions";
 import DemoDataBanner from "@/components/DemoDataBanner";
 import { Pagination, usePagination } from "@/components/Pagination";
+import { tx } from "@/lib/i18n/tx";
 
 export default function ClawbackEnginePage() {
   const [clawbacks, setClawbacks] = useState<ClawbackTransaction[]>([]);
@@ -32,7 +33,7 @@ export default function ClawbackEnginePage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900">Clawback Engine</h1>
+            <h1 className="text-xl font-semibold tracking-tight text-slate-900">{tx("Clawback Engine")}</h1>
             {/* <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">Risk & Regulatory</span> */}
           </div>
           {/* <p className="text-xs text-slate-500 mt-1">
@@ -43,41 +44,41 @@ export default function ClawbackEnginePage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col justify-between">
-          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">14-Day Free-Look Recoveries</div>
-          <div className="text-2xl font-bold text-slate-900">100% FYC</div>
-          <div className="text-xs text-slate-400 mt-1">Immediate reversal of First-Year Commission</div>
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">{tx("14-Day Free-Look Recoveries")}</div>
+          <div className="text-2xl font-bold text-slate-900">{tx("100% FYC")}</div>
+          <div className="text-xs text-slate-400 mt-1">{tx("Immediate reversal of First-Year Commission")}</div>
         </div>
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col justify-between">
-          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Multi-Tier Cascade Engine</div>
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">{tx("Multi-Tier Cascade Engine")}</div>
           <div className="text-xs text-slate-600 space-y-1">
-            <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> <span>Agent Split Reversal</span></div>
-            <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> <span>Unit Manager Override Reversal</span></div>
-            <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> <span>Branch Manager Override Reversal</span></div>
+            <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> <span>{tx("Agent Split Reversal")}</span></div>
+            <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> <span>{tx("Unit Manager Override Reversal")}</span></div>
+            <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> <span>{tx("Branch Manager Override Reversal")}</span></div>
           </div>
         </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-          <h2 className="text-sm font-bold text-slate-800">Cascade Debit Notes & Recoveries</h2>
+          <h2 className="text-sm font-bold text-slate-800">{tx("Cascade Debit Notes & Recoveries")}</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="bg-slate-50 text-slate-500 border-b border-slate-100 text-xs">
               <tr>
-                <th className="px-5 py-3 font-semibold">Policy / Trigger</th>
-                <th className="px-5 py-3 font-semibold">Hierarchy Target</th>
-                <th className="px-5 py-3 font-semibold text-right">Gross Reversal</th>
-                <th className="px-5 py-3 font-semibold text-right">Tax Adj (WHT)</th>
-                <th className="px-5 py-3 font-semibold text-right">Net Debit</th>
-                <th className="px-5 py-3 font-semibold">Recovery Status</th>
+                <th className="px-5 py-3 font-semibold">{tx("Policy / Trigger")}</th>
+                <th className="px-5 py-3 font-semibold">{tx("Hierarchy Target")}</th>
+                <th className="px-5 py-3 font-semibold text-right">{tx("Gross Reversal")}</th>
+                <th className="px-5 py-3 font-semibold text-right">{tx("Tax Adj (WHT)")}</th>
+                <th className="px-5 py-3 font-semibold text-right">{tx("Net Debit")}</th>
+                <th className="px-5 py-3 font-semibold">{tx("Recovery Status")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {loading ? (
-                <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-400 text-xs">Loading clawbacks...</td></tr>
+                <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-400 text-xs">{tx("Loading clawbacks...")}</td></tr>
               ) : clawbacks.length === 0 ? (
-                <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-400 text-xs">No clawback transactions found.</td></tr>
+                <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-400 text-xs">{tx("No clawback transactions found.")}</td></tr>
               ) : (
                 pagedClawbacks.map((c) => (
                   <tr key={c.clawbackId} className="hover:bg-slate-50/50 transition-colors">
@@ -90,13 +91,13 @@ export default function ClawbackEnginePage() {
                       <div className="text-[10px] text-slate-500 font-mono">{c.roleInHierarchy}</div>
                     </td>
                     <td className="px-5 py-3 text-right text-rose-600 font-medium">
-                      (Rs. {c.grossClawbackAmount.toLocaleString()})
+                      {tx("(Rs.")}{" "}{c.grossClawbackAmount.toLocaleString()})
                     </td>
                     <td className="px-5 py-3 text-right text-emerald-600 font-medium">
-                      +Rs. {c.taxAdjustmentAmount.toLocaleString()}
+                      {tx("+Rs.")}{" "}{c.taxAdjustmentAmount.toLocaleString()}
                     </td>
                     <td className="px-5 py-3 text-right">
-                      <div className="font-bold text-rose-700">(Rs. {c.netDebitAmount.toLocaleString()})</div>
+                      <div className="font-bold text-rose-700">{tx("(Rs.")}{" "}{c.netDebitAmount.toLocaleString()})</div>
                     </td>
                     <td className="px-5 py-3">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${c.recoveryStatus === 'FULLY_RECOVERED' ? 'bg-emerald-100 text-emerald-800' :
@@ -106,7 +107,7 @@ export default function ClawbackEnginePage() {
                         {c.recoveryStatus.replace(/_/g, ' ')}
                       </span>
                       {c.recoveryStatus === 'CARRIED_FORWARD_DEBT' && (
-                        <div className="text-[10px] text-slate-400 mt-1">Pending next payout run</div>
+                        <div className="text-[10px] text-slate-400 mt-1">{tx("Pending next payout run")}</div>
                       )}
                     </td>
                   </tr>
@@ -115,7 +116,7 @@ export default function ClawbackEnginePage() {
             </tbody>
           </table>
         </div>
-          <Pagination pagination={pagination} noun="clawbacks" inline />
+          <Pagination pagination={pagination} noun={tx("clawbacks")} inline />
       </div>
     </div>
   );

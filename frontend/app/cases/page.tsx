@@ -6,6 +6,7 @@ import { workflowStore } from "../case-summarizer/workflowStore";
 import api from "@/app/services/api";
 import { useNotify } from "@/components/NotificationContext";
 import { Pagination, usePagination } from "@/components/Pagination";
+import { tx } from "@/lib/i18n/tx";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -148,7 +149,7 @@ function ArtifactThumbnail({ artifact, ext }: { artifact: Artifact; ext: string 
   return (
     <img
       src={artifact.download_url}
-      alt={artifact.file_name ?? "Document preview"}
+      alt={artifact.file_name ?? tx("Document preview")}
       className="w-16 h-12 object-cover rounded-md border border-slate-200 bg-white"
       onError={() => setFailed(true)}
     />
@@ -214,14 +215,14 @@ function Breadcrumb({ view, customer, caseItem, onGoCustomers, onGoCases }: {
   return (
     <nav className="flex items-center gap-1 text-sm min-w-0 overflow-x-auto">
       <button onClick={onGoCustomers} className={`font-semibold whitespace-nowrap transition-colors ${view === "customers" ? "text-slate-800" : "text-blue-600 hover:text-blue-700"}`}>
-        Customers
+        {tx("Customers")}
       </button>
       {view === "all-cases" && (
         <>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-slate-400 flex-shrink-0">
             <polyline points="9 18 15 12 9 6" />
           </svg>
-          <span className="font-semibold text-slate-800 whitespace-nowrap">All Cases</span>
+          <span className="font-semibold text-slate-800 whitespace-nowrap">{tx("All Cases")}</span>
         </>
       )}
       {customer && view !== "all-cases" && (
@@ -348,28 +349,28 @@ function CreateCaseModal({ customer, onClose, onCreated }: { customer: Customer;
   };
 
   return (
-    <ModalShell title="New Case" subtitle={`Customer: ${customer.name}`} onClose={onClose}>
+    <ModalShell title={tx("New Case")} subtitle={tx("Customer: {0}", { 0: customer.name })} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
-        <Field label="Case Type">
+        <Field label={tx("Case Type")}>
           <select value={caseType} onChange={e => setCaseType(e.target.value)} className={SELECT}>
             {CASE_TYPE_OPTIONS.map(o => <option key={o}>{o}</option>)}
           </select>
         </Field>
-        <Field label="Priority">
+        <Field label={tx("Priority")}>
           <select value={priority} onChange={e => setPriority(e.target.value)} className={SELECT}>
             {PRIORITY_OPTIONS.map(o => <option key={o}>{o}</option>)}
           </select>
         </Field>
-        <Field label="Source Channel">
+        <Field label={tx("Source Channel")}>
           <select value={channel} onChange={e => setChannel(e.target.value)} className={SELECT}>
             {CHANNEL_OPTIONS.map(o => <option key={o}>{o}</option>)}
           </select>
         </Field>
         {err && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</p>}
         <div className="flex justify-end gap-3 pt-2">
-          <button type="button" onClick={onClose} className={BTN_GHOST}>Cancel</button>
+          <button type="button" onClick={onClose} className={BTN_GHOST}>{tx("Cancel")}</button>
           <button type="submit" disabled={submitting} className={BTN_PRIMARY}>
-            {submitting ? <SpinnerIcon /> : "Create Case"}
+            {submitting ? <SpinnerIcon /> : tx("Create Case")}
           </button>
         </div>
       </form>
@@ -407,24 +408,24 @@ function EditCaseModal({ caseItem, onClose, onSaved }: { caseItem: CaseItem; onC
   };
 
   return (
-    <ModalShell title="Edit Case" subtitle={caseItem.caseNumber} onClose={onClose}>
+    <ModalShell title={tx("Edit Case")} subtitle={caseItem.caseNumber} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
-        <Field label="Priority">
+        <Field label={tx("Priority")}>
           <select value={priority} onChange={e => setPriority(e.target.value)} className={SELECT}>
             {PRIORITY_OPTIONS.map(o => <option key={o}>{o}</option>)}
           </select>
         </Field>
-        <Field label="Status">
+        <Field label={tx("Status")}>
           <select value={status} onChange={e => setStatus(e.target.value)} className={SELECT}>
             {STATUS_OPTIONS.map(o => <option key={o}>{o}</option>)}
           </select>
         </Field>
         {err && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</p>}
-        <p className="text-[10px] text-slate-400">Status changes are appended to the immutable CaseHistory audit trail.</p>
+        <p className="text-[10px] text-slate-400">{tx("Status changes are appended to the immutable CaseHistory audit trail.")}</p>
         <div className="flex justify-end gap-3 pt-2">
-          <button type="button" onClick={onClose} className={BTN_GHOST}>Cancel</button>
+          <button type="button" onClick={onClose} className={BTN_GHOST}>{tx("Cancel")}</button>
           <button type="submit" disabled={submitting || (priority === caseItem.priorityLevel && status === caseItem.caseStatus)} className={BTN_PRIMARY}>
-            {submitting ? <SpinnerIcon /> : "Save Changes"}
+            {submitting ? <SpinnerIcon /> : tx("Save Changes")}
           </button>
         </div>
       </form>
@@ -533,9 +534,9 @@ function UploadModal({ caseItem, onClose, onUploaded }: { caseItem: CaseItem; on
   };
 
   return (
-    <ModalShell title="Upload Document(s)" subtitle={`Case: ${caseItem.caseNumber}`} onClose={onClose}>
+    <ModalShell title={tx("Upload Document(s)")} subtitle={tx("Case: {0}", { 0: caseItem.caseNumber })} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
-        <Field label="Default Document Type (for new selections)">
+        <Field label={tx("Default Document Type (for new selections)")}>
           <select value={docType} onChange={e => setDocType(e.target.value)} className={SELECT}>
             {DOCUMENT_TYPES.map(t => <option key={t}>{t}</option>)}
           </select>
@@ -557,14 +558,14 @@ function UploadModal({ caseItem, onClose, onUploaded }: { caseItem: CaseItem; on
             <polyline points="17 8 12 3 7 8" />
             <line x1="12" y1="3" x2="12" y2="15" />
           </svg>
-          <p className="text-xs font-semibold text-slate-600">Drop files here or <span className="text-blue-600">browse</span></p>
-          <p className="text-[10px] text-slate-400">PDF · PNG · JPG · JPEG · TIFF · BMP</p>
+          <p className="text-xs font-semibold text-slate-600">{tx("Drop files here or")}{" "}<span className="text-blue-600">{tx("browse")}</span></p>
+          <p className="text-[10px] text-slate-400">{tx("PDF · PNG · JPG · JPEG · TIFF · BMP")}</p>
         </div>
 
         {/* Selected files list */}
         {files.length > 0 && (
           <div className="space-y-2">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Selected Files ({files.length})</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{tx("Selected Files (")}{files.length})</p>
             <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl bg-white shadow-sm">
               {files.map((f, idx) => (
                 <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-3.5 py-3 hover:bg-slate-50 transition-colors">
@@ -607,12 +608,12 @@ function UploadModal({ caseItem, onClose, onUploaded }: { caseItem: CaseItem; on
         {uploading && (
           <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
             <SpinnerIcon className="w-3.5 h-3.5" />
-            Uploading to S3 and running OCR — this may take up to 30 seconds…
+            {tx("Uploading to S3 and running OCR — this may take up to 30 seconds…")}
           </div>
         )}
 
         <div className="flex justify-end gap-3 pt-2">
-          <button type="button" onClick={onClose} disabled={uploading} className={BTN_GHOST}>Cancel</button>
+          <button type="button" onClick={onClose} disabled={uploading} className={BTN_GHOST}>{tx("Cancel")}</button>
           <button type="submit" disabled={files.length === 0 || uploading} className={BTN_PRIMARY}>
             {uploading ? <SpinnerIcon /> : <>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
@@ -620,7 +621,7 @@ function UploadModal({ caseItem, onClose, onUploaded }: { caseItem: CaseItem; on
                 <polyline points="17 8 12 3 7 8" />
                 <line x1="12" y1="3" x2="12" y2="15" />
               </svg>
-              Upload &amp; OCR
+              {tx("Upload & OCR")}
             </>}
           </button>
         </div>
@@ -696,25 +697,25 @@ function ArtifactDetailModal({ artifact: initial, tenantId, onClose, onUpdate }:
             <>
               {/* Scores */}
               <div className="space-y-2.5">
-                <ScoreBar label="OCR Confidence" value={artifact.ocr_confidence_score} color="bg-blue-500" />
-                <ScoreBar label="Authenticity" value={artifact.authenticity_score} color="bg-blue-500" />
-                <ScoreBar label="Quality" value={artifact.quality_score} color="bg-blue-500" />
+                <ScoreBar label={tx("OCR Confidence")} value={artifact.ocr_confidence_score} color="bg-blue-500" />
+                <ScoreBar label={tx("Authenticity")} value={artifact.authenticity_score} color="bg-blue-500" />
+                <ScoreBar label={tx("Quality")} value={artifact.quality_score} color="bg-blue-500" />
               </div>
 
               {/* Meta */}
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div>
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold mb-0.5">File Type</p>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold mb-0.5">{tx("File Type")}</p>
                   <p className="font-medium text-slate-700">{artifact.file_type}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold mb-0.5">Uploaded</p>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold mb-0.5">{tx("Uploaded")}</p>
                   <p className="font-medium text-slate-700">{new Date(artifact.created_at).toLocaleString()}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold mb-0.5">Tamper Flag</p>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold mb-0.5">{tx("Tamper Flag")}</p>
                   <p className={`font-semibold ${artifact.tampered_flag ? "text-red-600" : "text-blue-600"}`}>
-                    {artifact.tampered_flag ? "⚠ Flagged" : "Clean"}
+                    {artifact.tampered_flag ? tx("⚠ Flagged") : tx("Clean")}
                   </p>
                 </div>
               </div>
@@ -722,24 +723,24 @@ function ArtifactDetailModal({ artifact: initial, tenantId, onClose, onUpdate }:
               {/* Document Preview */}
               {artifact.download_url && (
                 <div className="space-y-1.5">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Document Preview</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{tx("Document Preview")}</p>
                   <div className="rounded-lg border border-slate-200 overflow-hidden bg-slate-100">
                     {artifact.file_type === "application/pdf" ? (
                       <iframe
                         src={artifact.download_url}
-                        title={artifact.file_name ?? "Document preview"}
+                        title={artifact.file_name ?? tx("Document preview")}
                         className="w-full h-96 bg-white"
                       />
                     ) : artifact.file_type?.startsWith("image/") && artifact.file_type !== "image/tiff" ? (
                       <img
                         src={artifact.download_url}
-                        alt={artifact.file_name ?? "Document preview"}
+                        alt={artifact.file_name ?? tx("Document preview")}
                         className="w-full max-h-96 object-contain bg-slate-100"
                       />
                     ) : (
                       <div className="flex flex-col items-center justify-center gap-2 py-10 text-slate-400">
                         <FileSvg ext={getExt(artifact.file_name ?? "")} size={40} />
-                        <p className="text-xs">Preview not available for this file type.</p>
+                        <p className="text-xs">{tx("Preview not available for this file type.")}</p>
                       </div>
                     )}
                   </div>
@@ -759,7 +760,7 @@ function ArtifactDetailModal({ artifact: initial, tenantId, onClose, onUpdate }:
                     <polyline points="7 10 12 15 17 10" />
                     <line x1="12" y1="15" x2="12" y2="3" />
                   </svg>
-                  Download from S3 (1h link)
+                  {tx("Download from S3 (1h link)")}
                 </a>
               )}
 
@@ -767,9 +768,9 @@ function ArtifactDetailModal({ artifact: initial, tenantId, onClose, onUpdate }:
               {artifact.ocr_result && (
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Extracted Text</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{tx("Extracted Text")}</p>
                     <button onClick={copy} className="text-[10px] font-semibold text-slate-400 hover:text-slate-600 flex items-center gap-1">
-                      {copied ? "✓ Copied" : "Copy"}
+                      {copied ? tx("✓ Copied") : tx("Copy")}
                     </button>
                   </div>
                   <pre className="text-xs text-slate-700 whitespace-pre-wrap break-words leading-relaxed font-mono bg-slate-50 border border-slate-200 rounded-lg p-4 max-h-56 overflow-y-auto">
@@ -781,12 +782,12 @@ function ArtifactDetailModal({ artifact: initial, tenantId, onClose, onUpdate }:
               {!artifact.ocr_result && artifact.status === "Processing" && (
                 <div className="flex flex-col items-center gap-2 py-6">
                   <SpinnerIcon className="w-5 h-5 text-blue-400" />
-                  <p className="text-xs text-slate-400">OCR in progress — extracting text…</p>
+                  <p className="text-xs text-slate-400">{tx("OCR in progress — extracting text…")}</p>
                 </div>
               )}
 
               {!artifact.ocr_result && artifact.status !== "Processing" && (
-                <p className="text-xs text-slate-400 text-center py-4">No OCR text extracted for this document.</p>
+                <p className="text-xs text-slate-400 text-center py-4">{tx("No OCR text extracted for this document.")}</p>
               )}
             </>
           )}
@@ -815,18 +816,18 @@ function EditArtifactModal({ artifact, tenantId, onClose, onSaved }: { artifact:
   };
 
   return (
-    <ModalShell title="Edit Document" subtitle={artifact.file_name ?? ""} onClose={onClose}>
+    <ModalShell title={tx("Edit Document")} subtitle={artifact.file_name ?? ""} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
-        <Field label="Document Type">
+        <Field label={tx("Document Type")}>
           <select value={docType} onChange={e => setDocType(e.target.value)} className={SELECT}>
             {DOCUMENT_TYPES.map(t => <option key={t}>{t}</option>)}
           </select>
         </Field>
         {err && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</p>}
         <div className="flex justify-end gap-3 pt-2">
-          <button type="button" onClick={onClose} className={BTN_GHOST}>Cancel</button>
+          <button type="button" onClick={onClose} className={BTN_GHOST}>{tx("Cancel")}</button>
           <button type="submit" disabled={submitting || docType === artifact.document_type} className={BTN_PRIMARY}>
-            {submitting ? <SpinnerIcon /> : "Save"}
+            {submitting ? <SpinnerIcon /> : tx("Save")}
           </button>
         </div>
       </form>
@@ -854,9 +855,9 @@ function ConfirmDeleteModal({ title, message, onConfirm, onCancel, deleting }: {
             </div>
           </div>
           <div className="flex justify-end gap-3">
-            <button onClick={onCancel} disabled={deleting} className={BTN_GHOST}>Cancel</button>
+            <button onClick={onCancel} disabled={deleting} className={BTN_GHOST}>{tx("Cancel")}</button>
             <button onClick={onConfirm} disabled={deleting} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition-all">
-              {deleting ? <SpinnerIcon /> : "Delete"}
+              {deleting ? <SpinnerIcon /> : tx("Delete")}
             </button>
           </div>
         </div>
@@ -988,7 +989,7 @@ export default function CasesPage() {
             });
         }
       }
-    }).catch(err => setError(err.message ?? "Failed to load."))
+    }).catch(err => setError(err.message ?? tx("Failed to load.")))
       .finally(() => setLoadingMain(false));
   }, [tenantId]);
 
@@ -1057,7 +1058,7 @@ export default function CasesPage() {
       setCases(prev => prev.filter(c => c.caseld !== deletingCase.caseld));
       setDeletingCase(null);
     } catch (err: any) {
-      alert(err.response?.data?.detail ?? "Failed to delete case.");
+      alert(err.response?.data?.detail ?? tx("Failed to delete case."));
     } finally {
       setDeletingCaseInProgress(false);
     }
@@ -1072,7 +1073,7 @@ export default function CasesPage() {
       if (selectedId === deletingArtifact.id) setSelectedId(null);
       setDeletingArtifact(null);
     } catch (err: any) {
-      alert(err.response?.data?.detail ?? "Failed to delete document.");
+      alert(err.response?.data?.detail ?? tx("Failed to delete document."));
     } finally {
       setDeletingArtifactInProgress(false);
     }
@@ -1171,7 +1172,7 @@ export default function CasesPage() {
           <div className="relative w-full">
             <input
               type="text"
-              placeholder="Search Case #, Customer Name, CNIC, or Type..."
+              placeholder={tx("Search Case #, Customer Name, CNIC, or Type...")}
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="w-full h-9 text-xs pl-9 pr-8 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20 text-slate-800 placeholder-slate-400 transition-all font-medium"
@@ -1185,7 +1186,7 @@ export default function CasesPage() {
                 onClick={() => setSearch("")}
                 className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full hover:bg-slate-200"
               >
-                &times;
+                {tx("×")}
               </button>
             )}
           </div>
@@ -1199,7 +1200,7 @@ export default function CasesPage() {
                     : "text-slate-500 hover:text-slate-800"
                 }`}
               >
-                Customers
+                {tx("Customers")}
               </button>
               <button
                 onClick={() => {
@@ -1213,7 +1214,7 @@ export default function CasesPage() {
                     : "text-slate-500 hover:text-slate-800"
                 }`}
               >
-                <span>All Cases</span>
+                <span>{tx("All Cases")}</span>
                 <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-blue-50 text-blue-700 border border-blue-200">
                   {cases.length}
                 </span>
@@ -1229,7 +1230,7 @@ export default function CasesPage() {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
                 <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
               </svg>
-              New Case
+              {tx("New Case")}
             </button>
           )}
           {view === "documents" && activeCase && (
@@ -1254,7 +1255,7 @@ export default function CasesPage() {
                   <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
                   <line x1="12" y1="22.08" x2="12" y2="12" />
                 </svg>
-                Summarize Case
+                {tx("Summarize Case")}
               </button>
               <button onClick={() => setShowUpload(true)} className={BTN_PRIMARY}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
@@ -1262,7 +1263,7 @@ export default function CasesPage() {
                   <polyline points="17 8 12 3 7 8" />
                   <line x1="12" y1="3" x2="12" y2="15" />
                 </svg>
-                Upload Document
+                {tx("Upload Document")}
               </button>
             </>
           )}
@@ -1279,7 +1280,7 @@ export default function CasesPage() {
           <div className="flex items-center justify-center h-full">
             <div className="flex flex-col items-center gap-3 text-slate-400">
               <SpinnerIcon className="w-8 h-8" />
-              <p className="text-sm font-medium">Loading…</p>
+              <p className="text-sm font-medium">{tx("Loading…")}</p>
             </div>
           </div>
         ) : (
@@ -1290,8 +1291,8 @@ export default function CasesPage() {
               filteredCustomers.length === 0 ? (
                 <EmptyState
                   icon={<FolderSvg size={72} />}
-                  title={search ? "No matching customers" : "No customers yet"}
-                  subtitle={search ? `No customer matches "${search}".` : "Create a customer first to start managing cases."}
+                  title={search ? tx("No matching customers") : tx("No customers yet")}
+                  subtitle={search ? tx("No customer matches \"{0}\".", { 0: search }) : tx("Create a customer first to start managing cases.")}
                 />
               ) : (
                 <>
@@ -1313,7 +1314,7 @@ export default function CasesPage() {
                     );
                   })}
                 </div>
-                <Pagination pagination={customerPagination} noun="customers" />
+                <Pagination pagination={customerPagination} noun={tx("customers")} />
                 </>
               )
             )}
@@ -1323,8 +1324,8 @@ export default function CasesPage() {
               filteredCasesForCustomer.length === 0 ? (
                 <EmptyState
                   icon={<FolderSvg color="#93C5FD" accent="#3B82F6" size={72} />}
-                  title={search ? "No matching cases" : "No cases yet"}
-                  subtitle={search ? `No cases match "${search}".` : `${activeCustomer?.name} has no cases. Create the first one.`}
+                  title={search ? tx("No matching cases") : tx("No cases yet")}
+                  subtitle={search ? tx("No cases match \"{0}\".", { 0: search }) : tx("{0} has no cases. Create the first one.", { 0: activeCustomer?.name })}
                   action={
                     <button onClick={() => setShowCreateCase(true)} className={BTN_PRIMARY}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
@@ -1379,7 +1380,7 @@ export default function CasesPage() {
                     );
                   })}
                 </div>
-                <Pagination pagination={casePagination} noun="cases" />
+                <Pagination pagination={casePagination} noun={tx("cases")} />
                 </>
               )
             )}
@@ -1389,8 +1390,8 @@ export default function CasesPage() {
               filteredAllCases.length === 0 ? (
                 <EmptyState
                   icon={<FolderSvg color="#93C5FD" accent="#3B82F6" size={72} />}
-                  title="No cases found"
-                  subtitle={search ? `No cases match "${search}". Try clearing your search filter.` : "No cases registered yet."}
+                  title={tx("No cases found")}
+                  subtitle={search ? tx("No cases match \"{0}\". Try clearing your search filter.", { 0: search }) : tx("No cases registered yet.")}
                 />
               ) : (
                 <>
@@ -1417,7 +1418,7 @@ export default function CasesPage() {
                             <FolderSvg color={fc.color} accent={fc.accent} size={38} />
                             <div className="min-w-0">
                               <p className="font-bold text-xs text-slate-900 truncate">{c.caseNumber}</p>
-                              <p className="text-[11px] text-slate-500 truncate font-medium">{cust?.name ?? "Customer"}</p>
+                              <p className="text-[11px] text-slate-500 truncate font-medium">{cust?.name ?? tx("Customer")}</p>
                             </div>
                           </div>
                         </div>
@@ -1432,7 +1433,7 @@ export default function CasesPage() {
                     );
                   })}
                 </div>
-                <Pagination pagination={allCasePagination} noun="cases" />
+                <Pagination pagination={allCasePagination} noun={tx("cases")} />
                 </>
               )
             )}
@@ -1445,7 +1446,7 @@ export default function CasesPage() {
                 <div className="mb-4 p-4 rounded-xl border border-slate-200 bg-white">
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-sm font-semibold text-slate-700">
-                      Required Documents
+                      {tx("Required Documents")}
                       {checklistInsuranceType && (
                         <span className="ml-2 text-xs font-normal text-slate-400">
                           ({checklistInsuranceType.replaceAll("_", " ")})
@@ -1457,7 +1458,7 @@ export default function CasesPage() {
                         ? "bg-blue-50 text-blue-700 border-blue-200"
                         : "bg-amber-50 text-amber-700 border-amber-200"
                     }`}>
-                      {checklistRequired.length - missing.length}/{checklistRequired.length} received
+                      {checklistRequired.length - missing.length}/{checklistRequired.length}{" "}{tx("received")}
                     </span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
@@ -1484,7 +1485,7 @@ export default function CasesPage() {
                 <div className="flex items-center justify-center py-20">
                   <div className="flex flex-col items-center gap-3 text-slate-400">
                     <SpinnerIcon className="w-7 h-7" />
-                    <p className="text-sm font-medium">Loading documents…</p>
+                    <p className="text-sm font-medium">{tx("Loading documents…")}</p>
                   </div>
                 </div>
               ) : artifacts.length === 0 ? (
@@ -1495,8 +1496,8 @@ export default function CasesPage() {
                       <polyline points="14 2 14 8 20 8" />
                     </svg>
                   }
-                  title="No documents yet"
-                  subtitle={`Upload the first document to ${activeCase?.caseNumber}`}
+                  title={tx("No documents yet")}
+                  subtitle={tx("Upload the first document to {0}", { 0: activeCase?.caseNumber })}
                   action={
                     <button onClick={() => setShowUpload(true)} className={BTN_PRIMARY}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
@@ -1601,8 +1602,8 @@ export default function CasesPage() {
 
       {deletingCase && (
         <ConfirmDeleteModal
-          title="Delete Case"
-          message={`Delete "${deletingCase.caseNumber}" and all its documents? This cannot be undone.`}
+          title={tx("Delete Case")}
+          message={tx("Delete \"{0}\" and all its documents? This cannot be undone.", { 0: deletingCase.caseNumber })}
           onConfirm={handleDeleteCase}
           onCancel={() => setDeletingCase(null)}
           deleting={deletingCaseInProgress}
@@ -1658,8 +1659,8 @@ export default function CasesPage() {
 
       {deletingArtifact && (
         <ConfirmDeleteModal
-          title="Delete Document"
-          message={`Delete "${deletingArtifact.file_name}" from S3 and the database? This cannot be undone.`}
+          title={tx("Delete Document")}
+          message={tx("Delete \"{0}\" from S3 and the database? This cannot be undone.", { 0: deletingArtifact.file_name })}
           onConfirm={handleDeleteArtifact}
           onCancel={() => setDeletingArtifact(null)}
           deleting={deletingArtifactInProgress}

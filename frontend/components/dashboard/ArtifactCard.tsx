@@ -1,5 +1,6 @@
 import { RingGauge, Bar, PillarCard, Divider } from "./shared";
 import type { Claim } from "@/app/services/claims";
+import { tx } from "@/lib/i18n/tx";
 
 function FileCheckIcon() {
   return (
@@ -41,7 +42,7 @@ export function ArtifactCard({ claims, className = "" }: { claims: Claim[]; clas
   return (
     <PillarCard
       icon={<FileCheckIcon />}
-      title="Claim Documents"
+      title={tx("Claim Documents")}
       barClass="bg-blue-600"
       iconBg="bg-blue-50"
       iconColor="text-blue-600"
@@ -51,10 +52,10 @@ export function ArtifactCard({ claims, className = "" }: { claims: Claim[]; clas
       <div className="flex-1 flex flex-col justify-between space-y-1">
         {/* Coverage ring + key rates */}
         <div className="flex items-center gap-2.5">
-          <RingGauge value={coveragePct} max={100} strokeHex="#4f46e5" label="Coverage" valueLabel={`${coveragePct}%`} size={44} strokeW={5} />
+          <RingGauge value={coveragePct} max={100} strokeHex="#4f46e5" label={tx("Coverage")} valueLabel={`${coveragePct}%`} size={44} strokeW={5} />
           <div className="flex-1 space-y-0.5 min-w-0">
-            <Bar label="Clean-Claim Docs"   pct={cleanRatePct}   color="bg-blue-500" badge={`${cleanRatePct.toFixed(0)}%`} />
-            <Bar label="Flagged-Claim Docs" pct={flaggedRatePct} color="bg-red-500"  badge={`${flaggedRatePct.toFixed(0)}%`} />
+            <Bar label={tx("Clean-Claim Docs")}   pct={cleanRatePct}   color="bg-blue-500" badge={`${cleanRatePct.toFixed(0)}%`} />
+            <Bar label={tx("Flagged-Claim Docs")} pct={flaggedRatePct} color="bg-red-500"  badge={`${flaggedRatePct.toFixed(0)}%`} />
           </div>
         </div>
 
@@ -63,19 +64,19 @@ export function ArtifactCard({ claims, className = "" }: { claims: Claim[]; clas
         {/* Count stats */}
         <div className="grid grid-cols-3 gap-1">
           <div className="text-center">
-            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">Docs Today</p>
+            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">{tx("Docs Today")}</p>
             <p className="text-xs font-extrabold text-slate-800 mt-0.5">{processedToday}</p>
-            <p className="text-[8px] text-slate-400 truncate">new claims</p>
+            <p className="text-[8px] text-slate-400 truncate">{tx("new claims")}</p>
           </div>
           <div className="text-center">
-            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">Total Docs</p>
+            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">{tx("Total Docs")}</p>
             <p className="text-xs font-extrabold text-blue-600 mt-0.5">{totalArtifacts}</p>
-            <p className="text-[8px] text-slate-400 truncate">in range</p>
+            <p className="text-[8px] text-slate-400 truncate">{tx("in range")}</p>
           </div>
           <div className="text-center">
-            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">Avg/Claim</p>
+            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">{tx("Avg/Claim")}</p>
             <p className="text-xs font-extrabold text-red-600 mt-0.5">{avgDocsPerClaim.toFixed(1)}</p>
-            <p className="text-[8px] text-slate-400 truncate">docs</p>
+            <p className="text-[8px] text-slate-400 truncate">{tx("docs")}</p>
           </div>
         </div>
       </div>

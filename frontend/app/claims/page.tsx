@@ -7,6 +7,7 @@ import { listPolicies, getPolicyDetail, PolicyListItem, PolicyDetail } from "@/a
 import { formatCnic } from "@/lib/cnic";
 import { DateRangeFilter, resolvePreset, type DatePreset, type DateRange } from "@/components/commissions/DateRangeFilter";
 import { Pagination, usePagination } from "@/components/Pagination";
+import { tx } from "@/lib/i18n/tx";
 
 function getEligibleClaimTypes(policy?: PolicyListItem): string[] {
   if (!policy) {
@@ -112,15 +113,15 @@ function StatusBadge({ status }: { status: string }) {
 function RiskBadge({ prob, flag }: { prob: number; flag: boolean }) {
   const pct = Math.round(prob * 100);
   if (flag) {
-    return <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-50 text-rose-700">Duplicate</span>;
+    return <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-50 text-rose-700">{tx("Duplicate")}</span>;
   }
   if (pct >= 70) {
-    return <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-50 text-rose-700">High ({pct}%)</span>;
+    return <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-50 text-rose-700">{tx("High (")}{pct}%)</span>;
   }
   if (pct >= 30) {
-    return <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700">Medium ({pct}%)</span>;
+    return <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700">{tx("Medium (")}{pct}%)</span>;
   }
-  return <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700">Low ({pct}%)</span>;
+  return <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700">{tx("Low (")}{pct}%)</span>;
 }
 
 export default function ClaimsPage() {
@@ -263,11 +264,11 @@ export default function ClaimsPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.policy_id) { setErrorMsg("Please select an active policy."); return; }
+    if (!form.policy_id) { setErrorMsg(tx("Please select an active policy.")); return; }
 
     const selectedP = policies.find(p => p.id === form.policy_id);
     if (claimantType !== "SELF" && !claimantName.trim()) {
-      setErrorMsg("Claimant / Beneficiary Name is required for Death or Representative claims.");
+      setErrorMsg(tx("Claimant / Beneficiary Name is required for Death or Representative claims."));
       return;
     }
 
@@ -298,7 +299,7 @@ export default function ClaimsPage() {
       setClaimantType("SELF"); setClaimantName(""); setClaimantCnic(""); setClaimantRelationship("Spouse"); setClaimantPhone(""); setSelectedPolicyDetail(null);
       fetchData();
     } catch (err: any) {
-      setErrorMsg(err.response?.data?.detail || "Failed to submit claim FNOL.");
+      setErrorMsg(err.response?.data?.detail || tx("Failed to submit claim FNOL."));
     } finally { setSubmitting(false); }
   };
 
@@ -323,11 +324,11 @@ export default function ClaimsPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold text-blue-600 uppercase tracking-wider mb-1">
-            <span>Insurance Operations</span>
+            <span>{tx("Insurance Operations")}</span>
             <span>/</span>
-            <span>Claims Management</span>
+            <span>{tx("Claims Management")}</span>
           </div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-900">Claims Register & Triage Workbench</h1>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900">{tx("Claims Register & Triage Workbench")}</h1>
           {/* <p className="text-xs text-slate-500 mt-1">
             Search, filter, and triage claim intake records, rules-engine adjudications, and payout statuses.
           </p> */}
@@ -340,7 +341,7 @@ export default function ClaimsPage() {
             <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
-            <span>Claims Dashboard</span>
+            <span>{tx("Claims Dashboard")}</span>
           </Link>
 
           <button
@@ -350,7 +351,7 @@ export default function ClaimsPage() {
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-            <span>File New Claim</span>
+            <span>{tx("File New Claim")}</span>
           </button>
         </div>
       </div>
@@ -365,7 +366,7 @@ export default function ClaimsPage() {
               <div className="relative w-full">
                 <input
                   type="text"
-                  placeholder="Search Claim #, Policy #, or Claimant..."
+                  placeholder={tx("Search Claim #, Policy #, or Claimant...")}
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && fetchData()}
@@ -379,7 +380,7 @@ export default function ClaimsPage() {
                     onClick={() => setSearch("")}
                     className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-xs font-bold"
                   >
-                    &times;
+                    {tx("×")}
                   </button>
                 )}
               </div>
@@ -405,17 +406,17 @@ export default function ClaimsPage() {
                 onChange={e => setStatusFilter(e.target.value)}
                 className="h-9 text-xs px-3 rounded-lg border border-slate-200 bg-white text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-slate-900/5 hover:border-slate-300 transition-all shadow-2xs cursor-pointer"
               >
-                <option value="ALL">All Statuses</option>
-                <option value="New">New</option>
-                <option value="Triaged">Triaged</option>
-                <option value="Under Investigation">Under Investigation</option>
-                <option value="Pending Documents">Pending Documents</option>
-                <option value="Approved">Approved</option>
-                <option value="Partial Approval">Partial Approval</option>
-                <option value="Declined">Declined</option>
-                <option value="Referred to Manager">Referred to Manager</option>
-                <option value="Settled">Settled</option>
-                <option value="Closed">Closed</option>
+                <option value="ALL">{tx("All Statuses")}</option>
+                <option value="New">{tx("New")}</option>
+                <option value="Triaged">{tx("Triaged")}</option>
+                <option value="Under Investigation">{tx("Under Investigation")}</option>
+                <option value="Pending Documents">{tx("Pending Documents")}</option>
+                <option value="Approved">{tx("Approved")}</option>
+                <option value="Partial Approval">{tx("Partial Approval")}</option>
+                <option value="Declined">{tx("Declined")}</option>
+                <option value="Referred to Manager">{tx("Referred to Manager")}</option>
+                <option value="Settled">{tx("Settled")}</option>
+                <option value="Closed">{tx("Closed")}</option>
               </select>
 
               {/* Type */}
@@ -424,11 +425,11 @@ export default function ClaimsPage() {
                 onChange={e => setTypeFilter(e.target.value)}
                 className="h-9 text-xs px-3 rounded-lg border border-slate-200 bg-white text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-slate-900/5 hover:border-slate-300 transition-all shadow-2xs cursor-pointer"
               >
-                <option value="ALL">All Claim Types</option>
-                <option value="Hospitalization">Hospitalization</option>
-                <option value="Surgery">Surgery</option>
-                <option value="Death Claim">Death Claim</option>
-                <option value="Reimbursement">Reimbursement</option>
+                <option value="ALL">{tx("All Claim Types")}</option>
+                <option value="Hospitalization">{tx("Hospitalization")}</option>
+                <option value="Surgery">{tx("Surgery")}</option>
+                <option value="Death Claim">{tx("Death Claim")}</option>
+                <option value="Reimbursement">{tx("Reimbursement")}</option>
               </select>
 
               {/* Risk Level */}
@@ -437,11 +438,11 @@ export default function ClaimsPage() {
                 onChange={e => setRiskFilter(e.target.value)}
                 className="h-9 text-xs px-3 rounded-lg border border-slate-200 bg-white text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-slate-900/5 hover:border-slate-300 transition-all shadow-2xs cursor-pointer"
               >
-                <option value="ALL">All Risk Levels</option>
-                <option value="LOW">Low Risk (&lt;30%)</option>
-                <option value="MEDIUM">Medium Risk (30–69%)</option>
-                <option value="HIGH">High Risk (70%+)</option>
-                <option value="DUPLICATE">Duplicate Flagged</option>
+                <option value="ALL">{tx("All Risk Levels")}</option>
+                <option value="LOW">{tx("Low Risk (<30%)")}</option>
+                <option value="MEDIUM">{tx("Medium Risk (30–69%)")}</option>
+                <option value="HIGH">{tx("High Risk (70%+)")}</option>
+                <option value="DUPLICATE">{tx("Duplicate Flagged")}</option>
               </select>
 
               {/* Amount Range */}
@@ -450,10 +451,10 @@ export default function ClaimsPage() {
                 onChange={e => setAmountFilter(e.target.value)}
                 className="h-9 text-xs px-3 rounded-lg border border-slate-200 bg-white text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-slate-900/5 hover:border-slate-300 transition-all shadow-2xs cursor-pointer"
               >
-                <option value="ALL">All Amounts</option>
-                <option value="UNDER_50K">&lt; PKR 50,000</option>
-                <option value="50K_200K">PKR 50k – 200k</option>
-                <option value="OVER_200K">&gt; PKR 200,000</option>
+                <option value="ALL">{tx("All Amounts")}</option>
+                <option value="UNDER_50K">{tx("< PKR 50,000")}</option>
+                <option value="50K_200K">{tx("PKR 50k – 200k")}</option>
+                <option value="OVER_200K">{tx("> PKR 200,000")}</option>
               </select>
 
               <button
@@ -463,7 +464,7 @@ export default function ClaimsPage() {
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
-                <span>Search</span>
+                <span>{tx("Search")}</span>
               </button>
             </div>
           </div>
@@ -476,42 +477,42 @@ export default function ClaimsPage() {
                   <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
                   </svg>
-                  Active Filters:
+                  {tx("Active Filters:")}
                 </span>
                 {search && (
                   <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium flex items-center gap-1.5 border border-slate-200 text-[11px] shadow-2xs">
-                    Search: "{search}"
-                    <button onClick={() => setSearch("")} className="text-slate-400 hover:text-slate-700 font-bold">&times;</button>
+                    {tx("Search: \"")}{search}"
+                    <button onClick={() => setSearch("")} className="text-slate-400 hover:text-slate-700 font-bold">{tx("×")}</button>
                   </span>
                 )}
                 {statusFilter !== "ALL" && (
                   <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium flex items-center gap-1.5 border border-blue-200/80 text-[11px] shadow-2xs">
-                    Status: {statusFilter}
-                    <button onClick={() => setStatusFilter("ALL")} className="text-blue-400 hover:text-blue-700 font-bold">&times;</button>
+                    {tx("Status:")}{" "}{statusFilter}
+                    <button onClick={() => setStatusFilter("ALL")} className="text-blue-400 hover:text-blue-700 font-bold">{tx("×")}</button>
                   </span>
                 )}
                 {typeFilter !== "ALL" && (
                   <span className="px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 font-medium flex items-center gap-1.5 border border-purple-200/80 text-[11px] shadow-2xs">
-                    Type: {typeFilter}
-                    <button onClick={() => setTypeFilter("ALL")} className="text-purple-400 hover:text-purple-700 font-bold">&times;</button>
+                    {tx("Type:")}{" "}{typeFilter}
+                    <button onClick={() => setTypeFilter("ALL")} className="text-purple-400 hover:text-purple-700 font-bold">{tx("×")}</button>
                   </span>
                 )}
                 {riskFilter !== "ALL" && (
                   <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 font-medium flex items-center gap-1.5 border border-amber-200/80 text-[11px] shadow-2xs">
-                    Risk: {riskFilter === "LOW" ? "Low (<30%)" : riskFilter === "MEDIUM" ? "Medium (30-69%)" : riskFilter === "HIGH" ? "High (70%+)" : "Duplicate"}
-                    <button onClick={() => setRiskFilter("ALL")} className="text-amber-500 hover:text-amber-800 font-bold">&times;</button>
+                    {tx("Risk:")}{" "}{riskFilter === "LOW" ? tx("Low (<30%)") : riskFilter === "MEDIUM" ? tx("Medium (30-69%)") : riskFilter === "HIGH" ? tx("High (70%+)") : tx("Duplicate")}
+                    <button onClick={() => setRiskFilter("ALL")} className="text-amber-500 hover:text-amber-800 font-bold">{tx("×")}</button>
                   </span>
                 )}
                 {amountFilter !== "ALL" && (
                   <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-medium flex items-center gap-1.5 border border-emerald-200/80 text-[11px] shadow-2xs">
-                    Amount: {amountFilter === "UNDER_50K" ? "< 50k" : amountFilter === "50K_200K" ? "50k-200k" : "> 200k"}
-                    <button onClick={() => setAmountFilter("ALL")} className="text-emerald-500 hover:text-emerald-800 font-bold">&times;</button>
+                    {tx("Amount:")}{" "}{amountFilter === "UNDER_50K" ? "< 50k" : amountFilter === "50K_200K" ? "50k-200k" : "> 200k"}
+                    <button onClick={() => setAmountFilter("ALL")} className="text-emerald-500 hover:text-emerald-800 font-bold">{tx("×")}</button>
                   </span>
                 )}
                 {(dateRange.from || dateRange.to) && (
                   <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-medium flex items-center gap-1.5 border border-indigo-200/80 text-[11px] shadow-2xs">
-                    Incident Date: {dateRange.from || "Start"} to {dateRange.to || "Today"}
-                    <button onClick={() => { setDatePreset("all"); setDateRange(resolvePreset("all")); }} className="text-indigo-400 hover:text-indigo-700 font-bold">&times;</button>
+                    {tx("Incident Date:")}{" "}{dateRange.from || tx("Start")}{" "}{tx("to")}{" "}{dateRange.to || tx("Today")}
+                    <button onClick={() => { setDatePreset("all"); setDateRange(resolvePreset("all")); }} className="text-indigo-400 hover:text-indigo-700 font-bold">{tx("×")}</button>
                   </span>
                 )}
               </div>
@@ -523,7 +524,7 @@ export default function ClaimsPage() {
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                Reset Filters
+                {tx("Reset Filters")}
               </button>
             </div>
           )}
@@ -533,30 +534,30 @@ export default function ClaimsPage() {
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="bg-slate-50 text-slate-500 border-b border-slate-100 text-xs">
               <tr>
-                <th className="px-5 py-3 font-semibold">Claim Ref</th>
-                <th className="px-5 py-3 font-semibold">Policyholder</th>
-                <th className="px-5 py-3 font-semibold text-center">Claimant</th>
-                <th className="px-5 py-3 font-semibold">Policy #</th>
-                <th className="px-5 py-3 font-semibold">Type</th>
-                <th className="px-5 py-3 font-semibold">Incident Date</th>
-                <th className="px-5 py-3 font-semibold text-right">Claimed</th>
-                <th className="px-5 py-3 font-semibold text-right">Approved</th>
-                <th className="px-5 py-3 font-semibold">Risk Flag</th>
-                <th className="px-5 py-3 font-semibold">Status</th>
-                <th className="px-5 py-3 font-semibold text-center">Action</th>
+                <th className="px-5 py-3 font-semibold">{tx("Claim Ref")}</th>
+                <th className="px-5 py-3 font-semibold">{tx("Policyholder")}</th>
+                <th className="px-5 py-3 font-semibold text-center">{tx("Claimant")}</th>
+                <th className="px-5 py-3 font-semibold">{tx("Policy #")}</th>
+                <th className="px-5 py-3 font-semibold">{tx("Type")}</th>
+                <th className="px-5 py-3 font-semibold">{tx("Incident Date")}</th>
+                <th className="px-5 py-3 font-semibold text-right">{tx("Claimed")}</th>
+                <th className="px-5 py-3 font-semibold text-right">{tx("Approved")}</th>
+                <th className="px-5 py-3 font-semibold">{tx("Risk Flag")}</th>
+                <th className="px-5 py-3 font-semibold">{tx("Status")}</th>
+                <th className="px-5 py-3 font-semibold text-center">{tx("Action")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {loading ? (
                 <tr>
                   <td colSpan={11} className="px-5 py-8 text-center text-slate-400 text-xs">
-                    Loading claims register...
+                    {tx("Loading claims register...")}
                   </td>
                 </tr>
               ) : claims.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="px-5 py-8 text-center text-slate-400 text-xs">
-                    No claims found matching applied filters.
+                    {tx("No claims found matching applied filters.")}
                   </td>
                 </tr>
               ) : (
@@ -589,7 +590,7 @@ export default function ClaimsPage() {
                           </>
                         ) : (
                           <span className="text-xs text-slate-400">
-                            Self
+                            {tx("Self")}
                           </span>
                         )}
                       </div>
@@ -598,10 +599,10 @@ export default function ClaimsPage() {
                     <td className="px-5 py-3 text-xs text-slate-600">{c.claim_type}</td>
                     <td className="px-5 py-3 text-xs text-slate-600 font-mono">{c.incident_date ?? "—"}</td>
                     <td className="px-5 py-3 text-right font-medium text-slate-900">
-                      PKR {c.submitted_amount.toLocaleString()}
+                      {tx("PKR")}{" "}{c.submitted_amount.toLocaleString()}
                     </td>
                     <td className="px-5 py-3 text-right font-semibold text-slate-900">
-                      {c.approved_amount ? `PKR ${c.approved_amount.toLocaleString()}` : "—"}
+                      {c.approved_amount ? tx("PKR {0}", { 0: c.approved_amount.toLocaleString() }) : "—"}
                     </td>
                     <td className="px-5 py-3">
                       <RiskBadge prob={c.fraud_probability} flag={c.duplicate_flag} />
@@ -614,7 +615,7 @@ export default function ClaimsPage() {
                         href={`/claims/${c.id}`}
                         className="text-[11.5px] font-bold text-blue-600 hover:text-blue-800 underline flex items-center justify-center gap-1"
                       >
-                        Review
+                        {tx("Review")}
                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                         </svg>
@@ -626,7 +627,7 @@ export default function ClaimsPage() {
             </tbody>
           </table>
         </div>
-          <Pagination pagination={pagination} noun="claims" inline />
+          <Pagination pagination={pagination} noun={tx("claims")} inline />
       </div>
 
       {/* Modal */}
@@ -635,10 +636,10 @@ export default function ClaimsPage() {
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl max-h-[90vh] flex flex-col relative my-auto">
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/90 rounded-t-2xl shrink-0">
               <div>
-                <h3 className="text-sm font-bold text-slate-900">File First Notice of Loss (FNOL)</h3>
-                <p className="text-[11px] text-slate-500">Step {step} of 2 — {step === 1 ? "Select Policy" : "Claim & Beneficiary Details"}</p>
+                <h3 className="text-sm font-bold text-slate-900">{tx("File First Notice of Loss (FNOL)")}</h3>
+                <p className="text-[11px] text-slate-500">{tx("Step")}{" "}{step}{" "}{tx("of 2 —")}{" "}{step === 1 ? tx("Select Policy") : tx("Claim & Beneficiary Details")}</p>
               </div>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 text-lg font-bold">&times;</button>
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 text-lg font-bold">{tx("×")}</button>
             </div>
 
             <form onSubmit={handleCreate} className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
@@ -652,11 +653,11 @@ export default function ClaimsPage() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
-                      Select Policy ({policies.length} Available)
+                      {tx("Select Policy (")}{policies.length}{" "}{tx("Available)")}
                     </label>
                     {selectedPolicy && (
                       <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200/80">
-                        Selected: {selectedPolicy.customer_name}
+                        {tx("Selected:")}{" "}{selectedPolicy.customer_name}
                       </span>
                     )}
                   </div>
@@ -666,7 +667,7 @@ export default function ClaimsPage() {
                     <input
                       type="text"
                       autoFocus
-                      placeholder="Type customer name, policy #, or product to filter..."
+                      placeholder={tx("Type customer name, policy #, or product to filter...")}
                       value={policySearch}
                       onChange={(e) => setPolicySearch(e.target.value)}
                       className="w-full text-xs px-3.5 py-2.5 pl-9 pr-8 rounded-xl border border-slate-200 focus:outline-hidden focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 bg-white font-medium text-slate-800 placeholder-slate-400 shadow-2xs"
@@ -680,7 +681,7 @@ export default function ClaimsPage() {
                         onClick={() => setPolicySearch("")}
                         className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 text-xs font-bold w-4 h-4 flex items-center justify-center rounded-full hover:bg-slate-100"
                       >
-                        &times;
+                        {tx("×")}
                       </button>
                     )}
                   </div>
@@ -689,7 +690,7 @@ export default function ClaimsPage() {
                   <div className="max-h-72 sm:max-h-80 overflow-y-auto divide-y divide-slate-100 border border-slate-200/90 rounded-xl bg-white shadow-2xs">
                     {filteredPolicies.length === 0 ? (
                       <div className="p-6 text-center text-slate-400 text-xs font-medium">
-                        No policies found matching &quot;{policySearch}&quot;
+                        {tx("No policies found matching \"")}{policySearch}{tx("\"")}
                       </div>
                     ) : (
                       filteredPolicies.map((p) => {
@@ -708,16 +709,16 @@ export default function ClaimsPage() {
                                 <span className="font-mono text-slate-400 text-[11px]">({p.policy_number ?? p.id.slice(0, 8)})</span>
                               </div>
                               <span className="text-[10px] text-slate-500 truncate">
-                                {p.product_name} • {p.insurance_type || "Standard"} • PKR {(p.coverage_amount || 0).toLocaleString()}
+                                {p.product_name} • {p.insurance_type || tx("Standard")}{" "}{tx("• PKR")}{" "}{(p.coverage_amount || 0).toLocaleString()}
                               </span>
                             </div>
                             {isSelected ? (
                               <span className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-blue-600 text-white shrink-0 shadow-2xs">
-                                Selected ✓
+                                {tx("Selected ✓")}
                               </span>
                             ) : (
                               <span className="text-[11px] text-slate-400 font-medium shrink-0">
-                                Select &rarr;
+                                {tx("Select →")}
                               </span>
                             )}
                           </button>
@@ -728,8 +729,8 @@ export default function ClaimsPage() {
 
                   {selectedPolicyDetail?.nominee_name && (
                     <div className="p-2.5 bg-slate-50 border border-slate-200/80 rounded-lg text-[11px] text-slate-600 flex items-center justify-between">
-                      <span className="font-medium">Nominee on file: <strong className="text-slate-800">{selectedPolicyDetail.nominee_name}</strong> ({selectedPolicyDetail.nominee_relationship || "Nominee"})</span>
-                      <span className="text-slate-400 text-[10px]">Auto-populates in Step 2</span>
+                      <span className="font-medium">{tx("Nominee on file:")}{" "}<strong className="text-slate-800">{selectedPolicyDetail.nominee_name}</strong> ({selectedPolicyDetail.nominee_relationship || tx("Nominee")})</span>
+                      <span className="text-slate-400 text-[10px]">{tx("Auto-populates in Step 2")}</span>
                     </div>
                   )}
 
@@ -739,7 +740,7 @@ export default function ClaimsPage() {
                       onClick={() => setShowModal(false)}
                       className="px-3.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium hover:bg-slate-50"
                     >
-                      Cancel
+                      {tx("Cancel")}
                     </button>
                     <button
                       type="button"
@@ -749,7 +750,7 @@ export default function ClaimsPage() {
                       }}
                       className="px-4 py-1.5 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700"
                     >
-                      Next Step &rarr;
+                      {tx("Next Step →")}
                     </button>
                   </div>
                 </div>
@@ -776,9 +777,9 @@ export default function ClaimsPage() {
                           </span>
                         </div>
                         <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-blue-900/80 font-medium">
-                          <span>Policy #: <strong className="text-blue-950 font-mono tracking-wide">{selectedPolicy?.policy_number}</strong></span>
+                          <span>{tx("Policy #:")}{" "}<strong className="text-blue-950 font-mono tracking-wide">{selectedPolicy?.policy_number}</strong></span>
                           <span className="hidden sm:inline text-blue-300 font-bold">•</span>
-                          <span>Coverage Limit: <strong className="text-blue-950 font-bold">PKR {selectedPolicy?.coverage_amount.toLocaleString()}</strong></span>
+                          <span>{tx("Coverage Limit:")}{" "}<strong className="text-blue-950 font-bold">{tx("PKR")}{" "}{selectedPolicy?.coverage_amount.toLocaleString()}</strong></span>
                         </div>
                       </div>
 
@@ -787,7 +788,7 @@ export default function ClaimsPage() {
                           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                           </svg>
-                          Verified
+                          {tx("Verified")}
                         </span>
                       </div>
                     </div>
@@ -796,7 +797,7 @@ export default function ClaimsPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block font-semibold text-slate-700 mb-1">
-                          Eligible Claim Type <span className="text-slate-400 font-normal">({eligibleClaimTypes.length} available)</span>
+                          {tx("Eligible Claim Type")}{" "}<span className="text-slate-400 font-normal">({eligibleClaimTypes.length}{" "}{tx("available)")}</span>
                         </label>
                         <select
                           value={form.claim_type}
@@ -823,7 +824,7 @@ export default function ClaimsPage() {
 
                       <div>
                         <label className="block font-semibold text-slate-700 mb-1">
-                          Claim Amount (PKR)
+                          {tx("Claim Amount (PKR)")}
                         </label>
                         <input
                           type="number"
@@ -861,7 +862,7 @@ export default function ClaimsPage() {
                               : "bg-white border-slate-200 text-slate-600 hover:bg-slate-100"
                             } ${isDeathClaim ? "opacity-40 cursor-not-allowed bg-slate-100/50" : ""}`}
                         >
-                          <span>Self (Policyholder)</span>
+                          <span>{tx("Self (Policyholder)")}</span>
                           {claimantType === "SELF" && <span className="text-blue-600 font-bold text-xs">✓</span>}
                         </button>
 
@@ -880,7 +881,7 @@ export default function ClaimsPage() {
                               : "bg-white border-slate-200 text-slate-600 hover:bg-slate-100"
                             } ${!isDeathClaim ? "opacity-40 cursor-not-allowed bg-slate-100/50" : ""}`}
                         >
-                          <span>Nominee / Beneficiary / Heir</span>
+                          <span>{tx("Nominee / Beneficiary / Heir")}</span>
                           {claimantType !== "SELF" && <span className="text-blue-600 font-bold text-xs">✓</span>}
                         </button>
                       </div>
@@ -891,8 +892,8 @@ export default function ClaimsPage() {
                           {selectedPolicyDetail?.nominee_name && (
                             <div className="flex items-center justify-between p-2 bg-white border border-slate-200 rounded-lg text-xs">
                               <div>
-                                <span className="text-slate-400 text-[10px] uppercase font-bold">Policy Recorded Nominee:</span>
-                                <div className="font-semibold text-slate-900">{selectedPolicyDetail.nominee_name} ({selectedPolicyDetail.nominee_relationship || "Nominee"})</div>
+                                <span className="text-slate-400 text-[10px] uppercase font-bold">{tx("Policy Recorded Nominee:")}</span>
+                                <div className="font-semibold text-slate-900">{selectedPolicyDetail.nominee_name} ({selectedPolicyDetail.nominee_relationship || tx("Nominee")})</div>
                               </div>
                               <button
                                 type="button"
@@ -902,18 +903,18 @@ export default function ClaimsPage() {
                                 }}
                                 className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold rounded"
                               >
-                                Pre-fill
+                                {tx("Pre-fill")}
                               </button>
                             </div>
                           )}
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                             <div>
-                              <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">Claimant Full Name *</label>
+                              <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">{tx("Claimant Full Name *")}</label>
                               <input
                                 type="text"
                                 required
-                                placeholder="e.g. Fatima Ahmed"
+                                placeholder={tx("e.g. Fatima Ahmed")}
                                 value={claimantName}
                                 onChange={e => setClaimantName(e.target.value)}
                                 className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200"
@@ -921,24 +922,24 @@ export default function ClaimsPage() {
                             </div>
 
                             <div>
-                              <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">Relationship to Insured</label>
+                              <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">{tx("Relationship to Insured")}</label>
                               <select
                                 value={claimantRelationship}
                                 onChange={e => setClaimantRelationship(e.target.value)}
                                 className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white"
                               >
-                                <option value="Spouse">Spouse</option>
-                                <option value="Child">Child</option>
-                                <option value="Parent">Parent</option>
-                                <option value="Legal Heir">Legal Heir</option>
-                                <option value="Executor">Executor / Legal Representative</option>
+                                <option value="Spouse">{tx("Spouse")}</option>
+                                <option value="Child">{tx("Child")}</option>
+                                <option value="Parent">{tx("Parent")}</option>
+                                <option value="Legal Heir">{tx("Legal Heir")}</option>
+                                <option value="Executor">{tx("Executor / Legal Representative")}</option>
                               </select>
                             </div>
                           </div>
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                             <div>
-                              <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">Claimant CNIC / Govt ID</label>
+                              <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">{tx("Claimant CNIC / Govt ID")}</label>
                               <input
                                 type="text"
                                 inputMode="numeric"
@@ -951,10 +952,10 @@ export default function ClaimsPage() {
                             </div>
 
                             <div>
-                              <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">Claimant Phone Number</label>
+                              <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">{tx("Claimant Phone Number")}</label>
                               <input
                                 type="text"
-                                placeholder="+92 300 XXXXXXX"
+                                placeholder={tx("+92 300 XXXXXXX")}
                                 value={claimantPhone}
                                 onChange={e => setClaimantPhone(e.target.value)}
                                 className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200"
@@ -968,7 +969,7 @@ export default function ClaimsPage() {
                     {/* Incident Date & Description */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="block font-semibold text-slate-700 mb-1">Incident Date</label>
+                        <label className="block font-semibold text-slate-700 mb-1">{tx("Incident Date")}</label>
                         <input
                           type="date"
                           value={form.incident_date}
@@ -979,11 +980,11 @@ export default function ClaimsPage() {
 
                       <div>
                         <label className="block font-semibold text-slate-700 mb-1">
-                          Description / Intake Notes <span className="text-[10px] font-normal text-slate-400">(Optional)</span>
+                          {tx("Description / Intake Notes")}{" "}<span className="text-[10px] font-normal text-slate-400">{tx("(Optional)")}</span>
                         </label>
                         <textarea
                           rows={2}
-                          placeholder="Describe the claim event (optional)..."
+                          placeholder={tx("Describe the claim event (optional)...")}
                           value={form.notes}
                           onChange={e => setForm({ ...form, notes: e.target.value })}
                           className="w-full text-xs p-2 rounded-lg border border-slate-200"
@@ -997,14 +998,14 @@ export default function ClaimsPage() {
                         onClick={() => setStep(1)}
                         className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium"
                       >
-                        Back
+                        {tx("Back")}
                       </button>
                       <button
                         type="submit"
                         disabled={submitting}
                         className="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50"
                       >
-                        {submitting ? "Submitting FNOL..." : "Submit Claim FNOL"}
+                        {submitting ? tx("Submitting FNOL...") : tx("Submit Claim FNOL")}
                       </button>
                     </div>
                   </div>

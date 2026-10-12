@@ -8,6 +8,7 @@ import { Pagination, usePagination } from "@/components/Pagination";
 import DemoFillButton from "@/components/DemoFillButton";
 import { demoBranch } from "@/lib/demoData";
 import { adminsHref, type TenantSetupStatus } from "@/components/TenantSetupChecklist";
+import { tx } from "@/lib/i18n/tx";
 
 interface Tenant {
   id: string;
@@ -145,7 +146,7 @@ function BranchManagementContent() {
         setTenantId(resp.data[0].id);
       }
     } catch (err: any) {
-      setError(err.message ?? "Failed to load tenants.");
+      setError(err.message ?? tx("Failed to load tenants."));
     } finally {
       setLoading(false);
     }
@@ -158,7 +159,7 @@ function BranchManagementContent() {
       const resp = await api.get<Branch[]>(`/tenants/${forTenantId}/branches`);
       setBranches(resp.data);
     } catch (err: any) {
-      setBranchesError(err.response?.data?.detail ?? err.message ?? "Failed to load branches.");
+      setBranchesError(err.response?.data?.detail ?? err.message ?? tx("Failed to load branches."));
       setBranches([]);
     } finally {
       setBranchesLoading(false);
@@ -204,7 +205,7 @@ function BranchManagementContent() {
         .then((r) => r.data)
         .catch(() => [] as TenantSetupStatus[]);
       const needsAdmin = (statuses.find((st) => st.tenant_id === tenantId)?.admin_count ?? 0) === 0;
-      setSuccess(`Branch "${createForm.name}" (${createForm.branch_code}) created for ${tenantName}.`);
+      setSuccess(tx("Branch \"{0}\" ({1}) created for {2}.", { 0: createForm.name, 1: createForm.branch_code, 2: tenantName }));
       setSuccessNext(
         needsAdmin
           ? {
@@ -219,7 +220,7 @@ function BranchManagementContent() {
       setError(
         Array.isArray(detail)
           ? detail.map((d: any) => d.msg).join(", ")
-          : detail ?? err.message ?? "Failed to create branch."
+          : detail ?? err.message ?? tx("Failed to create branch.")
       );
     } finally {
       setFormLoading(false);
@@ -268,7 +269,7 @@ function BranchManagementContent() {
         opened_date: editForm.opened_date || null,
         is_active: editActive,
       });
-      setSuccess(`Branch "${editForm.name}" updated successfully!`);
+      setSuccess(tx("Branch \"{0}\" updated successfully!", { 0: editForm.name }));
       setShowEditModal(false);
       fetchBranches(tenantId);
     } catch (err: any) {
@@ -276,7 +277,7 @@ function BranchManagementContent() {
       setError(
         Array.isArray(detail)
           ? detail.map((d: any) => d.msg).join(", ")
-          : detail ?? err.message ?? "Failed to update branch."
+          : detail ?? err.message ?? tx("Failed to update branch.")
       );
     } finally {
       setFormLoading(false);
@@ -284,17 +285,17 @@ function BranchManagementContent() {
   };
 
   const handleDeleteBranch = async (branch: Branch) => {
-    if (!confirm(`Are you sure you want to delete the branch "${branch.name}" (${branch.branch_code})?`)) {
+    if (!confirm(tx("Are you sure you want to delete the branch \"{0}\" ({1})?", { 0: branch.name, 1: branch.branch_code }))) {
       return;
     }
     setError("");
     setSuccess("");
     try {
       await api.delete(`/branches/${branch.id}`);
-      setSuccess(`Branch "${branch.name}" deleted successfully!`);
+      setSuccess(tx("Branch \"{0}\" deleted successfully!", { 0: branch.name }));
       fetchBranches(tenantId);
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to delete branch.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to delete branch."));
     }
   };
 
@@ -310,12 +311,12 @@ function BranchManagementContent() {
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
           </div>
-          <h1 className="text-xl font-bold text-white mb-2">Access Denied</h1>
+          <h1 className="text-xl font-bold text-white mb-2">{tx("Access Denied")}</h1>
           <p className="text-slate-400 text-sm mb-6">
-            You do not have SuperAdmin privileges to access the Platform console.
+            {tx("You do not have SuperAdmin privileges to access the Platform console.")}
           </p>
           <a href="/" className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm px-5 py-2.5 rounded-lg transition-all">
-            Return to Dashboard
+            {tx("Return to Dashboard")}
           </a>
         </div>
       </div>
@@ -330,9 +331,9 @@ function BranchManagementContent() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Branch Management</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Branch Management")}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Manage regional offices and branches for a tenant's office network.
+            {tx("Manage regional offices and branches for a tenant's office network.")}
           </p>
         </div>
         {tenants.length > 0 && (
@@ -344,7 +345,7 @@ function BranchManagementContent() {
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="w-4 h-4">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
             </svg>
-            Add Branch
+            {tx("Add Branch")}
           </button>
         )}
       </div>
@@ -378,7 +379,7 @@ function BranchManagementContent() {
             <button
               onClick={() => setSuccess("")}
               className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
-              title="Dismiss"
+              title={tx("Dismiss")}
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -394,20 +395,20 @@ function BranchManagementContent() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
           </svg>
-          <span className="text-xs text-slate-400">Loading tenants...</span>
+          <span className="text-xs text-slate-400">{tx("Loading tenants...")}</span>
         </div>
       ) : tenants.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm py-16 text-center text-slate-400 px-5">
-          <p className="text-sm">No tenants exist yet.</p>
+          <p className="text-sm">{tx("No tenants exist yet.")}</p>
           <a href="/super-admin/tenants" className="mt-3 inline-block text-xs text-blue-600 font-semibold hover:underline">
-            Create a tenant first
+            {tx("Create a tenant first")}
           </a>
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-3">
-              <label className="text-xs font-semibold text-slate-600">Tenant</label>
+              <label className="text-xs font-semibold text-slate-600">{tx("Tenant")}</label>
               <select
                 value={tenantId}
                 onChange={(e) => setTenantId(e.target.value)}
@@ -420,7 +421,7 @@ function BranchManagementContent() {
                 ))}
               </select>
             </div>
-            <span className="text-xs text-slate-400 font-medium">Total: {branches.length}</span>
+            <span className="text-xs text-slate-400 font-medium">{tx("Total:")}{" "}{branches.length}</span>
           </div>
 
           {branchesLoading ? (
@@ -429,21 +430,21 @@ function BranchManagementContent() {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
               </svg>
-              <span className="text-xs text-slate-400">Fetching branches...</span>
+              <span className="text-xs text-slate-400">{tx("Fetching branches...")}</span>
             </div>
           ) : branchesError ? (
             <div className="py-16 text-center text-sm text-red-500 px-5">{branchesError}</div>
           ) : branches.length === 0 ? (
             <div className="py-20 text-center text-slate-400">
               <p className="text-sm">
-                No branches registered for {selectedTenant ? selectedTenant.name : "this tenant"} yet.
+                {tx("No branches registered for")}{" "}{selectedTenant ? selectedTenant.name : tx("this tenant")}{" "}{tx("yet.")}
               </p>
-              <p className="text-xs mt-1">Admins and staff are assigned to a branch, so add one before creating the tenant&apos;s Admin.</p>
+              <p className="text-xs mt-1">{tx("Admins and staff are assigned to a branch, so add one before creating the tenant's Admin.")}</p>
               <button
                 onClick={handleOpenCreateModal}
                 className="mt-3 text-xs text-blue-600 font-semibold hover:underline"
               >
-                Add the first branch
+                {tx("Add the first branch")}
               </button>
             </div>
           ) : (
@@ -452,12 +453,12 @@ function BranchManagementContent() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-400 whitespace-nowrap">
-                    <th className="px-5 py-3.5 text-left">Code</th>
-                    <th className="px-5 py-3.5 text-left">Name</th>
-                    <th className="px-5 py-3.5 text-left">Type</th>
-                    <th className="px-5 py-3.5 text-left">Region / City</th>
-                    <th className="px-5 py-3.5 text-center">Status</th>
-                    <th className="px-5 py-3.5 text-right">Actions</th>
+                    <th className="px-5 py-3.5 text-left">{tx("Code")}</th>
+                    <th className="px-5 py-3.5 text-left">{tx("Name")}</th>
+                    <th className="px-5 py-3.5 text-left">{tx("Type")}</th>
+                    <th className="px-5 py-3.5 text-left">{tx("Region / City")}</th>
+                    <th className="px-5 py-3.5 text-center">{tx("Status")}</th>
+                    <th className="px-5 py-3.5 text-right">{tx("Actions")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -482,7 +483,7 @@ function BranchManagementContent() {
                               : "bg-slate-100 text-slate-700 border-slate-200"
                           }`}
                         >
-                          {branch.is_active ? "Active" : "Inactive"}
+                          {branch.is_active ? tx("Active") : tx("Inactive")}
                         </span>
                       </td>
                       <td className="px-5 py-3.5 text-right whitespace-nowrap">
@@ -491,13 +492,13 @@ function BranchManagementContent() {
                             onClick={() => handleOpenEditModal(branch)}
                             className="px-3 py-1.5 text-xs font-semibold text-blue-600 bg-white hover:bg-slate-50 transition-colors"
                           >
-                            Edit
+                            {tx("Edit")}
                           </button>
                           <button
                             onClick={() => handleDeleteBranch(branch)}
                             className="px-3 py-1.5 text-xs font-semibold text-red-600 bg-white hover:bg-slate-50 transition-colors"
                           >
-                            Delete
+                            {tx("Delete")}
                           </button>
                         </div>
                       </td>
@@ -506,7 +507,7 @@ function BranchManagementContent() {
                 </tbody>
               </table>
             </div>
-          <Pagination pagination={pagination} noun="branches" inline />
+          <Pagination pagination={pagination} noun={tx("branches")} inline />
             </>
           )}
         </div>
@@ -517,7 +518,7 @@ function BranchManagementContent() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 space-y-4 my-8">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900">Add New Branch</h3>
+              <h3 className="text-base font-bold text-slate-900">{tx("Add New Branch")}</h3>
               <DemoFillButton
                 className="ml-auto mr-3"
                 onFill={() => setCreateForm(demoBranch(BRANCH_TYPES.map((t) => t.value)))}
@@ -535,18 +536,18 @@ function BranchManagementContent() {
             <form onSubmit={handleCreateBranch} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Branch Code *</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Branch Code *")}</label>
                   <input
                     type="text"
                     required
                     value={createForm.branch_code}
                     onChange={(e) => setCreateForm((f) => ({ ...f, branch_code: e.target.value.toUpperCase() }))}
-                    placeholder="e.g. LHR-01"
+                    placeholder={tx("e.g. LHR-01")}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 font-mono placeholder:text-slate-400 placeholder:font-sans focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Branch Type *</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Branch Type *")}</label>
                   <select
                     value={createForm.branch_type}
                     onChange={(e) => setCreateForm((f) => ({ ...f, branch_type: e.target.value }))}
@@ -558,49 +559,49 @@ function BranchManagementContent() {
                   </select>
                 </div>
                 <div className="col-span-2 space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Branch Name *</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Branch Name *")}</label>
                   <input
                     type="text"
                     required
                     value={createForm.name}
                     onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
-                    placeholder="e.g. Lahore Main Branch"
+                    placeholder={tx("e.g. Lahore Main Branch")}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Region</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Region")}</label>
                   <input
                     type="text"
                     value={createForm.region}
                     onChange={(e) => setCreateForm((f) => ({ ...f, region: e.target.value }))}
-                    placeholder="e.g. Punjab"
+                    placeholder={tx("e.g. Punjab")}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">City *</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("City *")}</label>
                   <input
                     type="text"
                     required
                     value={createForm.city}
                     onChange={(e) => setCreateForm((f) => ({ ...f, city: e.target.value }))}
-                    placeholder="e.g. Lahore"
+                    placeholder={tx("e.g. Lahore")}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
                 <div className="col-span-2 space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Address</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Address")}</label>
                   <input
                     type="text"
                     value={createForm.address}
                     onChange={(e) => setCreateForm((f) => ({ ...f, address: e.target.value }))}
-                    placeholder="Street address"
+                    placeholder={tx("Street address")}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Postal Code</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Postal Code")}</label>
                   <input
                     type="text"
                     value={createForm.postal_code}
@@ -609,7 +610,7 @@ function BranchManagementContent() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Opened Date</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Opened Date")}</label>
                   <input
                     type="date"
                     value={createForm.opened_date}
@@ -618,7 +619,7 @@ function BranchManagementContent() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Contact Person</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Contact Person")}</label>
                   <input
                     type="text"
                     value={createForm.contact_person}
@@ -627,7 +628,7 @@ function BranchManagementContent() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Contact Phone</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Contact Phone")}</label>
                   <input
                     type="text"
                     value={createForm.contact_phone}
@@ -636,7 +637,7 @@ function BranchManagementContent() {
                   />
                 </div>
                 <div className="col-span-2 space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Contact Email</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Contact Email")}</label>
                   <input
                     type="email"
                     value={createForm.contact_email}
@@ -652,7 +653,7 @@ function BranchManagementContent() {
                   onClick={() => setShowCreateModal(false)}
                   className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
                 >
-                  Cancel
+                  {tx("Cancel")}
                 </button>
                 <button
                   type="submit"
@@ -665,7 +666,7 @@ function BranchManagementContent() {
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
                   )}
-                  Create Branch
+                  {tx("Create Branch")}
                 </button>
               </div>
             </form>
@@ -678,7 +679,7 @@ function BranchManagementContent() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 space-y-4 my-8">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900">Edit Branch</h3>
+              <h3 className="text-base font-bold text-slate-900">{tx("Edit Branch")}</h3>
               <button
                 onClick={() => setShowEditModal(false)}
                 className="text-slate-400 hover:text-slate-600 transition-colors"
@@ -692,7 +693,7 @@ function BranchManagementContent() {
             <form onSubmit={handleEditBranch} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Branch Code</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Branch Code")}</label>
                   <input
                     type="text"
                     disabled
@@ -701,7 +702,7 @@ function BranchManagementContent() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Branch Type *</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Branch Type *")}</label>
                   <select
                     value={editForm.branch_type}
                     onChange={(e) => setEditForm((f) => ({ ...f, branch_type: e.target.value }))}
@@ -713,7 +714,7 @@ function BranchManagementContent() {
                   </select>
                 </div>
                 <div className="col-span-2 space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Branch Name *</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Branch Name *")}</label>
                   <input
                     type="text"
                     required
@@ -723,7 +724,7 @@ function BranchManagementContent() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Region</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Region")}</label>
                   <input
                     type="text"
                     value={editForm.region}
@@ -732,7 +733,7 @@ function BranchManagementContent() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">City *</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("City *")}</label>
                   <input
                     type="text"
                     required
@@ -742,7 +743,7 @@ function BranchManagementContent() {
                   />
                 </div>
                 <div className="col-span-2 space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Address</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Address")}</label>
                   <input
                     type="text"
                     value={editForm.address}
@@ -751,7 +752,7 @@ function BranchManagementContent() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Postal Code</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Postal Code")}</label>
                   <input
                     type="text"
                     value={editForm.postal_code}
@@ -760,7 +761,7 @@ function BranchManagementContent() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Opened Date</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Opened Date")}</label>
                   <input
                     type="date"
                     value={editForm.opened_date}
@@ -769,7 +770,7 @@ function BranchManagementContent() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Contact Person</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Contact Person")}</label>
                   <input
                     type="text"
                     value={editForm.contact_person}
@@ -778,7 +779,7 @@ function BranchManagementContent() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Contact Phone</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Contact Phone")}</label>
                   <input
                     type="text"
                     value={editForm.contact_phone}
@@ -787,7 +788,7 @@ function BranchManagementContent() {
                   />
                 </div>
                 <div className="col-span-2 space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Contact Email</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Contact Email")}</label>
                   <input
                     type="email"
                     value={editForm.contact_email}
@@ -806,7 +807,7 @@ function BranchManagementContent() {
                   className="rounded border-slate-300 text-blue-600 focus:ring-blue-500/20 h-4 w-4"
                 />
                 <label htmlFor="editBranchActive" className="text-xs font-semibold text-slate-700 select-none">
-                  Branch Active Status
+                  {tx("Branch Active Status")}
                 </label>
               </div>
 
@@ -816,7 +817,7 @@ function BranchManagementContent() {
                   onClick={() => setShowEditModal(false)}
                   className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
                 >
-                  Cancel
+                  {tx("Cancel")}
                 </button>
                 <button
                   type="submit"
@@ -829,7 +830,7 @@ function BranchManagementContent() {
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
                   )}
-                  Save Changes
+                  {tx("Save Changes")}
                 </button>
               </div>
             </form>

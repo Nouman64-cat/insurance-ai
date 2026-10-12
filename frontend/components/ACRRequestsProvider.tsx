@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { listMyACRRequests, type ACRRequest } from "@/app/services/agentConfidentialReport";
 import { useCaseEvents, type CaseEvent } from "@/lib/agent/useCaseEvents";
 import { useNotify } from "@/components/NotificationContext";
+import { tx } from "@/lib/i18n/tx";
 
 // The web counterpart of the agent app's ACRRequestsProvider: the Agent's Confidential
 // Reports this user has been asked to file. When a case passes Gate 1 the portal
@@ -63,7 +64,7 @@ export function ACRRequestsProvider({ children }: { children: ReactNode }) {
       fresh.forEach((r) => {
         const who = r.applicant_name || r.case_number || "a case";
         const group = r.group_name ? ` (${r.group_name})` : "";
-        notify(`ACR requested: ${who}${group} · ${SEGMENT[r.segment] ?? "Case"} ${r.case_number ?? ""} — click to file`, true, `case/${r.case_id}`);
+        notify(tx("ACR requested: {0}{1} · {2} {3} — click to file", { 0: who, 1: group, 2: SEGMENT[r.segment] ?? "Case", 3: r.case_number ?? "" }), true, tx("case/{0}", { 0: r.case_id }));
         seen.add(r.case_id);
       });
       // Forget cases that are no longer pending, so a re-request later is announced again.

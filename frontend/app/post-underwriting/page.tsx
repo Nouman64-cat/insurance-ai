@@ -36,6 +36,7 @@ import {
   FreeLookStatus,
 } from "@/app/services/postIssuance";
 import { Pagination, usePagination } from "@/components/Pagination";
+import { tx } from "@/lib/i18n/tx";
 
 /** The subset of a reinsurer the placement modal renders — shared by the live
  *  panel from tenant-service and the illustrative fallback below. */
@@ -313,7 +314,7 @@ function GateStepItem({ step, isLast, isExpanded, onToggle }: { step: any; isLas
                     : "text-slate-600"
                 }`}
               >
-                Gate {step.num}: {step.title}
+                {tx("Gate")}{" "}{step.num}: {step.title}
               </h4>
               
               <span className={`text-[10px] text-slate-400 font-mono transition-all duration-300 hidden sm:inline-block ${isExpanded ? "opacity-100 max-w-full ml-1" : "opacity-0 max-w-0 overflow-hidden m-0"}`}>
@@ -451,7 +452,7 @@ export default function PostUnderwritingPage() {
       setPreUnderwritingCount(pList.length - underwritten.length);
       setStats(pStats);
     } catch (err: any) {
-      notify("Failed to load post-underwriting cases.", false);
+      notify(tx("Failed to load post-underwriting cases."), false);
     } finally {
       setLoading(false);
     }
@@ -618,7 +619,7 @@ export default function PostUnderwritingPage() {
       setReadiness(rd);
       setFreeLookData(fl);
     } catch (e: any) {
-      notify("Error loading case details.", false);
+      notify(tx("Error loading case details."), false);
     } finally {
       setActionLoading(false);
     }
@@ -665,7 +666,7 @@ export default function PostUnderwritingPage() {
         "Customer explicitly signed counter-offer terms (Pakistani Contract Act verified).",
       );
       setAcceptedCounterOffers((prev) => ({ ...prev, [policyId]: true }));
-      notify("Counter-offer accepted & legal sign-off recorded.", true);
+      notify(tx("Counter-offer accepted & legal sign-off recorded."), true);
       await loadData();
       return true;
     } catch (e: any) {
@@ -692,7 +693,7 @@ export default function PostUnderwritingPage() {
       const view = await getReinsurance(policyId);
 
       if (!view.can_refer) {
-        notify(`This case cannot be referred to a reinsurer from status ${view.policy_status}.`, false);
+        notify(tx("This case cannot be referred to a reinsurer from status {0}.", { 0: view.policy_status }), false);
         return null;
       }
       if (!view.referral_required) {
@@ -706,7 +707,7 @@ export default function PostUnderwritingPage() {
 
       const match = pickReinsurer(view.panel, reinsurerName);
       if (!match) {
-        notify(`${reinsurerName} is not on this tenant's reinsurer panel.`, false);
+        notify(tx("{0} is not on this tenant's reinsurer panel.", { 0: reinsurerName }), false);
         return null;
       }
 
@@ -717,7 +718,7 @@ export default function PostUnderwritingPage() {
           `Facultative placement referral to ${match.name}`,
       });
       setReinsuranceReferrals((prev) => ({ ...prev, [policyId]: match.name }));
-      notify(`Facultative reinsurance slip transmitted to ${match.name}.`, true);
+      notify(tx("Facultative reinsurance slip transmitted to {0}.", { 0: match.name }), true);
       await loadData();
       return match;
     } catch (e: any) {
@@ -755,7 +756,7 @@ export default function PostUnderwritingPage() {
         podStatus: "Delivered (POD Signed)",
       },
     }));
-    notify(`Policy pack dispatched via TCS (${tracking})`, true);
+    notify(tx("Policy pack dispatched via TCS ({0})", { 0: tracking }), true);
   };
 
   // Complete SECP Welcome Call
@@ -775,7 +776,7 @@ export default function PostUnderwritingPage() {
     } catch (e) {
       // Graceful fallback
     }
-    notify("SECP Welcome call verified! 14-Day Free-Look period activated.", true);
+    notify(tx("SECP Welcome call verified! 14-Day Free-Look period activated."), true);
   };
 
   const { pageItems: pagedPolicies, pagination } = usePagination(filtered);
@@ -793,18 +794,18 @@ export default function PostUnderwritingPage() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-slate-900 tracking-tight">Post-Underwriting Operations</h1>
+              <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Post-Underwriting Operations")}</h1>
               <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-extrabold uppercase tracking-wider">
-                Adamjee Life Operations
+                {tx("Adamjee Life Operations")}
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Legal counter-offer sign-offs, facultative reinsurance placement, industry cover checks, SECP 14-day free-look &amp; courier POD verification.
+              {tx("Legal counter-offer sign-offs, facultative reinsurance placement, industry cover checks, SECP 14-day free-look & courier POD verification.")}
             </p>
             {preUnderwritingCount > 0 && (
               <p className="text-[11px] text-slate-400 mt-1">
-                {preUnderwritingCount.toLocaleString()} indicative quote
-                {preUnderwritingCount === 1 ? "" : "s"} not yet through underwriting are excluded from this board.
+                {preUnderwritingCount.toLocaleString()}{" "}{tx("indicative quote")}
+                {preUnderwritingCount === 1 ? "" : "s"}{" "}{tx("not yet through underwriting are excluded from this board.")}
               </p>
             )}
           </div>
@@ -814,9 +815,9 @@ export default function PostUnderwritingPage() {
       {/* Executive 4-Card Metric Suite matching Pre-Underwriting */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
-          title="Post-UW Active Cases"
+          title={tx("Post-UW Active Cases")}
           value={kpis.active}
-          subtitle="requiring operational clearance"
+          subtitle={tx("requiring operational clearance")}
           accent="blue"
           icon={
             <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -825,9 +826,9 @@ export default function PostUnderwritingPage() {
           }
         />
         <MetricCard
-          title="Legal Counter-Offers"
+          title={tx("Legal Counter-Offers")}
           value={kpis.pendingCounter}
-          subtitle="Pakistani Contract Act sign-offs"
+          subtitle={tx("Pakistani Contract Act sign-offs")}
           accent="sky"
           icon={
             <svg className="w-5 h-5 text-sky-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -836,9 +837,9 @@ export default function PostUnderwritingPage() {
           }
         />
         <MetricCard
-          title="Facultative Referrals"
+          title={tx("Facultative Referrals")}
           value={kpis.facultativeNeeded}
-          subtitle="exceeding PKR 10M retention limit"
+          subtitle={tx("exceeding PKR 10M retention limit")}
           accent="blue"
           icon={
             <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -847,9 +848,9 @@ export default function PostUnderwritingPage() {
           }
         />
         <MetricCard
-          title="SECP Free-Look Active"
+          title={tx("SECP Free-Look Active")}
           value={kpis.activeFreeLook}
-          subtitle="14-day statutory clock verified"
+          subtitle={tx("14-day statutory clock verified")}
           accent="emerald"
           icon={
             <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -865,7 +866,7 @@ export default function PostUnderwritingPage() {
           <div className="relative w-full max-w-xs">
             <input
               type="text"
-              placeholder="Search customer, CNIC, or policy number…"
+              placeholder={tx("Search customer, CNIC, or policy number…")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-slate-50"
@@ -884,7 +885,7 @@ export default function PostUnderwritingPage() {
             onChange={(e) => setShowCompleted(e.target.checked)}
             className="rounded text-blue-600 focus:ring-blue-500"
           />
-          Show fully-cleared post-underwriting cases
+          {tx("Show fully-cleared post-underwriting cases")}
         </label>
       </div>
 
@@ -896,8 +897,8 @@ export default function PostUnderwritingPage() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="py-16 bg-white rounded-xl border border-slate-200 text-center px-4">
-            <p className="text-sm font-bold text-slate-700">No cases requiring post-underwriting verification right now.</p>
-            <p className="text-xs text-slate-400 mt-1">Check "Show fully-cleared post-underwriting cases" or try another search.</p>
+            <p className="text-sm font-bold text-slate-700">{tx("No cases requiring post-underwriting verification right now.")}</p>
+            <p className="text-xs text-slate-400 mt-1">{tx("Check \"Show fully-cleared post-underwriting cases\" or try another search.")}</p>
           </div>
         ) : (
           pagedPolicies.map((p) => {
@@ -925,7 +926,7 @@ export default function PostUnderwritingPage() {
                           : "bg-gradient-to-br from-blue-700 to-indigo-800 text-white shadow-blue-900/10"
                       }`}
                     >
-                      {p.customer_name?.slice(0, 2).toUpperCase() ?? "PO"}
+                      {p.customer_name?.slice(0, 2).toUpperCase() ?? tx("PO")}
                     </div>
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
@@ -933,7 +934,7 @@ export default function PostUnderwritingPage() {
                           {p.customer_name}
                         </h3>
                         <span className="font-mono text-[10px] text-slate-600 bg-slate-200/70 px-2 py-0.5 rounded font-semibold border border-slate-300/50">
-                          {p.policy_number ?? "Drafting..."}
+                          {p.policy_number ?? tx("Drafting...")}
                         </span>
                         {p.segment && (
                           <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider border ${SEGMENT_BADGE_STYLE[p.segment as any] || "bg-slate-100 text-slate-600"}`}>
@@ -943,11 +944,11 @@ export default function PostUnderwritingPage() {
                       </div>
                       <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap">
                         <span className="inline-flex items-center gap-1 text-[11px] text-slate-600">
-                          <span className="text-slate-400 font-medium">Product:</span> {p.product_name}
+                          <span className="text-slate-400 font-medium">{tx("Product:")}</span> {p.product_name}
                         </span>
                         <span className="text-slate-300">•</span>
                         <span className="inline-flex items-center gap-1 font-mono text-[11px]">
-                          <span className="text-slate-400 font-sans font-medium">Sum Assured:</span>{" "}
+                          <span className="text-slate-400 font-sans font-medium">{tx("Sum Assured:")}</span>{" "}
                           <strong className="text-slate-900">{fmtPKR(p.coverage_amount)}</strong>
                         </span>
                       </div>
@@ -958,7 +959,7 @@ export default function PostUnderwritingPage() {
                   <div className="flex items-center gap-4 border-t md:border-t-0 pt-3 md:pt-0 border-slate-200/60">
                     <div className="flex flex-col items-end min-w-[130px]">
                       <div className="flex items-center gap-1.5 mb-1">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Operational Gates</span>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">{tx("Operational Gates")}</span>
                         <span className={`text-xs font-black font-mono ${gates.isFullyCleared ? "text-emerald-700" : "text-blue-800"}`}>
                           {gates.stepCount}/5
                         </span>
@@ -982,7 +983,7 @@ export default function PostUnderwritingPage() {
                       onClick={() => handleInspectPolicy(p)}
                       className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-xs hover:shadow transition-all flex items-center gap-1.5 active:scale-[0.98]"
                     >
-                      <span>Verify Details</span>
+                      <span>{tx("Verify Details")}</span>
                       <svg className="w-3.5 h-3.5 text-blue-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M9 18l6-6-6-6" />
                       </svg>
@@ -995,14 +996,14 @@ export default function PostUnderwritingPage() {
                   <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                        Operational Progression Timeline
+                        {tx("Operational Progression Timeline")}
                       </span>
                       <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200/60 font-mono">
-                        Sequential Gating 1 → 5
+                        {tx("Sequential Gating 1 → 5")}
                       </span>
                     </div>
                     <span className="text-xs text-slate-500">
-                      Completed <strong className="text-slate-900 font-mono">{gates.stepCount}</strong> of 5 verification milestones
+                      {tx("Completed")}{" "}<strong className="text-slate-900 font-mono">{gates.stepCount}</strong>{" "}{tx("of 5 verification milestones")}
                     </span>
                   </div>
 
@@ -1026,9 +1027,9 @@ export default function PostUnderwritingPage() {
                       // must stay inline-safe, no <div> here.
                       <span className="flex flex-col gap-0.5">
                         <span className="text-slate-700 font-semibold text-[11px]">
-                          Risk Driver: {coState.reasonCode || "Escalation"}
+                          {tx("Risk Driver:")}{" "}{coState.reasonCode || tx("Escalation")}
                         </span>
-                        <span>Proposer legal consent for loading & exclusion terms prior to contract perfection.</span>
+                        <span>{tx("Proposer legal consent for loading & exclusion terms prior to contract perfection.")}</span>
                       </span>
                     ) : (
                       "Proposer legal consent for terms prior to contract perfection."
@@ -1053,19 +1054,19 @@ export default function PostUnderwritingPage() {
                           <StatusPill
                             done={isGate1Done}
                             pending={pendingBadgeLabel}
-                            label="Accepted"
+                            label={tx("Accepted")}
                           />
                         ),
                         action: isGate1Done ? (
                           <div className="flex items-center gap-2">
                             <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                              <span>✓ Legal Sign-off Recorded</span>
+                              <span>{tx("✓ Legal Sign-off Recorded")}</span>
                             </span>
                             <button
                               onClick={() => setActiveCounterPolicy(p)}
                               className="text-[11px] font-bold text-blue-800 hover:text-blue-950 underline px-2 py-1 bg-blue-50/80 rounded-lg border border-blue-200/80"
                             >
-                              Rating Engine →
+                              {tx("Rating Engine →")}
                             </button>
                           </div>
                         ) : (
@@ -1073,7 +1074,7 @@ export default function PostUnderwritingPage() {
                             onClick={() => setActiveCounterPolicy(p)}
                             className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5"
                           >
-                            <span>Configure &amp; Sign-Off Counter-Offer →</span>
+                            <span>{tx("Configure & Sign-Off Counter-Offer →")}</span>
                           </button>
                         ),
                       },
@@ -1091,23 +1092,23 @@ export default function PostUnderwritingPage() {
                           <StatusPill
                             done={isGate2Done}
                             pending={p.coverage_amount >= 10000000 ? "Referral Required" : "Within Retention"}
-                            label={reinsurer ? `Placed (${reinsurer})` : "Within Limit"}
+                            label={reinsurer ? tx("Placed ({0})", { 0: reinsurer }) : tx("Within Limit")}
                           />
                         ),
                         action: isGate2Locked ? (
                           <span className="text-xs text-slate-400 font-medium italic">
-                            Prerequisite: Complete Gate 1 first
+                            {tx("Prerequisite: Complete Gate 1 first")}
                           </span>
                         ) : isGate2Done ? (
                           <div className="flex items-center gap-2">
                             <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                              <span>✓ Reinsured with {reinsurer || "Swiss Re"}</span>
+                              <span>{tx("✓ Reinsured with")}{" "}{reinsurer || tx("Swiss Re")}</span>
                             </span>
                             <button
                               onClick={() => openReinsuranceModal(p)}
                               className="text-[11px] font-bold text-sky-800 hover:text-sky-950 underline px-2 py-1 bg-sky-50 rounded-lg border border-sky-200"
                             >
-                              View Slip →
+                              {tx("View Slip →")}
                             </button>
                           </div>
                         ) : (
@@ -1115,7 +1116,7 @@ export default function PostUnderwritingPage() {
                             onClick={() => openReinsuranceModal(p)}
                             className="px-3.5 py-1.5 bg-gradient-to-r from-sky-600 to-blue-700 hover:from-sky-700 hover:to-blue-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5"
                           >
-                            <span>Configure &amp; Place Reinsurance →</span>
+                            <span>{tx("Configure & Place Reinsurance →")}</span>
                           </button>
                         ),
                       },
@@ -1130,15 +1131,15 @@ export default function PostUnderwritingPage() {
                         isLocked: isGate3Locked,
                         isNextActive: isGate1Done && isGate2Done && !isGate3Done,
                         badge: isGate3Locked ? null : (
-                          <StatusPill done={isGate3Done} pending="Audited" label="Clear" />
+                          <StatusPill done={isGate3Done} pending="Audited" label={tx("Clear")} />
                         ),
                         action: isGate3Locked ? (
                           <span className="text-xs text-slate-400 font-medium italic">
-                            Prerequisite: Complete Gate 2 first
+                            {tx("Prerequisite: Complete Gate 2 first")}
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                            <span>✓ Aggregate Cover Within HLV</span>
+                            <span>{tx("✓ Aggregate Cover Within HLV")}</span>
                           </span>
                         ),
                       },
@@ -1153,11 +1154,11 @@ export default function PostUnderwritingPage() {
                         isLocked: isGate4Locked,
                         isNextActive: isGate1Done && isGate2Done && isGate3Done && !isGate4Done,
                         badge: isGate4Locked ? null : (
-                          <StatusPill done={isGate4Done} pending="Pending Dispatch" label="POD Verified" />
+                          <StatusPill done={isGate4Done} pending="Pending Dispatch" label={tx("POD Verified")} />
                         ),
                         action: isGate4Locked ? (
                           <span className="text-xs text-slate-400 font-medium italic">
-                            Prerequisite: Complete Gate 3 first
+                            {tx("Prerequisite: Complete Gate 3 first")}
                           </span>
                         ) : isGate4Done ? (
                           <div className="flex items-center gap-2">
@@ -1165,7 +1166,7 @@ export default function PostUnderwritingPage() {
                               <span>✓ {courier.partner}: {courier.trackingNo}</span>
                             </span>
                             <span className="text-[10px] font-bold text-teal-700 bg-teal-100/70 px-2 py-0.5 rounded">
-                              POD Verified
+                              {tx("POD Verified")}
                             </span>
                           </div>
                         ) : (
@@ -1173,7 +1174,7 @@ export default function PostUnderwritingPage() {
                             onClick={() => handleDispatchCourier(p.id)}
                             className="px-3.5 py-1.5 bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5"
                           >
-                            <span>Dispatch via TCS Express →</span>
+                            <span>{tx("Dispatch via TCS Express →")}</span>
                           </button>
                         ),
                       },
@@ -1188,19 +1189,19 @@ export default function PostUnderwritingPage() {
                         isLocked: isGate5Locked,
                         isNextActive: isGate1Done && isGate2Done && isGate3Done && isGate4Done && !isGate5Done,
                         badge: isGate5Locked ? null : (
-                          <StatusPill done={isGate5Done} pending="Call Pending" label="14-Day Clock Active" />
+                          <StatusPill done={isGate5Done} pending="Call Pending" label={tx("14-Day Clock Active")} />
                         ),
                         action: isGate5Locked ? (
                           <span className="text-xs text-slate-400 font-medium italic">
-                            Prerequisite: Complete Gate 4 first
+                            {tx("Prerequisite: Complete Gate 4 first")}
                           </span>
                         ) : isGate5Done ? (
                           <div className="flex items-center gap-2">
                             <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                              <span>✓ Welcome Call Verified</span>
+                              <span>{tx("✓ Welcome Call Verified")}</span>
                             </span>
                             <span className="text-[10px] font-mono font-semibold text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded">
-                              Free-Look Active until {call.freeLookEnd}
+                              {tx("Free-Look Active until")}{" "}{call.freeLookEnd}
                             </span>
                           </div>
                         ) : (
@@ -1208,7 +1209,7 @@ export default function PostUnderwritingPage() {
                             onClick={() => handleCompleteWelcomeCall(p.id)}
                             className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5"
                           >
-                            <span>Verify Welcome Call →</span>
+                            <span>{tx("Verify Welcome Call →")}</span>
                           </button>
                         ),
                       },
@@ -1235,7 +1236,7 @@ export default function PostUnderwritingPage() {
                                   </div>
                                   <div className="flex-1 flex flex-col justify-center">
                                     <span className="text-[11px] font-semibold text-slate-400 group-hover:text-emerald-600 transition-colors">
-                                      Show {defaultActive - 1} previous stage{defaultActive - 1 > 1 ? "s" : ""}
+                                      {tx("Show")}{" "}{defaultActive - 1}{" "}{tx("previous stage")}{defaultActive - 1 > 1 ? "s" : ""}
                                     </span>
                                   </div>
                                 </div>
@@ -1269,7 +1270,7 @@ export default function PostUnderwritingPage() {
                                   </div>
                                   <div className="flex-1 flex flex-col justify-center">
                                     <span className="text-[11px] font-semibold text-slate-400 group-hover:text-slate-600 transition-colors">
-                                      Show {gateSteps.length - defaultActive} remaining stage{gateSteps.length - defaultActive > 1 ? "s" : ""}
+                                      {tx("Show")}{" "}{gateSteps.length - defaultActive}{" "}{tx("remaining stage")}{gateSteps.length - defaultActive > 1 ? "s" : ""}
                                     </span>
                                   </div>
                                 </div>
@@ -1287,7 +1288,7 @@ export default function PostUnderwritingPage() {
                                   </div>
                                   <div className="flex-1 flex flex-col justify-center">
                                     <span className="text-[11px] font-semibold text-slate-500 group-hover:text-slate-700 transition-colors">
-                                      Collapse timeline (view active only)
+                                      {tx("Collapse timeline (view active only)")}
                                     </span>
                                   </div>
                                 </div>
@@ -1303,7 +1304,7 @@ export default function PostUnderwritingPage() {
             );
           })
         )}
-        {!loading && <Pagination pagination={pagination} noun="cases" />}
+        {!loading && <Pagination pagination={pagination} noun={tx("cases")} />}
       </div>
 
       {/* Verification Drawer / Modal matching Pre-Underwriting */}
@@ -1348,7 +1349,7 @@ export default function PostUnderwritingPage() {
             workflowState: decision === "ACCEPTED" ? "APPROVAL_PENDING" : "COUNTER_OFFER_PREPARED",
             notes: `Customer response recorded: ${decision}.`,
           }));
-          notify(`Customer response recorded as ${decision}`, true);
+          notify(tx("Customer response recorded as {0}", { 0: decision }), true);
         };
 
         // Persist the sign-off before writing the audit trail — the trail should
@@ -1372,7 +1373,7 @@ export default function PostUnderwritingPage() {
               },
             ],
           }));
-          notify(`Counter-offer signed off successfully by ${roleName}.`, true);
+          notify(tx("Counter-offer signed off successfully by {0}.", { 0: roleName }), true);
         };
 
         return (
@@ -1382,13 +1383,13 @@ export default function PostUnderwritingPage() {
               <div className="bg-gradient-to-r from-sky-900 via-blue-900 to-slate-900 px-6 py-4 flex items-center justify-between text-white">
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-base font-bold">Counter-Offer Sign-off &amp; Renewal Pricing Engine</h2>
+                    <h2 className="text-base font-bold">{tx("Counter-Offer Sign-off & Renewal Pricing Engine")}</h2>
                     <span className="px-2 py-0.5 rounded bg-white/20 text-white font-mono text-[10px] font-bold">
-                      {p.customer_name} ({p.policy_number ?? "Proposal"})
+                      {p.customer_name} ({p.policy_number ?? tx("Proposal")})
                     </span>
                   </div>
                   <p className="text-xs text-sky-200 mt-0.5">
-                    Pakistani Contract Act Proposer Consent &amp; Actuarial Renewal Calculation Formula
+                    {tx("Pakistani Contract Act Proposer Consent & Actuarial Renewal Calculation Formula")}
                   </p>
                 </div>
                 <button onClick={() => setActiveCounterPolicy(null)} className="text-white/60 hover:text-white text-xl">✕</button>
@@ -1398,7 +1399,7 @@ export default function PostUnderwritingPage() {
                 {/* 1. Workflow State Stepper */}
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                   <h3 className="font-extrabold text-slate-800 uppercase tracking-wider text-[11px] mb-3">
-                    Counter-Offer Lifecycle Stepper
+                    {tx("Counter-Offer Lifecycle Stepper")}
                   </h3>
                   <div className="flex items-center justify-between gap-1 overflow-x-auto pb-1">
                     {workflowSteps.map((step, idx) => {
@@ -1431,9 +1432,9 @@ export default function PostUnderwritingPage() {
                 <div className="bg-slate-900 text-white rounded-2xl p-5 shadow-md border border-slate-800">
                   <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
                     <div>
-                      <h3 className="font-bold text-sm text-sky-200">Actuarial Renewal Premium Formula</h3>
+                      <h3 className="font-bold text-sm text-sky-200">{tx("Actuarial Renewal Premium Formula")}</h3>
                       <p className="text-[11px] text-slate-400 mt-0.5 font-mono">
-                        P_renewal = P_expiring × (1 + Δ_duration) × (1 + Δ_exposure) × (1 + Δ_coverage) × (1 + Δ_rate)
+                        {tx("P_renewal = P_expiring × (1 + Δ_duration) × (1 + Δ_exposure) × (1 + Δ_coverage) × (1 + Δ_rate)")}
                       </p>
                     </div>
                     <span className="px-3 py-1 bg-sky-500/20 border border-sky-400/30 text-sky-200 rounded-full font-mono text-xs font-bold">
@@ -1446,7 +1447,7 @@ export default function PostUnderwritingPage() {
                     {/* Expiring Base Premium */}
                     <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
                       <div className="flex justify-between text-[11px] mb-1">
-                        <span className="text-slate-300 font-medium">Expiring Base Premium (P_exp)</span>
+                        <span className="text-slate-300 font-medium">{tx("Expiring Base Premium (P_exp)")}</span>
                         <span className="font-mono font-bold text-sky-300">{fmtPKR(coState.expiringPremium)}</span>
                       </div>
                       <input
@@ -1460,7 +1461,7 @@ export default function PostUnderwritingPage() {
                     {/* Duration Factor */}
                     <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
                       <div className="flex justify-between text-[11px] mb-1">
-                        <span className="text-slate-300 font-medium">Duration Factor (Δ_duration)</span>
+                        <span className="text-slate-300 font-medium">{tx("Duration Factor (Δ_duration)")}</span>
                         <span className="font-mono font-bold text-sky-300">{(coState.deltaDuration * 100).toFixed(1)}%</span>
                       </div>
                       <input
@@ -1474,7 +1475,7 @@ export default function PostUnderwritingPage() {
                     {/* Exposure Factor */}
                     <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
                       <div className="flex justify-between text-[11px] mb-1">
-                        <span className="text-slate-300 font-medium">Exposure Factor (Δ_exposure)</span>
+                        <span className="text-slate-300 font-medium">{tx("Exposure Factor (Δ_exposure)")}</span>
                         <span className="font-mono font-bold text-sky-300">{(coState.deltaExposure * 100).toFixed(1)}%</span>
                       </div>
                       <input
@@ -1488,7 +1489,7 @@ export default function PostUnderwritingPage() {
                     {/* Coverage Factor */}
                     <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
                       <div className="flex justify-between text-[11px] mb-1">
-                        <span className="text-slate-300 font-medium">Coverage Factor (Δ_coverage)</span>
+                        <span className="text-slate-300 font-medium">{tx("Coverage Factor (Δ_coverage)")}</span>
                         <span className="font-mono font-bold text-sky-300">{(coState.deltaCoverage * 100).toFixed(1)}%</span>
                       </div>
                       <input
@@ -1502,7 +1503,7 @@ export default function PostUnderwritingPage() {
                     {/* Rate / Claims Adjustment */}
                     <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60 md:col-span-2">
                       <div className="flex justify-between text-[11px] mb-1">
-                        <span className="text-slate-300 font-medium">Base Rate &amp; Claims Experience Adjustment (Δ_rate)</span>
+                        <span className="text-slate-300 font-medium">{tx("Base Rate & Claims Experience Adjustment (Δ_rate)")}</span>
                         <span className="font-mono font-bold text-sky-300">{(coState.deltaRate * 100).toFixed(1)}%</span>
                       </div>
                       <input
@@ -1517,15 +1518,15 @@ export default function PostUnderwritingPage() {
                   {/* Summary Variance Box */}
                   <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-xs flex-wrap gap-2">
                     <div>
-                      <span className="text-slate-400 font-medium">Original Premium: </span>
+                      <span className="text-slate-400 font-medium">{tx("Original Premium:")}{" "}</span>
                       <span className="font-mono font-bold text-white">{fmtPKR(coState.expiringPremium)}</span>
                     </div>
                     <div>
-                      <span className="text-slate-400 font-medium">Calculated Renewal Premium: </span>
+                      <span className="text-slate-400 font-medium">{tx("Calculated Renewal Premium:")}{" "}</span>
                       <span className="font-mono font-bold text-emerald-400">{fmtPKR(coState.proposedPremium)}</span>
                     </div>
                     <div>
-                      <span className="text-slate-400 font-medium">Variance: </span>
+                      <span className="text-slate-400 font-medium">{tx("Variance:")}{" "}</span>
                       <span className={`font-mono font-bold ${deviationPct >= 0 ? "text-sky-300" : "text-emerald-300"}`}>
                         {deviationPct >= 0 ? "+" : ""}{fmtPKR(coState.proposedPremium - coState.expiringPremium)} ({deviationPct >= 0 ? "+" : ""}{deviationPct.toFixed(1)}%)
                       </span>
@@ -1536,26 +1537,26 @@ export default function PostUnderwritingPage() {
                 {/* 3. Reason Code & Proposer Consent */}
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
                   <h3 className="font-bold text-slate-900 text-xs uppercase tracking-wider">
-                    Counter-Offer Terms &amp; Proposer Response
+                    {tx("Counter-Offer Terms & Proposer Response")}
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">Counter-Offer Reason Code</label>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">{tx("Counter-Offer Reason Code")}</label>
                       <select
                         value={coState.reasonCode}
                         onChange={(e) => updateCounterState(p.id, (prev) => ({ ...prev, reasonCode: e.target.value }))}
                         className="w-full p-2 border border-slate-300 rounded-lg text-xs bg-white text-slate-800"
                       >
-                        <option value="Price Objection">Price Objection &amp; Broker Negotiation</option>
-                        <option value="Renewal Rate & Risk Exposure Change">Renewal Rate &amp; Exposure Adjustment</option>
-                        <option value="Claims Experience Surcharge">Claims Experience Adverse Loading</option>
-                        <option value="Competitor Rate Match">Competitor Premium Matching</option>
-                        <option value="Coverage Limit Modification">Coverage Limit / Deductible Alteration</option>
+                        <option value="Price Objection">{tx("Price Objection & Broker Negotiation")}</option>
+                        <option value="Renewal Rate & Risk Exposure Change">{tx("Renewal Rate & Exposure Adjustment")}</option>
+                        <option value="Claims Experience Surcharge">{tx("Claims Experience Adverse Loading")}</option>
+                        <option value="Competitor Rate Match">{tx("Competitor Premium Matching")}</option>
+                        <option value="Coverage Limit Modification">{tx("Coverage Limit / Deductible Alteration")}</option>
                       </select>
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">Customer / Proposer Decision</label>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">{tx("Customer / Proposer Decision")}</label>
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleCustomerDecision("ACCEPTED")}
@@ -1565,7 +1566,7 @@ export default function PostUnderwritingPage() {
                               : "bg-white text-slate-700 border-slate-300 hover:bg-slate-100"
                           }`}
                         >
-                          ✓ Accept Terms
+                          {tx("✓ Accept Terms")}
                         </button>
                         <button
                           onClick={() => handleCustomerDecision("RE_NEGOTIATE")}
@@ -1575,7 +1576,7 @@ export default function PostUnderwritingPage() {
                               : "bg-white text-slate-700 border-slate-300 hover:bg-slate-100"
                           }`}
                         >
-                          ↻ Re-Negotiate
+                          {tx("↻ Re-Negotiate")}
                         </button>
                         <button
                           onClick={() => handleCustomerDecision("DECLINED")}
@@ -1585,7 +1586,7 @@ export default function PostUnderwritingPage() {
                               : "bg-white text-slate-700 border-slate-300 hover:bg-slate-100"
                           }`}
                         >
-                          ✕ Decline Terms
+                          {tx("✕ Decline Terms")}
                         </button>
                       </div>
                     </div>
@@ -1597,7 +1598,7 @@ export default function PostUnderwritingPage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="font-bold text-sky-950 text-xs uppercase tracking-wider">
-                        Underwriting Authority Routing Matrix (Sign-Off Control)
+                        {tx("Underwriting Authority Routing Matrix (Sign-Off Control)")}
                       </h3>
                       <p className="text-[11px] text-sky-800 mt-0.5">
                         {authority.description}
@@ -1614,33 +1615,33 @@ export default function PostUnderwritingPage() {
                       disabled={coState.workflowState === "APPROVED"}
                       className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs disabled:opacity-50 transition-colors shadow-2xs"
                     >
-                      Sign-off as Junior UW (≤ 10%)
+                      {tx("Sign-off as Junior UW (≤ 10%)")}
                     </button>
                     <button
                       onClick={() => handleSignOff("Senior Underwriter", "Level 2")}
                       disabled={coState.workflowState === "APPROVED"}
                       className="px-3.5 py-2 bg-sky-700 hover:bg-sky-800 text-white font-bold rounded-lg text-xs disabled:opacity-50 transition-colors shadow-2xs"
                     >
-                      Sign-off as Senior UW (≤ 25%)
+                      {tx("Sign-off as Senior UW (≤ 25%)")}
                     </button>
                     <button
                       onClick={() => handleSignOff("Chief Underwriter & Pricing Committee", "Level 3")}
                       disabled={coState.workflowState === "APPROVED"}
                       className="px-3.5 py-2 bg-blue-900 hover:bg-blue-950 text-white font-bold rounded-lg text-xs disabled:opacity-50 transition-colors shadow-2xs"
                     >
-                      Sign-off as Chief UW / Committee (&gt; 25%)
+                      {tx("Sign-off as Chief UW / Committee (> 25%)")}
                     </button>
                   </div>
 
                   {/* Audit Trail Table */}
                   {coState.signoffHistory.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-sky-200/60">
-                      <h4 className="text-[11px] font-bold text-slate-800 mb-2">Electronic Sign-Off Audit Trail</h4>
+                      <h4 className="text-[11px] font-bold text-slate-800 mb-2">{tx("Electronic Sign-Off Audit Trail")}</h4>
                       <div className="space-y-1.5">
                         {coState.signoffHistory.map((s, idx) => (
                           <div key={idx} className="flex items-center justify-between bg-white p-2.5 rounded-lg border border-sky-200/80 text-[11px]">
                             <div className="flex items-center gap-2">
-                              <span className="font-bold text-emerald-700">✓ Signed</span>
+                              <span className="font-bold text-emerald-700">{tx("✓ Signed")}</span>
                               <span className="font-semibold text-slate-800">{s.approvedBy}</span>
                               <span className="text-slate-400">({s.level})</span>
                             </div>
@@ -1655,13 +1656,13 @@ export default function PostUnderwritingPage() {
 
               <div className="border-t border-slate-200 px-6 py-4 flex justify-between items-center bg-slate-50">
                 <span className="text-xs text-slate-500 font-mono">
-                  Pakistani Contract Act 1872 · Section 7 Counter-Offer Perfection
+                  {tx("Pakistani Contract Act 1872 · Section 7 Counter-Offer Perfection")}
                 </span>
                 <button
                   onClick={() => setActiveCounterPolicy(null)}
                   className="px-5 py-2 bg-slate-900 text-white font-bold text-xs rounded-xl hover:bg-slate-800"
                 >
-                  Done / Close
+                  {tx("Done / Close")}
                 </button>
               </div>
             </div>
@@ -1718,13 +1719,13 @@ export default function PostUnderwritingPage() {
               <div className="bg-gradient-to-r from-sky-900 via-blue-900 to-slate-900 px-6 py-4 flex items-center justify-between text-white">
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-base font-bold">Reinsurance Placement &amp; Cession Engine (Gate 2)</h2>
+                    <h2 className="text-base font-bold">{tx("Reinsurance Placement & Cession Engine (Gate 2)")}</h2>
                     <span className="px-2 py-0.5 rounded bg-white/20 text-white font-mono text-[10px] font-bold">
-                      {p.customer_name} ({p.policy_number ?? "Proposal"})
+                      {p.customer_name} ({p.policy_number ?? tx("Proposal")})
                     </span>
                   </div>
                   <p className="text-xs text-sky-200 mt-0.5 font-mono">
-                    Company Retention Limit: PKR 10,000,000 · Treaty Quota Share &amp; Facultative Placement
+                    {tx("Company Retention Limit: PKR 10,000,000 · Treaty Quota Share & Facultative Placement")}
                   </p>
                 </div>
                 <button onClick={() => closeReinsuranceModal()} className="text-white/60 hover:text-white text-xl">✕</button>
@@ -1734,28 +1735,28 @@ export default function PostUnderwritingPage() {
                 {/* 1. Cession Retention Breakdown */}
                 <div className="bg-slate-900 text-white p-4 rounded-2xl border border-slate-800 shadow-md">
                   <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
-                    <h3 className="font-bold text-xs text-sky-200 uppercase tracking-wider">Actuarial Cession Breakdown</h3>
+                    <h3 className="font-bold text-xs text-sky-200 uppercase tracking-wider">{tx("Actuarial Cession Breakdown")}</h3>
                     <span className="px-2.5 py-0.5 rounded-full bg-sky-500/20 text-sky-200 border border-sky-400/30 text-[10px] font-bold font-mono">
-                      SECP Rule 24 / Treaty 2026
+                      {tx("SECP Rule 24 / Treaty 2026")}
                     </span>
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
                     <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
-                      <span className="text-[10px] text-slate-400">Total Sum Assured</span>
+                      <span className="text-[10px] text-slate-400">{tx("Total Sum Assured")}</span>
                       <p className="font-mono font-bold text-white mt-0.5">{fmtPKR(sumAssured)}</p>
                     </div>
                     <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
-                      <span className="text-[10px] text-slate-400">Company Retention Cap</span>
+                      <span className="text-[10px] text-slate-400">{tx("Company Retention Cap")}</span>
                       <p className="font-mono font-bold text-emerald-400 mt-0.5">{fmtPKR(retentionLimit)}</p>
                     </div>
                     <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
-                      <span className="text-[10px] text-slate-400">Excess Ceded Risk</span>
+                      <span className="text-[10px] text-slate-400">{tx("Excess Ceded Risk")}</span>
                       <p className="font-mono font-bold text-sky-300 mt-0.5">
-                        {cededAmount > 0 ? fmtPKR(cededAmount) : "PKR 0 (Fully Retained)"}
+                        {cededAmount > 0 ? fmtPKR(cededAmount) : tx("PKR 0 (Fully Retained)")}
                       </p>
                     </div>
                     <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
-                      <span className="text-[10px] text-slate-400">Cession Share %</span>
+                      <span className="text-[10px] text-slate-400">{tx("Cession Share %")}</span>
                       <p className="font-mono font-bold text-sky-300 mt-0.5">{cessionPct.toFixed(1)}%</p>
                     </div>
                   </div>
@@ -1764,19 +1765,19 @@ export default function PostUnderwritingPage() {
                 {/* 2. Ceding Premium Accounting Entry */}
                 <div className="bg-sky-50/70 p-4 rounded-xl border border-sky-200 space-y-2">
                   <h3 className="font-bold text-sky-950 text-xs uppercase tracking-wider">
-                    Ceding Premium Accounting Entry (Double Entry Ledger)
+                    {tx("Ceding Premium Accounting Entry (Double Entry Ledger)")}
                   </h3>
                   <div className="grid grid-cols-3 gap-3 bg-white p-3 rounded-lg border border-sky-200/80 font-mono">
                     <div>
-                      <span className="text-[10px] text-slate-400">Ceded Gross Premium</span>
+                      <span className="text-[10px] text-slate-400">{tx("Ceded Gross Premium")}</span>
                       <p className="font-bold text-slate-900 text-xs mt-0.5">{fmtPKR(cededPremium)}</p>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400">Ceding Commission (22.5%)</span>
+                      <span className="text-[10px] text-slate-400">{tx("Ceding Commission (22.5%)")}</span>
                       <p className="font-bold text-emerald-700 text-xs mt-0.5">-{fmtPKR(cedingCommission)}</p>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400">Net Reinsurer Payable</span>
+                      <span className="text-[10px] text-slate-400">{tx("Net Reinsurer Payable")}</span>
                       <p className="font-bold text-sky-800 text-xs mt-0.5">{fmtPKR(netPayable)}</p>
                     </div>
                   </div>
@@ -1785,21 +1786,20 @@ export default function PostUnderwritingPage() {
                 {/* 3. Panel Reinsurer Selection & Transmit Slip */}
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
                   <h3 className="font-bold text-slate-900 text-xs uppercase tracking-wider">
-                    Select Reinsurer &amp; Transmit Facultative Slip
+                    {tx("Select Reinsurer & Transmit Facultative Slip")}
                   </h3>
 
                   {/* Say up front when the slip cannot be transmitted, rather than
                       letting the underwriter fill it in and hit a 400/409. */}
                   {activeReinsuranceView && !activeReinsuranceView.referral_required && (
                     <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-lg px-3 py-2 text-[11px] font-semibold">
-                      ✓ Fully retained — {fmtPKR(sumAssured)} sits within the automatic capacity of{" "}
-                      {fmtPKR(activeReinsuranceView.cession.automatic_capacity)}. No facultative slip is needed.
+                      {tx("✓ Fully retained —")}{" "}{fmtPKR(sumAssured)}{" "}{tx("sits within the automatic capacity of")}{" "}
+                      {fmtPKR(activeReinsuranceView.cession.automatic_capacity)}{tx(". No facultative slip is needed.")}
                     </div>
                   )}
                   {activeReinsuranceView && activeReinsuranceView.referral_required && !activeReinsuranceView.can_refer && (
                     <div className="bg-blue-50/80 border border-blue-200 text-blue-900 rounded-lg px-3 py-2 text-[11px] font-semibold">
-                      Cession is required, but a case at status {activeReinsuranceView.policy_status} cannot be
-                      referred yet — complete the underwriting view first.
+                      {tx("Cession is required, but a case at status")}{" "}{activeReinsuranceView.policy_status}{" "}{tx("cannot be referred yet — complete the underwriting view first.")}
                     </div>
                   )}
 
@@ -1826,14 +1826,14 @@ export default function PostUnderwritingPage() {
                           </span>
                         </div>
                         <p className="text-[10px] text-slate-500 mt-1">
-                          Capacity: {fmtPKR(r.facultative_capacity)} · Email: {r.contact_email}
+                          {tx("Capacity:")}{" "}{fmtPKR(r.facultative_capacity)}{" "}{tx("· Email:")}{" "}{r.contact_email}
                         </p>
                       </div>
                     ))}
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">Underwriter Risk Package Notes</label>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">{tx("Underwriter Risk Package Notes")}</label>
                     <textarea
                       rows={2}
                       value={currentPlacement.note}
@@ -1843,7 +1843,7 @@ export default function PostUnderwritingPage() {
                           [p.id]: { ...currentPlacement, note: e.target.value },
                         }))
                       }
-                      placeholder="Enter specific exposure notes, medical loading details, or coverage conditions for reinsurer slip..."
+                      placeholder={tx("Enter specific exposure notes, medical loading details, or coverage conditions for reinsurer slip...")}
                       className="w-full p-2 border border-slate-300 rounded-lg text-xs bg-white text-slate-800"
                     />
                   </div>
@@ -1855,14 +1855,14 @@ export default function PostUnderwritingPage() {
                     onClick={() => closeReinsuranceModal()}
                     className="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-lg hover:bg-slate-200"
                   >
-                    Cancel
+                    {tx("Cancel")}
                   </button>
                   <button
                     onClick={() => handleModalSubmit(selectedReinsurerName)}
                     disabled={actionLoading || activeReinsuranceView?.referral_required === false}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {actionLoading ? "Transmitting…" : `✓ Transmit Slip & Bind (${selectedReinsurerName})`}
+                    {actionLoading ? tx("Transmitting…") : tx("✓ Transmit Slip & Bind ({0})", { 0: selectedReinsurerName })}
                   </button>
                 </div>
               </div>
@@ -1877,7 +1877,7 @@ export default function PostUnderwritingPage() {
             <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 px-6 py-4 flex items-center justify-between text-white">
               <div>
                 <h2 className="text-base font-bold">{selectedPolicy.customer_name}</h2>
-                <p className="text-xs text-blue-200 font-mono mt-0.5">Post-Underwriting Verification · {selectedPolicy.product_name}</p>
+                <p className="text-xs text-blue-200 font-mono mt-0.5">{tx("Post-Underwriting Verification ·")}{" "}{selectedPolicy.product_name}</p>
               </div>
               <button onClick={() => setSelectedPolicy(null)} className="text-white/60 hover:text-white text-lg">✕</button>
             </div>
@@ -1886,13 +1886,13 @@ export default function PostUnderwritingPage() {
               {/* Customer Sign-off on Counter-Offers */}
               <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-4 space-y-2">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-blue-950 text-sm">Customer Sign-off on Counter-Offers (Pakistani Contract Act)</h3>
+                  <h3 className="font-bold text-blue-950 text-sm">{tx("Customer Sign-off on Counter-Offers (Pakistani Contract Act)")}</h3>
                   <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-mono font-bold text-[10px]">
-                    {counterOffer ? counterOffer.status : "No Active Counter-Offer"}
+                    {counterOffer ? counterOffer.status : tx("No Active Counter-Offer")}
                   </span>
                 </div>
                 <p className="text-slate-600 text-[11px] leading-relaxed">
-                  Under Pakistani contract law, any underwriting loading or exclusion clause constitutes a legal amendment. The proposer must explicitly accept terms prior to contract perfection.
+                  {tx("Under Pakistani contract law, any underwriting loading or exclusion clause constitutes a legal amendment. The proposer must explicitly accept terms prior to contract perfection.")}
                 </p>
                 {counterOffer && counterOffer.status === "Pending" && (
                   <div className="pt-2 flex gap-3">
@@ -1901,7 +1901,7 @@ export default function PostUnderwritingPage() {
                       disabled={actionLoading}
                       className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700 transition-colors shadow-xs"
                     >
-                      Record Proposer Acceptance &amp; Sign-off →
+                      {tx("Record Proposer Acceptance & Sign-off →")}
                     </button>
                   </div>
                 )}
@@ -1910,26 +1910,26 @@ export default function PostUnderwritingPage() {
               {/* Reinsurance Referral & Facultative Placement */}
               <div className="bg-sky-50/70 border border-sky-200 rounded-xl p-4 space-y-2">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-sky-950 text-sm">Reinsurance Referral &amp; Facultative Placement</h3>
+                  <h3 className="font-bold text-sky-950 text-sm">{tx("Reinsurance Referral & Facultative Placement")}</h3>
                   <span className="px-2 py-0.5 rounded bg-sky-100 text-sky-800 font-bold text-[10px]">
-                    {reinsuranceData?.referral ? reinsuranceData.referral.status : selectedPolicy.coverage_amount >= 10000000 ? "Facultative Required" : "Inside Retention Limit"}
+                    {reinsuranceData?.referral ? reinsuranceData.referral.status : selectedPolicy.coverage_amount >= 10000000 ? tx("Facultative Required") : tx("Inside Retention Limit")}
                   </span>
                 </div>
                 <p className="text-slate-600 text-[11px]">
-                  Ceding policy risk exceeding company retention limit (PKR 10M) to treaty quota share or facultative reinsurers (e.g., Swiss Re, Munich Re, PRCL, Hannover Re).
+                  {tx("Ceding policy risk exceeding company retention limit (PKR 10M) to treaty quota share or facultative reinsurers (e.g., Swiss Re, Munich Re, PRCL, Hannover Re).")}
                 </p>
                 {reinsuranceData?.cession && (
                   <div className="grid grid-cols-3 gap-3 bg-white p-3 rounded-lg border border-sky-100 mt-2">
                     <div>
-                      <p className="text-[10px] text-slate-400 font-semibold uppercase">Retention Limit</p>
+                      <p className="text-[10px] text-slate-400 font-semibold uppercase">{tx("Retention Limit")}</p>
                       <p className="font-bold text-slate-800">{fmtPKR(reinsuranceData.cession.retention_limit)}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] text-slate-400 font-semibold uppercase">Retained Amount</p>
+                      <p className="text-[10px] text-slate-400 font-semibold uppercase">{tx("Retained Amount")}</p>
                       <p className="font-bold text-slate-800">{fmtPKR(reinsuranceData.cession.retained_amount)}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] text-slate-400 font-semibold uppercase">Ceded Amount</p>
+                      <p className="text-[10px] text-slate-400 font-semibold uppercase">{tx("Ceded Amount")}</p>
                       <p className="font-bold text-sky-700">{fmtPKR(reinsuranceData.cession.total_ceded_amount || reinsuranceData.cession.facultative_ceded_amount)}</p>
                     </div>
                   </div>
@@ -1941,21 +1941,21 @@ export default function PostUnderwritingPage() {
                       disabled={actionLoading}
                       className="px-3 py-1.5 bg-sky-700 text-white font-semibold rounded-lg hover:bg-sky-800 transition-colors shadow-2xs"
                     >
-                      Refer to Swiss Re
+                      {tx("Refer to Swiss Re")}
                     </button>
                     <button
                       onClick={() => handleReferReinsurance(selectedPolicy.id, "Munich Re")}
                       disabled={actionLoading}
                       className="px-3 py-1.5 bg-blue-700 text-white font-semibold rounded-lg hover:bg-blue-800 transition-colors shadow-2xs"
                     >
-                      Refer to Munich Re
+                      {tx("Refer to Munich Re")}
                     </button>
                     <button
                       onClick={() => handleReferReinsurance(selectedPolicy.id, "Hannover Re")}
                       disabled={actionLoading}
                       className="px-3 py-1.5 bg-slate-700 text-white font-semibold rounded-lg hover:bg-slate-800 transition-colors"
                     >
-                      Refer to Hannover Re
+                      {tx("Refer to Hannover Re")}
                     </button>
                   </div>
                 </div>
@@ -1963,21 +1963,21 @@ export default function PostUnderwritingPage() {
 
               {/* Existing Insurance / Declared Policies Check */}
               <div className="bg-blue-50/60 border border-blue-200 rounded-xl p-4 space-y-2">
-                <h3 className="font-bold text-blue-900 text-sm">Existing Insurance &amp; Declared Industry Policies Check</h3>
+                <h3 className="font-bold text-blue-900 text-sm">{tx("Existing Insurance & Declared Industry Policies Check")}</h3>
                 <p className="text-slate-600 text-[11px]">
-                  Cross-checking total active sum assured across all life insurers against Human Life Value (HLV) limits &amp; retention rules.
+                  {tx("Cross-checking total active sum assured across all life insurers against Human Life Value (HLV) limits & retention rules.")}
                 </p>
                 {historyData && (
                   <div className="grid grid-cols-2 gap-3 bg-white p-3 rounded-lg border border-blue-100">
                     <div>
-                      <p className="text-[10px] text-slate-400 uppercase font-semibold">Human Life Value Cap</p>
+                      <p className="text-[10px] text-slate-400 uppercase font-semibold">{tx("Human Life Value Cap")}</p>
                       <p className="font-bold text-slate-800">
-                        {historyData.hlv_limit ? fmtPKR(historyData.hlv_limit) : "PKR 50,000,000"} 
+                        {historyData.hlv_limit ? fmtPKR(historyData.hlv_limit) : tx("PKR 50,000,000")} 
                         {historyData.hlv_ratio ? ` (${historyData.hlv_ratio.toFixed(2)}×)` : ""}
                       </p>
                     </div>
                     <div>
-                      <p className="text-[10px] text-slate-400 uppercase font-semibold">Industry Aggregate Cover</p>
+                      <p className="text-[10px] text-slate-400 uppercase font-semibold">{tx("Industry Aggregate Cover")}</p>
                       <p className="font-bold text-slate-800">
                         {fmtPKR(historyData.aggregate_sum_assured || historyData.external_declared_sum_assured + historyData.proposed_sum_assured)}
                       </p>
@@ -1988,33 +1988,33 @@ export default function PostUnderwritingPage() {
 
               {/* Policy Dispatch & Courier Tracking */}
               <div className="bg-teal-50/60 border border-teal-200 rounded-xl p-4 space-y-2">
-                <h3 className="font-bold text-teal-900 text-sm">Policy Dispatch &amp; Courier POD Tracking</h3>
+                <h3 className="font-bold text-teal-900 text-sm">{tx("Policy Dispatch & Courier POD Tracking")}</h3>
                 <p className="text-slate-600 text-[11px]">
-                  Essential for proof of delivery establishing commencement of statutory timelines.
+                  {tx("Essential for proof of delivery establishing commencement of statutory timelines.")}
                 </p>
                 <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-teal-100">
                   <div>
-                    <p className="font-bold text-slate-800">TCS Courier Express</p>
-                    <p className="text-[10px] text-slate-500">Tracking: TCS-98421034 · Status: POD Signed &amp; Verified</p>
+                    <p className="font-bold text-slate-800">{tx("TCS Courier Express")}</p>
+                    <p className="text-[10px] text-slate-500">{tx("Tracking: TCS-98421034 · Status: POD Signed & Verified")}</p>
                   </div>
-                  <span className="px-2.5 py-1 rounded bg-teal-100 text-teal-800 font-bold text-[10px]">Proof of Delivery Verified</span>
+                  <span className="px-2.5 py-1 rounded bg-teal-100 text-teal-800 font-bold text-[10px]">{tx("Proof of Delivery Verified")}</span>
                 </div>
               </div>
 
               {/* SECP Welcome Call & Free-Look Period */}
               <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-4 space-y-2">
-                <h3 className="font-bold text-emerald-900 text-sm">SECP Welcome Call &amp; 14-Day Free-Look Period</h3>
+                <h3 className="font-bold text-emerald-900 text-sm">{tx("SECP Welcome Call & 14-Day Free-Look Period")}</h3>
                 <p className="text-slate-600 text-[11px]">
-                  SECP mandates a 14-day Free-Look Period from date of policy receipt. The welcome call confirms receipt and starts the cancellation clock.
+                  {tx("SECP mandates a 14-day Free-Look Period from date of policy receipt. The welcome call confirms receipt and starts the cancellation clock.")}
                 </p>
                 <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-emerald-100">
                   <div>
-                    <p className="font-bold text-emerald-900">Welcome Call Status: Confirmed</p>
+                    <p className="font-bold text-emerald-900">{tx("Welcome Call Status: Confirmed")}</p>
                     <p className="text-[10px] text-slate-500">
-                      {freeLookData?.free_look_end_date ? `14-Day Free-Look Window active until ${freeLookData.free_look_end_date}.` : "14-Day Free-Look Window active post delivery confirmation."}
+                      {freeLookData?.free_look_end_date ? tx("14-Day Free-Look Window active until {0}.", { 0: freeLookData.free_look_end_date }) : tx("14-Day Free-Look Window active post delivery confirmation.")}
                     </p>
                   </div>
-                  <span className="px-2.5 py-1 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">14-Day Clock Active</span>
+                  <span className="px-2.5 py-1 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">{tx("14-Day Clock Active")}</span>
                 </div>
               </div>
             </div>
@@ -2024,7 +2024,7 @@ export default function PostUnderwritingPage() {
                 onClick={() => setSelectedPolicy(null)}
                 className="px-5 py-2 bg-slate-900 text-white font-bold text-xs rounded-xl hover:bg-slate-800"
               >
-                Close Portal View
+                {tx("Close Portal View")}
               </button>
             </div>
           </div>

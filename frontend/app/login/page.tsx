@@ -6,6 +6,7 @@ import { safeNext, startSso } from "@/lib/sso";
 import api from "@/app/services/api";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { useI18n } from "@/lib/i18n/I18nProvider";
+import { tx } from "@/lib/i18n/tx";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -139,7 +140,7 @@ export default function LoginPage() {
               </svg>
             </div>
             <h1 className="text-2xl font-bold text-white tracking-tight">
-              insurance<span className="text-blue-500">-ai</span>
+              {tx("insurance")}<span className="text-blue-500">{tx("-ai")}</span>
             </h1>
             <p className="text-xs text-slate-400 mt-1">{t("login.subtitle")}</p>
           </div>
@@ -164,7 +165,7 @@ export default function LoginPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@adamjeelife.com"
+                placeholder={tx("name@adamjeelife.com")}
                 className="w-full bg-slate-800/40 border border-slate-700/50 rounded-lg px-3.5 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all"
               />
             </div>

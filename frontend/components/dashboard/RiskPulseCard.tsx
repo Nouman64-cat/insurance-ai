@@ -1,4 +1,5 @@
 import { RingGauge, Bar, PillarCard } from "./shared";
+import { tx } from "@/lib/i18n/tx";
 
 function PulseIcon() {
   return (
@@ -38,7 +39,7 @@ export function RiskPulseCard({ riskIndex, avgOpenFraudProb, atRiskPolicyShare, 
   return (
     <PillarCard
       icon={<PulseIcon />}
-      title="AI Risk Pulse"
+      title={tx("AI Risk Pulse")}
       barClass="bg-blue-700"
       iconBg="bg-blue-50"
       iconColor="text-blue-700"
@@ -61,9 +62,9 @@ export function RiskPulseCard({ riskIndex, avgOpenFraudProb, atRiskPolicyShare, 
       </div>
 
       <div className="mt-5 space-y-3">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">What's driving the score</p>
-        <Bar label="Open-claim fraud probability" pct={Math.round(avgOpenFraudProb * 100)} color="bg-rose-500" badge={`${Math.round(avgOpenFraudProb * 100)}%`} />
-        <Bar label="Policies in grace / lapsed" pct={Math.round(atRiskPolicyShare * 100)} color="bg-amber-500" badge={`${Math.round(atRiskPolicyShare * 100)}%`} />
+        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{tx("What's driving the score")}</p>
+        <Bar label={tx("Open-claim fraud probability")} pct={Math.round(avgOpenFraudProb * 100)} color="bg-rose-500" badge={`${Math.round(avgOpenFraudProb * 100)}%`} />
+        <Bar label={tx("Policies in grace / lapsed")} pct={Math.round(atRiskPolicyShare * 100)} color="bg-amber-500" badge={`${Math.round(atRiskPolicyShare * 100)}%`} />
       </div>
     </PillarCard>
   );

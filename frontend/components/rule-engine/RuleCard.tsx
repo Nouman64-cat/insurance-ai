@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { RuleDetail, RuleCriteriaDraft } from "@/app/services/ruleEngine";
 import { IMPACT_TYPE_CONFIG, criterionSentence, detectOverlap } from "./constants";
+import { tx } from "@/lib/i18n/tx";
 
 interface Props {
   rule: RuleDetail;
@@ -93,7 +94,7 @@ export default function RuleCard({
         {editable && (
           <div
             className="mt-0.5 text-slate-300 hover:text-slate-500 cursor-grab active:cursor-grabbing shrink-0"
-            title="Drag to reorder rule priority"
+            title={tx("Drag to reorder rule priority")}
             onClick={(e) => e.stopPropagation()}
           >
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -103,7 +104,7 @@ export default function RuleCard({
         )}
 
         {/* Priority badge */}
-        <span className="mt-0.5 inline-block font-mono text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded shrink-0 min-w-[32px] text-center" title="Evaluation Priority">
+        <span className="mt-0.5 inline-block font-mono text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded shrink-0 min-w-[32px] text-center" title={tx("Evaluation Priority")}>
           #{rule.priority}
         </span>
 
@@ -118,7 +119,7 @@ export default function RuleCard({
             </span>
             {!rule.is_active && (
               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-500 border border-slate-200">
-                Inactive
+                {tx("Inactive")}
               </span>
             )}
             {rule.impact_data.is_terminal && (
@@ -126,18 +127,18 @@ export default function RuleCard({
                 <svg className="w-3 h-3 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
-                Terminal
+                {tx("Terminal")}
               </span>
             )}
             {hasConflict && (
               <span
                 className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-orange-50 text-orange-800 border border-orange-200"
-                title={`Overlap with: ${conflictingRules.map((r) => r.name).join(", ")}`}
+                title={tx("Overlap with: {0}", { 0: conflictingRules.map((r) => r.name).join(", ") })}
               >
                 <svg className="w-3 h-3 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
-                Overlap
+                {tx("Overlap")}
               </span>
             )}
           </div>
@@ -170,9 +171,9 @@ export default function RuleCard({
         <div className="border-t border-slate-100 px-4 py-3 space-y-3 bg-slate-50/50">
           {/* Conditions breakdown */}
           <div>
-            <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Conditions</h4>
+            <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">{tx("Conditions")}</h4>
             {rule.criteria.length === 0 ? (
-              <p className="text-xs italic text-slate-500">No conditions — rule always applies.</p>
+              <p className="text-xs italic text-slate-500">{tx("No conditions — rule always applies.")}</p>
             ) : (
               <div className="space-y-1.5">
                 {groupIds.map((gid, idx) => {
@@ -182,7 +183,7 @@ export default function RuleCard({
                       {idx > 0 && (
                         <div className="flex items-center gap-2 my-1">
                           <div className="flex-1 h-px bg-slate-200" />
-                          <span className="text-[10px] font-bold text-blue-600 uppercase">OR</span>
+                          <span className="text-[10px] font-bold text-blue-600 uppercase">{tx("OR")}</span>
                           <div className="flex-1 h-px bg-slate-200" />
                         </div>
                       )}
@@ -190,7 +191,7 @@ export default function RuleCard({
                         {group.map((c, i) => (
                           <div key={i} className="flex items-center gap-2 text-xs">
                             <span className="font-bold text-blue-600 uppercase w-7 text-right shrink-0">
-                              {i === 0 ? "IF" : "AND"}
+                              {i === 0 ? tx("IF") : tx("AND")}
                             </span>
                             <code className="text-xs text-slate-800 font-mono">
                               {criterionSentence(c)}
@@ -208,11 +209,11 @@ export default function RuleCard({
           {/* Ultra-compact Impact Details pills */}
           {(activeImpactEntries.length > 0 || (rule.action_outcome && rule.action_outcome !== rule.impact_type)) && (
             <div>
-              <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Impact Details</h4>
+              <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">{tx("Impact Details")}</h4>
               <div className="flex items-center gap-2 flex-wrap">
                 {rule.action_outcome && rule.action_outcome !== rule.impact_type && (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white border border-slate-200 text-xs font-medium text-slate-700">
-                    <span className="text-slate-400">Outcome:</span>
+                    <span className="text-slate-400">{tx("Outcome:")}</span>
                     <span className="font-bold font-mono text-slate-900">{rule.action_outcome}</span>
                   </span>
                 )}
@@ -233,7 +234,7 @@ export default function RuleCard({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
               <p className="text-xs text-orange-900 font-medium">
-                Overlap with: <span className="font-bold">{conflictingRules.map((r) => r.name).join(", ")}</span>
+                {tx("Overlap with:")}{" "}<span className="font-bold">{conflictingRules.map((r) => r.name).join(", ")}</span>
               </p>
             </div>
           )}
@@ -248,7 +249,7 @@ export default function RuleCard({
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
-                Delete
+                {tx("Delete")}
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); onEdit(rule); }}
@@ -257,7 +258,7 @@ export default function RuleCard({
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                 </svg>
-                Edit Rule
+                {tx("Edit Rule")}
               </button>
             </div>
           )}

@@ -14,6 +14,7 @@ import FamilyFormModal from "@/components/entities/FamilyFormModal";
 import OrganizationFormModal from "@/components/entities/OrganizationFormModal";
 import { MetricCard } from "@/components/MetricCard";
 import { Pagination, usePagination } from "@/components/Pagination";
+import { tx } from "@/lib/i18n/tx";
 
 type EntityType = "INDIVIDUAL" | "FAMILY" | "CORPORATE";
 
@@ -117,7 +118,7 @@ export default function PolicyholdersPage() {
     const tenantId = localStorage.getItem("tenant_id");
     
     if (!tenantId) {
-      setError("No active tenant found.");
+      setError(tx("No active tenant found."));
       setLoading(false);
       return;
     }
@@ -181,7 +182,7 @@ export default function PolicyholdersPage() {
       unified.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       setPolicyholders(unified);
     } catch (err: any) {
-      setError(err.message || "Failed to load policy holders");
+      setError(err.message || tx("Failed to load policy holders"));
     } finally {
       setLoading(false);
     }
@@ -215,7 +216,7 @@ export default function PolicyholdersPage() {
   };
 
   const handleDelete = async (policyholder: UnifiedPolicyholder) => {
-    if (!confirm(`Delete this ${policyholder.type.toLowerCase()} "${policyholder.name}"? This action cannot be undone.`)) return;
+    if (!confirm(tx("Delete this {0} \"{1}\"? This action cannot be undone.", { 0: policyholder.type.toLowerCase(), 1: policyholder.name }))) return;
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId) return;
     setActionBusyId(policyholder.id);
@@ -228,7 +229,7 @@ export default function PolicyholdersPage() {
       await api.delete(endpoint);
       await fetchPolicyholders();
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to delete.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to delete."));
     } finally {
       setActionBusyId(null);
     }
@@ -273,9 +274,9 @@ export default function PolicyholdersPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Policy Holders</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Policy Holders")}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Directory of all formal customers with active coverage.
+            {tx("Directory of all formal customers with active coverage.")}
           </p>
         </div>
         <div className="flex items-center gap-2 self-start">
@@ -289,25 +290,25 @@ export default function PolicyholdersPage() {
               <line x1="9" y1="13" x2="15" y2="13" />
               <line x1="9" y1="17" x2="13" y2="17" />
             </svg>
-            Insurance Plans
+            {tx("Insurance Plans")}
           </button>
           <button
             onClick={() => setActiveAdd({ type: "INDIVIDUAL" })}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow active:scale-95"
           >
-            + Add Individual
+            {tx("+ Add Individual")}
           </button>
           <button
             onClick={() => setActiveAdd({ type: "FAMILY" })}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow active:scale-95"
           >
-            + Add Family
+            {tx("+ Add Family")}
           </button>
           <button
             onClick={() => setActiveAdd({ type: "CORPORATE" })}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow active:scale-95"
           >
-            + Add Corporate
+            {tx("+ Add Corporate")}
           </button>
         </div>
       </div>
@@ -315,25 +316,25 @@ export default function PolicyholdersPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
-          title="Total Active"
+          title={tx("Total Active")}
           value={statsData.length}
           accent="blue"
           icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>}
         />
         <MetricCard
-          title="Individuals"
+          title={tx("Individuals")}
           value={statsData.filter(p => p.type === "INDIVIDUAL").length}
           accent="blue"
           icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>}
         />
         <MetricCard
-          title="Families"
+          title={tx("Families")}
           value={statsData.filter(p => p.type === "FAMILY").length}
           accent="blue"
           icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M12 3l9 7-9 7-9-7 9-7z"/><circle cx="8" cy="17" r="2"/><circle cx="16" cy="17" r="2"/><path d="M8 15v-2a4 4 0 018 0v2"/></svg>}
         />
         <MetricCard
-          title="Corporates"
+          title={tx("Corporates")}
           value={statsData.filter(p => p.type === "CORPORATE").length}
           accent="blue"
           icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M6 22V4a2 2 0 012-2h8a2 2 0 012 2v18z"/><path d="M6 12H4a2 2 0 00-2 2v8h4"/><path d="M18 9h2a2 2 0 012 2v11h-4"/></svg>}
@@ -355,7 +356,7 @@ export default function PolicyholdersPage() {
                       : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
                   }`}
                 >
-                  {ft === "ALL" ? "All" : ft === "INDIVIDUAL" ? "Individuals" : ft === "FAMILY" ? "Families" : "Corporates"}
+                  {ft === "ALL" ? tx("All") : ft === "INDIVIDUAL" ? tx("Individuals") : ft === "FAMILY" ? tx("Families") : tx("Corporates")}
                 </button>
               ))}
           </div>
@@ -368,7 +369,7 @@ export default function PolicyholdersPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, contact, identifier..."
+              placeholder={tx("Search by name, contact, identifier...")}
               className="w-full pl-9 pr-8 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-shadow"
             />
             {search && (
@@ -420,7 +421,7 @@ export default function PolicyholdersPage() {
               </span>
             ))}
             <button onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-blue-600 hover:underline ml-1">
-              Clear all
+              {tx("Clear all")}
             </button>
           </div>
         )}
@@ -439,7 +440,7 @@ export default function PolicyholdersPage() {
               <svg className="w-12 h-12 mx-auto text-slate-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
-              <p>No policy holders found for the selected filter.</p>
+              <p>{tx("No policy holders found for the selected filter.")}</p>
             </div>
           ) : (
             <>
@@ -447,13 +448,13 @@ export default function PolicyholdersPage() {
               <table className="w-full text-left text-sm whitespace-nowrap">
                 <thead className="bg-slate-50 text-slate-500 font-medium">
                   <tr>
-                    <th className="px-6 py-4">Name</th>
-                    <th className="px-6 py-4">Type</th>
-                    <th className="px-6 py-4">Contact</th>
-                    <th className="px-6 py-4">CNIC</th>
-                    <th className="px-6 py-4">Policy No.</th>
-                    <th className="px-6 py-4">Enrolled Date</th>
-                    <th className="px-6 py-4 text-right">Action</th>
+                    <th className="px-6 py-4">{tx("Name")}</th>
+                    <th className="px-6 py-4">{tx("Type")}</th>
+                    <th className="px-6 py-4">{tx("Contact")}</th>
+                    <th className="px-6 py-4">{tx("CNIC")}</th>
+                    <th className="px-6 py-4">{tx("Policy No.")}</th>
+                    <th className="px-6 py-4">{tx("Enrolled Date")}</th>
+                    <th className="px-6 py-4 text-right">{tx("Action")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -469,7 +470,7 @@ export default function PolicyholdersPage() {
                               <button
                                 onClick={(e) => toggleFamilyRow(p.id, e)}
                                 className="w-5 h-5 flex items-center justify-center rounded border border-slate-200 bg-white text-slate-500 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-colors shadow-sm shrink-0"
-                                title="View Family Members"
+                                title={tx("View Family Members")}
                               >
                                 {expandedFamilies[p.id] ? "-" : "+"}
                               </button>
@@ -497,14 +498,14 @@ export default function PolicyholdersPage() {
                             onClick={(e) => { e.stopPropagation(); handleRowClick(p); }} 
                             className="text-blue-600 hover:text-blue-800 font-semibold text-xs"
                           >
-                            View Details
+                            {tx("View Details")}
                           </button>
                           <button 
                             onClick={(e) => { e.stopPropagation(); handleDelete(p); }} 
                             disabled={actionBusyId === p.id}
                             className="text-red-500 hover:text-red-700 font-semibold text-xs disabled:opacity-50"
                           >
-                            {actionBusyId === p.id ? "Deleting..." : "Delete"}
+                            {actionBusyId === p.id ? tx("Deleting...") : tx("Delete")}
                           </button>
                         </td>
                       </tr>
@@ -515,26 +516,26 @@ export default function PolicyholdersPage() {
                             {loadingMembers[p.id] ? (
                               <div className="flex items-center py-4 text-slate-400 text-sm">
                                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-3"></div>
-                                Loading family members...
+                                {tx("Loading family members...")}
                               </div>
                             ) : (
                               <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden my-1">
                                 <div className="bg-slate-100/50 px-4 py-2.5 border-b border-slate-200 flex justify-between items-center">
                                   <h4 className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                                    Family Members Directory ({(familyMembersCache[p.id] || []).length})
+                                    {tx("Family Members Directory (")}{(familyMembersCache[p.id] || []).length})
                                   </h4>
                                 </div>
                                 <div className="overflow-x-auto">
                                   <table className="w-full text-left text-xs whitespace-nowrap">
                                     <thead className="bg-slate-50/50 text-slate-500 font-medium border-b border-slate-100">
                                       <tr>
-                                        <th className="px-4 py-2.5">Member Name</th>
-                                        <th className="px-4 py-2.5">Relation</th>
-                                        <th className="px-4 py-2.5">CNIC</th>
-                                        <th className="px-4 py-2.5">Gender / Age</th>
-                                        <th className="px-4 py-2.5">Occupation</th>
-                                        <th className="px-4 py-2.5 text-right">Declared Income (PKR)</th>
-                                        <th className="px-4 py-2.5 text-right">Health Stats</th>
+                                        <th className="px-4 py-2.5">{tx("Member Name")}</th>
+                                        <th className="px-4 py-2.5">{tx("Relation")}</th>
+                                        <th className="px-4 py-2.5">{tx("CNIC")}</th>
+                                        <th className="px-4 py-2.5">{tx("Gender / Age")}</th>
+                                        <th className="px-4 py-2.5">{tx("Occupation")}</th>
+                                        <th className="px-4 py-2.5 text-right">{tx("Declared Income (PKR)")}</th>
+                                        <th className="px-4 py-2.5 text-right">{tx("Health Stats")}</th>
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
@@ -551,14 +552,14 @@ export default function PolicyholdersPage() {
                                             {m.declared_income ? m.declared_income.toLocaleString() : "-"}
                                           </td>
                                           <td className="px-4 py-2.5 text-right text-slate-500">
-                                            <span className={m.is_smoker ? "text-amber-600 font-medium" : ""}>{m.is_smoker ? "Smoker" : "Non-smoker"}</span> 
-                                            {" "}· {m.height_cm}cm · {m.weight_kg}kg
+                                            <span className={m.is_smoker ? "text-amber-600 font-medium" : ""}>{m.is_smoker ? tx("Smoker") : tx("Non-smoker")}</span> 
+                                            {" "}· {m.height_cm}{tx("cm ·")}{" "}{m.weight_kg}{tx("kg")}
                                           </td>
                                         </tr>
                                       ))}
                                       {(!familyMembersCache[p.id] || familyMembersCache[p.id].length === 0) && (
                                         <tr>
-                                          <td colSpan={7} className="px-4 py-6 text-center text-slate-400">No enrolled members found for this family.</td>
+                                          <td colSpan={7} className="px-4 py-6 text-center text-slate-400">{tx("No enrolled members found for this family.")}</td>
                                         </tr>
                                       )}
                                     </tbody>
@@ -574,7 +575,7 @@ export default function PolicyholdersPage() {
                 </tbody>
               </table>
             </div>
-            <Pagination pagination={pagination} noun="policyholders" inline />
+            <Pagination pagination={pagination} noun={tx("policyholders")} inline />
             </>
           )}
         </div>

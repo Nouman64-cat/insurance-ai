@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { tx } from "@/lib/i18n/tx";
 
 export type StatusFilter =
   | "ALL"
@@ -93,7 +94,7 @@ export function StatusDropdown({ value, onChange, counts, className = "" }: Stat
           <svg className="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
           </svg>
-          <span className="text-slate-400 font-medium">Pipeline:</span> 
+          <span className="text-slate-400 font-medium">{tx("Pipeline:")}</span> 
           <span className="flex items-center gap-1.5 ml-1">
             <span className={`w-2 h-2 rounded-full ${selected.dot}`} />
             {selected.label}
@@ -123,8 +124,8 @@ export function StatusDropdown({ value, onChange, counts, className = "" }: Stat
               <div className={`w-2 h-2 rounded-full ${OPTIONS[0].dot}`} />
             </div>
             <div className="flex-1">
-              <div className={`text-sm font-bold ${value === "ALL" ? 'text-slate-900' : 'text-slate-700'}`}>All Proposals</div>
-              <div className="text-[11px] text-slate-500">View everything in the pipeline</div>
+              <div className={`text-sm font-bold ${value === "ALL" ? 'text-slate-900' : 'text-slate-700'}`}>{tx("All Proposals")}</div>
+              <div className="text-[11px] text-slate-500">{tx("View everything in the pipeline")}</div>
             </div>
             {counts?.ALL != null && (
               <div className={`text-xs font-bold ${value === "ALL" ? 'text-slate-600' : 'text-slate-400'}`}>{counts.ALL}</div>
@@ -172,7 +173,7 @@ export function StatusDropdown({ value, onChange, counts, className = "" }: Stat
                          className={`flex items-center gap-2 w-full p-2 rounded-lg transition-colors text-left ${value === "InformationRequested" ? ACTIVE_STYLE.InformationRequested : 'hover:bg-amber-50/40'}`}
                        >
                          <div className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-sm" />
-                         <div className={`text-xs font-bold flex-1 ${value === "InformationRequested" ? '' : 'text-slate-600'}`}>Info Requested</div>
+                         <div className={`text-xs font-bold flex-1 ${value === "InformationRequested" ? '' : 'text-slate-600'}`}>{tx("Info Requested")}</div>
                          {counts?.InformationRequested != null && (
                            <div className={`text-[10px] font-bold ${value === "InformationRequested" ? 'opacity-90' : 'text-slate-400'}`}>{counts.InformationRequested}</div>
                          )}
@@ -191,7 +192,7 @@ export function StatusDropdown({ value, onChange, counts, className = "" }: Stat
                          className={`flex items-center gap-2 w-full p-2 rounded-lg transition-colors text-left ${value === "Declined" ? ACTIVE_STYLE.Declined : 'hover:bg-rose-50/40'}`}
                        >
                          <div className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-sm" />
-                         <div className={`text-xs font-bold flex-1 ${value === "Declined" ? '' : 'text-slate-600'}`}>Rejected</div>
+                         <div className={`text-xs font-bold flex-1 ${value === "Declined" ? '' : 'text-slate-600'}`}>{tx("Rejected")}</div>
                          {counts?.Declined != null && (
                            <div className={`text-[10px] font-bold ${value === "Declined" ? 'opacity-90' : 'text-slate-400'}`}>{counts.Declined}</div>
                          )}

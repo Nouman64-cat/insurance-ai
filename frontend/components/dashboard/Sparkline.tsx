@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { smoothPathFromPoints, areaPathFromPoints } from "@/lib/chartPaths";
+import { tx } from "@/lib/i18n/tx";
 
 export interface SparklinePoint {
   label: string;
@@ -23,7 +24,7 @@ export function Sparkline({ data, color = "#2563eb", gradientId, height = 56, va
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   if (data.length === 0) {
-    return <div className="h-14 flex items-center justify-center text-[10px] text-slate-400 italic">No trend data yet.</div>;
+    return <div className="h-14 flex items-center justify-center text-[10px] text-slate-400 italic">{tx("No trend data yet.")}</div>;
   }
 
   const max = Math.max(...data.map((d) => d.value), 1);

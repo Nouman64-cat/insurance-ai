@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { tx } from "@/lib/i18n/tx";
 
 export interface DateRange {
   start: string;
@@ -96,7 +97,7 @@ export function DateRangeDropdown({ value, onChange, className = "" }: DateRange
         >
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Start Date</label>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{tx("Start Date")}</label>
               <input 
                 type="date" 
                 value={tempStart}
@@ -105,7 +106,7 @@ export function DateRangeDropdown({ value, onChange, className = "" }: DateRange
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">End Date</label>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{tx("End Date")}</label>
               <input 
                 type="date" 
                 value={tempEnd}
@@ -118,13 +119,13 @@ export function DateRangeDropdown({ value, onChange, className = "" }: DateRange
                 onClick={handleClear}
                 className="text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors"
               >
-                Clear
+                {tx("Clear")}
               </button>
               <button 
                 onClick={handleApply}
                 className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shadow-sm"
               >
-                Apply Range
+                {tx("Apply Range")}
               </button>
             </div>
           </div>

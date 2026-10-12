@@ -38,6 +38,7 @@ import {
   fmtPct,
 } from "./shared";
 import { Pagination, usePagination } from "../Pagination";
+import { tx } from "@/lib/i18n/tx";
 
 /**
  * Clean interactive Policy Lifecycle Bar to record milestone events.
@@ -60,13 +61,13 @@ function PolicyEventBar({
   return (
     <div className="px-4 py-3 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
       <div className="flex items-center gap-3">
-        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Policy Events:</span>
+        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{tx("Policy Events:")}</span>
         <div className="flex flex-wrap items-center gap-1.5">
           {state.map(([event, at]) => (
             <button
               key={event}
               onClick={() => onRecord(event)}
-              title={at ? `Recorded on ${at} — click to update` : `Record: ${POLICY_EVENT_LABELS[event]}`}
+              title={at ? tx("Recorded on {0} — click to update", { 0: at }) : tx("Record: {0}", { 0: POLICY_EVENT_LABELS[event] })}
               className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition-all ${at
                 ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
                 : "bg-white text-slate-500 border-slate-200 border-dashed hover:text-slate-800 hover:border-slate-300"
@@ -78,7 +79,7 @@ function PolicyEventBar({
           ))}
         </div>
       </div>
-      <span className="text-[10px] text-slate-400 italic">Click an event to trigger payout vesting</span>
+      <span className="text-[10px] text-slate-400 italic">{tx("Click an event to trigger payout vesting")}</span>
     </div>
   );
 }
@@ -224,7 +225,7 @@ export default function LedgerTab({
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search payee, customer, policy ID, or lead ID..."
+              placeholder={tx("Search payee, customer, policy ID, or lead ID...")}
               className="flex-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-800 focus:outline-hidden focus:border-blue-500"
             />
             {view === "stack" && (
@@ -232,7 +233,7 @@ export default function LedgerTab({
                 onClick={toggleAllPolicies}
                 className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors whitespace-nowrap"
               >
-                {openPolicyIds.size === groups.length ? "Collapse All" : "Expand All"}
+                {openPolicyIds.size === groups.length ? tx("Collapse All") : tx("Expand All")}
               </button>
             )}
           </div>
@@ -243,7 +244,7 @@ export default function LedgerTab({
           <DateRangeFilter preset={activePreset} range={activeRange} onPresetChange={handleDateChange} size="sm" align="left" />
 
           <select value={channel} onChange={(e) => setChannel(e.target.value as DistributionChannel | "all")} className={filterClass}>
-            <option value="all">All Channels</option>
+            <option value="all">{tx("All Channels")}</option>
             {(Object.keys(CHANNEL_LABELS) as DistributionChannel[]).map((c) => (
               <option key={c} value={c}>
                 {CHANNEL_LABELS[c]}
@@ -252,7 +253,7 @@ export default function LedgerTab({
           </select>
 
           <select value={payeeType} onChange={(e) => setPayeeType(e.target.value as PayeeType | "all")} className={filterClass}>
-            <option value="all">All Roles</option>
+            <option value="all">{tx("All Roles")}</option>
             {(Object.keys(PAYEE_TYPE_LABELS) as PayeeType[]).map((t) => (
               <option key={t} value={t}>
                 {PAYEE_TYPE_LABELS[t]}
@@ -261,7 +262,7 @@ export default function LedgerTab({
           </select>
 
           <select value={kind} onChange={(e) => setKind(e.target.value as CommissionEntryKind | "all")} className={filterClass}>
-            <option value="all">All Payout Types</option>
+            <option value="all">{tx("All Payout Types")}</option>
             {ENTRY_KINDS.map((k) => (
               <option key={k} value={k}>
                 {k.replace("_", " ")}
@@ -270,7 +271,7 @@ export default function LedgerTab({
           </select>
 
           <select value={status} onChange={(e) => setStatus(e.target.value as CommissionStatus | "all")} className={filterClass}>
-            <option value="all">All Statuses</option>
+            <option value="all">{tx("All Statuses")}</option>
             {STATUSES.map((s) => (
               <option key={s} value={s}>
                 {s.replace("_", " ")}
@@ -279,38 +280,38 @@ export default function LedgerTab({
           </select>
 
           <select value={segment} onChange={(e) => setSegment(e.target.value)} className={filterClass}>
-            <option value="all">All Segments</option>
-            <option value="individual">Individual Life</option>
-            <option value="group">Group Corporate</option>
-            <option value="family">Family Takaful</option>
+            <option value="all">{tx("All Segments")}</option>
+            <option value="individual">{tx("Individual Life")}</option>
+            <option value="group">{tx("Group Corporate")}</option>
+            <option value="family">{tx("Family Takaful")}</option>
           </select>
 
           <select value={premiumType} onChange={(e) => setPremiumType(e.target.value)} className={filterClass}>
-            <option value="all">All Payment Types</option>
-            <option value="FIRST_YEAR">First-Year Payment (FYP)</option>
-            <option value="RENEWAL">Renewal Payment (RYP)</option>
-            <option value="SINGLE_PREMIUM">Single Payment (SP)</option>
+            <option value="all">{tx("All Payment Types")}</option>
+            <option value="FIRST_YEAR">{tx("First-Year Payment (FYP)")}</option>
+            <option value="RENEWAL">{tx("Renewal Payment (RYP)")}</option>
+            <option value="SINGLE_PREMIUM">{tx("Single Payment (SP)")}</option>
           </select>
         </div>
       </div>
 
       {filtered.length === 0 ? (
         <Card>
-          <EmptyState message="No commission entries match these filters." />
+          <EmptyState message={tx("No commission entries match these filters.")} />
         </Card>
       ) : view === "stack" ? (
         <Card className="overflow-hidden border border-slate-200 shadow-2xs">
           {/* Master Table Header Row for Policy Stack */}
           <div className="hidden sm:grid grid-cols-12 gap-3 px-5 py-3 bg-slate-100/70 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
-            <div className="col-span-2">Customer</div>
-            <div className="col-span-2">Policy ID</div>
-            <div className="col-span-1">Channel</div>
-            <div className="col-span-1">Segment</div>
-            <div className="col-span-1 text-right">Premium</div>
-            <div className="col-span-1 text-right">Rate %</div>
-            <div className="col-span-2 text-right">Payout Status</div>
-            <div className="col-span-1 text-right">Total Comm.</div>
-            <div className="col-span-1 text-center">Action</div>
+            <div className="col-span-2">{tx("Customer")}</div>
+            <div className="col-span-2">{tx("Policy ID")}</div>
+            <div className="col-span-1">{tx("Channel")}</div>
+            <div className="col-span-1">{tx("Segment")}</div>
+            <div className="col-span-1 text-right">{tx("Premium")}</div>
+            <div className="col-span-1 text-right">{tx("Rate %")}</div>
+            <div className="col-span-2 text-right">{tx("Payout Status")}</div>
+            <div className="col-span-1 text-right">{tx("Total Comm.")}</div>
+            <div className="col-span-1 text-center">{tx("Action")}</div>
           </div>
 
           <div className="divide-y divide-slate-100 bg-white">
@@ -361,7 +362,7 @@ export default function LedgerTab({
                       <p className={`font-bold tabular-nums ${group.ceilingBreached ? "text-rose-600" : "text-slate-800"}`}>
                         {fmtPct(group.effectiveRatePct)}
                       </p>
-                      <p className="text-[9px] text-slate-400 font-medium">Cap: {fmtPct(group.ceilingPct)}</p>
+                      <p className="text-[9px] text-slate-400 font-medium">{tx("Cap:")}{" "}{fmtPct(group.ceilingPct)}</p>
                     </div>
 
                     {/* Col 7: Due Status Breakdown (2 cols) */}
@@ -377,7 +378,7 @@ export default function LedgerTab({
                     {/* Col 8: Total Commission (1 col) */}
                     <div className="col-span-6 sm:col-span-1 text-right min-w-0">
                       <p className="font-extrabold text-sm text-slate-900 tabular-nums">{fmtPKR(group.totalGross)}</p>
-                      <p className="text-[9px] text-slate-400 font-medium">{group.entries.length} payee {group.entries.length === 1 ? "row" : "rows"}</p>
+                      <p className="text-[9px] text-slate-400 font-medium">{group.entries.length}{" "}{tx("payee")}{" "}{group.entries.length === 1 ? tx("row") : tx("rows")}</p>
                     </div>
 
                     {/* Col 9: Action Toggle Button (1 col) */}
@@ -389,7 +390,7 @@ export default function LedgerTab({
                           : "bg-white text-slate-700 border-slate-300 hover:bg-slate-100"
                           }`}
                       >
-                        {isOpen ? "Hide ▲" : "View ▼"}
+                        {isOpen ? tx("Hide ▲") : tx("View ▼")}
                       </button>
                     </div>
                   </div>
@@ -409,18 +410,18 @@ export default function LedgerTab({
                       <table className="w-full text-left text-xs">
                         <thead className="bg-slate-100 text-slate-600 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200">
                           <tr>
-                            <th className="p-3 pl-5 text-center align-middle">PAYEE</th>
-                            <th className="p-3 text-center align-middle">ROLE</th>
-                            <th className="p-3 text-center align-middle">PAYOUT TYPE</th>
-                            <th className="p-3 text-center align-middle">CALCULATED FROM</th>
-                            <th className="p-3 text-center align-middle">RATE</th>
-                            <th className="p-3 text-center align-middle">GROSS AMOUNT</th>
-                            <th className="p-3 text-center align-middle">TAXES</th>
-                            <th className="p-3 text-center align-middle">NET PAYOUT</th>
-                            <th className="p-3 text-center align-middle">TRANSACTION DATE</th>
-                            <th className="p-3 text-center align-middle">STATUS</th>
-                            <th className="p-3 text-center align-middle">ACTIONS</th>
-                            <th className="p-3 pr-5 text-center align-middle">DETAILS</th>
+                            <th className="p-3 pl-5 text-center align-middle">{tx("PAYEE")}</th>
+                            <th className="p-3 text-center align-middle">{tx("ROLE")}</th>
+                            <th className="p-3 text-center align-middle">{tx("PAYOUT TYPE")}</th>
+                            <th className="p-3 text-center align-middle">{tx("CALCULATED FROM")}</th>
+                            <th className="p-3 text-center align-middle">{tx("RATE")}</th>
+                            <th className="p-3 text-center align-middle">{tx("GROSS AMOUNT")}</th>
+                            <th className="p-3 text-center align-middle">{tx("TAXES")}</th>
+                            <th className="p-3 text-center align-middle">{tx("NET PAYOUT")}</th>
+                            <th className="p-3 text-center align-middle">{tx("TRANSACTION DATE")}</th>
+                            <th className="p-3 text-center align-middle">{tx("STATUS")}</th>
+                            <th className="p-3 text-center align-middle">{tx("ACTIONS")}</th>
+                            <th className="p-3 pr-5 text-center align-middle">{tx("DETAILS")}</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -444,7 +445,7 @@ export default function LedgerTab({
             );
           })}
           </div>
-          <Pagination pagination={groupPagination} noun="policies" inline />
+          <Pagination pagination={groupPagination} noun={tx("policies")} inline />
         </Card>
       ) : view === "finance" ? (
         <Card className="overflow-hidden border border-slate-200 shadow-2xs">
@@ -452,21 +453,21 @@ export default function LedgerTab({
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-100/70 text-slate-600 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200">
                 <tr>
-                  <th className="p-3 text-center align-middle">COMM. ID</th>
-                  <th className="p-3 text-center align-middle">LEAD ID</th>
-                  <th className="p-3 text-center align-middle">PAYEE</th>
-                  <th className="p-3 text-center align-middle">ROLE</th>
-                  <th className="p-3 text-center align-middle">PAYMENT YEAR</th>
-                  <th className="p-3 text-center align-middle">RATE</th>
-                  <th className="p-3 text-center align-middle">COLLECTED PREMIUM</th>
-                  <th className="p-3 text-center align-middle">GROSS AMOUNT</th>
-                  <th className="p-3 text-center align-middle">TAXES</th>
-                  <th className="p-3 text-center align-middle">NET PAYOUT</th>
-                  <th className="p-3 text-center align-middle">DATE</th>
-                  <th className="p-3 text-center align-middle">PAYOUT STATUS</th>
-                  <th className="p-3 text-center align-middle">STATUS</th>
-                  <th className="p-3 text-center align-middle">ACTIONS</th>
-                  <th className="p-3 text-center align-middle">DETAILS</th>
+                  <th className="p-3 text-center align-middle">{tx("COMM. ID")}</th>
+                  <th className="p-3 text-center align-middle">{tx("LEAD ID")}</th>
+                  <th className="p-3 text-center align-middle">{tx("PAYEE")}</th>
+                  <th className="p-3 text-center align-middle">{tx("ROLE")}</th>
+                  <th className="p-3 text-center align-middle">{tx("PAYMENT YEAR")}</th>
+                  <th className="p-3 text-center align-middle">{tx("RATE")}</th>
+                  <th className="p-3 text-center align-middle">{tx("COLLECTED PREMIUM")}</th>
+                  <th className="p-3 text-center align-middle">{tx("GROSS AMOUNT")}</th>
+                  <th className="p-3 text-center align-middle">{tx("TAXES")}</th>
+                  <th className="p-3 text-center align-middle">{tx("NET PAYOUT")}</th>
+                  <th className="p-3 text-center align-middle">{tx("DATE")}</th>
+                  <th className="p-3 text-center align-middle">{tx("PAYOUT STATUS")}</th>
+                  <th className="p-3 text-center align-middle">{tx("STATUS")}</th>
+                  <th className="p-3 text-center align-middle">{tx("ACTIONS")}</th>
+                  <th className="p-3 text-center align-middle">{tx("DETAILS")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-800 bg-white">
@@ -491,20 +492,20 @@ export default function LedgerTab({
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-100/70 text-slate-600 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200">
                 <tr>
-                  <th className="p-3 text-center align-middle">COMM. ID</th>
-                  <th className="p-3 text-center align-middle">LEAD ID</th>
-                  <th className="p-3 text-center align-middle">PAYEE</th>
-                  <th className="p-3 text-center align-middle">ROLE</th>
-                  <th className="p-3 text-center align-middle">CUSTOMER</th>
-                  <th className="p-3 text-center align-middle">POLICY ID</th>
-                  <th className="p-3 text-center align-middle">CHANNEL</th>
-                  <th className="p-3 text-center align-middle">SEGMENT</th>
-                  <th className="p-3 text-center align-middle">CALCULATED FROM</th>
-                  <th className="p-3 text-center align-middle">RATE</th>
-                  <th className="p-3 text-center align-middle">GROSS AMOUNT</th>
-                  <th className="p-3 text-center align-middle">DATE</th>
-                  <th className="p-3 text-center align-middle">RULE &amp; SECP REF</th>
-                  <th className="p-3 text-center align-middle">DETAILS</th>
+                  <th className="p-3 text-center align-middle">{tx("COMM. ID")}</th>
+                  <th className="p-3 text-center align-middle">{tx("LEAD ID")}</th>
+                  <th className="p-3 text-center align-middle">{tx("PAYEE")}</th>
+                  <th className="p-3 text-center align-middle">{tx("ROLE")}</th>
+                  <th className="p-3 text-center align-middle">{tx("CUSTOMER")}</th>
+                  <th className="p-3 text-center align-middle">{tx("POLICY ID")}</th>
+                  <th className="p-3 text-center align-middle">{tx("CHANNEL")}</th>
+                  <th className="p-3 text-center align-middle">{tx("SEGMENT")}</th>
+                  <th className="p-3 text-center align-middle">{tx("CALCULATED FROM")}</th>
+                  <th className="p-3 text-center align-middle">{tx("RATE")}</th>
+                  <th className="p-3 text-center align-middle">{tx("GROSS AMOUNT")}</th>
+                  <th className="p-3 text-center align-middle">{tx("DATE")}</th>
+                  <th className="p-3 text-center align-middle">{tx("RULE & SECP REF")}</th>
+                  <th className="p-3 text-center align-middle">{tx("DETAILS")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-800 bg-white">
@@ -544,8 +545,8 @@ function DeductionSummary({ entry }: { entry: CommissionLedgerEntry }) {
     >
       <p className="font-mono text-xs font-semibold text-rose-600">- {fmtPKR(Math.abs(total))}</p>
       <p className="text-[9px] text-slate-400">
-        WHT {entry.whtPct}%{entry.deductions.length > 1 ? " + PST" : ""}
-        {entry.recoveryApplied > 0 ? " + Rec." : ""}
+        {tx("WHT")}{" "}{entry.whtPct}%{entry.deductions.length > 1 ? " " + tx("+ PST") : ""}
+        {entry.recoveryApplied > 0 ? " " + tx("+ Rec.") : ""}
       </p>
     </div>
   );
@@ -563,10 +564,10 @@ function EntryActions({
   onClawback: (entry: CommissionLedgerEntry) => void;
 }) {
   if (entry.entryKind === "CLAWBACK") {
-    return <span className="text-[10px] text-slate-400 whitespace-nowrap">Reversal of {entry.reversalOfEntryId}</span>;
+    return <span className="text-[10px] text-slate-400 whitespace-nowrap">{tx("Reversal of")}{" "}{entry.reversalOfEntryId}</span>;
   }
   if (entry.payeeType === "HOUSE") {
-    return <span className="text-[10px] text-slate-400 whitespace-nowrap">Company Retained</span>;
+    return <span className="text-[10px] text-slate-400 whitespace-nowrap">{tx("Company Retained")}</span>;
   }
 
   const dueStages = entry.stages.filter((s) => s.status === "DUE").length;
@@ -577,26 +578,26 @@ function EntryActions({
         <>
           <button
             onClick={() => onDisburse(entry.id)}
-            title={`Release the ${dueStages} tranche(s) that have fallen due`}
+            title={tx("Release the {0} tranche(s) that have fallen due", { 0: dueStages })}
             className="px-2 py-0.5 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold rounded transition-colors shadow-2xs whitespace-nowrap"
           >
-            Release {dueStages > 1 ? `${dueStages} Due` : "Due"} →
+            {tx("Release")}{" "}{dueStages > 1 ? tx("{0} Due", { 0: dueStages }) : tx("Due")} →
           </button>
           <button
             onClick={() => onHold(entry)}
             className="px-1.5 py-0.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-[10px] font-bold rounded transition-colors whitespace-nowrap"
           >
-            Hold
+            {tx("Hold")}
           </button>
         </>
       )}
-      {entry.inRunNet > 0 && <span className="text-[10px] font-bold text-indigo-700 whitespace-nowrap">In Run</span>}
+      {entry.inRunNet > 0 && <span className="text-[10px] font-bold text-indigo-700 whitespace-nowrap">{tx("In Run")}</span>}
       {entry.status !== "CLAWED_BACK" && (
         <button
           onClick={() => onClawback(entry)}
           className="px-1.5 py-0.5 bg-white hover:bg-rose-50 hover:border-rose-200 border border-slate-200 text-rose-600 text-[10px] font-semibold rounded transition-colors whitespace-nowrap"
         >
-          Clawback
+          {tx("Clawback")}
         </button>
       )}
     </div>
@@ -652,7 +653,7 @@ function EntryRow({
         <td className="p-3">
           <BasisLabel basis={entry.basis} amount={entry.basisAmount} />
           {entry.splitPct !== 100 && (
-            <p className="text-[10px] font-bold text-amber-700 mt-0.5">Split {fmtPct(entry.splitPct)}</p>
+            <p className="text-[10px] font-bold text-amber-700 mt-0.5">{tx("Split")}{" "}{fmtPct(entry.splitPct)}</p>
           )}
         </td>
 
@@ -689,14 +690,14 @@ function EntryRow({
         <td className="p-3 text-center">
           <button
             onClick={onToggle}
-            title="Toggle full payout schedule and gating checks"
+            title={tx("Toggle full payout schedule and gating checks")}
             className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all whitespace-nowrap inline-flex items-center gap-1 ${expanded
               ? "bg-blue-50 text-blue-700 border-blue-300"
               : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-800"
               }`}
           >
             <span className="text-[9px]">{expanded ? "▲" : "▼"}</span>
-            <span>Details</span>
+            <span>{tx("Details")}</span>
           </button>
         </td>
       </tr>
@@ -708,11 +709,11 @@ function EntryRow({
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-blue-600"></span>
                   <h4 className="font-extrabold text-xs text-slate-900 uppercase tracking-wider">
-                    Payout Schedule ({entry.releaseScheduleId})
+                    {tx("Payout Schedule (")}{entry.releaseScheduleId})
                   </h4>
                 </div>
                 <span className="text-[10px] text-slate-500 font-mono bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
-                  SECP Rule Ref: {entry.secpRef}
+                  {tx("SECP Rule Ref:")}{" "}{entry.secpRef}
                 </span>
               </div>
               <StageTimeline stages={entry.stages} onRelease={(code) => onDisburse(entry.id, code)} />
@@ -722,7 +723,7 @@ function EntryRow({
               <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                 <h4 className="font-extrabold text-xs text-slate-900 uppercase tracking-wider">
-                  Compliance &amp; Release Verification
+                  {tx("Compliance & Release Verification")}
                 </h4>
               </div>
               <GatingList checks={entry.gatingChecks} />
@@ -776,7 +777,7 @@ function FinancialLedgerRow({
         {/* Col 5: PREMIUM TYPE */}
         <td className="p-3">
           <span className="px-2 py-0.5 rounded text-[10px] font-semibold border bg-blue-50 text-blue-700 border-blue-200 whitespace-nowrap inline-block">
-            {entry.premiumType.replace("_", " ")} (Yr {entry.policyYear})
+            {entry.premiumType.replace("_", " ")}{" "}{tx("(Yr")}{" "}{entry.policyYear})
           </span>
         </td>
 
@@ -840,7 +841,7 @@ function FinancialLedgerRow({
               }`}
           >
             <span className="text-[9px]">{expanded ? "▲" : "▼"}</span>
-            <span>Details</span>
+            <span>{tx("Details")}</span>
           </button>
         </td>
       </tr>
@@ -853,11 +854,11 @@ function FinancialLedgerRow({
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-blue-600"></span>
                   <h4 className="font-extrabold text-xs text-slate-900 uppercase tracking-wider">
-                    Payout Schedule ({entry.releaseScheduleId})
+                    {tx("Payout Schedule (")}{entry.releaseScheduleId})
                   </h4>
                 </div>
                 <span className="text-[10px] text-slate-500 font-mono bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
-                  SECP Rule Ref: {entry.secpRef}
+                  {tx("SECP Rule Ref:")}{" "}{entry.secpRef}
                 </span>
               </div>
               <StageTimeline stages={entry.stages} onRelease={(code) => onDisburse(entry.id, code)} />
@@ -867,7 +868,7 @@ function FinancialLedgerRow({
               <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                 <h4 className="font-extrabold text-xs text-slate-900 uppercase tracking-wider">
-                  Compliance &amp; Release Verification
+                  {tx("Compliance & Release Verification")}
                 </h4>
               </div>
               <GatingList checks={entry.gatingChecks} />
@@ -942,7 +943,7 @@ function PayeeSummaryRow({
         <td className="p-3">
           <BasisLabel basis={entry.basis} amount={entry.basisAmount} />
           {entry.splitPct !== 100 && (
-            <p className="text-[10px] font-bold text-amber-700 mt-0.5">Split {fmtPct(entry.splitPct)}</p>
+            <p className="text-[10px] font-bold text-amber-700 mt-0.5">{tx("Split")}{" "}{fmtPct(entry.splitPct)}</p>
           )}
         </td>
 
@@ -973,7 +974,7 @@ function PayeeSummaryRow({
               }`}
           >
             <span className="text-[9px]">{expanded ? "▲" : "▼"}</span>
-            <span>Details</span>
+            <span>{tx("Details")}</span>
           </button>
         </td>
       </tr>
@@ -986,11 +987,11 @@ function PayeeSummaryRow({
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-blue-600"></span>
                   <h4 className="font-extrabold text-xs text-slate-900 uppercase tracking-wider">
-                    Payout Schedule ({entry.releaseScheduleId})
+                    {tx("Payout Schedule (")}{entry.releaseScheduleId})
                   </h4>
                 </div>
                 <span className="text-[10px] text-slate-500 font-mono bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
-                  SECP Rule Ref: {entry.secpRef}
+                  {tx("SECP Rule Ref:")}{" "}{entry.secpRef}
                 </span>
               </div>
               <StageTimeline stages={entry.stages} onRelease={(code) => onDisburse(entry.id, code)} />
@@ -1000,7 +1001,7 @@ function PayeeSummaryRow({
               <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                 <h4 className="font-extrabold text-xs text-slate-900 uppercase tracking-wider">
-                  Compliance &amp; Release Verification
+                  {tx("Compliance & Release Verification")}
                 </h4>
               </div>
               <GatingList checks={entry.gatingChecks} />

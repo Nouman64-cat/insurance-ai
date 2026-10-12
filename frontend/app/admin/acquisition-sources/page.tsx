@@ -9,6 +9,7 @@ import { formatCnic } from "@/lib/cnic";
 import { Pagination, usePagination } from "@/components/Pagination";
 import DemoFillButton from "@/components/DemoFillButton";
 import { demoAcquisitionSource } from "@/lib/demoData";
+import { tx } from "@/lib/i18n/tx";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -120,7 +121,7 @@ export default function AcquisitionSourcesPage() {
     if (!silent) setError("");
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId) {
-      setError("No active organization tenant found.");
+      setError(tx("No active organization tenant found."));
       setLoading(false);
       return;
     }
@@ -128,7 +129,7 @@ export default function AcquisitionSourcesPage() {
       const resp = await api.get<AcquisitionSource[]>(`/tenants/${tenantId}/acquisition-sources`);
       setSources(resp.data);
     } catch (err: any) {
-      if (!silent) setError(err.response?.data?.detail ?? err.message ?? "Failed to load acquisition sources.");
+      if (!silent) setError(err.response?.data?.detail ?? err.message ?? tx("Failed to load acquisition sources."));
     } finally {
       if (!silent) setLoading(false);
     }
@@ -176,14 +177,14 @@ export default function AcquisitionSourcesPage() {
 
   const handleSave = async () => {
     if (!form.name.trim() || !form.code.trim()) {
-      setError("Name and Code are required.");
+      setError(tx("Name and Code are required."));
       return;
     }
     setSaving(true);
     setError("");
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId) {
-      setError("No active tenant found.");
+      setError(tx("No active tenant found."));
       setSaving(false);
       return;
     }
@@ -204,27 +205,27 @@ export default function AcquisitionSourcesPage() {
     try {
       if (editingId) {
         await api.put(`/tenants/${tenantId}/acquisition-sources/${editingId}`, payload);
-        setSuccess("Acquisition source updated.");
+        setSuccess(tx("Acquisition source updated."));
       } else {
         const res = await api.post<AcquisitionSource>(`/tenants/${tenantId}/acquisition-sources`, payload);
         if (!payload.contact_email) {
-          setSuccess("Acquisition source created.");
+          setSuccess(tx("Acquisition source created."));
         } else if (res.data.credentials_email_sent) {
           setSuccess(
-            `Acquisition source created. Login credentials were emailed to ${payload.contact_email}${res.data.login_role ? ` (role: ${res.data.login_role})` : ""} — they'll appear in User Management once they sign in.`
+            tx("Acquisition source created. Login credentials were emailed to {0}{1} — they'll appear in User Management once they sign in.", { 0: payload.contact_email, 1: res.data.login_role ? ` (role: ${res.data.login_role})` : "" })
           );
         } else {
           // The account exists but the email didn't go out (mail not configured or
           // rejected) — the password was never shown, so say how to get it sent.
           setSuccess(
-            `Acquisition source created, but the credentials email to ${payload.contact_email} could not be sent. Use "Resend login" on the row to try again.`
+            tx("Acquisition source created, but the credentials email to {0} could not be sent. Use \"Resend login\" on the row to try again.", { 0: payload.contact_email })
           );
         }
       }
       setShowModal(false);
       fetchSources();
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to save acquisition source.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to save acquisition source."));
     } finally {
       setSaving(false);
     }
@@ -240,13 +241,13 @@ export default function AcquisitionSourcesPage() {
     try {
       const res = await api.post<AcquisitionSource>(`/tenants/${tenantId}/acquisition-sources/${s.id}/send-credentials`);
       if (res.data.credentials_email_sent) {
-        setSuccess(`New login credentials were emailed to ${s.contact_email}.`);
+        setSuccess(tx("New login credentials were emailed to {0}.", { 0: s.contact_email }));
       } else {
-        setError(`A new password was issued for ${s.contact_email}, but the email could not be sent. Check the email settings and try again.`);
+        setError(tx("A new password was issued for {0}, but the email could not be sent. Check the email settings and try again.", { 0: s.contact_email }));
       }
       fetchSources();
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to resend credentials.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to resend credentials."));
     } finally {
       setResendingId(null);
     }
@@ -256,17 +257,17 @@ export default function AcquisitionSourcesPage() {
     const loginNote = s.login_status
       ? `\n\nIts login (${s.contact_email}) will also be removed from User Management and can no longer sign in.`
       : "";
-    if (!confirm(`Delete acquisition source "${s.name}"?${loginNote}`)) return;
+    if (!confirm(tx("Delete acquisition source \"{0}\"?{1}", { 0: s.name, 1: loginNote }))) return;
     setError("");
     setSuccess("");
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId) return;
     try {
       await api.delete(`/tenants/${tenantId}/acquisition-sources/${s.id}`);
-      setSuccess(`"${s.name}" deleted${s.login_status ? " along with its login." : "."}`);
+      setSuccess(tx("\"{0}\" deleted{1}", { 0: s.name, 1: s.login_status ? " along with its login." : "." }));
       fetchSources();
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to delete acquisition source.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to delete acquisition source."));
     }
   };
 
@@ -310,8 +311,8 @@ export default function AcquisitionSourcesPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh] font-sans">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-8 text-center space-y-4">
-          <div className="text-red-500 font-bold">Unauthorized Access</div>
-          <p className="text-slate-400 text-sm">Administrative privileges required.</p>
+          <div className="text-red-500 font-bold">{tx("Unauthorized Access")}</div>
+          <p className="text-slate-400 text-sm">{tx("Administrative privileges required.")}</p>
         </div>
       </div>
     );
@@ -322,9 +323,9 @@ export default function AcquisitionSourcesPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Acquisition Sources</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Acquisition Sources")}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Manage agents, brokers, banks, and other origination channels.
+            {tx("Manage agents, brokers, banks, and other origination channels.")}
           </p>
         </div>
         <button
@@ -332,7 +333,7 @@ export default function AcquisitionSourcesPage() {
           className="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-600 rounded-xl hover:from-blue-700 hover:to-blue-700 transition-all shadow-sm active:scale-95 self-start"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Add Source
+          {tx("Add Source")}
         </button>
       </div>
 
@@ -342,27 +343,27 @@ export default function AcquisitionSourcesPage() {
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
-          title="Total Sources"
+          title={tx("Total Sources")}
           value={loading ? "—" : sources.length}
           accent="blue"
           icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>}
         />
         <MetricCard
-          title="Active Channels"
+          title={tx("Active Channels")}
           value={loading ? "—" : activeSources.length}
           accent="blue"
           icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>}
         />
         <MetricCard
-          title="Total Customers Sourced"
+          title={tx("Total Customers Sourced")}
           value={loading ? "—" : totalCustomers}
           accent="blue"
           icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>}
         />
         <MetricCard
-          title="Top Channel"
+          title={tx("Top Channel")}
           value={loading ? "—" : (topChannel?.name ?? "None")}
-          subtitle={loading ? "" : topChannel ? `${topChannel.customer_count} customers` : ""}
+          subtitle={loading ? "" : topChannel ? tx("{0} customers", { 0: topChannel.customer_count }) : ""}
           accent="blue"
           icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>}
         />
@@ -374,7 +375,7 @@ export default function AcquisitionSourcesPage() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-blue-500 transition-colors" ><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input
             type="text"
-            placeholder="Search by name, code, partner, or type…"
+            placeholder={tx("Search by name, code, partner, or type…")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-white shadow-sm transition-all"
@@ -402,14 +403,14 @@ export default function AcquisitionSourcesPage() {
             <button
               onClick={() => setViewMode("list")}
               className={`p-1.5 rounded text-slate-600 transition-all ${viewMode === "list" ? "bg-white shadow text-blue-600" : "hover:text-slate-900"}`}
-              title="List View"
+              title={tx("List View")}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
             </button>
             <button
               onClick={() => setViewMode("kanban")}
               className={`p-1.5 rounded text-slate-600 transition-all ${viewMode === "kanban" ? "bg-white shadow text-blue-600" : "hover:text-slate-900"}`}
-              title="Kanban Board"
+              title={tx("Kanban Board")}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="13" rx="1"/></svg>
             </button>
@@ -434,7 +435,7 @@ export default function AcquisitionSourcesPage() {
             </span>
           ))}
           <button onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-blue-600 hover:underline ml-1">
-            Clear all
+            {tx("Clear all")}
           </button>
         </div>
       )}
@@ -442,11 +443,11 @@ export default function AcquisitionSourcesPage() {
       {loading ? (
         <div className="py-20 flex flex-col items-center justify-center gap-2 bg-white rounded-xl border border-slate-200 shadow-sm">
           <div className="animate-spin h-7 w-7 text-blue-500 rounded-full border-2 border-slate-100 border-t-blue-500" />
-          <span className="text-xs text-slate-400">Loading sources…</span>
+          <span className="text-xs text-slate-400">{tx("Loading sources…")}</span>
         </div>
       ) : filtered.length === 0 ? (
         <div className="py-20 text-center text-slate-400 bg-white rounded-xl border border-slate-200 shadow-sm">
-          <p className="text-sm">{sources.length === 0 ? "No acquisition sources yet." : "No sources match your search and filters."}</p>
+          <p className="text-sm">{sources.length === 0 ? tx("No acquisition sources yet.") : tx("No sources match your search and filters.")}</p>
         </div>
       ) : viewMode === "kanban" ? (
         <div className="flex gap-6 overflow-x-auto pb-6 pt-2 px-2 snap-x snap-mandatory min-h-[60vh] w-full hide-scrollbar">
@@ -473,7 +474,7 @@ export default function AcquisitionSourcesPage() {
                           <p className="font-bold text-slate-900 text-sm leading-tight group-hover:text-blue-700 transition-colors">{s.name}</p>
                           <p className="font-mono text-[10px] font-semibold text-slate-500 mt-1 bg-slate-50 inline-block px-1.5 py-0.5 rounded">{s.code}</p>
                         </div>
-                        <span className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${s.is_active ? "bg-blue-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" : "bg-slate-300"}`} title={s.is_active ? "Active" : "Inactive"} />
+                        <span className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${s.is_active ? "bg-blue-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" : "bg-slate-300"}`} title={s.is_active ? tx("Active") : tx("Inactive")} />
                       </div>
                       
                       <div className="space-y-2 mb-4 text-xs mt-auto">
@@ -498,7 +499,7 @@ export default function AcquisitionSourcesPage() {
                       </div>
                       
                       <div className="pt-3 border-t border-slate-100/80 flex items-center justify-between">
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Customers</span>
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{tx("Customers")}</span>
                         <div className="flex items-center gap-1.5 bg-gradient-to-r from-blue-50 to-blue-50 border border-blue-100/50 px-2.5 py-1 rounded-lg">
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3 text-blue-600"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
                           <span className="font-bold text-blue-700 text-xs">{s.customer_count}</span>
@@ -518,15 +519,15 @@ export default function AcquisitionSourcesPage() {
             <table className="w-full text-sm min-w-[1000px]">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/80 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                  <th className="px-5 py-4 text-left">Name</th>
-                  <th className="px-5 py-4 text-left">Type</th>
-                  <th className="px-5 py-4 text-left">Code</th>
-                  <th className="px-5 py-4 text-left">Partner</th>
-                  <th className="px-5 py-4 text-left">Contact</th>
-                  <th className="px-5 py-4 text-left">City</th>
-                  <th className="px-5 py-4 text-right">Customers</th>
-                  <th className="px-5 py-4 text-center">Status</th>
-                  <th className="px-5 py-4 text-center">Actions</th>
+                  <th className="px-5 py-4 text-left">{tx("Name")}</th>
+                  <th className="px-5 py-4 text-left">{tx("Type")}</th>
+                  <th className="px-5 py-4 text-left">{tx("Code")}</th>
+                  <th className="px-5 py-4 text-left">{tx("Partner")}</th>
+                  <th className="px-5 py-4 text-left">{tx("Contact")}</th>
+                  <th className="px-5 py-4 text-left">{tx("City")}</th>
+                  <th className="px-5 py-4 text-right">{tx("Customers")}</th>
+                  <th className="px-5 py-4 text-center">{tx("Status")}</th>
+                  <th className="px-5 py-4 text-center">{tx("Actions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100/80">
@@ -565,9 +566,9 @@ export default function AcquisitionSourcesPage() {
                             <span className="flex items-center gap-1.5 flex-wrap">
                               <span
                                 className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200"
-                                title="Credentials were emailed. They become a user once they sign in."
+                                title={tx("Credentials were emailed. They become a user once they sign in.")}
                               >
-                                Invite sent · not signed in
+                                {tx("Invite sent · not signed in")}
                               </span>
                               {s.login_role && (
                                 <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
@@ -579,16 +580,16 @@ export default function AcquisitionSourcesPage() {
                                 disabled={resendingId === s.id}
                                 className="text-[10px] font-bold text-blue-600 hover:underline disabled:opacity-50"
                               >
-                                {resendingId === s.id ? "Sending…" : "Resend login"}
+                                {resendingId === s.id ? tx("Sending…") : tx("Resend login")}
                               </button>
                             </span>
                           )}
                           {s.login_status === "active" && (
                             <span
                               className="inline-flex w-fit px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200"
-                              title="Signed in — listed in User Management."
+                              title={tx("Signed in — listed in User Management.")}
                             >
-                              Signed in · {s.login_role || "user"}
+                              {tx("Signed in ·")}{" "}{s.login_role || tx("user")}
                             </span>
                           )}
                         </div>
@@ -615,7 +616,7 @@ export default function AcquisitionSourcesPage() {
                     </td>
                     <td className="px-5 py-4 text-center">
                       <span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold ${s.is_active ? "bg-blue-100 text-blue-800" : "bg-slate-100 text-slate-500"}`}>
-                        {s.is_active ? "Active" : "Inactive"}
+                        {s.is_active ? tx("Active") : tx("Inactive")}
                       </span>
                     </td>
                     <td className="px-5 py-4 text-center whitespace-nowrap">
@@ -625,13 +626,13 @@ export default function AcquisitionSourcesPage() {
                           className="px-3 py-1.5 text-xs font-bold text-blue-600 bg-white hover:bg-blue-50 transition-colors flex items-center gap-1"
                         >
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
-                          Edit
+                          {tx("Edit")}
                         </button>
                         <button
                           onClick={() => handleDelete(s)}
                           className="px-3 py-1.5 text-xs font-bold text-red-600 bg-white hover:bg-red-50 transition-colors"
                         >
-                          Delete
+                          {tx("Delete")}
                         </button>
                       </div>
                     </td>
@@ -640,7 +641,7 @@ export default function AcquisitionSourcesPage() {
               </tbody>
             </table>
           </div>
-          <Pagination pagination={pagination} noun="acquisition sources" inline />
+          <Pagination pagination={pagination} noun={tx("acquisition sources")} inline />
         </div>
       )}
 
@@ -649,7 +650,7 @@ export default function AcquisitionSourcesPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h3 className="text-base font-bold text-slate-900">{editingId ? "Edit Acquisition Source" : "Add Acquisition Source"}</h3>
+              <h3 className="text-base font-bold text-slate-900">{editingId ? tx("Edit Acquisition Source") : tx("Add Acquisition Source")}</h3>
               {!editingId && (
                 // Fills realistic values for whichever Type is currently selected.
                 <DemoFillButton
@@ -667,7 +668,7 @@ export default function AcquisitionSourcesPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Type *</label>
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("Type *")}</label>
                   <select
                     value={form.source_type}
                     onChange={(e) => setForm((f) => ({ ...f, source_type: e.target.value as SourceType }))}
@@ -679,37 +680,37 @@ export default function AcquisitionSourcesPage() {
                   </select>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Producer Code *</label>
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("Producer Code *")}</label>
                   <input
                     type="text"
                     value={form.code}
                     onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
-                    placeholder="e.g. AGT-0417"
+                    placeholder={tx("e.g. AGT-0417")}
                     className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all placeholder:text-slate-400"
                   />
                 </div>
                 <div className="space-y-1.5 md:col-span-2">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Name *</label>
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("Name *")}</label>
                   <input
                     type="text"
                     value={form.name}
                     onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                    placeholder="Agent name or firm / bank name"
+                    placeholder={tx("Agent name or firm / bank name")}
                     className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all placeholder:text-slate-400"
                   />
                 </div>
                 <div className="space-y-1.5 md:col-span-2">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Partner (bank / firm)</label>
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("Partner (bank / firm)")}</label>
                   <input
                     type="text"
                     value={form.partner_name}
                     onChange={(e) => setForm((f) => ({ ...f, partner_name: e.target.value }))}
-                    placeholder="e.g. Habib Bank Limited"
+                    placeholder={tx("e.g. Habib Bank Limited")}
                     className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all placeholder:text-slate-400"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Contact Person</label>
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("Contact Person")}</label>
                   <input
                     type="text"
                     value={form.contact_person}
@@ -718,7 +719,7 @@ export default function AcquisitionSourcesPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">City</label>
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("City")}</label>
                   <input
                     type="text"
                     value={form.city}
@@ -727,7 +728,7 @@ export default function AcquisitionSourcesPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Location</label>
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("Location")}</label>
                   <input
                     type="text"
                     value={form.location}
@@ -736,7 +737,7 @@ export default function AcquisitionSourcesPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">CNIC</label>
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("CNIC")}</label>
                   <input
                     type="text"
                     inputMode="numeric"
@@ -748,7 +749,7 @@ export default function AcquisitionSourcesPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Contact Phone</label>
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("Contact Phone")}</label>
                   <input
                     type="text"
                     value={form.contact_phone}
@@ -757,7 +758,7 @@ export default function AcquisitionSourcesPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Contact Email</label>
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("Contact Email")}</label>
                   <input
                     type="email"
                     value={form.contact_email}
@@ -766,7 +767,7 @@ export default function AcquisitionSourcesPage() {
                   />
                   {!editingId && (
                     <p className="text-[11px] text-slate-400">
-                      With an email, a login is created with the role that matches the type (Broker → Broker role) and its credentials are emailed here. They join User Management once they sign in.
+                      {tx("With an email, a login is created with the role that matches the type (Broker → Broker role) and its credentials are emailed here. They join User Management once they sign in.")}
                     </p>
                   )}
                 </div>
@@ -778,7 +779,7 @@ export default function AcquisitionSourcesPage() {
                     onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
                     className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                   />
-                  <label htmlFor="is_active" className="text-sm font-bold text-slate-800 cursor-pointer select-none">Channel is Active</label>
+                  <label htmlFor="is_active" className="text-sm font-bold text-slate-800 cursor-pointer select-none">{tx("Channel is Active")}</label>
                 </div>
               </div>
             </div>
@@ -789,7 +790,7 @@ export default function AcquisitionSourcesPage() {
                 disabled={saving}
                 className="px-5 py-2.5 text-sm font-bold text-slate-600 bg-white border border-slate-200 shadow-sm hover:bg-slate-50 rounded-xl transition-colors"
               >
-                Cancel
+                {tx("Cancel")}
               </button>
               <button
                 onClick={handleSave}
@@ -797,7 +798,7 @@ export default function AcquisitionSourcesPage() {
                 className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-600 rounded-xl shadow-sm hover:from-blue-700 hover:to-blue-700 disabled:opacity-50 transition-all active:scale-95"
               >
                 {saving && <span className="animate-spin h-4 w-4 rounded-full border-2 border-white/30 border-t-white" />}
-                {saving ? "Saving…" : editingId ? "Save Changes" : "Create Source"}
+                {saving ? tx("Saving…") : editingId ? tx("Save Changes") : tx("Create Source")}
               </button>
             </div>
           </div>

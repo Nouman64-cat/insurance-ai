@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { tx } from "@/lib/i18n/tx";
 
 /**
  * Marks a screen whose figures are generated in the browser rather than read
@@ -35,9 +36,9 @@ export default function DemoDataBanner({ note }: { note?: string }) {
         <line x1="12" y1="17" x2="12.01" y2="17" />
       </svg>
       <p className="text-xs leading-relaxed text-amber-900">
-        <span className="font-semibold">Illustrative data — not a system of record.</span>{" "}
+        <span className="font-semibold">{tx("Illustrative data — not a system of record.")}</span>{" "}
         {note ??
-          "This module has no backend yet. Figures are generated in the browser and must not be used for payment, tax filing, or regulatory reporting."}
+          tx("This module has no backend yet. Figures are generated in the browser and must not be used for payment, tax filing, or regulatory reporting.")}
       </p>
     </div>
   );

@@ -22,6 +22,7 @@ import {
   fmtPKRSigned,
 } from "./shared";
 import { Pagination, usePagination } from "../Pagination";
+import { tx } from "@/lib/i18n/tx";
 
 function filterStatementByDate(statement: PayeeStatement, range: DateRange): PayeeStatement {
   if (!range.from || !range.to) return statement;
@@ -126,7 +127,7 @@ export default function StatementsTab({
   if (statements.length === 0) {
     return (
       <Card>
-        <EmptyState message="No statements yet — commission entries have to exist before a statement can be built." />
+        <EmptyState message={tx("No statements yet — commission entries have to exist before a statement can be built.")} />
       </Card>
     );
   }
@@ -154,8 +155,8 @@ export default function StatementsTab({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Left Column: Payee Header with Inline Search & Role Filter + Payees List */}
         <Card
-          title="Payees"
-          subtitle={`${filteredStatements.length} of ${statements.length} active`}
+          title={tx("Payees")}
+          subtitle={tx("{0} of {1} active", { 0: filteredStatements.length, 1: statements.length })}
           actions={
             <div className="flex flex-wrap items-center gap-1.5">
               <DateRangeFilter preset={activePreset} range={activeRange} onPresetChange={handleDateChange} size="sm" align="left" />
@@ -206,7 +207,7 @@ export default function StatementsTab({
           {/* Payee List */}
           <div className="max-h-[680px] overflow-y-auto divide-y divide-slate-100 flex-1">
             {filteredStatements.length === 0 ? (
-              <div className="p-6 text-center text-xs text-slate-400">No payees match your search criteria.</div>
+              <div className="p-6 text-center text-xs text-slate-400">{tx("No payees match your search criteria.")}</div>
             ) : (
               pagedStatements.map((s) => {
                 const isSelected = selected?.payee.id === s.payee.id;
@@ -230,7 +231,7 @@ export default function StatementsTab({
                         <span className="text-[10px] font-mono text-slate-400">{s.payee.code}</span>
                       </div>
                       <p className="text-[10px] text-slate-400 mt-1">
-                        {s.entries.length} entries · {fmtPKR(s.pending)} pending
+                        {s.entries.length}{" "}{tx("entries ·")}{" "}{fmtPKR(s.pending)}{" "}{tx("pending")}
                       </p>
                     </div>
                   </button>
@@ -238,14 +239,14 @@ export default function StatementsTab({
               })
             )}
           </div>
-          <Pagination pagination={statementPagination} noun="statements" inline />
+          <Pagination pagination={statementPagination} noun={tx("statements")} inline />
         </Card>
 
         {/* Right Column: Statement Details & Itemized Lines */}
         {selected ? (
           <div className="lg:col-span-2 space-y-4">
             <Card
-              title={`Statement — ${selected.payee.name}`}
+              title={tx("Statement — {0}", { 0: selected.payee.name })}
               subtitle={`${selected.payee.code} · ${selected.payee.branch}`}
               actions={
                 <div className="flex items-center gap-2">
@@ -265,10 +266,10 @@ export default function StatementsTab({
               <div className="p-5 space-y-5">
                 {/* 4 Summary Stat Cards */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <StatBox label="Commission &amp; Fees" value={fmtPKR(selected.grossCommission)} tone="blue" />
-                  <StatBox label="Overrides Earned" value={fmtPKR(selected.overrides)} tone="indigo" />
-                  <StatBox label="Bonuses" value={fmtPKR(selected.bonuses)} tone="emerald" />
-                  <StatBox label="Clawed Back" value={fmtPKR(selected.clawbacks)} tone="rose" />
+                  <StatBox label={tx("Commission &amp; Fees")} value={fmtPKR(selected.grossCommission)} tone="blue" />
+                  <StatBox label={tx("Overrides Earned")} value={fmtPKR(selected.overrides)} tone="indigo" />
+                  <StatBox label={tx("Bonuses")} value={fmtPKR(selected.bonuses)} tone="emerald" />
+                  <StatBox label={tx("Clawed Back")} value={fmtPKR(selected.clawbacks)} tone="rose" />
                 </div>
 
                 {/* Plain-English Statement Financial Summary Table */}
@@ -276,31 +277,31 @@ export default function StatementsTab({
                   <table className="w-full text-xs">
                     <tbody className="divide-y divide-slate-100">
                       <Line
-                        label="Gross Earnings (Commission, Overrides &amp; Bonuses)"
+                        label={tx("Gross Earnings (Commission, Overrides &amp; Bonuses)")}
                         value={selected.grossCommission + selected.overrides + selected.bonuses}
                         bold
                       />
                       {selected.deductions.map((d) => (
                         <Line
                           key={d.code}
-                          label={`Income Tax Withheld (${d.pct}% Filer Rate)`}
+                          label={tx("Income Tax Withheld ({0}% Filer Rate)", { 0: d.pct })}
                           value={-d.amount}
                         />
                       ))}
                       {selected.recoveryApplied > 0 && (
-                        <Line label="Clawback / Advance Recovered" value={-selected.recoveryApplied} />
+                        <Line label={tx("Clawback / Advance Recovered")} value={-selected.recoveryApplied} />
                       )}
 
                       {/* Highlighted Net Payable Row */}
                       <tr className="bg-blue-600 text-white font-bold">
-                        <td className="px-4 py-3 text-xs uppercase tracking-wider">Net Payable Stack</td>
+                        <td className="px-4 py-3 text-xs uppercase tracking-wider">{tx("Net Payable Stack")}</td>
                         <td className="px-4 py-3 text-right font-mono text-sm font-black">{fmtPKRSigned(selected.netPayable)}</td>
                       </tr>
 
-                      <Line label="Already Released / Settled" value={selected.disbursed} muted />
-                      <Line label="Ready to Pay (Vested &amp; Approved)" value={selected.dueNow} bold highlight />
-                      <Line label="Processing in Active Payout Run" value={selected.inRun} muted />
-                      <Line label="In-Progress (Future Milestone Unvested)" value={selected.notYetDue} muted />
+                      <Line label={tx("Already Released / Settled")} value={selected.disbursed} muted />
+                      <Line label={tx("Ready to Pay (Vested &amp; Approved)")} value={selected.dueNow} bold highlight />
+                      <Line label={tx("Processing in Active Payout Run")} value={selected.inRun} muted />
+                      <Line label={tx("In-Progress (Future Milestone Unvested)")} value={selected.notYetDue} muted />
                     </tbody>
                   </table>
                 </div>
@@ -312,20 +313,20 @@ export default function StatementsTab({
                     <div>
                       <div className="flex items-center justify-between gap-1 mb-1">
                         <p className="font-bold text-slate-900 flex items-center gap-1">
-                          <span>🏛️</span> Tax Profile
+                          <span>🏛️</span>{" "}{tx("Tax Profile")}
                         </p>
                         <span className="px-2 py-0.5 text-[9px] font-bold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                          {selected.payee.taxFilerStatus === "FILER" ? "✓ Active Filer" : "Non-Filer"}
+                          {selected.payee.taxFilerStatus === "FILER" ? tx("✓ Active Filer") : tx("Non-Filer")}
                         </span>
                       </div>
                       <p className="text-slate-600 text-[11px]">
-                        {selected.payee.isCorporate ? "Corporate Entity" : "Individual Agent"}
+                        {selected.payee.isCorporate ? tx("Corporate Entity") : tx("Individual Agent")}
                       </p>
-                      <p className="text-slate-600 font-medium">Withheld at {selected.whtPct}% Rate</p>
+                      <p className="text-slate-600 font-medium">{tx("Withheld at")}{" "}{selected.whtPct}{tx("% Rate")}</p>
                     </div>
                     <div className="pt-2 border-t border-slate-200/80">
                       <p className="text-[10px] text-slate-500">
-                        YTD Earnings: <span className="font-mono font-bold text-slate-800">{fmtPKR(selected.payee.ytdCommission)}</span>
+                        {tx("YTD Earnings:")}{" "}<span className="font-mono font-bold text-slate-800">{fmtPKR(selected.payee.ytdCommission)}</span>
                       </p>
                     </div>
                   </div>
@@ -335,16 +336,16 @@ export default function StatementsTab({
                     <div>
                       <div className="flex items-center justify-between gap-1 mb-1">
                         <p className="font-bold text-slate-900 flex items-center gap-1">
-                          <span>🪪</span> Regulatory Licence
+                          <span>🪪</span>{" "}{tx("Regulatory Licence")}
                         </p>
                         <span className="px-2 py-0.5 text-[9px] font-bold rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-                          ✓ Verified Active
+                          {tx("✓ Verified Active")}
                         </span>
                       </div>
                       <LicenceCell licenceNo={selected.payee.licenceNo} expiry={selected.payee.licenceExpiry} />
                     </div>
                     <div className="pt-2 border-t border-slate-200/80">
-                      <p className="text-[10px] text-slate-500">SECP Compliance Valid</p>
+                      <p className="text-[10px] text-slate-500">{tx("SECP Compliance Valid")}</p>
                     </div>
                   </div>
 
@@ -356,7 +357,7 @@ export default function StatementsTab({
                     <div>
                       <div className="flex items-center justify-between gap-1 mb-1">
                         <p className="font-bold text-slate-900 flex items-center gap-1">
-                          <span>⚖️</span> Advance Recovery
+                          <span>⚖️</span>{" "}{tx("Advance Recovery")}
                         </p>
                         <span
                           className={`px-2 py-0.5 text-[9px] font-bold rounded-full ${selected.openingRecovery > 0
@@ -364,7 +365,7 @@ export default function StatementsTab({
                             : "bg-slate-200/70 text-slate-700 border border-slate-300"
                             }`}
                         >
-                          {selected.openingRecovery > 0 ? "⚠️ Pending Recovery" : "✓ Clear Balance"}
+                          {selected.openingRecovery > 0 ? tx("⚠️ Pending Recovery") : tx("✓ Clear Balance")}
                         </span>
                       </div>
                       <p className={`font-mono font-bold text-sm ${selected.openingRecovery > 0 ? "text-rose-700" : "text-slate-800"}`}>
@@ -372,7 +373,7 @@ export default function StatementsTab({
                       </p>
                     </div>
                     <div className="pt-2 border-t border-slate-200/80">
-                      <p className="text-[10px] text-slate-500">Netted off future payouts until cleared</p>
+                      <p className="text-[10px] text-slate-500">{tx("Netted off future payouts until cleared")}</p>
                     </div>
                   </div>
                 </div>
@@ -382,7 +383,7 @@ export default function StatementsTab({
                   <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 text-[11px] space-y-2 shadow-2xs">
                     <div className="flex items-center justify-between gap-2 border-b border-blue-200/60 pb-2">
                       <p className="font-extrabold text-blue-900 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
-                        <span>🎯</span> Upcoming Bonus &amp; Vesting Milestone
+                        <span>🎯</span>{" "}{tx("Upcoming Bonus & Vesting Milestone")}
                       </p>
                       <span className="font-mono font-black text-blue-700 text-sm">{fmtPKR(selected.nextStage.netAmount)}</span>
                     </div>
@@ -395,8 +396,8 @@ export default function StatementsTab({
                     {/* Visual Progress Bar indicator */}
                     <div className="pt-1">
                       <div className="flex items-center justify-between text-[10px] text-slate-500 font-medium mb-1">
-                        <span>Milestone Progress</span>
-                        <span className="font-mono text-blue-700 font-bold">Vesting Pending</span>
+                        <span>{tx("Milestone Progress")}</span>
+                        <span className="font-mono text-blue-700 font-bold">{tx("Vesting Pending")}</span>
                       </div>
                       <div className="w-full bg-blue-200/60 rounded-full h-1.5 overflow-hidden">
                         <div className="bg-blue-600 h-1.5 rounded-full w-2/3 transition-all duration-500"></div>
@@ -407,19 +408,19 @@ export default function StatementsTab({
               </div>
             </Card>
 
-            <Card title="Statement Lines" subtitle="Every ledger entry raised for this payee">
+            <Card title={tx("Statement Lines")} subtitle={tx("Every ledger entry raised for this payee")}>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-50/80 text-slate-500 font-medium uppercase tracking-wider text-[10px] border-b border-slate-200">
                     <tr>
-                      <th className="p-3">Entry ID</th>
-                      <th className="p-3">Policy / Plan</th>
-                      <th className="p-3">Kind</th>
-                      <th className="p-3 text-right">Rate</th>
-                      <th className="p-3 text-right">Gross</th>
-                      <th className="p-3 text-right">Net</th>
-                      <th className="p-3">Release Schedule</th>
-                      <th className="p-3 text-center">Status</th>
+                      <th className="p-3">{tx("Entry ID")}</th>
+                      <th className="p-3">{tx("Policy / Plan")}</th>
+                      <th className="p-3">{tx("Kind")}</th>
+                      <th className="p-3 text-right">{tx("Rate")}</th>
+                      <th className="p-3 text-right">{tx("Gross")}</th>
+                      <th className="p-3 text-right">{tx("Net")}</th>
+                      <th className="p-3">{tx("Release Schedule")}</th>
+                      <th className="p-3 text-center">{tx("Status")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -455,7 +456,7 @@ export default function StatementsTab({
         ) : (
           <div className="lg:col-span-2">
             <Card>
-              <EmptyState message="No payee statement selected matching your search criteria." />
+              <EmptyState message={tx("No payee statement selected matching your search criteria.")} />
             </Card>
           </div>
         )}

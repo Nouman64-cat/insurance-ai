@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { GROUPED_FIELDS, FIELD_LABELS } from "./constants";
+import { tx } from "@/lib/i18n/tx";
 
 interface Props {
   value: string;
@@ -54,7 +55,7 @@ export default function FieldSearchSelect({ value, onChange }: Props) {
               <code className="text-[10px] text-slate-400 font-mono">({value})</code>
             </span>
           ) : (
-            <span className="text-slate-400 italic">Select Field...</span>
+            <span className="text-slate-400 italic">{tx("Select Field...")}</span>
           )}
         </span>
         <svg
@@ -79,7 +80,7 @@ export default function FieldSearchSelect({ value, onChange }: Props) {
                 autoFocus
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search field or keyword (e.g. age, bmi, smoker)..."
+                placeholder={tx("Search field or keyword (e.g. age, bmi, smoker)...")}
                 className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
               />
             </div>
@@ -89,7 +90,7 @@ export default function FieldSearchSelect({ value, onChange }: Props) {
           <div className="flex-1 overflow-y-auto p-1 divide-y divide-slate-100">
             {filteredGroups.length === 0 ? (
               <div className="p-4 text-center text-xs text-slate-400 italic">
-                No matching field found.
+                {tx("No matching field found.")}
                 {search && (
                   <button
                     type="button"
@@ -99,7 +100,7 @@ export default function FieldSearchSelect({ value, onChange }: Props) {
                     }}
                     className="block mt-1 mx-auto text-blue-600 font-bold hover:underline"
                   >
-                    Use custom keyword: &quot;{search}&quot;
+                    {tx("Use custom keyword: \"")}{search}{tx("\"")}
                   </button>
                 )}
               </div>

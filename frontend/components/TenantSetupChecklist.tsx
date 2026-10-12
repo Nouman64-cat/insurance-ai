@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { tx } from "@/lib/i18n/tx";
 
 // Tenant onboarding is three steps across three pages: create the tenant, give it a
 // branch (every Admin and staff user must belong to one), then create its first
@@ -101,7 +102,7 @@ export default function TenantSetupChecklist({
             </div>
             {!step.done && step.action && (
               step.blocked ? (
-                <span className="text-[11px] text-slate-400 whitespace-nowrap pt-0.5">Needs a branch first</span>
+                <span className="text-[11px] text-slate-400 whitespace-nowrap pt-0.5">{tx("Needs a branch first")}</span>
               ) : (
                 <Link
                   href={step.action.href}

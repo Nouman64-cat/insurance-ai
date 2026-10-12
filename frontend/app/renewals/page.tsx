@@ -13,6 +13,7 @@ import {
 import { fmtCoverage } from "@/lib/mock-data";
 import { MetricCard } from "@/components/MetricCard";
 import { Pagination, usePagination } from "@/components/Pagination";
+import { tx } from "@/lib/i18n/tx";
 
 const URGENCY_CONFIG = {
   "90d": { label: "90 Days", color: "bg-slate-100 text-slate-600 border-slate-200", dot: "bg-slate-400", header: "bg-slate-50 border-slate-200" },
@@ -46,7 +47,7 @@ function RenewalCard({
       else await lapsePolicy(renewal.policy_id);
       action === "renew" ? onRenewed() : onLapsed();
     } catch (e: any) {
-      setError(e?.response?.data?.detail ?? "Action failed.");
+      setError(e?.response?.data?.detail ?? tx("Action failed."));
     } finally {
       setActionLoading(null);
     }
@@ -70,19 +71,19 @@ function RenewalCard({
 
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div className="bg-slate-50 rounded-lg px-3 py-2">
-            <p className="text-slate-400 text-[10px] font-medium">Sum Assured</p>
+            <p className="text-slate-400 text-[10px] font-medium">{tx("Sum Assured")}</p>
             <p className="font-bold text-slate-800 mt-0.5">{fmtCoverage(renewal.coverage_amount)}</p>
           </div>
           <div className="bg-slate-50 rounded-lg px-3 py-2">
-            <p className="text-slate-400 text-[10px] font-medium">Expiry</p>
+            <p className="text-slate-400 text-[10px] font-medium">{tx("Expiry")}</p>
             <p className="font-bold text-slate-800 mt-0.5">{renewal.expiry_date}</p>
           </div>
           <div className="bg-slate-50 rounded-lg px-3 py-2 col-span-2">
-            <p className="text-slate-400 text-[10px] font-medium">Days to Expiry</p>
+            <p className="text-slate-400 text-[10px] font-medium">{tx("Days to Expiry")}</p>
             <p className={`font-bold mt-0.5 ${renewal.days_to_expiry <= 15 ? "text-red-600" : renewal.days_to_expiry <= 30 ? "text-orange-600" : "text-slate-800"}`}>
-              {renewal.days_to_expiry <= 0 ? "Expired" : `${renewal.days_to_expiry} days`}
+              {renewal.days_to_expiry <= 0 ? tx("Expired") : tx("{0} days", { 0: renewal.days_to_expiry })}
               {renewal.status === "GracePeriod" && renewal.grace_period_end_date && (
-                <span className="text-red-500 text-[10px] font-normal ml-1">· Grace ends {renewal.grace_period_end_date}</span>
+                <span className="text-red-500 text-[10px] font-normal ml-1">{tx("· Grace ends")}{" "}{renewal.grace_period_end_date}</span>
               )}
             </p>
           </div>
@@ -92,9 +93,9 @@ function RenewalCard({
         <div className="flex items-center gap-1.5">
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-2.5 h-2.5"><polyline points="20 6 9 17 4 12" /></svg>
-            STP Auto-Rate
+            {tx("STP Auto-Rate")}
           </span>
-          <span className="text-[10px] text-slate-400">No claims — straight-through processing</span>
+          <span className="text-[10px] text-slate-400">{tx("No claims — straight-through processing")}</span>
         </div>
 
         {error && <p className="text-[10px] text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1">{error}</p>}
@@ -105,14 +106,14 @@ function RenewalCard({
             disabled={!!actionLoading}
             className="flex-1 px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"
           >
-            {actionLoading === "renew" ? "Binding…" : "Bind Renewal"}
+            {actionLoading === "renew" ? tx("Binding…") : tx("Bind Renewal")}
           </button>
           <button
             onClick={() => handle("lapse")}
             disabled={!!actionLoading}
             className="px-3 py-2 rounded-lg border border-red-200 text-red-600 text-xs font-semibold hover:bg-red-50 disabled:opacity-50 transition-colors"
           >
-            {actionLoading === "lapse" ? "…" : "Lapse"}
+            {actionLoading === "lapse" ? "…" : tx("Lapse")}
           </button>
         </div>
       </div>
@@ -180,9 +181,9 @@ export default function RenewalsPage() {
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full">
       {/* Header */}
       <div>
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight">Premium Renewals</h1>
+        <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Premium Renewals")}</h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          Lifecycle pipeline for policies approaching expiry — automated re-rating, grace period management, and lapse state machine.
+          {tx("Lifecycle pipeline for policies approaching expiry — automated re-rating, grace period management, and lapse state machine.")}
         </p>
       </div>
 
@@ -216,14 +217,14 @@ export default function RenewalsPage() {
                 onClick={() => setFilter(f)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${filter === f ? (cfg ? `${cfg.color} shadow-sm` : "bg-slate-900 text-white border-slate-900") : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"}`}
               >
-                {f === "all" ? `All (${count})` : `${cfg!.label} (${count})`}
+                {f === "all" ? tx("All ({0})", { 0: count }) : `${cfg!.label} (${count})`}
               </button>
             );
           })}
         </div>
         <input
           type="text"
-          placeholder="Search policy number or product…"
+          placeholder={tx("Search policy number or product…")}
           value={search}
           onChange={e => setSearch(e.target.value)}
           className="w-full max-w-xs px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
@@ -237,8 +238,8 @@ export default function RenewalsPage() {
           <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3">
             <span className="text-2xl">🔄</span>
           </div>
-          <p className="text-sm font-semibold text-slate-600">No policies in the renewal pipeline</p>
-          <p className="text-xs text-slate-400 mt-1.5 max-w-xs">Active policies approaching expiry will appear here 90 days out.</p>
+          <p className="text-sm font-semibold text-slate-600">{tx("No policies in the renewal pipeline")}</p>
+          <p className="text-xs text-slate-400 mt-1.5 max-w-xs">{tx("Active policies approaching expiry will appear here 90 days out.")}</p>
         </div>
       ) : (
         /* Pipeline columns */
@@ -255,11 +256,11 @@ export default function RenewalsPage() {
                 {/* Column header */}
                 <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${cfg.header} mb-3`}>
                   <span className={`w-2.5 h-2.5 rounded-full ${cfg.dot}`} />
-                  <h3 className="text-sm font-bold text-slate-700">{cfg.label} Out</h3>
-                  <span className="ml-auto text-xs font-semibold text-slate-500">{total} {total === 1 ? "policy" : "policies"}</span>
+                  <h3 className="text-sm font-bold text-slate-700">{cfg.label}{" "}{tx("Out")}</h3>
+                  <span className="ml-auto text-xs font-semibold text-slate-500">{total} {total === 1 ? tx("policy") : tx("policies")}</span>
                 </div>
                 {total === 0 ? (
-                  <p className="text-xs text-slate-400 pl-4">No policies in this window.</p>
+                  <p className="text-xs text-slate-400 pl-4">{tx("No policies in this window.")}</p>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {cards.map(r => (
@@ -276,7 +277,7 @@ export default function RenewalsPage() {
             );
           })}
         </div>
-        <Pagination pagination={pagination} noun="renewals" />
+        <Pagination pagination={pagination} noun={tx("renewals")} />
         </>
       )}
     </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { FilterDropdown, type FilterOption } from "./FilterDropdown";
+import { tx } from "@/lib/i18n/tx";
 
 const PinIcon = (
   <svg className="w-3.5 h-3.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -25,6 +26,6 @@ export function RegionFilter({ regions, value, onChange, className }: RegionFilt
     ...regions.map((r) => ({ value: r, label: r })),
   ];
   return (
-    <FilterDropdown value={value} options={options} onChange={onChange} className={className} placeholder="Region" />
+    <FilterDropdown value={value} options={options} onChange={onChange} className={className} placeholder={tx("Region")} />
   );
 }

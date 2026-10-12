@@ -1,4 +1,5 @@
 import { MetricCard } from "@/components/MetricCard";
+import { tx } from "@/lib/i18n/tx";
 
 const KPIS = [
   { title: "Avg Score Today", value: "82.3", subtitle: "across 127 evaluations", accent: "blue" as const },
@@ -49,10 +50,10 @@ export default function ScoreEnginePage() {
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">AI Score Engine</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Centralized intelligence engine consolidating risk, artifact, fraud, and persistency signals into a unified decision score.</p>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("AI Score Engine")}</h1>
+          <p className="text-sm text-slate-500 mt-0.5">{tx("Centralized intelligence engine consolidating risk, artifact, fraud, and persistency signals into a unified decision score.")}</p>
         </div>
-        <span className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold tracking-wide">insurance-ai v0.1.0-proto</span>
+        <span className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold tracking-wide">{tx("insurance-ai v0.1.0-proto")}</span>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -62,8 +63,8 @@ export default function ScoreEnginePage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-5 py-3 border-b border-slate-100">
-            <p className="text-sm font-semibold text-slate-700">Score Inputs</p>
-            <p className="text-xs text-slate-400 mt-0.5">9 weighted signals processed per evaluation</p>
+            <p className="text-sm font-semibold text-slate-700">{tx("Score Inputs")}</p>
+            <p className="text-xs text-slate-400 mt-0.5">{tx("9 weighted signals processed per evaluation")}</p>
           </div>
           <div className="p-5 space-y-4">
             {INPUTS.map(inp => (
@@ -92,7 +93,7 @@ export default function ScoreEnginePage() {
         <div className="space-y-5">
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="px-5 py-3 border-b border-slate-100">
-              <p className="text-sm font-semibold text-slate-700">Score Outputs</p>
+              <p className="text-sm font-semibold text-slate-700">{tx("Score Outputs")}</p>
             </div>
             <div className="p-4 grid grid-cols-2 gap-3">
               {OUTPUTS.map(o => (
@@ -109,7 +110,7 @@ export default function ScoreEnginePage() {
 
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="px-5 py-3 border-b border-slate-100">
-              <p className="text-sm font-semibold text-slate-700">Demo Scenario Scores</p>
+              <p className="text-sm font-semibold text-slate-700">{tx("Demo Scenario Scores")}</p>
             </div>
             <div className="divide-y divide-slate-50">
               {SCENARIOS.map(s => (

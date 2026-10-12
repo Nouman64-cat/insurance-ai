@@ -1,15 +1,10 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useMemo } from "react";
 import { LOCALE_COOKIE, Locale, localeDir } from "./config";
-import en from "./messages/en";
-import ur from "./messages/ur";
-import urText from "./messages/ur-text";
+import { setCurrentLocale, t, tx, type Vars } from "./tx";
 
-const MESSAGES = { en, ur };
 const ONE_YEAR_S = 365 * 24 * 60 * 60;
-
-type Vars = Record<string, string | number>;
 
 interface I18nValue {
   locale: Locale;
@@ -26,21 +21,6 @@ interface I18nValue {
 
 const I18nContext = createContext<I18nValue | null>(null);
 
-function lookup(messages: unknown, key: string): string | undefined {
-  const value = key.split(".").reduce<any>((node, part) => (node == null ? undefined : node[part]), messages);
-  return typeof value === "string" ? value : undefined;
-}
-
-function fill(text: string, vars?: Vars): string {
-  return vars ? text.replace(/\{(\w+)\}/g, (match, name) => (name in vars ? String(vars[name]) : match)) : text;
-}
-
-/** Each paragraph takes its direction from its first letter (globals.css), so an Urdu string that opens with a
- *  Latin word ("LLM کنفیگریشن") would be laid out left-to-right: a leading right-to-left mark prevents that. */
-function marked(locale: Locale, text: string): string {
-  return localeDir(locale) === "rtl" ? `\u200F${text}` : text;
-}
-
 export function I18nProvider({
   initialLocale,
   cookieDomain,
@@ -51,28 +31,22 @@ export function I18nProvider({
   cookieDomain?: string;
   children: React.ReactNode;
 }) {
-  const [locale, setLocaleState] = useState<Locale>(initialLocale);
+  // Set while rendering, before any page below renders, so the plain `tx()` / `t()` functions see it too.
+  setCurrentLocale(initialLocale);
 
   const setLocale = useCallback((next: Locale) => {
-    setLocaleState(next);
+    if (next === initialLocale) return;
     document.cookie =
       `${LOCALE_COOKIE}=${next}; path=/; max-age=${ONE_YEAR_S}; samesite=lax` + (cookieDomain ? `; domain=${cookieDomain}` : "");
-    document.documentElement.lang = next;
-    document.documentElement.dir = localeDir(next);
-  }, [cookieDomain]);
+    // Reload rather than re-render: every page, toast and cached label is drawn again in the new language, and the
+    // server sends the page with the right direction (lang/dir) from the first paint.
+    window.location.reload();
+  }, [cookieDomain, initialLocale]);
 
-  const dir = localeDir(locale);
-  const t = useCallback((key: string, vars?: Vars) => (
-    marked(locale, fill(lookup(MESSAGES[locale], key) ?? lookup(en, key) ?? key, vars))
-  ), [locale]);
-
-  const tx = useCallback((text: string, vars?: Vars) => {
-    const translated = locale === "ur" ? urText[text] : undefined;
-    // Wording with no translation yet is left exactly as it is (no direction mark), so it still reads as English.
-    return translated === undefined ? fill(text, vars) : marked(locale, fill(translated, vars));
-  }, [locale]);
-
-  const value = useMemo(() => ({ locale, dir, setLocale, t, tx }), [locale, dir, setLocale, t, tx]);
+  const value = useMemo(
+    () => ({ locale: initialLocale, dir: localeDir(initialLocale), setLocale, t, tx }),
+    [initialLocale, setLocale],
+  );
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 

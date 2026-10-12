@@ -5,6 +5,7 @@ import { PillarCard } from "./shared";
 import type { PolicyListItem } from "@/app/services/policies";
 import type { Claim } from "@/app/services/claims";
 import type { CommissionLedgerEntry } from "@/app/services/commissions";
+import { tx } from "@/lib/i18n/tx";
 
 interface TimeTrendChartCardProps {
   policies: PolicyListItem[];
@@ -239,7 +240,7 @@ export function TimeTrendChartCard({ policies, claims, ledger, title }: TimeTren
           <path strokeLinecap="round" strokeLinejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
         </svg>
       }
-      title={title || "Financial Dynamics & Trends"}
+      title={title || tx("Financial Dynamics & Trends")}
       barClass="bg-blue-600"
       iconBg="bg-blue-50"
       iconColor="text-blue-600"
@@ -301,27 +302,27 @@ export function TimeTrendChartCard({ policies, claims, ledger, title }: TimeTren
               {viewMetric === "financials" ? (
                 <>
                   <span className="flex items-center gap-1.5 font-bold text-slate-700">
-                    <span className="w-3 h-1 rounded-full bg-blue-600 inline-block shadow-xs"></span> GWP Premium
+                    <span className="w-3 h-1 rounded-full bg-blue-600 inline-block shadow-xs"></span>{" "}{tx("GWP Premium")}
                   </span>
                   <span className="flex items-center gap-1.5 font-bold text-slate-700">
-                    <span className="w-3 h-1 rounded-full bg-rose-500 inline-block shadow-xs"></span> Claims Paid
+                    <span className="w-3 h-1 rounded-full bg-rose-500 inline-block shadow-xs"></span>{" "}{tx("Claims Paid")}
                   </span>
                   <span className="flex items-center gap-1.5 font-bold text-slate-700">
-                    <span className="w-3 h-1 rounded-full bg-amber-400 inline-block shadow-xs"></span> Commissions
+                    <span className="w-3 h-1 rounded-full bg-amber-400 inline-block shadow-xs"></span>{" "}{tx("Commissions")}
                   </span>
                 </>
               ) : (
                 <>
                   <span className="flex items-center gap-1.5 font-bold text-slate-700">
-                    <span className="w-3 h-1 rounded-full bg-blue-500 inline-block shadow-xs"></span> Policies Issued
+                    <span className="w-3 h-1 rounded-full bg-blue-500 inline-block shadow-xs"></span>{" "}{tx("Policies Issued")}
                   </span>
                   <span className="flex items-center gap-1.5 font-bold text-slate-700">
-                    <span className="w-3 h-1 rounded-full bg-purple-500 inline-block shadow-xs"></span> Claims Filed
+                    <span className="w-3 h-1 rounded-full bg-purple-500 inline-block shadow-xs"></span>{" "}{tx("Claims Filed")}
                   </span>
                 </>
               )}
             </div>
-            <span className="text-[10px] text-slate-400 font-medium italic">Hover node points for detailed dynamics</span>
+            <span className="text-[10px] text-slate-400 font-medium italic">{tx("Hover node points for detailed dynamics")}</span>
           </div>
 
           {/* SVG Canvas Box */}
@@ -580,7 +581,7 @@ export function TimeTrendChartCard({ policies, claims, ledger, title }: TimeTren
           {hoveredPoint && (
             <div className="absolute top-12 left-1/2 -translate-x-1/2 bg-slate-900/95 text-white p-3.5 rounded-2xl shadow-2xl backdrop-blur-md border border-slate-700 pointer-events-none z-30 min-w-[250px] animate-in fade-in zoom-in-95 duration-150">
               <div className="flex justify-between items-center border-b border-slate-700 pb-1.5 mb-2">
-                <span className="font-extrabold text-blue-300 text-xs">{hoveredPoint.label} Dynamics</span>
+                <span className="font-extrabold text-blue-300 text-xs">{hoveredPoint.label}{" "}{tx("Dynamics")}</span>
                 <span className="text-[10px] bg-blue-900/80 px-2 py-0.5 rounded-full text-blue-200 capitalize font-semibold">
                   {granularity}
                 </span>
@@ -588,24 +589,24 @@ export function TimeTrendChartCard({ policies, claims, ledger, title }: TimeTren
               <div className="space-y-1.5 text-[11px]">
                 <div className="flex justify-between items-center">
                   <span className="text-slate-400 flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block"></span> GWP Premium:
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block"></span>{" "}{tx("GWP Premium:")}
                   </span>
                   <span className="font-mono font-extrabold text-blue-400">{fmtPKR(hoveredPoint.premium)}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-slate-400 flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span> Claims Incurred:
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span>{" "}{tx("Claims Incurred:")}
                   </span>
                   <span className="font-mono font-extrabold text-rose-400">{fmtPKR(hoveredPoint.claims)}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-slate-400 flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span> Commissions Paid:
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span>{" "}{tx("Commissions Paid:")}
                   </span>
                   <span className="font-mono font-extrabold text-amber-400">{fmtPKR(hoveredPoint.commissions)}</span>
                 </div>
                 <div className="flex justify-between items-center pt-1.5 border-t border-slate-800">
-                  <span className="text-slate-300 font-semibold">Net Operating Surplus:</span>
+                  <span className="text-slate-300 font-semibold">{tx("Net Operating Surplus:")}</span>
                   <span
                     className={`font-mono font-extrabold ${
                       hoveredPoint.netMargin >= 0 ? "text-emerald-400" : "text-rose-400"
@@ -615,8 +616,8 @@ export function TimeTrendChartCard({ policies, claims, ledger, title }: TimeTren
                   </span>
                 </div>
                 <div className="flex justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-800/60">
-                  <span>Policies Issued: <strong className="text-white">{hoveredPoint.policyCount}</strong></span>
-                  <span>Claims Filed: <strong className="text-white">{hoveredPoint.claimCount}</strong></span>
+                  <span>{tx("Policies Issued:")}{" "}<strong className="text-white">{hoveredPoint.policyCount}</strong></span>
+                  <span>{tx("Claims Filed:")}{" "}<strong className="text-white">{hoveredPoint.claimCount}</strong></span>
                 </div>
               </div>
             </div>

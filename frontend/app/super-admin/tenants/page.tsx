@@ -12,6 +12,7 @@ import TenantSetupChecklist, {
   setupProgress,
   type TenantSetupStatus,
 } from "@/components/TenantSetupChecklist";
+import { tx } from "@/lib/i18n/tx";
 
 interface Tenant {
   id: string;
@@ -96,7 +97,7 @@ export default function TenantManagementPage() {
   // Demo mode only: load the standard plan catalog (seeds/insurance_plans_seed.py)
   // into a tenant. Idempotent server-side — plans the tenant already has are skipped.
   const handleSeedPlans = async (tenant: Tenant) => {
-    if (!confirm(`Add the default insurance plan catalog to "${tenant.name}"? Plans it already has are left untouched.`)) {
+    if (!confirm(tx("Add the default insurance plan catalog to \"{0}\"? Plans it already has are left untouched.", { 0: tenant.name }))) {
       return;
     }
     setError("");
@@ -107,12 +108,12 @@ export default function TenantManagementPage() {
       const added = resp.data.length;
       setSuccess(
         added > 0
-          ? `Added ${added} insurance plan${added === 1 ? "" : "s"} to "${tenant.name}".`
-          : `"${tenant.name}" already has every default insurance plan — nothing to add.`
+          ? tx("Added {0} insurance plan{1} to \"{2}\".", { 0: added, 1: added === 1 ? "" : "s", 2: tenant.name })
+          : tx("\"{0}\" already has every default insurance plan — nothing to add.", { 0: tenant.name })
       );
       fetchTenants();
     } catch (err: any) {
-      setError(err.message ?? "Failed to seed insurance plans.");
+      setError(err.message ?? tx("Failed to seed insurance plans."));
     } finally {
       setSeedingId(null);
     }
@@ -139,7 +140,7 @@ export default function TenantManagementPage() {
       setTenants(resp.data);
       setSetupStatus(Object.fromEntries(statusResp.data.map((st) => [st.tenant_id, st])));
     } catch (err: any) {
-      setError(err.message ?? "Failed to load tenants.");
+      setError(err.message ?? tx("Failed to load tenants."));
     } finally {
       setLoading(false);
     }
@@ -175,7 +176,7 @@ export default function TenantManagementPage() {
       setError(
         Array.isArray(detail)
           ? detail.map((d: any) => d.msg).join(", ")
-          : detail ?? err.message ?? "Failed to create tenant."
+          : detail ?? err.message ?? tx("Failed to create tenant.")
       );
     } finally {
       setFormLoading(false);
@@ -219,7 +220,7 @@ export default function TenantManagementPage() {
         payload[key] = value.trim() === "" ? null : value;
       }
       await api.patch(`/tenants/${editingTenant.id}`, payload);
-      setSuccess(`Tenant "${editName}" updated successfully!`);
+      setSuccess(tx("Tenant \"{0}\" updated successfully!", { 0: editName }));
       setShowEditModal(false);
       fetchTenants();
     } catch (err: any) {
@@ -227,7 +228,7 @@ export default function TenantManagementPage() {
       setError(
         Array.isArray(detail)
           ? detail.map((d: any) => d.msg).join(", ")
-          : detail ?? err.message ?? "Failed to update tenant."
+          : detail ?? err.message ?? tx("Failed to update tenant.")
       );
     } finally {
       setFormLoading(false);
@@ -246,7 +247,7 @@ export default function TenantManagementPage() {
     e.preventDefault();
     if (!deletingTenant) return;
     if (deleteConfirmationCode !== deletingTenant.code) {
-      setError("Confirmation code does not match.");
+      setError(tx("Confirmation code does not match."));
       return;
     }
     setError("");
@@ -255,7 +256,7 @@ export default function TenantManagementPage() {
 
     try {
       await api.delete(`/tenants/${deletingTenant.id}`);
-      setSuccess(`Tenant "${deletingTenant.name}" deleted successfully!`);
+      setSuccess(tx("Tenant \"{0}\" deleted successfully!", { 0: deletingTenant.name }));
       setShowDeleteModal(false);
       fetchTenants();
     } catch (err: any) {
@@ -263,7 +264,7 @@ export default function TenantManagementPage() {
       setError(
         Array.isArray(detail)
           ? detail.map((d: any) => d.msg).join(", ")
-          : detail ?? err.message ?? "Failed to delete tenant."
+          : detail ?? err.message ?? tx("Failed to delete tenant.")
       );
     } finally {
       setFormLoading(false);
@@ -282,12 +283,12 @@ export default function TenantManagementPage() {
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
           </div>
-          <h1 className="text-xl font-bold text-white mb-2">Access Denied</h1>
+          <h1 className="text-xl font-bold text-white mb-2">{tx("Access Denied")}</h1>
           <p className="text-slate-400 text-sm mb-6">
-            You do not have SuperAdmin privileges to access the Platform console.
+            {tx("You do not have SuperAdmin privileges to access the Platform console.")}
           </p>
           <a href="/" className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm px-5 py-2.5 rounded-lg transition-all">
-            Return to Dashboard
+            {tx("Return to Dashboard")}
           </a>
         </div>
       </div>
@@ -300,9 +301,9 @@ export default function TenantManagementPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Tenant Management</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Tenant Management")}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Create and review tenant organizations on the platform.
+            {tx("Create and review tenant organizations on the platform.")}
           </p>
         </div>
         <button
@@ -312,7 +313,7 @@ export default function TenantManagementPage() {
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="w-4 h-4">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
           </svg>
-          Add New Tenant
+          {tx("Add New Tenant")}
         </button>
       </div>
 
@@ -331,8 +332,8 @@ export default function TenantManagementPage() {
       {/* Main content table card */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-          <p className="text-sm font-semibold text-slate-700">All Tenants</p>
-          <span className="text-xs text-slate-400 font-medium">Total: {tenants.length}</span>
+          <p className="text-sm font-semibold text-slate-700">{tx("All Tenants")}</p>
+          <span className="text-xs text-slate-400 font-medium">{tx("Total:")}{" "}{tenants.length}</span>
         </div>
 
         {loading ? (
@@ -341,16 +342,16 @@ export default function TenantManagementPage() {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
             </svg>
-            <span className="text-xs text-slate-400">Fetching tenants...</span>
+            <span className="text-xs text-slate-400">{tx("Fetching tenants...")}</span>
           </div>
         ) : tenants.length === 0 ? (
           <div className="py-20 text-center text-slate-400">
-            <p className="text-sm">No tenants registered on the platform.</p>
+            <p className="text-sm">{tx("No tenants registered on the platform.")}</p>
             <button
               onClick={handleOpenCreateModal}
               className="mt-3 text-xs text-blue-600 font-semibold hover:underline"
             >
-              Create the first tenant
+              {tx("Create the first tenant")}
             </button>
           </div>
         ) : (
@@ -359,13 +360,13 @@ export default function TenantManagementPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  <th className="px-5 py-3.5 text-left">Tenant Name</th>
-                  <th className="px-5 py-3.5 text-left">Tenant ID</th>
-                  <th className="px-5 py-3.5 text-left">Code</th>
-                  <th className="px-5 py-3.5 text-center">Status</th>
-                  <th className="px-5 py-3.5 text-left">Setup</th>
-                  <th className="px-5 py-3.5 text-left">Created Date</th>
-                  <th className="px-5 py-3.5 text-right">Actions</th>
+                  <th className="px-5 py-3.5 text-left">{tx("Tenant Name")}</th>
+                  <th className="px-5 py-3.5 text-left">{tx("Tenant ID")}</th>
+                  <th className="px-5 py-3.5 text-left">{tx("Code")}</th>
+                  <th className="px-5 py-3.5 text-center">{tx("Status")}</th>
+                  <th className="px-5 py-3.5 text-left">{tx("Setup")}</th>
+                  <th className="px-5 py-3.5 text-left">{tx("Created Date")}</th>
+                  <th className="px-5 py-3.5 text-right">{tx("Actions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -383,7 +384,7 @@ export default function TenantManagementPage() {
                         <button
                           onClick={() => handleCopyId(tenant.id)}
                           className="text-slate-400 hover:text-blue-600 transition-colors"
-                          title="Copy full tenant ID"
+                          title={tx("Copy full tenant ID")}
                         >
                           {copiedId === tenant.id ? (
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className="w-4 h-4 text-blue-600">
@@ -410,7 +411,7 @@ export default function TenantManagementPage() {
                             : "bg-slate-100 text-slate-700 border-slate-200"
                         }`}
                       >
-                        {tenant.is_active ? "Active" : "Inactive"}
+                        {tenant.is_active ? tx("Active") : tx("Inactive")}
                       </span>
                     </td>
                     <td className="px-5 py-3.5">
@@ -418,13 +419,13 @@ export default function TenantManagementPage() {
                         <button
                           onClick={() => setSetupTenant(tenant)}
                           className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold border bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 transition-colors"
-                          title="Show remaining setup steps"
+                          title={tx("Show remaining setup steps")}
                         >
                           {setupProgress(setupStatus[tenant.id])}/3 · {nextSetupStep(tenant.id, setupStatus[tenant.id])!.label}
                         </button>
                       ) : (
                         <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200">
-                          Ready
+                          {tx("Ready")}
                         </span>
                       )}
                     </td>
@@ -441,10 +442,10 @@ export default function TenantManagementPage() {
                           <button
                             onClick={() => handleSeedPlans(tenant)}
                             disabled={seedingId === tenant.id}
-                            title={`${setupStatus[tenant.id]?.plan_count ?? 0} insurance plans — add the default catalog (demo only)`}
+                            title={tx("{0} insurance plans — add the default catalog (demo only)", { 0: setupStatus[tenant.id]?.plan_count ?? 0 })}
                             className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-violet-700 bg-violet-50 border border-dashed border-violet-300 rounded-md hover:bg-violet-100 transition-colors whitespace-nowrap disabled:opacity-60"
                           >
-                            {seedingId === tenant.id ? "Seeding…" : "Seed plans"}
+                            {seedingId === tenant.id ? tx("Seeding…") : tx("Seed plans")}
                             <span className="text-violet-500/80">· {setupStatus[tenant.id]?.plan_count ?? 0}</span>
                           </button>
                         )}
@@ -452,18 +453,18 @@ export default function TenantManagementPage() {
                           onClick={() => router.push(`/super-admin/admins?tenantId=${tenant.id}`)}
                           className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors mr-2"
                         >
-                          Add Admin
+                          {tx("Add Admin")}
                         </button>
                         <button
                           onClick={() => router.push(`/super-admin/branches?tenantId=${tenant.id}`)}
                           className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors mr-2"
                         >
-                          Branches
+                          {tx("Branches")}
                         </button>
                         <button
                           onClick={() => handleOpenEditModal(tenant)}
                           className="text-slate-400 hover:text-blue-600 transition-colors"
-                          title="Edit Tenant"
+                          title={tx("Edit Tenant")}
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-4 h-4">
                             <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.83 20.082a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
@@ -472,7 +473,7 @@ export default function TenantManagementPage() {
                         <button
                           onClick={() => handleOpenDeleteModal(tenant)}
                           className="text-slate-400 hover:text-red-600 transition-colors"
-                          title="Delete Tenant"
+                          title={tx("Delete Tenant")}
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-4 h-4">
                             <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
@@ -485,7 +486,7 @@ export default function TenantManagementPage() {
               </tbody>
             </table>
           </div>
-          <Pagination pagination={pagination} noun="tenants" inline />
+          <Pagination pagination={pagination} noun={tx("tenants")} inline />
           </>
         )}
       </div>
@@ -495,7 +496,7 @@ export default function TenantManagementPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 space-y-4 my-8">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900">Add New Tenant</h3>
+              <h3 className="text-base font-bold text-slate-900">{tx("Add New Tenant")}</h3>
               <DemoFillButton
                 className="ml-auto mr-3"
                 onFill={() => {
@@ -517,95 +518,95 @@ export default function TenantManagementPage() {
 
             <form onSubmit={handleCreateTenant} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Tenant Name *</label>
+                <label className="block text-xs font-semibold text-slate-600">{tx("Tenant Name *")}</label>
                 <input
                   type="text"
                   required
                   value={tenantName}
                   onChange={(e) => setTenantName(e.target.value)}
-                  placeholder="e.g. Adamjee Life Assurance"
+                  placeholder={tx("e.g. Adamjee Life Assurance")}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Tenant Code *</label>
+                <label className="block text-xs font-semibold text-slate-600">{tx("Tenant Code *")}</label>
                 <input
                   type="text"
                   required
                   value={tenantCode}
                   onChange={(e) => setTenantCode(e.target.value.toUpperCase())}
-                  placeholder="e.g. ADJ"
+                  placeholder={tx("e.g. ADJ")}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 font-mono placeholder:text-slate-400 placeholder:font-sans focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                 />
-                <p className="text-[11px] text-slate-400">A short, unique identifier for this tenant. Cannot be changed later.</p>
+                <p className="text-[11px] text-slate-400">{tx("A short, unique identifier for this tenant. Cannot be changed later.")}</p>
               </div>
 
               <div className="pt-2 border-t border-slate-100">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide pt-3 pb-1">Company Details</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide pt-3 pb-1">{tx("Company Details")}</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Registration Number</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Registration Number")}</label>
                     <input
                       type="text"
                       value={createProfile.registration_number}
                       onChange={(e) => setCreateProfile((p) => ({ ...p, registration_number: e.target.value }))}
-                      placeholder="SECP / NTN No."
+                      placeholder={tx("SECP / NTN No.")}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">License Number</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("License Number")}</label>
                     <input
                       type="text"
                       value={createProfile.license_number}
                       onChange={(e) => setCreateProfile((p) => ({ ...p, license_number: e.target.value }))}
-                      placeholder="SECP Insurance License No."
+                      placeholder={tx("SECP Insurance License No.")}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   </div>
                   <div className="col-span-2 space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Head Office Address</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Head Office Address")}</label>
                     <input
                       type="text"
                       value={createProfile.head_office_address}
                       onChange={(e) => setCreateProfile((p) => ({ ...p, head_office_address: e.target.value }))}
-                      placeholder="Street address"
+                      placeholder={tx("Street address")}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">City</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("City")}</label>
                     <input
                       type="text"
                       value={createProfile.city}
                       onChange={(e) => setCreateProfile((p) => ({ ...p, city: e.target.value }))}
-                      placeholder="e.g. Karachi"
+                      placeholder={tx("e.g. Karachi")}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Province</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Province")}</label>
                     <input
                       type="text"
                       value={createProfile.province}
                       onChange={(e) => setCreateProfile((p) => ({ ...p, province: e.target.value }))}
-                      placeholder="e.g. Sindh"
+                      placeholder={tx("e.g. Sindh")}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Website</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Website")}</label>
                     <input
                       type="text"
                       value={createProfile.website}
                       onChange={(e) => setCreateProfile((p) => ({ ...p, website: e.target.value }))}
-                      placeholder="https://example.com"
+                      placeholder={tx("https://example.com")}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Established Date</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Established Date")}</label>
                     <input
                       type="date"
                       value={createProfile.established_date}
@@ -617,20 +618,20 @@ export default function TenantManagementPage() {
               </div>
 
               <div className="pt-2 border-t border-slate-100">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide pt-3 pb-1">Contact</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide pt-3 pb-1">{tx("Contact")}</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Contact Person</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Contact Person")}</label>
                     <input
                       type="text"
                       value={createProfile.contact_person}
                       onChange={(e) => setCreateProfile((p) => ({ ...p, contact_person: e.target.value }))}
-                      placeholder="Full name"
+                      placeholder={tx("Full name")}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Contact Phone</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Contact Phone")}</label>
                     <input
                       type="text"
                       value={createProfile.contact_phone}
@@ -640,12 +641,12 @@ export default function TenantManagementPage() {
                     />
                   </div>
                   <div className="col-span-2 space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Contact Email</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Contact Email")}</label>
                     <input
                       type="email"
                       value={createProfile.contact_email}
                       onChange={(e) => setCreateProfile((p) => ({ ...p, contact_email: e.target.value }))}
-                      placeholder="contact@example.com"
+                      placeholder={tx("contact@example.com")}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   </div>
@@ -658,7 +659,7 @@ export default function TenantManagementPage() {
                   onClick={() => setShowCreateModal(false)}
                   className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
                 >
-                  Cancel
+                  {tx("Cancel")}
                 </button>
                 <button
                   type="submit"
@@ -671,7 +672,7 @@ export default function TenantManagementPage() {
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
                   )}
-                  Create Tenant
+                  {tx("Create Tenant")}
                 </button>
               </div>
             </form>
@@ -685,9 +686,9 @@ export default function TenantManagementPage() {
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-4 my-8">
             <div className="flex justify-between items-start border-b border-slate-100 pb-3">
               <div>
-                <h3 className="text-base font-bold text-slate-900">Set up {setupTenant.name}</h3>
+                <h3 className="text-base font-bold text-slate-900">{tx("Set up")}{" "}{setupTenant.name}</h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  A tenant can be used once it has a branch and an Admin.
+                  {tx("A tenant can be used once it has a branch and an Admin.")}
                 </p>
               </div>
               <button
@@ -710,7 +711,7 @@ export default function TenantManagementPage() {
                 onClick={() => setSetupTenant(null)}
                 className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
               >
-                Finish later
+                {tx("Finish later")}
               </button>
             </div>
           </div>
@@ -722,7 +723,7 @@ export default function TenantManagementPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 space-y-4 my-8">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900">Edit Tenant</h3>
+              <h3 className="text-base font-bold text-slate-900">{tx("Edit Tenant")}</h3>
               <button
                 onClick={() => setShowEditModal(false)}
                 className="text-slate-400 hover:text-slate-600 transition-colors"
@@ -735,26 +736,26 @@ export default function TenantManagementPage() {
 
             <form onSubmit={handleEditTenant} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Tenant Name *</label>
+                <label className="block text-xs font-semibold text-slate-600">{tx("Tenant Name *")}</label>
                 <input
                   type="text"
                   required
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  placeholder="e.g. Adamjee Life Assurance"
+                  placeholder={tx("e.g. Adamjee Life Assurance")}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Tenant Code</label>
+                <label className="block text-xs font-semibold text-slate-600">{tx("Tenant Code")}</label>
                 <input
                   type="text"
                   disabled
                   value={editingTenant.code}
                   className="w-full bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-400 font-mono focus:outline-none cursor-not-allowed"
                 />
-                <p className="text-[11px] text-slate-400">Tenant code cannot be modified.</p>
+                <p className="text-[11px] text-slate-400">{tx("Tenant code cannot be modified.")}</p>
               </div>
 
               <div className="flex items-center gap-2 pt-1.5">
@@ -766,75 +767,75 @@ export default function TenantManagementPage() {
                   className="rounded border-slate-300 text-blue-600 focus:ring-blue-500/20 h-4 w-4"
                 />
                 <label htmlFor="editActive" className="text-xs font-semibold text-slate-700 select-none">
-                  Tenant Active Status
+                  {tx("Tenant Active Status")}
                 </label>
               </div>
 
               <div className="pt-2 border-t border-slate-100">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide pt-3 pb-1">Company Details</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide pt-3 pb-1">{tx("Company Details")}</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Registration Number</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Registration Number")}</label>
                     <input
                       type="text"
                       value={editProfile.registration_number}
                       onChange={(e) => setEditProfile((p) => ({ ...p, registration_number: e.target.value }))}
-                      placeholder="SECP / NTN No."
+                      placeholder={tx("SECP / NTN No.")}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">License Number</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("License Number")}</label>
                     <input
                       type="text"
                       value={editProfile.license_number}
                       onChange={(e) => setEditProfile((p) => ({ ...p, license_number: e.target.value }))}
-                      placeholder="SECP Insurance License No."
+                      placeholder={tx("SECP Insurance License No.")}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   </div>
                   <div className="col-span-2 space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Head Office Address</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Head Office Address")}</label>
                     <input
                       type="text"
                       value={editProfile.head_office_address}
                       onChange={(e) => setEditProfile((p) => ({ ...p, head_office_address: e.target.value }))}
-                      placeholder="Street address"
+                      placeholder={tx("Street address")}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">City</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("City")}</label>
                     <input
                       type="text"
                       value={editProfile.city}
                       onChange={(e) => setEditProfile((p) => ({ ...p, city: e.target.value }))}
-                      placeholder="e.g. Karachi"
+                      placeholder={tx("e.g. Karachi")}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Province</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Province")}</label>
                     <input
                       type="text"
                       value={editProfile.province}
                       onChange={(e) => setEditProfile((p) => ({ ...p, province: e.target.value }))}
-                      placeholder="e.g. Sindh"
+                      placeholder={tx("e.g. Sindh")}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Website</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Website")}</label>
                     <input
                       type="text"
                       value={editProfile.website}
                       onChange={(e) => setEditProfile((p) => ({ ...p, website: e.target.value }))}
-                      placeholder="https://example.com"
+                      placeholder={tx("https://example.com")}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Established Date</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Established Date")}</label>
                     <input
                       type="date"
                       value={editProfile.established_date}
@@ -846,20 +847,20 @@ export default function TenantManagementPage() {
               </div>
 
               <div className="pt-2 border-t border-slate-100">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide pt-3 pb-1">Contact</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide pt-3 pb-1">{tx("Contact")}</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Contact Person</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Contact Person")}</label>
                     <input
                       type="text"
                       value={editProfile.contact_person}
                       onChange={(e) => setEditProfile((p) => ({ ...p, contact_person: e.target.value }))}
-                      placeholder="Full name"
+                      placeholder={tx("Full name")}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Contact Phone</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Contact Phone")}</label>
                     <input
                       type="text"
                       value={editProfile.contact_phone}
@@ -869,12 +870,12 @@ export default function TenantManagementPage() {
                     />
                   </div>
                   <div className="col-span-2 space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-600">Contact Email</label>
+                    <label className="block text-xs font-semibold text-slate-600">{tx("Contact Email")}</label>
                     <input
                       type="email"
                       value={editProfile.contact_email}
                       onChange={(e) => setEditProfile((p) => ({ ...p, contact_email: e.target.value }))}
-                      placeholder="contact@example.com"
+                      placeholder={tx("contact@example.com")}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   </div>
@@ -887,7 +888,7 @@ export default function TenantManagementPage() {
                   onClick={() => setShowEditModal(false)}
                   className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
                 >
-                  Cancel
+                  {tx("Cancel")}
                 </button>
                 <button
                   type="submit"
@@ -900,7 +901,7 @@ export default function TenantManagementPage() {
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
                   )}
-                  Save Changes
+                  {tx("Save Changes")}
                 </button>
               </div>
             </form>
@@ -913,7 +914,7 @@ export default function TenantManagementPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 my-8">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-red-600">Delete Tenant</h3>
+              <h3 className="text-base font-bold text-red-600">{tx("Delete Tenant")}</h3>
               <button
                 onClick={() => setShowDeleteModal(false)}
                 className="text-slate-400 hover:text-slate-600 transition-colors"
@@ -926,13 +927,13 @@ export default function TenantManagementPage() {
 
             <form onSubmit={handleDeleteTenant} className="space-y-4">
               <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 text-xs text-red-700 leading-relaxed space-y-2">
-                <p className="font-bold">⚠️ Warning: This is a permanent action!</p>
-                <p>Deleting tenant <strong>"{deletingTenant.name}"</strong> ({deletingTenant.code}) will perform a cascade deletion of all associated users, cases, policies, plans, and customer data.</p>
+                <p className="font-bold">{tx("⚠️ Warning: This is a permanent action!")}</p>
+                <p>{tx("Deleting tenant")}{" "}<strong>"{deletingTenant.name}"</strong> ({deletingTenant.code}{tx(") will perform a cascade deletion of all associated users, cases, policies, plans, and customer data.")}</p>
               </div>
 
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-slate-600">
-                  To confirm, type the tenant code <strong>"{deletingTenant.code}"</strong> below:
+                  {tx("To confirm, type the tenant code")}{" "}<strong>"{deletingTenant.code}"</strong>{" "}{tx("below:")}
                 </label>
                 <input
                   type="text"
@@ -950,7 +951,7 @@ export default function TenantManagementPage() {
                   onClick={() => setShowDeleteModal(false)}
                   className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
                 >
-                  Cancel
+                  {tx("Cancel")}
                 </button>
                 <button
                   type="submit"
@@ -963,7 +964,7 @@ export default function TenantManagementPage() {
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
                   )}
-                  Permanently Delete
+                  {tx("Permanently Delete")}
                 </button>
               </div>
             </form>

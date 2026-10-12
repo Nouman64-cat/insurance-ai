@@ -14,6 +14,7 @@ import {
   ReleaseStageCode,
   StageStatus,
 } from "../../app/services/commissions";
+import { tx } from "@/lib/i18n/tx";
 
 export const fmtPKR = (val: number) =>
   new Intl.NumberFormat("en-PK", { style: "currency", currency: "PKR", maximumFractionDigits: 0 }).format(val);
@@ -211,7 +212,7 @@ export function BasisLabel({ basis, amount }: { basis: CommissionBasis; amount: 
 
 /** Licence state with an at-a-glance colour: expired licences block payout. */
 export function LicenceCell({ licenceNo, expiry }: { licenceNo: string | null; expiry: string | null }) {
-  if (!licenceNo) return <span className="text-[10px] text-slate-400">Not licensed / not required</span>;
+  if (!licenceNo) return <span className="text-[10px] text-slate-400">{tx("Not licensed / not required")}</span>;
 
   const today = new Date().toISOString().slice(0, 10);
   const expired = !!expiry && expiry < today;
@@ -224,7 +225,7 @@ export function LicenceCell({ licenceNo, expiry }: { licenceNo: string | null; e
       <p
         className={`text-[10px] font-semibold ${expired ? "text-rose-600" : soon ? "text-amber-600" : "text-slate-400"}`}
       >
-        {expired ? `Expired ${expiry}` : soon ? `Expires ${expiry}` : `Valid to ${expiry}`}
+        {expired ? tx("Expired {0}", { 0: expiry }) : soon ? tx("Expires {0}", { 0: expiry }) : tx("Valid to {0}", { 0: expiry })}
       </p>
     </div>
   );
@@ -271,7 +272,7 @@ export function GatingList({
 }: {
   checks: { code: string; label: string; passed: boolean; detail: string }[];
 }) {
-  if (checks.length === 0) return <p className="text-[10px] text-slate-400">No gating checks recorded.</p>;
+  if (checks.length === 0) return <p className="text-[10px] text-slate-400">{tx("No gating checks recorded.")}</p>;
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
       {checks.map((c) => {
@@ -315,7 +316,7 @@ export function GatingList({
                       : "bg-rose-100 text-rose-800"
                   }`}
                 >
-                  {c.passed ? "Met" : isPending ? "Pending" : "Blocked"}
+                  {c.passed ? tx("Met") : isPending ? tx("Pending") : tx("Blocked")}
                 </span>
               </div>
               <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">{c.detail}</p>
@@ -359,7 +360,7 @@ export function StageTimeline({
   onRelease?: (code: ReleaseStageCode) => void;
   compact?: boolean;
 }) {
-  if (stages.length === 0) return <p className="text-[10px] text-slate-400">No release schedule on this entry.</p>;
+  if (stages.length === 0) return <p className="text-[10px] text-slate-400">{tx("No release schedule on this entry.")}</p>;
 
   const totalAmount = stages.reduce((acc, s) => acc + (s.netAmount || 0), 0);
 
@@ -411,10 +412,10 @@ export function StageTimeline({
       <div className="bg-slate-50/80 p-2.5 rounded-xl border border-slate-200/80 space-y-2">
         <div className="flex items-center justify-between text-xs">
           <span className="font-extrabold text-slate-800 uppercase tracking-wider text-[10px]">
-            Tranche Milestone Pipeline
+            {tx("Tranche Milestone Pipeline")}
           </span>
           <span className="font-mono text-[11px] text-slate-600">
-            Total Net Payout: <span className="text-blue-700 font-extrabold text-xs">{fmtPKR(totalAmount)}</span> ({stages.length} Tranches)
+            {tx("Total Net Payout:")}{" "}<span className="text-blue-700 font-extrabold text-xs">{fmtPKR(totalAmount)}</span> ({stages.length}{" "}{tx("Tranches)")}
           </span>
         </div>
         <div className="flex h-2 w-full rounded-full overflow-hidden bg-slate-200/80 p-0.5">
@@ -464,7 +465,7 @@ export function StageTimeline({
                     0{idx + 1}
                   </span>
                   <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
-                    Tranche ({s.sharePct}%)
+                    {tx("Tranche (")}{s.sharePct}%)
                   </span>
                 </div>
                 <StageStatusPill status={s.status} />
@@ -487,7 +488,7 @@ export function StageTimeline({
                 <p className="text-[10px] text-slate-500 font-medium leading-tight">{s.reason}</p>
                 {s.releasedAt && (
                   <p className="text-[9px] text-emerald-600 font-bold mt-1 bg-emerald-100/60 px-1.5 py-0.5 rounded inline-block">
-                    ✓ Paid {s.releasedAt}
+                    {tx("✓ Paid")}{" "}{s.releasedAt}
                   </p>
                 )}
               </div>
@@ -498,7 +499,7 @@ export function StageTimeline({
                   onClick={() => onRelease(s.code)}
                   className="w-full py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-lg transition-colors shadow-2xs flex items-center justify-center gap-1 mt-1"
                 >
-                  Release Tranche →
+                  {tx("Release Tranche →")}
                 </button>
               )}
             </div>
@@ -523,10 +524,10 @@ export function DueBreakdown({
 }) {
   return (
     <div className="leading-tight text-right">
-      {dueNet > 0 && <p className="font-semibold tabular-nums text-blue-700">{fmtPKR(dueNet)} ready</p>}
-      {inRunNet > 0 && <p className="font-mono text-[10px] text-indigo-600">{fmtPKR(inRunNet)} processing</p>}
-      {releasedNet > 0 && <p className="font-mono text-[10px] text-emerald-600">{fmtPKR(releasedNet)} paid</p>}
-      {pendingNet > 0 && <p className="font-mono text-[10px] text-slate-400">{fmtPKR(pendingNet)} upcoming</p>}
+      {dueNet > 0 && <p className="font-semibold tabular-nums text-blue-700">{fmtPKR(dueNet)}{" "}{tx("ready")}</p>}
+      {inRunNet > 0 && <p className="font-mono text-[10px] text-indigo-600">{fmtPKR(inRunNet)}{" "}{tx("processing")}</p>}
+      {releasedNet > 0 && <p className="font-mono text-[10px] text-emerald-600">{fmtPKR(releasedNet)}{" "}{tx("paid")}</p>}
+      {pendingNet > 0 && <p className="font-mono text-[10px] text-slate-400">{fmtPKR(pendingNet)}{" "}{tx("upcoming")}</p>}
       {dueNet === 0 && inRunNet === 0 && releasedNet === 0 && pendingNet === 0 && (
         <p className="font-mono text-[10px] text-slate-300">—</p>
       )}

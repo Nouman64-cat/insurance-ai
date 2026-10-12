@@ -1,5 +1,6 @@
 import { RingGauge, Bar, PillarCard, Divider } from "./shared";
 import type { Claim } from "@/app/services/claims";
+import { tx } from "@/lib/i18n/tx";
 
 function ClipboardIcon() {
   return (
@@ -50,7 +51,7 @@ export function ClaimsCard({ claims, className = "" }: { claims: Claim[]; classN
   return (
     <PillarCard
       icon={<ClipboardIcon />}
-      title="Claims Status"
+      title={tx("Claims Status")}
       barClass="bg-blue-600"
       iconBg="bg-blue-50"
       iconColor="text-blue-600"
@@ -59,11 +60,11 @@ export function ClaimsCard({ claims, className = "" }: { claims: Claim[]; classN
       <div className="flex-1 flex flex-col justify-between space-y-1">
         {/* AI Confidence ring + status bars */}
         <div className="flex items-center gap-2.5">
-          <RingGauge value={aiConfidencePct} max={100} strokeHex="#2563eb" label="AI Confidence" valueLabel={`${aiConfidencePct}%`} size={44} strokeW={5} />
+          <RingGauge value={aiConfidencePct} max={100} strokeHex="#2563eb" label={tx("AI Confidence")} valueLabel={`${aiConfidencePct}%`} size={44} strokeW={5} />
           <div className="flex-1 space-y-0.5 min-w-0">
-            <Bar label="Approval Rate"       pct={approvedPct}     color="bg-blue-500"  badge={`${approvedPct.toFixed(0)}%`} />
-            <Bar label="Rejection Rate"      pct={rejectedPct}     color="bg-red-500"   badge={`${rejectedPct.toFixed(0)}%`} />
-            <Bar label="Under Investigation" pct={investigatingPct} color="bg-amber-400" badge={`${investigatingPct.toFixed(0)}%`} />
+            <Bar label={tx("Approval Rate")}       pct={approvedPct}     color="bg-blue-500"  badge={`${approvedPct.toFixed(0)}%`} />
+            <Bar label={tx("Rejection Rate")}      pct={rejectedPct}     color="bg-red-500"   badge={`${rejectedPct.toFixed(0)}%`} />
+            <Bar label={tx("Under Investigation")} pct={investigatingPct} color="bg-amber-400" badge={`${investigatingPct.toFixed(0)}%`} />
           </div>
         </div>
 
@@ -72,19 +73,19 @@ export function ClaimsCard({ claims, className = "" }: { claims: Claim[]; classN
         {/* Key stats */}
         <div className="grid grid-cols-3 gap-1">
           <div className="text-center">
-            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">Claims Today</p>
+            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">{tx("Claims Today")}</p>
             <p className="text-xs font-extrabold text-slate-800 mt-0.5">{claimsToday}</p>
-            <p className="text-[8px] text-slate-400 truncate">new entries</p>
+            <p className="text-[8px] text-slate-400 truncate">{tx("new entries")}</p>
           </div>
           <div className="text-center">
-            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">Approved</p>
+            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">{tx("Approved")}</p>
             <p className="text-xs font-extrabold text-blue-600 mt-0.5">{fmtCompact(approvedSum)}</p>
-            <p className="text-[8px] text-slate-400 truncate">payout</p>
+            <p className="text-[8px] text-slate-400 truncate">{tx("payout")}</p>
           </div>
           <div className="text-center">
-            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">Avg Process</p>
+            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">{tx("Avg Process")}</p>
             <p className="text-xs font-extrabold text-blue-600 mt-0.5">{avgProcessDays !== null ? `${avgProcessDays.toFixed(1)}d` : "—"}</p>
-            <p className="text-[8px] text-slate-400 truncate">end-to-end</p>
+            <p className="text-[8px] text-slate-400 truncate">{tx("end-to-end")}</p>
           </div>
         </div>
       </div>

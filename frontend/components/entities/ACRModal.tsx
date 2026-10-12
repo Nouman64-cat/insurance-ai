@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { saveACR, submitACR, type AgentConfidentialReport, type ACRRecommendation } from "@/app/services/agentConfidentialReport";
+import { tx } from "@/lib/i18n/tx";
 
 // Agent's Confidential Report modal — agent files moral hazard / financial
 // standing / lifestyle observations + their own declaration (Pre-Underwriting).
@@ -51,113 +52,113 @@ export function ACRModal({ caseId, initial, onClose, onDone }: {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={onClose}>
       <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="bg-blue-600 px-5 py-3 flex-shrink-0">
-          <p className="text-white/80 text-[11px] font-semibold uppercase tracking-wider">Pre-Underwriting</p>
-          <h2 className="text-white text-lg font-bold">Agent's Confidential Report</h2>
+          <p className="text-white/80 text-[11px] font-semibold uppercase tracking-wider">{tx("Pre-Underwriting")}</p>
+          <h2 className="text-white text-lg font-bold">{tx("Agent's Confidential Report")}</h2>
         </div>
         <div className="p-5 space-y-4 overflow-y-auto">
           <div>
-            <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Moral Hazard</p>
+            <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">{tx("Moral Hazard")}</p>
             <div className="space-y-2">
               <div>
-                <label className={label}>How long have you known the proposer?</label>
-                <input className={input} value={form.known_proposer_since} onChange={(e) => setForm({ ...form, known_proposer_since: e.target.value })} placeholder="e.g. 3 years" />
+                <label className={label}>{tx("How long have you known the proposer?")}</label>
+                <input className={input} value={form.known_proposer_since} onChange={(e) => setForm({ ...form, known_proposer_since: e.target.value })} placeholder={tx("e.g. 3 years")} />
               </div>
               <div>
-                <label className={label}>Relationship to proposer</label>
-                <input className={input} value={form.relationship_to_proposer} onChange={(e) => setForm({ ...form, relationship_to_proposer: e.target.value })} placeholder="e.g. Family friend, referred client" />
+                <label className={label}>{tx("Relationship to proposer")}</label>
+                <input className={input} value={form.relationship_to_proposer} onChange={(e) => setForm({ ...form, relationship_to_proposer: e.target.value })} placeholder={tx("e.g. Family friend, referred client")} />
               </div>
               <div>
-                <label className={label}>Purpose of insurance</label>
-                <input className={input} value={form.purpose_of_insurance} onChange={(e) => setForm({ ...form, purpose_of_insurance: e.target.value })} placeholder="e.g. Family protection, loan collateral" />
+                <label className={label}>{tx("Purpose of insurance")}</label>
+                <input className={input} value={form.purpose_of_insurance} onChange={(e) => setForm({ ...form, purpose_of_insurance: e.target.value })} placeholder={tx("e.g. Family protection, loan collateral")} />
               </div>
               <label className="flex items-center gap-1.5 text-sm text-slate-600">
                 <input type="checkbox" checked={form.financial_interest_explained} onChange={(e) => setForm({ ...form, financial_interest_explained: e.target.checked })} />
-                I have explained the financial interest/insurable interest to the proposer
+                {tx("I have explained the financial interest/insurable interest to the proposer")}
               </label>
               <label className="flex items-center gap-1.5 text-sm text-slate-600">
                 <input type="checkbox" checked={form.adverse_info_known} onChange={(e) => setForm({ ...form, adverse_info_known: e.target.checked })} />
-                I am aware of any adverse information about the proposer
+                {tx("I am aware of any adverse information about the proposer")}
               </label>
               {form.adverse_info_known && (
-                <textarea className={input} rows={2} value={form.adverse_info_details} onChange={(e) => setForm({ ...form, adverse_info_details: e.target.value })} placeholder="Details" />
+                <textarea className={input} rows={2} value={form.adverse_info_details} onChange={(e) => setForm({ ...form, adverse_info_details: e.target.value })} placeholder={tx("Details")} />
               )}
             </div>
           </div>
 
           <div>
-            <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Financial Standing</p>
+            <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">{tx("Financial Standing")}</p>
             <div className="space-y-2">
               <label className="flex items-center gap-1.5 text-sm text-slate-600">
                 <input type="checkbox" checked={form.occupation_verified} onChange={(e) => setForm({ ...form, occupation_verified: e.target.checked })} />
-                Occupation verified in person
+                {tx("Occupation verified in person")}
               </label>
               <label className="flex items-center gap-1.5 text-sm text-slate-600">
                 <input type="checkbox" checked={form.income_source_verified} onChange={(e) => setForm({ ...form, income_source_verified: e.target.checked })} />
-                Source of income verified
+                {tx("Source of income verified")}
               </label>
               <div>
-                <label className={label}>Your estimate of the proposer's income (PKR/yr)</label>
+                <label className={label}>{tx("Your estimate of the proposer's income (PKR/yr)")}</label>
                 <input type="number" className={input} value={form.estimated_income_opinion ?? ""} onChange={(e) => setForm({ ...form, estimated_income_opinion: e.target.value ? Number(e.target.value) : undefined })} />
               </div>
               <div>
-                <label className={label}>Income consistency note</label>
-                <textarea className={input} rows={2} value={form.income_consistency_note} onChange={(e) => setForm({ ...form, income_consistency_note: e.target.value })} placeholder="Does declared income match lifestyle/occupation?" />
+                <label className={label}>{tx("Income consistency note")}</label>
+                <textarea className={input} rows={2} value={form.income_consistency_note} onChange={(e) => setForm({ ...form, income_consistency_note: e.target.value })} placeholder={tx("Does declared income match lifestyle/occupation?")} />
               </div>
             </div>
           </div>
 
           <div>
-            <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">General Lifestyle</p>
+            <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">{tx("General Lifestyle")}</p>
             <div className="space-y-2">
               <div>
-                <label className={label}>Health / appearance note</label>
-                <textarea className={input} rows={2} value={form.health_appearance_note} onChange={(e) => setForm({ ...form, health_appearance_note: e.target.value })} placeholder="Any visible health concerns at the time of meeting?" />
+                <label className={label}>{tx("Health / appearance note")}</label>
+                <textarea className={input} rows={2} value={form.health_appearance_note} onChange={(e) => setForm({ ...form, health_appearance_note: e.target.value })} placeholder={tx("Any visible health concerns at the time of meeting?")} />
               </div>
               <label className="flex items-center gap-1.5 text-sm text-slate-600">
                 <input type="checkbox" checked={form.hazardous_activity_known} onChange={(e) => setForm({ ...form, hazardous_activity_known: e.target.checked })} />
-                Aware of hazardous activities/habits not disclosed elsewhere
+                {tx("Aware of hazardous activities/habits not disclosed elsewhere")}
               </label>
             </div>
           </div>
 
           <div>
-            <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Agent Declaration</p>
+            <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">{tx("Agent Declaration")}</p>
             <div className="space-y-2">
               <label className="flex items-center gap-1.5 text-sm text-slate-600">
                 <input type="checkbox" checked={form.terms_explained_to_proposer} onChange={(e) => setForm({ ...form, terms_explained_to_proposer: e.target.checked })} />
-                I have explained all policy terms, benefits, and exclusions to the proposer
+                {tx("I have explained all policy terms, benefits, and exclusions to the proposer")}
               </label>
               <label className="flex items-center gap-1.5 text-sm text-slate-600">
                 <input type="checkbox" checked={form.identity_verified_kyc} onChange={(e) => setForm({ ...form, identity_verified_kyc: e.target.checked })} />
-                I have verified the identity of the proposer (KYC compliance)
+                {tx("I have verified the identity of the proposer (KYC compliance)")}
               </label>
               <label className="flex items-center gap-1.5 text-sm text-slate-600">
                 <input type="checkbox" checked={form.signature_obtained_in_presence} onChange={(e) => setForm({ ...form, signature_obtained_in_presence: e.target.checked })} />
-                I confirm the proposer's signature was obtained in my presence
+                {tx("I confirm the proposer's signature was obtained in my presence")}
               </label>
             </div>
           </div>
 
           <div>
-            <label className={label}>Recommendation</label>
+            <label className={label}>{tx("Recommendation")}</label>
             <select className={input} value={form.recommendation} onChange={(e) => setForm({ ...form, recommendation: e.target.value as ACRRecommendation })}>
-              <option value="Recommend">Recommend</option>
-              <option value="RecommendWithCaution">Recommend with caution</option>
-              <option value="DoNotRecommend">Do not recommend</option>
+              <option value="Recommend">{tx("Recommend")}</option>
+              <option value="RecommendWithCaution">{tx("Recommend with caution")}</option>
+              <option value="DoNotRecommend">{tx("Do not recommend")}</option>
             </select>
           </div>
           <div>
-            <label className={label}>Remarks</label>
+            <label className={label}>{tx("Remarks")}</label>
             <textarea className={input} rows={2} value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} />
           </div>
 
           {err && <p className="text-xs text-red-600">{err}</p>}
         </div>
         <div className="flex justify-end gap-2 px-5 py-3 border-t border-slate-100 flex-shrink-0">
-          <button onClick={onClose} className="px-3 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
+          <button onClick={onClose} className="px-3 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700">{tx("Cancel")}</button>
           <button onClick={submit} disabled={busy}
             className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40">
-            {busy ? "Submitting…" : "Submit ACR"}
+            {busy ? tx("Submitting…") : tx("Submit ACR")}
           </button>
         </div>
       </div>

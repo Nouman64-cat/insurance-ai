@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import { tx } from "@/lib/i18n/tx";
 
 export type DatePreset = "all" | "7d" | "30d" | "90d" | "this_month" | "last_month" | "ytd" | "custom";
 
@@ -129,7 +130,7 @@ export function DateRangeFilter({ preset, range, onPresetChange, size = "md", al
         <span>{activeLabel}</span>
         {preset !== "all" && (range.from || range.to) && (
           <span className="text-slate-400 text-[10px] font-normal hidden sm:inline">
-            {range.from || "Start"} – {range.to || "Today"}
+            {range.from || tx("Start")} – {range.to || tx("Today")}
           </span>
         )}
         <svg className={`w-3.5 h-3.5 text-slate-400 transition-transform shrink-0 ${isOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -158,10 +159,10 @@ export function DateRangeFilter({ preset, range, onPresetChange, size = "md", al
 
           {/* Custom date inputs */}
           <div className="p-3 space-y-2.5 bg-slate-50/50">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Custom Range</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{tx("Custom Range")}</p>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-[10px] text-slate-500 font-semibold block mb-1">From</label>
+                <label className="text-[10px] text-slate-500 font-semibold block mb-1">{tx("From")}</label>
                 <input
                   type="date"
                   value={customFrom}
@@ -171,7 +172,7 @@ export function DateRangeFilter({ preset, range, onPresetChange, size = "md", al
                 />
               </div>
               <div>
-                <label className="text-[10px] text-slate-500 font-semibold block mb-1">To</label>
+                <label className="text-[10px] text-slate-500 font-semibold block mb-1">{tx("To")}</label>
                 <input
                   type="date"
                   value={customTo}
@@ -186,7 +187,7 @@ export function DateRangeFilter({ preset, range, onPresetChange, size = "md", al
               disabled={!customFrom || !customTo || customFrom > customTo}
               className="w-full py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-[11px] font-bold rounded-lg transition-colors shadow-xs cursor-pointer"
             >
-              Apply Custom Range
+              {tx("Apply Custom Range")}
             </button>
           </div>
         </div>

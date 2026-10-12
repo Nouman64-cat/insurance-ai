@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import api from "@/app/services/api";
+import { tx } from "@/lib/i18n/tx";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type Role = "primary" | "fallback" | "disabled";
@@ -188,7 +189,7 @@ function ProviderCard({
               : "bg-red-50 text-red-500"
           }`}
         >
-          {status.has_key ? `key ••••${status.api_key_last4}` : "no key"}
+          {status.has_key ? tx("key ••••{0}", { 0: status.api_key_last4 }) : tx("no key")}
         </span>
       </div>
 
@@ -196,7 +197,7 @@ function ProviderCard({
         {/* Role */}
         <div>
           <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-            Role
+            {tx("Role")}
           </label>
           <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-lg">
             {(["primary", "fallback", "disabled"] as Role[]).map((r) => (
@@ -206,7 +207,7 @@ function ProviderCard({
                 onClick={() => setRole(r)}
                 title={
                   roleTaken(r) && role !== r
-                    ? `Reassigns ${ROLE_LABEL[r].toLowerCase()} from another provider`
+                    ? tx("Reassigns {0} from another provider", { 0: ROLE_LABEL[r].toLowerCase() })
                     : undefined
                 }
                 className={`py-1.5 text-xs font-semibold rounded-md transition-all ${
@@ -224,7 +225,7 @@ function ProviderCard({
           </div>
           {roleTaken(role) && role !== status.role && (
             <p className="text-[11px] text-amber-600 mt-1">
-              Another provider is currently {ROLE_LABEL[role].toLowerCase()} — saving moves it here.
+              {tx("Another provider is currently")}{" "}{ROLE_LABEL[role].toLowerCase()}{" "}{tx("— saving moves it here.")}
             </p>
           )}
         </div>
@@ -232,20 +233,20 @@ function ProviderCard({
         {/* Model */}
         <div>
           <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-            Model
+            {tx("Model")}
           </label>
           <input
             value={model}
             onChange={(e) => setModel(e.target.value)}
             className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-            placeholder="model id"
+            placeholder={tx("model id")}
           />
         </div>
 
         {/* API key */}
         <div>
           <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-            API key
+            {tx("API key")}
           </label>
           {editingKey ? (
             <input
@@ -254,7 +255,7 @@ function ProviderCard({
               onChange={(e) => setNewKey(e.target.value)}
               autoComplete="off"
               className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-              placeholder={meta.keyHint || "paste key"}
+              placeholder={meta.keyHint || tx("paste key")}
             />
           ) : (
             <div className="flex items-center gap-2">
@@ -266,7 +267,7 @@ function ProviderCard({
                 onClick={() => setEditingKey(true)}
                 className="px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-lg"
               >
-                Replace
+                {tx("Replace")}
               </button>
             </div>
           )}
@@ -280,7 +281,7 @@ function ProviderCard({
                 }}
                 className="text-[11px] text-slate-400 hover:text-slate-600"
               >
-                Cancel key change
+                {tx("Cancel key change")}
               </button>
             ) : (
               <span />
@@ -292,7 +293,7 @@ function ProviderCard({
                 rel="noreferrer"
                 className="text-[11px] text-blue-500 hover:underline"
               >
-                Where to get a key ↗
+                {tx("Where to get a key ↗")}
               </a>
             )}
           </div>
@@ -311,21 +312,21 @@ function ProviderCard({
           >
             <span className="font-semibold">
               {test.ok
-                ? "✓ Responding"
+                ? tx("✓ Responding")
                 : test.status === "no_credits"
-                  ? "⚠ 429 · No credits"
+                  ? tx("⚠ 429 · No credits")
                   : test.status === "rate_limited"
-                    ? "⚠ 429 · Rate limited"
+                    ? tx("⚠ 429 · Rate limited")
                     : test.status === "invalid_key"
-                      ? "✕ Invalid key"
+                      ? tx("✕ Invalid key")
                       : test.status === "bad_model"
-                        ? "✕ Model not found"
-                        : "✕ Failed"}
+                        ? tx("✕ Model not found")
+                        : tx("✕ Failed")}
             </span>
             {" — "}
             {test.detail}
             {test.latency_ms > 0 && (
-              <span className="opacity-60"> ({test.latency_ms} ms)</span>
+              <span className="opacity-60"> ({test.latency_ms}{" "}{tx("ms)")}</span>
             )}
           </div>
         )}
@@ -347,7 +348,7 @@ function ProviderCard({
           disabled={testing || (!status.has_key && newKey.trim() === "")}
           className="py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:border-slate-300 transition-all disabled:opacity-40"
         >
-          {testing ? "Testing…" : "Test key"}
+          {testing ? tx("Testing…") : tx("Test key")}
         </button>
         <button
           type="button"
@@ -355,7 +356,7 @@ function ProviderCard({
           disabled={saving || !dirty}
           className="py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all disabled:opacity-40"
         >
-          {saving ? "Saving…" : "Save"}
+          {saving ? tx("Saving…") : tx("Save")}
         </button>
       </div>
     </div>
@@ -387,7 +388,7 @@ function LLMConfigContent() {
       const resp = await api.get<ConfigResponse>("/platform/llm-config");
       setCfg(resp.data);
     } catch (err: any) {
-      setError(err.message ?? "Failed to load configuration.");
+      setError(err.message ?? tx("Failed to load configuration."));
     } finally {
       setLoading(false);
     }
@@ -414,15 +415,15 @@ function LLMConfigContent() {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-950 text-center font-sans min-h-screen">
         <div className="max-w-md p-6 bg-slate-900 border border-slate-800 rounded-xl shadow-xl">
-          <h1 className="text-xl font-bold text-white mb-2">Access Denied</h1>
+          <h1 className="text-xl font-bold text-white mb-2">{tx("Access Denied")}</h1>
           <p className="text-slate-400 text-sm mb-6">
-            This page is restricted to platform SuperAdmins.
+            {tx("This page is restricted to platform SuperAdmins.")}
           </p>
           <a
             href="/"
             className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm px-5 py-2.5 rounded-lg transition-all"
           >
-            Back to app
+            {tx("Back to app")}
           </a>
         </div>
       </div>
@@ -439,19 +440,16 @@ function LLMConfigContent() {
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full font-sans">
       <div>
         <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-          LLM Configuration
+          {tx("LLM Configuration")}
         </h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          Primary and fallback chat models for the AI agent and risk engine.
-          Keys are encrypted at rest and take effect within ~60 seconds — no
-          restart.
+          {tx("Primary and fallback chat models for the AI agent and risk engine. Keys are encrypted at rest and take effect within ~60 seconds — no restart.")}
         </p>
       </div>
 
       {cfg && !cfg.encryption_available && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600">
-          <b>CONFIG_ENCRYPTION_KEY is not set.</b> API keys cannot be saved until
-          it is configured in the environment. Generate one with{" "}
+          <b>{tx("CONFIG_ENCRYPTION_KEY is not set.")}</b>{" "}{tx("API keys cannot be saved until it is configured in the environment. Generate one with")}{" "}
           <code className="text-xs bg-red-100 px-1 py-0.5 rounded">
             python -c &quot;from cryptography.fernet import Fernet;
             print(Fernet.generate_key().decode())&quot;
@@ -487,7 +485,7 @@ function LLMConfigContent() {
               d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
             />
           </svg>
-          <span className="text-xs text-slate-400">Loading configuration…</span>
+          <span className="text-xs text-slate-400">{tx("Loading configuration…")}</span>
         </div>
       ) : (
         cfg && (
@@ -495,7 +493,7 @@ function LLMConfigContent() {
             <div className="flex flex-col sm:flex-row sm:items-stretch gap-3">
               <div className="flex-1 bg-white border border-slate-200 border-l-4 border-l-emerald-500 rounded-xl px-4 py-3">
                 <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                  Primary
+                  {tx("Primary")}
                 </div>
                 {primary ? (
                   <div className="text-sm font-semibold text-slate-800 mt-0.5">
@@ -506,14 +504,14 @@ function LLMConfigContent() {
                   </div>
                 ) : (
                   <div className="text-sm text-amber-600 mt-0.5">
-                    No primary set — services fall back to env vars
+                    {tx("No primary set — services fall back to env vars")}
                   </div>
                 )}
               </div>
               <div className="hidden sm:flex items-center text-slate-300 text-lg">→</div>
               <div className="flex-1 bg-white border border-slate-200 border-l-4 border-l-amber-400 rounded-xl px-4 py-3">
                 <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                  Fallback
+                  {tx("Fallback")}
                 </div>
                 {fallback ? (
                   <div className="text-sm font-semibold text-slate-800 mt-0.5">
@@ -523,7 +521,7 @@ function LLMConfigContent() {
                     </span>
                   </div>
                 ) : (
-                  <div className="text-sm text-slate-400 mt-0.5">None</div>
+                  <div className="text-sm text-slate-400 mt-0.5">{tx("None")}</div>
                 )}
               </div>
             </div>

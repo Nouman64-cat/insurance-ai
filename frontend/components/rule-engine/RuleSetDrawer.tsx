@@ -6,6 +6,7 @@ import VersionBar from "./VersionBar";
 import RuleCard from "./RuleCard";
 import CriteriaGroupBuilder from "./CriteriaGroupBuilder";
 import ImpactForm from "./ImpactForm";
+import { tx } from "@/lib/i18n/tx";
 
 interface Props {
   detail: RuleSetDetail | null;
@@ -63,7 +64,7 @@ export default function RuleSetDrawer({
     return (
       <div className="fixed inset-y-0 right-0 z-50 w-full max-w-[680px] bg-white border-l border-slate-200 shadow-2xl p-6 flex flex-col justify-center items-center">
         <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mb-3" />
-        <p className="text-xs text-slate-500 font-medium">Loading details...</p>
+        <p className="text-xs text-slate-500 font-medium">{tx("Loading details...")}</p>
       </div>
     );
   }
@@ -89,7 +90,7 @@ export default function RuleSetDrawer({
           </span>
           {isLocked && (
             <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded shrink-0">
-              Locked
+              {tx("Locked")}
             </span>
           )}
         </div>
@@ -97,7 +98,7 @@ export default function RuleSetDrawer({
         <button
           onClick={onClose}
           className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition shrink-0"
-          title="Close (Esc)"
+          title={tx("Close (Esc)")}
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -122,7 +123,7 @@ export default function RuleSetDrawer({
           <div className="space-y-4 py-1">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <h3 className="text-sm font-bold text-slate-900">
-                {editingRule ? `Edit: ${editingRule.name}` : "New Decision Rule"}
+                {editingRule ? tx("Edit: {0}", { 0: editingRule.name }) : tx("New Decision Rule")}
               </h3>
               <div className="flex items-center gap-2">
                 <button
@@ -130,14 +131,14 @@ export default function RuleSetDrawer({
                   onClick={onCancelEdit}
                   className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
                 >
-                  Cancel
+                  {tx("Cancel")}
                 </button>
                 <button
                   type="button"
                   onClick={() => onSaveRule(ruleDraft)}
                   className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm transition"
                 >
-                  Save Rule
+                  {tx("Save Rule")}
                 </button>
               </div>
             </div>
@@ -145,29 +146,29 @@ export default function RuleSetDrawer({
             {/* Basic Info Inputs */}
             <div className="grid grid-cols-12 gap-3">
               <div className="col-span-6">
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Rule Name *</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">{tx("Rule Name *")}</label>
                 <input
                   type="text"
                   value={ruleDraft.name}
                   onChange={(e) => setRuleDraft({ ...ruleDraft, name: e.target.value })}
-                  placeholder="e.g. Moderate BMI Loading"
+                  placeholder={tx("e.g. Moderate BMI Loading")}
                   className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
 
               <div className="col-span-4">
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Rule Code *</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">{tx("Rule Code *")}</label>
                 <input
                   type="text"
                   value={ruleDraft.rule_code}
                   onChange={(e) => setRuleDraft({ ...ruleDraft, rule_code: e.target.value })}
-                  placeholder="e.g. bmi_30_35"
+                  placeholder={tx("e.g. bmi_30_35")}
                   className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
 
               <div className="col-span-2">
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Priority *</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">{tx("Priority *")}</label>
                 <input
                   type="number"
                   value={ruleDraft.priority}
@@ -180,7 +181,7 @@ export default function RuleSetDrawer({
             {/* Matching Criteria */}
             <div className="pt-1">
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
-                Matching Criteria
+                {tx("Matching Criteria")}
               </h4>
               <CriteriaGroupBuilder
                 criteria={ruleDraft.criteria}
@@ -202,7 +203,7 @@ export default function RuleSetDrawer({
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Decision Rules ({rules.length})
+                {tx("Decision Rules (")}{rules.length})
               </h3>
               {!isLocked && (
                 <button
@@ -213,20 +214,20 @@ export default function RuleSetDrawer({
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
-                  Add Rule
+                  {tx("Add Rule")}
                 </button>
               )}
             </div>
 
             {rules.length === 0 ? (
               <div className="border border-dashed border-slate-200 rounded-xl p-8 text-center bg-slate-50/50">
-                <p className="text-xs text-slate-500 italic">No rules defined in this version.</p>
+                <p className="text-xs text-slate-500 italic">{tx("No rules defined in this version.")}</p>
                 {!isLocked && (
                   <button
                     onClick={onAddRule}
                     className="mt-2 text-xs font-bold text-blue-600 hover:underline"
                   >
-                    + Add your first rule
+                    {tx("+ Add your first rule")}
                   </button>
                 )}
               </div>

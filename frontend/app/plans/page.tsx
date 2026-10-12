@@ -12,6 +12,7 @@ import {
   updateInsurancePlan,
 } from "../services/insurancePlans";
 import { Pagination, usePagination } from "@/components/Pagination";
+import { tx } from "@/lib/i18n/tx";
 
 const COLOR_CLASSES: Record<string, { badge: string; accent: string }> = {
   blue: { badge: "bg-blue-50 text-blue-700 border-blue-200", accent: "border-t-blue-500" },
@@ -105,7 +106,7 @@ export default function InsurancePlansPage() {
     const tid = localStorage.getItem("tenant_id");
     setTenantId(tid);
     if (!tid) {
-      setError("No active tenant found. Please log in again.");
+      setError(tx("No active tenant found. Please log in again."));
       setLoading(false);
       return;
     }
@@ -118,7 +119,7 @@ export default function InsurancePlansPage() {
     try {
       setPlans(await listInsurancePlans(tid));
     } catch (err: any) {
-      setError(err.message ?? "Failed to load insurance plans.");
+      setError(err.message ?? tx("Failed to load insurance plans."));
     } finally {
       setLoading(false);
     }
@@ -173,19 +174,19 @@ export default function InsurancePlansPage() {
       await seedDefaultPlans(tenantId);
       await fetchPlans(tenantId);
     } catch (err: any) {
-      setError(err.message ?? "Failed to seed default plans.");
+      setError(err.message ?? tx("Failed to seed default plans."));
       setLoading(false);
     }
   }
 
   async function handleDelete(plan: InsurancePlan) {
     if (!tenantId) return;
-    if (!window.confirm(`Delete plan "${plan.label}"? This cannot be undone.`)) return;
+    if (!window.confirm(tx("Delete plan \"{0}\"? This cannot be undone.", { 0: plan.label }))) return;
     try {
       await deleteInsurancePlan(tenantId, plan.id);
       await fetchPlans(tenantId);
     } catch (err: any) {
-      setError(err.message ?? "Failed to delete plan.");
+      setError(err.message ?? tx("Failed to delete plan."));
     }
   }
 
@@ -211,7 +212,7 @@ export default function InsurancePlansPage() {
       setShowModal(false);
       await fetchPlans(tenantId);
     } catch (err: any) {
-      setFormError(err.message ?? "Failed to save plan.");
+      setFormError(err.message ?? tx("Failed to save plan."));
     } finally {
       setSaving(false);
     }
@@ -270,9 +271,9 @@ export default function InsurancePlansPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Insurance Plans</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Insurance Plans")}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Your tenant&apos;s catalog of plan types, their eligibility rules, and required documents.
+            {tx("Your tenant's catalog of plan types, their eligibility rules, and required documents.")}
           </p>
         </div>
         {isAdmin && (
@@ -282,14 +283,14 @@ export default function InsurancePlansPage() {
                 onClick={handleSeedDefaults}
                 className="text-sm font-semibold px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
               >
-                Load default catalog
+                {tx("Load default catalog")}
               </button>
             )}
             <button
               onClick={openCreate}
               className="text-sm font-semibold px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
             >
-              + New Plan
+              {tx("+ New Plan")}
             </button>
           </div>
         )}
@@ -300,17 +301,17 @@ export default function InsurancePlansPage() {
       )}
 
       {loading ? (
-        <div className="text-sm text-slate-500 py-10 text-center">Loading plans…</div>
+        <div className="text-sm text-slate-500 py-10 text-center">{tx("Loading plans…")}</div>
       ) : plans.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center">
-          <p className="text-sm text-slate-600 font-medium">No insurance plans defined yet.</p>
+          <p className="text-sm text-slate-600 font-medium">{tx("No insurance plans defined yet.")}</p>
           {isAdmin ? (
             <p className="text-xs text-slate-500 mt-1">
-              Use <span className="font-semibold">Load default catalog</span> to start from the standard plans, or{" "}
-              <span className="font-semibold">+ New Plan</span> to define your own.
+              {tx("Use")}{" "}<span className="font-semibold">{tx("Load default catalog")}</span>{" "}{tx("to start from the standard plans, or")}{" "}
+              <span className="font-semibold">{tx("+ New Plan")}</span>{" "}{tx("to define your own.")}
             </p>
           ) : (
-            <p className="text-xs text-slate-500 mt-1">Ask your administrator to configure the plan catalog.</p>
+            <p className="text-xs text-slate-500 mt-1">{tx("Ask your administrator to configure the plan catalog.")}</p>
           )}
         </div>
       ) : (
@@ -321,32 +322,32 @@ export default function InsurancePlansPage() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by name, code, description, or bank…"
+                placeholder={tx("Search by name, code, description, or bank…")}
                 className="w-full rounded-lg border border-slate-300 pl-3 pr-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
               />
             </div>
-            <FilterSelect value={productCategoryFilter} onChange={setProductCategoryFilter} label="Channel" options={PRODUCT_CATEGORIES} />
-            <FilterSelect value={insuranceTypeFilter} onChange={setInsuranceTypeFilter} label="Type" options={INSURANCE_TYPES} />
-            <FilterSelect value={categoryFilter} onChange={setCategoryFilter} label="Category" options={["Individual", "Group"]} />
-            <FilterSelect value={statusFilter} onChange={setStatusFilter} label="Status" options={STATUSES} />
+            <FilterSelect value={productCategoryFilter} onChange={setProductCategoryFilter} label={tx("Channel")} options={PRODUCT_CATEGORIES} />
+            <FilterSelect value={insuranceTypeFilter} onChange={setInsuranceTypeFilter} label={tx("Type")} options={INSURANCE_TYPES} />
+            <FilterSelect value={categoryFilter} onChange={setCategoryFilter} label={tx("Category")} options={["Individual", "Group"]} />
+            <FilterSelect value={statusFilter} onChange={setStatusFilter} label={tx("Status")} options={STATUSES} />
             {hasActiveFilters && (
               <button
                 onClick={clearFilters}
                 className="text-xs font-semibold px-3 py-2 rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50"
               >
-                Clear filters
+                {tx("Clear filters")}
               </button>
             )}
           </div>
 
           {filteredPlans.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center text-sm text-slate-500">
-              No plans match your search/filters.
+              {tx("No plans match your search/filters.")}
             </div>
           ) : (
             <>
               <PlansTable plans={pagedPlans} onView={setViewingPlan} />
-              <Pagination pagination={planPagination} noun="plans" />
+              <Pagination pagination={planPagination} noun={tx("plans")} />
             </>
           )}
         </>
@@ -409,7 +410,7 @@ function FilterSelect({
         value === ALL ? "border-slate-300 text-slate-500" : "border-blue-300 text-blue-700 bg-blue-50/50 font-semibold"
       }`}
     >
-      <option value={ALL}>{label}: All</option>
+      <option value={ALL}>{label}{tx(": All")}</option>
       {options.map((o) => (
         <option key={o} value={o}>
           {o}
@@ -444,14 +445,14 @@ function PlansTable({ plans, onView }: { plans: InsurancePlan[]; onView: (p: Ins
       <table className="w-full text-sm min-w-[1150px]">
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-            <th className="px-4 py-2.5">Plan</th>
-            <th className="px-4 py-2.5">Type</th>
-            <th className="px-4 py-2.5">Channel</th>
-            <th className="px-4 py-2.5">Category</th>
-            <th className="px-4 py-2.5">Entry Age</th>
-            <th className="px-4 py-2.5">Term</th>
-            <th className="px-4 py-2.5">Medical Exam Thresholds (PKR)</th>
-            <th className="px-4 py-2.5">Status</th>
+            <th className="px-4 py-2.5">{tx("Plan")}</th>
+            <th className="px-4 py-2.5">{tx("Type")}</th>
+            <th className="px-4 py-2.5">{tx("Channel")}</th>
+            <th className="px-4 py-2.5">{tx("Category")}</th>
+            <th className="px-4 py-2.5">{tx("Entry Age")}</th>
+            <th className="px-4 py-2.5">{tx("Term")}</th>
+            <th className="px-4 py-2.5">{tx("Medical Exam Thresholds (PKR)")}</th>
+            <th className="px-4 py-2.5">{tx("Status")}</th>
           </tr>
         </thead>
         <tbody>
@@ -483,10 +484,10 @@ function PlansTable({ plans, onView }: { plans: InsurancePlan[]; onView: (p: Ins
                 </td>
                 <td className="px-4 py-2.5 text-slate-600">{plan.category}</td>
                 <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap">
-                  {plan.entry_age_min}–{plan.entry_age_max} yrs
+                  {plan.entry_age_min}–{plan.entry_age_max}{" "}{tx("yrs")}
                 </td>
                 <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap">
-                  {plan.term_min_years}–{plan.term_max_years} yrs
+                  {plan.term_min_years}–{plan.term_max_years}{" "}{tx("yrs")}
                 </td>
                 <td className="px-4 py-2.5">
                   {tiers.length === 0 ? (
@@ -571,29 +572,29 @@ function PlanDetailDrawer({
 
           <div className="pt-2 border-t border-slate-100">
             <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-              Plan Details
+              {tx("Plan Details")}
             </span>
             <table className="w-full text-xs border border-slate-200 rounded-lg overflow-hidden">
               <tbody>
-                <PlanDetailRow label={`${plan.entry_age_label} Entry Age`} value={`${plan.entry_age_min}–${plan.entry_age_max} years`} />
-                <PlanDetailRow label="Policy Term" value={`${plan.term_min_years}–${plan.term_max_years} years`} />
-                <PlanDetailRow label="Max Maturity Age" value={`${plan.max_maturity_age} years`} />
-                <PlanDetailRow label="Max Coverage" value={`${plan.max_income_multiple}× annual income`} />
+                <PlanDetailRow label={tx("{0} Entry Age", { 0: plan.entry_age_label })} value={`${plan.entry_age_min}–${plan.entry_age_max} years`} />
+                <PlanDetailRow label={tx("Policy Term")} value={`${plan.term_min_years}–${plan.term_max_years} years`} />
+                <PlanDetailRow label={tx("Max Maturity Age")} value={`${plan.max_maturity_age} years`} />
+                <PlanDetailRow label={tx("Max Coverage")} value={`${plan.max_income_multiple}× annual income`} />
                 <PlanDetailRow
-                  label="Base Premium Rate"
+                  label={tx("Base Premium Rate")}
                   value={`PKR ${plan.base_premium_rate} / 1,000 sum assured / yr (rate ${plan.rate_version})`}
                 />
-                <PlanDetailRow label="Smoker Factor" value={`${plan.smoker_factor}x`} />
+                <PlanDetailRow label={tx("Smoker Factor")} value={`${plan.smoker_factor}x`} />
                 {plan.dependent_age_min != null && plan.dependent_age_max != null && (
                   <PlanDetailRow
-                    label="Dependent Age (at entry)"
+                    label={tx("Dependent Age (at entry)")}
                     value={`${plan.dependent_age_min}–${plan.dependent_age_max} years`}
                   />
                 )}
                 {plan.min_group_size != null && (
-                  <PlanDetailRow label="Minimum Group Size" value={`${plan.min_group_size} employees`} />
+                  <PlanDetailRow label={tx("Minimum Group Size")} value={`${plan.min_group_size} employees`} />
                 )}
-                {plan.underwriting_basis && <PlanDetailRow label="Underwriting Basis" value={plan.underwriting_basis} />}
+                {plan.underwriting_basis && <PlanDetailRow label={tx("Underwriting Basis")} value={plan.underwriting_basis} />}
               </tbody>
             </table>
           </div>
@@ -601,13 +602,13 @@ function PlanDetailDrawer({
           {tiers.length > 0 && (
             <div className="pt-2 border-t border-slate-100">
               <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                Medical Exam Thresholds (PKR)
+                {tx("Medical Exam Thresholds (PKR)")}
               </span>
               <table className="w-full text-xs border border-slate-200 rounded-lg overflow-hidden">
                 <thead>
                   <tr className="bg-slate-50 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                    <th className="px-3 py-1.5 border-b border-slate-200">Sum Assured Range</th>
-                    <th className="px-3 py-1.5 border-b border-slate-200">Requirement</th>
+                    <th className="px-3 py-1.5 border-b border-slate-200">{tx("Sum Assured Range")}</th>
+                    <th className="px-3 py-1.5 border-b border-slate-200">{tx("Requirement")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -615,8 +616,8 @@ function PlanDetailDrawer({
                     <tr key={i} className="border-b border-slate-100 last:border-0">
                       <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">
                         {i === tiers.length - 1
-                          ? `≥ PKR ${t.minSumAssured.toLocaleString()}`
-                          : `PKR ${t.minSumAssured.toLocaleString()} – ${(tiers[i + 1].minSumAssured - 1).toLocaleString()}`}
+                          ? tx("≥ PKR {0}", { 0: t.minSumAssured.toLocaleString() })
+                          : tx("PKR {0} – {1}", { 0: t.minSumAssured.toLocaleString(), 1: (tiers[i + 1].minSumAssured - 1).toLocaleString() })}
                       </td>
                       <td className="px-3 py-1.5 font-semibold text-slate-700">{t.tier}</td>
                     </tr>
@@ -629,7 +630,7 @@ function PlanDetailDrawer({
           {plan.required_documents.length > 0 && (
             <div className="pt-2 border-t border-slate-100">
               <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                Required Documents (Underwriting)
+                {tx("Required Documents (Underwriting)")}
               </span>
               <table className="w-full text-xs border border-slate-200 rounded-lg overflow-hidden">
                 <tbody>
@@ -649,13 +650,13 @@ function PlanDetailDrawer({
                 onClick={() => onEdit(plan)}
                 className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
               >
-                Edit
+                {tx("Edit")}
               </button>
               <button
                 onClick={() => onDelete(plan)}
                 className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50"
               >
-                Delete
+                {tx("Delete")}
               </button>
             </div>
           )}
@@ -714,7 +715,7 @@ function PlanFormModal({
       <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
         <form onSubmit={onSubmit} className="p-6 space-y-5">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-slate-900">{editingId ? "Edit Plan" : "New Insurance Plan"}</h2>
+            <h2 className="text-lg font-bold text-slate-900">{editingId ? tx("Edit Plan") : tx("New Insurance Plan")}</h2>
             <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">
               ×
             </button>
@@ -726,22 +727,22 @@ function PlanFormModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={labelCls}>Code {editingId && <span className="text-slate-400">(immutable)</span>}</label>
+              <label className={labelCls}>{tx("Code")}{" "}{editingId && <span className="text-slate-400">{tx("(immutable)")}</span>}</label>
               <input
                 className={inputCls}
                 value={form.code}
                 disabled={!!editingId}
                 onChange={(e) => setField("code", e.target.value)}
-                placeholder="TERM_LIFE"
+                placeholder={tx("TERM_LIFE")}
                 required
               />
             </div>
             <div>
-              <label className={labelCls}>Label</label>
-              <input className={inputCls} value={form.label} onChange={(e) => setField("label", e.target.value)} placeholder="Term Life" required />
+              <label className={labelCls}>{tx("Label")}</label>
+              <input className={inputCls} value={form.label} onChange={(e) => setField("label", e.target.value)} placeholder={tx("Term Life")} required />
             </div>
             <div>
-              <label className={labelCls}>Insurance Type</label>
+              <label className={labelCls}>{tx("Insurance Type")}</label>
               <select className={inputCls} value={form.insurance_type} onChange={(e) => setField("insurance_type", e.target.value as any)}>
                 {INSURANCE_TYPES.map((t) => (
                   <option key={t} value={t}>{t}</option>
@@ -749,14 +750,14 @@ function PlanFormModal({
               </select>
             </div>
             <div>
-              <label className={labelCls}>Category</label>
+              <label className={labelCls}>{tx("Category")}</label>
               <select className={inputCls} value={form.category} onChange={(e) => setField("category", e.target.value as any)}>
-                <option value="Individual">Individual</option>
-                <option value="Group">Group</option>
+                <option value="Individual">{tx("Individual")}</option>
+                <option value="Group">{tx("Group")}</option>
               </select>
             </div>
             <div>
-              <label className={labelCls}>Product Category</label>
+              <label className={labelCls}>{tx("Product Category")}</label>
               <select
                 className={inputCls}
                 value={form.product_category}
@@ -768,16 +769,16 @@ function PlanFormModal({
               </select>
             </div>
             <div>
-              <label className={labelCls}>Partner Bank (Bancassurance only)</label>
+              <label className={labelCls}>{tx("Partner Bank (Bancassurance only)")}</label>
               <input
                 className={inputCls}
                 value={form.partner_bank ?? ""}
                 onChange={(e) => setField("partner_bank", e.target.value || null)}
-                placeholder="e.g. MCB Bank"
+                placeholder={tx("e.g. MCB Bank")}
               />
             </div>
             <div>
-              <label className={labelCls}>Status</label>
+              <label className={labelCls}>{tx("Status")}</label>
               <select className={inputCls} value={form.status} onChange={(e) => setField("status", e.target.value as any)}>
                 {STATUSES.map((s) => (
                   <option key={s} value={s}>{s}</option>
@@ -785,7 +786,7 @@ function PlanFormModal({
               </select>
             </div>
             <div>
-              <label className={labelCls}>Accent Colour</label>
+              <label className={labelCls}>{tx("Accent Colour")}</label>
               <select className={inputCls} value={form.color} onChange={(e) => setField("color", e.target.value)}>
                 {COLOR_OPTIONS.map((c) => (
                   <option key={c} value={c}>{c}</option>
@@ -795,45 +796,45 @@ function PlanFormModal({
           </div>
 
           <div>
-            <label className={labelCls}>Description</label>
+            <label className={labelCls}>{tx("Description")}</label>
             <textarea className={inputCls} rows={3} value={form.description} onChange={(e) => setField("description", e.target.value)} />
           </div>
 
           <div className="grid grid-cols-3 gap-4">
-            <NumField label="Entry Age Min" value={form.entry_age_min} onChange={(v) => setField("entry_age_min", v)} />
-            <NumField label="Entry Age Max" value={form.entry_age_max} onChange={(v) => setField("entry_age_max", v)} />
+            <NumField label={tx("Entry Age Min")} value={form.entry_age_min} onChange={(v) => setField("entry_age_min", v)} />
+            <NumField label={tx("Entry Age Max")} value={form.entry_age_max} onChange={(v) => setField("entry_age_max", v)} />
             <div>
-              <label className={labelCls}>Entry Age Label</label>
+              <label className={labelCls}>{tx("Entry Age Label")}</label>
               <input className={inputCls} value={form.entry_age_label} onChange={(e) => setField("entry_age_label", e.target.value)} />
             </div>
-            <NumField label="Term Min (yrs)" value={form.term_min_years} onChange={(v) => setField("term_min_years", v)} />
-            <NumField label="Term Max (yrs)" value={form.term_max_years} onChange={(v) => setField("term_max_years", v)} />
-            <NumField label="Max Maturity Age" value={form.max_maturity_age} onChange={(v) => setField("max_maturity_age", v)} />
-            <NumField label="Max Income Multiple" value={form.max_income_multiple} onChange={(v) => setField("max_income_multiple", v)} step="any" />
+            <NumField label={tx("Term Min (yrs)")} value={form.term_min_years} onChange={(v) => setField("term_min_years", v)} />
+            <NumField label={tx("Term Max (yrs)")} value={form.term_max_years} onChange={(v) => setField("term_max_years", v)} />
+            <NumField label={tx("Max Maturity Age")} value={form.max_maturity_age} onChange={(v) => setField("max_maturity_age", v)} />
+            <NumField label={tx("Max Income Multiple")} value={form.max_income_multiple} onChange={(v) => setField("max_income_multiple", v)} step="any" />
             <NumField
-              label="Base Premium Rate (PKR/1,000 sum assured/yr)"
+              label={tx("Base Premium Rate (PKR/1,000 sum assured/yr)")}
               value={form.base_premium_rate}
               onChange={(v) => setField("base_premium_rate", v)}
               step="any"
             />
             <NumField
-              label="Smoker Factor (x)"
+              label={tx("Smoker Factor (x)")}
               value={form.smoker_factor}
               onChange={(v) => setField("smoker_factor", v)}
               step="any"
             />
             <div>
-              <label className={labelCls}>Rate Version</label>
+              <label className={labelCls}>{tx("Rate Version")}</label>
               <input className={inputCls} value={form.rate_version} onChange={(e) => setField("rate_version", e.target.value)} placeholder="v1" />
             </div>
             <NumField
-              label="Dependent Age Min"
+              label={tx("Dependent Age Min")}
               value={form.dependent_age_min}
               nullable
               onChange={(v) => setField("dependent_age_min", v)}
             />
             <NumField
-              label="Dependent Age Max"
+              label={tx("Dependent Age Max")}
               value={form.dependent_age_max}
               nullable
               onChange={(v) => setField("dependent_age_max", v)}
@@ -842,9 +843,9 @@ function PlanFormModal({
 
           {form.category === "Group" && (
             <div className="grid grid-cols-2 gap-4">
-              <NumField label="Min Group Size" value={form.min_group_size} nullable onChange={(v) => setField("min_group_size", v)} />
+              <NumField label={tx("Min Group Size")} value={form.min_group_size} nullable onChange={(v) => setField("min_group_size", v)} />
               <div>
-                <label className={labelCls}>Underwriting Basis</label>
+                <label className={labelCls}>{tx("Underwriting Basis")}</label>
                 <input
                   className={inputCls}
                   value={form.underwriting_basis ?? ""}
@@ -857,9 +858,9 @@ function PlanFormModal({
           {/* Medical exam tiers */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className={labelCls + " mb-0"}>Medical Exam Tiers</label>
+              <label className={labelCls + " mb-0"}>{tx("Medical Exam Tiers")}</label>
               <button type="button" onClick={addTier} className="text-xs font-semibold text-blue-600 hover:text-blue-700">
-                + Add tier
+                {tx("+ Add tier")}
               </button>
             </div>
             <div className="space-y-2">
@@ -870,13 +871,13 @@ function PlanFormModal({
                     className={inputCls + " w-40"}
                     value={tier.minSumAssured}
                     onChange={(e) => updateTier(i, { minSumAssured: Number(e.target.value) })}
-                    placeholder="Min sum assured"
+                    placeholder={tx("Min sum assured")}
                   />
                   <input
                     className={inputCls}
                     value={tier.tier}
                     onChange={(e) => updateTier(i, { tier: e.target.value })}
-                    placeholder="Requirement"
+                    placeholder={tx("Requirement")}
                   />
                   <button type="button" onClick={() => removeTier(i)} className="text-red-500 hover:text-red-700 px-2">
                     ×
@@ -887,20 +888,20 @@ function PlanFormModal({
           </div>
 
           <div>
-            <label className={labelCls}>Required Documents (comma-separated)</label>
-            <input className={inputCls} value={docInput} onChange={(e) => setDocInput(e.target.value)} placeholder="CNIC, Medical Report, Salary Slip" />
+            <label className={labelCls}>{tx("Required Documents (comma-separated)")}</label>
+            <input className={inputCls} value={docInput} onChange={(e) => setDocInput(e.target.value)} placeholder={tx("CNIC, Medical Report, Salary Slip")} />
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
             <button type="button" onClick={onClose} className="text-sm font-semibold px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">
-              Cancel
+              {tx("Cancel")}
             </button>
             <button
               type="submit"
               disabled={saving}
               className="text-sm font-semibold px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
             >
-              {saving ? "Saving…" : editingId ? "Save changes" : "Create plan"}
+              {saving ? tx("Saving…") : editingId ? tx("Save changes") : tx("Create plan")}
             </button>
           </div>
         </form>

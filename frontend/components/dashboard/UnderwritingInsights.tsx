@@ -1,6 +1,7 @@
 import { PillarCard } from "./shared";
 import { worstLossRatioLine } from "@/lib/underwriting";
 import type { PolicyStats } from "@/app/services/policies";
+import { tx } from "@/lib/i18n/tx";
 
 function SparkleIcon() {
   return (
@@ -86,7 +87,7 @@ export function UnderwritingInsights({ policyStats, issuanceVelocity }: Underwri
   return (
     <PillarCard
       icon={<SparkleIcon />}
-      title="AI Underwriting Insights"
+      title={tx("AI Underwriting Insights")}
       barClass="bg-violet-500"
       iconBg="bg-violet-50"
       iconColor="text-violet-600"

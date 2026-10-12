@@ -3,6 +3,7 @@ import React, { useState, useCallback, useEffect } from "react";
 import PayeesTab from "../../../components/commissions/PayeesTab";
 import { CommissionPayee, listPayees } from "../../services/commissions";
 import { DateRangeFilter, resolvePreset, type DatePreset, type DateRange } from "../../../components/commissions/DateRangeFilter";
+import { tx } from "@/lib/i18n/tx";
 
 export default function PayeesPage() {
   const [notification, setNotification] = useState<{ msg: string; type: "success" | "error" } | null>(null);
@@ -22,7 +23,7 @@ export default function PayeesPage() {
       const payeeData = await listPayees();
       setPayees([...payeeData]);
     } catch (err) {
-      notify("Could not load payees.", false);
+      notify(tx("Could not load payees."), false);
     } finally {
       setLoading(false);
     }
@@ -43,8 +44,8 @@ export default function PayeesPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900">Roles</h1>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">Payees &amp; Hierarchy</span>
+            <h1 className="text-xl font-semibold tracking-tight text-slate-900">{tx("Roles")}</h1>
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">{tx("Payees & Hierarchy")}</span>
           </div>
         </div>
 
@@ -59,7 +60,7 @@ export default function PayeesPage() {
         />
       </div>
       {loading && payees.length === 0 ? (
-        <div className="px-5 py-12 text-center text-xs text-slate-400 bg-white rounded-xl shadow-sm border border-slate-200">Loading payees...</div>
+        <div className="px-5 py-12 text-center text-xs text-slate-400 bg-white rounded-xl shadow-sm border border-slate-200">{tx("Loading payees...")}</div>
       ) : (
         <PayeesTab
           payees={payees}

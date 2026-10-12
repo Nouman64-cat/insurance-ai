@@ -1,5 +1,6 @@
 import { PillarCard, Divider } from "./shared";
 import type { Claim } from "@/app/services/claims";
+import { tx } from "@/lib/i18n/tx";
 
 function AlertTriangleIcon() {
   return (
@@ -52,7 +53,7 @@ export function FraudCard({ claims }: { claims: Claim[] }) {
   return (
     <PillarCard
       icon={<AlertTriangleIcon />}
-      title="Fraud Queue"
+      title={tx("Fraud Queue")}
       barClass="bg-blue-600"
       iconBg="bg-blue-50"
       iconColor="text-blue-600"
@@ -81,10 +82,10 @@ export function FraudCard({ claims }: { claims: Claim[] }) {
         {/* Footer — single compact line */}
         <div className="flex items-center justify-between text-[10px] pt-0.5">
           <span className="text-slate-500 font-medium">
-            High-Risk in Queue: <strong className="text-slate-800">{highRiskInQueue} cases</strong>
+            {tx("High-Risk in Queue:")}{" "}<strong className="text-slate-800">{highRiskInQueue}{" "}{tx("cases")}</strong>
           </span>
           <span className="text-slate-500 font-medium">
-            Flagged Today: <strong className="text-slate-800">{flaggedToday} cases</strong>
+            {tx("Flagged Today:")}{" "}<strong className="text-slate-800">{flaggedToday}{" "}{tx("cases")}</strong>
           </span>
         </div>
       </div>

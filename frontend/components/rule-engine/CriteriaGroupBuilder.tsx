@@ -3,6 +3,7 @@
 import { RuleCriteriaDraft, ComparisonOperator } from "@/app/services/ruleEngine";
 import { OPERATOR_OPTIONS } from "./constants";
 import FieldSearchSelect from "./FieldSearchSelect";
+import { tx } from "@/lib/i18n/tx";
 
 interface Props {
   criteria: RuleCriteriaDraft[];
@@ -52,13 +53,13 @@ export default function CriteriaGroupBuilder({ criteria, onChange }: Props) {
     <div className="space-y-3">
       {groupIds.length === 0 ? (
         <div className="p-3 text-center text-xs text-slate-500 bg-slate-50 border border-dashed border-slate-200 rounded-xl flex items-center justify-between">
-          <span>Rule always applies (no conditions).</span>
+          <span>{tx("Rule always applies (no conditions).")}</span>
           <button
             type="button"
             onClick={addGroup}
             className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm cursor-pointer"
           >
-            + Add Condition
+            {tx("+ Add Condition")}
           </button>
         </div>
       ) : (
@@ -73,7 +74,7 @@ export default function CriteriaGroupBuilder({ criteria, onChange }: Props) {
                 <div className="flex items-center gap-2 my-2">
                   <div className="flex-1 h-px bg-slate-200" />
                   <span className="text-[10px] font-bold text-blue-600 uppercase bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                    OR
+                    {tx("OR")}
                   </span>
                   <div className="flex-1 h-px bg-slate-200" />
                 </div>
@@ -82,14 +83,14 @@ export default function CriteriaGroupBuilder({ criteria, onChange }: Props) {
               <div className="border border-slate-200 rounded-xl bg-slate-50/50 p-3 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                    {gIdx === 0 ? "Condition Group" : `Group #${gIdx + 1}`}
+                    {gIdx === 0 ? tx("Condition Group") : tx("Group #{0}", { 0: gIdx + 1 })}
                   </span>
                   <button
                     type="button"
                     onClick={() => removeGroup(groupId)}
                     className="text-xs font-semibold text-slate-400 hover:text-red-600 transition cursor-pointer"
                   >
-                    Delete Group
+                    {tx("Delete Group")}
                   </button>
                 </div>
 
@@ -100,7 +101,7 @@ export default function CriteriaGroupBuilder({ criteria, onChange }: Props) {
                     return (
                       <div key={critIdx} className="flex items-center gap-2 bg-white p-2 border border-slate-200 rounded-lg flex-wrap sm:flex-nowrap">
                         <span className="text-xs font-bold text-slate-400 w-7 text-center shrink-0">
-                          {idx === 0 ? "IF" : "AND"}
+                          {idx === 0 ? tx("IF") : tx("AND")}
                         </span>
 
                         {/* Searchable Field Dropdown Selector */}
@@ -127,7 +128,7 @@ export default function CriteriaGroupBuilder({ criteria, onChange }: Props) {
                           <div className="flex items-center gap-1">
                             <input
                               type="number"
-                              placeholder="min"
+                              placeholder={tx("min")}
                               value={item.value_range_min ?? ""}
                               onChange={(e) => updateCriterion(critIdx, { value_range_min: e.target.value === "" ? null : parseFloat(e.target.value) })}
                               className="w-16 border border-slate-200 rounded px-2 py-1.5 text-xs font-semibold text-slate-800"
@@ -135,7 +136,7 @@ export default function CriteriaGroupBuilder({ criteria, onChange }: Props) {
                             <span className="text-slate-400 text-xs">–</span>
                             <input
                               type="number"
-                              placeholder="max"
+                              placeholder={tx("max")}
                               value={item.value_range_max ?? ""}
                               onChange={(e) => updateCriterion(critIdx, { value_range_max: e.target.value === "" ? null : parseFloat(e.target.value) })}
                               className="w-16 border border-slate-200 rounded px-2 py-1.5 text-xs font-semibold text-slate-800"
@@ -144,7 +145,7 @@ export default function CriteriaGroupBuilder({ criteria, onChange }: Props) {
                         ) : item.operator === "in_set" ? (
                           <input
                             type="text"
-                            placeholder="val1, val2"
+                            placeholder={tx("val1, val2")}
                             value={item.value_list?.join(", ") ?? ""}
                             onChange={(e) => updateCriterion(critIdx, { value_list: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
                             className="w-36 border border-slate-200 rounded px-2 py-1.5 text-xs font-mono font-semibold"
@@ -152,7 +153,7 @@ export default function CriteriaGroupBuilder({ criteria, onChange }: Props) {
                         ) : item.operator === "field_gt" || item.operator === "field_gte" ? (
                           <input
                             type="text"
-                            placeholder="target_field"
+                            placeholder={tx("target_field")}
                             value={item.target_field_name ?? ""}
                             onChange={(e) => updateCriterion(critIdx, { target_field_name: e.target.value })}
                             className="w-32 border border-slate-200 rounded px-2 py-1.5 text-xs font-mono font-semibold"
@@ -160,7 +161,7 @@ export default function CriteriaGroupBuilder({ criteria, onChange }: Props) {
                         ) : (
                           <input
                             type="text"
-                            placeholder="value"
+                            placeholder={tx("value")}
                             value={item.value_string || (item.value_numeric !== null ? String(item.value_numeric) : "")}
                             onChange={(e) => {
                               const v = e.target.value;
@@ -195,7 +196,7 @@ export default function CriteriaGroupBuilder({ criteria, onChange }: Props) {
                     onClick={() => addConditionToGroup(groupId)}
                     className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
                   >
-                    + Add AND condition
+                    {tx("+ Add AND condition")}
                   </button>
                 </div>
               </div>
@@ -210,7 +211,7 @@ export default function CriteriaGroupBuilder({ criteria, onChange }: Props) {
           onClick={addGroup}
           className="text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg transition cursor-pointer"
         >
-          + Add OR Group
+          {tx("+ Add OR Group")}
         </button>
       )}
     </div>

@@ -1,6 +1,7 @@
 import { RingGauge, Bar, PillarCard, Divider } from "./shared";
 import type { CommissionPayee } from "@/app/services/commissions";
 import type { PolicyListItem, PolicyStats } from "@/app/services/policies";
+import { tx } from "@/lib/i18n/tx";
 
 function UsersIcon() {
   return (
@@ -54,7 +55,7 @@ export function CustomerCard({ policyStats, policies, payees, className = "" }: 
   return (
     <PillarCard
       icon={<UsersIcon />}
-      title="Customer Persistence"
+      title={tx("Customer Persistence")}
       barClass="bg-blue-600"
       iconBg="bg-blue-50"
       iconColor="text-blue-600"
@@ -63,11 +64,11 @@ export function CustomerCard({ policyStats, policies, payees, className = "" }: 
       <div className="flex-1 flex flex-col justify-between space-y-1">
         {/* Persistency ring + segments */}
         <div className="flex items-center gap-2.5">
-          <RingGauge value={avgPersistency} max={100} strokeHex="#7c3aed" label="Persistency" valueLabel={`${avgPersistency}%`} size={44} strokeW={5} />
+          <RingGauge value={avgPersistency} max={100} strokeHex="#7c3aed" label={tx("Persistency")} valueLabel={`${avgPersistency}%`} size={44} strokeW={5} />
           <div className="flex-1 space-y-0.5 min-w-0">
-            <p className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Segments</p>
+            <p className="text-[8px] font-bold uppercase tracking-wider text-slate-400">{tx("Segments")}</p>
             {SEGMENTS.length === 0 ? (
-              <p className="text-xs text-slate-400">No policies in range.</p>
+              <p className="text-xs text-slate-400">{tx("No policies in range.")}</p>
             ) : (
               SEGMENTS.map((s) => <Bar key={s.label} label={s.label} pct={s.pct} color={s.color} badge={`${s.pct}%`} />)
             )}
@@ -79,19 +80,19 @@ export function CustomerCard({ policyStats, policies, payees, className = "" }: 
         {/* Key stats */}
         <div className="grid grid-cols-3 gap-1">
           <div className="text-center">
-            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">Avg Coverage</p>
+            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">{tx("Avg Coverage")}</p>
             <p className="text-xs font-extrabold text-blue-700 mt-0.5">{fmtCompact(avgCoverage)}</p>
-            <p className="text-[8px] text-slate-400 truncate">per policy</p>
+            <p className="text-[8px] text-slate-400 truncate">{tx("per policy")}</p>
           </div>
           <div className="text-center">
-            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">At-Risk</p>
+            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">{tx("At-Risk")}</p>
             <p className="text-xs font-extrabold text-red-600 mt-0.5">{atRisk}</p>
-            <p className="text-[8px] text-slate-400 truncate">lapse risk</p>
+            <p className="text-[8px] text-slate-400 truncate">{tx("lapse risk")}</p>
           </div>
           <div className="text-center">
-            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">Renewals</p>
+            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">{tx("Renewals")}</p>
             <p className="text-xs font-extrabold text-amber-600 mt-0.5">{renewalsDue}</p>
-            <p className="text-[8px] text-slate-400 truncate">due 30d</p>
+            <p className="text-[8px] text-slate-400 truncate">{tx("due 30d")}</p>
           </div>
         </div>
       </div>

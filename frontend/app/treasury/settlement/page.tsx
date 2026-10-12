@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { SettlementRecord, listSettlementRecords } from "../../services/commissions";
 import DemoDataBanner from "@/components/DemoDataBanner";
 import { Pagination, usePagination } from "@/components/Pagination";
+import { tx } from "@/lib/i18n/tx";
 
 export default function SettlementPage() {
   const [records, setRecords] = useState<SettlementRecord[]>([]);
@@ -32,7 +33,7 @@ export default function SettlementPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900">Payment Settlement</h1>
+            <h1 className="text-xl font-semibold tracking-tight text-slate-900">{tx("Payment Settlement")}</h1>
             {/* <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">Disbursement & Treasury</span> */}
           </div>
           {/* <p className="text-xs text-slate-500 mt-1">
@@ -44,32 +45,32 @@ export default function SettlementPage() {
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
             </svg>
-            Ingest MT940 File
+            {tx("Ingest MT940 File")}
           </button>
         </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-          <h2 className="text-sm font-bold text-slate-800">Reconciliation & Exceptions Desk</h2>
+          <h2 className="text-sm font-bold text-slate-800">{tx("Reconciliation & Exceptions Desk")}</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="bg-slate-50 text-slate-500 border-b border-slate-100 text-xs">
               <tr>
-                <th className="px-5 py-3 font-semibold">Settlement ID</th>
-                <th className="px-5 py-3 font-semibold">Payee / Line Item</th>
-                <th className="px-5 py-3 font-semibold">Bank Reference</th>
-                <th className="px-5 py-3 font-semibold">Clearing Date</th>
-                <th className="px-5 py-3 font-semibold">Status</th>
-                <th className="px-5 py-3 font-semibold">Exception/Action</th>
+                <th className="px-5 py-3 font-semibold">{tx("Settlement ID")}</th>
+                <th className="px-5 py-3 font-semibold">{tx("Payee / Line Item")}</th>
+                <th className="px-5 py-3 font-semibold">{tx("Bank Reference")}</th>
+                <th className="px-5 py-3 font-semibold">{tx("Clearing Date")}</th>
+                <th className="px-5 py-3 font-semibold">{tx("Status")}</th>
+                <th className="px-5 py-3 font-semibold">{tx("Exception/Action")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {loading ? (
-                <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-400 text-xs">Loading settlement records...</td></tr>
+                <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-400 text-xs">{tx("Loading settlement records...")}</td></tr>
               ) : records.length === 0 ? (
-                <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-400 text-xs">No settlement records found.</td></tr>
+                <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-400 text-xs">{tx("No settlement records found.")}</td></tr>
               ) : (
                 pagedRecords.map((r) => (
                   <tr key={r.settlementId} className="hover:bg-slate-50/50 transition-colors">
@@ -98,10 +99,10 @@ export default function SettlementPage() {
                         <div>
                           <div className="text-xs font-bold text-rose-700">{r.returnReasonCode}</div>
                           <div className="text-[10px] text-slate-500">{r.returnReasonDescription}</div>
-                          <button className="mt-1 text-[10px] font-semibold text-purple-600 hover:text-purple-800 underline">Rollback to Unpaid</button>
+                          <button className="mt-1 text-[10px] font-semibold text-purple-600 hover:text-purple-800 underline">{tx("Rollback to Unpaid")}</button>
                         </div>
                       ) : (
-                        <span className="text-xs text-slate-400">None</span>
+                        <span className="text-xs text-slate-400">{tx("None")}</span>
                       )}
                     </td>
                   </tr>
@@ -110,7 +111,7 @@ export default function SettlementPage() {
             </tbody>
           </table>
         </div>
-          <Pagination pagination={pagination} noun="settlement records" inline />
+          <Pagination pagination={pagination} noun={tx("settlement records")} inline />
       </div>
     </div>
   );

@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import api from "@/app/services/api";
+import { tx } from "@/lib/i18n/tx";
 
 // --- Per-model pricing ------------------------------------------------------
 // USD per 1M tokens. Sources (verify periodically):
@@ -305,12 +306,12 @@ function TokenManagementContent() {
           <div className="w-16 h-16 bg-red-950/40 text-red-500 border border-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
             <LockIcon />
           </div>
-          <h1 className="text-xl font-bold text-white mb-2">Access Denied</h1>
+          <h1 className="text-xl font-bold text-white mb-2">{tx("Access Denied")}</h1>
           <p className="text-slate-400 text-sm mb-6">
-            You do not have SuperAdmin privileges to access the Token Management console.
+            {tx("You do not have SuperAdmin privileges to access the Token Management console.")}
           </p>
           <a href="/" className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm px-5 py-2.5 rounded-lg transition-all">
-            Return to Dashboard
+            {tx("Return to Dashboard")}
           </a>
         </div>
       </div>
@@ -404,18 +405,18 @@ function TokenManagementContent() {
           <div className="flex items-center gap-2">
             <span className="p-1.5 bg-blue-100 text-blue-600 rounded-lg"><TokenIcon /></span>
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-              FinOps Engineering & Token Economy Console
+              {tx("FinOps Engineering & Token Economy Console")}
             </h1>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Real-time LLM spend across every configured model, priced per-model.{" "}
+            {tx("Real-time LLM spend across every configured model, priced per-model.")}{" "}
             {modelsSeen.length > 0 && (
               <span className="font-semibold text-slate-700">
-                Models in range: {modelsSeen.join(", ")}
+                {tx("Models in range:")}{" "}{modelsSeen.join(", ")}
               </span>
             )}
             {hasUnknownModel && (
-              <span className="text-amber-600"> · some rows use an unrecognised model — costs for those are estimated.</span>
+              <span className="text-amber-600">{" "}{tx("· some rows use an unrecognised model — costs for those are estimated.")}</span>
             )}
           </p>
         </div>
@@ -431,7 +432,7 @@ function TokenManagementContent() {
                   : "text-slate-500 hover:text-slate-700"
               }`}
             >
-              Today
+              {tx("Today")}
             </button>
             <button
               onClick={() => setDateRangeOption("7days")}
@@ -441,7 +442,7 @@ function TokenManagementContent() {
                   : "text-slate-500 hover:text-slate-700"
               }`}
             >
-              Last 7 Days
+              {tx("Last 7 Days")}
             </button>
             <button
               onClick={() => setDateRangeOption("30days")}
@@ -451,13 +452,13 @@ function TokenManagementContent() {
                   : "text-slate-500 hover:text-slate-700"
               }`}
             >
-              Last 30 Days
+              {tx("Last 30 Days")}
             </button>
           </div>
 
           <div className="hidden sm:flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-3.5 py-2 rounded-lg text-xs text-emerald-800 font-semibold shadow-sm">
             <CheckShieldIcon />
-            <span>FinOps Active</span>
+            <span>{tx("FinOps Active")}</span>
           </div>
         </div>
       </div>
@@ -468,17 +469,17 @@ function TokenManagementContent() {
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                FinOps Strategy Active
+                {tx("FinOps Strategy Active")}
               </span>
               <span className="text-xs text-slate-300 font-medium">
-                1-Click Direct Shortcut Routing + Prompt Cache Optimization
+                {tx("1-Click Direct Shortcut Routing + Prompt Cache Optimization")}
               </span>
             </div>
             <h2 className="text-lg font-bold text-white tracking-tight">
-              Estimated Monthly Savings: <span className="text-emerald-400 font-extrabold">${(estimatedSavings * 30).toFixed(2)}</span>
+              {tx("Estimated Monthly Savings:")}{" "}<span className="text-emerald-400 font-extrabold">${(estimatedSavings * 30).toFixed(2)}</span>
             </h2>
             <p className="text-xs text-slate-300 max-w-3xl">
-              By routing Rule Engine evaluations and Commission calculations directly to deterministic AST/local engines, and using 1-Click Action shortcuts in Copilot, we bypass redundant LLM turns and eliminate unnecessary input token inflation.
+              {tx("By routing Rule Engine evaluations and Commission calculations directly to deterministic AST/local engines, and using 1-Click Action shortcuts in Copilot, we bypass redundant LLM turns and eliminate unnecessary input token inflation.")}
             </p>
           </div>
 
@@ -488,14 +489,14 @@ function TokenManagementContent() {
               className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow transition"
             >
               <BoltIcon />
-              Rule Catalog
+              {tx("Rule Catalog")}
             </Link>
             <Link
               href="/commissions"
               className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold rounded-lg shadow transition"
             >
               <BoltIcon />
-              Commission Ledger
+              {tx("Commission Ledger")}
             </Link>
           </div>
         </div>
@@ -507,48 +508,48 @@ function TokenManagementContent() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
           </svg>
-          <span className="text-xs text-slate-400">Analyzing token telemetry...</span>
+          <span className="text-xs text-slate-400">{tx("Analyzing token telemetry...")}</span>
         </div>
       ) : (
         <>
           {/* KPI Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Total Cost ({diffDays}d)</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">{tx("Total Cost (")}{diffDays}d)</p>
               <h3 className="text-2xl font-bold text-slate-900">${totalCost.toFixed(5)}</h3>
               <div className="flex items-center justify-between mt-2 text-xs">
-                <span className="text-slate-400">${costPerRequest.toFixed(6)} / request</span>
+                <span className="text-slate-400">${costPerRequest.toFixed(6)}{" "}{tx("/ request")}</span>
                 <span
                   className={`font-bold px-2 py-0.5 rounded ${cacheHitRate >= 20 ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}
-                  title="Share of input tokens served from the prompt cache. Higher is cheaper — a stable system prompt and tool list is what makes this climb."
+                  title={tx("Share of input tokens served from the prompt cache. Higher is cheaper — a stable system prompt and tool list is what makes this climb.")}
                 >
-                  {cacheHitRate.toFixed(0)}% cached
+                  {cacheHitRate.toFixed(0)}{tx("% cached")}
                 </span>
               </div>
             </div>
             
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Total Input Tokens</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">{tx("Total Input Tokens")}</p>
               <h3 className="text-2xl font-bold text-blue-600">{totalInputTokens.toLocaleString()}</h3>
               <div className="flex items-center justify-between mt-2 text-xs">
-                <span className="text-slate-400">incl. {totalCachedTokens.toLocaleString()} cached</span>
-                <span className="font-semibold text-slate-700">Cost: ${inputCost.toFixed(5)}</span>
+                <span className="text-slate-400">{tx("incl.")}{" "}{totalCachedTokens.toLocaleString()}{" "}{tx("cached")}</span>
+                <span className="font-semibold text-slate-700">{tx("Cost: $")}{inputCost.toFixed(5)}</span>
               </div>
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Total Output Tokens</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">{tx("Total Output Tokens")}</p>
               <h3 className="text-2xl font-bold text-blue-600">{totalOutputTokens.toLocaleString()}</h3>
               <div className="flex items-center justify-between mt-2 text-xs">
-                <span className="text-slate-400">priced per model</span>
-                <span className="font-semibold text-slate-700">Cost: ${outputCost.toFixed(5)}</span>
+                <span className="text-slate-400">{tx("priced per model")}</span>
+                <span className="font-semibold text-slate-700">{tx("Cost: $")}{outputCost.toFixed(5)}</span>
               </div>
             </div>
             
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Total API & Action Runs</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">{tx("Total API & Action Runs")}</p>
               <h3 className="text-2xl font-bold text-blue-600">{totalRequests.toLocaleString()}</h3>
-              <p className="text-xs text-slate-400 mt-2">Combined LLM + 1-Click Action Executions</p>
+              <p className="text-xs text-slate-400 mt-2">{tx("Combined LLM + 1-Click Action Executions")}</p>
             </div>
           </div>
 
@@ -564,32 +565,32 @@ function TokenManagementContent() {
                     </svg>
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900">Rule Engine FinOps Performance</h3>
-                    <p className="text-xs text-slate-500">Underwriting Risk Rules & Catalog Engine</p>
+                    <h3 className="text-sm font-bold text-slate-900">{tx("Rule Engine FinOps Performance")}</h3>
+                    <p className="text-xs text-slate-500">{tx("Underwriting Risk Rules & Catalog Engine")}</p>
                   </div>
                 </div>
                 <span className="px-2 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold rounded-md">
-                  100% Deterministic
+                  {tx("100% Deterministic")}
                 </span>
               </div>
 
               <div className="grid grid-cols-3 gap-3 text-center">
                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                  <p className="text-[11px] font-medium text-slate-500">Evaluations</p>
+                  <p className="text-[11px] font-medium text-slate-500">{tx("Evaluations")}</p>
                   <p className="text-base font-bold text-slate-900 mt-0.5">1,420</p>
                 </div>
                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                  <p className="text-[11px] font-medium text-slate-500">Avg Latency</p>
-                  <p className="text-base font-bold text-emerald-600 mt-0.5">&lt; 12ms</p>
+                  <p className="text-[11px] font-medium text-slate-500">{tx("Avg Latency")}</p>
+                  <p className="text-base font-bold text-emerald-600 mt-0.5">{tx("< 12ms")}</p>
                 </div>
                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                  <p className="text-[11px] font-medium text-slate-500">Token Cost</p>
+                  <p className="text-[11px] font-medium text-slate-500">{tx("Token Cost")}</p>
                   <p className="text-base font-bold text-emerald-600 mt-0.5">$0.000</p>
                 </div>
               </div>
 
               <p className="text-xs text-slate-600 leading-relaxed">
-                Rules are evaluated using local Python AST expression resolution without calling LLM endpoints. This saves an estimated ~3,500 input tokens per risk assessment run.
+                {tx("Rules are evaluated using local Python AST expression resolution without calling LLM endpoints. This saves an estimated ~3,500 input tokens per risk assessment run.")}
               </p>
 
               <div className="flex items-center gap-2 pt-1">
@@ -598,7 +599,7 @@ function TokenManagementContent() {
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
                 >
                   <BoltIcon />
-                  Manage Rule Sets & Categories
+                  {tx("Manage Rule Sets & Categories")}
                 </Link>
               </div>
             </div>
@@ -613,32 +614,32 @@ function TokenManagementContent() {
                     </svg>
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900">Commission Engine FinOps Performance</h3>
-                    <p className="text-xs text-slate-500">Waterfall Calculator, Ledger & Payout Runs</p>
+                    <h3 className="text-sm font-bold text-slate-900">{tx("Commission Engine FinOps Performance")}</h3>
+                    <p className="text-xs text-slate-500">{tx("Waterfall Calculator, Ledger & Payout Runs")}</p>
                   </div>
                 </div>
                 <span className="px-2 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold rounded-md">
-                  Local Waterfall Engine
+                  {tx("Local Waterfall Engine")}
                 </span>
               </div>
 
               <div className="grid grid-cols-3 gap-3 text-center">
                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                  <p className="text-[11px] font-medium text-slate-500">Ledger Entries</p>
+                  <p className="text-[11px] font-medium text-slate-500">{tx("Ledger Entries")}</p>
                   <p className="text-base font-bold text-slate-900 mt-0.5">850+</p>
                 </div>
                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                  <p className="text-[11px] font-medium text-slate-500">Calculation Speed</p>
-                  <p className="text-base font-bold text-emerald-600 mt-0.5">&lt; 5ms</p>
+                  <p className="text-[11px] font-medium text-slate-500">{tx("Calculation Speed")}</p>
+                  <p className="text-base font-bold text-emerald-600 mt-0.5">{tx("< 5ms")}</p>
                 </div>
                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                  <p className="text-[11px] font-medium text-slate-500">Token Cost</p>
+                  <p className="text-[11px] font-medium text-slate-500">{tx("Token Cost")}</p>
                   <p className="text-base font-bold text-emerald-600 mt-0.5">$0.000</p>
                 </div>
               </div>
 
               <p className="text-xs text-slate-600 leading-relaxed">
-                Multi-tier producer commission waterfall calculations and tax withholding rules run deterministically in browser/service microservices, eliminating LLM token fees for all standard payout runs.
+                {tx("Multi-tier producer commission waterfall calculations and tax withholding rules run deterministically in browser/service microservices, eliminating LLM token fees for all standard payout runs.")}
               </p>
 
               <div className="flex items-center gap-2 pt-1">
@@ -647,13 +648,13 @@ function TokenManagementContent() {
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
                 >
                   <BoltIcon />
-                  Open Commission Dashboard
+                  {tx("Open Commission Dashboard")}
                 </Link>
                 <Link
                   href="/commission-ops/ledger"
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition"
                 >
-                  View Ledger
+                  {tx("View Ledger")}
                 </Link>
               </div>
             </div>
@@ -663,11 +664,11 @@ function TokenManagementContent() {
           <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
-                <h3 className="text-sm font-bold text-slate-900">Active FinOps Cost Optimization Controls</h3>
-                <p className="text-xs text-slate-500">Configure real-time token reduction strategies across the platform</p>
+                <h3 className="text-sm font-bold text-slate-900">{tx("Active FinOps Cost Optimization Controls")}</h3>
+                <p className="text-xs text-slate-500">{tx("Configure real-time token reduction strategies across the platform")}</p>
               </div>
               <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full">
-                5 Optimizations Enforced
+                {tx("5 Optimizations Enforced")}
               </span>
             </div>
 
@@ -680,8 +681,8 @@ function TokenManagementContent() {
                   className="mt-1 rounded text-blue-600 focus:ring-blue-500"
                 />
                 <div>
-                  <p className="text-xs font-bold text-slate-800">System Prompt Caching</p>
-                  <p className="text-[11px] font-normal text-slate-500 mt-0.5">Cached prompt-prefix tokens bill at a fraction of fresh input (~10–25% depending on model).</p>
+                  <p className="text-xs font-bold text-slate-800">{tx("System Prompt Caching")}</p>
+                  <p className="text-[11px] font-normal text-slate-500 mt-0.5">{tx("Cached prompt-prefix tokens bill at a fraction of fresh input (~10–25% depending on model).")}</p>
                 </div>
               </label>
 
@@ -693,8 +694,8 @@ function TokenManagementContent() {
                   className="mt-1 rounded text-blue-600 focus:ring-blue-500"
                 />
                 <div>
-                  <p className="text-xs font-bold text-slate-800">1-Click Direct Action Routing</p>
-                  <p className="text-[11px] font-normal text-slate-500 mt-0.5">Executes common navigation & operations directly without conversational LLM overhead.</p>
+                  <p className="text-xs font-bold text-slate-800">{tx("1-Click Direct Action Routing")}</p>
+                  <p className="text-[11px] font-normal text-slate-500 mt-0.5">{tx("Executes common navigation & operations directly without conversational LLM overhead.")}</p>
                 </div>
               </label>
 
@@ -706,8 +707,8 @@ function TokenManagementContent() {
                   className="mt-1 rounded text-blue-600 focus:ring-blue-500"
                 />
                 <div>
-                  <p className="text-xs font-bold text-slate-800">Rule Engine AST Compilation</p>
-                  <p className="text-[11px] font-normal text-slate-500 mt-0.5">Executes expression-based decision rules locally with zero LLM API calls.</p>
+                  <p className="text-xs font-bold text-slate-800">{tx("Rule Engine AST Compilation")}</p>
+                  <p className="text-[11px] font-normal text-slate-500 mt-0.5">{tx("Executes expression-based decision rules locally with zero LLM API calls.")}</p>
                 </div>
               </label>
 
@@ -719,8 +720,8 @@ function TokenManagementContent() {
                   className="mt-1 rounded text-blue-600 focus:ring-blue-500"
                 />
                 <div>
-                  <p className="text-xs font-bold text-slate-800">Deterministic Commission Waterfall</p>
-                  <p className="text-[11px] font-normal text-slate-500 mt-0.5">Computes tier rates and WHT tax deductions instantly without spending tokens.</p>
+                  <p className="text-xs font-bold text-slate-800">{tx("Deterministic Commission Waterfall")}</p>
+                  <p className="text-[11px] font-normal text-slate-500 mt-0.5">{tx("Computes tier rates and WHT tax deductions instantly without spending tokens.")}</p>
                 </div>
               </label>
 
@@ -732,8 +733,8 @@ function TokenManagementContent() {
                   className="mt-1 rounded text-blue-600 focus:ring-blue-500"
                 />
                 <div>
-                  <p className="text-xs font-bold text-slate-800">Dynamic Tool Schema Binding</p>
-                  <p className="text-[11px] font-normal text-slate-500 mt-0.5">Binds only contextually required tool definitions, saving ~7k input tokens per turn.</p>
+                  <p className="text-xs font-bold text-slate-800">{tx("Dynamic Tool Schema Binding")}</p>
+                  <p className="text-[11px] font-normal text-slate-500 mt-0.5">{tx("Binds only contextually required tool definitions, saving ~7k input tokens per turn.")}</p>
                 </div>
               </label>
             </div>
@@ -744,10 +745,10 @@ function TokenManagementContent() {
             <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm p-5">
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">Token Usage Trend & Cost Trajectory</h3>
-                  <p className="text-xs text-slate-500">Daily breakdown of input, output, and cached tokens</p>
+                  <h3 className="text-sm font-bold text-slate-900">{tx("Token Usage Trend & Cost Trajectory")}</h3>
+                  <p className="text-xs text-slate-500">{tx("Daily breakdown of input, output, and cached tokens")}</p>
                 </div>
-                <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-1 rounded-md">{diffDays} Days</span>
+                <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-1 rounded-md">{diffDays}{" "}{tx("Days")}</span>
               </div>
               
               <div className="relative h-64 w-full mt-4">
@@ -827,8 +828,8 @@ function TokenManagementContent() {
             {/* Breakdown Table */}
             <div className="lg:col-span-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
               <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-                <p className="text-sm font-bold text-slate-800">Usage & Cost by Service</p>
-                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Sorted by Spend</span>
+                <p className="text-sm font-bold text-slate-800">{tx("Usage & Cost by Service")}</p>
+                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{tx("Sorted by Spend")}</span>
               </div>
               
               <div className="flex-1 overflow-y-auto max-h-[480px]">
@@ -837,7 +838,7 @@ function TokenManagementContent() {
                     {services.length === 0 && (
                       <tr>
                         <td className="px-5 py-8 text-center text-xs text-slate-400">
-                          No LLM calls recorded in this window.
+                          {tx("No LLM calls recorded in this window.")}
                         </td>
                       </tr>
                     )}
@@ -855,7 +856,7 @@ function TokenManagementContent() {
                                       ? "bg-slate-100 text-slate-600 border-slate-200"
                                       : "bg-amber-50 text-amber-700 border-amber-200"
                                   }`}
-                                  title={rateFor(m).known ? "" : "unrecognised model — cost estimated"}
+                                  title={rateFor(m).known ? "" : tx("unrecognised model — cost estimated")}
                                 >
                                   {m}
                                 </span>
@@ -868,23 +869,23 @@ function TokenManagementContent() {
 
                           <div className="mt-3 space-y-1 text-xs">
                             <div className="flex justify-between">
-                              <span className="text-slate-500">Requests:</span>
+                              <span className="text-slate-500">{tx("Requests:")}</span>
                               <span className="font-semibold text-slate-700">{svc.total_requests.toLocaleString()}</span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-slate-500">Input Tokens:</span>
+                              <span className="text-slate-500">{tx("Input Tokens:")}</span>
                               <span className="font-semibold text-blue-600">{svc.total_input.toLocaleString()}</span>
                             </div>
                             {svc.total_cached > 0 && (
                               <div className="flex justify-between">
-                                <span className="text-slate-500">— Cached input:</span>
+                                <span className="text-slate-500">{tx("— Cached input:")}</span>
                                 <span className="font-semibold text-emerald-700">
                                   {svc.total_cached.toLocaleString()} ({((svc.total_cached / Math.max(svc.total_input, 1)) * 100).toFixed(0)}%)
                                 </span>
                               </div>
                             )}
                             <div className="flex justify-between">
-                              <span className="text-slate-500">Output Tokens:</span>
+                              <span className="text-slate-500">{tx("Output Tokens:")}</span>
                               <span className="font-semibold text-blue-600">{svc.total_output.toLocaleString()}</span>
                             </div>
 
@@ -903,7 +904,7 @@ function TokenManagementContent() {
 
                             <div className="flex justify-between items-center pt-2 mt-2 border-t border-slate-100">
                               <div className="flex items-center gap-1.5">
-                                <span className="font-bold text-slate-700">Cost:</span>
+                                <span className="font-bold text-slate-700">{tx("Cost:")}</span>
                                 <span className="font-bold text-slate-900">${svc.total_cost.toFixed(5)}</span>
                               </div>
                               {svc.routeLink && (
@@ -911,7 +912,7 @@ function TokenManagementContent() {
                                   href={svc.routeLink}
                                   className="text-[11px] font-bold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-0.5"
                                 >
-                                  {svc.routeLabel} &rarr;
+                                  {svc.routeLabel}{" "}{tx("→")}
                                 </Link>
                               )}
                             </div>

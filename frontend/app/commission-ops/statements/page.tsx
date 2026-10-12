@@ -8,6 +8,7 @@ import {
   type DatePreset,
   type DateRange,
 } from "../../../components/commissions/DateRangeFilter";
+import { tx } from "@/lib/i18n/tx";
 
 export default function StatementsPage() {
   const [datePreset, setDatePreset] = useState<DatePreset>("30d");
@@ -34,10 +35,10 @@ export default function StatementsPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900">Payee Statements</h1>
+            <h1 className="text-xl font-semibold tracking-tight text-slate-900">{tx("Payee Statements")}</h1>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Payee earnings summaries, statutory tax deductions, and net stub details
+            {tx("Payee earnings summaries, statutory tax deductions, and net stub details")}
           </p>
         </div>
         <DateRangeFilter
@@ -51,7 +52,7 @@ export default function StatementsPage() {
         />
       </div>
       {loading && statements.length === 0 ? (
-        <div className="px-5 py-12 text-center text-xs text-slate-400 bg-white rounded-xl shadow-sm border border-slate-200">Loading statements...</div>
+        <div className="px-5 py-12 text-center text-xs text-slate-400 bg-white rounded-xl shadow-sm border border-slate-200">{tx("Loading statements...")}</div>
       ) : (
         <StatementsTab
           statements={statements}

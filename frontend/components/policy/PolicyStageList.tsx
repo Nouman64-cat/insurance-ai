@@ -7,6 +7,7 @@ import { listPolicies, type PolicyListItem } from "@/app/services/policies";
 import { fmtCoverage } from "@/lib/mock-data";
 import { PolicyLifecycleDrawer } from "./PolicyLifecycleDrawer";
 import { normStatus } from "./lifecycle";
+import { tx } from "@/lib/i18n/tx";
 
 // Which lifecycle statuses belong to each stage.
 const PRE_ISSUANCE = new Set([
@@ -56,7 +57,7 @@ export function PolicyStageList({ variant, title, subtitle }: Readonly<Props>) {
         const all = await listPolicies();
         if (alive) setPolicies(all);
       } catch (err: any) {
-        if (alive) setError(err?.response?.data?.detail ?? err?.message ?? "Failed to load policies.");
+        if (alive) setError(err?.response?.data?.detail ?? err?.message ?? tx("Failed to load policies."));
       } finally {
         if (alive) setLoading(false);
       }
@@ -87,13 +88,13 @@ export function PolicyStageList({ variant, title, subtitle }: Readonly<Props>) {
       <div className="flex items-end justify-between gap-4 mb-6">
         <div>
           <p className="text-[11px] font-semibold text-blue-600 uppercase tracking-wider">
-            Policy Management
+            {tx("Policy Management")}
           </p>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">{title}</h1>
           <p className="text-sm text-slate-500 mt-0.5">{subtitle}</p>
         </div>
         <span className="text-xs font-semibold text-slate-400 bg-slate-100 border border-slate-200 rounded-full px-3 py-1 flex-shrink-0">
-          {rows.length} {rows.length === 1 ? "policy" : "policies"}
+          {rows.length} {rows.length === 1 ? tx("policy") : tx("policies")}
         </span>
       </div>
 
@@ -105,7 +106,7 @@ export function PolicyStageList({ variant, title, subtitle }: Readonly<Props>) {
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name, policy number or product…"
+          placeholder={tx("Search by name, policy number or product…")}
           className="w-full text-sm border border-slate-200 rounded-lg pl-9 pr-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300"
         />
       </div>
@@ -119,11 +120,11 @@ export function PolicyStageList({ variant, title, subtitle }: Readonly<Props>) {
         </div>
       ) : rows.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 py-16 text-center">
-          <p className="text-sm font-semibold text-slate-500">No policies in this stage</p>
+          <p className="text-sm font-semibold text-slate-500">{tx("No policies in this stage")}</p>
           <p className="text-xs text-slate-400 mt-1">
             {variant === "pre"
-              ? "Policies appear here between underwriting approval and going in-force."
-              : "Policies appear here once cover binds and the first premium is paid."}
+              ? tx("Policies appear here between underwriting approval and going in-force.")
+              : tx("Policies appear here once cover binds and the first premium is paid.")}
           </p>
         </div>
       ) : (
@@ -140,12 +141,12 @@ export function PolicyStageList({ variant, title, subtitle }: Readonly<Props>) {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-slate-800 truncate">{p.customer_name}</p>
                 <p className="text-[11px] text-slate-400 font-mono truncate">
-                  {p.policy_number ?? "Not yet issued"} · {p.product_name}
+                  {p.policy_number ?? tx("Not yet issued")} · {p.product_name}
                 </p>
               </div>
               <div className="hidden sm:block text-right flex-shrink-0">
                 <p className="text-xs font-semibold text-slate-700">{fmtCoverage(p.coverage_amount)}</p>
-                <p className="text-[10px] text-slate-400">{p.term_years} yr term</p>
+                <p className="text-[10px] text-slate-400">{p.term_years}{" "}{tx("yr term")}</p>
               </div>
               <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border flex-shrink-0 ${STATUS_BADGE[normStatus(p.status)] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>
                 {p.status}

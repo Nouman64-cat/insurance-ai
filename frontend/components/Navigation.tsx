@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { tx } from "@/lib/i18n/tx";
 
 function ShieldIcon() {
   return (
@@ -35,16 +36,16 @@ export function Navigation() {
         <Link href="/" className="flex items-center gap-2.5 flex-shrink-0">
           <ShieldIcon />
           <span className="text-white font-bold text-lg tracking-tight">
-            insurance<span className="text-blue-400">-ai</span>
+            {tx("insurance")}<span className="text-blue-400">{tx("-ai")}</span>
           </span>
           <span className="hidden sm:block h-4 w-px bg-slate-700" />
           <span className="hidden sm:block text-slate-400 text-xs font-medium uppercase tracking-widest">
-            Underwriting Portal
+            {tx("Underwriting Portal")}
           </span>
         </Link>
 
         {/* Nav links */}
-        <nav className="hidden md:flex items-center gap-1" aria-label="Primary navigation">
+        <nav className="hidden md:flex items-center gap-1" aria-label={tx("Primary navigation")}>
           {[
             { href: "/",        label: "Dashboard"  },
             { href: "#queue",   label: "Queue"      },
@@ -67,7 +68,7 @@ export function Navigation() {
           <button
             type="button"
             className="relative p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-            aria-label="Notifications"
+            aria-label={tx("Notifications")}
           >
             <BellIcon />
             <span className="absolute top-1 right-1 w-2 h-2 bg-blue-500 rounded-full" />
@@ -79,11 +80,11 @@ export function Navigation() {
           {/* User avatar */}
           <div className="flex items-center gap-2.5 cursor-pointer group">
             <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
-              <span className="text-xs font-bold text-white">SR</span>
+              <span className="text-xs font-bold text-white">{tx("SR")}</span>
             </div>
             <div className="hidden sm:block">
-              <p className="text-sm font-medium text-slate-200 leading-none">Saira Reviewer</p>
-              <p className="text-xs text-slate-500 mt-0.5">Senior Underwriter</p>
+              <p className="text-sm font-medium text-slate-200 leading-none">{tx("Saira Reviewer")}</p>
+              <p className="text-xs text-slate-500 mt-0.5">{tx("Senior Underwriter")}</p>
             </div>
           </div>
         </div>

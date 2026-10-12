@@ -20,6 +20,7 @@ import { notifyParentPortal } from "@/lib/agent/portalMessage";
 import { pauseLeadAnnouncements } from "@/lib/leadAnnouncements";
 import DemoFillButton from "@/components/DemoFillButton";
 import { demoOrganizationExtraction } from "@/lib/demoData";
+import { tx } from "@/lib/i18n/tx";
 
 interface Props {
   open: boolean;
@@ -303,11 +304,11 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
           try { parsed = JSON.parse(xhr.responseText); } catch { /* non-JSON error body */ }
           resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data: parsed });
         };
-        xhr.onerror = () => reject(new Error("Could not reach the document reader."));
+        xhr.onerror = () => reject(new Error(tx("Could not reach the document reader.")));
         xhr.send(body);
       });
       setProgress(100);
-      if (!ok) throw new Error(data.detail || `Extraction failed (${status}).`);
+      if (!ok) throw new Error(data.detail || tx("Extraction failed ({0}).", { 0: status }));
 
       applyExtracted(data, file.name);
     } catch (err: any) {
@@ -543,8 +544,8 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
   const label = "block text-xs font-semibold text-slate-600";
   const empOptions = (
     <>
-      <option value="">Select employee…</option>
-      {employees.map((e) => <option key={e.uid} value={e.uid}>{e.name.trim() || e.employee_id || "(unnamed employee)"}{e.employee_id ? ` · ${e.employee_id}` : ""}</option>)}
+      <option value="">{tx("Select employee…")}</option>
+      {employees.map((e) => <option key={e.uid} value={e.uid}>{e.name.trim() || e.employee_id || tx("(unnamed employee)")}{e.employee_id ? ` · ${e.employee_id}` : ""}</option>)}
     </>
   );
   const Th = ({ children }: { children?: React.ReactNode }) => <th className="px-2 py-2 text-left whitespace-nowrap">{children}</th>;
@@ -556,8 +557,8 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <div>
-            <h3 className="text-base font-bold text-slate-900">Add New Corporate</h3>
-            <p className="text-xs text-slate-500 mt-0.5">Company, group policy, benefit classes, employees, dependants and nominees in one place — or upload a document to fill every tab.</p>
+            <h3 className="text-base font-bold text-slate-900">{tx("Add New Corporate")}</h3>
+            <p className="text-xs text-slate-500 mt-0.5">{tx("Company, group policy, benefit classes, employees, dependants and nominees in one place — or upload a document to fill every tab.")}</p>
           </div>
           <div className="flex items-center gap-3">
             <DemoFillButton onFill={() => {
@@ -570,7 +571,7 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
             <input ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} />
             <button type="button" onClick={() => fileRef.current?.click()} disabled={extracting || saving}
-              title="Upload a PDF, PNG or JPG (max 10 MB) to fill the form automatically"
+              title={tx("Upload a PDF, PNG or JPG (max 10 MB) to fill the form automatically")}
               className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-blue-200 bg-white text-blue-700 hover:bg-blue-50 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 transition-colors">
               {extracting ? (
                 <>
@@ -582,16 +583,16 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
                     </svg>
                     <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold tabular-nums text-blue-800">{progress}%</span>
                   </span>
-                  {progress < 50 ? "Uploading…" : "Reading document…"}
+                  {progress < 50 ? tx("Uploading…") : tx("Reading document…")}
                 </>
               ) : (
                 <>
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>
-                  Upload document
+                  {tx("Upload document")}
                 </>
               )}
             </button>
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600" aria-label="Close">✕</button>
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600" aria-label={tx("Close")}>✕</button>
           </div>
         </div>
 
@@ -601,7 +602,7 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
             <button key={t.id} type="button" onClick={() => setTab(t.id)}
               className={`px-4 py-3 text-xs font-semibold border-b-2 transition-all ${tab === t.id ? "border-blue-600 text-blue-600" : "border-transparent text-slate-400 hover:text-slate-600"}`}>
               {t.label}
-              {tabHasMissing[t.id] && <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-amber-500" title="Fields to fill in on this tab" />}
+              {tabHasMissing[t.id] && <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-amber-500" title={tx("Fields to fill in on this tab")} />}
             </button>
           ))}
         </div>
@@ -624,27 +625,27 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
           {tab === "company" && (
             <div className="space-y-4 max-w-3xl">
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5"><label className={label}>Company Name *</label>
-                  <input className={`${INPUT} ${hi("name", name)}`} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Meridian Textiles Ltd" /></div>
-                <div className="space-y-1.5"><label className={label}>Registration Number</label>
+                <div className="space-y-1.5"><label className={label}>{tx("Company Name *")}</label>
+                  <input className={`${INPUT} ${hi("name", name)}`} value={name} onChange={(e) => setName(e.target.value)} placeholder={tx("e.g. Meridian Textiles Ltd")} /></div>
+                <div className="space-y-1.5"><label className={label}>{tx("Registration Number")}</label>
                   <input className={`${INPUT} ${hi("registration_number", registrationNumber)}`} value={registrationNumber} onChange={(e) => setRegistrationNumber(e.target.value)} placeholder="e.g. 0123456" /></div>
               </div>
-              <div className="space-y-1.5"><label className={label}>Industry</label>
-                <input className={`${INPUT} ${hi("industry", industry)}`} value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="e.g. Textiles" /></div>
-              <div className="space-y-1.5"><label className={label}>Contact Person</label>
-                <input className={`${INPUT} ${hi("contact_person", contactPerson)}`} value={contactPerson} onChange={(e) => setContactPerson(e.target.value)} placeholder="e.g. Sana Iqbal" /></div>
+              <div className="space-y-1.5"><label className={label}>{tx("Industry")}</label>
+                <input className={`${INPUT} ${hi("industry", industry)}`} value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder={tx("e.g. Textiles")} /></div>
+              <div className="space-y-1.5"><label className={label}>{tx("Contact Person")}</label>
+                <input className={`${INPUT} ${hi("contact_person", contactPerson)}`} value={contactPerson} onChange={(e) => setContactPerson(e.target.value)} placeholder={tx("e.g. Sana Iqbal")} /></div>
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5"><label className={label}>Contact Email</label>
-                  <input type="email" className={`${INPUT} ${hi("contact_email", contactEmail)}`} value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="hr@company.com" /></div>
-                <div className="space-y-1.5"><label className={label}>Contact Phone</label>
+                <div className="space-y-1.5"><label className={label}>{tx("Contact Email")}</label>
+                  <input type="email" className={`${INPUT} ${hi("contact_email", contactEmail)}`} value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder={tx("hr@company.com")} /></div>
+                <div className="space-y-1.5"><label className={label}>{tx("Contact Phone")}</label>
                   <input className={`${INPUT} ${hi("contact_phone", contactPhone)}`} value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} placeholder="+92 300 1234567" /></div>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5"><label className={label}>City</label>
-                  <input className={`${INPUT} ${hi("city", city)}`} value={city} onChange={(e) => setCity(e.target.value)} placeholder="e.g. Lahore" /></div>
-                <div className="space-y-1.5"><label className={label}>Province</label>
+                <div className="space-y-1.5"><label className={label}>{tx("City")}</label>
+                  <input className={`${INPUT} ${hi("city", city)}`} value={city} onChange={(e) => setCity(e.target.value)} placeholder={tx("e.g. Lahore")} /></div>
+                <div className="space-y-1.5"><label className={label}>{tx("Province")}</label>
                   <select className={`${INPUT} ${hi("province", province)}`} value={province} onChange={(e) => setProvince(e.target.value)}>
-                    <option value="">Select province</option>
+                    <option value="">{tx("Select province")}</option>
                     {PAKISTAN_PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
                   </select></div>
               </div>
@@ -668,23 +669,23 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
           {tab === "policy" && (
             <div className="space-y-4 max-w-3xl">
               <div className="space-y-1.5">
-                <label className={label}>Product *</label>
+                <label className={label}>{tx("Product *")}</label>
                 <select className={`${INPUT} ${hi("plan", planCode)}`} value={planCode} onChange={(e) => setPlanCode(e.target.value)}>
                   {(plans.length ? plans : [{ code: "GROUP_LIFE", label: "Group Life" } as InsurancePlan]).map((p) => (
                     <option key={p.code} value={p.code}>{p.label}{p.product_category ? ` (${p.product_category})` : ""}</option>
                   ))}
                 </select>
-                {minGroup ? <p className="text-[11px] text-slate-400">This product needs at least {minGroup} employees.</p> : null}
-                {plan?.product_category === "Takaful" && <p className="text-[11px] text-slate-400">Takaful: the employer pays a contribution, split between the Wakala fee and the Participants&apos; Takaful Fund.</p>}
-                {planCode === "GROUP_CREDIT_LIFE" && <p className="text-[11px] text-slate-400">Credit life: cover follows each borrower&apos;s outstanding loan — use the &ldquo;Loan balance&rdquo; basis on a class and give each employee a loan amount.</p>}
+                {minGroup ? <p className="text-[11px] text-slate-400">{tx("This product needs at least")}{" "}{minGroup}{" "}{tx("employees.")}</p> : null}
+                {plan?.product_category === "Takaful" && <p className="text-[11px] text-slate-400">{tx("Takaful: the employer pays a contribution, split between the Wakala fee and the Participants' Takaful Fund.")}</p>}
+                {planCode === "GROUP_CREDIT_LIFE" && <p className="text-[11px] text-slate-400">{tx("Credit life: cover follows each borrower's outstanding loan — use the “Loan balance” basis on a class and give each employee a loan amount.")}</p>}
               </div>
               <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-1.5"><label className={label}>Default cover (× monthly basic salary) *</label>
+                <div className="space-y-1.5"><label className={label}>{tx("Default cover (× monthly basic salary) *")}</label>
                   <input type="number" step="0.5" className={`${INPUT} ${hi("multiple", multiple)}`} value={multiple} onChange={(e) => setMultiple(e.target.value)} />
-                  <p className="text-[11px] text-slate-400">Between 12× and 36×. Used for employees in no benefit class.</p></div>
-                <div className="space-y-1.5"><label className={label}>Term (years) *</label>
+                  <p className="text-[11px] text-slate-400">{tx("Between 12× and 36×. Used for employees in no benefit class.")}</p></div>
+                <div className="space-y-1.5"><label className={label}>{tx("Term (years) *")}</label>
                   <input type="number" min="1" className={`${INPUT} ${hi("term", term)}`} value={term} onChange={(e) => setTerm(e.target.value)} /></div>
-                <div className="space-y-1.5"><label className={label}>Effective date *</label>
+                <div className="space-y-1.5"><label className={label}>{tx("Effective date *")}</label>
                   <input type="date" className={`${INPUT} ${hi("effective", effective)}`} value={effective} onChange={(e) => setEffective(e.target.value)} /></div>
               </div>
             </div>
@@ -693,7 +694,7 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
           {tab === "classes" && (
             <div className="space-y-3">
               <p className="text-xs text-slate-500">
-                Who gets how much cover, and which extra benefits come with it. Optional — employees in no class get the default multiple from the policy tab. Classes are locked once the employees are enrolled.
+                {tx("Who gets how much cover, and which extra benefits come with it. Optional — employees in no class get the default multiple from the policy tab. Classes are locked once the employees are enrolled.")}
               </p>
               {classes.length > 0 && (
                 <div className="overflow-x-auto border border-slate-100 rounded-lg">
@@ -703,33 +704,33 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
                       {classes.map((c, i) => (
                         <Fragment key={i}>
                           <tr>
-                            <td className="px-1.5 py-1.5 min-w-[140px]"><input className={`${CELL} ${amber("class", i, "name", c.name)}`} value={c.name} onChange={(e) => setCls(i, { name: e.target.value })} placeholder="Management" /></td>
+                            <td className="px-1.5 py-1.5 min-w-[140px]"><input className={`${CELL} ${amber("class", i, "name", c.name)}`} value={c.name} onChange={(e) => setCls(i, { name: e.target.value })} placeholder={tx("Management")} /></td>
                             <td className="px-1.5 py-1.5">
                               <select className={CELL} value={c.basis} onChange={(e) => setCls(i, { basis: e.target.value as Basis })}>
-                                <option value="SalaryMultiple">Salary multiple</option><option value="Flat">Flat amount</option><option value="ServiceBanded">By years of service</option>
-                                {(showLoan || c.basis === "LoanBalance") && <option value="LoanBalance">Loan balance</option>}
+                                <option value="SalaryMultiple">{tx("Salary multiple")}</option><option value="Flat">{tx("Flat amount")}</option><option value="ServiceBanded">{tx("By years of service")}</option>
+                                {(showLoan || c.basis === "LoanBalance") && <option value="LoanBalance">{tx("Loan balance")}</option>}
                               </select>
                             </td>
                             <td className="px-1.5 py-1.5 min-w-[170px]">
-                              {c.basis === "Flat" && <input type="number" className={`${CELL} ${amber("class", i, "flat_amount", c.flat_amount)}`} value={c.flat_amount} onChange={(e) => setCls(i, { flat_amount: e.target.value })} placeholder="PKR" />}
-                              {c.basis === "SalaryMultiple" && <input type="number" step="0.5" className={`${CELL} ${amber("class", i, "salary_multiple", c.salary_multiple)}`} value={c.salary_multiple} onChange={(e) => setCls(i, { salary_multiple: e.target.value })} placeholder="× salary" />}
-                              {c.basis === "ServiceBanded" && <input className={`${CELL} ${amber("class", i, "bands", c.bands)}`} value={c.bands} onChange={(e) => setCls(i, { bands: e.target.value })} placeholder="0:500000, 3:800000" title="Completed years of service : cover" />}
-                              {c.basis === "LoanBalance" && <span className="text-[11px] text-slate-400">The borrower&apos;s loan amount</span>}
+                              {c.basis === "Flat" && <input type="number" className={`${CELL} ${amber("class", i, "flat_amount", c.flat_amount)}`} value={c.flat_amount} onChange={(e) => setCls(i, { flat_amount: e.target.value })} placeholder={tx("PKR")} />}
+                              {c.basis === "SalaryMultiple" && <input type="number" step="0.5" className={`${CELL} ${amber("class", i, "salary_multiple", c.salary_multiple)}`} value={c.salary_multiple} onChange={(e) => setCls(i, { salary_multiple: e.target.value })} placeholder={tx("× salary")} />}
+                              {c.basis === "ServiceBanded" && <input className={`${CELL} ${amber("class", i, "bands", c.bands)}`} value={c.bands} onChange={(e) => setCls(i, { bands: e.target.value })} placeholder="0:500000, 3:800000" title={tx("Completed years of service : cover")} />}
+                              {c.basis === "LoanBalance" && <span className="text-[11px] text-slate-400">{tx("The borrower's loan amount")}</span>}
                             </td>
                             <td className="px-1.5 py-1.5 min-w-[110px]"><input className={CELL} value={c.grades} onChange={(e) => setCls(i, { grades: e.target.value })} placeholder="M1, M2" /></td>
                             <td className="px-1.5 py-1.5 min-w-[100px]"><input type="number" className={CELL} value={c.min_cover} onChange={(e) => setCls(i, { min_cover: e.target.value })} /></td>
                             <td className="px-1.5 py-1.5 min-w-[100px]"><input type="number" className={CELL} value={c.max_cover} onChange={(e) => setCls(i, { max_cover: e.target.value })} /></td>
                             <td className="px-1.5 py-1.5 text-center"><input type="checkbox" checked={c.is_default} onChange={(e) => setClasses((prev) => prev.map((r, j) => ({ ...r, is_default: j === i ? e.target.checked : e.target.checked ? false : r.is_default })))} /></td>
-                            <td className="px-1.5 py-1.5"><button type="button" onClick={() => { setClasses((p) => p.filter((_, j) => j !== i)); setNewBenefit(null); }} className="text-slate-300 hover:text-red-600" aria-label="Remove class">✕</button></td>
+                            <td className="px-1.5 py-1.5"><button type="button" onClick={() => { setClasses((p) => p.filter((_, j) => j !== i)); setNewBenefit(null); }} className="text-slate-300 hover:text-red-600" aria-label={tx("Remove class")}>✕</button></td>
                           </tr>
                           <tr className="bg-slate-50/40">
                             <td colSpan={8} className="px-3 py-1.5">
                               <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Extra benefits</span>
+                                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{tx("Extra benefits")}</span>
                                 {c.coverages.map((v, k) => (
                                   <span key={k} className="inline-flex items-center gap-1 text-[11px] border border-slate-200 bg-white rounded px-1.5 py-0.5 text-slate-700">
-                                    {RIDERS[v.coverage_type]} {v.percent_of_base}%{v.max_amount ? ` (max ${Number(v.max_amount).toLocaleString()})` : ""}
-                                    <button type="button" onClick={() => setCls(i, { coverages: c.coverages.filter((_, j) => j !== k) })} className="text-slate-400 hover:text-red-600" aria-label="Remove benefit">✕</button>
+                                    {RIDERS[v.coverage_type]} {v.percent_of_base}%{v.max_amount ? " " + tx("(max {0})", { 0: Number(v.max_amount).toLocaleString() }) : ""}
+                                    <button type="button" onClick={() => setCls(i, { coverages: c.coverages.filter((_, j) => j !== k) })} className="text-slate-400 hover:text-red-600" aria-label={tx("Remove benefit")}>✕</button>
                                   </span>
                                 ))}
                                 {newBenefit?.cls === i ? (
@@ -737,15 +738,15 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
                                     <select className={`${CELL} !w-auto`} value={newBenefit.type} onChange={(e) => setNewBenefit({ ...newBenefit, type: e.target.value })}>
                                       {Object.entries(RIDERS).filter(([k]) => !c.coverages.some((v) => v.coverage_type === k)).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                                     </select>
-                                    <input type="number" min="1" className={`${CELL} !w-20`} value={newBenefit.pct} onChange={(e) => setNewBenefit({ ...newBenefit, pct: e.target.value })} aria-label="Percent of life cover" />
-                                    <span className="text-[11px] text-slate-400">% of life</span>
-                                    <input type="number" min="1" className={`${CELL} !w-28`} placeholder="Max PKR" value={newBenefit.max} onChange={(e) => setNewBenefit({ ...newBenefit, max: e.target.value })} />
+                                    <input type="number" min="1" className={`${CELL} !w-20`} value={newBenefit.pct} onChange={(e) => setNewBenefit({ ...newBenefit, pct: e.target.value })} aria-label={tx("Percent of life cover")} />
+                                    <span className="text-[11px] text-slate-400">{tx("% of life")}</span>
+                                    <input type="number" min="1" className={`${CELL} !w-28`} placeholder={tx("Max PKR")} value={newBenefit.max} onChange={(e) => setNewBenefit({ ...newBenefit, max: e.target.value })} />
                                     <button type="button" disabled={!(parseFloat(newBenefit.pct) > 0)} onClick={() => { setCls(i, { coverages: [...c.coverages, { coverage_type: newBenefit.type, percent_of_base: newBenefit.pct, max_amount: newBenefit.max }] }); setNewBenefit(null); }}
-                                      className="text-xs font-semibold text-white bg-blue-600 disabled:opacity-50 rounded px-2 py-1">Add</button>
-                                    <button type="button" onClick={() => setNewBenefit(null)} className="text-xs text-slate-400">Cancel</button>
+                                      className="text-xs font-semibold text-white bg-blue-600 disabled:opacity-50 rounded px-2 py-1">{tx("Add")}</button>
+                                    <button type="button" onClick={() => setNewBenefit(null)} className="text-xs text-slate-400">{tx("Cancel")}</button>
                                   </>
                                 ) : c.coverages.length < Object.keys(RIDERS).length && (
-                                  <button type="button" onClick={() => setNewBenefit({ cls: i, type: Object.keys(RIDERS).find((k) => !c.coverages.some((v) => v.coverage_type === k))!, pct: "100", max: "" })} className="text-[11px] font-semibold text-blue-600 hover:text-blue-800">+ Benefit</button>
+                                  <button type="button" onClick={() => setNewBenefit({ cls: i, type: Object.keys(RIDERS).find((k) => !c.coverages.some((v) => v.coverage_type === k))!, pct: "100", max: "" })} className="text-[11px] font-semibold text-blue-600 hover:text-blue-800">{tx("+ Benefit")}</button>
                                 )}
                               </div>
                             </td>
@@ -756,14 +757,14 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
                   </table>
                 </div>
               )}
-              <button type="button" onClick={() => setClasses((p) => [...p, { ...BLANK_CLASS, coverages: [] }])} className="text-xs font-semibold text-blue-600 hover:text-blue-800">+ Add class</button>
+              <button type="button" onClick={() => setClasses((p) => [...p, { ...BLANK_CLASS, coverages: [] }])} className="text-xs font-semibold text-blue-600 hover:text-blue-800">{tx("+ Add class")}</button>
             </div>
           )}
 
           {tab === "employees" && (
             <div className="space-y-3">
               <p className="text-xs text-slate-500">
-                The employee census{minGroup ? ` — at least ${minGroup} for ${plan?.label}` : ""}. CNIC, name, date of birth, gender, occupation and annual income are required; the rest sharpens the cover calculation and underwriting.
+                {tx("The employee census")}{minGroup ? " " + tx("— at least {0} for {1}", { 0: minGroup, 1: plan?.label }) : ""}{tx(". CNIC, name, date of birth, gender, occupation and annual income are required; the rest sharpens the cover calculation and underwriting.")}
               </p>
               <div className="overflow-x-auto border border-slate-100 rounded-lg">
                 <table className="w-full text-xs">
@@ -774,42 +775,42 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
                       return (
                         <tr key={r.uid}>
                           <td className="px-1.5 py-1.5 min-w-[140px]"><input className={cls("cnic")} value={r.cnic} onChange={(e) => setEmp(r.uid, "cnic", e.target.value)} placeholder="35202-1234567-1" /></td>
-                          <td className="px-1.5 py-1.5 min-w-[130px]"><input className={cls("name")} value={r.name} onChange={(e) => setEmp(r.uid, "name", e.target.value)} placeholder="Full name" /></td>
+                          <td className="px-1.5 py-1.5 min-w-[130px]"><input className={cls("name")} value={r.name} onChange={(e) => setEmp(r.uid, "name", e.target.value)} placeholder={tx("Full name")} /></td>
                           <td className="px-1.5 py-1.5 min-w-[120px]"><input type="date" className={cls("dob")} value={r.dob} onChange={(e) => setEmp(r.uid, "dob", e.target.value)} /></td>
-                          <td className="px-1.5 py-1.5"><select className={cls("gender")} value={r.gender} onChange={(e) => setEmp(r.uid, "gender", e.target.value)}><option value="">—</option><option>Male</option><option>Female</option></select></td>
-                          <td className="px-1.5 py-1.5 min-w-[110px]"><input className={cls("occupation")} value={r.occupation} onChange={(e) => setEmp(r.uid, "occupation", e.target.value)} placeholder="Job title" /></td>
-                          <td className="px-1.5 py-1.5 min-w-[100px]"><input type="number" className={cls("declared_income")} value={r.declared_income} onChange={(e) => setEmp(r.uid, "declared_income", e.target.value)} placeholder="PKR / year" /></td>
+                          <td className="px-1.5 py-1.5"><select className={cls("gender")} value={r.gender} onChange={(e) => setEmp(r.uid, "gender", e.target.value)}><option value="">—</option><option>{tx("Male")}</option><option>{tx("Female")}</option></select></td>
+                          <td className="px-1.5 py-1.5 min-w-[110px]"><input className={cls("occupation")} value={r.occupation} onChange={(e) => setEmp(r.uid, "occupation", e.target.value)} placeholder={tx("Job title")} /></td>
+                          <td className="px-1.5 py-1.5 min-w-[100px]"><input type="number" className={cls("declared_income")} value={r.declared_income} onChange={(e) => setEmp(r.uid, "declared_income", e.target.value)} placeholder={tx("PKR / year")} /></td>
                           <td className="px-1.5 py-1.5 w-[80px]"><input className={cls("employee_id")} value={r.employee_id} onChange={(e) => setEmp(r.uid, "employee_id", e.target.value)} /></td>
                           <td className="px-1.5 py-1.5 min-w-[110px]"><input className={cls("designation")} value={r.designation} onChange={(e) => setEmp(r.uid, "designation", e.target.value)} /></td>
                           <td className="px-1.5 py-1.5 w-[70px]"><input className={cls("grade")} value={r.grade} onChange={(e) => setEmp(r.uid, "grade", e.target.value)} /></td>
                           <td className="px-1.5 py-1.5 min-w-[120px]"><input type="date" className={cls("joining_date")} value={r.joining_date} onChange={(e) => setEmp(r.uid, "joining_date", e.target.value)} /></td>
-                          <td className="px-1.5 py-1.5 min-w-[100px]"><input type="number" className={cls("basic_monthly_salary")} value={r.basic_monthly_salary} onChange={(e) => setEmp(r.uid, "basic_monthly_salary", e.target.value)} placeholder="PKR / month" /></td>
+                          <td className="px-1.5 py-1.5 min-w-[100px]"><input type="number" className={cls("basic_monthly_salary")} value={r.basic_monthly_salary} onChange={(e) => setEmp(r.uid, "basic_monthly_salary", e.target.value)} placeholder={tx("PKR / month")} /></td>
                           <td className="px-1.5 py-1.5 min-w-[120px]">
                             <select className={cls("benefit_class")} value={r.benefit_class} onChange={(e) => setEmp(r.uid, "benefit_class", e.target.value)}>
-                              <option value="">{classes.length ? "By grade / default" : "—"}</option>
+                              <option value="">{classes.length ? tx("By grade / default") : "—"}</option>
                               {classes.filter((c) => c.name.trim()).map((c) => <option key={c.name} value={c.name.trim()}>{c.name.trim()}</option>)}
-                              {r.benefit_class && !classes.some((c) => c.name.trim() === r.benefit_class) && <option value={r.benefit_class}>{r.benefit_class} (no such class)</option>}
+                              {r.benefit_class && !classes.some((c) => c.name.trim() === r.benefit_class) && <option value={r.benefit_class}>{r.benefit_class}{" "}{tx("(no such class)")}</option>}
                             </select>
                           </td>
-                          <td className="px-1.5 py-1.5"><select className={cls("is_smoker")} value={r.is_smoker} onChange={(e) => setEmp(r.uid, "is_smoker", e.target.value)}><option value="">—</option><option value="false">No</option><option value="true">Yes</option></select></td>
-                          <td className="px-1.5 py-1.5 w-[70px]"><input type="number" className={cls("height_cm")} value={r.height_cm} onChange={(e) => setEmp(r.uid, "height_cm", e.target.value)} placeholder="cm" /></td>
-                          <td className="px-1.5 py-1.5 w-[70px]"><input type="number" className={cls("weight_kg")} value={r.weight_kg} onChange={(e) => setEmp(r.uid, "weight_kg", e.target.value)} placeholder="kg" /></td>
-                          {showLoan && <td className="px-1.5 py-1.5 min-w-[100px]"><input type="number" className={cls("loan_amount")} value={r.loan_amount} onChange={(e) => setEmp(r.uid, "loan_amount", e.target.value)} placeholder="PKR" /></td>}
-                          <td className="px-1.5 py-1.5">{employees.length > 1 && <button type="button" onClick={() => { setEmployees((p) => p.filter((x) => x.uid !== r.uid)); setDependants((p) => p.filter((d) => d.emp !== r.uid)); setNominees((p) => p.filter((n) => n.emp !== r.uid)); }} className="text-slate-300 hover:text-red-600" aria-label="Remove employee">✕</button>}</td>
+                          <td className="px-1.5 py-1.5"><select className={cls("is_smoker")} value={r.is_smoker} onChange={(e) => setEmp(r.uid, "is_smoker", e.target.value)}><option value="">—</option><option value="false">{tx("No")}</option><option value="true">{tx("Yes")}</option></select></td>
+                          <td className="px-1.5 py-1.5 w-[70px]"><input type="number" className={cls("height_cm")} value={r.height_cm} onChange={(e) => setEmp(r.uid, "height_cm", e.target.value)} placeholder={tx("cm")} /></td>
+                          <td className="px-1.5 py-1.5 w-[70px]"><input type="number" className={cls("weight_kg")} value={r.weight_kg} onChange={(e) => setEmp(r.uid, "weight_kg", e.target.value)} placeholder={tx("kg")} /></td>
+                          {showLoan && <td className="px-1.5 py-1.5 min-w-[100px]"><input type="number" className={cls("loan_amount")} value={r.loan_amount} onChange={(e) => setEmp(r.uid, "loan_amount", e.target.value)} placeholder={tx("PKR")} /></td>}
+                          <td className="px-1.5 py-1.5">{employees.length > 1 && <button type="button" onClick={() => { setEmployees((p) => p.filter((x) => x.uid !== r.uid)); setDependants((p) => p.filter((d) => d.emp !== r.uid)); setNominees((p) => p.filter((n) => n.emp !== r.uid)); }} className="text-slate-300 hover:text-red-600" aria-label={tx("Remove employee")}>✕</button>}</td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
-              <button type="button" onClick={() => setEmployees((p) => [...p, blankEmployee()])} className="text-xs font-semibold text-blue-600 hover:text-blue-800">+ Add employee</button>
+              <button type="button" onClick={() => setEmployees((p) => [...p, blankEmployee()])} className="text-xs font-semibold text-blue-600 hover:text-blue-800">{tx("+ Add employee")}</button>
             </div>
           )}
 
           {tab === "dependants" && (
             <div className="space-y-3">
               <p className="text-xs text-slate-500">
-                Spouses, children and parents the employer also covers. Optional. A dependant&apos;s cover can&apos;t exceed their employee&apos;s own cover — nominees (who only receive a payout) are on the next tab.
+                {tx("Spouses, children and parents the employer also covers. Optional. A dependant's cover can't exceed their employee's own cover — nominees (who only receive a payout) are on the next tab.")}
               </p>
               {dependants.length > 0 && (
                 <div className="overflow-x-auto border border-slate-100 rounded-lg">
@@ -820,26 +821,26 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
                         <tr key={d.uid}>
                           <td className="px-1.5 py-1.5 min-w-[160px]"><select className={`${CELL} ${amber("dep", d.uid, "emp", d.emp)}`} value={d.emp ?? ""} onChange={(e) => setDep(d.uid, { emp: e.target.value ? Number(e.target.value) : null })}>{empOptions}</select></td>
                           <td className="px-1.5 py-1.5 min-w-[140px]"><input className={`${CELL} ${amber("dep", d.uid, "name", d.name)}`} value={d.name} onChange={(e) => setDep(d.uid, { name: e.target.value })} /></td>
-                          <td className="px-1.5 py-1.5"><select className={`${CELL} ${amber("dep", d.uid, "relationship", d.relationship)}`} value={d.relationship} onChange={(e) => setDep(d.uid, { relationship: e.target.value })}><option>Spouse</option><option>Child</option><option>Parent</option></select></td>
+                          <td className="px-1.5 py-1.5"><select className={`${CELL} ${amber("dep", d.uid, "relationship", d.relationship)}`} value={d.relationship} onChange={(e) => setDep(d.uid, { relationship: e.target.value })}><option>{tx("Spouse")}</option><option>{tx("Child")}</option><option>{tx("Parent")}</option></select></td>
                           <td className="px-1.5 py-1.5 min-w-[120px]"><input type="date" className={`${CELL} ${amber("dep", d.uid, "dob", d.dob)}`} value={d.dob} onChange={(e) => setDep(d.uid, { dob: e.target.value })} /></td>
-                          <td className="px-1.5 py-1.5 min-w-[140px]"><input className={`${CELL} ${amber("dep", d.uid, "cnic", d.cnic)}`} value={d.cnic} onChange={(e) => setDep(d.uid, { cnic: e.target.value })} placeholder="optional" /></td>
-                          <td className="px-1.5 py-1.5"><select className={CELL} value={d.gender} onChange={(e) => setDep(d.uid, { gender: e.target.value })}><option value="">—</option><option>Male</option><option>Female</option></select></td>
-                          <td className="px-1.5 py-1.5 min-w-[110px]"><input type="number" className={`${CELL} ${amber("dep", d.uid, "covered_amount", d.covered_amount)}`} value={d.covered_amount} onChange={(e) => setDep(d.uid, { covered_amount: e.target.value })} placeholder="PKR" /></td>
-                          <td className="px-1.5 py-1.5"><button type="button" onClick={() => setDependants((p) => p.filter((x) => x.uid !== d.uid))} className="text-slate-300 hover:text-red-600" aria-label="Remove dependant">✕</button></td>
+                          <td className="px-1.5 py-1.5 min-w-[140px]"><input className={`${CELL} ${amber("dep", d.uid, "cnic", d.cnic)}`} value={d.cnic} onChange={(e) => setDep(d.uid, { cnic: e.target.value })} placeholder={tx("optional")} /></td>
+                          <td className="px-1.5 py-1.5"><select className={CELL} value={d.gender} onChange={(e) => setDep(d.uid, { gender: e.target.value })}><option value="">—</option><option>{tx("Male")}</option><option>{tx("Female")}</option></select></td>
+                          <td className="px-1.5 py-1.5 min-w-[110px]"><input type="number" className={`${CELL} ${amber("dep", d.uid, "covered_amount", d.covered_amount)}`} value={d.covered_amount} onChange={(e) => setDep(d.uid, { covered_amount: e.target.value })} placeholder={tx("PKR")} /></td>
+                          <td className="px-1.5 py-1.5"><button type="button" onClick={() => setDependants((p) => p.filter((x) => x.uid !== d.uid))} className="text-slate-300 hover:text-red-600" aria-label={tx("Remove dependant")}>✕</button></td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
               )}
-              <button type="button" onClick={() => setDependants((p) => [...p, blankDependant(employees.length === 1 ? employees[0].uid : null)])} className="text-xs font-semibold text-blue-600 hover:text-blue-800">+ Add dependant</button>
+              <button type="button" onClick={() => setDependants((p) => [...p, blankDependant(employees.length === 1 ? employees[0].uid : null)])} className="text-xs font-semibold text-blue-600 hover:text-blue-800">{tx("+ Add dependant")}</button>
             </div>
           )}
 
           {tab === "nominees" && (
             <div className="space-y-3">
               <p className="text-xs text-slate-500">
-                Who receives an employee&apos;s death benefit. Optional per employee, but when an employee has nominees their shares must total 100%. Nominees are not covered themselves.
+                {tx("Who receives an employee's death benefit. Optional per employee, but when an employee has nominees their shares must total 100%. Nominees are not covered themselves.")}
               </p>
               {nominees.length > 0 && (
                 <div className="overflow-x-auto border border-slate-100 rounded-lg">
@@ -850,34 +851,34 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
                         <tr key={n.uid}>
                           <td className="px-1.5 py-1.5 min-w-[160px]"><select className={`${CELL} ${amber("nom", n.uid, "emp", n.emp)}`} value={n.emp ?? ""} onChange={(e) => setNom(n.uid, { emp: e.target.value ? Number(e.target.value) : null })}>{empOptions}</select></td>
                           <td className="px-1.5 py-1.5 min-w-[140px]"><input className={`${CELL} ${amber("nom", n.uid, "name", n.name)}`} value={n.name} onChange={(e) => setNom(n.uid, { name: e.target.value })} /></td>
-                          <td className="px-1.5 py-1.5"><select className={`${CELL} ${amber("nom", n.uid, "relationship", n.relationship)}`} value={n.relationship} onChange={(e) => setNom(n.uid, { relationship: e.target.value })}><option>Spouse</option><option>Child</option><option>Parent</option><option>Sibling</option><option>Other</option></select></td>
-                          <td className="px-1.5 py-1.5 min-w-[140px]"><input className={`${CELL} ${amber("nom", n.uid, "cnic", n.cnic)}`} value={n.cnic} onChange={(e) => setNom(n.uid, { cnic: e.target.value })} placeholder="optional" /></td>
+                          <td className="px-1.5 py-1.5"><select className={`${CELL} ${amber("nom", n.uid, "relationship", n.relationship)}`} value={n.relationship} onChange={(e) => setNom(n.uid, { relationship: e.target.value })}><option>{tx("Spouse")}</option><option>{tx("Child")}</option><option>{tx("Parent")}</option><option>{tx("Sibling")}</option><option>{tx("Other")}</option></select></td>
+                          <td className="px-1.5 py-1.5 min-w-[140px]"><input className={`${CELL} ${amber("nom", n.uid, "cnic", n.cnic)}`} value={n.cnic} onChange={(e) => setNom(n.uid, { cnic: e.target.value })} placeholder={tx("optional")} /></td>
                           <td className="px-1.5 py-1.5 w-[80px]"><input type="number" className={`${CELL} ${amber("nom", n.uid, "share_pct", n.share_pct)}`} value={n.share_pct} onChange={(e) => setNom(n.uid, { share_pct: e.target.value })} placeholder="%" /></td>
                           <td className="px-1.5 py-1.5 min-w-[120px]"><input type="date" className={`${CELL} ${amber("nom", n.uid, "dob", n.dob)}`} value={n.dob} onChange={(e) => setNom(n.uid, { dob: e.target.value })} /></td>
                           <td className="px-1.5 py-1.5 text-center"><input type="checkbox" checked={n.is_minor} onChange={(e) => setNom(n.uid, { is_minor: e.target.checked })} /></td>
-                          <td className="px-1.5 py-1.5 min-w-[120px]"><input className={CELL} value={n.guardian_name} onChange={(e) => setNom(n.uid, { guardian_name: e.target.value })} disabled={!n.is_minor} placeholder={n.is_minor ? "Guardian name" : "—"} /></td>
-                          <td className="px-1.5 py-1.5"><button type="button" onClick={() => setNominees((p) => p.filter((x) => x.uid !== n.uid))} className="text-slate-300 hover:text-red-600" aria-label="Remove nominee">✕</button></td>
+                          <td className="px-1.5 py-1.5 min-w-[120px]"><input className={CELL} value={n.guardian_name} onChange={(e) => setNom(n.uid, { guardian_name: e.target.value })} disabled={!n.is_minor} placeholder={n.is_minor ? tx("Guardian name") : "—"} /></td>
+                          <td className="px-1.5 py-1.5"><button type="button" onClick={() => setNominees((p) => p.filter((x) => x.uid !== n.uid))} className="text-slate-300 hover:text-red-600" aria-label={tx("Remove nominee")}>✕</button></td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
               )}
-              <button type="button" onClick={() => setNominees((p) => [...p, blankNominee(employees.length === 1 ? employees[0].uid : null)])} className="text-xs font-semibold text-blue-600 hover:text-blue-800">+ Add nominee</button>
+              <button type="button" onClick={() => setNominees((p) => [...p, blankNominee(employees.length === 1 ? employees[0].uid : null)])} className="text-xs font-semibold text-blue-600 hover:text-blue-800">{tx("+ Add nominee")}</button>
             </div>
           )}
         </div>
 
         {/* Footer */}
         <div className="px-6 py-3 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-3">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 bg-white rounded-lg hover:bg-slate-50">Cancel</button>
+          <button type="button" onClick={onClose} className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 bg-white rounded-lg hover:bg-slate-50">{tx("Cancel")}</button>
           <div className="flex items-center gap-2">
-            {tab !== "company" && <button type="button" onClick={() => setTab(order[order.indexOf(tab) - 1])} className="px-4 py-2 text-xs font-semibold text-slate-700 border border-slate-200 bg-white rounded-lg hover:bg-slate-50">Back</button>}
+            {tab !== "company" && <button type="button" onClick={() => setTab(order[order.indexOf(tab) - 1])} className="px-4 py-2 text-xs font-semibold text-slate-700 border border-slate-200 bg-white rounded-lg hover:bg-slate-50">{tx("Back")}</button>}
             {tab !== "nominees" ? (
-              <button type="button" onClick={() => setTab(order[order.indexOf(tab) + 1])} className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg">Next</button>
+              <button type="button" onClick={() => setTab(order[order.indexOf(tab) + 1])} className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg">{tx("Next")}</button>
             ) : (
               <button type="button" onClick={submit} disabled={saving || extracting} className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg">
-                {saving ? "Creating…" : "Create corporate & enrol"}
+                {saving ? tx("Creating…") : tx("Create corporate & enrol")}
               </button>
             )}
           </div>

@@ -8,6 +8,7 @@ import { Pagination, usePagination } from "@/components/Pagination";
 import DemoFillButton from "@/components/DemoFillButton";
 import { demoInboxEmail, demoPerson } from "@/lib/demoData";
 import { branchesHref } from "@/components/TenantSetupChecklist";
+import { tx } from "@/lib/i18n/tx";
 
 interface Tenant {
   id: string;
@@ -133,7 +134,7 @@ function AdminManagementContent() {
         setTenantId(tenantsResp.data[0].id);
       }
     } catch (err: any) {
-      setError(err.message ?? "Failed to load tenants.");
+      setError(err.message ?? tx("Failed to load tenants."));
     } finally {
       setLoading(false);
     }
@@ -147,7 +148,7 @@ function AdminManagementContent() {
       const adminRoleIds = new Set(roles.filter((r) => r.name === "Admin").map((r) => r.id));
       setAdmins(resp.data.filter((u) => adminRoleIds.has(u.role_id)));
     } catch (err: any) {
-      setAdminsError(err.response?.data?.detail ?? err.message ?? "Failed to load admins.");
+      setAdminsError(err.response?.data?.detail ?? err.message ?? tx("Failed to load admins."));
       setAdmins([]);
     } finally {
       setAdminsLoading(false);
@@ -194,12 +195,12 @@ function AdminManagementContent() {
 
     const adminRole = roles.find((r) => r.name === "Admin");
     if (!adminRole) {
-      setError("Admin role not found.");
+      setError(tx("Admin role not found."));
       setFormLoading(false);
       return;
     }
     if (!branchId) {
-      setError("Please select a branch.");
+      setError(tx("Please select a branch."));
       setFormLoading(false);
       return;
     }
@@ -233,14 +234,14 @@ function AdminManagementContent() {
         }
       }
       const tenantName = tenants.find((t) => t.id === tenantId)?.name ?? "the tenant";
-      setSuccess(`Admin created for ${tenantName}.`);
+      setSuccess(tx("Admin created for {0}.", { 0: tenantName }));
       setCreated({ tenantName, email, setupComplete: admins.length === 0 });
       setShowCreateModal(false);
       setFullName("");
       setEmail("");
       fetchAdmins(tenantId);
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to create admin.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to create admin."));
     } finally {
       setFormLoading(false);
     }
@@ -288,18 +289,18 @@ function AdminManagementContent() {
 
       await api.patch(`/tenants/${tenantId}/users/${selectedAdmin.id}`, updateData);
 
-      setSuccess("Admin account updated successfully!");
+      setSuccess(tx("Admin account updated successfully!"));
       setShowEditModal(false);
       fetchAdmins(tenantId);
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to update admin.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to update admin."));
     } finally {
       setFormLoading(false);
     }
   };
 
   const handleDeleteAdmin = async (admin: AdminUser) => {
-    if (!confirm(`Are you sure you want to delete the admin "${admin.full_name}"?`)) {
+    if (!confirm(tx("Are you sure you want to delete the admin \"{0}\"?", { 0: admin.full_name }))) {
       return;
     }
 
@@ -308,10 +309,10 @@ function AdminManagementContent() {
 
     try {
       await api.delete(`/tenants/${tenantId}/users/${admin.id}`);
-      setSuccess("Admin account deleted successfully!");
+      setSuccess(tx("Admin account deleted successfully!"));
       fetchAdmins(tenantId);
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to delete admin.");
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to delete admin."));
     }
   };
 
@@ -327,12 +328,12 @@ function AdminManagementContent() {
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
           </div>
-          <h1 className="text-xl font-bold text-white mb-2">Access Denied</h1>
+          <h1 className="text-xl font-bold text-white mb-2">{tx("Access Denied")}</h1>
           <p className="text-slate-400 text-sm mb-6">
-            You do not have SuperAdmin privileges to access the Platform console.
+            {tx("You do not have SuperAdmin privileges to access the Platform console.")}
           </p>
           <a href="/" className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm px-5 py-2.5 rounded-lg transition-all">
-            Return to Dashboard
+            {tx("Return to Dashboard")}
           </a>
         </div>
       </div>
@@ -347,9 +348,9 @@ function AdminManagementContent() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Admin Management</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Admin Management")}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Provision Admin accounts for each tenant. Login credentials are emailed automatically.
+            {tx("Provision Admin accounts for each tenant. Login credentials are emailed automatically.")}
           </p>
         </div>
         {tenants.length > 0 && (
@@ -361,7 +362,7 @@ function AdminManagementContent() {
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="w-4 h-4">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
             </svg>
-            Add Admin
+            {tx("Add Admin")}
           </button>
         )}
       </div>
@@ -384,10 +385,10 @@ function AdminManagementContent() {
             {created && (
               <div className="mt-1 space-y-0.5 text-xs text-slate-500">
                 <p className="truncate">
-                  Login credentials emailed to <span className="font-medium text-slate-700">{created.email}</span>
+                  {tx("Login credentials emailed to")}{" "}<span className="font-medium text-slate-700">{created.email}</span>
                 </p>
                 {created.setupComplete && (
-                  <p>{created.tenantName} is fully set up — the Admin can now sign in and add the rest of the team.</p>
+                  <p>{created.tenantName}{" "}{tx("is fully set up — the Admin can now sign in and add the rest of the team.")}</p>
                 )}
               </div>
             )}
@@ -398,13 +399,13 @@ function AdminManagementContent() {
                 href="/super-admin/tenants"
                 className="px-3 py-1.5 text-xs font-semibold text-blue-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap"
               >
-                Back to tenants
+                {tx("Back to tenants")}
               </Link>
             )}
             <button
               onClick={() => setSuccess("")}
               className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
-              title="Dismiss"
+              title={tx("Dismiss")}
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -420,20 +421,20 @@ function AdminManagementContent() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
           </svg>
-          <span className="text-xs text-slate-400">Loading tenants...</span>
+          <span className="text-xs text-slate-400">{tx("Loading tenants...")}</span>
         </div>
       ) : tenants.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm py-16 text-center text-slate-400 px-5">
-          <p className="text-sm">No tenants exist yet.</p>
+          <p className="text-sm">{tx("No tenants exist yet.")}</p>
           <a href="/super-admin/tenants" className="mt-3 inline-block text-xs text-blue-600 font-semibold hover:underline">
-            Create a tenant first
+            {tx("Create a tenant first")}
           </a>
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-3">
-              <label className="text-xs font-semibold text-slate-600">Tenant</label>
+              <label className="text-xs font-semibold text-slate-600">{tx("Tenant")}</label>
               <select
                 value={tenantId}
                 onChange={(e) => setTenantId(e.target.value)}
@@ -446,7 +447,7 @@ function AdminManagementContent() {
                 ))}
               </select>
             </div>
-            <span className="text-xs text-slate-400 font-medium">Total: {admins.length}</span>
+            <span className="text-xs text-slate-400 font-medium">{tx("Total:")}{" "}{admins.length}</span>
           </div>
 
             {adminsLoading ? (
@@ -455,20 +456,20 @@ function AdminManagementContent() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
-                <span className="text-xs text-slate-400">Loading admins...</span>
+                <span className="text-xs text-slate-400">{tx("Loading admins...")}</span>
               </div>
             ) : adminsError ? (
               <div className="py-16 text-center text-sm text-red-500 px-5">{adminsError}</div>
             ) : admins.length === 0 ? (
               <div className="py-20 text-center text-slate-400 px-5">
                 <p className="text-sm">
-                  No Admin has been provisioned for {selectedTenant ? selectedTenant.name : "this tenant"} yet.
+                  {tx("No Admin has been provisioned for")}{" "}{selectedTenant ? selectedTenant.name : tx("this tenant")}{" "}{tx("yet.")}
                 </p>
                 <button
                   onClick={handleOpenCreateModal}
                   className="mt-3 text-xs text-blue-600 font-semibold hover:underline"
                 >
-                  Add the first admin
+                  {tx("Add the first admin")}
                 </button>
               </div>
             ) : (
@@ -477,11 +478,11 @@ function AdminManagementContent() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-bold uppercase tracking-widest text-slate-400 whitespace-nowrap">
-                      <th className="px-5 py-3 text-left">Admin</th>
-                      <th className="px-5 py-3 text-left">Branch</th>
-                      <th className="px-5 py-3 text-center">Status</th>
-                      <th className="px-5 py-3 text-left">Created</th>
-                      <th className="px-5 py-3 text-right">Actions</th>
+                      <th className="px-5 py-3 text-left">{tx("Admin")}</th>
+                      <th className="px-5 py-3 text-left">{tx("Branch")}</th>
+                      <th className="px-5 py-3 text-center">{tx("Status")}</th>
+                      <th className="px-5 py-3 text-left">{tx("Created")}</th>
+                      <th className="px-5 py-3 text-right">{tx("Actions")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -524,13 +525,13 @@ function AdminManagementContent() {
                             }`}
                           >
                             {admin.status === "ACTIVE"
-                              ? "Active"
+                              ? tx("Active")
                               : admin.status === "SUSPENDED"
-                              ? "Suspended"
+                              ? tx("Suspended")
                               : admin.status === "LOCKED"
-                              ? "Locked"
+                              ? tx("Locked")
                               : admin.status === "INACTIVE"
-                              ? "Inactive"
+                              ? tx("Inactive")
                               : admin.status}
                           </span>
                         </td>
@@ -547,13 +548,13 @@ function AdminManagementContent() {
                               onClick={() => handleOpenEditModal(admin)}
                               className="px-3 py-1.5 text-xs font-semibold text-blue-600 bg-white hover:bg-slate-50 transition-colors"
                             >
-                              Edit
+                              {tx("Edit")}
                             </button>
                             <button
                               onClick={() => handleDeleteAdmin(admin)}
                               className="px-3 py-1.5 text-xs font-semibold text-red-600 bg-white hover:bg-slate-50 transition-colors"
                             >
-                              Delete
+                              {tx("Delete")}
                             </button>
                           </div>
                         </td>
@@ -562,7 +563,7 @@ function AdminManagementContent() {
                   </tbody>
                 </table>
               </div>
-          <Pagination pagination={pagination} noun="admins" inline />
+          <Pagination pagination={pagination} noun={tx("admins")} inline />
               </>
             )}
         </div>
@@ -573,7 +574,7 @@ function AdminManagementContent() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-4 my-8">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900">Add Admin</h3>
+              <h3 className="text-base font-bold text-slate-900">{tx("Add Admin")}</h3>
               <DemoFillButton
                 className="ml-auto mr-3"
                 onFill={() => {
@@ -600,7 +601,7 @@ function AdminManagementContent() {
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs font-medium text-red-600">{error}</div>
               )}
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Tenant</label>
+                <label className="block text-xs font-semibold text-slate-600">{tx("Tenant")}</label>
                 <input
                   type="text"
                   disabled
@@ -610,7 +611,7 @@ function AdminManagementContent() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Branch *</label>
+                <label className="block text-xs font-semibold text-slate-600">{tx("Branch *")}</label>
                 <select
                   required
                   value={branchId}
@@ -619,7 +620,7 @@ function AdminManagementContent() {
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <option value="" disabled>
-                    {branchesLoading ? "Loading branches..." : branches.length === 0 ? "No branches for this tenant" : "Select a branch"}
+                    {branchesLoading ? tx("Loading branches...") : branches.length === 0 ? tx("No branches for this tenant") : tx("Select a branch")}
                   </option>
                   {branches.map((b) => (
                     <option key={b.id} value={b.id}>
@@ -629,9 +630,9 @@ function AdminManagementContent() {
                 </select>
                 {!branchesLoading && branches.length === 0 && tenantId && (
                   <p className="text-[11px] text-slate-500">
-                    Admins must belong to a branch, and this tenant has none yet.{" "}
+                    {tx("Admins must belong to a branch, and this tenant has none yet.")}{" "}
                     <Link href={branchesHref(tenantId, true)} className="font-semibold text-blue-600 hover:underline">
-                      Add a branch first →
+                      {tx("Add a branch first →")}
                     </Link>
                   </p>
                 )}
@@ -639,31 +640,31 @@ function AdminManagementContent() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Full Name *</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Full Name *")}</label>
                   <input
                     type="text"
                     required
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    placeholder="e.g. Ali Raza"
+                    placeholder={tx("e.g. Ali Raza")}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Email Address *</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Email Address *")}</label>
                   <input
                     type="email"
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="e.g. ali@adamjeelife.com"
+                    placeholder={tx("e.g. ali@adamjeelife.com")}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
               </div>
 
               <p className="text-[11px] text-slate-400">
-                A username and password are generated automatically and emailed to this address.
+                {tx("A username and password are generated automatically and emailed to this address.")}
               </p>
 
               <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
@@ -672,7 +673,7 @@ function AdminManagementContent() {
                   onClick={() => setShowCreateModal(false)}
                   className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
                 >
-                  Cancel
+                  {tx("Cancel")}
                 </button>
                 <button
                   type="submit"
@@ -685,7 +686,7 @@ function AdminManagementContent() {
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
                   )}
-                  Create Admin
+                  {tx("Create Admin")}
                 </button>
               </div>
             </form>
@@ -698,7 +699,7 @@ function AdminManagementContent() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-2xl w-full p-6 space-y-4 my-8">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900">Edit Admin Account</h3>
+              <h3 className="text-base font-bold text-slate-900">{tx("Edit Admin Account")}</h3>
               <button
                 onClick={() => setShowEditModal(false)}
                 className="text-slate-400 hover:text-slate-600 transition-colors"
@@ -712,7 +713,7 @@ function AdminManagementContent() {
             <form onSubmit={handleEditAdmin} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Username (Read Only)</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Username (Read Only)")}</label>
                   <input
                     type="text"
                     disabled
@@ -722,7 +723,7 @@ function AdminManagementContent() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Email (Read Only)</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Email (Read Only)")}</label>
                   <input
                     type="email"
                     disabled
@@ -732,7 +733,7 @@ function AdminManagementContent() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">First Name *</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("First Name *")}</label>
                   <input
                     type="text"
                     required
@@ -743,7 +744,7 @@ function AdminManagementContent() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Last Name *</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Last Name *")}</label>
                   <input
                     type="text"
                     required
@@ -754,19 +755,19 @@ function AdminManagementContent() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Password (Leave blank to keep same)</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Password (Leave blank to keep same)")}</label>
                   <input
                     type="password"
                     autoComplete="new-password"
                     value={editPassword}
                     onChange={(e) => setEditPassword(e.target.value)}
-                    placeholder="Enter new password if updating"
+                    placeholder={tx("Enter new password if updating")}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Phone</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Phone")}</label>
                   <input
                     type="text"
                     value={editPhone}
@@ -777,40 +778,40 @@ function AdminManagementContent() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Department</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Department")}</label>
                   <input
                     type="text"
                     value={editDepartment}
                     onChange={(e) => setEditDepartment(e.target.value)}
-                    placeholder="e.g. Underwriting"
+                    placeholder={tx("e.g. Underwriting")}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Employee ID</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Employee ID")}</label>
                   <input
                     type="text"
                     value={editEmployeeId}
                     onChange={(e) => setEditEmployeeId(e.target.value)}
-                    placeholder="e.g. EMP-1049"
+                    placeholder={tx("e.g. EMP-1049")}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Designation</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Designation")}</label>
                   <input
                     type="text"
                     value={editDesignation}
                     onChange={(e) => setEditDesignation(e.target.value)}
-                    placeholder="e.g. Senior Underwriter"
+                    placeholder={tx("e.g. Senior Underwriter")}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Date of Joining</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Date of Joining")}</label>
                   <input
                     type="date"
                     value={editDateOfJoining}
@@ -820,16 +821,16 @@ function AdminManagementContent() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Account Status *</label>
+                  <label className="block text-xs font-semibold text-slate-600">{tx("Account Status *")}</label>
                   <select
                     value={editStatus}
                     onChange={(e) => setEditStatus(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
                   >
-                    <option value="ACTIVE">Active</option>
-                    <option value="INACTIVE">Inactive</option>
-                    <option value="SUSPENDED">Suspended</option>
-                    <option value="LOCKED">Locked</option>
+                    <option value="ACTIVE">{tx("Active")}</option>
+                    <option value="INACTIVE">{tx("Inactive")}</option>
+                    <option value="SUSPENDED">{tx("Suspended")}</option>
+                    <option value="LOCKED">{tx("Locked")}</option>
                   </select>
                 </div>
               </div>
@@ -840,7 +841,7 @@ function AdminManagementContent() {
                   onClick={() => setShowEditModal(false)}
                   className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
                 >
-                  Cancel
+                  {tx("Cancel")}
                 </button>
                 <button
                   type="submit"
@@ -853,7 +854,7 @@ function AdminManagementContent() {
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
                   )}
-                  Save Changes
+                  {tx("Save Changes")}
                 </button>
               </div>
             </form>

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import { tx } from "@/lib/i18n/tx";
 
 interface Option {
   code: string;
@@ -103,7 +104,7 @@ export default function MultiTagSelector({ selected = [], onChange, options, pla
             setIsOpen(true);
           }}
           onKeyDown={handleKeyDown}
-          placeholder={selected.length === 0 ? placeholder : "Add more..."}
+          placeholder={selected.length === 0 ? placeholder : tx("Add more...")}
           className="flex-1 min-w-[120px] bg-transparent text-xs font-medium text-slate-800 focus:outline-none placeholder:text-slate-400"
         />
       </div>
@@ -113,14 +114,14 @@ export default function MultiTagSelector({ selected = [], onChange, options, pla
         <div className="absolute left-0 top-full mt-1 z-50 w-full max-h-56 bg-white border border-slate-200 rounded-xl shadow-xl overflow-y-auto p-1 divide-y divide-slate-100">
           {filteredOptions.length === 0 ? (
             <div className="p-3 text-center text-xs text-slate-400 italic">
-              No matching standard option.
+              {tx("No matching standard option.")}
               {inputVal.trim() && (
                 <button
                   type="button"
                   onClick={() => addItem(inputVal)}
                   className="block mt-1 mx-auto text-blue-600 font-bold hover:underline"
                 >
-                  + Add &quot;{inputVal.trim()}&quot; as custom tag
+                  {tx("+ Add \"")}{inputVal.trim()}{tx("\" as custom tag")}
                 </button>
               )}
             </div>

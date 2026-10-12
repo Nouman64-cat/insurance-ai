@@ -14,6 +14,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
 
 import { workflowStore, INITIAL_EVAL, INITIAL_FORM, INSURANCE_TYPE_OPTIONS, INSURANCE_TYPE_LABELS } from "./workflowStore";
 import type { Customer, CaseItem, Artifact, TokenUsage, SumStatus, EvalStatus, EvalState, EvalForm } from "./workflowStore";
+import { tx } from "@/lib/i18n/tx";
 
 const PIPELINE_NODES = [
   { key: "validate_input",            label: "Input\nValidation",     dotColor: "bg-slate-500"   },
@@ -630,13 +631,13 @@ export default function CaseSummarizerPage() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Case Summarizer</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Case Summarizer")}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Compile OCR text from case documents into an AI summary, then route directly to risk evaluation.
+            {tx("Compile OCR text from case documents into an AI summary, then route directly to risk evaluation.")}
           </p>
         </div>
         <span className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold tracking-wide">
-          POST /summarize/stream
+          {tx("POST /summarize/stream")}
         </span>
       </div>
 
@@ -648,15 +649,15 @@ export default function CaseSummarizerPage() {
           {/* Case selector */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
             <div className="px-5 py-3 border-b border-slate-100 rounded-t-xl">
-              <p className="text-sm font-semibold text-slate-700">Select Case</p>
+              <p className="text-sm font-semibold text-slate-700">{tx("Select Case")}</p>
             </div>
             <div className="p-5 space-y-4">
               <div className="relative" ref={dropdownRef}>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">Customer</label>
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">{tx("Customer")}</label>
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="Search or select customer..."
+                    placeholder={tx("Search or select customer...")}
                     value={customerSearch}
                     onFocus={() => setShowCustomerDropdown(true)}
                     onChange={e => {
@@ -702,7 +703,7 @@ export default function CaseSummarizerPage() {
                         a.cnic.includes(customerSearch)
                       );
                       if (filtered.length === 0) {
-                        return <div className="px-3 py-2 text-xs text-slate-500">No customers found</div>;
+                        return <div className="px-3 py-2 text-xs text-slate-500">{tx("No customers found")}</div>;
                       }
                       return filtered.map(a => (
                         <div
@@ -720,7 +721,7 @@ export default function CaseSummarizerPage() {
                           }`}
                         >
                           <span className="font-semibold text-slate-700">{a.name}</span>
-                          <span className="text-[10px] text-slate-400 font-mono">CNIC: {a.cnic}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">{tx("CNIC:")}{" "}{a.cnic}</span>
                         </div>
                       ));
                     })()}
@@ -729,7 +730,7 @@ export default function CaseSummarizerPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">Case</label>
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">{tx("Case")}</label>
                 <select
                   value={selectedCase?.caseld ?? ""}
                   disabled={!selectedCustomer || loadingCases}
@@ -743,7 +744,7 @@ export default function CaseSummarizerPage() {
                   }}
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 disabled:opacity-50"
                 >
-                  <option value="">— Select case —</option>
+                  <option value="">{tx("— Select case —")}</option>
                   {cases.map(c => (
                     <option key={c.caseld} value={c.caseld}>{c.caseNumber} · {c.status}</option>
                   ))}
@@ -756,9 +757,9 @@ export default function CaseSummarizerPage() {
           {selectedCase && (
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-700">Documents</p>
+                <p className="text-sm font-semibold text-slate-700">{tx("Documents")}</p>
                 <span className="text-[10px] font-medium text-slate-400">
-                  {selectedDocs.length} / {artifacts.length} selected
+                  {selectedDocs.length} / {artifacts.length}{" "}{tx("selected")}
                 </span>
               </div>
 
@@ -768,7 +769,7 @@ export default function CaseSummarizerPage() {
                     <span className="w-4 h-4 rounded-full border-2 border-blue-400 border-t-transparent animate-spin" />
                   </div>
                 ) : artifacts.length === 0 ? (
-                  <p className="text-xs text-slate-400 text-center py-8">No documents in this case.</p>
+                  <p className="text-xs text-slate-400 text-center py-8">{tx("No documents in this case.")}</p>
                 ) : artifacts.map(a => {
                   const hasOCR = !!a.ocr_result && a.status !== "Processing";
                   const chipCls =
@@ -792,7 +793,7 @@ export default function CaseSummarizerPage() {
                         className="accent-blue-600 flex-shrink-0"
                       />
                       <div className="min-w-0 flex-1">
-                        <p className="text-xs font-medium text-slate-700 truncate">{a.file_name ?? "Untitled"}</p>
+                        <p className="text-xs font-medium text-slate-700 truncate">{a.file_name ?? tx("Untitled")}</p>
                         <p className="text-[10px] text-slate-400">{a.document_type}</p>
                       </div>
                       <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border flex-shrink-0 ${chipCls}`}>
@@ -816,9 +817,9 @@ export default function CaseSummarizerPage() {
                   {sumRunning ? (
                     <span className="flex items-center justify-center gap-2">
                       <span className="w-3.5 h-3.5 rounded-full border-2 border-blue-300 border-t-transparent animate-spin" />
-                      Summarizing…
+                      {tx("Summarizing…")}
                     </span>
-                  ) : `Summarize ${selectedDocs.length} Document${selectedDocs.length !== 1 ? "s" : ""}`}
+                  ) : tx("Summarize {0} Document{1}", { 0: selectedDocs.length, 1: selectedDocs.length !== 1 ? "s" : "" })}
                 </button>
               </div>
             </div>
@@ -837,14 +838,14 @@ export default function CaseSummarizerPage() {
                 </svg>
               </div>
               <p className="text-sm font-semibold text-slate-600">
-                {!selectedCase ? "Select a case to get started" : selectedDocs.length === 0 ? "No OCR-ready documents selected" : "Ready to summarize"}
+                {!selectedCase ? tx("Select a case to get started") : selectedDocs.length === 0 ? tx("No OCR-ready documents selected") : tx("Ready to summarize")}
               </p>
               <p className="text-xs text-slate-400 mt-1.5 max-w-xs leading-relaxed">
                 {!selectedCase
-                  ? "Choose an customer and case on the left, then select the documents to include."
+                  ? tx("Choose an customer and case on the left, then select the documents to include.")
                   : selectedDocs.length === 0
-                  ? "Tick the documents with OCR results on the left, then click Summarize."
-                  : `${selectedDocs.length} document${selectedDocs.length !== 1 ? "s" : ""} selected — click Summarize to begin.`}
+                  ? tx("Tick the documents with OCR results on the left, then click Summarize.")
+                  : tx("{0} document{1} selected — click Summarize to begin.", { 0: selectedDocs.length, 1: selectedDocs.length !== 1 ? "s" : "" })}
               </p>
             </div>
           )}
@@ -853,21 +854,21 @@ export default function CaseSummarizerPage() {
           {sumStatus !== "idle" && (
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-700">AI Case Summary</p>
+                <p className="text-sm font-semibold text-slate-700">{tx("AI Case Summary")}</p>
                 <div className="flex items-center gap-3">
                   {tokenUsage && (
-                    <span className="text-[10px] text-slate-400 font-mono">{tokenUsage.total.toLocaleString()} tokens</span>
+                    <span className="text-[10px] text-slate-400 font-mono">{tokenUsage.total.toLocaleString()}{" "}{tx("tokens")}</span>
                   )}
                   {sumStatus === "streaming" && (
                     <span className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-600">
                       <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
-                      Gemini 2.5 Flash
+                      {tx("Gemini 2.5 Flash")}
                     </span>
                   )}
                   {sumStatus === "done" && (
                     <span className="text-[10px] font-semibold text-blue-600 flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                      Complete
+                      {tx("Complete")}
                     </span>
                   )}
                 </div>
@@ -882,16 +883,16 @@ export default function CaseSummarizerPage() {
                 ) : sumStatus === "streaming" ? (
                   <div className="flex items-center gap-2 text-xs text-slate-400 py-4">
                     <span className="w-3.5 h-3.5 rounded-full border-2 border-slate-300 border-t-transparent animate-spin" />
-                    Generating summary…
+                    {tx("Generating summary…")}
                   </div>
                 ) : null}
               </div>
 
               {sumStatus === "done" && tokenUsage && (
                 <div className="px-5 py-2.5 border-t border-slate-100 flex gap-5 text-[10px] text-slate-400 font-mono bg-slate-50">
-                  <span>Input: {tokenUsage.input.toLocaleString()}</span>
-                  <span>Output: {tokenUsage.output.toLocaleString()}</span>
-                  <span className="font-semibold text-slate-500">Total: {tokenUsage.total.toLocaleString()}</span>
+                  <span>{tx("Input:")}{" "}{tokenUsage.input.toLocaleString()}</span>
+                  <span>{tx("Output:")}{" "}{tokenUsage.output.toLocaleString()}</span>
+                  <span className="font-semibold text-slate-500">{tx("Total:")}{" "}{tokenUsage.total.toLocaleString()}</span>
                 </div>
               )}
             </div>
@@ -908,9 +909,9 @@ export default function CaseSummarizerPage() {
                   className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors border-b border-slate-100"
                 >
                   <div className="flex items-center gap-2.5">
-                    <p className="text-sm font-semibold text-slate-700">Risk Engine Proposal</p>
+                    <p className="text-sm font-semibold text-slate-700">{tx("Risk Engine Proposal")}</p>
                     <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200">
-                      Auto-filled
+                      {tx("Auto-filled")}
                     </span>
                   </div>
                   <svg
@@ -925,23 +926,23 @@ export default function CaseSummarizerPage() {
                 {showEvalForm && (
                   <div className="p-5">
                     <div className="grid grid-cols-2 gap-3 mb-4">
-                      <EvalField label="CNIC"                value={evalForm.cnic}            onChange={v => setEvalForm({ ...evalForm, cnic: formatCnic(v) })}            placeholder="35201-1234567-1" />
-                      <EvalField label="Full Name"           value={evalForm.name}            onChange={v => setEvalForm({ ...evalForm, name: v })}            placeholder="Muhammad Ali" />
-                      <EvalField label="Date of Birth" type="date" value={evalForm.dob}       onChange={v => setEvalForm({ ...evalForm, dob: v })} />
+                      <EvalField label={tx("CNIC")}                value={evalForm.cnic}            onChange={v => setEvalForm({ ...evalForm, cnic: formatCnic(v) })}            placeholder="35201-1234567-1" />
+                      <EvalField label={tx("Full Name")}           value={evalForm.name}            onChange={v => setEvalForm({ ...evalForm, name: v })}            placeholder={tx("Muhammad Ali")} />
+                      <EvalField label={tx("Date of Birth")} type="date" value={evalForm.dob}       onChange={v => setEvalForm({ ...evalForm, dob: v })} />
                       <div>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">Gender</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">{tx("Gender")}</label>
                         <select
                           value={evalForm.gender}
                           onChange={e => setEvalForm({ ...evalForm, gender: e.target.value })}
                           className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
                         >
-                          <option>Male</option><option>Female</option><option>Other</option>
+                          <option>{tx("Male")}</option><option>{tx("Female")}</option><option>{tx("Other")}</option>
                         </select>
                       </div>
-                      <EvalField label="Occupation"          value={evalForm.occupation}      onChange={v => setEvalForm({ ...evalForm, occupation: v })}      placeholder="Engineer" />
-                      <EvalField label="Annual Income (PKR)" type="number" value={evalForm.declaredIncome} onChange={v => setEvalForm({ ...evalForm, declaredIncome: v })} placeholder="1200000" />
+                      <EvalField label={tx("Occupation")}          value={evalForm.occupation}      onChange={v => setEvalForm({ ...evalForm, occupation: v })}      placeholder={tx("Engineer")} />
+                      <EvalField label={tx("Annual Income (PKR)")} type="number" value={evalForm.declaredIncome} onChange={v => setEvalForm({ ...evalForm, declaredIncome: v })} placeholder="1200000" />
                       <div>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">Insurance Type</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">{tx("Insurance Type")}</label>
                         <select
                           value={evalForm.insuranceType}
                           onChange={e => setEvalForm({ ...evalForm, insuranceType: e.target.value })}
@@ -952,12 +953,12 @@ export default function CaseSummarizerPage() {
                           ))}
                         </select>
                       </div>
-                      <EvalField label="Coverage (PKR)"      type="number" value={evalForm.coverageAmount} onChange={v => setEvalForm({ ...evalForm, coverageAmount: v })} placeholder="5000000" />
-                      <EvalField label="Term (Years)"        type="number" value={evalForm.termYears}      onChange={v => setEvalForm({ ...evalForm, termYears: v })}      placeholder="20" />
+                      <EvalField label={tx("Coverage (PKR)")}      type="number" value={evalForm.coverageAmount} onChange={v => setEvalForm({ ...evalForm, coverageAmount: v })} placeholder="5000000" />
+                      <EvalField label={tx("Term (Years)")}        type="number" value={evalForm.termYears}      onChange={v => setEvalForm({ ...evalForm, termYears: v })}      placeholder="20" />
                       {evalForm.insuranceType === "CHILD_EDUCATION_MARRIAGE" && (
                         <>
-                          <EvalField label="Dependent Name" value={evalForm.dependentName} onChange={v => setEvalForm({ ...evalForm, dependentName: v })} placeholder="Child's full name" />
-                          <EvalField label="Dependent Date of Birth" type="date" value={evalForm.dependentDob} onChange={v => setEvalForm({ ...evalForm, dependentDob: v })} />
+                          <EvalField label={tx("Dependent Name")} value={evalForm.dependentName} onChange={v => setEvalForm({ ...evalForm, dependentName: v })} placeholder={tx("Child's full name")} />
+                          <EvalField label={tx("Dependent Date of Birth")} type="date" value={evalForm.dependentDob} onChange={v => setEvalForm({ ...evalForm, dependentDob: v })} />
                         </>
                       )}
                     </div>
@@ -967,8 +968,8 @@ export default function CaseSummarizerPage() {
                 {/* Always-visible quick inputs for coverage + term (the two fields not from customer) */}
                 {!showEvalForm && (
                   <div className="px-5 py-4 grid grid-cols-2 gap-3">
-                    <EvalField label="Coverage Amount (PKR)" type="number" value={evalForm.coverageAmount} onChange={v => setEvalForm({ ...evalForm, coverageAmount: v })} placeholder="5000000" />
-                    <EvalField label="Term (Years)"          type="number" value={evalForm.termYears}      onChange={v => setEvalForm({ ...evalForm, termYears: v })}      placeholder="20" />
+                    <EvalField label={tx("Coverage Amount (PKR)")} type="number" value={evalForm.coverageAmount} onChange={v => setEvalForm({ ...evalForm, coverageAmount: v })} placeholder="5000000" />
+                    <EvalField label={tx("Term (Years)")}          type="number" value={evalForm.termYears}      onChange={v => setEvalForm({ ...evalForm, termYears: v })}      placeholder="20" />
                   </div>
                 )}
 
@@ -985,9 +986,9 @@ export default function CaseSummarizerPage() {
                     {evalRunning ? (
                       <span className="flex items-center justify-center gap-2">
                         <span className="w-3.5 h-3.5 rounded-full border-2 border-slate-400 border-t-transparent animate-spin" />
-                        Evaluating…
+                        {tx("Evaluating…")}
                       </span>
-                    ) : "Run Risk Evaluation"}
+                    ) : tx("Run Risk Evaluation")}
                   </button>
                 </div>
               </div>
@@ -996,17 +997,17 @@ export default function CaseSummarizerPage() {
               {(evalStatus !== "idle" || evalResult.completedNodes.length > 0) && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-                    <p className="text-sm font-semibold text-slate-700">LangGraph Pipeline</p>
+                    <p className="text-sm font-semibold text-slate-700">{tx("LangGraph Pipeline")}</p>
                     {evalRunning && (
                       <span className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-600">
                         <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
-                        Streaming
+                        {tx("Streaming")}
                       </span>
                     )}
                     {evalStatus === "done" && (
                       <span className="text-[10px] font-semibold text-blue-600 flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                        Complete
+                        {tx("Complete")}
                       </span>
                     )}
                   </div>
@@ -1043,7 +1044,7 @@ export default function CaseSummarizerPage() {
               {/* Validation errors */}
               {evalResult.validationErrors.length > 0 && (
                 <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                  <p className="text-xs font-bold text-red-700 uppercase tracking-widest mb-2">Validation Errors</p>
+                  <p className="text-xs font-bold text-red-700 uppercase tracking-widest mb-2">{tx("Validation Errors")}</p>
                   <ul className="space-y-1">
                     {evalResult.validationErrors.map((msg: string, i: number) => (
                       <li key={i} className="text-xs text-red-600 flex items-start gap-1.5">
@@ -1057,7 +1058,7 @@ export default function CaseSummarizerPage() {
               {/* Stream error */}
               {evalStatus === "error" && evalError && evalResult.validationErrors.length === 0 && (
                 <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                   <p className="text-xs font-bold text-red-700 uppercase tracking-widest mb-1">Error</p>
+                   <p className="text-xs font-bold text-red-700 uppercase tracking-widest mb-1">{tx("Error")}</p>
                    <p className="text-xs text-red-600">{evalError}</p>
                 </div>
               )}
@@ -1066,25 +1067,25 @@ export default function CaseSummarizerPage() {
               {(evalResult.medicalScore !== null || evalResult.financialScore !== null || evalResult.fraudProbability !== null) && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="px-5 py-3 border-b border-slate-100">
-                    <p className="text-sm font-semibold text-slate-700">Risk Scores</p>
+                    <p className="text-sm font-semibold text-slate-700">{tx("Risk Scores")}</p>
                   </div>
                   <div className="p-5 space-y-5">
                     {evalResult.medicalScore !== null && (
                       <div>
-                        <RiskScoreBar label="Medical Score" score={evalResult.medicalScore} />
+                        <RiskScoreBar label={tx("Medical Score")} score={evalResult.medicalScore} />
                         <ReasonList reasons={evalResult.medicalReasons} accent="text-blue-400" />
                       </div>
                     )}
                     {evalResult.financialScore !== null && (
                       <div>
-                        <RiskScoreBar label="Financial Score" score={evalResult.financialScore} />
+                        <RiskScoreBar label={tx("Financial Score")} score={evalResult.financialScore} />
                         <ReasonList reasons={evalResult.financialReasons} accent="text-blue-400" />
                       </div>
                     )}
                     {evalResult.fraudProbability !== null && (
                       <div>
                         <RiskScoreBar
-                          label="Fraud Probability"
+                          label={tx("Fraud Probability")}
                           score={Math.round(evalResult.fraudProbability * 100)}
                           valueLabel={evalResult.fraudProbability.toFixed(2)}
                         />
@@ -1099,19 +1100,19 @@ export default function CaseSummarizerPage() {
               {evalResult.compositeScore !== null && decision && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="px-5 py-3 border-b border-slate-100">
-                    <p className="text-sm font-semibold text-slate-700">Underwriting Decision</p>
+                    <p className="text-sm font-semibold text-slate-700">{tx("Underwriting Decision")}</p>
                   </div>
                   <div className="p-5 space-y-5">
                     <div className="flex flex-col sm:flex-row sm:items-center gap-5">
                       <CompositeScoreRing score={evalResult.compositeScore} />
                       <div className="space-y-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">AI Decision</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">{tx("AI Decision")}</p>
                         <StatusBadge decision={decision} size="lg" />
                       </div>
                     </div>
                     {evalResult.reasons.length > 0 && (
                       <div>
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">XAI Reasons</p>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">{tx("XAI Reasons")}</p>
                         <ul className="space-y-1.5">
                           {evalResult.reasons.map((r: string, i: number) => {
                             const isMath = i === evalResult.reasons.length - 1;
@@ -1144,7 +1145,7 @@ export default function CaseSummarizerPage() {
                     <polyline points="7 10 12 15 17 10" />
                     <line x1="12" y1="15" x2="12" y2="3" />
                   </svg>
-                  Download PDF Report
+                  {tx("Download PDF Report")}
                 </button>
               )}
             </>

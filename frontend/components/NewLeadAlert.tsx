@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { tx } from "@/lib/i18n/tx";
 
 export interface NewLeadInfo {
   id: string;
@@ -94,29 +95,29 @@ export default function NewLeadAlert({
           </div>
 
           <h2 id="new-lead-alert-title" className="text-lg font-bold text-slate-900">
-            {extra > 0 ? `${leads.length} new leads added` : "New lead added"}
+            {extra > 0 ? tx("{0} new leads added", { 0: leads.length }) : tx("New lead added")}
           </h2>
 
           <p className="mt-1 text-sm text-slate-500">
             <span className="font-semibold text-slate-700">{primary.name}</span>
             {" · "}
             {TYPE_LABEL[primary.type]}
-            {extra > 0 ? ` and ${extra} more` : ""}
+            {extra > 0 ? " " + tx("and {0} more", { 0: extra }) : ""}
           </p>
 
           <dl className="mt-5 space-y-2 rounded-xl bg-slate-50 border border-slate-100 p-4 text-left text-sm">
             <div className="flex items-center justify-between gap-3">
-              <dt className="text-slate-500">Contact</dt>
+              <dt className="text-slate-500">{tx("Contact")}</dt>
               <dd className="font-medium text-slate-800 truncate">{primary.contact_info}</dd>
             </div>
             <div className="flex items-center justify-between gap-3">
-              <dt className="text-slate-500">Added by</dt>
+              <dt className="text-slate-500">{tx("Added by")}</dt>
               <dd className="font-medium text-slate-800 truncate">
-                {primary.agentName ?? "Unassigned"}
+                {primary.agentName ?? tx("Unassigned")}
               </dd>
             </div>
             <div className="flex items-center justify-between gap-3">
-              <dt className="text-slate-500">Received</dt>
+              <dt className="text-slate-500">{tx("Received")}</dt>
               <dd className="font-medium text-slate-800">
                 {new Date(primary.createdAt).toLocaleTimeString([], {
                   hour: "2-digit",
@@ -131,13 +132,13 @@ export default function NewLeadAlert({
               onClick={onDismiss}
               className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
             >
-              Dismiss
+              {tx("Dismiss")}
             </button>
             <button
               onClick={() => onView(primary)}
               className="flex-1 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
             >
-              View lead
+              {tx("View lead")}
             </button>
           </div>
         </div>
