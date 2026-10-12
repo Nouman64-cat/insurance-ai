@@ -296,12 +296,8 @@ services:
   # ───────────────────────────────────────────────────────────────────────────
   # Automation Chat (Next.js) — the AI copilot as its own app, http://localhost:3004
   # Signs in from the dashboard's session (single sign-on cookie), see automation-chat/README.md
-  # Optional: it only runs when you start it yourself (profile "automation").
   # ───────────────────────────────────────────────────────────────────────────
   automation-chat:
-    # Not started by a plain `docker compose up`: run it on purpose with `docker compose up -d automation-chat`
-    # (naming a profiled service starts it). Until then the dashboard's Automation button reports it is not running.
-    profiles: ["automation"]
     build:
       context: ./automation-chat
       dockerfile: Dockerfile

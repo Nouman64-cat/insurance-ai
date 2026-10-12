@@ -7,6 +7,6 @@ The AI copilot as its own app and container (port **3004**), separate from the m
   (`/api/sso/session`, verified against `/auth/me`) and signs the same user in. Not signed in on the dashboard? You are
   sent to its login page and brought back here.
 - Pages the copilot opens or embeds (cases, forms) are dashboard pages, loaded from `NEXT_PUBLIC_PORTAL_URL`.
-- It is **optional and does not start with the rest of the stack** (compose profile `automation`). Start it on purpose:
-  `docker compose up -d automation-chat`, stop it with `docker compose stop automation-chat`.
+- It starts with the rest of the stack (`docker compose up -d --build`). Stop it on its own with
+  `docker compose stop automation-chat`.
 - The dashboard's **Automation** button opens it in a new tab, and says so if the container is not running.
