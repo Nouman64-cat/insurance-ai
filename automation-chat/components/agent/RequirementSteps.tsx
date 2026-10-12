@@ -7,10 +7,9 @@ import { fmtCoverage } from "@/lib/mock-data";
 import type { ChecklistItem, RequirementsChecklist } from "@/lib/agent/types";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { DocumentUploadDialog } from "@/components/agent/DocumentUploadDialog";
-import { ACRModal } from "@/components/entities/ACRModal";
 import VerifyEAppModal from "@/components/entities/VerifyEAppModal";
 import { IPPModal } from "@/components/entities/IPPModal";
-import { getACR, type AgentConfidentialReport } from "@/app/services/agentConfidentialReport";
+import { getACR, requestACR } from "@/app/services/agentConfidentialReport";
 import { getEApplication, inviteEApplication, type EApplication } from "@/app/services/eApplication";
 import { runCaseCompliance, clearComplianceCheck } from "@/app/services/cases";
 import { getInsuranceHistory, runInsuranceHistory, clearInsuranceHistory, type InsuranceHistory } from "@/app/services/insuranceHistory";
@@ -250,33 +249,38 @@ function EAppStep({ checklist, item, changed, report }: StepProps) {
 
 // ── 3 · Agent's Confidential Report ─────────────────────────────────────────
 
-function AcrStep({ checklist, item, changed, report }: StepProps) {
-  const [form, setForm] = useState<{ initial: AgentConfidentialReport | null } | null>(null);
+function AcrStep({ checklist, item, changed }: StepProps) {
+  // The report is the agent's own, filed from the agent app, so there is no form here: this step asks for it and waits.
+  const [asked, setAsked] = useState<{ text: string } | null>(null);
+  const [requestedAt, setRequestedAt] = useState<string | null>(null);
   const { busy, error, run } = useAction();
-  const open = () => run(async () => {
-    let initial: AgentConfidentialReport | null = null;
-    try {
-      const acr = await getACR(checklist.caseId);
-      initial = acr.status === "NotStarted" ? null : acr;
-    } catch { /* none filed yet */ }
-    setForm({ initial });
-  }, "Couldn't open the report.");
+
+  const load = useCallback(async () => {
+    try { setRequestedAt((await getACR(checklist.caseId)).requested_at ?? null); } catch { /* none yet */ }
+  }, [checklist.caseId]);
+  useEffect(() => { void load(); }, [load]);
+  useLive(checklist.caseId, () => { void load(); void changed(); }, true);
+
+  const ask = () => run(async () => {
+    const r = await requestACR(checklist.caseId);
+    const who = r.recipient?.name ?? "the agent";
+    setAsked({
+      text: r.self_request ? "You are the agent on this case: file the report from the agent app."
+        : r.already_requested ? `Already requested from ${who}.` : `Asked ${who} to file the report from the agent app.`,
+    });
+    await load();
+  }, "Couldn't send the request.");
+
   return (
     <div>
-      <div className="mt-3"><Btn onClick={open} busy={busy}>{item.status === "Draft" ? "Continue the report" : "File ACR"}</Btn></div>
+      <Waiting>
+        {item.status === "Draft" ? "The agent has started the report in the app…" : "Waiting for the agent to submit the report from the agent app…"}
+      </Waiting>
+      {asked && <p className="mt-2 rounded-lg bg-blue-50 px-2.5 py-1.5 text-[12px] font-medium text-blue-800">{asked.text}</p>}
+      <div className="mt-3">
+        <Btn kind="secondary" onClick={ask} busy={busy}>{requestedAt || asked ? "Remind agent" : "Request from agent"}</Btn>
+      </div>
       <ErrorLine text={error} />
-      {form && portalModal(
-        <ACRModal
-          caseId={checklist.caseId}
-          initial={form.initial}
-          onClose={() => setForm(null)}
-          onDone={async () => {
-            setForm(null);
-            report("acr", { tone: "ok", title: "Confidential report filed" });
-            await changed();
-          }}
-        />,
-      )}
     </div>
   );
 }

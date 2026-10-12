@@ -32,7 +32,7 @@ import { useCopilot } from "./CopilotContext";
 import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
 import { IssuanceModal, SuccessModal, PaymentModal } from "./policy/IssuanceModals";
 import type { IssuanceResult, PaymentConfirmResult } from "@/app/services/policies";
-import { ACRModal } from "./entities/ACRModal";
+import { requestACR } from "@/app/services/agentConfidentialReport";
 import RuleBuilderModal from "./rule-engine/RuleBuilderModal";
 import { IS_DEMO } from "@/lib/envMode";
 import { PORTAL_ORIGIN } from "@/lib/portal";
@@ -610,7 +610,6 @@ export function CopilotInterface() {
   const [issuanceModalPolicy, setIssuanceModalPolicy] = useState<any | null>(null);
   const [successModalResult, setSuccessModalResult] = useState<{ result: IssuanceResult | PaymentConfirmResult, policyName: string, caseNumber: string, isPayment?: boolean } | null>(null);
   const [paymentModalPolicy, setPaymentModalPolicy] = useState<any | null>(null);
-  const [acrModalCase, setAcrModalCase] = useState<{ caseId: string; caseNumber: string } | null>(null);
   const [ruleBuilderModalArgs, setRuleBuilderModalArgs] = useState<any | null>(null);
   // Inline case view for "navigate" actions — embeds the destination page via
   // iframe directly in the conversation instead of opening a new tab, so the
@@ -1066,7 +1065,7 @@ export function CopilotInterface() {
         { id: "eapp", name: "Customer E-Application Questionnaire", status: eApp, ok: eApp === "Verified",
           detail: "The customer's health disclosures questionnaire — send the link, then verify it once submitted." },
         { id: "acr", name: "Agent's Confidential Report (ACR)", status: acr, ok: acr === "Submitted",
-          detail: d.family_head_case ? `Filed once for the whole family (recorded on the head's case ${d.family_head_case.case_number}) — one proposer, one report.` : "The agent's own confidential assessment of the applicant, to be filed." },
+          detail: d.family_head_case ? `Filed once for the whole family (recorded on the head's case ${d.family_head_case.case_number}) — one proposer, one report.` : "The agent's own confidential assessment of the applicant, filed by the agent from the agent app." },
         { id: "pep", name: "PEP & Sanctions Screening", status: comp, ok: ["Passed", "Cleared"].includes(comp),
           detail: "PEP and AML screening of the applicant against watchlists." },
         { id: "ipp", name: "Initial Premium Payment (IPP)", status: ipp, ok: ipp === "Realized",
@@ -1556,10 +1555,19 @@ export function CopilotInterface() {
     } else if (pendingInterrupt.toolCall.name === "confirm_policy_payment") {
       setPaymentModalPolicy(pendingInterrupt.toolCall.args.policy);
     } else if (pendingInterrupt.toolCall.name === "submit_agent_confidential_report") {
-      setAcrModalCase({
-        caseId: pendingInterrupt.toolCall.args.case_id,
-        caseNumber: pendingInterrupt.toolCall.args.case_number,
-      });
+      // The ACR is the agent's own report, filed from the agent app: there is no form here. Ask for it instead.
+      const { case_id: caseId, case_number: caseNumber } = pendingInterrupt.toolCall.args;
+      requestACR(caseId)
+        .then((r) => resolveInterrupt({
+          success: false,
+          message: r.self_request
+            ? `The Agent's Confidential Report for case **${caseNumber}** is filed by the agent from the agent app — that is you on this case, so it can't be filed from here.`
+            : `The Agent's Confidential Report for case **${caseNumber}** can only be filed by the agent from the agent app. ${r.already_requested ? "It is already requested from" : "I've asked"} **${r.recipient?.name ?? "the agent"}**. This step continues once they submit it.`,
+        }))
+        .catch((e: any) => resolveInterrupt({
+          success: false,
+          message: `The ACR for case ${caseNumber} must be filed by the agent from the agent app, and I couldn't send the request: ${e?.response?.data?.detail ?? e?.message ?? "unknown error"}.`,
+        }));
     } else if (pendingInterrupt.toolCall.name === "build_rule_ui") {
       setRuleBuilderModalArgs(pendingInterrupt.toolCall.args);
     }
@@ -2700,37 +2708,6 @@ export function CopilotInterface() {
           onDone={handleDocDialogDone}
         />
       )}
-      {acrModalCase && (
-            <ACRModal
-              caseId={acrModalCase.caseId}
-              initial={null}
-              onClose={() => {
-                setAcrModalCase(null);
-                resolveInterrupt({ success: false, message: "Okay, the ACR form was closed without submitting." });
-              }}
-              onDone={() => {
-                const caseNum = acrModalCase.caseNumber;
-                const caseId = acrModalCase.caseId;
-                setAcrModalCase(null);
-                resolveInterrupt({
-                  success: true,
-                  message: `✅ **Gate 2: Agent Confidential Report (ACR) Submitted** for case **${caseNum}**.\n\n👉 Next Gate: **Gate 3: Compliance / PEP Screening**.`,
-                  status: "Submitted",
-                  last_action: {
-                    tool_name: "submit_agent_confidential_report",
-                    entity_type: "case",
-                    entity_id: caseId,
-                    route: `case/${caseId}`,
-                    label: "ACR submitted",
-                  },
-                  quick_actions: [
-                    { label: "3. Compliance Screen (Gate 3)", actionType: "submit", payload: `Run compliance screening for case ${caseNum}` },
-                    { label: "Check Gate Status", actionType: "submit", payload: `Check pre-underwriting status for case ${caseNum}` },
-                  ],
-                });
-              }}
-            />
-          )}
           {ruleBuilderModalArgs && (
             <RuleBuilderModal
               mode={ruleBuilderModalArgs.mode}
@@ -3827,37 +3804,6 @@ export function CopilotInterface() {
           documentTypes={docDialog.document_types}
           onClose={() => setDocDialog(null)}
           onDone={handleDocDialogDone}
-        />
-      )}
-      {acrModalCase && (
-        <ACRModal
-          caseId={acrModalCase.caseId}
-          initial={null}
-          onClose={() => {
-            setAcrModalCase(null);
-            resolveInterrupt({ success: false, message: "Okay, the ACR form was closed without submitting." });
-          }}
-          onDone={() => {
-            const caseNum = acrModalCase.caseNumber;
-            const caseId = acrModalCase.caseId;
-            setAcrModalCase(null);
-            resolveInterrupt({
-              success: true,
-              message: `✅ **Gate 2: Agent Confidential Report (ACR) Submitted** for case **${caseNum}**.\n\n👉 Next Gate: **Gate 3: Compliance / PEP Screening**.`,
-              status: "Submitted",
-              last_action: {
-                tool_name: "submit_agent_confidential_report",
-                entity_type: "case",
-                entity_id: caseId,
-                route: `case/${caseId}`,
-                label: "ACR submitted",
-              },
-              quick_actions: [
-                { label: "3. Compliance Screen (Gate 3)", actionType: "submit", payload: `Run compliance screening for case ${caseNum}` },
-                { label: "Check Gate Status", actionType: "submit", payload: `Check pre-underwriting status for case ${caseNum}` },
-              ],
-            });
-          }}
         />
       )}
 

@@ -14,8 +14,9 @@ import api, { summarizerApi } from "@/app/services/api";
 import { useCaseEvents, type CaseEvent } from "@/lib/agent/useCaseEvents";
 import { parentOrigin } from "@/lib/agent/portalMessage";
 import { getEApplication, inviteEApplication, type EApplication } from "@/app/services/eApplication";
-import { getACR, type AgentConfidentialReport } from "@/app/services/agentConfidentialReport";
+import { getACR, requestACR, type AgentConfidentialReport } from "@/app/services/agentConfidentialReport";
 import { ACRModal } from "@/components/entities/ACRModal";
+import ModalPortal from "@/components/ModalPortal";
 import { getIPP, type IPP } from "@/app/services/initialPremiumPayment";
 import { IPPModal } from "@/components/entities/IPPModal";
 import { getCompliance, runCompliance, clearCompliance, failCompliance, type ComplianceCheck } from "@/app/services/preIssuance";
@@ -769,6 +770,18 @@ const LIVE_CASE_EVENTS = new Set([
 
 export default function CasePage({ params }: { params: { id: string } }) {
   const caseId = params.id;
+
+  // The case header stays pinned while the page scrolls; the left column sticks just below it, so its height is needed.
+  const [headHeight, setHeadHeight] = useState(128);
+  const headObserver = useRef<ResizeObserver | null>(null);
+  const headRef = useCallback((el: HTMLDivElement | null) => {
+    headObserver.current?.disconnect();
+    if (!el) return;
+    const measure = () => setHeadHeight(Math.round(el.getBoundingClientRect().height));
+    measure();
+    headObserver.current = new ResizeObserver(measure);
+    headObserver.current.observe(el);
+  }, []);
   const [detail, setDetail] = useState<CaseDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1088,6 +1101,22 @@ export default function CasePage({ params }: { params: { id: string } }) {
       alert(e?.message ?? "Insurance history check failed");
     } finally {
       setHistBusy(false);
+    }
+  };
+
+  const [acrRequesting, setAcrRequesting] = useState(false);
+  const handleRequestAcr = async () => {
+    setAcrRequesting(true);
+    try {
+      const r = await requestACR(caseId);
+      if (r.self_request) setSuccessMessage("You are the agent on this case: file the report from the agent app.");
+      else setSuccessMessage(r.already_requested ? `Already requested from ${r.recipient?.name ?? "the agent"}.` : `Asked ${r.recipient?.name ?? "the agent"} to file the ACR from the app.`);
+      window.setTimeout(() => setSuccessMessage(null), 4000);
+      await fetchAcr();
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? e?.message ?? "Couldn't send the ACR request.");
+    } finally {
+      setAcrRequesting(false);
     }
   };
 
@@ -1768,12 +1797,14 @@ export default function CasePage({ params }: { params: { id: string } }) {
       id: "acr",
       title: "Agent's Confidential Report (ACR)",
       done: acr?.status === "Submitted",
-      statusLabel: acr?.status ?? "Not Started",
+      statusLabel: acr?.status === "Submitted" ? "Submitted" : acr?.requested_at ? "Awaiting agent" : (acr?.status ?? "Not Started"),
       description: acr?.status === "Submitted" 
         ? `Moral hazard & financial standing report filed by field agent.${detail?.family_head_case ? ` Filed once for the whole family (recorded on the head's case ${detail.family_head_case.case_number}) — one proposer, one report.` : ""}`
-        : detail?.family_head_case ? `The agent's report on the proposer is filed once for the whole family — it is recorded on the head's case ${detail.family_head_case.case_number}.` : "Agent confidential report needs to be completed.",
-      actionLabel: acr?.status === "Submitted" ? "View ACR" : "File ACR",
-      onAction: () => setShowACRModal(true),
+        : detail?.family_head_case ? `The agent's report on the proposer is filed once for the whole family — it is recorded on the head's case ${detail.family_head_case.case_number}.` : "Waiting for the agent to submit the confidential report from the agent app.",
+      // The report is the agent's own, filed from the app: staff can read it once it is in, and ask for it until then.
+      actionLabel: acr?.status === "Submitted" ? "View ACR" : acrRequesting ? "Asking…" : acr?.requested_at ? "Remind agent" : "Request from agent",
+      busy: acrRequesting,
+      onAction: acr?.status === "Submitted" ? () => setShowACRModal(true) : handleRequestAcr,
     },
     {
       id: "pep",
@@ -1919,19 +1950,14 @@ export default function CasePage({ params }: { params: { id: string } }) {
     return lines.join("\n");
   };
 
-  // The three decision buttons. They sit below the seven pre-underwriting steps (and under the AI assessment once
-  // the case has been scored), not in the page header. Once the case has reached a final decision (the override
+  // The three decision buttons, in the pinned page header beside Download Application so they are always in reach.
+  // Once the case has reached a final decision (the override
   // or the AI's own Auto Approve/Decline) there is nothing left to override, so they are hidden rather than let a
   // stale click re-assert the same status and bounce off the policy state machine ("Approved → Approved").
   const prereqsIncomplete = missingPreChecks.length > 0;
   const decisionButtons =
     c.caseStatus !== "Approved" && c.caseStatus !== "Rejected" ? (
-      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-4">
-        {prereqsIncomplete && (
-          <p className="mr-auto text-xs text-slate-500">
-            Override: Proceed unlocks when all 7 steps above are done ({7 - missingPreChecks.length} of 7 so far).
-          </p>
-        )}
+      <div className="flex flex-wrap items-center gap-2">
         <button
           onClick={() => overrideStatus("Pending Documents")}
           disabled={overriding !== null || userRole === "Agent"}
@@ -1971,7 +1997,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
   triggerNotesRef.current = () => generateNote(buildNoteContext());
 
   return (
-    <div className="max-w-screen-2xl mx-auto px-6 py-6 space-y-5">
+    <div className="max-w-screen-2xl mx-auto px-6 pb-6 space-y-5" style={{ ["--case-head" as any]: `${headHeight}px` }}>
       {successMessage && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 z-50 animate-in slide-in-from-top-5">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-5 h-5 text-blue-100">
@@ -1982,7 +2008,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
       )}
 
       {/* ── Breadcrumb & case header ──────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div ref={headRef} className="sticky top-0 z-20 -mx-6 flex flex-col gap-4 border-b border-slate-200/70 bg-slate-50 px-6 pb-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2 mb-2">
             <Link href="/" className="text-xs text-slate-500 hover:text-blue-700 font-medium transition-colors">← Dashboard</Link>
@@ -2006,6 +2032,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
         {/* Final step after underwriting — generate the full application dossier */}
         <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+          {decisionButtons}
           <button
             onClick={downloadApplication}
             disabled={downloadingApp}
@@ -2099,7 +2126,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
         {/* ── LEFT COLUMN: Customer + Policy ─────────────────────────────── */}
-        <div className="lg:col-span-1 space-y-4">
+        {/* Stays in view while the right column scrolls; if it is taller than the screen it scrolls on its own. */}
+        <div className="lg:col-span-1 space-y-4 lg:sticky lg:top-[calc(var(--case-head,8rem)+0.75rem)] lg:self-start lg:max-h-[calc(100vh-var(--case-head,8rem)-7.25rem)] lg:overflow-y-auto lg:pr-1 [scrollbar-width:thin]">
 
           {customer && (
             <div className="card p-5">
@@ -2284,6 +2312,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
 
 
+          <ModalPortal>
           {showResultModal && medical && (
             <MedicalResultModal
               order={medical}
@@ -2326,6 +2355,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
               onConfirmed={() => { setShowIPPModal(false); fetchIpp(); }}
             />
           )}
+          </ModalPortal>
 
           {/* Document checklist + upload */}
           <div className="card p-5">
@@ -2555,7 +2585,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
                 </div>
               )}
               {effStreamError && !requiredDocsMissing && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-2">{effStreamError}</p>}
-              {decisionButtons && <div className="mt-4 px-4 pb-1">{decisionButtons}</div>}
             </div>
           ) : (
             <>
@@ -2701,7 +2730,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   )}
                 </div>
               </div>
-              {decisionButtons && <div className="px-1">{decisionButtons}</div>}
             </>
           )}
 
