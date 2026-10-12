@@ -235,16 +235,14 @@ def check_plan_rules(
     if income <= 0:
         errors.append("Declared income must be greater than zero.")
 
-    # ── Coverage vs income multiple ───────────────────────────────────────
+    # ── Coverage ───────────────────────────────────────────────────────────
+    # Coverage-vs-income is a financial underwriting judgment, not a hard
+    # eligibility gate — handled by financial_scoring/decide() (workflow.py)
+    # so it can actually produce a recorded Decline/Human Review decision
+    # instead of a 422 that drops the case before scoring ever runs.
     coverage = policy.get("coverage_amount", 0)
     if coverage <= 0:
         errors.append("Coverage amount must be greater than zero.")
-    if income > 0 and coverage > income * rules.max_income_multiple:
-        errors.append(
-            f"[{plan_label}] Coverage amount ({coverage:,.0f}) exceeds "
-            f"{rules.max_income_multiple:g}× annual income "
-            f"({income * rules.max_income_multiple:,.0f})."
-        )
 
     # ── Term ───────────────────────────────────────────────────────────────
     term = policy.get("term_years", 0)

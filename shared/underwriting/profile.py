@@ -157,6 +157,8 @@ def build_profile(
 
     occupation = customer.get("occupation")
     hazard_level = classify_occupation_hazard(occupation)
+    occupation_details = (customer.get("details") or {}).get("occupation_details") or {}
+    employer_declared = (occupation_details.get("employer_name") or "").strip() or None
 
     lifestyle_habits = e_application.get("lifestyle_habits") or {}
     is_smoker = customer.get("is_smoker")
@@ -205,7 +207,7 @@ def build_profile(
             "verified_income": verified_income,
             "coverage_amount": coverage_amount,
             "coverage_to_income_ratio": coverage_to_income_ratio,
-            "employer_declared": None,
+            "employer_declared": employer_declared,
             "employer_evidence": employer_from_evidence,
             "agent_income_opinion": acr.get("estimated_income_opinion"),
         },

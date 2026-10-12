@@ -13,7 +13,13 @@ from typing_extensions import TypedDict
 
 import usage
 from llm import structured_llm
-from underwriting_rules import UNDERWRITING_RULES, _GENERIC_FALLBACK, check_plan_rules
+from underwriting_rules import (
+    UNDERWRITING_RULES,
+    _GENERIC_FALLBACK,
+    MedicalExamTier,
+    check_plan_rules,
+    resolve_medical_exam_tier,
+)
 
 from shared.underwriting.decision_rules import decide
 from shared.underwriting.profile import build_profile
@@ -122,6 +128,39 @@ class FraudScoreOutput(BaseModel):
 # DecisionOutput removed — final node is deterministic (no LLM).
 
 
+# Neutral placeholder scores used when an LLM read is unavailable. Each node
+# also forces its structured result to a review-level outcome, so these never
+# drive the decision on their own.
+_LLM_UNAVAILABLE_MEDICAL_SCORE = 50
+_LLM_UNAVAILABLE_FINANCIAL_SCORE = 50
+_LLM_UNAVAILABLE_FRAUD_PROBABILITY = 0.5
+
+
+def _invoke_structured(prompt: ChatPromptTemplate, schema: Any, inputs: Dict[str, Any],
+                       state: RiskState, node: str) -> Optional[Any]:
+    """Returns the parsed LLM output, or None if every provider failed or the
+    output didn't parse (include_raw=True reports parse failures as
+    parsed=None rather than raising)."""
+    try:
+        raw = (prompt | structured_llm(schema)).invoke(inputs)
+    except Exception:
+        logger.exception("%s: LLM call failed on all providers", node)
+        return None
+    usage.record(raw["raw"], tenant_id=state.get("tenant_id"))
+    if raw.get("parsed") is None:
+        logger.error("%s: LLM output could not be parsed: %s", node, raw.get("parsing_error"))
+        return None
+    return raw["parsed"]
+
+
+def _llm_unavailable_reason(parameter: str) -> Dict[str, str]:
+    return {
+        "parameter": parameter,
+        "observation": "AI assessment unavailable (provider error or unparseable output) — routed to underwriter review.",
+        "risk_rating": "Moderate",
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Graph nodes
 # ─────────────────────────────────────────────────────────────────────────────
@@ -169,12 +208,22 @@ _RISK_CLASS_SEVERITY = {
 }
 
 
+_STANDARD_MAX_SCORE = 35
+_SUBSTANDARD_MAX_SCORE = 55
+
+# Lowest raw score that lands in each loadable class.
+_RISK_CLASS_MIN_SCORE = {
+    MedicalRiskClass.SUBSTANDARD: _STANDARD_MAX_SCORE + 1,
+    MedicalRiskClass.RATED: _SUBSTANDARD_MAX_SCORE + 1,
+}
+
+
 def _score_to_risk_class(score: int) -> MedicalRiskClass:
     if score <= 15:
         return MedicalRiskClass.PREFERRED
-    if score <= 35:
+    if score <= _STANDARD_MAX_SCORE:
         return MedicalRiskClass.STANDARD
-    if score <= 55:
+    if score <= _SUBSTANDARD_MAX_SCORE:
         return MedicalRiskClass.SUBSTANDARD
     if score <= 75:
         return MedicalRiskClass.RATED
@@ -189,7 +238,20 @@ def _deterministic_medical_floor(profile: Dict[str, Any]) -> tuple[Optional[Medi
     floor: Optional[MedicalRiskClass] = None
 
     bmi = medical_history.get("bmi")
-    if bmi is not None:
+    if bmi is None:
+        # Omitting height/weight must not silently bypass the BMI floors once
+        # the plan's own exam tier says this coverage needs medical evidence.
+        policy_request = profile.get("policy_request") or {}
+        insurance_type = policy_request.get("insurance_type")
+        rules = UNDERWRITING_RULES.get(insurance_type, _GENERIC_FALLBACK) if insurance_type else _GENERIC_FALLBACK
+        tier = resolve_medical_exam_tier(rules, float(policy_request.get("coverage_amount") or 0))
+        if tier is not None and tier != MedicalExamTier.NONE:
+            floor = MedicalRiskClass.MEDICAL_REVIEW_REQUIRED
+            reasons.append(
+                f"Height/weight not provided, so BMI could not be assessed, and this coverage "
+                f"requires medical evidence ({tier.value})."
+            )
+    else:
         if bmi >= BMI_DECLINE_THRESHOLD:
             floor = MedicalRiskClass.DECLINE
             reasons.append(f"BMI {bmi} is at/above the deterministic decline threshold of {BMI_DECLINE_THRESHOLD:g}.")
@@ -212,7 +274,6 @@ def _deterministic_medical_floor(profile: Dict[str, Any]) -> tuple[Optional[Medi
 def medical_scoring(state: RiskState) -> Dict[str, Any]:
     customer = state["customer"]
     e_app = state.get("e_application")
-    model = structured_llm(MedicalScoreOutput)
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are an expert life insurance medical underwriter.
          Evaluate the following customer's baseline medical and lifestyle risk based on:
@@ -229,27 +290,38 @@ def medical_scoring(state: RiskState) -> Dict[str, Any]:
          Provide structured risk factors including the parameter, observation, and risk rating."""),
         ("user", "Customer Data: {customer}\n\nE-Application Disclosures: {e_app}")
     ])
-    raw = (prompt | model).invoke({"customer": customer, "e_app": e_app or "None provided"})
-    usage.record(raw["raw"], tenant_id=state.get("tenant_id"))
-    result = raw["parsed"]
-    medical_reasons = [r.dict() for r in result.medical_reasons]
+    result = _invoke_structured(
+        prompt, MedicalScoreOutput,
+        {"customer": customer, "e_app": e_app or "None provided"},
+        state, "medical_scoring",
+    )
+    if result is not None:
+        medical_score = result.medical_score
+        medical_reasons = [r.dict() for r in result.medical_reasons]
+        risk_class = _score_to_risk_class(medical_score)
+    else:
+        medical_score = _LLM_UNAVAILABLE_MEDICAL_SCORE
+        medical_reasons = [_llm_unavailable_reason("Medical Assessment")]
+        risk_class = MedicalRiskClass.MEDICAL_REVIEW_REQUIRED
 
     profile = state.get("underwriting_profile") or {}
     floor, floor_reasons = _deterministic_medical_floor(profile)
-    risk_class = _score_to_risk_class(result.medical_score)
     if floor is not None and _RISK_CLASS_SEVERITY[floor] > _RISK_CLASS_SEVERITY[risk_class]:
         risk_class = floor
 
+    # A floor can raise the class above what the raw score implies (e.g. BMI
+    # 32 with a score of 10 → Rated); price at no less than that class's own
+    # lowest score so a loaded decision never carries a standard-rate loading.
     loading_percentage = (
-        _suggested_loading(result.medical_score)
-        if risk_class in (MedicalRiskClass.SUBSTANDARD, MedicalRiskClass.RATED) else None
+        _medical_loading(max(medical_score, _RISK_CLASS_MIN_SCORE[risk_class]))
+        if risk_class in _RISK_CLASS_MIN_SCORE else None
     )
     evidence_refs = [
         str(d.get("artifact_id")) for d in profile.get("document_evidence", [])
         if any(kw in (d.get("document_type") or "").lower() for kw in ("medical", "lab", "ecg", "physician", "health"))
     ]
     medical_result = MedicalUnderwritingResult(
-        risk_score=result.medical_score,
+        risk_score=medical_score,
         risk_class=risk_class,
         loading_percentage=loading_percentage,
         requires_human_review=(risk_class == MedicalRiskClass.MEDICAL_REVIEW_REQUIRED),
@@ -257,17 +329,19 @@ def medical_scoring(state: RiskState) -> Dict[str, Any]:
         evidence_refs=evidence_refs,
     )
     return {
-        "medical_score": result.medical_score,
+        "medical_score": medical_score,
         "medical_reasons": medical_reasons,
         "medical_result": medical_result.model_dump(mode="json"),
     }
+
+
+FINANCIAL_REFERRAL_TOLERANCE = 1.5
 
 
 def financial_scoring(state: RiskState) -> Dict[str, Any]:
     customer = state["customer"]
     policy = state["policy"]
     acr = state.get("acr")
-    model = structured_llm(FinancialScoreOutput)
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are an expert insurance financial underwriter.
          Assess the financial risk of this customer based on:
@@ -280,29 +354,65 @@ def financial_scoring(state: RiskState) -> Dict[str, Any]:
          Provide structured risk factors including the parameter, observation, and risk rating."""),
         ("user", "Customer: {customer}\nPolicy: {policy}\n\nAgent Confidential Report (ACR): {acr}")
     ])
-    raw = (prompt | model).invoke({"customer": customer, "policy": policy, "acr": acr or "None provided"})
-    usage.record(raw["raw"], tenant_id=state.get("tenant_id"))
-    result = raw["parsed"]
-    financial_reasons = [r.dict() for r in result.financial_reasons]
+    result = _invoke_structured(
+        prompt, FinancialScoreOutput,
+        {"customer": customer, "policy": policy, "acr": acr or "None provided"},
+        state, "financial_scoring",
+    )
+    if result is not None:
+        financial_score = result.financial_score
+        financial_reasons = [r.dict() for r in result.financial_reasons]
+    else:
+        financial_score = _LLM_UNAVAILABLE_FINANCIAL_SCORE
+        financial_reasons = [_llm_unavailable_reason("Financial Assessment")]
 
-    # Deterministic coverage-vs-income ceiling (brief §7) — reuses the same
-    # per-plan max_income_multiple validate_input already validated against,
-    # so "how much cover is justified" and "is this term/age/coverage
-    # combination even legal for this plan" never disagree with each other.
+    # Deterministic coverage-vs-income ceiling (brief §7) — two tiers so the
+    # decision chain (shared/underwriting/decision_rules.py::decide) can
+    # actually reach every one of its own branches:
+    #   <= 1.0x the plan multiple        -> financially_justified
+    #   1.0x - FINANCIAL_REFERRAL_TOLERANCE -> Human Review (referral)
+    #   beyond FINANCIAL_REFERRAL_TOLERANCE -> Decline, not referred
+    # validate_input no longer hard-rejects over-coverage with a 422 (see
+    # underwriting_rules.py::check_plan_rules) specifically so this judgment
+    # gets recorded as a real, explainable underwriting decision instead of
+    # dropping the case before scoring ever runs.
     rules = UNDERWRITING_RULES.get(policy.get("insurance_type"), _GENERIC_FALLBACK) if policy.get("insurance_type") else _GENERIC_FALLBACK
     declared_income = float(customer.get("declared_income") or 0)
     coverage_amount = float(policy.get("coverage_amount") or 0)
-    maximum_supported_cover = declared_income * rules.max_income_multiple if declared_income > 0 else None
-    coverage_to_income_ratio = (coverage_amount / declared_income) if declared_income > 0 else 0.0
-    financially_justified = maximum_supported_cover is not None and coverage_amount <= maximum_supported_cover
 
     profile = state.get("underwriting_profile") or {}
     verified_income = (profile.get("financial") or {}).get("verified_income")
+    # Deterministic floor: when documents evidence a lower income than
+    # declared, the ceiling is computed on the evidenced figure — the LLM's
+    # read of the ACR/salary slip can't talk a cover above it back down.
+    underwriting_income = declared_income
+    if verified_income is not None and 0 < verified_income < declared_income:
+        underwriting_income = float(verified_income)
+        financial_reasons.append({
+            "parameter": "Verified Income",
+            "observation": (
+                f"Income evidenced by documents ({underwriting_income:,.0f}) is below declared "
+                f"income ({declared_income:,.0f}); coverage ceiling uses the evidenced figure."
+            ),
+            "risk_rating": "Moderate",
+        })
+
+    maximum_supported_cover = underwriting_income * rules.max_income_multiple if underwriting_income > 0 else None
+    hard_ceiling = maximum_supported_cover * FINANCIAL_REFERRAL_TOLERANCE if maximum_supported_cover else None
+    coverage_to_income_ratio = (coverage_amount / underwriting_income) if underwriting_income > 0 else 0.0
+    financially_justified = maximum_supported_cover is not None and coverage_amount <= maximum_supported_cover
+    beyond_hard_ceiling = hard_ceiling is None or coverage_amount > hard_ceiling
     # A numeric financial_score still over the referral line (ambiguous LLM
     # read) sends this to Human Review even when the deterministic ceiling
     # alone would have cleared it — the score and the ceiling are independent
-    # checks, neither one can single-handedly force an approval.
-    referral_required = (not financially_justified) or result.financial_score >= 60
+    # checks, neither one can single-handedly force an approval. A clear
+    # breach of the hard ceiling skips referral entirely — decide() declines
+    # it outright rather than sending an obvious over-insurance case to an
+    # underwriter.
+    if beyond_hard_ceiling:
+        referral_required = False
+    else:
+        referral_required = (not financially_justified) or result is None or financial_score >= 60
 
     evidence_refs = [
         str(d.get("artifact_id")) for d in profile.get("document_evidence", [])
@@ -319,7 +429,7 @@ def financial_scoring(state: RiskState) -> Dict[str, Any]:
         evidence_refs=evidence_refs,
     )
     return {
-        "financial_score": result.financial_score,
+        "financial_score": financial_score,
         "financial_reasons": financial_reasons,
         "financial_result": financial_result.model_dump(mode="json"),
     }
@@ -442,6 +552,14 @@ _FRAUD_SEVERITY_BANDS: List[tuple] = [
 ]
 
 
+_FRAUD_SEVERITY_RANK = {
+    FraudSeverity.LOW: 0,
+    FraudSeverity.MEDIUM: 1,
+    FraudSeverity.HIGH: 2,
+    FraudSeverity.CRITICAL: 3,
+}
+
+
 def _fraud_severity(probability: float) -> FraudSeverity:
     severity = FraudSeverity.LOW
     for lower, band in _FRAUD_SEVERITY_BANDS:
@@ -480,8 +598,6 @@ def fraud_check(state: RiskState) -> Dict[str, Any]:
     comp_screening = state.get("compliance_screening")
 
     # ── 3. LLM evaluation (Gemini, → OpenAI on failure) ───────────────────────
-    model = structured_llm(FraudScoreOutput)
-
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are a senior insurance fraud investigator specialising in network-based fraud rings and compliance screening.
 You have access to raw customer data, live Memgraph graph intelligence, and Pre-Underwriting Compliance Screening results.
@@ -509,33 +625,58 @@ Provide structured risk factors including the parameter, observation, and risk r
          "=== MEMGRAPH RING INTELLIGENCE ===\n{graph_summary}"),
     ])
 
-    raw = (prompt | model).invoke({
-        "customer":       customer,
-        "policy":          policy,
-        "comp_screening":  comp_screening or "None provided",
-        "graph_summary":   graph_summary,
-    })
-    usage.record(raw["raw"], tenant_id=state.get("tenant_id"))
-    result = raw["parsed"]
-
-    fraud_reasons = [r.dict() for r in result.fraud_reasons]
-    severity = _fraud_severity(result.fraud_probability)
-    # Deterministic Tier-1 graph signals escalate straight to investigation
-    # regardless of the LLM's own probability read — a hard income-outlier +
-    # coverage-cluster combination must not be talked down by a "moderate"
-    # LLM score.
-    investigation_required = (
-        severity in (FraudSeverity.HIGH, FraudSeverity.CRITICAL)
-        or (graph.get("income_outlier") and graph.get("coverage_cluster_size", 0) > 0)
+    result = _invoke_structured(
+        prompt, FraudScoreOutput,
+        {
+            "customer":       customer,
+            "policy":         policy,
+            "comp_screening": comp_screening or "None provided",
+            "graph_summary":  graph_summary,
+        },
+        state, "fraud_check",
     )
+    if result is not None:
+        fraud_probability = result.fraud_probability
+        fraud_reasons = [r.dict() for r in result.fraud_reasons]
+        severity = _fraud_severity(fraud_probability)
+    else:
+        fraud_probability = _LLM_UNAVAILABLE_FRAUD_PROBABILITY
+        fraud_reasons = [_llm_unavailable_reason("Fraud Assessment")]
+        severity = FraudSeverity.MEDIUM
+
+    # Deterministic Tier-1 graph floors — the LLM's read can raise severity
+    # above these, never lower it. income_outlier alone → at least Medium
+    # (underwriter review); income_outlier + coverage cluster → at least High
+    # (fraud investigation). A coverage cluster alone is too common (round
+    # coverage amounts) to floor on by itself.
+    income_outlier = bool(graph.get("income_outlier"))
+    coverage_cluster = graph.get("coverage_cluster_size", 0) > 0
+    graph_floor: Optional[FraudSeverity] = None
+    if income_outlier and coverage_cluster:
+        graph_floor = FraudSeverity.HIGH
+    elif income_outlier:
+        graph_floor = FraudSeverity.MEDIUM
+    if graph_floor is not None and _FRAUD_SEVERITY_RANK[graph_floor] > _FRAUD_SEVERITY_RANK[severity]:
+        severity = graph_floor
+        fraud_reasons.append({
+            "parameter": "Graph Fraud Signal",
+            "observation": (
+                f"Declared income exceeds 3× the peer-cluster average"
+                f"{' and peers hold near-identical coverage' if coverage_cluster else ''} — "
+                f"severity floored at {graph_floor.value} regardless of the AI score."
+            ),
+            "risk_rating": "High" if graph_floor == FraudSeverity.HIGH else "Moderate",
+        })
+
+    investigation_required = severity in (FraudSeverity.HIGH, FraudSeverity.CRITICAL)
     fraud_result = FraudAssessment(
-        probability=result.fraud_probability,
+        probability=fraud_probability,
         severity=severity,
         investigation_required=investigation_required,
         reasons=fraud_reasons,
     )
     return {
-        "fraud_probability": result.fraud_probability,
+        "fraud_probability": fraud_probability,
         "fraud_reasons":     fraud_reasons,
         "fraud_result":      fraud_result.model_dump(mode="json"),
     }
@@ -545,17 +686,14 @@ Provide structured risk factors including the parameter, observation, and risk r
 # Decision aggregation — deterministic, no LLM
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Actuarial decision bands
-#   Auto Approve         → composite < 30  AND  fraud < 0.10  (clean profile, low risk)
-#   Decline              → composite > 75  OR   fraud > 0.60  (either is disqualifying)
-#   Approve with Loading → composite 30–49 AND  fraud < 0.10  (ratable — sub-standard
-#                          but writable at an extra premium)
-#   Human Review         → everything else                    (needs underwriter eyes)
+# The outcome itself comes from shared.underwriting.decision_rules.decide(),
+# a sequential rule chain — the composite score is computed for display only.
 
-# Extra-mortality loading for the ratable band, as a % on the base premium.
-# (lower_bound_composite, loading_pct) — the highest band the score reaches wins.
-# Deliberately coarse and explainable rather than a continuous curve: an
-# underwriter has to be able to justify the number to the customer.
+# Extra-mortality loading for Substandard/Rated medical classes, as a % on the
+# base premium. (lower_bound_medical_score, loading_pct) — the highest band the
+# score reaches wins. Deliberately coarse and explainable rather than a
+# continuous curve: an underwriter has to be able to justify the number to the
+# customer.
 _LOADING_BANDS: List[tuple] = [
     (30, 25.0),
     (40, 50.0),
@@ -564,8 +702,8 @@ _LOADING_BANDS: List[tuple] = [
 ]
 
 
-def _suggested_loading(composite_risk_score: int) -> Optional[float]:
-    """Extra-mortality loading implied by a composite score, or None if standard.
+def _medical_loading(medical_score: int) -> Optional[float]:
+    """Extra-mortality loading implied by the medical risk score, or None if standard.
 
     Read by the whole downstream chain — the RiskAssessment row, the issuance
     price (tenant-service routers/policies.py::_effective_loading_pct) and the
@@ -573,7 +711,7 @@ def _suggested_loading(composite_risk_score: int) -> Optional[float]:
     returned a loading at all, so RiskAssessment.suggested_loading was always
     NULL and every contract priced at standard rates no matter the risk.
     """
-    applicable = [pct for lower, pct in _LOADING_BANDS if composite_risk_score >= lower]
+    applicable = [pct for lower, pct in _LOADING_BANDS if medical_score >= lower]
     return applicable[-1] if applicable else None
 
 
