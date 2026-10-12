@@ -329,42 +329,45 @@ def financial_scoring(state: RiskState) -> Dict[str, Any]:
 # Fraud detection — Memgraph ring query + Gemini evaluation
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Detects two classes of fraud signal from the relationships built up by
-# graph_writer.py after each evaluation (SAME_AREA and SAME_OCCUPATION_CLUSTER):
+# Detects two classes of fraud signal by matching peer customers directly on
+# their stored attributes (tenant, CNIC-prefix area, occupation) rather than
+# via the SAME_AREA/SAME_OCCUPATION_CLUSTER edges graph_writer.py precomputes.
+# This also means income/coverage are compared using the CURRENT request's
+# values, not whatever was last written to this customer's own node.
 #
-#   1. Income-outlier ring — an customer whose declared income wildly exceeds
-#      the average of neighbours in the same area *and* occupation cluster,
-#      suggesting a fabricated salary figure within a coordinated group.
+#   1. Income-outlier ring — this customer's declared income wildly exceeds
+#      the average of peers in the same area *and* occupation, suggesting a
+#      fabricated salary figure within a coordinated group.
 #
-#   2. Coverage cluster — peers in the same occupation cluster applying for near-
+#   2. Coverage cluster — peers in the same occupation applying for near-
 #      identical coverage amounts, indicating coordinated high-value applications.
 #
-# Both queries are tenant-scoped. If Memgraph is unreachable the node falls back
-# to empty signals so the rest of the workflow is never blocked by a graph-DB
-# outage.
+# Both queries are tenant-scoped, aggregate with no grouping key (so they
+# always return exactly one row, even over zero peers), and never require
+# this customer's own node to already exist. If Memgraph is unreachable the
+# node falls back to empty signals so the rest of the workflow is never
+# blocked by a graph-DB outage.
 
 # Income-outlier detection within the same area + occupation cluster.
 _INCOME_OUTLIER_QUERY = """
-MATCH (a:Customer {cnic: $cnic, tenant_id: $tenant_id})
-OPTIONAL MATCH (a)-[:SAME_AREA]->(neighbour:Customer)-[:SAME_OCCUPATION_CLUSTER]->(a)
-WITH a, collect(neighbour) AS neighbours, avg(neighbour.declared_income) AS avg_income
+MATCH (n:Customer {tenant_id: $tenant_id})
+WHERE n.cnic <> $cnic
+  AND left(n.cnic, 5) = left($cnic, 5)
+  AND n.occupation = $occupation
+WITH collect(n) AS neighbours, avg(n.declared_income) AS avg_income
 RETURN
-  size(neighbours)                                        AS cluster_size,
-  avg_income                                              AS avg_income_in_cluster,
-  CASE
-    WHEN avg_income > 0 AND a.declared_income > avg_income * 3 THEN true
-    ELSE false
-  END                                                     AS income_outlier,
-  left(a.cnic, 5)                                         AS cnic_prefix
+  size(neighbours)                                            AS cluster_size,
+  coalesce(avg_income, 0.0)                                   AS avg_income_in_cluster,
+  (avg_income > 0 AND $declared_income > avg_income * 3)      AS income_outlier
 """
 
 # Coverage-cluster detection (suspicious near-identical coverage amounts).
 _COVERAGE_CLUSTER_QUERY = """
-MATCH (a:Customer {cnic: $cnic, tenant_id: $tenant_id})
-OPTIONAL MATCH (a)-[:SAME_OCCUPATION_CLUSTER]->(peer:Customer)
-WHERE abs(peer.coverage_amount - a.coverage_amount) < 50000
-WITH collect(peer) AS cluster
-RETURN size(cluster) AS coverage_cluster_size
+MATCH (p:Customer {tenant_id: $tenant_id})
+WHERE p.cnic <> $cnic
+  AND p.occupation = $occupation
+  AND abs(p.coverage_amount - $coverage_amount) < 50000
+RETURN count(p) AS coverage_cluster_size
 """
 
 _GRAPH_FALLBACK: Dict[str, Any] = {
@@ -376,13 +379,21 @@ _GRAPH_FALLBACK: Dict[str, Any] = {
 }
 
 
-def _query_fraud_graph(cnic: str, tenant_id: str) -> Dict[str, Any]:
+def _query_fraud_graph(
+    cnic: str,
+    tenant_id: str,
+    occupation: str,
+    declared_income: float,
+    coverage_amount: float,
+) -> Dict[str, Any]:
     """Run the ring-detection Cypher queries against Memgraph.
 
-    Runs both the income-outlier and coverage-cluster queries in a single
-    session and merges their results. Returns graph intelligence on success;
-    returns _GRAPH_FALLBACK on any connectivity or query error so the calling
-    node is never blocked.
+    Matches peer customers directly on their attributes and compares against
+    this request's declared_income/coverage_amount — never depends on this
+    customer's own node already existing, and never reads stale values off
+    it. Runs both queries in a single session and merges their results.
+    Returns graph intelligence on success; returns _GRAPH_FALLBACK on any
+    connectivity or query error so the calling node is never blocked.
     """
     try:
         with GraphDatabase.driver(
@@ -391,10 +402,14 @@ def _query_fraud_graph(cnic: str, tenant_id: str) -> Dict[str, Any]:
             driver.verify_connectivity()
             with driver.session() as session:
                 income_rec = session.run(
-                    _INCOME_OUTLIER_QUERY, cnic=cnic, tenant_id=tenant_id
+                    _INCOME_OUTLIER_QUERY,
+                    cnic=cnic, tenant_id=tenant_id,
+                    occupation=occupation, declared_income=declared_income,
                 ).single()
                 coverage_rec = session.run(
-                    _COVERAGE_CLUSTER_QUERY, cnic=cnic, tenant_id=tenant_id
+                    _COVERAGE_CLUSTER_QUERY,
+                    cnic=cnic, tenant_id=tenant_id,
+                    occupation=occupation, coverage_amount=coverage_amount,
                 ).single()
 
         result: Dict[str, Any] = {**_GRAPH_FALLBACK, "graph_available": True}
@@ -442,7 +457,13 @@ def fraud_check(state: RiskState) -> Dict[str, Any]:
     tenant_id = state.get("tenant_id", "")
 
     # ── 1. Graph intelligence from Memgraph ───────────────────────────────────
-    graph = _query_fraud_graph(cnic=cnic, tenant_id=tenant_id)
+    graph = _query_fraud_graph(
+        cnic=cnic,
+        tenant_id=tenant_id,
+        occupation=customer.get("occupation") or "",
+        declared_income=float(customer.get("declared_income") or 0),
+        coverage_amount=float(policy.get("coverage_amount") or 0),
+    )
 
     # ── 2. Format graph results as a readable block for the LLM ──────────────
     graph_summary = (
