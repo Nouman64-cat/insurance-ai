@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { ClientLayout } from "./ClientLayout";
-import { CopilotProvider } from "@/components/CopilotContext";
 import { NotificationProvider } from "@/components/NotificationContext";
 import "./globals.css";
 
@@ -29,11 +28,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <CopilotProvider>
-        <NotificationProvider>
-          <ClientLayout>{children}</ClientLayout>
-        </NotificationProvider>
-      </CopilotProvider>
+      <NotificationProvider>
+        <ClientLayout>{children}</ClientLayout>
+      </NotificationProvider>
     </html>
   );
 }

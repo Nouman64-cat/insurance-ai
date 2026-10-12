@@ -9,8 +9,6 @@ import { useEffect, useState } from "react";
 import api from "@/app/services/api";
 import { listQuotes } from "@/app/services/quotes";
 import { PENDING_QUOTES_STORAGE_KEY, PENDING_QUOTES_EVENT, PendingQuoteWatch } from "@/lib/pendingQuotes";
-import { useCopilot } from "@/components/CopilotContext";
-import dynamic from "next/dynamic";
 import { NavigationProgress } from "@/components/NavigationProgress";
 import { NotificationProvider, useNotify } from "@/components/NotificationContext";
 import { ACRRequestsProvider } from "@/components/ACRRequestsProvider";
@@ -19,18 +17,6 @@ import { useRecordHighlighter } from "@/lib/useHighlightTarget";
 // Give up watching an customer after this many polls (~2 min at 4s/poll) —
 // they simply didn't qualify for any active plan, so no quote will ever land.
 const MAX_QUOTE_POLL_ATTEMPTS = 30;
-
-// The copilot (~4k lines + markdown renderer) only renders in automation mode;
-// importing it statically put it in the root layout bundle of every page.
-const CopilotInterface = dynamic(
-  () => import("@/components/CopilotInterface").then((m) => m.CopilotInterface),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-full items-center justify-center text-xs text-slate-400">Loading copilot…</div>
-    ),
-  }
-);
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -58,51 +44,11 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   const bypassAuthShell = isLoginPage || isPublicStandalonePage;
   const [authChecked, setAuthChecked] = useState(false);
   const [tenantName, setTenantName] = useState("Adamjee Life");
-  const { isAutomationMode } = useCopilot();
   const { notify: showToast } = useNotify();
 
   // Global "pop the record the agent just navigated to" watcher — pages don't
   // need any wiring beyond rendering the data the row contains.
   useRecordHighlighter();
-
-  const [copilotWidth, setCopilotWidth] = useState(40); // percentage
-  const [isResizing, setIsResizing] = useState(false);
-
-  useEffect(() => {
-    if (!isResizing) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const widthPct = ((window.innerWidth - e.clientX) / window.innerWidth) * 100;
-      if (widthPct >= 15 && widthPct <= 85) {
-        setCopilotWidth(widthPct);
-      }
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 0) return;
-      const clientX = e.touches[0].clientX;
-      const widthPct = ((window.innerWidth - clientX) / window.innerWidth) * 100;
-      if (widthPct >= 15 && widthPct <= 85) {
-        setCopilotWidth(widthPct);
-      }
-    };
-
-    const handleMouseUp = () => {
-      setIsResizing(false);
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("touchmove", handleTouchMove);
-    window.addEventListener("mouseup", handleMouseUp);
-    window.addEventListener("touchend", handleMouseUp);
-
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("touchmove", handleTouchMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-      window.removeEventListener("touchend", handleMouseUp);
-    };
-  }, [isResizing]);
 
   useEffect(() => {
     const token = localStorage.getItem("jwt_token");
@@ -316,22 +262,18 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
       ) : (
         <ACRRequestsProvider>
           {/* ── Sidebar ──────────────────────────────────────────────────────── */}
-          {!isAutomationMode && !isPortalEmbed && <Sidebar />}
-          {!isAutomationMode && !isPortalEmbed && <AdminTour />}
+          {!isPortalEmbed && <Sidebar />}
+          {!isPortalEmbed && <AdminTour />}
 
           {/* ── Main column ─────────────────────────────────────────────────── */}
           <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-            {!isAutomationMode && !isPortalEmbed && <TopBar />}
+            {!isPortalEmbed && <TopBar />}
 
             {/* ── Page content ──────────────────────────────────────────────── */}
             <main className="flex-1 overflow-hidden relative flex">
               {isPortalEmbed ? (
                 <div className="flex-1 overflow-auto bg-slate-50 relative h-full">
                   {children}
-                </div>
-              ) : isAutomationMode ? (
-                <div className="flex-1 h-full relative z-30 overflow-hidden bg-slate-50">
-                  <CopilotInterface />
                 </div>
               ) : (
                 <div className="flex-1 overflow-auto bg-slate-50 relative h-full">
@@ -341,7 +283,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
             </main>
 
             {/* ── Footer ────────────────────────────────────────────────────── */}
-            {!isAutomationMode && !isPortalEmbed && (
+            {!isPortalEmbed && (
               <footer className="border-t border-slate-200 bg-white py-2.5 px-6 shrink-0">
                 <p className="text-center text-[10px] text-slate-400">
                   insurance-ai Underwriting Portal — Prototype v0.1.0 &nbsp;·&nbsp; Strictly Confidential &nbsp;·&nbsp; {tenantName}

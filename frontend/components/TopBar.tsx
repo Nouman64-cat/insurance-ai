@@ -3,7 +3,6 @@ import { openAutomationChat } from "@/lib/sso";
 import { useNotify } from "@/components/NotificationContext";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useCopilot } from "@/components/CopilotContext";
 import { useACRRequests } from "@/components/ACRRequestsProvider";
 import GlobalSearch from "@/components/GlobalSearch";
 
@@ -32,7 +31,6 @@ interface TopBarProps {
 }
 
 export function TopBar({ title = "Executive Overview", subtitle }: TopBarProps) {
-  const { isAutomationMode, setAutomationMode } = useCopilot();
   const router = useRouter();
   const { requests: acrRequests } = useACRRequests();
   const pendingACR = acrRequests.filter((r) => r.status !== "Submitted");
@@ -122,8 +120,9 @@ export function TopBar({ title = "Executive Overview", subtitle }: TopBarProps) 
         {/* Automation Mode Toggle */}
         <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-full border border-slate-200">
           <button
-            onClick={() => setAutomationMode(false)}
-            className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full transition-all ${!isAutomationMode ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+            type="button"
+            aria-current="page"
+            className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full bg-white shadow-sm text-slate-800 cursor-default"
           >
             Manual
           </button>
@@ -133,7 +132,7 @@ export function TopBar({ title = "Executive Overview", subtitle }: TopBarProps) 
                 notify("Automation Chat is not running. Start its container with:  docker compose up -d automation-chat", false);
               }
             }}
-            className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full transition-all ${isAutomationMode ? 'bg-blue-600 shadow-sm text-white' : 'text-slate-500 hover:text-slate-700'}`}
+            className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full transition-all text-slate-500 hover:text-slate-700`}
           >
             Automation
           </button>
