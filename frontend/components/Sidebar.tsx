@@ -2,6 +2,7 @@
 
 
 
+import { endSso } from "@/lib/sso";
 import Link from "next/link";
 
 import { usePathname, useSearchParams } from "next/navigation";
@@ -878,7 +879,7 @@ export function Sidebar() {
                 e.preventDefault();
                 e.stopPropagation();
                 localStorage.clear();
-                window.location.replace("/login");
+                endSso().finally(() => window.location.replace("/login"));
               }}
               className="text-slate-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors cursor-pointer flex-shrink-0 relative z-50"
             >

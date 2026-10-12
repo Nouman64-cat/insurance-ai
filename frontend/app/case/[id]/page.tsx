@@ -12,6 +12,7 @@ import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
 import { fmtCoverage, fmtDob, fmtIncome, type AIDecision } from "@/lib/mock-data";
 import api, { summarizerApi } from "@/app/services/api";
 import { useCaseEvents, type CaseEvent } from "@/lib/agent/useCaseEvents";
+import { parentOrigin } from "@/lib/agent/portalMessage";
 import { getEApplication, inviteEApplication, type EApplication } from "@/app/services/eApplication";
 import { getACR, type AgentConfidentialReport } from "@/app/services/agentConfidentialReport";
 import { ACRModal } from "@/components/entities/ACRModal";
@@ -35,7 +36,7 @@ import {
 function notifyParentPortal(event: string, detail?: Record<string, unknown>) {
   if (typeof window === "undefined" || window.parent === window) return;
   try {
-    window.parent.postMessage({ source: "insurance-ai-portal", type: event, ...detail }, window.location.origin);
+    window.parent.postMessage({ source: "insurance-ai-portal", type: event, ...detail }, parentOrigin());
   } catch {
     // Cross-origin or no listener — nothing to recover, the page still works standalone.
   }
@@ -1226,7 +1227,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
+      if (event.origin !== window.location.origin && event.origin !== parentOrigin()) return;
       if (event.data?.source !== "insurance-ai-copilot" || event.data?.type !== "refresh") return;
       refreshCaseData();
     };

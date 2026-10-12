@@ -16,9 +16,10 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         // If this tab was opened from the chatbot via _portal=1, always show
         // the portal (never the automation/chatbot interface) regardless of the
         // persisted localStorage flag.
-        const params = new URLSearchParams(window.location.search);
-        if (params.get("_portal") === "1") return false;
-        return localStorage.getItem("copilot_automation_mode") === "true";
+        // Automation mode now lives in its own app (the Automation Chat, see ../automation-chat), so the
+        // dashboard always renders the manual portal, whatever an older session left in storage.
+        localStorage.removeItem("copilot_automation_mode");
+        return false;
       } catch {}
     }
     return false;

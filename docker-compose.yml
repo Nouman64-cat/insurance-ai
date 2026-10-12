@@ -289,6 +289,47 @@ services:
       NEXT_PUBLIC_SUMMARIZER_URL: ${NEXT_PUBLIC_SUMMARIZER_URL:-http://localhost:8015} # browser-side; host port mapping to text-summarizer
       API_GATEWAY_INTERNAL_URL: http://api-gateway:8000 # server-side (Next.js API routes); internal docker network
       CHOKIDAR_USEPOLLING: "true" # macOS Docker Desktop: FSEvents don't reach chokidar via inotify
+      NEXT_PUBLIC_AUTOMATION_URL: ${NEXT_PUBLIC_AUTOMATION_URL:-http://localhost:3004} # the Automation Chat app (the "Automation" button opens it)
+      SSO_COOKIE_NAME: ${SSO_COOKIE_NAME:-insurance_sso} # single sign-on cookie shared with the Automation Chat app
+      SSO_COOKIE_DOMAIN: ${SSO_COOKIE_DOMAIN:-} # empty on localhost; a shared parent domain (.example.com) across subdomains
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Automation Chat (Next.js) — the AI copilot as its own app, http://localhost:3004
+  # Signs in from the dashboard's session (single sign-on cookie), see automation-chat/README.md
+  # Optional: it only runs when you start it yourself (profile "automation").
+  # ───────────────────────────────────────────────────────────────────────────
+  automation-chat:
+    # Not started by a plain `docker compose up`: run it on purpose with `docker compose up -d automation-chat`
+    # (naming a profiled service starts it). Until then the dashboard's Automation button reports it is not running.
+    profiles: ["automation"]
+    build:
+      context: ./automation-chat
+      dockerfile: Dockerfile
+      target: dev
+    container_name: insurance-automation-chat
+    restart: unless-stopped
+    networks:
+      - insurance-net
+    ports:
+      - "3004:3000"
+    env_file:
+      - .env
+      - ./frontend/.env.local # voice keys (STT/TTS) live with the dashboard's local env
+    volumes:
+      - ./automation-chat:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010}
+      NEXT_PUBLIC_OCR_URL: ${NEXT_PUBLIC_OCR_URL:-http://localhost:8014}
+      NEXT_PUBLIC_SUMMARIZER_URL: ${NEXT_PUBLIC_SUMMARIZER_URL:-http://localhost:8015}
+      NEXT_PUBLIC_PORTAL_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000} # the dashboard: embedded pages and the sign-in redirect
+      API_GATEWAY_INTERNAL_URL: http://api-gateway:8000
+      SSO_COOKIE_NAME: ${SSO_COOKIE_NAME:-insurance_sso}
+      SSO_COOKIE_DOMAIN: ${SSO_COOKIE_DOMAIN:-}
+      CHOKIDAR_USEPOLLING: "true"
+    depends_on:
+      - api-gateway
 
   # ───────────────────────────────────────────────────────────────────────────
   # Marketing site (Next.js App Router) — public site at http://localhost:3002

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { safeNext, startSso } from "@/lib/sso";
 import api from "@/app/services/api";
 
 export default function LoginPage() {
@@ -37,6 +38,8 @@ export default function LoginPage() {
 
       // Save token in localStorage
       localStorage.setItem("jwt_token", access_token);
+      // Single sign-on: also publish it for the Automation Chat app, so opening that app needs no second sign-in.
+      await startSso(access_token);
 
       // Set the default authorization header for subsequent API calls
       api.defaults.headers.common["Authorization"] = `Bearer ${access_token}`;
@@ -86,7 +89,8 @@ export default function LoginPage() {
       }
 
       // The tenant dashboard has nothing to show a SuperAdmin — land on the platform console.
-      window.location.href = profileResponse.data.role_name === "SuperAdmin" ? "/super-admin/tenants" : "/";
+      const back = safeNext(new URLSearchParams(window.location.search).get("next"));
+      window.location.href = back ?? (profileResponse.data.role_name === "SuperAdmin" ? "/super-admin/tenants" : "/");
     } catch (err: any) {
       setError(
         err.response?.data?.detail ??

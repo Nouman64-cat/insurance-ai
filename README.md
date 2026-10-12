@@ -133,6 +133,7 @@ Provider credentials are encrypted at rest and services automatically fall back 
 ```text
 insurance-ai/
 ├── frontend/                 # Next.js operations/admin portal
+├── automation-chat/          # Next.js Automation Chat (AI copilot) app, own container, :3004 (opt-in)
 ├── marketing-site/           # Next.js public marketing site (demo content, :3002)
 ├── agent-app/                # React Native / Expo agent application
 ├── services/
@@ -210,6 +211,34 @@ http://localhost:3000
 
 Then configure the primary/fallback LLM providers under **Platform → LLM Configuration**.
 
+## Automation Chat
+
+The AI copilot runs as its own app and container, separate from the web portal (`automation-chat/`, port **3004**).
+It is **opt-in**: `docker compose up` does not start it. Start it when you want it:
+
+```bash
+docker compose up -d automation-chat   # start (builds on first run)
+docker compose stop automation-chat    # stop
+```
+
+Then use the **Automation** button in the portal's top bar. It opens the chat in a new tab, or tells you the
+container is not running. You can also open http://localhost:3004 directly.
+
+**Single sign-on.** Nothing to type: signing in to the portal also sets an httpOnly session cookie (`insurance_sso`).
+The chat app reads it, verifies it with the API Gateway and signs the same user in. If you are not signed in to the
+portal you are sent to its login page and brought back. Signing out of the portal signs out of the chat as well.
+
+| Setting                  | Where                | Purpose                                                             |
+| ------------------------ | -------------------- | ------------------------------------------------------------------- |
+| `NEXT_PUBLIC_AUTOMATION_URL` | portal (`frontend`) | Address the **Automation** button opens (default `http://localhost:3004`) |
+| `NEXT_PUBLIC_PORTAL_URL` | `automation-chat`    | The portal: pages the chat embeds and the sign-in redirect (default `http://localhost:3000`) |
+| `SSO_COOKIE_NAME`        | both                 | Cookie name, must match (default `insurance_sso`)                   |
+| `SSO_COOKIE_DOMAIN`      | both                 | Leave empty on localhost. Set a shared parent domain (`.example.com`) when the apps are on different subdomains |
+| `SSO_COOKIE_SECURE`      | both                 | `true` behind HTTPS                                                 |
+
+The chat uses the same API Gateway and Chat Agent as before; it needs the rest of the stack running. Details:
+[`automation-chat/README.md`](automation-chat/README.md).
+
 ## Agent Mobile App
 
 The agent application runs separately through Expo:
@@ -233,6 +262,7 @@ A physical device must use an address reachable from the device rather than `loc
 | Service         |            URL / Port |
 | --------------- | --------------------: |
 | Web Portal      | http://localhost:3000 |
+| Automation Chat | http://localhost:3004 (opt-in, see above) |
 | API Gateway     | http://localhost:8010 |
 | Tenant Service  | http://localhost:8011 |
 | Risk Engine     | http://localhost:8012 |

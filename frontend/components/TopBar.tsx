@@ -1,4 +1,6 @@
 "use client";
+import { openAutomationChat } from "@/lib/sso";
+import { useNotify } from "@/components/NotificationContext";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useCopilot } from "@/components/CopilotContext";
@@ -34,6 +36,7 @@ export function TopBar({ title = "Executive Overview", subtitle }: TopBarProps) 
   const router = useRouter();
   const { requests: acrRequests } = useACRRequests();
   const pendingACR = acrRequests.filter((r) => r.status !== "Submitted");
+  const { notify } = useNotify();
   const [bellOpen, setBellOpen] = useState(false);
   // Admins can replay the welcome tour (components/tour/AdminTour.tsx) at any time.
   const [isAdmin, setIsAdmin] = useState(false);
@@ -125,7 +128,11 @@ export function TopBar({ title = "Executive Overview", subtitle }: TopBarProps) 
             Manual
           </button>
           <button
-            onClick={() => setAutomationMode(true)}
+            onClick={async () => {
+              if (!(await openAutomationChat())) {
+                notify("Automation Chat is not running. Start its container with:  docker compose up -d automation-chat", false);
+              }
+            }}
             className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full transition-all ${isAutomationMode ? 'bg-blue-600 shadow-sm text-white' : 'text-slate-500 hover:text-slate-700'}`}
           >
             Automation

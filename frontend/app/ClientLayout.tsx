@@ -3,6 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
+import { safeNext, startSso } from "@/lib/sso";
 import AdminTour from "@/components/tour/AdminTour";
 import { useEffect, useState } from "react";
 import api from "@/app/services/api";
@@ -115,6 +116,12 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
     // SuperAdmins have a token but no tenant_id, so the two headers are set independently.
     if (token) {
       api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+      // Sessions that began before single sign-on existed have no shared cookie yet: create it, once per tab.
+      try {
+        if (!sessionStorage.getItem("sso_published") || sessionStorage.getItem("sso_published") !== token) {
+          startSso(token).then((ok) => { if (ok) sessionStorage.setItem("sso_published", token); });
+        }
+      } catch { /* storage unavailable */ }
     }
     if (token && tenantId) {
       api.defaults.headers.common["X-Tenant-Id"] = tenantId;
@@ -126,7 +133,12 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
     } else if (!token && !isLoginPage) {
       router.push("/login");
     } else if (token && isLoginPage) {
-      router.push(isSuperAdmin ? "/super-admin/tenants" : "/");
+      // Already signed in here: make sure the shared session exists too, and honour a ?next= back to the chat app.
+      const back = safeNext(new URLSearchParams(window.location.search).get("next"));
+      startSso(token).finally(() => {
+        if (back) window.location.assign(back);
+        else router.push(isSuperAdmin ? "/super-admin/tenants" : "/");
+      });
     } else if (token && isSuperAdmin && pathname === "/") {
       router.push("/super-admin/tenants");
     } else {

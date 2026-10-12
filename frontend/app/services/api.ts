@@ -1,4 +1,5 @@
 import axios from "axios";
+import { endSso } from "@/lib/sso";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 export const OCR_BASE_URL = process.env.NEXT_PUBLIC_OCR_URL;
@@ -36,6 +37,7 @@ api.interceptors.response.use(
       localStorage.removeItem("jwt_token");
       localStorage.removeItem("tenant_id");
       localStorage.removeItem("user_email");
+      endSso();
       window.location.href = "/login";
       return Promise.reject(new Error("Session expired. Redirecting to login..."));
     }
