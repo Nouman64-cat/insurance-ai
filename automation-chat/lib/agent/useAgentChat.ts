@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNotify } from "@/components/NotificationContext";
+import { DEFAULT_LOCALE, LOCALE_COOKIE } from "@/lib/i18n/config";
 import type { AgentMessage, AgentStreamEvent, OrganizationEmployee, PendingInterrupt, ProcessStep, QuickAction } from "./types";
 
 function newId(): string {
@@ -20,6 +21,13 @@ function authHeaders(): Record<string, string> {
 
 function currentRole(): string {
   return typeof window !== "undefined" ? localStorage.getItem("user_role") || "Agent" : "Agent";
+}
+
+/** The UI language (shared cookie, see lib/i18n/config.ts): the agent replies in it. */
+function currentLocale(): string {
+  if (typeof document === "undefined") return DEFAULT_LOCALE;
+  const match = document.cookie.match(new RegExp(`(?:^|; )${LOCALE_COOKIE}=([^;]*)`));
+  return match ? match[1] : DEFAULT_LOCALE;
 }
 
 interface UseAgentChatOptions {
@@ -393,7 +401,7 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
     fetch("/api/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ thread_id: tid, role: currentRole() }),
+      body: JSON.stringify({ thread_id: tid, role: currentRole(), locale: currentLocale() }),
     })
       .then(consumeStream)
       .catch(() => {});
@@ -413,7 +421,7 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
       setMessages((prev) => [...prev, { id: userId, role: "user", text: msgText, attachments }]);
       setIsLoading(true);
       try {
-        const payload: any = { thread_id: threadIdRef.current, message: text.trim(), role: currentRole() };
+        const payload: any = { thread_id: threadIdRef.current, message: text.trim(), role: currentRole(), locale: currentLocale() };
         if (attachments && attachments.length > 0) {
             payload.attachments = attachments;
         }
@@ -524,7 +532,7 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
       setTurnActions([]);
       setIsLoading(true);
       try {
-        const payload: any = { thread_id: threadIdRef.current, message: asked.text, role: currentRole(), regenerate: true, occurrence };
+        const payload: any = { thread_id: threadIdRef.current, message: asked.text, role: currentRole(), locale: currentLocale(), regenerate: true, occurrence };
         if (asked.attachments?.length) payload.attachments = asked.attachments;
         const res = await fetch("/api/chat/stream", {
           method: "POST",

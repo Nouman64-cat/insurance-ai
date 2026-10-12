@@ -1,0 +1,70 @@
+import type { Messages } from "./en";
+
+// Urdu UI text. Product and brand names (Rizviz) stay as they are.
+const ur: Messages = {
+  common: {
+    language: "زبان",
+    cancel: "منسوخ کریں",
+    image: "تصویر",
+    document: "دستاویز",
+  },
+  sso: {
+    signingIn: "پورٹل سے آپ کو سائن اِن کیا جا رہا ہے…",
+    unreachable: "سائن اِن سروس تک رسائی نہیں ہو سکی۔ دوبارہ کوشش ہو رہی ہے…",
+    notResponding: "سائن اِن سروس جواب نہیں دے رہی۔ دوبارہ کوشش ہو رہی ہے…",
+  },
+  sidebar: {
+    newChat: "نئی چیٹ",
+    search: "چیٹس تلاش کریں…",
+    chatTools: "چیٹ ٹولز",
+    selectChats: "چیٹس منتخب کریں",
+    selectAll: "سب منتخب کریں ({count})",
+    deleteSelected: "حذف کریں ({count})",
+    noMatch: "“{query}” سے کوئی چیٹ نہیں ملی",
+    selectChat: "{title} منتخب کریں",
+    untitled: "چیٹ",
+    generatingTitle: "عنوان بن رہا ہے…",
+    pinned: "پن شدہ",
+    chatOptions: "چیٹ کے اختیارات",
+    pin: "چیٹ پن کریں",
+    unpin: "پن ہٹائیں",
+    rename: "نام تبدیل کریں",
+    exportMarkdown: "Markdown میں ایکسپورٹ کریں",
+    exportJson: "JSON میں ایکسپورٹ کریں",
+    deleteChat: "چیٹ حذف کریں",
+    seeMore: "مزید دیکھیں",
+    backToDashboard: "ڈیش بورڈ پر واپس",
+  },
+  header: {
+    showHistory: "چیٹ کی تاریخ دکھائیں",
+    hideHistory: "چیٹ کی تاریخ چھپائیں",
+    beta: "بیٹا",
+    journeyMap: "سفر کا نقشہ",
+    backToChat: "چیٹ پر واپس",
+    journey: "سفر",
+    chat: "چیٹ",
+    clear: "صاف کریں",
+    clearChat: "چیٹ صاف کریں",
+  },
+  composer: {
+    welcome: "آج میں آپ کی کیا مدد کر سکتا ہوں؟",
+    askAnything: "کچھ بھی پوچھیں...",
+    message: "پیغام…",
+    typeAnswer: "اپنا جواب لکھیں…",
+    attach: "منسلک کریں",
+    attachDocument: "دستاویز منسلک کریں",
+    voiceAgent: "لائیو وائس ایجنٹ",
+    holdToDictate: "بول کر لکھوانے کے لیے دبائے رکھیں",
+  },
+  messageActions: {
+    copy: "کاپی",
+    share: "شیئر",
+    download: "ڈاؤن لوڈ",
+    regenerate: "یہاں سے دوبارہ بنائیں — اس جواب کے بعد کا سب کچھ ہٹ جائے گا",
+    helpful: "مفید",
+    unhelpful: "غیر مفید",
+    more: "مزید",
+  },
+};
+
+export default ur;

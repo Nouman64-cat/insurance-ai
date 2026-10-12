@@ -234,6 +234,7 @@ async def chat_stream(body: ChatStreamRequest, request: Request, x_tenant_id: st
         "tenant_id": x_tenant_id,
         "user_role": body.role,
         "platform": body.platform,
+        "locale": body.locale,
         "jwt_token": jwt_token,
         "last_action": None,
     }

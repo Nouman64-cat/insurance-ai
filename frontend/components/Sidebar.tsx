@@ -3,6 +3,7 @@
 
 
 import { endSso } from "@/lib/sso";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 import Link from "next/link";
 
 import { usePathname, useSearchParams } from "next/navigation";
@@ -51,7 +52,7 @@ function ChevronIcon({ collapsed }: { collapsed: boolean }) {
 
       strokeLinejoin="round"
 
-      className={`w-4 h-4 transition-transform duration-300 ${collapsed ? "rotate-180" : ""}`}
+      className={`w-4 h-4 transition-transform duration-300 rtl:-scale-x-100 ${collapsed ? "rotate-180" : ""}`}
 
     >
 
@@ -525,6 +526,7 @@ function activeSidebarHref(pathname: string, searchParams: { get(name: string): 
 }
 
 export function Sidebar() {
+  const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -680,7 +682,7 @@ export function Sidebar() {
     <aside
       className={`
         sidebar-shell flex-shrink-0 flex flex-col
-        bg-white border-r border-slate-200
+        bg-white border-e border-slate-200
         transition-all duration-300 ease-in-out overflow-x-hidden
         ${collapsed ? "w-[72px]" : "w-64"}
         h-screen relative z-40
@@ -695,10 +697,10 @@ export function Sidebar() {
           {!collapsed && (
             <div className="flex flex-col justify-center">
               <span className="text-slate-900 font-bold text-[16px] tracking-tight whitespace-nowrap leading-tight">
-                Life Insurance
+                {t("sidebar.brand")}
               </span>
               <span className="text-blue-500 font-medium text-[11px] whitespace-nowrap leading-tight">
-                AI powered solutions
+                {t("sidebar.tagline")}
               </span>
             </div>
           )}
@@ -706,14 +708,14 @@ export function Sidebar() {
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors flex-shrink-0"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}
         >
           <ChevronIcon collapsed={collapsed} />
         </button>
       </div>
 
       {/* ── Nav ───────────────────────────────────────────────────────────── */}
-      <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-5" aria-label="Sidebar navigation">
+      <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-5" aria-label={t("sidebar.navLabel")}>
         {displayGroups.map((group: any, gIndex: number) => {
           const visibleLinks = group.links.filter((link: any) => {
             if (link.adminOnly && userRole !== "Admin" && !(link.agentToo && (userRole === "Agent" || userRole === "Broker"))) return false;
@@ -726,7 +728,7 @@ export function Sidebar() {
             <div key={group.group} className={collapsed && gIndex > 0 ? "pt-5 border-t border-slate-200 w-full" : ""}>
               {!collapsed && (
                 <p className="px-2 mb-1.5 text-[9px] font-bold uppercase tracking-[0.15em] text-slate-600">
-                  {group.group}
+                  {t(`nav.${group.group}`)}
                 </p>
               )}
               <div className="space-y-0.5">
@@ -752,7 +754,7 @@ export function Sidebar() {
                       <Link
                         href={link.subLinks ? "#" : link.href}
                         data-tour={link.href}
-                        title={collapsed ? link.label : undefined}
+                        title={collapsed ? t(`nav.${link.label}`) : undefined}
                         onClick={(e) => {
                           if (link.subLinks) toggleSubmenu(e);
                           else setActiveHref(link.href);
@@ -767,7 +769,7 @@ export function Sidebar() {
                         `}
                       >
                         {isDragEnabled && !collapsed && (
-                          <div className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 mr-1 flex-shrink-0 transition-colors">
+                          <div className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 me-1 flex-shrink-0 transition-colors">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
                               <circle cx="9" cy="5" r="1" /><circle cx="9" cy="12" r="1" /><circle cx="9" cy="19" r="1" />
                               <circle cx="15" cy="5" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="15" cy="19" r="1" />
@@ -778,11 +780,11 @@ export function Sidebar() {
                           {link.icon}
                         </span>
                         {!collapsed && (
-                          <span className="flex-1 truncate">{link.label}</span>
+                          <span className="flex-1 truncate">{t(`nav.${link.label}`)}</span>
                         )}
                         {!collapsed && link.badge && (
                           <span className={`
-                            text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ml-auto
+                            text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ms-auto
                             ${isActive ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}
                           `}>
                             {link.badge}
@@ -790,22 +792,22 @@ export function Sidebar() {
                         )}
                         {!collapsed && link.subLinks && (
                           <svg
-                            className={`ml-auto w-4 h-4 transition-transform duration-200 text-slate-400 ${expandedMenus[link.href] ? "rotate-180" : ""}`}
+                            className={`ms-auto w-4 h-4 transition-transform duration-200 text-slate-400 ${expandedMenus[link.href] ? "rotate-180" : ""}`}
                             viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
                           >
                             <polyline points="6 9 12 15 18 9" />
                           </svg>
                         )}
                         {collapsed && link.badge && (
-                          <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-blue-500" />
+                          <span className="absolute top-0.5 end-0.5 w-1.5 h-1.5 rounded-full bg-blue-500" />
                         )}
                       </Link>
 
                       {/* Sub-links Rendering */}
                       {!collapsed && link.subLinks && expandedMenus[link.href] && (
-                        <div className="mt-1 mb-2 ml-[36px] relative space-y-1 animate-in slide-in-from-top-1 fade-in duration-200 mr-2">
+                        <div className="mt-1 mb-2 ms-[36px] relative space-y-1 animate-in slide-in-from-top-1 fade-in duration-200 me-2">
                           {/* Continuous vertical line for the tree */}
-                          <div className="absolute left-[9px] top-2 bottom-3.5 w-[2px] bg-slate-100 rounded-full" />
+                          <div className="absolute start-[9px] top-2 bottom-3.5 w-[2px] bg-slate-100 rounded-full" />
 
                           {link.subLinks.map((sub: any) => {
                             const isSubActive = activeHref === sub.href;
@@ -815,7 +817,7 @@ export function Sidebar() {
                                 href={sub.href}
                                 onClick={() => setActiveHref(sub.href)}
                                 className={`
-                                  group relative flex items-center pl-7 pr-3 py-1.5 text-[12px] rounded-lg transition-all duration-200
+                                  group relative flex items-center ps-7 pe-3 py-1.5 text-[12px] rounded-lg transition-all duration-200
                                   ${isSubActive
                                     ? "text-blue-700 font-bold bg-blue-50/50 ring-1 ring-blue-100/50 shadow-sm"
                                     : "text-slate-500 font-medium hover:text-slate-900 hover:bg-slate-50"}
@@ -823,7 +825,7 @@ export function Sidebar() {
                               >
                                 {/* Active / Hover Dot */}
                                 <div
-                                  className={`absolute left-[6.5px] w-[7px] h-[7px] rounded-full transition-all duration-200 z-10
+                                  className={`absolute start-[6.5px] w-[7px] h-[7px] rounded-full transition-all duration-200 z-10
                                     ${isSubActive
                                       ? "bg-blue-500 ring-4 ring-blue-50"
                                       : "bg-slate-200 ring-2 ring-white group-hover:bg-slate-400 group-hover:scale-125"
@@ -831,7 +833,7 @@ export function Sidebar() {
                                   `}
                                 />
 
-                                <span className="truncate tracking-wide">{sub.label}</span>
+                                <span className="truncate tracking-wide">{t(`nav.${sub.label}`)}</span>
                               </Link>
                             );
                           })}
@@ -851,7 +853,7 @@ export function Sidebar() {
               onClick={resetNavOrder}
               className="w-full py-2 text-[10px] font-bold text-slate-400 hover:text-slate-600 uppercase tracking-wider bg-slate-50 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200"
             >
-              Reset Menu Order
+              {t("sidebar.resetOrder")}
             </button>
           </div>
         )}
@@ -860,7 +862,7 @@ export function Sidebar() {
       {/* ── User & Logout ─────────────────────────────────────────────────── */}
       <div className="p-3 border-t border-slate-100 bg-slate-50 flex-shrink-0">
         <div className={`flex items-center hover:bg-white rounded-xl transition-colors p-2 ${collapsed ? "justify-center" : "gap-3"}`}>
-          <Link href="/profile" className="flex items-center gap-3 flex-1 min-w-0" title="Profile">
+          <Link href="/profile" className="flex items-center gap-3 flex-1 min-w-0" title={t("sidebar.profile")}>
             <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-sm flex-shrink-0 ring-2 ring-white">
               {userName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "SR"}
             </div>
@@ -874,7 +876,7 @@ export function Sidebar() {
           {!collapsed && (
             <button
               type="button"
-              title="Logout"
+              title={t("sidebar.logout")}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();

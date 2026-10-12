@@ -13,6 +13,7 @@ import { NavigationProgress } from "@/components/NavigationProgress";
 import { NotificationProvider, useNotify } from "@/components/NotificationContext";
 import { ACRRequestsProvider } from "@/components/ACRRequestsProvider";
 import { useRecordHighlighter } from "@/lib/useHighlightTarget";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 
 // Give up watching an customer after this many polls (~2 min at 4s/poll) —
 // they simply didn't qualify for any active plan, so no quote will ever land.
@@ -45,6 +46,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   const [authChecked, setAuthChecked] = useState(false);
   const [tenantName, setTenantName] = useState("Adamjee Life");
   const { notify: showToast } = useNotify();
+  const { t } = useI18n();
 
   // Global "pop the record the agent just navigated to" watcher — pages don't
   // need any wiring beyond rendering the data the row contains.
@@ -130,7 +132,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
 
           if (artifact.status !== "Processing") {
             const isAccepted = artifact.status === "Accepted";
-            showToast(`${item.name} has been ${artifact.status.toLowerCase()}!`, isAccepted);
+            showToast(t("shell.documentStatus", { name: item.name, status: artifact.status.toLowerCase() }), isAccepted);
 
             const idx = updatedList.findIndex(x => x.id === item.id);
             if (idx > -1) {
@@ -169,7 +171,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
       if (timerId) clearTimeout(timerId);
       window.removeEventListener("insurance_ai_new_processing", handleNewDoc);
     };
-  }, [authChecked, isLoginPage, isPublicStandalonePage, showToast]);
+  }, [authChecked, isLoginPage, isPublicStandalonePage, showToast, t]);
 
   // Poll for background-generated quotations (Kafka quote worker) globally
   // across navigation, so the toast fires no matter which page the user is on.
@@ -209,7 +211,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
       const remaining: (PendingQuoteWatch & { attempts?: number })[] = [];
       for (const watch of pending) {
         if (quotedCustomerIds.has(watch.id)) {
-          showToast(`Quotation generated for ${watch.name}!`, true);
+          showToast(t("shell.quoteGenerated", { name: watch.name }), true);
           continue;
         }
         const attempts = (watch.attempts ?? 0) + 1;
@@ -238,7 +240,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
       if (timerId) clearTimeout(timerId);
       window.removeEventListener(PENDING_QUOTES_EVENT, handleNewPending);
     };
-  }, [authChecked, isLoginPage, isPublicStandalonePage, showToast]);
+  }, [authChecked, isLoginPage, isPublicStandalonePage, showToast, t]);
 
   if (!authChecked && !bypassAuthShell) {
     return (
@@ -248,7 +250,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
           </svg>
-          <span className="text-xs text-slate-400 font-medium">Validating credentials...</span>
+          <span className="text-xs text-slate-400 font-medium">{t("shell.validating")}</span>
         </div>
       </body>
     );
@@ -286,7 +288,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
             {!isPortalEmbed && (
               <footer className="border-t border-slate-200 bg-white py-2.5 px-6 shrink-0">
                 <p className="text-center text-[10px] text-slate-400">
-                  insurance-ai Underwriting Portal — Prototype v0.1.0 &nbsp;·&nbsp; Strictly Confidential &nbsp;·&nbsp; {tenantName}
+                  {t("shell.footer", { tenant: tenantName })}
                 </p>
               </footer>
             )}

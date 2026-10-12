@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme, ThemeType } from '../theme/ThemeContext';
+import { useLocale } from '../i18n/LocaleContext';
+import { LOCALES, LOCALE_LABELS, Locale } from '../i18n/config';
 import { spacing } from '../theme/tokens';
 import { useSession } from '../context/SessionContext';
 import { useNotifications } from '../notifications/NotificationContext';
@@ -21,6 +23,7 @@ import {
 
 export default function SettingsScreen() {
   const { theme, setTheme, colors } = useTheme();
+  const { locale, setLocale, restartRequired, t } = useLocale();
   const navigation = useNavigation<any>();
   const { user, signOut } = useSession();
   const { unreadCount, notifications, clearAll, toast } = useNotifications();
@@ -30,7 +33,7 @@ export default function SettingsScreen() {
 
   return (
     <Screen
-      header={<ScreenHeader title="Settings" leading="menu" />}
+      header={<ScreenHeader title={t('settings.title')} leading="menu" />}
     >
       {/* ── Account ───────────────────────────────────────────────────────── */}
 
@@ -39,7 +42,7 @@ export default function SettingsScreen() {
           <Avatar name={user?.fullName} size={60} tone="brand" />
           <View style={styles.profileText}>
             <Text variant="title2" numberOfLines={1}>
-              {user?.fullName ?? 'Agent'}
+              {user?.fullName ?? t('common.agent')}
             </Text>
             <Text variant="caption" color="muted" numberOfLines={1}>
               {user?.email ?? '—'}
@@ -57,21 +60,21 @@ export default function SettingsScreen() {
         </View>
       </Card>
 
-      <SectionHeader title="Account" icon="person-outline" />
+      <SectionHeader title={t('settings.account')} icon="person-outline" />
       <Card padding="md" style={styles.section}>
-        <ListRow title="Full name" value={user?.fullName ?? '—'} icon="person-outline" tone="brand" />
+        <ListRow title={t('settings.fullName')} value={user?.fullName ?? '—'} icon="person-outline" tone="brand" />
         <Divider spacingY="none" />
-        <ListRow title="Email" value={user?.email ?? '—'} icon="mail-outline" tone="info" />
+        <ListRow title={t('settings.email')} value={user?.email ?? '—'} icon="mail-outline" tone="info" />
         <Divider spacingY="none" />
-        <ListRow title="Role" value={user?.role ?? '—'} icon="shield-outline" tone="accent" />
+        <ListRow title={t('settings.role')} value={user?.role ?? '—'} icon="shield-outline" tone="accent" />
         <Divider spacingY="none" />
         <ListRow
-          title="Lead visibility"
-          value={user && user.role !== 'Agent' ? 'All leads' : 'My leads'}
+          title={t('settings.leadVisibility')}
+          value={user && user.role !== 'Agent' ? t('settings.allLeads') : t('settings.myLeads')}
           subtitle={
             user && user.role !== 'Agent'
-              ? 'You see every lead in the tenant.'
-              : 'You see only the leads assigned to you.'
+              ? t('settings.seesAllLeads')
+              : t('settings.seesOwnLeads')
           }
           icon="eye-outline"
           tone="neutral"
@@ -80,37 +83,49 @@ export default function SettingsScreen() {
 
       {/* ── Appearance ────────────────────────────────────────────────────── */}
 
-      <SectionHeader title="Appearance" icon="color-palette-outline" />
+      <SectionHeader title={t('settings.appearance')} icon="color-palette-outline" />
       <Card padding="lg" style={styles.section}>
         <Text variant="captionStrong" color="muted" style={styles.controlLabel}>
-          Theme
+          {t('settings.theme')}
         </Text>
         <SegmentedControl<ThemeType>
           segments={[
-            { value: 'light', label: 'Light', icon: 'sunny-outline' },
-            { value: 'dark', label: 'Dark', icon: 'moon-outline' },
-            { value: 'system', label: 'System', icon: 'phone-portrait-outline' },
+            { value: 'light', label: t('settings.light'), icon: 'sunny-outline' },
+            { value: 'dark', label: t('settings.dark'), icon: 'moon-outline' },
+            { value: 'system', label: t('settings.system'), icon: 'phone-portrait-outline' },
           ]}
           value={theme}
           onChange={setTheme}
         />
         <Text variant="caption" color="subtle" style={styles.controlHelp}>
           {theme === 'system'
-            ? 'Follows your device setting automatically.'
-            : `Always uses the ${theme} theme, whatever your device is set to.`}
+            ? t('settings.themeSystemHelp')
+            : theme === 'light' ? t('settings.themeLightHelp') : t('settings.themeDarkHelp')}
+        </Text>
+
+        <Text variant="captionStrong" color="muted" style={[styles.controlLabel, styles.languageLabel]}>
+          {t('settings.language')}
+        </Text>
+        <SegmentedControl<Locale>
+          segments={LOCALES.map((code) => ({ value: code, label: LOCALE_LABELS[code] }))}
+          value={locale}
+          onChange={setLocale}
+        />
+        <Text variant="caption" color={restartRequired ? 'muted' : 'subtle'} style={styles.controlHelp}>
+          {restartRequired ? t('settings.restartRequired') : t('settings.languageHelp')}
         </Text>
       </Card>
 
       {/* ── Notifications ─────────────────────────────────────────────────── */}
 
-      <SectionHeader title="Notifications" icon="notifications-outline" />
+      <SectionHeader title={t('settings.notifications')} icon="notifications-outline" />
       <Card padding="md" style={styles.section}>
         <ListRow
-          title="Notification centre"
+          title={t('settings.notificationCentre')}
           subtitle={
             unreadCount > 0
-              ? `${unreadCount} unread of ${notifications.length}`
-              : `${notifications.length} in history`
+              ? t('settings.unreadOf', { unread: unreadCount, total: notifications.length })
+              : t('settings.inHistory', { total: notifications.length })
           }
           icon="notifications-outline"
           tone="warning"
@@ -118,8 +133,8 @@ export default function SettingsScreen() {
         />
         <Divider spacingY="none" />
         <ListRow
-          title="Clear notification history"
-          subtitle="Removes the local feed. No leads are affected."
+          title={t('settings.clearHistory')}
+          subtitle={t('settings.clearHistoryHelp')}
           icon="trash-outline"
           destructive
           disabled={notifications.length === 0}
@@ -129,19 +144,19 @@ export default function SettingsScreen() {
 
       {/* ── Support ───────────────────────────────────────────────────────── */}
 
-      <SectionHeader title="Support" icon="help-buoy-outline" />
+      <SectionHeader title={t('settings.support')} icon="help-buoy-outline" />
       <Card padding="md" style={styles.section}>
         <ListRow
-          title="Help & support"
-          subtitle="Contact the internal IT team"
+          title={t('settings.help')}
+          subtitle={t('settings.helpSubtitle')}
           icon="help-buoy-outline"
           tone="info"
           onPress={() => navigation.navigate('Help')}
         />
         <Divider spacingY="none" />
         <ListRow
-          title="About"
-          subtitle="Version and build information"
+          title={t('settings.about')}
+          subtitle={t('settings.aboutSubtitle')}
           icon="information-circle-outline"
           tone="neutral"
           onPress={() => navigation.navigate('About')}
@@ -150,8 +165,8 @@ export default function SettingsScreen() {
 
       <Card padding="md" style={styles.section}>
         <ListRow
-          title="Sign out"
-          subtitle="You will need to sign in again"
+          title={t('signOut.action')}
+          subtitle={t('settings.signOutSubtitle')}
           icon="log-out-outline"
           destructive
           onPress={() => setConfirmSignOut(true)}
@@ -159,29 +174,29 @@ export default function SettingsScreen() {
       </Card>
 
       <Text variant="caption" color="subtle" align="center" style={styles.footer}>
-        RIZVIZ Agent Portal · v1.0.0
+        {t('settings.footer')}
       </Text>
 
       <ConfirmDialog
         visible={confirmClear}
-        title="Clear notification history?"
-        message="This removes the feed from this device only. No lead or case is changed."
-        confirmLabel="Clear"
+        title={t('settings.clearConfirmTitle')}
+        message={t('settings.clearConfirmMessage')}
+        confirmLabel={t('common.clear')}
         tone="danger"
         icon="trash-outline"
         onConfirm={() => {
           clearAll();
           setConfirmClear(false);
-          toast('Notification history cleared', { tone: 'neutral', icon: 'checkmark-circle' });
+          toast(t('settings.cleared'), { tone: 'neutral', icon: 'checkmark-circle' });
         }}
         onCancel={() => setConfirmClear(false)}
       />
 
       <ConfirmDialog
         visible={confirmSignOut}
-        title="Sign out?"
-        message="You will need your email and password to sign back in."
-        confirmLabel="Sign out"
+        title={t('signOut.confirmTitle')}
+        message={t('signOut.confirmMessage')}
+        confirmLabel={t('signOut.action')}
         tone="danger"
         icon="log-out-outline"
         onConfirm={() => {
@@ -219,6 +234,9 @@ const styles = StyleSheet.create({
   },
   controlHelp: {
     marginTop: spacing.md,
+  },
+  languageLabel: {
+    marginTop: spacing.xl,
   },
   footer: {
     marginTop: spacing.sm,

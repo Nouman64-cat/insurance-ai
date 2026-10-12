@@ -4,6 +4,7 @@ import { DrawerContentScrollView, DrawerContentComponentProps } from '@react-nav
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeContext';
+import { useLocale } from '../i18n/LocaleContext';
 import { spacing, radii } from '../theme/tokens';
 import { useSession } from '../context/SessionContext';
 import { useNotifications } from '../notifications/NotificationContext';
@@ -22,6 +23,7 @@ interface DrawerLink {
 
 export default function CustomDrawer(props: DrawerContentComponentProps) {
   const { colors, shadow } = useTheme();
+  const { t } = useLocale();
   const insets = useSafeAreaInsets();
   const { user, signOut } = useSession();
   const { unreadCount } = useNotifications();
@@ -30,15 +32,15 @@ export default function CustomDrawer(props: DrawerContentComponentProps) {
   const activeRoute = props.state.routeNames[props.state.index];
 
   const links: DrawerLink[] = [
-    { route: 'DashboardTabs', label: 'Dashboard', icon: 'grid-outline' },
-    { route: 'Notifications', label: 'Notifications', icon: 'notifications-outline', onRootStack: true, badge: unreadCount },
-    { route: 'Underwriting', label: 'Underwriting', icon: 'shield-checkmark-outline', onRootStack: true },
-    { route: 'PolicyIssuance', label: 'Policy Issuance', icon: 'ribbon-outline', onRootStack: true },
-    { route: 'Commission', label: 'Commission', icon: 'cash-outline', onRootStack: true },
-    { route: 'SECPRateCard', label: 'SECP Commission Types', icon: 'document-text-outline', onRootStack: true },
-    { route: 'Settings', label: 'Settings', icon: 'settings-outline' },
-    { route: 'About', label: 'About', icon: 'information-circle-outline' },
-    { route: 'Help', label: 'Help & Support', icon: 'help-buoy-outline' },
+    { route: 'DashboardTabs', label: t('nav.dashboard'), icon: 'grid-outline' },
+    { route: 'Notifications', label: t('nav.notifications'), icon: 'notifications-outline', onRootStack: true, badge: unreadCount },
+    { route: 'Underwriting', label: t('nav.underwriting'), icon: 'shield-checkmark-outline', onRootStack: true },
+    { route: 'PolicyIssuance', label: t('nav.policyIssuance'), icon: 'ribbon-outline', onRootStack: true },
+    { route: 'Commission', label: t('nav.commission'), icon: 'cash-outline', onRootStack: true },
+    { route: 'SECPRateCard', label: t('nav.secpCommissionTypes'), icon: 'document-text-outline', onRootStack: true },
+    { route: 'Settings', label: t('nav.settings'), icon: 'settings-outline' },
+    { route: 'About', label: t('nav.about'), icon: 'information-circle-outline' },
+    { route: 'Help', label: t('nav.help'), icon: 'help-buoy-outline' },
   ];
 
   const go = (link: DrawerLink) => {
@@ -65,7 +67,7 @@ export default function CustomDrawer(props: DrawerContentComponentProps) {
             <Avatar name={user?.fullName} size={48} tone="brand" />
             <View style={styles.identityText}>
               <Text variant="title3" numberOfLines={1}>
-                {user?.fullName ?? 'Agent'}
+                {user?.fullName ?? t('common.agent')}
               </Text>
               <Text variant="caption" color="muted" numberOfLines={1}>
                 {user?.email ?? ''}
@@ -136,22 +138,22 @@ export default function CustomDrawer(props: DrawerContentComponentProps) {
         <Pressable
           onPress={() => setConfirmSignOut(true)}
           accessibilityRole="button"
-          accessibilityLabel="Sign out"
+          accessibilityLabel={t('signOut.action')}
           pressedScale={0.98}
           style={styles.item}
         >
           <Ionicons name="log-out-outline" size={21} color={colors.tone.danger.solid} />
           <Text variant="bodyStrong" style={[styles.itemLabel, { color: colors.tone.danger.on }]}>
-            Sign out
+            {t('signOut.action')}
           </Text>
         </Pressable>
       </View>
 
       <ConfirmDialog
         visible={confirmSignOut}
-        title="Sign out?"
-        message="You will need your email and password to sign back in."
-        confirmLabel="Sign out"
+        title={t('signOut.confirmTitle')}
+        message={t('signOut.confirmMessage')}
+        confirmLabel={t('signOut.action')}
         tone="danger"
         icon="log-out-outline"
         onConfirm={() => {

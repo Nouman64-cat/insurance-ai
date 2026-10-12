@@ -3,6 +3,8 @@ import { useState, useEffect } from "react";
 import { openAutomationChat } from "@/lib/sso";
 import { useNotify } from "@/components/NotificationContext";
 import GlobalSearch from "@/components/GlobalSearch";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 
 function RefreshIcon() {
   return (
@@ -29,8 +31,9 @@ interface TopBarProps {
   subtitle?: string;
 }
 
-export function TopBar({ title = "Executive Overview", subtitle }: TopBarProps) {
+export function TopBar({ title, subtitle }: TopBarProps) {
   const { notify } = useNotify();
+  const { t } = useI18n();
   // Admins can replay the welcome tour (components/tour/AdminTour.tsx) at any time.
   const [isAdmin, setIsAdmin] = useState(false);
   useEffect(() => { setIsAdmin(localStorage.getItem("user_role") === "Admin"); }, []);
@@ -60,7 +63,7 @@ export function TopBar({ title = "Executive Overview", subtitle }: TopBarProps) 
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h1 className="text-base font-bold text-slate-900 tracking-tight truncate leading-snug py-0.5">
-              {title}
+              {title ?? t("topBar.defaultTitle")}
             </h1>
             <span className="hidden sm:inline-flex items-center text-[9px] font-bold uppercase tracking-[0.12em] text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full whitespace-nowrap">
               {tenantName}
@@ -77,20 +80,22 @@ export function TopBar({ title = "Executive Overview", subtitle }: TopBarProps) 
 
       {/* Right: Actions */}
       <div className="flex items-center gap-3 flex-shrink-0">
+        <LanguageSwitcher />
+
         {/* The Automation Chat is a separate app in its own container: this opens it in a new tab (it is a link out,
             not a mode of this page), or says it is not running. */}
         <button
           type="button"
           onClick={async () => {
             if (!(await openAutomationChat())) {
-              notify("Automation Chat is not running. Start its container with:  docker compose up -d automation-chat", false);
+              notify(t("topBar.automationChatDown"), false);
             }
           }}
-          title="Open the Automation Chat in a new tab"
+          title={t("topBar.automationChatTitle")}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
         >
           <ChatIcon />
-          Automation Chat
+          {t("topBar.automationChat")}
         </button>
 
         {isAdmin && (
@@ -99,7 +104,7 @@ export function TopBar({ title = "Executive Overview", subtitle }: TopBarProps) 
             onClick={() => window.dispatchEvent(new Event("start-admin-tour"))}
             className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all"
           >
-            Take the tour
+            {t("topBar.takeTour")}
           </button>
         )}
 
@@ -109,7 +114,7 @@ export function TopBar({ title = "Executive Overview", subtitle }: TopBarProps) 
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow-md"
         >
           <RefreshIcon />
-          <span className="hidden sm:inline">Refresh</span>
+          <span className="hidden sm:inline">{t("topBar.refresh")}</span>
         </button>
       </div>
     </header>

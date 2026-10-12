@@ -1,5 +1,6 @@
 import api from './api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { DEFAULT_LOCALE, LOCALE_STORAGE_KEY } from '../i18n/config';
 
 export interface QuickAction {
   label: string;
@@ -98,13 +99,15 @@ export const sendChatMessage = async (
   callbacks: StreamCallbacks
 ): Promise<void> => {
   const role = (await AsyncStorage.getItem('user_role')) || 'Agent';
+  // The language picked in Settings: the copilot replies in it.
+  const locale = (await AsyncStorage.getItem(LOCALE_STORAGE_KEY)) || DEFAULT_LOCALE;
   const headers = await authHeaders();
   const baseURL = api.defaults.baseURL;
 
   const response = await fetch(`${baseURL}/chat/stream`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ thread_id: threadId, message, role, platform: 'mobile' }),
+    body: JSON.stringify({ thread_id: threadId, message, role, platform: 'mobile', locale }),
   });
 
   await consumeSSE(response, callbacks);

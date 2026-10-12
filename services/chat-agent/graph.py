@@ -457,8 +457,16 @@ _SYSTEM_PROMPT_CACHED = SYSTEM_PROMPT.format(pages=catalogue())
 # variants rather than six.
 _MOBILE_SUFFIX = AGENT_MOBILE_ROLE_RESTRICTION_TEMPLATE
 
+# Appended last, after everything cacheable, for users who picked Urdu in the app.
+_URDU_SUFFIX = (
+    "\n\nLANGUAGE: The user has chosen Urdu. Write every reply in Urdu (Urdu script), whatever language the user "
+    "types in. Keep names, CNICs, policy/case numbers, amounts, dates, emails and product names exactly as they are, "
+    "and keep common insurance terms Pakistani insurers use in English (policy, claim, premium, underwriting) as "
+    "Urdu loanwords. Tool arguments and ids stay in English."
+)
 
-def _build_prompt(role: str, platform: str = "web", domains: frozenset[str] | None = None) -> str:
+
+def _build_prompt(role: str, platform: str = "web", domains: frozenset[str] | None = None, locale: str = "en") -> str:
     """The system prompt for this turn.
 
     The base is identical for every role — the cacheable prefix. Domain
@@ -472,6 +480,8 @@ def _build_prompt(role: str, platform: str = "web", domains: frozenset[str] | No
         prompt += DOMAIN_PROMPTS.get(domain, "")
     if role == "Agent" and platform == "mobile":
         prompt += _MOBILE_SUFFIX
+    if locale == "ur":
+        prompt += _URDU_SUFFIX
     return prompt
 
 
@@ -702,7 +712,7 @@ async def agent_node(state: ChatState, config: RunnableConfig | None = None) -> 
     # Trim before sending. Without this the whole thread is re-sent every turn
     # and a long conversation's input cost climbs without any ceiling.
     history = trim_history(state["messages"])
-    messages = [SystemMessage(content=_build_prompt(user_role, platform, domains)), *history]
+    messages = [SystemMessage(content=_build_prompt(user_role, platform, domains, state.get("locale") or "en")), *history]
 
     cfg = await providers.resolve()
     llm = _llm(cfg, user_role, platform, domains)

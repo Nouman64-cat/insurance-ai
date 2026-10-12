@@ -13,6 +13,8 @@ class ChatStreamRequest(BaseModel):
     # "web" (portal) or "mobile" (agent-app) — the mobile client is Agent-only
     # and scoped to onboarding through Gate 6, see permission.py.
     platform: str = "web"
+    # UI language picked in the app ("en" or "ur"): the agent answers in it, see graph._build_prompt.
+    locale: str = "en"
     # Edit-and-regenerate: re-ask `message` from the point where the user first asked it. The thread is rewound to
     # just before the `occurrence`-th (0-based) time this exact text was asked and the turn runs again from there;
     # everything the agent said after it is dropped from the conversation it sees.

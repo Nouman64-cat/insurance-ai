@@ -10,6 +10,7 @@ class ChatState(TypedDict, total=False):
     tenant_id: str
     user_role: str
     platform: str  # "web" or "mobile" — see permission.py
+    locale: str  # UI language, "en" or "ur" — the agent replies in it
     jwt_token: str
     last_action: Optional[dict[str, Any]]
     # Domain tool-packs bound on the previous turn (see toolsets.py). Carried

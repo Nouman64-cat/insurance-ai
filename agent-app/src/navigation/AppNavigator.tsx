@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useTheme } from '../theme/ThemeContext';
+import { useLocale } from '../i18n/LocaleContext';
 import { typography } from '../theme/tokens';
 import { useResponsive } from '../hooks/useResponsive';
 import { useSession } from '../context/SessionContext';
@@ -116,6 +117,7 @@ const TAB_ICONS: Record<keyof MainTabParamList, [keyof typeof Ionicons.glyphMap,
 
 function MainTabs() {
   const { colors } = useTheme();
+  const { t } = useLocale();
   // Badges count items that appeared and the user hasn't opened yet; opening one clears it.
   const { unseen } = useSeenItems();
   const badge = (n: number) => (n > 0 ? (n > 99 ? '99+' : n) : undefined);
@@ -163,15 +165,15 @@ function MainTabs() {
         },
       })}
     >
-      <Tab.Screen name="Dashboard" component={DashboardScreen} />
+      <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: t('nav.dashboard') }} />
       <Tab.Screen
         name="Leads"
         component={LeadsScreen}
-        options={{ tabBarBadge: badge(unseen.leads) }}
+        options={{ title: t('nav.leads'), tabBarBadge: badge(unseen.leads) }}
       />
-      <Tab.Screen name="Proposals" component={ProposalsScreen} options={{ tabBarBadge: badge(unseen.proposals) }} />
-      <Tab.Screen name="Cases" component={CasesScreen} options={{ tabBarBadge: badge(unseen.cases) }} />
-      <Tab.Screen name="Chat" component={ChatScreen} options={{ title: 'Copilot' }} />
+      <Tab.Screen name="Proposals" component={ProposalsScreen} options={{ title: t('nav.proposals'), tabBarBadge: badge(unseen.proposals) }} />
+      <Tab.Screen name="Cases" component={CasesScreen} options={{ title: t('nav.cases'), tabBarBadge: badge(unseen.cases) }} />
+      <Tab.Screen name="Chat" component={ChatScreen} options={{ title: t('nav.copilot') }} />
     </Tab.Navigator>
   );
 }
@@ -180,6 +182,7 @@ function MainTabs() {
 
 function MainDrawer() {
   const { colors } = useTheme();
+  const { t } = useLocale();
   const { width } = useResponsive();
 
   // A fixed width leaves only a sliver of the screen visible on a small phone
@@ -205,10 +208,10 @@ function MainDrawer() {
         overlayColor: colors.overlay,
       }}
     >
-      <Drawer.Screen name="DashboardTabs" component={MainTabs} options={{ title: 'Dashboard' }} />
-      <Drawer.Screen name="Settings" component={SettingsScreen} />
-      <Drawer.Screen name="About" component={AboutScreen} />
-      <Drawer.Screen name="Help" component={HelpScreen} options={{ title: 'Help & Support' }} />
+      <Drawer.Screen name="DashboardTabs" component={MainTabs} options={{ title: t('nav.dashboard') }} />
+      <Drawer.Screen name="Settings" component={SettingsScreen} options={{ title: t('nav.settings') }} />
+      <Drawer.Screen name="About" component={AboutScreen} options={{ title: t('nav.about') }} />
+      <Drawer.Screen name="Help" component={HelpScreen} options={{ title: t('nav.help') }} />
     </Drawer.Navigator>
   );
 }
@@ -216,13 +219,14 @@ function MainDrawer() {
 // ── Root ─────────────────────────────────────────────────────────────────────
 
 function AuthFlow() {
+  const { t } = useLocale();
   const [showSplash, setShowSplash] = useState(true);
 
   return (
     <View style={{ flex: 1 }}>
       {showSplash ? (
         <AnimatedSplashScreen
-          subtitle="Agent Portal"
+          subtitle={t('nav.agentPortal')}
           onFinish={() => setShowSplash(false)}
         />
       ) : null}

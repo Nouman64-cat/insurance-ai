@@ -11,15 +11,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useTheme } from '../theme/ThemeContext';
+import { useLocale } from '../i18n/LocaleContext';
+import { LOCALES, LOCALE_LABELS, Locale } from '../i18n/config';
 import { spacing, radii } from '../theme/tokens';
 import { useResponsive } from '../hooks/useResponsive';
 import { useSession } from '../context/SessionContext';
 import { useNotifications } from '../notifications/NotificationContext';
-import { Text, Field, Button, Banner, Card } from '../components/ui';
+import { Text, Field, Button, Banner, Card, SegmentedControl } from '../components/ui';
 import ConstellationBackground from '../components/ui/ConstellationBackground';
 
 export default function LoginScreen() {
   const { colors, isDark, shadow } = useTheme();
+  const { locale, setLocale, t } = useLocale();
   const { isCompact, height } = useResponsive();
   const { signIn } = useSession();
   const { toast } = useNotifications();
@@ -35,9 +38,9 @@ export default function LoginScreen() {
   const validate = () => {
     const next: typeof errors = {};
     const trimmed = email.trim();
-    if (!trimmed) next.email = 'Enter your email address.';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) next.email = 'That does not look like a valid email.';
-    if (!password) next.password = 'Enter your password.';
+    if (!trimmed) next.email = t('login.emailRequired');
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) next.email = t('login.emailInvalid');
+    if (!password) next.password = t('login.passwordRequired');
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -49,9 +52,9 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await signIn(email.trim(), password);
-      toast('Signed in', { tone: 'success', icon: 'checkmark-circle' });
+      toast(t('login.signedIn'), { tone: 'success', icon: 'checkmark-circle' });
     } catch (err: any) {
-      setFormError(err?.message ?? 'We could not sign you in. Please try again.');
+      setFormError(err?.message ?? t('login.failed'));
     } finally {
       setLoading(false);
     }
@@ -86,17 +89,17 @@ export default function LoginScreen() {
                 align="center"
                 style={[styles.subtitle, { color: colors.tone.brand.solid }]}
               >
-                AGENT PORTAL
+                {t('login.subtitle')}
               </Text>
               <Text variant="caption" color="muted" align="center" style={styles.description}>
-                Sign in to manage your leads, proposals and cases.
+                {t('login.description')}
               </Text>
             </View>
 
             {formError ? (
               <Banner
                 tone="danger"
-                title="Sign-in failed"
+                title={t('login.failedTitle')}
                 description={formError}
                 onDismiss={() => setFormError(null)}
                 style={styles.banner}
@@ -106,7 +109,7 @@ export default function LoginScreen() {
             {/* Clean Form Card */}
             <Card padding="xl" style={[styles.formCard, shadow(1)]}>
               <Field
-                label="Email address"
+                label={t('login.email')}
                 placeholder="agent@rizviz.com"
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -127,7 +130,7 @@ export default function LoginScreen() {
 
               <Field
                 ref={passwordRef}
-                label="Password"
+                label={t('login.password')}
                 placeholder="••••••••"
                 isPassword
                 autoComplete="password"
@@ -145,7 +148,7 @@ export default function LoginScreen() {
               />
 
               <Button
-                title="Sign in"
+                title={t('login.signIn')}
                 onPress={handleLogin}
                 loading={loading}
                 size="lg"
@@ -157,14 +160,19 @@ export default function LoginScreen() {
             </Card>
 
             <View style={styles.footer}>
+              <SegmentedControl<Locale>
+                segments={LOCALES.map((code) => ({ value: code, label: LOCALE_LABELS[code] }))}
+                value={locale}
+                onChange={setLocale}
+              />
               <View style={[styles.secureNote, { backgroundColor: colors.surfaceSunken, borderColor: colors.border }]}>
                 <Ionicons name="shield-checkmark-outline" size={15} color={colors.tone.success.solid} />
                 <Text variant="caption" color="muted">
-                  Secure, encrypted connection
+                  {t('login.secure')}
                 </Text>
               </View>
               <Text variant="micro" color="subtle" align="center">
-                RIZVIZ Insurance · Agent Portal
+                {t('login.footer')}
               </Text>
             </View>
           </View>

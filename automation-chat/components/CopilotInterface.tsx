@@ -37,6 +37,8 @@ import RuleBuilderModal from "./rule-engine/RuleBuilderModal";
 import { IS_DEMO } from "@/lib/envMode";
 import { PORTAL_ORIGIN } from "@/lib/portal";
 import GroupCensusClientTool from "@/components/group/GroupCensusClientTool";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 
 const WELCOME: AgentMessage = {
   id: "1",
@@ -524,6 +526,7 @@ function getRecommendedActions(lastMessage: AgentMessage | undefined): QuickActi
 }
 
 export function CopilotInterface() {
+  const { t } = useI18n();
   const router = useRouter();
   const { notify } = useNotify();
   const { isAutomationMode, setAutomationMode } = useCopilot();
@@ -2804,7 +2807,7 @@ export function CopilotInterface() {
         />
 
         {/* Sidebar */}
-        <div className={`w-[260px] flex-shrink-0 bg-zinc-50 border-r border-zinc-200 dark:bg-[#0f1115] dark:border-zinc-800 flex-col hidden ${sidebarOpen ? "md:flex" : ""} relative overflow-hidden`}>
+        <div className={`w-[260px] flex-shrink-0 bg-zinc-50 border-e border-zinc-200 dark:bg-[#0f1115] dark:border-zinc-800 flex-col hidden ${sidebarOpen ? "md:flex" : ""} relative overflow-hidden`}>
           <div className="absolute top-0 left-0 w-full h-48 bg-gradient-to-b from-blue-500/5 dark:from-blue-500/10 to-transparent pointer-events-none" />
           
           <div className="p-5 flex items-center gap-3 font-bold text-lg text-zinc-900 dark:text-white relative z-10">
@@ -2816,23 +2819,23 @@ export function CopilotInterface() {
           <div className="px-4 pb-3 mt-2 relative z-10 space-y-2">
             <button onClick={handleClearChat} className="flex items-center gap-3 w-full px-4 py-3 text-sm font-semibold text-zinc-800 bg-white hover:bg-zinc-100 border-zinc-200 dark:text-zinc-200 dark:bg-white/5 dark:hover:bg-white/10 rounded-xl transition-all border dark:border-white/5 shadow-sm">
               <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4"/></svg>
-              New chat
+              {t("sidebar.newChat")}
             </button>
             {/* Search input + chat tools (3 dots) */}
             <div className="flex items-center gap-1.5">
             <div className="relative flex-1 min-w-0">
-              <svg className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3.5 h-3.5 absolute start-2.5 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
               </svg>
               <input
                 type="text"
                 value={chatSearch}
                 onChange={e => setChatSearch(e.target.value)}
-                placeholder="Search chats…"
-                className="w-full pl-8 pr-3 py-2 text-xs bg-white border border-zinc-200 text-zinc-700 placeholder:text-zinc-400 dark:bg-white/5 dark:border-white/10 dark:text-zinc-300 dark:placeholder:text-zinc-600 rounded-xl focus:outline-none focus:border-blue-500/60 transition-all"
+                placeholder={t("sidebar.search")}
+                className="w-full ps-8 pe-3 py-2 text-xs bg-white border border-zinc-200 text-zinc-700 placeholder:text-zinc-400 dark:bg-white/5 dark:border-white/10 dark:text-zinc-300 dark:placeholder:text-zinc-600 rounded-xl focus:outline-none focus:border-blue-500/60 transition-all"
               />
               {chatSearch && (
-                <button onClick={() => setChatSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-300 transition-colors">
+                <button onClick={() => setChatSearch("")} className="absolute end-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-300 transition-colors">
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
               )}
@@ -2840,8 +2843,8 @@ export function CopilotInterface() {
             <div ref={chatToolsRef} className="relative shrink-0">
               <button
                 onClick={() => setChatToolsOpen(o => !o)}
-                title="Chat tools"
-                aria-label="Chat tools"
+                title={t("sidebar.chatTools")}
+                aria-label={t("sidebar.chatTools")}
                 className="p-2 rounded-lg text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200 dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/10 transition-colors"
               >
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -2849,13 +2852,13 @@ export function CopilotInterface() {
                 </svg>
               </button>
               {chatToolsOpen && (
-                <div className="absolute right-0 top-9 w-44 bg-white border border-zinc-200 dark:bg-[#181b21] dark:border-white/15 rounded-xl shadow-2xl py-1.5 z-50 text-xs">
+                <div className="absolute end-0 top-9 w-44 bg-white border border-zinc-200 dark:bg-[#181b21] dark:border-white/15 rounded-xl shadow-2xl py-1.5 z-50 text-xs">
                   <button
                     onClick={() => { setChatToolsOpen(false); setSelectMode(true); setSelectedChatIds(new Set()); }}
                     disabled={sessions.length === 0}
                     className="flex items-center gap-2.5 w-full px-3 py-2 text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-white/10 font-medium text-left disabled:opacity-50"
                   >
-                    Select chats
+                    {t("sidebar.selectChats")}
                   </button>
                 </div>
               )}
@@ -2873,7 +2876,7 @@ export function CopilotInterface() {
                       onChange={() => setSelectedChatIds(allSelected ? new Set() : new Set(all.map(x => x.id)))}
                       className="w-3.5 h-3.5 accent-blue-600"
                     />
-                    Select all ({all.length})
+                    {t("sidebar.selectAll", { count: all.length })}
                   </label>
                   <div className="flex items-center gap-1.5">
                     <button
@@ -2881,10 +2884,10 @@ export function CopilotInterface() {
                       disabled={selectedChatIds.size === 0}
                       className="px-2.5 py-1 rounded-lg font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
-                      Delete ({selectedChatIds.size})
+                      {t("sidebar.deleteSelected", { count: selectedChatIds.size })}
                     </button>
                     <button onClick={exitSelectMode} className="px-2.5 py-1 rounded-lg font-medium text-zinc-600 hover:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-white/10 transition-colors">
-                      Cancel
+                      {t("common.cancel")}
                     </button>
                   </div>
                 </div>
@@ -2896,7 +2899,7 @@ export function CopilotInterface() {
               const filtered = getFilteredSessions();
               if (filtered.length === 0) return (
                 <div className="text-center py-8 text-zinc-500 dark:text-zinc-600 text-xs">
-                  No chats match &ldquo;{chatSearch}&rdquo;
+                  {t("sidebar.noMatch", { query: chatSearch })}
                 </div>
               );
               return (
@@ -2908,7 +2911,7 @@ export function CopilotInterface() {
                     >
                       <div
                         onClick={() => (selectMode ? toggleSelectedChat(session.id) : handleLoadSession(session))}
-                        className={`w-full text-left px-3 py-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-between border ${
+                        className={`w-full text-start px-3 py-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-between border ${
                           selectMode && selectedChatIds.has(session.id)
                             ? 'bg-blue-50 border-blue-200 text-zinc-900 dark:bg-blue-500/10 dark:border-blue-500/30 dark:text-white'
                             : activeSessionId === session.id
@@ -2922,11 +2925,11 @@ export function CopilotInterface() {
                             checked={selectedChatIds.has(session.id)}
                             onChange={() => toggleSelectedChat(session.id)}
                             onClick={(e) => e.stopPropagation()}
-                            aria-label={`Select ${session.title || "chat"}`}
-                            className="w-3.5 h-3.5 mr-2.5 shrink-0 accent-blue-600"
+                            aria-label={t("sidebar.selectChat", { title: session.title || t("sidebar.untitled") })}
+                            className="w-3.5 h-3.5 me-2.5 shrink-0 accent-blue-600"
                           />
                         )}
-                        <div className="flex-1 min-w-0 pr-2">
+                        <div className="flex-1 min-w-0 pe-2">
                           {editingSessionId === session.id ? (
                             <input
                               type="text"
@@ -2952,11 +2955,11 @@ export function CopilotInterface() {
                             </div>
                           ) : (
                             // Empty title = the AI title-gen call is still in flight.
-                            <div className="h-3.5 w-[70%] rounded bg-zinc-200 dark:bg-white/10 animate-pulse" title="Generating title…" />
+                            <div className="h-3.5 w-[70%] rounded bg-zinc-200 dark:bg-white/10 animate-pulse" title={t("sidebar.generatingTitle")} />
                           )}
                           <div className="text-[11px] text-zinc-500 mt-0.5 flex items-center gap-2">
                             <span>{new Date(session.date).toLocaleDateString()}</span>
-                            {session.pinned && <span className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold uppercase tracking-wider">Pinned</span>}
+                            {session.pinned && <span className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold uppercase tracking-wider">{t("sidebar.pinned")}</span>}
                           </div>
                         </div>
 
@@ -2969,7 +2972,7 @@ export function CopilotInterface() {
                           className={`p-1 rounded-lg text-zinc-400 hover:text-zinc-900 hover:bg-zinc-200 dark:hover:text-white dark:hover:bg-white/10 transition-all ${
                             openMenuSessionId === session.id ? "opacity-100 bg-zinc-200 text-zinc-900 dark:bg-white/10 dark:text-white" : "opacity-0 group-hover:opacity-100"
                           }`}
-                          title="Chat options"
+                          title={t("sidebar.chatOptions")}
                           style={selectMode ? { display: "none" } : undefined}
                         >
                           <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -2982,7 +2985,7 @@ export function CopilotInterface() {
                       {openMenuSessionId === session.id && (
                         <div
                           ref={menuRef}
-                          className="absolute right-2 top-10 w-44 bg-white border border-zinc-200 dark:bg-[#181b21] dark:border-white/15 rounded-xl shadow-2xl py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100 text-xs backdrop-blur-xl"
+                          className="absolute end-2 top-10 w-44 bg-white border border-zinc-200 dark:bg-[#181b21] dark:border-white/15 rounded-xl shadow-2xl py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100 text-xs backdrop-blur-xl"
                         >
                           <button
                             onClick={(e) => handleTogglePinSession(session.id, e)}
@@ -2991,7 +2994,7 @@ export function CopilotInterface() {
                             <svg className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" fill="currentColor" viewBox="0 0 24 24">
                               <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
                             </svg>
-                            {session.pinned ? "Unpin chat" : "Pin chat"}
+                            {session.pinned ? t("sidebar.unpin") : t("sidebar.pin")}
                           </button>
 
                           <button
@@ -3001,7 +3004,7 @@ export function CopilotInterface() {
                             <svg className="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
                             </svg>
-                            Rename
+                            {t("sidebar.rename")}
                           </button>
 
                           {IS_DEMO && (
@@ -3013,7 +3016,7 @@ export function CopilotInterface() {
                                 <svg className="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
                                 </svg>
-                                Export as Markdown
+                                {t("sidebar.exportMarkdown")}
                               </button>
 
                               <button
@@ -3023,7 +3026,7 @@ export function CopilotInterface() {
                                 <svg className="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
                                 </svg>
-                                Export as JSON
+                                {t("sidebar.exportJson")}
                               </button>
                             </>
                           )}
@@ -3040,7 +3043,7 @@ export function CopilotInterface() {
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                             </svg>
-                            Delete chat
+                            {t("sidebar.deleteChat")}
                           </button>
                         </div>
                       )}
@@ -3051,7 +3054,7 @@ export function CopilotInterface() {
                       onClick={() => setVisibleChats(n => n + CHAT_PAGE_NEXT)}
                       className="w-full mt-1 py-2.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-white/5 rounded-xl transition-colors"
                     >
-                      See more
+                      {t("sidebar.seeMore")}
                     </button>
                   )}
               </div>
@@ -3062,7 +3065,7 @@ export function CopilotInterface() {
           <div className="p-4 mt-auto border-t border-zinc-200 bg-zinc-100/60 dark:border-white/5 dark:bg-black/20 relative z-10">
             <button onClick={() => setAutomationMode(false)} className="flex items-center gap-3 w-full px-4 py-2.5 text-sm font-medium text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200/60 dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/5 rounded-xl transition-colors">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-              Back to Dashboard
+              {t("sidebar.backToDashboard")}
             </button>
           </div>
         </div>
@@ -3083,9 +3086,9 @@ export function CopilotInterface() {
                <button
                  type="button"
                  onClick={() => setSidebarOpen((v) => !v)}
-                 aria-label={sidebarOpen ? "Hide chat history" : "Show chat history"}
+                 aria-label={sidebarOpen ? t("header.hideHistory") : t("header.showHistory")}
                  aria-expanded={sidebarOpen}
-                 title={sidebarOpen ? "Hide chat history" : "Show chat history"}
+                 title={sidebarOpen ? t("header.hideHistory") : t("header.showHistory")}
                  className="hidden md:flex p-2 -ml-2 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/10 transition-colors"
                >
                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
@@ -3098,14 +3101,15 @@ export function CopilotInterface() {
                <div className="flex items-center gap-2">
                  <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
                  <span className="font-bold text-sm text-slate-800 tracking-tight">Rizviz Copilot</span>
-                 <span className="hidden sm:inline-block px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-bold uppercase tracking-widest ml-1 border border-blue-100">Beta</span>
+                 <span className="hidden sm:inline-block px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-bold uppercase tracking-widest ms-1 border border-blue-100">{t("header.beta")}</span>
                </div>
              </div>
              <div className="flex items-center gap-3">
+               <LanguageSwitcher />
                <button
                  onClick={() => setShowJourneyMap((v) => !v)}
                  aria-pressed={showJourneyMap}
-                 title={showJourneyMap ? "Back to chat" : "Journey map"}
+                 title={showJourneyMap ? t("header.backToChat") : t("header.journeyMap")}
                  className={`relative text-sm font-semibold transition-colors flex items-center gap-1.5 px-3 py-1.5 rounded-lg ${
                    showJourneyMap
                      ? "bg-indigo-600 text-white hover:bg-indigo-500"
@@ -3117,14 +3121,14 @@ export function CopilotInterface() {
                  ) : (
                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><circle cx="5" cy="6" r="2.25" /><circle cx="19" cy="6" r="2.25" /><circle cx="12" cy="18" r="2.25" /><path strokeLinecap="round" d="M7.25 6h9.5M6.2 8l4.6 8M17.8 8l-4.6 8" /></svg>
                  )}
-                 <span className="hidden sm:inline">{showJourneyMap ? "Chat" : "Journey"}</span>
+                 <span className="hidden sm:inline">{showJourneyMap ? t("header.chat") : t("header.journey")}</span>
                  {!showJourneyMap && journey && journey.gates.concat(journey.before, journey.after).some((n) => n.state === "next" || n.state === "failed") && (
-                   <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-indigo-500 ring-2 ring-white dark:ring-zinc-900" />
+                   <span className="absolute -top-0.5 -end-0.5 w-2 h-2 rounded-full bg-indigo-500 ring-2 ring-white dark:ring-zinc-900" />
                  )}
                </button>
                <button onClick={handleClearChat} className="text-sm font-semibold text-slate-500 hover:text-slate-800 transition-colors flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-slate-100">
                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                 <span className="hidden sm:inline">Clear</span>
+                 <span className="hidden sm:inline">{t("header.clear")}</span>
                </button>
              </div>
            </div>
@@ -3194,7 +3198,7 @@ export function CopilotInterface() {
                    <div className="w-full max-w-3xl flex flex-col items-center mt-10">
                      <div className="text-slate-400 font-bold text-xs uppercase tracking-[0.2em] mb-3">Rizviz AI Copilot</div>
                      <h2 className="text-4xl md:text-[50px] font-bold tracking-tight text-center mb-10 bg-clip-text text-transparent bg-gradient-to-r from-blue-500 via-blue-500 to-fuchsia-500 pb-2 leading-tight">
-                       How can I help you today?
+                       {t("composer.welcome")}
                      </h2>
                      
                      {/* Input Box - Perplexity style */}
@@ -3213,7 +3217,7 @@ export function CopilotInterface() {
                              )}
                              <div className="flex flex-col min-w-0 flex-1">
                                <span className="text-sm font-semibold text-slate-700 truncate">{selectedFile.name}</span>
-                               <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">{selectedFile.type.startsWith("image/") ? "Image" : "Document"}</span>
+                               <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">{selectedFile.type.startsWith("image/") ? t("common.image") : t("common.document")}</span>
                              </div>
                              <button
                                type="button"
@@ -3236,7 +3240,7 @@ export function CopilotInterface() {
                                handleSubmit();
                              }
                            }}
-                           placeholder={pendingInterrupt?.kind === "clarify" ? "Type your answer…" : "Ask anything..."}
+                           placeholder={pendingInterrupt?.kind === "clarify" ? t("composer.typeAnswer") : t("composer.askAnything")}
                            className="w-full max-h-48 px-5 pt-4 pb-2 bg-transparent border-none focus:outline-none focus:ring-0 resize-none text-[16px] text-slate-900 placeholder:text-slate-400"
                            style={{ minHeight: "60px" }}
                          />
@@ -3245,7 +3249,7 @@ export function CopilotInterface() {
                            <div className="flex items-center gap-2">
                              <button type="button" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors">
                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4M4 12h16"/></svg>
-                               Attach
+                               {t("composer.attach")}
                              </button>
                            </div>
                            <div className="flex items-center gap-2">
@@ -3319,7 +3323,7 @@ export function CopilotInterface() {
                                      </div>
                                      <button
                                        type="button"
-                                       title="Copy"
+                                       title={t("messageActions.copy")}
                                        onClick={() => navigator.clipboard.writeText(msg.text)}
                                        className="absolute -bottom-6 right-0 p-1 opacity-0 group-hover/usermsg:opacity-100 transition-opacity text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded"
                                      >
@@ -3425,27 +3429,27 @@ export function CopilotInterface() {
                                  {/* AI Message Action Bar (Perplexity Style) */}
                                  <div className="flex items-center justify-between w-full mt-1 pt-1 text-slate-400 max-w-3xl">
                                    <div className="flex items-center gap-3 md:gap-4">
-                                     <button type="button" className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title="Share">
+                                     <button type="button" className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title={t("messageActions.share")}>
                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
                                      </button>
-                                     <button type="button" className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title="Download">
+                                     <button type="button" className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title={t("messageActions.download")}>
                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                                      </button>
-                                     <button type="button" title="Copy" onClick={() => navigator.clipboard.writeText(msg.text)} className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors">
+                                     <button type="button" title={t("messageActions.copy")} onClick={() => navigator.clipboard.writeText(msg.text)} className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors">
                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
                                      </button>
-                                     <button type="button" onClick={() => regenerate(msg.id)} disabled={isLoading || riskSteps.length > 0 || bulkSteps.length > 0} className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed" title="Regenerate from here — drops everything after this reply">
+                                     <button type="button" onClick={() => regenerate(msg.id)} disabled={isLoading || riskSteps.length > 0 || bulkSteps.length > 0} className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed" title={t("messageActions.regenerate")}>
                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                                      </button>
                                    </div>
                                    <div className="flex items-center gap-2">
-                                     <button type="button" className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title="Helpful">
+                                     <button type="button" className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title={t("messageActions.helpful")}>
                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"></path></svg>
                                      </button>
-                                     <button type="button" className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title="Unhelpful">
+                                     <button type="button" className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title={t("messageActions.unhelpful")}>
                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018a2 2 0 01.485.06l3.76.94m-7 10v5a2 2 0 002 2h.096c.5 0 .905-.405.905-.904 0-.715.211-1.413.608-2.008L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5"></path></svg>
                                      </button>
-                                     <button type="button" className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title="More">
+                                     <button type="button" className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title={t("messageActions.more")}>
                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z"></path></svg>
                                      </button>
                                    </div>
@@ -3697,7 +3701,7 @@ export function CopilotInterface() {
                          )}
                          <div className="flex flex-col min-w-0 flex-1">
                            <span className="text-sm font-semibold text-slate-700 truncate">{selectedFile.name}</span>
-                           <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">{selectedFile.type.startsWith("image/") ? "Image" : "Document"}</span>
+                           <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">{selectedFile.type.startsWith("image/") ? t("common.image") : t("common.document")}</span>
                          </div>
                          <button
                            type="button"
@@ -3720,7 +3724,7 @@ export function CopilotInterface() {
                            handleSubmit();
                          }
                        }}
-                       placeholder={pendingInterrupt?.kind === "clarify" ? "Type your answer…" : "Ask anything..."}
+                       placeholder={pendingInterrupt?.kind === "clarify" ? t("composer.typeAnswer") : t("composer.askAnything")}
                        className="w-full max-h-48 px-5 pt-4 pb-2 bg-transparent border-none focus:outline-none focus:ring-0 resize-none text-[16px] text-slate-900 placeholder:text-slate-400"
                        style={{ minHeight: "60px" }}
                      />
@@ -3729,7 +3733,7 @@ export function CopilotInterface() {
                        <div className="flex items-center gap-1">
                          <button type="button" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors">
                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4M4 12h16"/></svg>
-                           Attach
+                           {t("composer.attach")}
                          </button>
                        </div>
                        <div className="flex items-center">
@@ -3893,7 +3897,7 @@ export function CopilotInterface() {
                   </span>
                 </div>
               </div>
-              <button onClick={handleClearChat} title="Clear chat" className="p-2 rounded-full hover:bg-white/15 transition-colors">
+              <button onClick={handleClearChat} title={t("header.clearChat")} className="p-2 rounded-full hover:bg-white/15 transition-colors">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
               </button>
             </div>
@@ -4257,7 +4261,7 @@ export function CopilotInterface() {
                 />
                 {/* Pill input with inline actions */}
                 <div className="flex-1 flex items-center gap-0.5 bg-slate-100 rounded-full pl-1.5 pr-1 py-1 focus-within:ring-2 focus-within:ring-blue-400/50 transition-all">
-                  <button type="button" onClick={() => fileInputRef.current?.click()} title="Attach Document"
+                  <button type="button" onClick={() => fileInputRef.current?.click()} title={t("composer.attachDocument")}
                     className="p-2 text-slate-400 hover:text-blue-600 rounded-full transition-all shrink-0">
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
                   </button>
@@ -4265,16 +4269,16 @@ export function CopilotInterface() {
                     type="text"
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    placeholder={pendingInterrupt?.kind === "clarify" ? "Type your answer…" : "Message…"}
+                    placeholder={pendingInterrupt?.kind === "clarify" ? t("composer.typeAnswer") : t("composer.message")}
                     className="flex-1 bg-transparent text-slate-900 py-1.5 focus:outline-none text-[14px] placeholder:text-slate-400 min-w-0 disabled:opacity-50"
                     disabled={isLoading || isUploading}
                   />
-                  <button type="button" onClick={() => setShowVoice(true)} title="Live Voice Agent"
+                  <button type="button" onClick={() => setShowVoice(true)} title={t("composer.voiceAgent")}
                     className="p-2 text-slate-400 hover:text-blue-600 rounded-full transition-all shrink-0">
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 18v-6a9 9 0 0118 0v6M3 18a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3v5zm16 0a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3v5z" /></svg>
                   </button>
                   <button type="button" onMouseDown={startRecording} onMouseUp={stopRecording}
-                    onMouseLeave={() => isRecording && stopRecording()} title="Hold to dictate"
+                    onMouseLeave={() => isRecording && stopRecording()} title={t("composer.holdToDictate")}
                     className={`p-2 rounded-full transition-all shrink-0 ${isRecording ? "bg-rose-100 text-rose-600 animate-pulse" : "text-slate-400 hover:text-blue-600"}`}>
                     {isRecording
                       ? <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>

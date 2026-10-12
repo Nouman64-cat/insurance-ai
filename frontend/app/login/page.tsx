@@ -4,9 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { safeNext, startSso } from "@/lib/sso";
 import api from "@/app/services/api";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -95,7 +98,7 @@ export default function LoginPage() {
       setError(
         err.response?.data?.detail ??
         err.message ??
-        "Invalid credentials or connection error."
+        t("login.failed")
       );
     } finally {
       setLoading(false);
@@ -104,6 +107,10 @@ export default function LoginPage() {
 
   return (
     <div className="relative min-h-screen flex items-center justify-center bg-slate-950 overflow-hidden font-sans">
+      <div className="absolute top-4 end-4 z-20">
+        <LanguageSwitcher dark />
+      </div>
+
       {/* ── Background decoration elements ── */}
       <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[60%] rounded-full bg-blue-900/10 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[60%] rounded-full bg-blue-900/10 blur-[120px] pointer-events-none" />
@@ -122,7 +129,7 @@ export default function LoginPage() {
             <h1 className="text-2xl font-bold text-white tracking-tight">
               insurance<span className="text-blue-500">-ai</span>
             </h1>
-            <p className="text-xs text-slate-400 mt-1">Underwriting & Decision Portal</p>
+            <p className="text-xs text-slate-400 mt-1">{t("login.subtitle")}</p>
           </div>
 
           {/* Form */}
@@ -136,11 +143,12 @@ export default function LoginPage() {
             {/* Email Address */}
             <div className="space-y-1.5">
               <label htmlFor="email" className="block text-xs font-semibold text-slate-300">
-                Email Address
+                {t("login.email")}
               </label>
               <input
                 id="email"
                 type="email"
+                dir="ltr"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -153,13 +161,14 @@ export default function LoginPage() {
             <div className="space-y-1.5">
               <div className="flex justify-between items-center">
                 <label htmlFor="password" className="block text-xs font-semibold text-slate-300">
-                  Password
+                  {t("login.password")}
                 </label>
               </div>
               <div className="relative">
                 <input
                   id="password"
                   type={showPassword ? "text" : "password"}
+                  dir="ltr"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -169,7 +178,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword((prev) => !prev)}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-label={showPassword ? t("login.hidePassword") : t("login.showPassword")}
                   className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-200 transition-colors"
                 >
                   {showPassword ? (
@@ -194,14 +203,14 @@ export default function LoginPage() {
             >
               {loading ? (
                 <>
-                  <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                  <svg className="animate-spin -ms-1 me-3 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                   </svg>
-                  Authenticating...
+                  {t("login.authenticating")}
                 </>
               ) : (
-                "Sign In"
+                t("login.signIn")
               )}
             </button>
           </form>
@@ -209,7 +218,7 @@ export default function LoginPage() {
           {/* Footer inside Card */}
           <div className="mt-6 pt-6 border-t border-slate-800/60 text-center">
             <p className="text-[10px] text-slate-500">
-              Authorized personnel only. All access is logged and monitored.
+              {t("login.notice")}
             </p>
           </div>
         </div>

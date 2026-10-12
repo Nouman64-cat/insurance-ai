@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import api from "@/app/services/api";
 import { PORTAL_URL } from "@/lib/portal";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 
 // Signs this app in from the portal's session. Nothing to type: if the user is signed in on the manual dashboard
 // they are signed in here, as the same user. If they are not, they are sent to the portal's sign-in page and
@@ -22,6 +23,7 @@ function clearLocal() {
 }
 
 export default function SsoGate({ children }: { children: ReactNode }) {
+  const { t } = useI18n();
   const [ready, setReady] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const tokenRef = useRef<string | null>(null);
@@ -34,12 +36,12 @@ export default function SsoGate({ children }: { children: ReactNode }) {
       try {
         res = await fetch("/api/sso/session", { cache: "no-store", credentials: "same-origin" });
       } catch {
-        if (initial && !cancelled) setProblem("The sign-in service could not be reached. Retrying…");
+        if (initial && !cancelled) setProblem(t("sso.unreachable"));
         return;
       }
       if (cancelled) return;
       if (res.status === 401) { clearLocal(); toPortalLogin(); return; }
-      if (!res.ok) { if (initial) setProblem("The sign-in service is not responding. Retrying…"); return; }
+      if (!res.ok) { if (initial) setProblem(t("sso.notResponding")); return; }
 
       const { token, user } = await res.json();
       // A different person signed in on the portal since this page loaded: start over as them.
@@ -74,7 +76,7 @@ export default function SsoGate({ children }: { children: ReactNode }) {
   if (!ready) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50 text-sm text-slate-500">
-        {problem ?? "Signing you in from the portal…"}
+        {problem ?? t("sso.signingIn")}
       </div>
     );
   }
