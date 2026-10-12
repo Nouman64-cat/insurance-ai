@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { MetricCard } from "@/components/MetricCard";
 import { UnderwritingCard } from "@/components/dashboard/UnderwritingCard";
 import { FraudCard } from "@/components/dashboard/FraudCard";
@@ -39,6 +40,8 @@ function inRange(dateStr: string, range: DateRange): boolean {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [claims, setClaims] = useState<Claim[]>([]);
   const [policies, setPolicies] = useState<PolicyListItem[]>([]);
   const [policyStats, setPolicyStats] = useState<PolicyStats | null>(null);
@@ -78,10 +81,21 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
+    const role = typeof window !== "undefined" ? localStorage.getItem("user_role") : null;
+    if (role && role !== "Admin") {
+      setAuthorized(false);
+      let target = "/cases";
+      if (role === "SuperAdmin") target = "/super-admin/tenants";
+      else if (role === "Agent" || role === "Broker") target = "/proposal";
+      else if (role === "ClaimsAdjuster" || role === "ClaimsManager") target = "/claims";
+      router.replace(target);
+      return;
+    }
+    setAuthorized(true);
     fetchAll();
     const interval = setInterval(fetchAll, REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, []);
+  }, [router]);
 
   const regions = distinctRegions(branches);
   const payeeRegionById = new Map(payees.map((p: CommissionPayee) => [p.id, resolvePayeeRegion(p.branch, branches)]));
@@ -153,6 +167,10 @@ export default function DashboardPage() {
       accent: "blue" as const,
     },
   ];
+
+  if (authorized === false) {
+    return null;
+  }
 
   return (
     <div className="px-6 py-4 max-w-screen-2xl mx-auto w-full space-y-4">

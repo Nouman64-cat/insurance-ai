@@ -72,6 +72,7 @@ def _customer_dict(customer: Optional[Customer]) -> dict:
         "is_smoker": customer.is_smoker,
         "height_cm": customer.height_cm,
         "weight_kg": customer.weight_kg,
+        "details": customer.details,
     }
 
 

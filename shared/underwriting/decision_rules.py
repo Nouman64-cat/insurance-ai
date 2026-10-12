@@ -65,6 +65,9 @@ def decide(
 
     if medical.risk_class == MedicalRiskClass.MEDICAL_REVIEW_REQUIRED or medical.requires_human_review:
         reasons.append("Medical findings are ambiguous or inconclusive — underwriter review required.")
+        # Plain-string reasons are the deterministic floor's explanations
+    
+        reasons.extend(r for r in medical.reasons if isinstance(r, str))
         return UnderwritingDecision.HUMAN_REVIEW, reasons
 
     if not financial.financially_justified:
