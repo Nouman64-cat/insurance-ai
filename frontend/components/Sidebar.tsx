@@ -85,6 +85,7 @@ const NAV_ITEMS = [
           </svg>
         ),
         badge: null,
+        adminOnly: true,
       },
       {
         href: "/claims/dashboard",
@@ -98,6 +99,7 @@ const NAV_ITEMS = [
           </svg>
         ),
         badge: null,
+        adminOnly: true,
       },
       {
         href: "/commissions",
@@ -109,6 +111,7 @@ const NAV_ITEMS = [
           </svg>
         ),
         badge: null,
+        adminOnly: true,
       },
     ],
   },
@@ -690,7 +693,18 @@ export function Sidebar() {
     >
       {/* ── Brand ─────────────────────────────────────────────────────────── */}
       <div className={`flex items-center border-b border-slate-100 flex-shrink-0 ${collapsed ? "flex-col justify-center py-4 gap-4" : "justify-between h-16 px-4"}`}>
-        <Link href="/" className="flex items-center gap-2.5 overflow-hidden">
+        <Link
+          href={
+            userRole === "Admin"
+              ? "/"
+              : userRole === "SuperAdmin"
+              ? "/super-admin/tenants"
+              : userRole === "Agent" || userRole === "Broker"
+              ? "/proposal"
+              : "/cases"
+          }
+          className="flex items-center gap-2.5 overflow-hidden"
+        >
           <span className="text-blue-600 flex-shrink-0">
             <ShieldIcon />
           </span>

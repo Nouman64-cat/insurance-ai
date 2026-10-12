@@ -91,9 +91,21 @@ export default function LoginPage() {
         delete api.defaults.headers.common["X-Tenant-Id"];
       }
 
-      // The tenant dashboard has nothing to show a SuperAdmin — land on the platform console.
+      // A validated ?next= (SSO / Automation Chat return) wins; otherwise only Admin
+      // lands on the executive dashboard ("/") and other roles go to their work consoles.
       const back = safeNext(new URLSearchParams(window.location.search).get("next"));
-      window.location.href = back ?? (profileResponse.data.role_name === "SuperAdmin" ? "/super-admin/tenants" : "/");
+      const userRoleName = profileResponse.data.role_name;
+      let targetPath = "/";
+      if (userRoleName === "SuperAdmin") {
+        targetPath = "/super-admin/tenants";
+      } else if (userRoleName === "Agent" || userRoleName === "Broker") {
+        targetPath = "/proposal";
+      } else if (userRoleName === "ClaimsAdjuster" || userRoleName === "ClaimsManager") {
+        targetPath = "/claims";
+      } else if (userRoleName !== "Admin") {
+        targetPath = "/cases";
+      }
+      window.location.href = back ?? targetPath;
     } catch (err: any) {
       setError(
         err.response?.data?.detail ??
