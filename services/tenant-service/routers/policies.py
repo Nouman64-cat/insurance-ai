@@ -23,6 +23,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
+from routers.auth import optional_oauth2_scheme, source_scope
 from services import payment_gateway
 from services.env_mode import is_demo
 from family_approval import pending_insured_members, waiting_message
@@ -85,6 +86,30 @@ class PaymentConfirmRequest(BaseModel):
 def _st(p) -> str:
     """String-safe status extractor — avoids VARCHAR vs enum cast errors."""
     return p.status.value if hasattr(p.status, "value") else str(p.status)
+
+
+async def _policy_in_scope(
+    policy_id: UUID,
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """A login issued to an acquisition source (agent, broker, bank desk…) only sees
+    policies for customers that source brought in. 404 rather than 403, so another
+    producer's policy ids can't be probed. Staff logins are unrestricted."""
+    scope = await source_scope(token, session)
+    if scope is None:
+        return
+    policy = await session.get(Policy, policy_id)
+    customer = await session.get(Customer, policy.customer_id) if policy else None
+    if not customer or customer.acquisition_source_id not in scope:
+        raise HTTPException(404, "Policy not found")
+
+
+def _scoped(q, scope: Optional[set[UUID]]):
+    """Limits a Policy query to the caller's acquisition sources (no-op for staff)."""
+    if scope is None:
+        return q
+    return q.join(Customer, Policy.customer_id == Customer.id).where(Customer.acquisition_source_id.in_(scope))
 
 
 async def _get_policy(session: AsyncSession, tenant_id: UUID, policy_id: UUID) -> Policy:
@@ -457,8 +482,13 @@ async def _close_cases_and_promote(session: AsyncSession, policy: Policy) -> Non
 # ── GET /stats ────────────────────────────────────────────────────────────────
 
 @router.get("/tenants/{tenant_id}/policies/stats")
-async def policy_stats(tenant_id: UUID, session: AsyncSession = Depends(get_session)):
-    result = await session.exec(select(Policy).where(Policy.tenant_id == tenant_id))
+async def policy_stats(
+    tenant_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    scope = await source_scope(token, session)
+    result = await session.exec(_scoped(select(Policy).where(Policy.tenant_id == tenant_id), scope))
     all_policies = list(result.all())
     today = date.today()
     return {
@@ -482,12 +512,14 @@ async def upcoming_renewals(
     tenant_id: UUID,
     days: int = Query(90, ge=1, le=365),
     session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
 ):
     today = date.today()
+    scope = await source_scope(token, session)
     # Group-life certificates renew at master-policy level, not one by one.
-    result = await session.exec(
-        select(Policy).where(Policy.tenant_id == tenant_id, Policy.master_policy_id.is_(None))
-    )
+    result = await session.exec(_scoped(
+        select(Policy).where(Policy.tenant_id == tenant_id, Policy.master_policy_id.is_(None)), scope
+    ))
     upcoming = []
     for p in result.all():
         # _st() returns the enum *value* ("Active" / "GracePeriod"). Comparing
@@ -530,8 +562,10 @@ async def list_policies(
     assigned_agent_id: Optional[UUID] = None,
     family_group_id: Optional[UUID] = None,
     session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
 ):
-    q = select(Policy).where(Policy.tenant_id == tenant_id)
+    scope = await source_scope(token, session)
+    q = _scoped(select(Policy).where(Policy.tenant_id == tenant_id), scope)
     if customer_id:
         q = q.where(Policy.customer_id == customer_id)
     if family_group_id:
@@ -539,7 +573,9 @@ async def list_policies(
 
     # To filter by assigned_agent_id, we need to join with Customer or Case?
     # Policy doesn't have assigned_agent_id, but Customer does.
-    if assigned_agent_id:
+    # A source login is already limited to its source's book above (its leads usually have
+    # no assigned agent, so filtering by agent would hide them).
+    if assigned_agent_id and scope is None:
         q = q.join(Customer, Policy.customer_id == Customer.id).where(Customer.assigned_agent_id == assigned_agent_id)
 
     result = await session.exec(q)
@@ -593,7 +629,7 @@ async def list_policies(
 
 # ── GET /policies/{pid} ───────────────────────────────────────────────────────
 
-@router.get("/tenants/{tenant_id}/policies/{policy_id}")
+@router.get("/tenants/{tenant_id}/policies/{policy_id}", dependencies=[Depends(_policy_in_scope)])
 async def get_policy_detail(
     tenant_id: UUID, policy_id: UUID,
     session: AsyncSession = Depends(get_session),
@@ -682,7 +718,7 @@ async def get_policy_detail(
 # Pricing stays decoupled via PricingEngine.calculate(); the whole draft is one
 # atomic transaction; every status change goes through the state machine.
 
-@router.get("/tenants/{tenant_id}/policies/{policy_id}/issuance-preview")
+@router.get("/tenants/{tenant_id}/policies/{policy_id}/issuance-preview", dependencies=[Depends(_policy_in_scope)])
 async def issuance_preview(
     tenant_id: UUID, policy_id: UUID,
     session: AsyncSession = Depends(get_session),
@@ -734,7 +770,7 @@ async def issuance_preview(
     }
 
 
-@router.post("/tenants/{tenant_id}/policies/{policy_id}/issue")
+@router.post("/tenants/{tenant_id}/policies/{policy_id}/issue", dependencies=[Depends(_policy_in_scope)])
 async def issue_policy(
     tenant_id: UUID, policy_id: UUID,
     request: Request,
@@ -936,7 +972,7 @@ async def issue_policy(
 # card, bank transfer) for a policy already sitting in PENDING_PAYMENT. Refreshes
 # the pending installment's payment_reference to the chosen channel's intent.
 
-@router.post("/tenants/{tenant_id}/policies/{policy_id}/payments/initiate")
+@router.post("/tenants/{tenant_id}/policies/{policy_id}/payments/initiate", dependencies=[Depends(_policy_in_scope)])
 async def initiate_payment(
     tenant_id: UUID, policy_id: UUID,
     body: PaymentInitiateRequest,
@@ -972,7 +1008,7 @@ async def initiate_payment(
 # binds cover: PENDING_PAYMENT → ACTIVE, closes underwriting cases, promotes the
 # customer to POLICYHOLDER. This is the single gate that activates a policy.
 
-@router.post("/tenants/{tenant_id}/policies/{policy_id}/payments/confirm")
+@router.post("/tenants/{tenant_id}/policies/{policy_id}/payments/confirm", dependencies=[Depends(_policy_in_scope)])
 async def confirm_payment(
     tenant_id: UUID, policy_id: UUID,
     request: Request,
@@ -1242,7 +1278,7 @@ async def confirm_payment(
 
 # ── GET /documents ────────────────────────────────────────────────────────────
 
-@router.get("/tenants/{tenant_id}/policies/{policy_id}/documents")
+@router.get("/tenants/{tenant_id}/policies/{policy_id}/documents", dependencies=[Depends(_policy_in_scope)])
 async def list_policy_documents(
     tenant_id: UUID, policy_id: UUID,
     session: AsyncSession = Depends(get_session),
@@ -1264,7 +1300,7 @@ async def list_policy_documents(
 
 # ── GET /events (lifecycle audit trail) ───────────────────────────────────────
 
-@router.get("/tenants/{tenant_id}/policies/{policy_id}/events")
+@router.get("/tenants/{tenant_id}/policies/{policy_id}/events", dependencies=[Depends(_policy_in_scope)])
 async def list_policy_events(
     tenant_id: UUID, policy_id: UUID,
     session: AsyncSession = Depends(get_session),
