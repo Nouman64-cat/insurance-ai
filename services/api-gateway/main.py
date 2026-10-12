@@ -796,6 +796,11 @@ async def proxy_tenant_policies(tenant_id: UUID, path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/policies{path}")
 
 
+@app.api_route("/tenants/{tenant_id}/commissions/{path:path}", methods=["GET", "POST", "PUT"])
+async def proxy_tenant_commissions(tenant_id: UUID, path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/commissions/{path}")
+
+
 @app.api_route("/tenants/{tenant_id}/requirements{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)
 async def proxy_tenant_requirements(tenant_id: UUID, path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/requirements{path}")

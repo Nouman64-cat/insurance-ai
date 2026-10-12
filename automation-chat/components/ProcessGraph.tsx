@@ -2,6 +2,7 @@
 
 import React from "react";
 import type { ProcessStep } from "@/lib/agent/types";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 
 /**
  * Live state-graph of the agent's current turn, rendered as a vertical
@@ -40,6 +41,7 @@ function NodeIcon({ status }: { status: ProcessStep["status"] }) {
 }
 
 export function ProcessGraph({ steps, compact = false }: { steps: ProcessStep[]; compact?: boolean }) {
+  const { t } = useI18n();
   if (steps.length === 0) return null;
 
   return (
@@ -52,7 +54,7 @@ export function ProcessGraph({ steps, compact = false }: { steps: ProcessStep[];
           <circle cx="5" cy="6" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="18" r="2" />
           <path d="M7 7l3 3M14 13l3 3" strokeLinecap="round" />
         </svg>
-        Process
+        {t("panel.process")}
       </p>
       <ol className="relative">
         {steps.map((step, i) => {
@@ -77,6 +79,7 @@ export function ProcessGraph({ steps, compact = false }: { steps: ProcessStep[];
               {/* Label */}
               <div className={`pb-2 ${isLast ? "pb-0" : ""} min-w-0`}>
                 <p
+                  dir="auto"
                   className={`text-[12px] leading-5 font-semibold truncate ${
                     step.status === "active"
                       ? "text-blue-700 animate-pulse"

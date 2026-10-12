@@ -693,6 +693,7 @@ async def collect_installment(
     """Collect one installment (gateway or manual). Marks it PAID and, if this
     clears the arrears on a grace-period policy, revives it (GRACE_PERIOD → ACTIVE)."""
     policy = await _get_policy(session, tenant_id, policy_id)
+    await session.refresh(policy, with_for_update=True)
     _assert_in_force(policy)
     schedule = await _get_schedule(session, policy_id, schedule_id)
     if schedule.status not in (PremiumScheduleStatusEnum.PENDING, PremiumScheduleStatusEnum.OVERDUE):
@@ -731,7 +732,7 @@ async def collect_installment(
     # ── Receipt (with any surcharge) + agent commission on this collection ─────
     customer = await session.get(Customer, policy.customer_id)
     tenant = await session.get(Tenant, policy.tenant_id)
-    commission_pct = insurer_config.AGENT_COMMISSION_PCT
+    commission_pct = 0.0  # Actual earnings are posted by commission_engine; never use a default rate.
     commission_amount = round(base * commission_pct / 100.0, 2)
     agent_id = str(customer.assigned_agent_id) if (customer and customer.assigned_agent_id) else "unassigned"
     receipt_no = await _next_receipt_no(session, tenant_id)
@@ -751,6 +752,9 @@ async def collect_installment(
         document_path=kit["file_path"],
     )
     session.add(receipt)
+    from services.commission_engine import accrue_receipt
+    await accrue_receipt(session, receipt)
+    commission_amount = receipt.commission_amount
 
     events = [record_event(
         session, policy, event_type="PremiumCollected",
@@ -786,6 +790,7 @@ async def bulk_collect_premiums(
 ):
     """Settle an arbitrary lump sum sequentially across the policy's upcoming installments."""
     policy = await _get_policy(session, tenant_id, policy_id)
+    await session.refresh(policy, with_for_update=True)
     _assert_in_force(policy)
     
     if body.amount <= 0:
@@ -807,7 +812,7 @@ async def bulk_collect_premiums(
     
     customer = await session.get(Customer, policy.customer_id)
     tenant = await session.get(Tenant, policy.tenant_id)
-    commission_pct = insurer_config.AGENT_COMMISSION_PCT
+    commission_pct = 0.0  # Actual earnings are posted by commission_engine; never use a default rate.
     agent_id = str(customer.assigned_agent_id) if (customer and customer.assigned_agent_id) else "unassigned"
 
     for schedule in schedules:
@@ -887,6 +892,9 @@ async def bulk_collect_premiums(
             document_path=kit["file_path"],
         )
         session.add(receipt)
+        from services.commission_engine import accrue_receipt
+        await accrue_receipt(session, receipt)
+        commission_amount = receipt.commission_amount
 
         events.append(record_event(
             session, policy, event_type="PremiumCollected",

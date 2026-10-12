@@ -38,7 +38,7 @@ const ur: Messages = {
   header: {
     showHistory: "چیٹ کی تاریخ دکھائیں",
     hideHistory: "چیٹ کی تاریخ چھپائیں",
-    beta: "بیٹا",
+    beta: "آزمائشی",
     journeyMap: "سفر کا نقشہ",
     backToChat: "چیٹ پر واپس",
     journey: "سفر",
@@ -48,6 +48,7 @@ const ur: Messages = {
   },
   composer: {
     welcome: "آج میں آپ کی کیا مدد کر سکتا ہوں؟",
+    greeting: "السلام علیکم! میں آپ کا AI انڈر رائٹنگ کو پائلٹ ہوں۔ میں درخواست دہندگان کی آن بورڈنگ، رسک اسیسمنٹ چلانے، یا کیس کی تفصیلات فوراً نکالنے میں مدد کر سکتا ہوں۔ آج آپ کیا خودکار کرنا چاہیں گے؟",
     askAnything: "کچھ بھی پوچھیں...",
     message: "پیغام…",
     typeAnswer: "اپنا جواب لکھیں…",
@@ -55,6 +56,13 @@ const ur: Messages = {
     attachDocument: "دستاویز منسلک کریں",
     voiceAgent: "لائیو وائس ایجنٹ",
     holdToDictate: "بول کر لکھوانے کے لیے دبائے رکھیں",
+  },
+  panel: {
+    pipeline: "پائپ لائن",
+    process: "عمل",
+    noProcess: "اس وقت کوئی عمل جاری نہیں۔",
+    suggestedActions: "تجویز کردہ اقدامات",
+    suggestedNextActions: "تجویز کردہ اگلے اقدامات",
   },
   messageActions: {
     copy: "کاپی",

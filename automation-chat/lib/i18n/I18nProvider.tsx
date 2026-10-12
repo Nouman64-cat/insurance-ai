@@ -45,12 +45,16 @@ export function I18nProvider({
     document.documentElement.dir = localeDir(next);
   }, [cookieDomain]);
 
+  const dir = localeDir(locale);
   const t = useCallback((key: string, vars?: Vars) => {
     const text = lookup(MESSAGES[locale], key) ?? lookup(en, key) ?? key;
-    return vars ? text.replace(/\{(\w+)\}/g, (match, name) => (name in vars ? String(vars[name]) : match)) : text;
-  }, [locale]);
+    const filled = vars ? text.replace(/\{(\w+)\}/g, (match, name) => (name in vars ? String(vars[name]) : match)) : text;
+    // Each paragraph takes its direction from its first letter (globals.css), so an Urdu string that opens with a
+    // Latin word ("LLM کنفیگریشن") would be laid out left-to-right: the invisible right-to-left mark prevents that.
+    return dir === "rtl" ? `\u200F${filled}` : filled;
+  }, [locale, dir]);
 
-  const value = useMemo(() => ({ locale, dir: localeDir(locale), setLocale, t }), [locale, setLocale, t]);
+  const value = useMemo(() => ({ locale, dir, setLocale, t }), [locale, dir, setLocale, t]);
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 

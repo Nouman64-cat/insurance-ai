@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import type { CustomerSegment } from "@/app/services/cases";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 
 export type SegmentFilter = "all" | CustomerSegment;
 
@@ -100,6 +101,7 @@ interface SegmentDropdownProps {
 }
 
 export function SegmentDropdown({ value, onChange, counts, className = "" }: SegmentDropdownProps) {
+  const { tx } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -147,7 +149,7 @@ export function SegmentDropdown({ value, onChange, counts, className = "" }: Seg
             {selectedOption.icon}
           </span>
           <span className="text-slate-700 whitespace-nowrap">
-            {selectedOption.label}
+            {tx(selectedOption.label)}
           </span>
           {counts?.[selectedOption.value] != null && (
             <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
@@ -157,14 +159,14 @@ export function SegmentDropdown({ value, onChange, counts, className = "" }: Seg
             </span>
           )}
         </div>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`w-4 h-4 ml-1 transition-transform duration-300 ${expanded ? "rotate-180 text-blue-600" : "text-slate-400"}`}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`w-4 h-4 ms-1 transition-transform duration-300 ${expanded ? "rotate-180 text-blue-600" : "text-slate-400"}`}>
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
 
       {expanded && (
         <div 
-          className="absolute top-full left-0 mt-2 w-[220px] bg-white border border-slate-100 rounded-xl shadow-[0_8px_24px_rgb(0,0,0,0.08)] z-50 overflow-hidden py-2"
+          className="absolute top-full start-0 mt-2 w-[220px] bg-white border border-slate-100 rounded-xl shadow-[0_8px_24px_rgb(0,0,0,0.08)] z-50 overflow-hidden py-2"
           style={{ animation: 'slideDown 0.15s ease-out forwards' }}
         >
           {OPTIONS.map((option) => (
@@ -186,7 +188,7 @@ export function SegmentDropdown({ value, onChange, counts, className = "" }: Seg
                   {option.icon}
                 </span>
                 <span className={`font-semibold ${value === option.value ? textColors[option.value] : "text-slate-600"}`}>
-                  {option.label}
+                  {tx(option.label)}
                 </span>
               </div>
               {counts?.[option.value] != null && (

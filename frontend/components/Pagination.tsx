@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 
 /** Rows per page — the same as the Leads board. */
 export const DEFAULT_PAGE_SIZE = 12;
@@ -63,6 +64,7 @@ export function Pagination({
   /** Render as the bottom bar of a table card instead of a card of its own. */
   inline?: boolean;
 }) {
+  const { tx } = useI18n();
   const { page, totalPages, totalItems, pageSize, setPage } = pagination;
   if (totalItems === 0) return null;
   const from = Math.min(totalItems, (page - 1) * pageSize + 1);
@@ -76,18 +78,17 @@ export function Pagination({
       } ${className}`}
     >
       <div className="text-xs text-slate-500">
-        Showing <span className="font-semibold text-slate-700">{from}-{to}</span> of{" "}
-        <span className="font-semibold text-slate-700">{totalItems}</span> {noun}
+        {tx("Showing {from}-{to} of {total} {noun}", { from, to, total: totalItems, noun: tx(noun) })}
       </div>
       <div className="flex items-center gap-2">
         <button type="button" onClick={() => setPage(page - 1)} disabled={page === 1} className={btn}>
-          Previous
+          {tx("Previous")}
         </button>
         <div className="text-xs font-semibold text-slate-700 px-2">
-          Page {page} of {totalPages}
+          {tx("Page {page} of {total}", { page, total: totalPages })}
         </div>
         <button type="button" onClick={() => setPage(page + 1)} disabled={page === totalPages} className={btn}>
-          Next
+          {tx("Next")}
         </button>
       </div>
     </div>

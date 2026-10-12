@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from './api';
-import { fetchPolicies } from './policies';
 
 export type PremiumType = 'FIRST_YEAR' | 'RENEWAL' | 'SINGLE_PREMIUM';
 export type CommissionStatus = 'ACCRUED' | 'PAYABLE' | 'DISBURSED';
@@ -89,55 +88,27 @@ export interface CommissionEntry {
   ratePct: number;
   collectedPremium: number;
   grossCommission: number;
-  whtTax: number;
-  netCommission: number;
+  splitPct: number;
   gatingReason: string;
 }
 
-/**
- * This agent's own commission ledger. There's no dedicated commission table
- * yet (same limitation as the web portal's Commission Hub) — entries are
- * derived from the agent's own policies (already scoped via fetchPolicies),
- * so unlike the portal's ledger there's no need to fake-assign an owning
- * agent: every policy here already belongs to the signed-in agent.
- */
+/** Read only persisted earnings; never infer collection or disbursement from a policy status. */
 export const fetchMyCommissionLedger = async (): Promise<CommissionEntry[]> => {
-  const policies = await fetchPolicies();
-
-  return Promise.all(policies.map(async (p): Promise<CommissionEntry> => {
-    const collectedPremium = p.premium_amount || Math.round(p.coverage_amount * 0.025) || 250000;
-    const status = (p.status || '').toUpperCase();
-    const isRealized = status === 'ACTIVE' || status === 'ISSUED';
-    const isIssued = isRealized || status === 'PENDING_PAYMENT' || status === 'APPROVED';
-    // Policy-year tracking isn't surfaced on the case list yet, so this
-    // ledger only covers new business (year 1) — same limitation the
-    // pre-rule-engine version had, but the rate now varies with segment.
-    const { ratePct } = await evaluateCommissionRule({
-      segment: p.segment,
-      policyYear: 1,
-      premiumType: 'FIRST_YEAR',
-    });
-    const grossCommission = Math.round((collectedPremium * ratePct) / 100);
-    const whtTax = Math.round(grossCommission * 0.1);
-    const netCommission = grossCommission - whtTax;
-
-    return {
-      id: `COM-${p.id.slice(0, 8)}`,
-      policyId: p.id,
-      policyNumber: p.policy_number,
-      customerName: p.customer_name,
-      productName: p.product_name,
-      status: isRealized ? 'DISBURSED' : isIssued ? 'PAYABLE' : 'ACCRUED',
-      ratePct,
-      collectedPremium,
-      grossCommission,
-      whtTax,
-      netCommission,
-      gatingReason: isRealized
-        ? 'Disbursed to bank account (SECP Rule 58 confirmed)'
-        : isIssued
-        ? 'Payable — issued & cash realized (SECP Rule 58)'
-        : 'Gated — pending cash realization confirmation (SECP Rule 58)',
-    };
-  }));
+  const tenant = await AsyncStorage.getItem('tenant_id');
+  if (!tenant) throw new Error('No tenant session');
+  const entries: CommissionEntry[] = [];
+  let offset = 0;
+  while (true) {
+    const {data} = await api.get(`/tenants/${tenant}/commissions/earnings`, {params: {offset, limit: 500}});
+    entries.push(...data.items.map((e: any): CommissionEntry => ({
+      id: e.id, policyId: e.policy_id, policyNumber: e.snapshot.policy_number,
+      customerName: e.snapshot.customer_name || 'Customer', productName: e.snapshot.product_name || '',
+      status: 'ACCRUED', ratePct: Number(e.rate_pct), splitPct: Number(e.split_pct),
+      collectedPremium: Number(e.basis_amount), grossCommission: Number(e.gross_amount),
+      gatingReason: `Receipt ${e.snapshot.receipt_no} · ${e.snapshot.agreement_code} v${e.snapshot.agreement_version}. Tax and settlement are not enabled.`,
+    })));
+    offset += data.items.length;
+    if (!data.items.length || offset >= data.total) break;
+  }
+  return entries;
 };

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 
 // A generic, elegant single-select combobox — the same accessible listbox
 // pattern as StatusDropdown/SegmentDropdown (button + popup listbox, arrow-key
@@ -33,13 +34,15 @@ export function FancyDropdown({
   value,
   onChange,
   options,
-  placeholder = "Select…",
+  placeholder,
   searchable = false,
   disabled = false,
   className = "",
   panelClassName = "",
   size = "md",
 }: FancyDropdownProps) {
+  // Option labels and the placeholder are translated here, so callers can keep passing English wording.
+  const { tx } = useI18n();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -128,8 +131,8 @@ export function FancyDropdown({
       >
         {selected?.dot && <span className={`w-2 h-2 rounded-full shrink-0 ${selected.dot}`} />}
         {selected?.icon && <span className="shrink-0">{selected.icon}</span>}
-        <span className={`flex-1 min-w-0 truncate text-left ${selected ? "" : "text-slate-400 font-normal"}`}>
-          {selected?.label ?? placeholder}
+        <span className={`flex-1 min-w-0 truncate text-start ${selected ? "" : "text-slate-400 font-normal"}`}>
+          {selected ? tx(selected.label) : placeholder ? tx(placeholder) : tx("Select…")}
         </span>
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -162,7 +165,7 @@ export function FancyDropdown({
                 setActiveIndex(0);
               }}
               onKeyDown={handleListKeyDown}
-              placeholder="Search…"
+              placeholder={tx("Search…")}
               className="w-full text-xs px-2 py-1.5 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
             />
           </div>
@@ -176,7 +179,7 @@ export function FancyDropdown({
           onKeyDown={handleListKeyDown}
           className="py-1.5 max-h-64 overflow-y-auto focus:outline-none"
         >
-          {filtered.length === 0 && <li className="px-3 py-3 text-xs text-slate-400 text-center">No matches</li>}
+          {filtered.length === 0 && <li className="px-3 py-3 text-xs text-slate-400 text-center">{tx("No matches")}</li>}
           {filtered.map((option, index) => {
             const isSelected = option.value === value;
             const isActive = index === activeIndex;
@@ -197,7 +200,7 @@ export function FancyDropdown({
                 {option.icon && <span className="shrink-0">{option.icon}</span>}
                 <span className="flex-1 min-w-0">
                   <span className={`block text-sm font-semibold truncate ${isSelected ? "text-blue-700" : "text-slate-700"}`}>
-                    {option.label}
+                    {tx(option.label)}
                   </span>
                   {option.description && <span className="block text-xs text-slate-400 truncate">{option.description}</span>}
                 </span>

@@ -17,6 +17,12 @@ html[lang="ur"] {
 html[lang="ur"] body * {
   letter-spacing: normal !important;
 }
+/* In the right-to-left layout, every paragraph takes its direction from its own first letter, so English text (names,
+   data, pages not yet translated) keeps its punctuation and word order instead of being laid out as if it were Urdu.
+   Only the text inside an element is affected; the page layout itself stays right-to-left. */
+html[dir="rtl"] body * {
+  unicode-bidi: plaintext;
+}
 
 @layer base {
   html {

@@ -391,26 +391,19 @@ class (the open quote is withdrawn — re-quote). For a Takaful scheme **get_gro
 shows the fund. Never say "premium" for Takaful — it is a contribution."""
 
 DOMAIN_PROMPTS["commission"] = """
-
-## COMMISSION ENGINE
-
-### CRITICAL: Commission Types / Rate Cards vs Underwriting Business Rules
-- "Commission Type", "Commission Rate Card", "Commission Rule", or "Add Rate Card Rule" refers strictly to **Commission Rate Card Rules** in the Commission Engine (page `/commissions/types`). Call **create_commission_rule**, **list_commission_rules**, **update_commission_rule**, **toggle_commission_rule_active**, or **delete_commission_rule**.
-- "Add Bonus", "Add Bonus Plan", "Performance Bonus", or "Incentive Scheme" refers strictly to **Performance Bonus Plans** in the Commission Engine (page `/commissions/bonuses`). Call **create_incentive_scheme**, **list_incentive_schemes**, **update_incentive_scheme**, **toggle_incentive_scheme_active**, or **delete_incentive_scheme**.
-- **NEVER** call `add_rule_to_version` or `create_rule_set` when the user asks to add or edit a commission type, commission rate card, or bonus plan. The Rule Engine (`/admin/rule-engine`) is ONLY for underwriting risk and eligibility rules (like NML, AML, loadings).
-
-### Commission Rate Cards & Incentive Plans Management
-- **list_commission_rules**: List or search commission rate card rules by channel, segment, or payee role.
-- **create_commission_rule**: Create a new commission rate card rule (rate %, channel, payee role, policy year, statutory vs contractual).
-- **update_commission_rule** / **toggle_commission_rule_active** / **delete_commission_rule**: Manage existing rate card rules.
-- **list_incentive_schemes**: List performance bonus plans.
-- **create_incentive_scheme**: Create a performance bonus plan / retention incentive scheme (kind, metric, threshold, reward % or amount).
-- **update_incentive_scheme** / **toggle_incentive_scheme_active** / **delete_incentive_scheme**: Manage existing bonus plans.
-
-### Waterfall & Ledger Calculations
-**calculate_commission** previews the full waterfall for a policy — producer commission, hierarchy overrides, partner and referral fees, tax withholding. **get_commission_ledger** and **get_agent_statement** report what is owed and to whom; **get_commission_summary** is the portfolio-level view.
-
-Payouts are maker–checker: **create_payout_run** assembles due tranches, **approve_payout_run** releases them, and the approver must not be the maker. Always name the period and the total before creating or approving a run."""
+## COMMISSION EARNINGS
+The commission backend posts accrued gross earnings from recorded premium receipts
+and approved contractual producer agreements. The portal is /commissions.
+Use **list_commission_payees**, **get_commission_ledger**, **get_agent_statement**
+and **get_commission_summary** for persisted data. Statements use posting dates.
+Never infer payment from policy status. Tax, release eligibility, payouts,
+clawbacks, incentives and group/family allocation are not enabled yet.
+**get_commission_rate_card** explains agreement configuration; rates are not
+statutory defaults. Administrators create agreements in the portal; a different
+administrator approves them. Do not use underwriting rule tools to alter these
+agreements. Prototype mutation/calculator tools return an unavailable result;
+never describe them as having changed a financial record.
+"""
 
 
 AGENT_ROLE_RESTRICTION_TEMPLATE = (

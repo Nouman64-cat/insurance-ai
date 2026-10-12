@@ -4490,121 +4490,53 @@ async def _archive_rule_version(args: dict, ctx: Ctx) -> dict:
 # ═══════════════════════════════════════════════════════════════════════════
 # Commission engine
 #
-# Split brain, deliberately, until the backend lands:
-#
-#   get_commission_rate_card  — REAL. The SECP statutory rate card is seeded
-#                               into the rule engine (commission.secp_rate_card)
-#                               so the rate comes from the same place the
-#                               portal reads it from.
-#   everything else           — CLIENT-EXECUTED. The payee registry, waterfall,
-#                               ledger and payout runs live in the browser
-#                               (frontend/app/services/commissions.ts) because
-#                               there is no commission table yet. The browser
-#                               already holds that state, so the tool hands
-#                               execution to it the same way upload_document
-#                               and issue_policy do.
-#
-# When routers/commissions.py exists, these handlers move server-side and the
-# client-execute markers come out. The tool contract stays the same.
-# ═══════════════════════════════════════════════════════════════════════════
-
-_COMMISSION_CLIENT_TOOLS = {
-    "list_commission_payees",
-    "calculate_commission",
-    "get_commission_ledger",
-    "get_agent_statement",
-    "get_commission_summary",
-    "create_payout_run",
-    "approve_payout_run",
-    "list_commission_rules",
-    "create_commission_rule",
-    "update_commission_rule",
-    "delete_commission_rule",
-    "toggle_commission_rule_active",
-    "list_incentive_schemes",
-    "create_incentive_scheme",
-    "update_incentive_scheme",
-    "delete_incentive_scheme",
-    "toggle_incentive_scheme_active",
-}
-
+# Earnings reads use the tenant-service system of record. Prototype financial
+# mutations are disabled until their backend milestones are implemented.
 
 def _commission_client_call(name: str, args: dict) -> dict:
-    return {
-        "__client_execute__": True,
-        "kind": "client_execute",
-        "tool_call": {"name": name, "args": args},
-    }
+    return {"success": False, "message": f"{name} is not enabled in the persistent commission engine yet. No financial record was changed.",
+            "quick_actions": [{"label": "Open commission earnings", "actionType": "navigate", "payload": "commissions"}]}
 
 
 @handles("get_commission_rate_card")
 async def _get_commission_rate_card(args: dict, ctx: Ctx) -> dict:
-    segment = (args.get("segment") or "individual").lower()
-    category = {"group": "Group", "family": "Family"}.get(segment, "Individual")
-    policy_year = int(args.get("policy_year") or 1)
-    premium_type = args.get("premium_type") or ("FIRST_YEAR" if policy_year == 1 else "RENEWAL")
+    return {"success": True, "message": "Earnings use the approved contractual agreement assigned to each producer and policy. There is no automatic statutory default rate. Administrators can inspect and approve agreements in Commission earnings.",
+            "quick_actions": [{"label": "Open agreements", "actionType": "navigate", "payload": "commissions"}]}
 
-    res = await ctx.client.post(
-        _rules(ctx, "/evaluate"),
-        json={
-            "rule_set_code": "commission.secp_rate_card",
-            "context": {
-                "category": category,
-                "policy_year": policy_year,
-                "premium_type": premium_type,
-            },
-            "actor": "AI Copilot",
-        },
-    )
-    res.raise_for_status()
-    payload = res.json()
-    outcome = payload.get("outcome_payload") or {}
-    rate = outcome.get("commission_pct")
-    wht = outcome.get("withholding_tax_pct")
 
-    if rate is None:
-        return {
-            "success": False,
-            "message": (
-                f"The rate card has no rule for {category} / {premium_type} / year {policy_year}. "
-                "Check the commission.secp_rate_card rule set."
-            ),
-            "evaluation": payload,
-            "quick_actions": [
-                {"label": "View rate card rules", "actionType": "submit",
-                 "payload": "Show rule set commission.secp_rate_card"},
-            ],
-        }
-
-    lines = [
-        f"**{category}** · {premium_type.replace('_', ' ').title()} · policy year {policy_year}",
-        "",
-        f"- Commission: **{rate}%** of premium",
-    ]
-    if wht is not None:
-        lines.append(f"- Withholding tax: **{wht}%** (filer rate; non-filers are doubled under s.233)")
-    if outcome.get("reason"):
-        lines.append(f"\n> {outcome['reason']}")
-
-    return {
-        "success": True,
-        "message": "\n".join(lines),
-        "rate_pct": rate,
-        "withholding_tax_pct": wht,
-        "evaluation": payload,
-        "quick_actions": [
-            {"label": "Open Rate Card", "actionType": "navigate", "payload": "commissions/rate-card"},
-            {"label": "Calculate a policy", "actionType": "submit",
-             "payload": "Calculate the commission waterfall for the most recent policy"},
-            {"label": "View rate card rules", "actionType": "submit",
-             "payload": "Show rule set commission.secp_rate_card"},
-        ],
-    }
+async def _commission_filters(args: dict, ctx: Ctx) -> dict:
+    params = {}
+    if args.get("payee_name"):
+        res = await ctx.client.get(ctx.tsvc("/commissions/payees"))
+        res.raise_for_status()
+        needle = args["payee_name"].strip().casefold()
+        rows = res.json()
+        matches = [p for p in rows if needle in (p["name"].casefold(), p["code"].casefold())]
+        if not matches:
+            matches = [p for p in rows if needle in p["name"].casefold()]
+        if len(matches) != 1:
+            raise ValueError("Specify one exact registered producer name or code")
+        params["source_id"] = matches[0]["id"]
+    if args.get("period"):
+        import calendar
+        from datetime import datetime
+        start = datetime.strptime(args["period"], "%Y-%m")
+        params.update(date_from=start.strftime("%Y-%m-01"), date_to=f"{start.year:04d}-{start.month:02d}-{calendar.monthrange(start.year, start.month)[1]}")
+    return params
 
 
 @handles("list_commission_payees")
 async def _list_commission_payees(args: dict, ctx: Ctx) -> dict:
-    return _commission_client_call("list_commission_payees", args)
+    res = await ctx.client.get(f"{TENANT_SERVICE_URL}/tenants/{ctx.tenant_id}/commissions/payees")
+    res.raise_for_status()
+    rows = res.json()
+    if args.get("search"):
+        needle = args["search"].casefold()
+        rows = [p for p in rows if needle in p["name"].casefold() or needle in p["code"].casefold()]
+    if args.get("channel"):
+        channel = {"DIRECT_AGENCY": "AGENT", "DIGITAL_DIRECT": "DIGITAL"}.get(args["channel"], args["channel"])
+        rows = [p for p in rows if p["channel"] == channel]
+    return {"success": True, "payees": rows, "message": "Registered acquisition-source payees from the commission backend."}
 
 
 @handles("calculate_commission")
@@ -4626,17 +4558,33 @@ async def _calculate_commission(args: dict, ctx: Ctx) -> dict:
 
 @handles("get_commission_ledger")
 async def _get_commission_ledger(args: dict, ctx: Ctx) -> dict:
-    return _commission_client_call("get_commission_ledger", args)
+    if args.get("status") and args["status"] != "ACCRUED":
+        return {"success": False, "message": "Only accrued gross earnings are available. Release and settlement are not enabled."}
+    params = await _commission_filters(args, ctx)
+    params["limit"] = min(100, max(1, int(args.get("limit") or 20)))
+    res = await ctx.client.get(ctx.tsvc("/commissions/earnings"), params=params)
+    res.raise_for_status()
+    return {"success": True, **res.json(), "message": "Persisted accrued gross earnings (first 100). No tax or payment settlement is implied.",
+            "quick_actions": [{"label": "Open earnings", "actionType": "navigate", "payload": "commissions"}]}
 
 
 @handles("get_agent_statement")
 async def _get_agent_statement(args: dict, ctx: Ctx) -> dict:
-    return _commission_client_call("get_agent_statement", args)
+    params = await _commission_filters(args, ctx)
+    if not args.get("period"):
+        from datetime import datetime
+        params = await _commission_filters({**args, "period": datetime.utcnow().strftime("%Y-%m")}, ctx)
+    res = await ctx.client.get(ctx.tsvc("/commissions/summary"), params=params)
+    res.raise_for_status()
+    return {"success": True, **res.json(), "period": params,
+            "message": "Accrued gross statement by posting date. Tax, deductions and settlement are not enabled."}
 
 
 @handles("get_commission_summary")
 async def _get_commission_summary(args: dict, ctx: Ctx) -> dict:
-    return _commission_client_call("get_commission_summary", args)
+    res = await ctx.client.get(f"{TENANT_SERVICE_URL}/tenants/{ctx.tenant_id}/commissions/summary")
+    res.raise_for_status()
+    return {"success": True, **res.json(), "message": "Persisted commission earnings. Settlement is not enabled."}
 
 
 @handles("create_payout_run")

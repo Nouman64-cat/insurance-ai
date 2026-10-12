@@ -3291,3 +3291,8 @@ class RuleEvaluationLog(SQLModel, table=True):
     reasons: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     execution_duration_ms: float = Field(default=0.0)
 
+
+# Register the additive commission earnings tables for every create_all caller.
+from shared.models.commission import (  # noqa: E402,F401
+    CommissionAgreement, CommissionAssignment, CommissionAccrual, CommissionEarning,
+)

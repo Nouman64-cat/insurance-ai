@@ -1649,9 +1649,7 @@ class ListPayeesArgs(BaseModel):
 
 @tool(args_schema=ListPayeesArgs)
 def list_commission_payees(**kwargs) -> str:
-    """List everyone who can be owed commission — producers, sales and branch
-    managers, agencies, brokers, bank partners, referral partners — with their
-    licence status and year-to-date earnings."""
+    """List registered acquisition-source payees from the persistent commission backend."""
     return "{}"
 
 
@@ -1700,8 +1698,7 @@ class LedgerArgs(BaseModel):
 
 @tool(args_schema=LedgerArgs)
 def get_commission_ledger(**kwargs) -> str:
-    """List commission ledger entries — what has been earned, what is payable,
-    what is held and what has been disbursed."""
+    """List persisted accrued gross earnings. Release and settlement are not enabled."""
     return "{}"
 
 
@@ -1712,15 +1709,13 @@ class StatementArgs(BaseModel):
 
 @tool(args_schema=StatementArgs)
 def get_agent_statement(**kwargs) -> str:
-    """Produce one payee's commission statement for a period — gross earnings,
-    deductions, tax withheld and net payable."""
+    """Summarize one payee's accrued gross earnings by posting month. No tax or settlement figures."""
     return "{}"
 
 
 @tool(args_schema=EmptyArgs)
 def get_commission_summary() -> str:
-    """Portfolio-level commission position: total accrued, payable, held and
-    disbursed, plus the top earning producers."""
+    """Summarize persisted accrued gross earnings. Does not imply payout or settlement."""
     return "{}"
 
 

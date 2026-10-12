@@ -17,7 +17,7 @@ from uuid import UUID
 
 from aiokafka import AIOKafkaProducer
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -78,7 +78,7 @@ class PaymentInitiateRequest(BaseModel):
 class PaymentConfirmRequest(BaseModel):
     method: Optional[str] = None
     reference: Optional[str] = None   # echo of the intent reference (webhook style)
-    amount: Optional[float] = None    # defaults to the schedule's amount_due
+    amount: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)  # outstanding balance
     realize: bool = True              # False simulates a failed / abandoned payment
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -414,6 +414,9 @@ async def _bind_cover(
         session, policy, PolicyStatusEnum.ACTIVE,
         event_type="PaymentConfirmed", actor=actor, detail=detail,
     )
+
+    from services.commission_engine import record_binding_receipt
+    await record_binding_receipt(session, policy, detail)
 
     # Start the free-look clock. Delivery = the moment cover binds and docs go
     # out; the statutory window runs from here (NOT effective_date). Stage B
@@ -778,6 +781,7 @@ async def issue_policy(
 ):
     # ── Pre-flight checks (outside transaction — read-only) ──────────────────
     policy = await _get_policy(session, tenant_id, policy_id)
+    await session.refresh(policy, with_for_update=True)
     status_val = _st(policy)
     # An undecided (UnderReview) policy is only waved through to issue in demo mode.
     issuable = ("Approved", "AcceptedWithLoadings", "Issued") + (("UnderReview",) if is_demo() else ())
@@ -1016,6 +1020,7 @@ async def confirm_payment(
     session: AsyncSession = Depends(get_session),
 ):
     policy = await _get_policy(session, tenant_id, policy_id)
+    await session.refresh(policy, with_for_update=True)
     if _st(policy) != PolicyStatusEnum.PENDING_PAYMENT.value:
         raise HTTPException(400, f"Policy is not awaiting payment (current: {_st(policy)})")
 
@@ -1023,7 +1028,11 @@ async def confirm_payment(
     if schedule is None:
         raise HTTPException(400, "No pending premium installment found for this policy")
 
-    amount = body.amount if body.amount is not None else schedule.amount_due
+    from shared.commissions.calculator import money
+    balance = money(schedule.amount_due) - money(schedule.amount_paid)
+    amount = body.amount if body.amount is not None else float(balance)
+    if money(amount) != balance:
+        raise HTTPException(422, "Payment must equal the outstanding first-premium balance")
     reference = body.reference or schedule.payment_reference or payment_gateway.generate_reference(
         payment_gateway.PaymentMethodEnum.JAZZCASH
     )

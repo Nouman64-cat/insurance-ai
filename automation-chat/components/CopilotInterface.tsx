@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import dynamic from "next/dynamic";
 // Voice mode pulls in LangChain (+ LangSmith, zod); load it only when opened.
@@ -40,11 +40,8 @@ import GroupCensusClientTool from "@/components/group/GroupCensusClientTool";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 
-const WELCOME: AgentMessage = {
-  id: "1",
-  role: "assistant",
-  text: "Hello! I am your AI Underwriting Copilot. I can help you onboard applicants, run risk assessments, or pull case details instantly. What would you like to automate today?",
-};
+// The greeting that opens every chat; its text is the UI language's (composer.greeting).
+const WELCOME_ID = "1";
 
 const STORAGE_KEY = "copilot_history";
 const DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001";
@@ -527,6 +524,7 @@ function getRecommendedActions(lastMessage: AgentMessage | undefined): QuickActi
 
 export function CopilotInterface() {
   const { t } = useI18n();
+  const welcome = useMemo<AgentMessage>(() => ({ id: WELCOME_ID, role: "assistant", text: t("composer.greeting") }), [t]);
   const router = useRouter();
   const { notify } = useNotify();
   const { isAutomationMode, setAutomationMode } = useCopilot();
@@ -565,7 +563,7 @@ export function CopilotInterface() {
 
   const { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat, loadChat, steps, turnActions, addAssistantMessage, patchMessage, recordSelection, regenerate } = useAgentChat({
     storageKey: STORAGE_KEY,
-    welcomeMessage: WELCOME,
+    welcomeMessage: welcome,
     onNavigate: handleAgentNavigate,
     // Demo data: the customer comes with a Draft proposal, so run the same
     // proposal steps as after the form. (Defined further down — see the ref.)
@@ -580,6 +578,8 @@ export function CopilotInterface() {
       setCasePanel(null);
     },
   });
+  // A chat restored from history keeps the greeting it was saved with: show it in the language picked now.
+  useEffect(() => { patchMessage(WELCOME_ID, { text: welcome.text }); }, [welcome, patchMessage]);
   // A family is underwritten head first, then a fully insured spouse; the risk assessments run once both members'
   // requirements are in.
   const familyQueueRef = useRef<FamilyJourney["cases"]>([]);
@@ -2928,7 +2928,7 @@ export function CopilotInterface() {
                                   <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
                                 </svg>
                               )}
-                              <span className="truncate">{session.title}</span>
+                              <span dir="auto" className="truncate">{session.title}</span>
                             </div>
                           ) : (
                             // Empty title = the AI title-gen call is still in flight.
@@ -3295,7 +3295,7 @@ export function CopilotInterface() {
                                <>
                                  {msg.text && (
                                    <div className="group/usermsg relative">
-                                     <div className="bg-[#f3f4f6] dark:bg-zinc-700 text-slate-900 px-5 py-3 rounded-[24px] rounded-tr-md text-[15px] leading-relaxed whitespace-pre-wrap">
+                                     <div dir="auto" className="bg-[#f3f4f6] dark:bg-zinc-700 text-slate-900 px-5 py-3 rounded-[24px] rounded-tr-md text-[15px] leading-relaxed whitespace-pre-wrap">
                                        {msg.text}
                                      </div>
                                      <button
@@ -3336,7 +3336,7 @@ export function CopilotInterface() {
                                      onRefresh={() => showUnderwritingRequirements(msg.checklist!.caseId, msg.checklist!.caseNo, msg.id)}
                                    />
                                  ) : (
-                                 <div className="prose prose-slate max-w-none text-[16px] leading-relaxed break-words text-slate-800 w-full copilot-markdown prose-p:font-serif prose-headings:font-serif prose-li:font-serif">
+                                 <div dir="auto" className="prose prose-slate max-w-none text-[16px] leading-relaxed break-words text-slate-800 w-full copilot-markdown prose-p:font-serif prose-headings:font-serif prose-li:font-serif">
                                    <ReactMarkdown>{msg.text}</ReactMarkdown>
                                  </div>
                                  )}
@@ -3740,25 +3740,25 @@ export function CopilotInterface() {
             .map((s) => ({ label: s, actionType: "submit", payload: s } as QuickAction));
           const finalActions = [...actionsToShow, ...extraActions];
           return (
-            <div className="hidden xl:flex flex-col w-[260px] flex-shrink-0 bg-white/60 dark:bg-zinc-900/60 backdrop-blur-sm border-l border-slate-200/60 h-full overflow-y-auto custom-scrollbar py-5 px-3 gap-4">
+            <div className="hidden xl:flex flex-col w-[260px] flex-shrink-0 bg-white/60 dark:bg-zinc-900/60 backdrop-blur-sm border-s border-slate-200/60 h-full overflow-y-auto custom-scrollbar py-5 px-3 gap-4">
               <div>
-                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 pb-2">Pipeline</div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 pb-2">{t("panel.pipeline")}</div>
                 {steps.length > 0 ? (
                   <ProcessGraph steps={steps} />
                 ) : (
-                  <p className="px-2 text-[12px] text-slate-400">No active process right now.</p>
+                  <p className="px-2 text-[12px] text-slate-400">{t("panel.noProcess")}</p>
                 )}
               </div>
               {finalActions.length > 0 && (
               <div className="flex flex-col gap-1.5">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 pb-1">Suggested Actions</div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 pb-1">{t("panel.suggestedActions")}</div>
               {finalActions.slice(0, 8).map((action, idx) => {
                 const isUploaded = checkIsUploaded(action, uploadedDocs);
                 return (
                   <button
                     key={`rp-${action.actionType}-${idx}`}
                     onClick={() => handleQuickAction(action)}
-                    className={`w-full text-left px-3 py-2.5 text-[12.5px] font-medium rounded-xl border transition-all shadow-sm flex items-start gap-2.5 group ${
+                    className={`w-full text-start px-3 py-2.5 text-[12.5px] font-medium rounded-xl border transition-all shadow-sm flex items-start gap-2.5 group ${
                       isUploaded
                         ? "bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-800 font-bold"
                         : "bg-white hover:bg-indigo-50 border-slate-200/80 hover:border-indigo-200 hover:text-indigo-700 text-slate-700"
@@ -3775,7 +3775,7 @@ export function CopilotInterface() {
                         <svg className="w-3.5 h-3.5 text-violet-400 group-hover:text-violet-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
                       )}
                     </span>
-                    <span className="leading-snug">{isUploaded ? `Uploaded ${action.label.replace(/^Upload\s+/i, "")}` : action.label}</span>
+                    <span dir="auto" className="leading-snug">{isUploaded ? `Uploaded ${action.label.replace(/^Upload\s+/i, "")}` : action.label}</span>
                   </button>
                 );
               })}
@@ -3867,7 +3867,7 @@ export function CopilotInterface() {
                       }`}>
                       {msg.role === "user" ? (
                         <div className="flex flex-col gap-2">
-                          <div className="whitespace-pre-wrap">{msg.text}</div>
+                          <div dir="auto" className="whitespace-pre-wrap">{msg.text}</div>
                           {msg.attachments && msg.attachments.length > 0 && (
                             <div className="flex flex-wrap gap-1.5 justify-end mt-1">
                               {msg.attachments.map((att, idx) => (
@@ -3888,7 +3888,7 @@ export function CopilotInterface() {
                           )}
                         </div>
                       ) : (
-                        <div className="copilot-markdown">
+                        <div dir="auto" className="copilot-markdown">
                           <ReactMarkdown>{msg.text}</ReactMarkdown>
                           {msg.steps && msg.steps.length > 0 && (
                             <div className="mt-4 mb-1">
@@ -4284,14 +4284,15 @@ export function CopilotInterface() {
               <span className="flex h-2.5 w-2.5 items-center justify-center rounded-full bg-blue-100">
                 <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
               </span>
-              <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Suggested Next Actions</span>
+              <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">{t("panel.suggestedNextActions")}</span>
             </div>
             <div className="flex flex-col gap-2">
               {suggestedActions.map((action, idx) => (
                 <button
                   key={`${action}-${idx}`}
                   onClick={() => { setSuggestedActions([]); handleSubmit(undefined, action); }}
-                  className="w-full text-left px-4 py-2.5 bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 text-[13px] font-semibold rounded-xl border border-transparent hover:border-blue-100 transition-all active:scale-[0.98]"
+                  dir="auto"
+                  className="w-full text-start px-4 py-2.5 bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 text-[13px] font-semibold rounded-xl border border-transparent hover:border-blue-100 transition-all active:scale-[0.98]"
                 >
                   {action}
                 </button>

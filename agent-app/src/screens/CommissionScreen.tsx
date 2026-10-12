@@ -56,9 +56,7 @@ export default function CommissionScreen() {
 
   const stats = useMemo(() => {
     const gross = entries.reduce((sum, e) => sum + e.grossCommission, 0);
-    const net = entries.reduce((sum, e) => sum + e.netCommission, 0);
-    const disbursed = entries.filter((e) => e.status === 'DISBURSED').reduce((sum, e) => sum + e.netCommission, 0);
-    return { gross, net, disbursed };
+    return { gross };
   }, [entries]);
 
   const gridColumns = isCompact ? 1 : columns(340);
@@ -80,7 +78,7 @@ export default function CommissionScreen() {
         <Banner
           tone="info"
           title="Read-only"
-          description="Disbursement and clawbacks are handled by finance. Figures are estimates pending confirmed cash realization."
+          description="Disbursement and clawbacks are handled by finance. Earnings are posted from recorded receipts. Tax, release eligibility and settlement are not enabled."
           icon="lock-closed"
           style={styles.banner}
         />
@@ -99,8 +97,8 @@ export default function CommissionScreen() {
         {!loading ? (
           <View style={styles.stats}>
             <StatTile label="Gross commission" value={money(stats.gross)} icon="cash-outline" tone="brand" style={styles.stat} />
-            <StatTile label="Net (after WHT)" value={money(stats.net)} icon="wallet-outline" tone="accent" style={styles.stat} />
-            <StatTile label="Disbursed" value={money(stats.disbursed)} icon="checkmark-done-outline" tone="success" style={styles.stat} />
+            <StatTile label="Tax calculation" value="Not enabled" icon="wallet-outline" tone="accent" style={styles.stat} />
+            <StatTile label="Settlement" value="Not enabled" icon="checkmark-done-outline" tone="success" style={styles.stat} />
           </View>
         ) : null}
       </View>
@@ -135,7 +133,7 @@ export default function CommissionScreen() {
             <EmptyState
               icon="cash-outline"
               title="No commission entries yet"
-              description="Entries appear here once a proposal you brought in becomes a policy."
+              description="Entries appear after a recorded premium receipt is allocated to your producer agreement."
             />
           }
           renderItem={({ item }) => (
@@ -158,8 +156,8 @@ export default function CommissionScreen() {
                 <Detail label="Collected premium" value={money(item.collectedPremium)} />
                 <Detail label="Rate" value={`${item.ratePct}%`} />
                 <Detail label="Gross commission" value={money(item.grossCommission)} />
-                <Detail label="WHT (10%)" value={`− ${money(item.whtTax)}`} />
-                <Detail label="Net commission" value={money(item.netCommission)} />
+                <Detail label="Producer split" value={`${item.splitPct}%`} />
+                <Detail label="Status" value="Accrued gross only" />
               </View>
 
               <Text variant="caption" color="subtle" style={styles.gating}>

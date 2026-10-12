@@ -1,4 +1,7 @@
+"use client";
+
 import type { ReactNode } from "react";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 
 interface MetricCardProps {
   title: string;
@@ -52,6 +55,8 @@ const TREND_COLOR = {
 const TREND_ARROW = { up: "↗", down: "↘", neutral: "→" };
 
 export function MetricCard({ title, value, subtitle, accent = "slate", trend, icon, size = "default" }: MetricCardProps) {
+  // Callers pass English wording; it is translated here so every card on every page follows the language.
+  const { tx } = useI18n();
   const isCompact = size === "compact";
   return (
     <div className={`group relative bg-white ${isCompact ? 'rounded-xl' : 'rounded-2xl'} border border-slate-200/70 shadow-[0_4px_20px_rgb(0,0,0,0.03)] overflow-hidden transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] hover:-translate-y-0.5`}>
@@ -63,8 +68,8 @@ export function MetricCard({ title, value, subtitle, accent = "slate", trend, ic
       
       <div className={`relative ${isCompact ? 'px-3 py-2.5' : 'px-4 py-3'}`}>
         <div className="flex items-start justify-between gap-2">
-          <p className={`${isCompact ? 'text-[9px]' : 'text-[11px]'} font-bold uppercase tracking-widest text-slate-500/80 truncate`} title={title}>
-            {title}
+          <p className={`${isCompact ? 'text-[9px]' : 'text-[11px]'} font-bold uppercase tracking-widest text-slate-500/80 truncate`} title={tx(title)}>
+            {tx(title)}
           </p>
           {icon && (
             <span className={`${isCompact ? 'w-6 h-6 rounded-md [&>svg]:w-3.5 [&>svg]:h-3.5' : 'w-10 h-10 rounded-xl'} flex items-center justify-center shrink-0 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3 shadow-sm ${ACCENT_ICON_BG[accent]}`}>
@@ -84,7 +89,7 @@ export function MetricCard({ title, value, subtitle, accent = "slate", trend, ic
             </span>
           )}
           {subtitle && (
-            <span className="text-[10px] font-medium text-slate-500 truncate">{subtitle}</span>
+            <span className="text-[10px] font-medium text-slate-500 truncate">{tx(subtitle)}</span>
           )}
         </div>
       </div>

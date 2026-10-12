@@ -15,6 +15,7 @@ import { listUnderwriters, Agent } from "../services/agents";
 import { listAcquisitionSources, AcquisitionSource } from "../services/acquisitionSources";
 import { updateCustomer } from "../services/customers";
 import { Pagination, usePagination } from "@/components/Pagination";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -133,6 +134,7 @@ const STATUS_DOT: Record<string, string> = {
 };
 
 function StatusBadge({ status, className = "" }: { status: string; className?: string }) {
+  const { tx } = useI18n();
   return (
     <span
       className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${
@@ -140,7 +142,7 @@ function StatusBadge({ status, className = "" }: { status: string; className?: s
       } ${className}`}
     >
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[status] ?? "bg-slate-400"}`} />
-      {STATUS_LABEL[status] ?? status}
+      {tx(STATUS_LABEL[status] ?? status)}
     </span>
   );
 }
@@ -152,10 +154,11 @@ const SLA_STYLE: Record<string, { dot: string; text: string; label: string }> = 
 };
 
 function SlaHint({ status, daysRemaining }: { status: QuoteListItem["sla_status"]; daysRemaining: number | null }) {
+  const { tx } = useI18n();
   if (!status) return null;
   const s = SLA_STYLE[status];
   if (!s) return null;
-  const label = status !== "breached" && daysRemaining != null ? `${daysRemaining}d left` : s.label;
+  const label = status !== "breached" && daysRemaining != null ? tx("{days}d left", { days: daysRemaining }) : tx(s.label);
   return (
     <span className={`inline-flex items-center gap-1 text-[10px] font-semibold ${s.text}`}>
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.dot}`} />
@@ -178,11 +181,12 @@ function UnderwriterInitial({ name }: { name?: string | null }) {
 }
 
 function UnderwriterAvatar({ name }: { name?: string | null }) {
+  const { tx } = useI18n();
   if (!name) {
     return (
       <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-slate-400">
         <span className="w-5 h-5 rounded-full border border-dashed border-slate-300 flex items-center justify-center shrink-0">–</span>
-        Unassigned
+        {tx("Unassigned")}
       </span>
     );
   }
@@ -361,6 +365,7 @@ interface FamilyGroupFolderData {
 
 export default function QuotePage() {
   const router = useRouter();
+  const { tx } = useI18n();
   const [quotes, setQuotes] = useState<QuoteListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -382,22 +387,22 @@ export default function QuotePage() {
 
   const underwriterFilterOptions: FancyDropdownOption[] = useMemo(
     () => [
-      { value: "", label: "All Underwriters" },
+      { value: "", label: tx("All Underwriters") },
       ...underwriters.map((u) => ({ value: u.id, label: u.full_name, description: u.email, icon: <UnderwriterInitial name={u.full_name} /> })),
     ],
-    [underwriters]
+    [underwriters, tx]
   );
 
   const sourceFilterOptions: FancyDropdownOption[] = useMemo(
     () => [
-      { value: "", label: "All Sources" },
+      { value: "", label: tx("All Sources") },
       ...sources.map((s) => ({
         value: s.id,
         label: s.name,
-        description: [SOURCE_TYPE_LABELS[s.source_type] ?? s.source_type, s.partner_name].filter(Boolean).join(" · "),
+        description: [tx(SOURCE_TYPE_LABELS[s.source_type] ?? s.source_type), s.partner_name].filter(Boolean).join(" · "),
       })),
     ],
-    [sources]
+    [sources, tx]
   );
 
   useEffect(() => {
@@ -493,7 +498,7 @@ export default function QuotePage() {
     if (selectedQuotes.length === 0) return;
     
     if (selectedQuotes.some((q) => q.quote_id.startsWith("draft-"))) {
-      setBulkProceedError("Cannot proceed with an unquoted Draft. Please generate a Quotation in the Leads Hub first.");
+      setBulkProceedError(tx("Cannot proceed with an unquoted Draft. Please generate a Quotation in the Leads Hub first."));
       return;
     }
 
@@ -546,7 +551,7 @@ export default function QuotePage() {
 
       setSelectedProposalIds(new Set());
     } catch (err: any) {
-      setBulkProceedError(err.message ?? "Failed to initialize bulk processing.");
+      setBulkProceedError(err.message ?? tx("Failed to initialize bulk processing."));
     } finally {
       setIsBulkProceeding(false);
     }
@@ -557,7 +562,7 @@ export default function QuotePage() {
     if (selectedQuotes.length === 0) return;
     
     if (selectedQuotes.some((q) => q.quote_id.startsWith("draft-"))) {
-      setBulkProceedError("Cannot change status of an unquoted Draft. Please generate a Quotation in the Leads Hub first.");
+      setBulkProceedError(tx("Cannot change status of an unquoted Draft. Please generate a Quotation in the Leads Hub first."));
       return;
     }
 
@@ -568,13 +573,13 @@ export default function QuotePage() {
       await Promise.all(
         selectedQuotes.map((q) => updateQuote(q.quote_id, { status: targetStatus }))
       );
-      setBulkProceedSuccess("Successfully updated statuses.");
+      setBulkProceedSuccess(tx("Successfully updated statuses."));
       fetchQuotes();
       setSelectedProposalIds(new Set());
       // With a stage chip on, follow the moved proposals to their new stage instead of letting them vanish.
       if (activeTab !== "ALL") setActiveTab(targetStatus as StatusFilter);
     } catch (err: any) {
-      setBulkProceedError(err.message ?? "Failed to update statuses.");
+      setBulkProceedError(err.message ?? tx("Failed to update statuses."));
     } finally {
       setIsBulkProceeding(false);
     }
@@ -602,11 +607,11 @@ export default function QuotePage() {
   };
 
   const getBatchConfirmMessage = (option: ProposalActionOption, selectedCount: number) =>
-    option.tier === "decision" ? `Reject ${selectedCount} proposal(s)? This cannot be undone.` : undefined;
+    option.tier === "decision" ? tx("Reject {count} proposal(s)? This cannot be undone.", { count: selectedCount }) : undefined;
 
   const openQuote = useCallback(async (quoteId: string) => {
     if (quoteId.startsWith("draft-")) {
-      alert("This is an unquoted draft lead. Please go to the Leads Hub and generate a Quotation for this customer before proceeding here.");
+      alert(tx("This is an unquoted draft lead. Please go to the Leads Hub and generate a Quotation for this customer before proceeding here."));
       return;
     }
     setSelectedProposalId(quoteId);
@@ -617,7 +622,7 @@ export default function QuotePage() {
       const data = await getQuote(quoteId);
       setDetail(data);
     } catch (err: any) {
-      setDetailError(err.message ?? "Failed to load quotation details.");
+      setDetailError(err.message ?? tx("Failed to load quotation details."));
     } finally {
       setDetailLoading(false);
     }
@@ -702,7 +707,7 @@ export default function QuotePage() {
 
       setQuotes(quotesList);
     } catch (err: any) {
-      setError(err.message ?? "Failed to load quotations.");
+      setError(err.message ?? tx("Failed to load quotations."));
     } finally {
       setLoading(false);
     }
@@ -782,11 +787,11 @@ export default function QuotePage() {
     const totalCoverage = fullyFilteredQuotes.reduce((sum, qt) => sum + qt.coverage_amount, 0);
     const totalPremium = fullyFilteredQuotes.reduce((sum, qt) => sum + qt.total_premium, 0);
     return [
-      { title: "Proposals", value: fullyFilteredQuotes.length, subtitle: "plans generated", accent: "blue" as const, icon: <KpiIcon name="document" /> },
-      { title: "Total Coverage", value: fullyFilteredQuotes.length > 0 ? fmtCoverage(totalCoverage) : "—", subtitle: "sum assured", accent: "blue" as const, icon: <KpiIcon name="shield" /> },
-      { title: "Total Premium", value: fullyFilteredQuotes.length > 0 ? fmtCoverage(totalPremium) : "—", subtitle: "annualized", accent: "blue" as const, icon: <KpiIcon name="coin" /> },
+      { title: tx("Proposals"), value: fullyFilteredQuotes.length, subtitle: tx("plans generated"), accent: "blue" as const, icon: <KpiIcon name="document" /> },
+      { title: tx("Total Coverage"), value: fullyFilteredQuotes.length > 0 ? fmtCoverage(totalCoverage) : "—", subtitle: tx("sum assured"), accent: "blue" as const, icon: <KpiIcon name="shield" /> },
+      { title: tx("Total Premium"), value: fullyFilteredQuotes.length > 0 ? fmtCoverage(totalPremium) : "—", subtitle: tx("annualized"), accent: "blue" as const, icon: <KpiIcon name="coin" /> },
     ];
-  }, [segmentQuotes, search]);
+  }, [segmentQuotes, search, tx]);
 
   const { organizationGroups, familyGroups, individualGroups } = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -899,7 +904,7 @@ export default function QuotePage() {
   // corporate / family folders are already grouped and open on demand.
   const individualQuotes = useMemo(() => individualGroups.flatMap((g) => g.quotes), [individualGroups]);
   const { pageItems: pagedIndividualQuotes, pagination: individualPagination } = usePagination(individualQuotes);
-  const activeTabLabel = STATUS_TABS.find((t) => t.id === activeTab)?.label ?? activeTab;
+  const activeTabLabel = tx(STATUS_TABS.find((t) => t.id === activeTab)?.label ?? activeTab);
   const activeFilterCount = [dateFrom, dateTo, agentFilter, sourceFilter].filter(Boolean).length;
   const clearFilters = () => {
     setDateFrom("");
@@ -920,10 +925,9 @@ export default function QuotePage() {
             </svg>
           </div>
           <div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Proposals</h1>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Proposals")}</h1>
             <p className="text-sm text-slate-500 mt-0.5 max-w-2xl">
-              Generated automatically the moment a customer is registered — no form to fill in. Corporate
-              proposals nest by organization and master policy; family proposals by family and floater/life-bundle policy.
+              {tx("Generated automatically the moment a customer is registered — no form to fill in. Corporate proposals nest by organization and master policy; family proposals by family and floater/life-bundle policy.")}
             </p>
           </div>
         </div>
@@ -939,7 +943,7 @@ export default function QuotePage() {
 
       <div className="flex flex-col gap-3">
         {/* Stage filter: one tap to see only the proposals at that stage, with how many; "All proposals" until one is picked */}
-        <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Proposal stage">
+        <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label={tx("Proposal stage")}>
           {STATUS_TABS.map((t) => {
             const on = activeTab === t.id;
             const dot: Record<string, string> = {
@@ -958,7 +962,7 @@ export default function QuotePage() {
                 }`}
               >
                 {t.id !== "ALL" && <span className={`h-2 w-2 rounded-full ${on ? "bg-white" : dot[t.id] ?? "bg-slate-400"}`} />}
-                {t.label}
+                {tx(t.label)}
                 <span className={`tabular-nums ${on ? "text-blue-100" : "text-slate-400"}`}>{statusCounts[t.id as StatusFilter] ?? 0}</span>
               </button>
             );
@@ -974,21 +978,21 @@ export default function QuotePage() {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
               <line x1="4" y1="6" x2="20" y2="6" /><line x1="8" y1="12" x2="16" y2="12" /><line x1="11" y1="18" x2="13" y2="18" />
             </svg>
-            {filtersOpen ? "Hide Filters" : "Advanced Filters"}
+            {filtersOpen ? tx("Hide Filters") : tx("Advanced Filters")}
             {activeFilterCount > 0 && (
               <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-600 text-white">{activeFilterCount}</span>
             )}
           </button>
           {activeFilterCount > 0 && (
             <button onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-slate-600 transition-colors">
-              Clear filters
+              {tx("Clear filters")}
             </button>
           )}
         </div>
         {filtersOpen && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl">
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Created From</label>
+              <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">{tx("Created From")}</label>
               <input
                 type="date"
                 value={dateFrom}
@@ -997,7 +1001,7 @@ export default function QuotePage() {
               />
             </div>
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Created To</label>
+              <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">{tx("Created To")}</label>
               <input
                 type="date"
                 value={dateTo}
@@ -1006,24 +1010,24 @@ export default function QuotePage() {
               />
             </div>
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Underwriter</label>
+              <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">{tx("Underwriter")}</label>
               <FancyDropdown
                 value={agentFilter}
                 onChange={setAgentFilter}
                 options={underwriterFilterOptions}
-                placeholder="All Underwriters"
+                placeholder={tx("All Underwriters")}
                 searchable={underwriters.length > 6}
                 size="sm"
                 className="w-full"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Source</label>
+              <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">{tx("Source")}</label>
               <FancyDropdown
                 value={sourceFilter}
                 onChange={setSourceFilter}
                 options={sourceFilterOptions}
-                placeholder="All Sources"
+                placeholder={tx("All Sources")}
                 searchable={sources.length > 6}
                 size="sm"
                 className="w-full"
@@ -1036,15 +1040,15 @@ export default function QuotePage() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
           <div className="relative w-full max-w-xs">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none">
               <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
             <input
               type="text"
-              placeholder="Search by customer, CNIC, organization, or plan…"
+              placeholder={tx("Search by customer, CNIC, organization, or plan…")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+              className="w-full ps-9 pe-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
             />
           </div>
           <SegmentDropdown value={segment} onChange={setSegment} counts={segmentCounts} />
@@ -1053,14 +1057,14 @@ export default function QuotePage() {
           <div className="inline-flex bg-slate-100/80 p-1 rounded-xl shadow-inner border border-slate-200/60 shrink-0">
             <button
               onClick={() => setViewMode("list")}
-              title="List View"
+              title={tx("List View")}
               className={`p-2 rounded-lg transition-all ${viewMode === "list" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>
             </button>
             <button
               onClick={() => setViewMode("grid")}
-              title="Grid View"
+              title={tx("Grid View")}
               className={`p-2 rounded-lg transition-all ${viewMode === "grid" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>
@@ -1076,14 +1080,14 @@ export default function QuotePage() {
               <polyline points="1 20 1 14 7 14" />
               <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
             </svg>
-            Refresh
+            {tx("Refresh")}
           </button>
         </div>
       </div>
 
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-          <p className="text-xs font-bold text-red-700 uppercase tracking-widest mb-1">Error</p>
+          <p className="text-xs font-bold text-red-700 uppercase tracking-widest mb-1">{tx("Error")}</p>
           <p className="text-xs text-red-600">{error}</p>
         </div>
       )}
@@ -1100,17 +1104,17 @@ export default function QuotePage() {
             </div>
             <p className="text-sm font-semibold text-slate-600">
               {quotes.length === 0
-                ? "No proposals yet"
+                ? tx("No proposals yet")
                 : segmentQuotes.length === 0
-                  ? `No ${segment === "all" ? "" : segment + " "}proposals${activeTab === "ALL" ? "" : ` in "${activeTabLabel}"`}`
-                  : "No proposals match your search"}
+                  ? activeTab === "ALL" ? tx("No proposals") : tx("No proposals in “{stage}”", { stage: activeTabLabel })
+                  : tx("No proposals match your search")}
             </p>
             <p className="text-xs text-slate-400 mt-1.5 max-w-xs leading-relaxed">
               {quotes.length === 0
-                ? "Register a customer and a proposal will be generated automatically in the background."
+                ? tx("Register a customer and a proposal will be generated automatically in the background.")
                 : segmentQuotes.length === 0
-                  ? "Try a different stage or switch the segment filter to All Cases."
-                  : "Try a different customer name, CNIC, organization, or plan."}
+                  ? tx("Try a different stage or switch the segment filter to All Cases.")
+                  : tx("Try a different customer name, CNIC, organization, or plan.")}
             </p>
           </div>
         ) : (
@@ -1119,10 +1123,10 @@ export default function QuotePage() {
               <div className="space-y-3">
                 <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-amber-600 px-1">
                   <OrgIcon className="w-3.5 h-3.5" />
-                  Corporate / Group Life
+                  {tx("Corporate / Group Life")}
                   <span className="text-slate-400 font-medium normal-case tracking-normal">
-                    · {organizationGroups.length} {organizationGroups.length === 1 ? "organization" : "organizations"} ·{" "}
-                    {organizationGroups.reduce((n, o) => n + o.policies.reduce((m, p) => m + p.customers.length, 0), 0)} insured
+                    · {tx(organizationGroups.length === 1 ? "{count} organization" : "{count} organizations", { count: organizationGroups.length })} ·{" "}
+                    {tx("{count} insured", { count: organizationGroups.reduce((n, o) => n + o.policies.reduce((m, p) => m + p.customers.length, 0), 0) })}
                   </span>
                 </p>
                 {organizationGroups.map((org) => {
@@ -1144,7 +1148,7 @@ export default function QuotePage() {
                            </div>
                            <div>
                              <h4 className="text-sm font-bold text-slate-900">{org.organization_name}</h4>
-                             <p className="text-[11px] font-medium text-slate-500 mt-0.5">{allOrgQuotes.length} {allOrgQuotes.length === 1 ? 'insured' : 'insured'}</p>
+                             <p className="text-[11px] font-medium text-slate-500 mt-0.5">{tx("{count} insured", { count: allOrgQuotes.length })}</p>
                            </div>
                         </div>
                         <div>
@@ -1199,10 +1203,10 @@ export default function QuotePage() {
               <div className="space-y-3">
                 <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-blue-600 px-1">
                   <FamilyIcon className="w-3.5 h-3.5" />
-                  Family Insurance
+                  {tx("Family Insurance")}
                   <span className="text-slate-400 font-medium normal-case tracking-normal">
-                    · {familyGroups.length} {familyGroups.length === 1 ? "family" : "families"} ·{" "}
-                    {familyGroups.reduce((n, f) => n + f.policies.reduce((m, p) => m + p.customers.length, 0), 0)} insured
+                    · {tx(familyGroups.length === 1 ? "{count} family" : "{count} families", { count: familyGroups.length })} ·{" "}
+                    {tx("{count} insured", { count: familyGroups.reduce((n, f) => n + f.policies.reduce((m, p) => m + p.customers.length, 0), 0) })}
                   </span>
                 </p>
                 {familyGroups.map((family) => {
@@ -1224,7 +1228,7 @@ export default function QuotePage() {
                            </div>
                            <div>
                              <h4 className="text-sm font-bold text-slate-900">{family.family_group_name}</h4>
-                             <p className="text-[11px] font-medium text-slate-500 mt-0.5">{allFamQuotes.length} {allFamQuotes.length === 1 ? 'insured' : 'insured'}</p>
+                             <p className="text-[11px] font-medium text-slate-500 mt-0.5">{tx("{count} insured", { count: allFamQuotes.length })}</p>
                            </div>
                         </div>
                         <div>
@@ -1279,9 +1283,9 @@ export default function QuotePage() {
               <div className="space-y-3">
                 {(organizationGroups.length > 0 || familyGroups.length > 0) && (
                   <p className="text-[10px] font-bold uppercase tracking-widest text-blue-600 px-1 pt-1">
-                    Individual
+                    {tx("Individual")}
                     <span className="text-slate-400 font-medium normal-case tracking-normal">
-                      {" "}· {individualGroups.length} {individualGroups.length === 1 ? "customer" : "customers"}
+                      {" "}· {tx(individualGroups.length === 1 ? "{count} customer" : "{count} customers", { count: individualGroups.length })}
                     </span>
                   </p>
                 )}
@@ -1312,7 +1316,7 @@ export default function QuotePage() {
                         )}
                         {bulkProceedSuccess && (
                           <div className="mx-4 mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                            <p className="text-xs text-blue-700 font-semibold">Success</p>
+                            <p className="text-xs text-blue-700 font-semibold">{tx("Success")}</p>
                             <p className="text-xs text-blue-600">{bulkProceedSuccess}</p>
                           </div>
                         )}
@@ -1335,7 +1339,7 @@ export default function QuotePage() {
                             openQuote={openQuote}
                           />
                         )}
-                        <Pagination pagination={individualPagination} noun="proposals" inline />
+                        <Pagination pagination={individualPagination} noun={tx("proposals")} inline />
                       </div>
                     );
                   })()}
@@ -1440,6 +1444,7 @@ function ActionDropdown({
   canAct: boolean;
   canDecide: boolean;
 }) {
+  const { tx } = useI18n();
   const visible = options.filter((o) => (o.tier === "decision" ? canDecide : canAct));
   const [selected, setSelected] = useState(visible[0]?.value ?? "");
   const [applying, setApplying] = useState(false);
@@ -1457,7 +1462,7 @@ function ActionDropdown({
 
   const dropdownOptions: FancyDropdownOption[] = visible.map((o) => ({
     value: o.value,
-    label: o.label,
+    label: tx(o.label),
     icon: (
       <span className={o.tier === "decision" ? "text-rose-500" : "text-blue-500"}>
         <ActionIcon value={o.value} />
@@ -1506,7 +1511,7 @@ function ActionDropdown({
             <polyline points="20 6 9 17 4 12" />
           </svg>
         )}
-        {applying ? "Applying…" : "Apply"}
+        {applying ? tx("Applying…") : tx("Apply")}
       </button>
     </div>
   );
@@ -1529,6 +1534,7 @@ function BatchActionBar({
   canAct: boolean;
   canDecide: boolean;
 }) {
+  const { tx } = useI18n();
   return (
     <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap border-b border-slate-200 bg-slate-50/50">
       <div className="flex items-center gap-3">
@@ -1544,7 +1550,7 @@ function BatchActionBar({
               {selectedCount}
             </span>
           )}
-          {selectedCount > 0 ? `of ${totalCount} plan(s) selected` : `${totalCount} plan(s) in this folder`}
+          {selectedCount > 0 ? tx("of {count} plan(s) selected", { count: totalCount }) : tx("{count} plan(s) in this folder", { count: totalCount })}
         </p>
       </div>
       <ActionDropdown
@@ -1621,6 +1627,7 @@ function ProposalsTable({
   toggleAllInFolder: (quoteIds: string[]) => void;
   openQuote: (quoteId: string) => void;
 }) {
+  const { tx } = useI18n();
   if (quotes.length === 0) return null;
   const allSelected = quotes.length > 0 && quotes.every(q => selectedQuoteIds.has(q.quote_id));
 
@@ -1629,7 +1636,7 @@ function ProposalsTable({
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-400">
-            <th className="px-5 py-3 text-left w-12">
+            <th className="px-5 py-3 text-start w-12">
               <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
                 <input
                   type="checkbox"
@@ -1639,16 +1646,16 @@ function ProposalsTable({
                 />
               </div>
             </th>
-            <th className="px-5 py-3 text-left">Customer</th>
-            <th className="px-2 py-3 text-left">Plan</th>
-            <th className="px-5 py-3 text-left">Status</th>
-            <th className="px-5 py-3 text-right">Coverage</th>
-            <th className="px-5 py-3 text-center">Term</th>
-            <th className="px-5 py-3 text-right">Premium</th>
-            <th className="px-5 py-3 text-right">Risk</th>
-            <th className="px-5 py-3 text-right">Total</th>
-            <th className="px-5 py-3 text-left">Underwriter</th>
-            <th className="px-5 py-3 text-left">Generated</th>
+            <th className="px-5 py-3 text-start">{tx("Customer")}</th>
+            <th className="px-2 py-3 text-start">{tx("Plan")}</th>
+            <th className="px-5 py-3 text-start">{tx("Status")}</th>
+            <th className="px-5 py-3 text-end">{tx("Coverage")}</th>
+            <th className="px-5 py-3 text-center">{tx("Term")}</th>
+            <th className="px-5 py-3 text-end">{tx("Premium")}</th>
+            <th className="px-5 py-3 text-end">{tx("Risk")}</th>
+            <th className="px-5 py-3 text-end">{tx("Total")}</th>
+            <th className="px-5 py-3 text-start">{tx("Underwriter")}</th>
+            <th className="px-5 py-3 text-start">{tx("Generated")}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -1672,7 +1679,7 @@ function ProposalsTable({
                 <p className="text-slate-900 font-bold truncate max-w-[150px]" title={row.customer_name}>{row.customer_name}</p>
                 <p className="text-slate-500 text-[10px] font-mono">{row.customer_cnic}</p>
                 <p className="text-[11px] font-medium text-slate-500 mt-1">
-                  Lead ID: {formatLeadDisplayId(row.customer_id, row.created_at, quoteSegment(row))}
+                  {tx("Lead ID:")} {formatLeadDisplayId(row.customer_id, row.created_at, quoteSegment(row))}
                 </p>
                 {row.acquisition_source_name && (
                   <p className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[150px]" title={row.acquisition_source_name}>
@@ -1683,17 +1690,17 @@ function ProposalsTable({
               <td className="px-2 py-3.5">
                 <p className="text-slate-700 font-medium">{row.plan_label}</p>
                 <span className="inline-flex mt-0.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">
-                  {INSURANCE_TYPE_LABELS[row.insurance_type] ?? row.insurance_type}
+                  {tx(INSURANCE_TYPE_LABELS[row.insurance_type] ?? row.insurance_type)}
                 </span>
               </td>
               <td className="px-5 py-3.5">
                 <StatusBadge status={row.status} />
               </td>
-              <td className="px-5 py-3.5 text-right font-medium text-slate-700">{formatPKR(row.coverage_amount)}</td>
-              <td className="px-5 py-3.5 text-center text-slate-600">{row.term_years}y</td>
-              <td className="px-5 py-3.5 text-right text-slate-600">{formatPKR(row.base_premium)}</td>
-              <td className="px-5 py-3.5 text-right text-slate-600">{formatPKR(row.loading_applied)}</td>
-              <td className="px-5 py-3.5 text-right font-bold text-slate-900">{formatPKR(row.total_premium)}</td>
+              <td className="px-5 py-3.5 text-end font-medium text-slate-700">{formatPKR(row.coverage_amount)}</td>
+              <td className="px-5 py-3.5 text-center text-slate-600">{tx("{years}y", { years: row.term_years })}</td>
+              <td className="px-5 py-3.5 text-end text-slate-600">{formatPKR(row.base_premium)}</td>
+              <td className="px-5 py-3.5 text-end text-slate-600">{formatPKR(row.loading_applied)}</td>
+              <td className="px-5 py-3.5 text-end font-bold text-slate-900">{formatPKR(row.total_premium)}</td>
               <td className="px-5 py-3.5">
                 <UnderwriterAvatar name={row.assigned_underwriter_name} />
                 <div className="mt-1">
@@ -1723,6 +1730,7 @@ function ProposalsGrid({
   toggleAllInFolder: (quoteIds: string[]) => void;
   openQuote: (quoteId: string) => void;
 }) {
+  const { tx } = useI18n();
   if (quotes.length === 0) return null;
 
   return (
@@ -1733,7 +1741,7 @@ function ProposalsGrid({
           onClick={() => openQuote(row.quote_id)}
           className={`relative border rounded-xl p-4 flex flex-col gap-3 cursor-pointer transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg bg-white ${selectedQuoteIds.has(row.quote_id) ? "border-blue-300 ring-1 ring-blue-400/20 shadow-md" : "border-slate-200 shadow-sm"}`}
         >
-          <div className="absolute top-3 right-3 z-10" onClick={(e) => e.stopPropagation()}>
+          <div className="absolute top-3 end-3 z-10" onClick={(e) => e.stopPropagation()}>
             <input
               type="checkbox"
               className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
@@ -1742,11 +1750,11 @@ function ProposalsGrid({
             />
           </div>
 
-          <div className="pr-6">
+          <div className="pe-6">
             <h4 className="font-bold text-slate-900 truncate">{row.customer_name}</h4>
             <p className="text-xs text-slate-500 font-mono mt-0.5">{row.customer_cnic}</p>
             <p className="text-[11px] font-medium text-slate-500 mt-1">
-              Lead ID: {formatLeadDisplayId(row.customer_id, row.created_at, quoteSegment(row))}
+              {tx("Lead ID:")} {formatLeadDisplayId(row.customer_id, row.created_at, quoteSegment(row))}
             </p>
           </div>
 
@@ -1756,12 +1764,12 @@ function ProposalsGrid({
           </div>
 
           <div className="bg-slate-50 rounded-lg p-2.5 border border-slate-100 flex items-center justify-between">
-            <div className="min-w-0 pr-2">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Plan</p>
+            <div className="min-w-0 pe-2">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">{tx("Plan")}</p>
               <p className="text-xs font-semibold text-slate-700 truncate">{row.plan_label}</p>
             </div>
             <span className="flex-shrink-0 inline-flex px-1.5 py-0.5 rounded-[4px] text-[9px] font-bold bg-blue-100 text-blue-700 border border-blue-200">
-              {INSURANCE_TYPE_LABELS[row.insurance_type] ?? row.insurance_type}
+              {tx(INSURANCE_TYPE_LABELS[row.insurance_type] ?? row.insurance_type)}
             </span>
           </div>
 
@@ -1769,11 +1777,11 @@ function ProposalsGrid({
 
           <div className="grid grid-cols-2 gap-3 mt-auto pt-2 border-t border-slate-100">
             <div>
-              <p className="text-[10px] font-medium text-slate-500">Coverage</p>
+              <p className="text-[10px] font-medium text-slate-500">{tx("Coverage")}</p>
               <p className="text-sm font-semibold text-slate-800">{formatPKR(row.coverage_amount)}</p>
             </div>
-            <div className="text-right">
-              <p className="text-[10px] font-medium text-slate-500">Premium</p>
+            <div className="text-end">
+              <p className="text-[10px] font-medium text-slate-500">{tx("Premium")}</p>
               <p className="text-sm font-bold text-blue-600">{formatPKR(row.total_premium)}</p>
             </div>
           </div>
@@ -1806,10 +1814,11 @@ function proposalProgress(status: string): { current: number; note?: string; ton
 }
 
 function ProposalProgress({ status }: { status: string }) {
+  const { tx } = useI18n();
   const { current, note, tone } = proposalProgress(status);
   return (
     <div>
-      <ol className="flex items-start" aria-label="Proposal progress">
+      <ol className="flex items-start" aria-label={tx("Proposal progress")}>
         {PROPOSAL_STEPS_UI.map((st, i) => {
           const done = st.n < current;
           const now = st.n === current;
@@ -1834,7 +1843,7 @@ function ProposalProgress({ status }: { status: string }) {
                   )}
                 </span>
                 <span className={`text-[11px] font-semibold leading-tight ${done || now ? "text-slate-700" : "text-slate-400"}`}>
-                  {st.n}. {st.label}
+                  {st.n}. {tx(st.label)}
                 </span>
               </div>
               {i < PROPOSAL_STEPS_UI.length - 1 && (
@@ -1847,7 +1856,7 @@ function ProposalProgress({ status }: { status: string }) {
         })}
       </ol>
       {note && (
-        <p className={`mt-3 text-center text-xs font-semibold ${tone === "red" ? "text-rose-600" : "text-amber-600"}`}>{note}</p>
+        <p className={`mt-3 text-center text-xs font-semibold ${tone === "red" ? "text-rose-600" : "text-amber-600"}`}>{tx(note)}</p>
       )}
     </div>
   );
@@ -1870,6 +1879,7 @@ function QuoteDetailModal({
   canSendToUnderwriting: boolean;
   isAgent: boolean;
 }) {
+  const { locale, tx } = useI18n();
   const [underwriters, setUnderwriters] = useState<Agent[]>([]);
   const [updating, setUpdating] = useState(false);
 
@@ -1880,10 +1890,10 @@ function QuoteDetailModal({
 
   const underwriterOptions: FancyDropdownOption[] = useMemo(
     () => [
-      { value: "", label: "Unassigned" },
+      { value: "", label: tx("Unassigned") },
       ...underwriters.map((u) => ({ value: u.id, label: u.full_name, description: u.email, icon: <UnderwriterInitial name={u.full_name} /> })),
     ],
-    [underwriters]
+    [underwriters, tx]
   );
 
   const handleUpdate = async (updates: { status?: string; assigned_underwriter_id?: string | null }) => {
@@ -1894,7 +1904,7 @@ function QuoteDetailModal({
       onRefresh();
       onClose(); // Alternatively just refresh details, but close is simpler.
     } catch (err: any) {
-      alert(err.message || "Update failed");
+      alert(err.message || tx("Update failed"));
     } finally {
       setUpdating(false);
     }
@@ -1946,7 +1956,7 @@ function QuoteDetailModal({
       onRefresh();
       await onReloadDetail();
     } catch (err: any) {
-      setStartError(err.message ?? "Failed to update.");
+      setStartError(err.message ?? tx("Failed to update."));
     }
   };
 
@@ -1961,7 +1971,7 @@ function QuoteDetailModal({
       >
         <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <p className="text-sm font-semibold text-slate-700">Proposal Details</p>
+            <p className="text-sm font-semibold text-slate-700">{tx("Proposal Details")}</p>
             {detail && <StatusBadge status={detail.status} />}
           </div>
           <button
@@ -1978,8 +1988,8 @@ function QuoteDetailModal({
           <div className="space-y-4 border-b border-slate-100 bg-slate-50/70 px-5 py-4">
             <ProposalProgress status={detail.status} />
             {isAgent && modalOptions.length === 0 && ["Proposed", "UnderReview", "Approved", "AcceptedWithLoadings", "Declined", "Issued"].includes(detail.status) && (
-              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-500" title="Currently, you have no access to do this, ask your manager">
-                This proposal has been sent to the admin team for further review, so it can no longer be changed from here. You can follow its progress on this page.
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-500" title={tx("Currently, you have no access to do this, ask your manager")}>
+                {tx("This proposal has been sent to the admin team for further review, so it can no longer be changed from here. You can follow its progress on this page.")}
               </div>
             )}
             {/* The next move: only what is legal from here */}
@@ -1992,7 +2002,7 @@ function QuoteDetailModal({
                   options={modalOptions}
                   onApply={handleApplyAction}
                   isOptionDisabled={(value) => value === "save_info" && Object.keys(missingFormData).length === 0}
-                  getConfirmMessage={(o) => (o.tier === "decision" ? "Reject this proposal? This cannot be undone." : undefined)}
+                  getConfirmMessage={(o) => (o.tier === "decision" ? tx("Reject this proposal? This cannot be undone.") : undefined)}
                   canAct={canAct}
                   canDecide={canDecide}
                 />
@@ -2004,14 +2014,14 @@ function QuoteDetailModal({
         {loading && (
           <div className="py-16 flex flex-col items-center justify-center gap-2">
             <div className="animate-spin h-7 w-7 text-blue-500 rounded-full border-2 border-slate-100 border-t-blue-500" />
-            <span className="text-xs text-slate-400">Loading details…</span>
+            <span className="text-xs text-slate-400">{tx("Loading details…")}</span>
           </div>
         )}
 
         {error && (
           <div className="p-5">
             <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-              <p className="text-xs font-bold text-red-700 uppercase tracking-widest mb-1">Error</p>
+              <p className="text-xs font-bold text-red-700 uppercase tracking-widest mb-1">{tx("Error")}</p>
               <p className="text-xs text-red-600">{error}</p>
             </div>
           </div>
@@ -2022,62 +2032,85 @@ function QuoteDetailModal({
             {/* Proposal Statement */}
             <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-5 py-4 space-y-1.5">
               <div className="flex items-center justify-between mb-1">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500">Proposal Statement</p>
-                <span className="text-[10px] font-mono text-slate-400">Ref: {detail.quote_id.slice(0, 8).toUpperCase()}</span>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500">{tx("Proposal Statement")}</p>
+                <span className="text-[10px] font-mono text-slate-400">{tx("Ref:")} {detail.quote_id.slice(0, 8).toUpperCase()}</span>
               </div>
               {detail.organization_name && (
                 <p className="flex items-center gap-1.5 text-[11px] text-amber-600 font-semibold">
                   <OrgIcon className="w-3 h-3" />
-                  Corporate — {detail.organization_name}
+                  {tx("Corporate")} — {detail.organization_name}
                   {detail.master_policy_label ? ` · ${detail.master_policy_label}` : ""}
                 </p>
               )}
               {detail.family_group_name && (
                 <p className="flex items-center gap-1.5 text-[11px] text-blue-600 font-semibold">
                   <FamilyIcon className="w-3 h-3" />
-                  Family — {detail.family_group_name}
+                  {tx("Family")} — {detail.family_group_name}
                   {detail.family_policy_label ? ` · ${detail.family_policy_label}` : ""}
                 </p>
               )}
-              <p className="text-sm text-slate-700 leading-relaxed">
-                We are pleased to present the following insurance proposal for{" "}
-                <span className="font-semibold text-slate-900">{detail.customer_name}</span>. Based on the
-                information provided, we propose a{" "}
-                <span className="font-semibold text-slate-900">
-                  {INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type}
-                </span>{" "}
-                policy under the{" "}
-                <span className="font-semibold text-slate-900">{detail.plan_label}</span>{" "}
-                plan, providing a sum assured of{" "}
-                <span className="font-semibold text-slate-900">{formatPKR(detail.coverage_amount)}</span>{" "}
-                over a term of{" "}
-                <span className="font-semibold text-slate-900">{detail.term_years} years</span>.
-              </p>
-              <p className="text-sm text-slate-700 leading-relaxed">
-                The total annual premium for this coverage is{" "}
-                <span className="font-bold text-slate-900">{formatPKR(detail.total_premium)}</span>{" "}
-                (expected premium of {formatPKR(detail.base_premium)} plus a risk of{" "}
-                {formatPKR(detail.loading_applied)}). This proposal is valid subject to
-                satisfactory underwriting assessment and is generated as of{" "}
-                <span className="font-medium text-slate-800">{formatDate(detail.created_at)}</span>.
-              </p>
+              {locale === "ur" ? (
+                <>
+                  <p className="text-sm text-slate-700 leading-relaxed">
+                    ہمیں{" "}<span className="font-semibold text-slate-900">{detail.customer_name}</span>{" "}کے لیے درج ذیل انشورنس
+                    پروپوزل پیش کرتے ہوئے خوشی ہے۔ فراہم کردہ معلومات کی بنیاد پر ہم{" "}
+                    <span className="font-semibold text-slate-900">{detail.plan_label}</span>{" "}پلان کے تحت{" "}
+                    <span className="font-semibold text-slate-900">{tx(INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type)}</span>{" "}
+                    پالیسی تجویز کرتے ہیں، جو{" "}
+                    <span className="font-semibold text-slate-900">{detail.term_years} سال</span>{" "}کی مدت کے لیے{" "}
+                    <span className="font-semibold text-slate-900">{formatPKR(detail.coverage_amount)}</span>{" "}کی بیمہ شدہ رقم فراہم کرتی ہے۔
+                  </p>
+                  <p className="text-sm text-slate-700 leading-relaxed">
+                    اس کوریج کا کل سالانہ پریمیم{" "}
+                    <span className="font-bold text-slate-900">{formatPKR(detail.total_premium)}</span>{" "}ہے
+                    (متوقع پریمیم {formatPKR(detail.base_premium)} اور رسک {formatPKR(detail.loading_applied)})۔ یہ پروپوزل
+                    تسلی بخش انڈر رائٹنگ جائزے سے مشروط ہے اور{" "}
+                    <span className="font-medium text-slate-800">{formatDate(detail.created_at)}</span>{" "}کو تیار کیا گیا۔
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-slate-700 leading-relaxed">
+                    We are pleased to present the following insurance proposal for{" "}
+                    <span className="font-semibold text-slate-900">{detail.customer_name}</span>. Based on the
+                    information provided, we propose a{" "}
+                    <span className="font-semibold text-slate-900">
+                      {INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type}
+                    </span>{" "}
+                    policy under the{" "}
+                    <span className="font-semibold text-slate-900">{detail.plan_label}</span>{" "}
+                    plan, providing a sum assured of{" "}
+                    <span className="font-semibold text-slate-900">{formatPKR(detail.coverage_amount)}</span>{" "}
+                    over a term of{" "}
+                    <span className="font-semibold text-slate-900">{detail.term_years} years</span>.
+                  </p>
+                  <p className="text-sm text-slate-700 leading-relaxed">
+                    The total annual premium for this coverage is{" "}
+                    <span className="font-bold text-slate-900">{formatPKR(detail.total_premium)}</span>{" "}
+                    (expected premium of {formatPKR(detail.base_premium)} plus a risk of{" "}
+                    {formatPKR(detail.loading_applied)}). This proposal is valid subject to
+                    satisfactory underwriting assessment and is generated as of{" "}
+                    <span className="font-medium text-slate-800">{formatDate(detail.created_at)}</span>.
+                  </p>
+                </>
+              )}
             </div>
 
             <p className="text-[11px] text-slate-500 mt-1 mb-2 text-center italic">
-              Opens an Underwriting case for this customer on this exact proposal — documents, AI risk scoring, and the final decision all happen there.
+              {tx("Opens an Underwriting case for this customer on this exact proposal — documents, AI risk scoring, and the final decision all happen there.")}
             </p>
 
             
             {/* Status and Underwriter Update */}
             <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl">
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">Assigned Underwriter</label>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Assigned Underwriter")}</label>
                 <FancyDropdown
                   className="w-full max-w-sm"
                   value={detail.assigned_underwriter_id || ""}
                   onChange={(v) => handleUpdate({ assigned_underwriter_id: v || null })}
                   options={underwriterOptions}
-                  placeholder="Unassigned"
+                  placeholder={tx("Unassigned")}
                   searchable={underwriters.length > 6}
                   disabled={updating}
                 />
@@ -2090,20 +2123,20 @@ function QuoteDetailModal({
                 <h2 className="text-lg font-bold text-slate-900">{detail.customer_name}</h2>
                 <p className="text-xs text-slate-400">{detail.customer_cnic}</p>
               </div>
-              <p className="text-[11px] text-slate-400 text-right mt-1.5">
-                Rate version {detail.rate_version} · Generated {new Date(detail.created_at).toLocaleString()}
+              <p className="text-[11px] text-slate-400 text-end mt-1.5">
+                {tx("Rate version {version} · Generated {date}", { version: detail.rate_version, date: new Date(detail.created_at).toLocaleString() })}
               </p>
             </div>
 
             {/* Customer */}
             <section>
-              <SectionLabel>Customer</SectionLabel>
+              <SectionLabel>{tx("Customer")}</SectionLabel>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <DetailField label="Date of Birth" value={`${formatDate(detail.customer_dob)} (${detail.customer_age} yrs)`} />
+                <DetailField label="Date of Birth" value={`${formatDate(detail.customer_dob)} (${tx("{age} yrs", { age: detail.customer_age })})`} />
                 <DetailField label="Gender" value={detail.customer_gender} />
                 <DetailField label="Occupation" value={detail.customer_occupation} />
                 <DetailField label="Annual Income" value={formatPKR(detail.customer_declared_income)} />
-                <DetailField label="Smoker" value={detail.customer_is_smoker ? "Yes" : "No"} />
+                <DetailField label="Smoker" value={detail.customer_is_smoker ? tx("Yes") : tx("No")} />
                 <DetailField
                   label="Height / Weight"
                   value={`${detail.customer_height_cm} cm / ${detail.customer_weight_kg} kg${detail.customer_bmi ? ` (BMI ${detail.customer_bmi})` : ""}`}
@@ -2111,7 +2144,7 @@ function QuoteDetailModal({
                 {detail.acquisition_source_name && (
                   <DetailField
                     label="Lead Generated By"
-                    value={`${detail.acquisition_source_name} (${SOURCE_TYPE_LABELS[detail.acquisition_source_type ?? ""] ?? detail.acquisition_source_type ?? ""})${detail.acquisition_source_partner ? ` — ${detail.acquisition_source_partner}` : ""}`}
+                    value={`${detail.acquisition_source_name} (${tx(SOURCE_TYPE_LABELS[detail.acquisition_source_type ?? ""] ?? detail.acquisition_source_type ?? "")})${detail.acquisition_source_partner ? ` — ${detail.acquisition_source_partner}` : ""}`}
                   />
                 )}
               </div>
@@ -2119,12 +2152,12 @@ function QuoteDetailModal({
 
             {/* Policy */}
             <section>
-              <SectionLabel>Policy</SectionLabel>
+              <SectionLabel>{tx("Policy")}</SectionLabel>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <DetailField label="Plan" value={detail.plan_label} />
-                <DetailField label="Type" value={INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type} />
+                <DetailField label="Type" value={tx(INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type)} />
                 <DetailField label="Coverage" value={formatPKR(detail.coverage_amount)} />
-                <DetailField label="Term" value={`${detail.term_years} years`} />
+                <DetailField label="Term" value={tx("{years} years", { years: detail.term_years })} />
                 {detail.organization_name && <DetailField label="Organization" value={detail.organization_name} />}
                 {detail.master_policy_label && <DetailField label="Master Policy" value={detail.master_policy_label} />}
                 {detail.family_group_name && <DetailField label="Family" value={detail.family_group_name} />}
@@ -2136,7 +2169,7 @@ function QuoteDetailModal({
 
             {/* Premium breakdown */}
             <section>
-              <SectionLabel>Premium Breakdown</SectionLabel>
+              <SectionLabel>{tx("Premium Breakdown")}</SectionLabel>
               <div className="grid grid-cols-3 gap-3">
                 <StatTile label="Premium" value={formatPKR(detail.base_premium)} />
                 {/* <StatTile label="Risk" value={formatPKR(detail.loading_applied)} /> */}
@@ -2156,30 +2189,30 @@ function QuoteDetailModal({
             {/* Missing Information section */}
             {missingFields.length > 0 && detail.status === "Quoted" && (
               <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl">
-                <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-1">Missing Information</p>
-                <p className="text-sm text-amber-600 mb-2">The following information is missing and must be completed:</p>
+                <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-1">{tx("Missing Information")}</p>
+                <p className="text-sm text-amber-600 mb-2">{tx("The following information is missing and must be completed:")}</p>
                 <ul className="list-disc list-inside text-sm text-amber-700">
-                  {missingFields.map(f => <li key={f.key}>{f.label}</li>)}
+                  {missingFields.map(f => <li key={f.key}>{tx(f.label)}</li>)}
                 </ul>
               </div>
             )}
 
             {missingFields.length > 0 && detail.status === "InformationRequested" && (
               <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl">
-                <p className="text-xs font-bold text-blue-700 uppercase tracking-widest mb-3">Provide Missing Information</p>
+                <p className="text-xs font-bold text-blue-700 uppercase tracking-widest mb-3">{tx("Provide Missing Information")}</p>
                 <div className="space-y-3">
                   {missingFields.map(f => (
                     <div key={f.key}>
-                      <label className="text-xs font-semibold text-slate-700 block mb-1">{f.label}</label>
+                      <label className="text-xs font-semibold text-slate-700 block mb-1">{tx(f.label)}</label>
                       {f.type === 'select' ? (
                         <FancyDropdown
                           className="w-full"
                           value={missingFormData[f.key] || ''}
                           onChange={(v) => setMissingFormData({...missingFormData, [f.key]: v})}
-                          placeholder={`Select ${f.label}`}
+                          placeholder={tx("Select {field}", { field: tx(f.label) })}
                           options={f.key === 'gender' ? [
-                            { value: "Male", label: "Male" },
-                            { value: "Female", label: "Female" },
+                            { value: "Male", label: tx("Male") },
+                            { value: "Female", label: tx("Female") },
                           ] : []}
                         />
                       ) : (
@@ -2188,7 +2221,7 @@ function QuoteDetailModal({
                           className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
                           value={missingFormData[f.key] || ''}
                           onChange={e => setMissingFormData({...missingFormData, [f.key]: e.target.value})}
-                          placeholder={`Enter ${f.label}`}
+                          placeholder={tx("Enter {field}", { field: tx(f.label) })}
                         />
                       )}
                     </div>
@@ -2199,7 +2232,7 @@ function QuoteDetailModal({
 
             {(detail.status === "Approved" || detail.status === "AcceptedWithLoadings" || detail.status === "Declined") && (
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-500">
-                This proposal's outcome was decided on its underwriting case, not here — open the case to review the decision.
+                {tx("This proposal's outcome was decided on its underwriting case, not here — open the case to review the decision.")}
               </div>
             )}
           </div>
@@ -2214,19 +2247,21 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 function DetailField({ label, value }: { label: string; value: string }) {
+  const { tx } = useI18n();
   return (
     <div>
-      <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wide mb-0.5">{label}</p>
+      <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wide mb-0.5">{tx(label)}</p>
       <p className="text-sm text-slate-700 font-medium">{value}</p>
     </div>
   );
 }
 
 function StatTile({ label, value, highlight }: { label: string; value: React.ReactNode; highlight?: boolean }) {
+  const { tx } = useI18n();
   return (
     <div className={`rounded-lg p-3 ${highlight ? "bg-slate-900" : "bg-slate-50"}`}>
       <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${highlight ? "text-slate-300" : "text-slate-400"}`}>
-        {label}
+        {tx(label)}
       </p>
       <p className={`text-sm font-bold ${highlight ? "text-white" : "text-slate-800"}`}>{value}</p>
     </div>
