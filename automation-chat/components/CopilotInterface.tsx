@@ -13,6 +13,7 @@ import { JourneyMap } from "./agent/JourneyMap";
 import { JourneyActivityPanel } from "./agent/JourneyActivityPanel";
 import { journeyFromCase, journeyFromChat } from "@/lib/agent/journey";
 import type { CaseDetail, Journey, JourneyContext, ProposalState } from "@/lib/agent/journey";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { useCaseEvents } from "@/lib/agent/useCaseEvents";
 import type { CaseEvent } from "@/lib/agent/useCaseEvents";
 import { isPassiveAction } from "@/lib/agent/quickActions";
@@ -24,7 +25,8 @@ import { DocumentUploadDialog } from "./agent/DocumentUploadDialog";
 import type { DocumentUploadResult } from "./agent/DocumentUploadDialog";
 import { getQuote, listQuotes, updateQuote } from "../app/services/quotes";
 import type { QuoteDetail } from "../app/services/quotes";
-import type { AgentMessage, QuickAction, ProcessStep } from "@/lib/agent/types";
+import type { AgentMessage, QuickAction, ProcessStep, RequirementsChecklist, ChecklistItem } from "@/lib/agent/types";
+import { RequirementsCard } from "./agent/RequirementsCard";
 
 import { useCopilot } from "./CopilotContext";
 import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
@@ -558,7 +560,7 @@ export function CopilotInterface() {
     []
   );
 
-  const { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat, loadChat, steps, turnActions, addAssistantMessage, recordSelection, regenerate } = useAgentChat({
+  const { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat, loadChat, steps, turnActions, addAssistantMessage, patchMessage, recordSelection, regenerate } = useAgentChat({
     storageKey: STORAGE_KEY,
     welcomeMessage: WELCOME,
     onNavigate: handleAgentNavigate,
@@ -813,6 +815,8 @@ export function CopilotInterface() {
 
   startProposalJourneyRef.current = startProposalJourney;
 
+  const [confirm, confirmDialog] = useConfirm();
+
   const runProposalStep = useCallback(async (p: ProposalStep) => {
     const { step, from, ...base } = p;
     try {
@@ -865,7 +869,7 @@ export function CopilotInterface() {
         return;
       }
       const def = PROPOSAL_STEPS[step];
-      if (step === "reject" && !window.confirm(`Reject ${p.name}'s proposal? This cannot be undone.`)) {
+      if (step === "reject" && !(await confirm({ title: `Reject ${p.name}'s proposal?`, message: "This cannot be undone.", confirmLabel: "Reject proposal", tone: "danger" }))) {
         addAssistantMessage(`Okay — **${p.name}**'s proposal was not rejected. ${proposalNext(from)}`, proposalActions(from, base));
         return;
       }
@@ -891,7 +895,7 @@ export function CopilotInterface() {
         [{ label: step === "underwrite" ? "Send to Underwriting" : PROPOSAL_STEPS[step].label, actionType: "proposal_step", payload: JSON.stringify(p) }]
       );
     }
-  }, [addAssistantMessage]);
+  }, [addAssistantMessage, confirm]);
 
   // Reverse direction of the sync above: the embedded case page (see
   // case/[id]/page.tsx's notifyParentPortal) posts a message here whenever
@@ -1034,7 +1038,7 @@ export function CopilotInterface() {
   // clearance gates), read straight from the case and rendered here with the
   // next one's button — not relayed through the model, so the list and its
   // buttons are always there. Gate actions still run as normal chat requests.
-  const showUnderwritingRequirements = useCallback(async (caseId: string, caseNo?: string) => {
+  const showUnderwritingRequirements = useCallback(async (caseId: string, caseNo?: string, refreshId?: string) => {
     try {
       const tenantId = localStorage.getItem("tenant_id") || DEFAULT_TENANT_ID;
       const res = await api.get(`/tenants/${tenantId}/cases/${caseId}/detail`);
@@ -1053,82 +1057,75 @@ export function CopilotInterface() {
       const eApp = pre.e_application ?? "NotStarted", acr = pre.acr ?? "NotStarted", comp = pre.compliance ?? "NotRun";
       const ipp = pre.ipp ?? "NotStarted", hist = pre.insurance_history ?? "NotStarted", med = pre.medical_exam ?? "NotAssessed";
 
-      const reqs: { name: string; status: string; ok: boolean; detail: string }[] = [
-        { name: "Mandatory Documents Checklist", status: missingDocs.length ? `Missing (${missingDocs.length})` : "Complete", ok: missingDocs.length === 0,
+      const reqs: { id: ChecklistItem["id"]; name: string; status: string; ok: boolean; detail: string }[] = [
+        { id: "docs", name: "Mandatory Documents Checklist", status: missingDocs.length ? `Missing (${missingDocs.length})` : "Complete", ok: missingDocs.length === 0,
           detail: missingDocs.length ? `Missing required document(s): ${missingDocs.join(", ")}.` : "All required documents are uploaded." },
-        { name: "Customer E-Application Questionnaire", status: eApp, ok: eApp === "Verified",
+        { id: "eapp", name: "Customer E-Application Questionnaire", status: eApp, ok: eApp === "Verified",
           detail: "The customer's health disclosures questionnaire — send the link, then verify it once submitted." },
-        { name: "Agent's Confidential Report (ACR)", status: acr, ok: acr === "Submitted",
+        { id: "acr", name: "Agent's Confidential Report (ACR)", status: acr, ok: acr === "Submitted",
           detail: d.family_head_case ? `Filed once for the whole family (recorded on the head's case ${d.family_head_case.case_number}) — one proposer, one report.` : "The agent's own confidential assessment of the applicant, to be filed." },
-        { name: "PEP & Sanctions Screening", status: comp, ok: ["Passed", "Cleared"].includes(comp),
+        { id: "pep", name: "PEP & Sanctions Screening", status: comp, ok: ["Passed", "Cleared"].includes(comp),
           detail: "PEP and AML screening of the applicant against watchlists." },
-        { name: "Initial Premium Payment (IPP)", status: ipp, ok: ipp === "Realized",
+        { id: "ipp", name: "Initial Premium Payment (IPP)", status: ipp, ok: ipp === "Realized",
           detail: d.family_head_case ? `Paid once for the whole family policy (recorded on the head's case ${d.family_head_case.case_number}).` : "Collect the initial premium payment so cover can start." },
-        { name: "Insurance History Clearance", status: hist, ok: ["Clear", "Cleared"].includes(hist),
+        { id: "history", name: "Insurance History Clearance", status: hist, ok: ["Clear", "Cleared"].includes(hist),
           detail: "Prior policy coverage and over-insurance history check." },
-        { name: "Medical Examination / NML Grid", status: med, ok: ["Completed", "Waived", "NotRequired"].includes(med),
+        { id: "medical", name: "Medical Examination / NML Grid", status: med, ok: ["Completed", "Waived", "NotRequired"].includes(med),
           detail: "Non-medical limit grid or panel diagnostic check, depending on the cover amount." },
       ];
       const doneCount = reqs.filter((r) => r.ok).length;
-      const icon = (r: { ok: boolean; status: string }) => (r.ok ? "✅" : /flag|fail|reject/i.test(r.status) ? "❌" : "⏳");
-      const list = reqs.map((r, i) => `${icon(r)} **${i + 1}. ${r.name}** — \`${r.status}\`  \n   _${r.detail}_`).join("\n\n");
 
       const workspace: QuickAction = { label: "Open the case workspace", actionType: "embed", payload: `case/${caseId}` };
       const act = (label: string, payload: string): QuickAction => ({ label, actionType: "submit", payload });
-      let actions: QuickAction[];
-      let footer: string;
-      if (reqs.every((r) => r.ok)) {
-        footer = "**All 7 requirements are complete.** The case is ready for AI underwriting.";
-        actions = [act("Run AI Underwriting", `Run risk assessment for case ${no}`), workspace];
+      // The steps run inside the card itself; `footerActions` are the card as a whole (they go to the chat).
+      let footerActions: QuickAction[] = [workspace];
+      let warning: string | undefined;
+      let note: string | undefined;
+      const allDone = reqs.every((r) => r.ok);
+      if (allDone) {
+        footerActions = [act("Run AI Underwriting", `Run risk assessment for case ${no}`), workspace];
         // A family's next insured member (the spouse) is underwritten once this one's requirements are in.
         const queue = familyQueueRef.current;
         const at = queue.findIndex((c) => c.case_id === caseId);
         const next = at >= 0 ? queue[at + 1] : undefined;
         if (at >= 0) familyDoneRef.current.add(caseId);
         // In a family one member is never assessed alone: the assessments run together once everyone's requirements are in.
-        if (at >= 0 && queue.length > 1) actions = actions.filter((a) => a.label !== "Run AI Underwriting");
+        if (at >= 0 && queue.length > 1) footerActions = footerActions.filter((x) => x.label !== "Run AI Underwriting");
         if (next) {
-          footer += `\n\n👉 **Next member:** ${next.name} (${next.relationship === "Self" ? "head" : "fully insured spouse"}) — their underwriting starts now.`;
-          actions.push({ label: `Underwrite ${next.name}`, actionType: "uw_requirements", payload: JSON.stringify({ caseId: next.case_id, caseNo: next.case_number }) });
+          note = `Next member: ${next.name} (${next.relationship === "Self" ? "head" : "fully insured spouse"}). Their underwriting starts now.`;
+          footerActions.push({ label: `Underwrite ${next.name}`, actionType: "uw_requirements", payload: JSON.stringify({ caseId: next.case_id, caseNo: next.case_number }) });
         } else if (at >= 0 && queue.length > 1 && queue.every((c) => familyDoneRef.current.has(c.case_id))) {
           // Everyone insured has their requirements in: assess them all together rather than just this member.
-          footer += `\n\n👉 **Every insured member's requirements are complete** — assess them together.`;
-          actions = [{ label: "Run risk assessment — all insured members", actionType: "family_assess", payload: "{}" }, workspace];
+          note = "Every insured member's requirements are complete. Assess them together.";
+          footerActions = [{ label: "Run risk assessment — all insured members", actionType: "family_assess", payload: "{}" }, workspace];
         }
-      } else if (!reqs[0].ok) {
-        footer = "👉 **Next — requirement 1 of 7:** upload the missing documents.";
-        actions = [{
-          label: "Upload Documents", actionType: "upload",
-          payload: JSON.stringify({ document_types: missingDocs, case_id: caseId, case_number: no, cnic: d.customer?.cnic || "" }),
-        }, workspace];
-      } else if (!reqs[1].ok) {
-        footer = "👉 **Next — requirement 2 of 7:** send the e-application link to the customer.";
-        actions = [act("Generate E-App Link", `Generate e-application link for case ${no}`)];
-        if (eApp === "Submitted") actions.push(act("Verify E-Application", `Verify e-application for case ${no} action verify`));
-        actions.push(workspace);
-      } else if (!reqs[2].ok) {
-        footer = "👉 **Next — requirement 3 of 7:** file the agent's confidential report.";
-        actions = [act("File ACR", `Submit agent confidential report for case ${no}`), workspace];
-      } else if (!reqs[3].ok) {
-        footer = "👉 **Next — requirement 4 of 7:** run the PEP and sanctions screening.";
-        actions = [act("Run PEP Check", `Run compliance screening for case ${no}`), workspace];
-      } else if (!reqs[4].ok) {
-        footer = "👉 **Next — requirement 5 of 7:** collect the initial premium payment.\n\n⚠️ **Choose carefully** — a collected premium can't be undone from here.";
-        actions = [act("Collect Premium", `Process initial premium payment for case ${no}`), workspace];
-      } else if (!reqs[5].ok) {
-        footer = "👉 **Next — requirement 6 of 7:** run the insurance history check.";
-        actions = [act("Run History Check", `Run insurance history check for case ${no}`), workspace];
-      } else {
-        footer = "👉 **Next — requirement 7 of 7:** assess the medical examination requirement.";
-        actions = [act("Assess Medical", `Assess medical examination for case ${no}`), workspace];
+      } else if (!reqs[4].ok && reqs.slice(0, 4).every((r) => r.ok)) {
+        warning = "Choose carefully: a collected premium can't be undone from here.";
       }
-      addAssistantMessage(`### Underwriting requirements for case **${no}** — ${doneCount} / 7 ready\n\n${list}\n\n${footer}`, actions);
+      const nextIdx = reqs.findIndex((r) => !r.ok);
+      const checklist: RequirementsChecklist = {
+        caseId, caseNo: no, tenantId, customerName: d.customer?.name || undefined, missingDocs, done: doneCount, total: reqs.length, allDone, asOf: Date.now(), note, footerActions,
+        items: reqs.map((r, i) => ({
+          id: r.id,
+          name: r.name,
+          status: r.status,
+          detail: r.detail,
+          state: r.ok ? "done" : i === nextIdx ? (/flag|fail|reject/i.test(r.status) ? "issue" : "next") : "todo",
+          ...(i === nextIdx && warning ? { warning } : {}),
+        })),
+      };
+      // The plain-text twin of the card: what a copy, an export or an old saved chat shows.
+      const summary = `Underwriting requirements for case ${no}: ${doneCount} of ${reqs.length} ready.` +
+        (allDone ? " All requirements are complete." : ` Up next: ${reqs[nextIdx].name}.`);
+      const allActions = footerActions;
+      if (refreshId) patchMessage(refreshId, { text: summary, checklist, quickActions: allActions });
+      else addAssistantMessage(summary, allActions, { checklist });
     } catch (err: any) {
       addAssistantMessage(`⚠️ Couldn't load the underwriting requirements: ${err?.response?.data?.detail ?? err?.message ?? "unknown error"}.`, [
         { label: "Try again", actionType: "uw_requirements", payload: JSON.stringify({ caseId, caseNo }) },
       ]);
     }
-  }, [addAssistantMessage]);
+  }, [addAssistantMessage, patchMessage]);
 
   // Popup for a case's required documents (one slot per document type), opened
   // by an "Upload Documents" button whose payload lists the types.
@@ -2046,6 +2043,12 @@ export function CopilotInterface() {
       (!!evt.case_number && messages.some((m) => m.text?.includes(evt.case_number!)));
     if (evt.case_id === journeyCaseId) refreshJourney(journeyCaseId);
 
+    // A requirements card on screen for this case carries these steps itself: tell it, and keep the chat quiet.
+    if (evt.case_id && messages.some((m) => m.checklist?.caseId === evt.case_id)) {
+      window.dispatchEvent(new CustomEvent("uw-case-event", { detail: evt }));
+      if (["EApplicationSubmitted", "ACRSubmitted", "MedicalExamCompleted"].includes(evt.event_type)) return;
+    }
+
     if (evt.event_type === "EApplicationSubmitted") {
       if (!inThisChat) {
         notify(`📨 ${who} submitted the e-application for ${caseNo}`, true, `case/${evt.case_id}`);
@@ -2535,10 +2538,10 @@ export function CopilotInterface() {
   const exitSelectMode = () => { setSelectMode(false); setSelectedChatIds(new Set()); };
   const toggleSelectedChat = (id: string) =>
     setSelectedChatIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const handleDeleteSelected = () => {
+  const handleDeleteSelected = async () => {
     const ids = selectedChatIds;
     if (ids.size === 0) return;
-    if (!window.confirm(`Delete ${ids.size} chat${ids.size === 1 ? "" : "s"}? This can't be undone.`)) return;
+    if (!(await confirm({ title: `Delete ${ids.size} chat${ids.size === 1 ? "" : "s"}?`, message: "This can't be undone.", confirmLabel: "Delete", tone: "danger" }))) return;
     setSessions(prev => prev.filter(x => !ids.has(x.id)));
     if (activeSessionId && ids.has(activeSessionId)) handleClearChat();
     exitSelectMode();
@@ -2683,7 +2686,8 @@ export function CopilotInterface() {
               }}
             />
           )}
-          {docDialog && (
+          {confirmDialog}
+      {docDialog && (
         <DocumentUploadDialog
           tenantId={localStorage.getItem("tenant_id") || DEFAULT_TENANT_ID}
           caseId={docDialog.case_id}
@@ -3344,9 +3348,17 @@ export function CopilotInterface() {
                                </>
                              ) : (
                                <div className="w-full flex flex-col gap-3">
+                                 {msg.checklist ? (
+                                   <RequirementsCard
+                                     checklist={msg.checklist}
+                                     onAction={handleQuickAction}
+                                     onRefresh={() => showUnderwritingRequirements(msg.checklist!.caseId, msg.checklist!.caseNo, msg.id)}
+                                   />
+                                 ) : (
                                  <div className="prose prose-slate max-w-none text-[16px] leading-relaxed break-words text-slate-800 w-full copilot-markdown prose-p:font-serif prose-headings:font-serif prose-li:font-serif">
                                    <ReactMarkdown>{msg.text}</ReactMarkdown>
                                  </div>
+                                 )}
 
                                  {msg.familyMembers && msg.familyMembers.length > 0 && (
                                    <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm max-w-3xl">
@@ -3467,7 +3479,7 @@ export function CopilotInterface() {
                                 (lowerText.includes("missing") && lowerText.includes("document")) ||
                                 (lowerText.includes("upload") && lowerText.includes("document")));
                              const contentActions = looksLikeMissingDocs ? getRecommendedActions(msg) : [];
-                             const effectiveActions = msg.quickActions && msg.quickActions.length > 0
+                             const effectiveActions = msg.checklist ? undefined : msg.quickActions && msg.quickActions.length > 0
                                ? msg.quickActions
                                : contentActions.length > 0
                                ? contentActions
@@ -3802,6 +3814,7 @@ export function CopilotInterface() {
 
       {showVoice && <VoiceOverlay onClose={() => setShowVoice(false)} />}
 
+      {confirmDialog}
       {docDialog && (
         <DocumentUploadDialog
           tenantId={localStorage.getItem("tenant_id") || DEFAULT_TENANT_ID}

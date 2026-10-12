@@ -83,6 +83,42 @@ export interface FamilyMember {
   relationship?: string;
 }
 
+// The underwriting requirements shown as an interactive card (components/agent/RequirementsCard.tsx) instead of prose.
+export interface ChecklistItem {
+  /** Which step this is; the card runs the step itself. */
+  id: "docs" | "eapp" | "acr" | "pep" | "ipp" | "history" | "medical";
+  name: string;
+  /** The raw status word ("Missing (2)", "NotSent", "Passed"...), shown as a chip. */
+  status: string;
+  /** done: finished; next: the one to do now; todo: waiting on earlier steps; issue: flagged or failed. */
+  state: "done" | "next" | "todo" | "issue";
+  detail: string;
+  /** A caution shown with the action (e.g. a premium can't be undone from here). */
+  warning?: string;
+  /** What can be done about it right now; only given for the next step. */
+  actions?: QuickAction[];
+}
+
+export interface RequirementsChecklist {
+  caseId: string;
+  caseNo: string;
+  tenantId: string;
+  /** The applicant, for modals that name them. */
+  customerName?: string;
+  /** Document types the case still lacks (for the upload step). */
+  missingDocs: string[];
+  items: ChecklistItem[];
+  done: number;
+  total: number;
+  allDone: boolean;
+  /** When this was read from the case, so an old card can say how old it is. */
+  asOf: number;
+  /** A line under the list (e.g. who is underwritten next in a family). */
+  note?: string;
+  /** Buttons for the card as a whole: run underwriting, open the workspace, the next family member... */
+  footerActions?: QuickAction[];
+}
+
 export interface AgentMessage {
   id: string;
   role: "user" | "assistant";
@@ -94,6 +130,8 @@ export interface AgentMessage {
   // answered dropdown stays answered after switching chats or reloading.
   selections?: Record<number, string>;
   actionResult?: ActionResult;
+  /** When set the message is drawn as the requirements card; `text` is a short plain summary of it. */
+  checklist?: RequirementsChecklist;
   steps?: ProcessStep[];
   assessment?: AssessmentScores;
   familyMembers?: FamilyMember[];

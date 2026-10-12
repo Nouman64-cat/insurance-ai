@@ -481,6 +481,11 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
     }
   }, []);
 
+  // Replace parts of an existing message in place (a live card refreshing itself) without adding a new one.
+  const patchMessage = useCallback((id: string, patch: Partial<AgentMessage>) => {
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+  }, []);
+
   // GPT-style "regenerate from here": everything after this point is dropped and the flow carries on from it.
   //  - A reply the agent wrote: the conversation is rewound to the message that asked for it and that message is asked
   //    again (the agent's own memory of the thread is rewound too — see /chat/stream `regenerate`).
@@ -553,5 +558,5 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
     localStorage.removeItem(`${storageKey}_actions`);
   }, [storageKey, threadStorageKey, welcomeMessage]);
 
-  return { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat, loadChat, steps, turnActions, addAssistantMessage, recordSelection, regenerate };
+  return { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat, loadChat, steps, turnActions, addAssistantMessage, patchMessage, recordSelection, regenerate };
 }

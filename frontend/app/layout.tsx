@@ -21,9 +21,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              if (localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                document.documentElement.classList.add('dark');
-              }
+              // The dark-mode switch was removed: always light, even if an old session saved a dark theme.
+              try { localStorage.removeItem('theme'); } catch (e) {}
+              document.documentElement.classList.remove('dark');
             `,
           }}
         />
