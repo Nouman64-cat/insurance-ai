@@ -135,6 +135,9 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
   // through its workflow (Draft → Submitted → Under Review → Underwriting), so
   // a customer can't be registered there without one.
   const inChatPanel = mode === "create" && typeof window !== "undefined" && window.parent !== window;
+  // A new lead is added without a plan: the plan is attached later, in the Plan Selection module. Only the
+  // Copilot chat still picks one here, because it creates the proposal straight away.
+  const formTabs = mode === "create" && !inChatPanel ? customerTabs.filter((t) => t.id !== "insurance_plan") : customerTabs;
 
   const {
     register,
@@ -956,7 +959,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
 
         {/* Tab navigation */}
         <div className="px-6 border-b border-slate-100 bg-white flex flex-wrap gap-1">
-          {customerTabs.map((tab) => (
+          {formTabs.map((tab) => (
             <button
               key={tab.id}
               type="button"
@@ -2545,23 +2548,23 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
           </div>
           <div className="flex gap-3">
             {(() => {
-              const currentIdx = customerTabs.findIndex(t => t.id === formTab);
+              const currentIdx = formTabs.findIndex(t => t.id === formTab);
               return (
                 <>
                   {currentIdx > 0 && (
                     <button
                       type="button"
-                      onClick={() => setFormTab(customerTabs[currentIdx - 1].id)}
+                      onClick={() => setFormTab(formTabs[currentIdx - 1].id)}
                       className="px-5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg"
                     >
                       {tx("Previous")}
                     </button>
                   )}
-                  {currentIdx < customerTabs.length - 1 ? (
+                  {currentIdx < formTabs.length - 1 ? (
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => setFormTab(customerTabs[currentIdx + 1].id)}
+                        onClick={() => setFormTab(formTabs[currentIdx + 1].id)}
                         className="px-5 py-2 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-900 rounded-lg"
                       >
                         {tx("Next Step")}

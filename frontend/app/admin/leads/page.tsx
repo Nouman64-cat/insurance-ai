@@ -49,6 +49,12 @@ interface UnifiedLead {
   proposalStatus?: string | null;
   /** Status of this lead's underwriting case, when one has been opened. */
   caseStatus?: string | null;
+  /** The quotation (estimated annual premium) of this customer's most advanced proposal. Individuals only. */
+  quotation?: { amount: number; plan: string; coverage: number; extra: number } | null;
+  /** A plan chosen on the entry form that has no quotation yet (it becomes a proposal on Send Draft). */
+  pendingPlan?: string | null;
+  /** Sent to the Plan Selection module and waiting there for a plan / Send Draft. Individuals only. */
+  inPlanSelection?: boolean;
 }
 
 const SOURCE_TYPE_LABELS: Record<string, string> = {
@@ -344,6 +350,8 @@ export default function LeadsHubPage() {
             assignedAgentName: agentNameFor(c.assigned_agent_id),
             sourceName: c.acquisition_source?.name ?? null,
             sourceType: c.acquisition_source?.source_type ?? null,
+            pendingPlan: c.details?.pending_plan?.product_name ?? null,
+            inPlanSelection: !!c.details?.in_plan_selection,
           });
         }
       });
@@ -427,11 +435,24 @@ export default function LeadsHubPage() {
           Approved: 4, AcceptedWithLoadings: 4, PendingPayment: 5, Issued: 5, Active: 5,
         };
         const bestQuote = new Map<string, string>();
+        const bestItem = new Map<string, { total_premium: number; plan_label: string; coverage_amount: number }>();
+        const quoteCount = new Map<string, number>();
         for (const q of (await listQuotes()) ?? []) {
+          quoteCount.set(q.customer_id, (quoteCount.get(q.customer_id) ?? 0) + 1);
           const have = bestQuote.get(q.customer_id);
-          if ((QUOTE_RANK[q.status] ?? 1) > (have === undefined ? -1 : QUOTE_RANK[have] ?? 1)) bestQuote.set(q.customer_id, q.status);
+          if ((QUOTE_RANK[q.status] ?? 1) > (have === undefined ? -1 : QUOTE_RANK[have] ?? 1)) {
+            bestQuote.set(q.customer_id, q.status);
+            bestItem.set(q.customer_id, q);
+          }
         }
-        unified.forEach((l) => { if (l.type === "INDIVIDUAL") l.proposalStatus = bestQuote.get(l.id) ?? null; });
+        unified.forEach((l) => {
+          if (l.type !== "INDIVIDUAL") return;
+          l.proposalStatus = bestQuote.get(l.id) ?? null;
+          const q = bestItem.get(l.id);
+          l.quotation = q
+            ? { amount: q.total_premium, plan: q.plan_label, coverage: q.coverage_amount, extra: (quoteCount.get(l.id) ?? 1) - 1 }
+            : null;
+        });
       } catch { /* proposal statuses unavailable */ }
       try {
         // An open case beats a closed one; Approved beats the rest.
@@ -520,8 +541,8 @@ export default function LeadsHubPage() {
       case "ACTIVE": return l.status !== "NOT_INTERESTED" && l.status !== "POLICYHOLDER" && st.tone !== "red";
       case "LEAD": return st.step === 1;
       case "IN_PROGRESS": return st.label === "In proposal" || st.label === "Proposal draft";
-      case "SUBMITTED": return st.label === "Proposal submitted";
-      case "UNDER_REVIEW": return st.label === "Proposal under review";
+      case "SUBMITTED": return st.label === "Application submitted";
+      case "UNDER_REVIEW": return st.label === "Application under review";
       case "INFO_REQUESTED": return st.label === "Info requested";
       case "UNDERWRITING": return st.label === "In underwriting";
       case "APPROVED": return st.label === "Approved" || st.step === 5;
@@ -618,6 +639,7 @@ export default function LeadsHubPage() {
 
   // "Send Draft" is what moves a lead into Proposals, and takes you there.
   const handleSendDraft = async (lead: UnifiedLead) => {
+    if (lead.type === "INDIVIDUAL") return handleSelectPlan(lead);
     setActionBusyId(lead.id);
     setError("");
     try {
@@ -630,6 +652,33 @@ export default function LeadsHubPage() {
       }
     } catch (err: any) {
       setError(err.response?.data?.detail ?? err.message ?? tx("Failed to send draft."));
+    } finally {
+      setActionBusyId(null);
+    }
+  };
+
+  // Individuals pick their plan in the Plan Selection module; "Select Plan" sends the lead there. Send Draft
+  // happens from that module once a plan is chosen. Families and organisations have no plan stage yet.
+  const handleSelectPlan = async (lead: UnifiedLead) => {
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId) return;
+    setActionBusyId(lead.id);
+    setError("");
+    try {
+      const { data: customer } = await api.get(`/tenants/${tenantId}/customers/${lead.id}`);
+      if (!customer.details?.in_plan_selection) {
+        // A plan left over from the old entry form is dropped: a lead starts Plan Selection with no plan.
+        const { pending_plan, plan_policy_id, ...rest } = customer.details || {};
+        await api.put(`/tenants/${tenantId}/customers/${lead.id}`, { details: { ...rest, in_plan_selection: true } });
+      }
+      if (isEmbedded()) {
+        setNotice(tx("\"{0}\" sent to Plan Selection.", { 0: lead.name }));
+        await fetchLeads();
+      } else {
+        router.push("/plans?tab=selection");
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to send to Plan Selection."));
     } finally {
       setActionBusyId(null);
     }
@@ -1047,7 +1096,7 @@ export default function LeadsHubPage() {
                     </div>
                   ) : (
                     <div className="overflow-x-auto w-full">
-                      <table className="w-full min-w-[1000px] text-left text-sm whitespace-nowrap">
+                      <table className="w-full min-w-[1150px] text-left text-sm whitespace-nowrap">
                         <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-100">
                           <tr>
                             <th className="px-6 py-4">{tx("Lead ID")}</th>
@@ -1057,6 +1106,7 @@ export default function LeadsHubPage() {
                             <th className="px-6 py-4">{tx("Contact")}</th>
                             <th className="px-6 py-4">{tx("CNIC")}</th>
                             <th className="px-6 py-4">{tx("Date Added")}</th>
+                            <th className="px-6 py-4">{tx("Quotation")}</th>
                             <th className="px-6 py-4">{tx("Status")}</th>
                             <th className="px-4 py-4 w-10"></th>
                             <th className="px-6 py-4 text-right">{tx("Actions")}</th>
@@ -1094,6 +1144,26 @@ export default function LeadsHubPage() {
                                 <td className="px-6 py-4 text-slate-500 font-mono text-xs">{lead.primaryIdentifier || "-"}</td>
                                 <td className="px-6 py-4 text-slate-500 text-xs">{new Date(lead.created_at).toLocaleDateString()}</td>
                                 <td className="px-6 py-4">
+                                  {lead.quotation ? (
+                                    <div title={`${lead.quotation.plan} · ${tx("Coverage")} ${tx("PKR")} ${lead.quotation.coverage.toLocaleString()}`}>
+                                      <div className="font-semibold text-slate-900">
+                                        {tx("PKR")} {Math.round(lead.quotation.amount).toLocaleString()}{" "}
+                                        <span className="text-[11px] font-medium text-slate-400">/ {tx("yr")}</span>
+                                      </div>
+                                      <div className="max-w-[200px] truncate text-xs text-slate-500">
+                                        {lead.quotation.plan}{lead.quotation.extra > 0 ? ` · +${lead.quotation.extra} ${tx("more")}` : ""}
+                                      </div>
+                                    </div>
+                                  ) : lead.pendingPlan ? (
+                                    <div>
+                                      <div className="text-xs font-semibold text-slate-500">{tx("Not quoted yet")}</div>
+                                      <div className="max-w-[200px] truncate text-xs text-slate-400">{lead.pendingPlan}</div>
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-300">—</span>
+                                  )}
+                                </td>
+                                <td className="px-6 py-4">
                                   <LeadProgress lead={lead} />
                                 </td>
                                 <td className="px-4 py-4 text-center">
@@ -1130,9 +1200,9 @@ export default function LeadsHubPage() {
                                           <button
                                             disabled={busy}
                                             onClick={() => handleSendDraft(lead)}
-                                            className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-fuchsia-50 text-fuchsia-700 hover:bg-fuchsia-100 transition-colors"
+                                            className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
                                           >
-                                            {tx("Send Draft")}
+                                            {lead.type === "INDIVIDUAL" ? (lead.inPlanSelection ? tx("In Plan Selection") : tx("Select Plan")) : tx("Send Draft")}
                                           </button>
                                         )}
                                         <button
@@ -1405,8 +1475,8 @@ function LeadCard({
               </button>
             )}
             {lead.status !== "DRAFT" && (
-              <button disabled={busy} onClick={act(onSendDraft)} className={`${btnBase} text-fuchsia-700 bg-fuchsia-50 hover:bg-fuchsia-100`}>
-                {tx("Send Draft")}
+              <button disabled={busy} onClick={act(onSendDraft)} className={`${btnBase} text-blue-700 bg-blue-50 hover:bg-blue-100`}>
+                {lead.type === "INDIVIDUAL" ? (lead.inPlanSelection ? tx("In Plan Selection") : tx("Select Plan")) : tx("Send Draft")}
               </button>
             )}
             <button disabled={busy} onClick={act(onMarkNotInterested)} className={`${btnBase} text-rose-600 bg-rose-50 hover:bg-rose-100`}>

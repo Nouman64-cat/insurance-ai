@@ -71,6 +71,7 @@ import { appHref, portalUrl } from "@/lib/appLinks";
 import dynamic from "next/dynamic";
 
 // Dialogs are loaded when first opened, not with the page.
+const ChangePlanModal = dynamic(() => import("@/components/entities/ChangePlanModal").then((m) => m.ChangePlanModal), { ssr: false });
 const ACRModal = dynamic(() => import("@/components/entities/ACRModal").then((m) => m.ACRModal), { ssr: false });
 const WaiveAcrModal = dynamic(() => import("@/components/entities/WaiveAcrModal").then((m) => m.WaiveAcrModal), { ssr: false });
 const UndoWaiverModal = dynamic(() => import("@/components/entities/WaiveAcrModal").then((m) => m.UndoWaiverModal), { ssr: false });
@@ -1319,6 +1320,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const [eAppErr, setEAppErr] = useState<string | null>(null);
   const [acr, setAcr] = useState<AgentConfidentialReport | null>(null);
   const [showACRModal, setShowACRModal] = useState(false);
+  const [showChangePlan, setShowChangePlan] = useState(false);
   const [ipp, setIpp] = useState<IPP | null>(null);
   const [showIPPModal, setShowIPPModal] = useState(false);
   const [checks, setChecks] = useState<ComplianceCheck[]>([]);
@@ -2943,7 +2945,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const prereqsIncomplete = missingPreChecks.length > 0;
   const decisionButtons =
     c.caseStatus !== "Approved" && c.caseStatus !== "Rejected" ? (
-      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-4">
+      <div className="flex flex-wrap items-center justify-end gap-2">
         {prereqsIncomplete && (
           <p className="mr-auto text-xs text-slate-500">
             {tx("Override: Proceed unlocks when all 7 steps above are done (")}
@@ -2965,6 +2967,22 @@ export default function CasePage({ params }: { params: { id: string } }) {
           ) : (
             tx("Request Info")
           )}
+        </button>
+        <button
+          onClick={() => {
+            // Deliberately changes nothing: no status, no decision, no API call. The toast only confirms it.
+            setSuccessMessage("Case left on hold — nothing was changed.");
+            window.setTimeout(() => setSuccessMessage(null), 4000);
+          }}
+          disabled={overriding !== null || userRole === "Agent"}
+          title={
+            userRole === "Agent"
+              ? tx("Currently, you have no access to do this, ask your manager")
+              : tx("Leave the case as it is for now. Nothing is changed.")
+          }
+          className={`px-4 py-2 text-sm font-semibold text-slate-700 border border-slate-300 rounded-lg transition-colors ${userRole === "Agent" ? "opacity-50 cursor-not-allowed bg-slate-100" : "hover:bg-slate-50"}`}
+        >
+          {tx("On hold")}
         </button>
         <button
           onClick={() => overrideStatus("Rejected")}
@@ -3594,6 +3612,23 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   }
                 />
                 <DataRow
+                  label={tx("Plan")}
+                  value={
+                    <span className="flex items-center justify-between gap-3">
+                      <span>{policy.product_name}</span>
+                      {canWaiveAcr && !["Approved", "Rejected", "Closed"].includes(c.caseStatus) && (
+                        <button
+                          type="button"
+                          onClick={() => setShowChangePlan(true)}
+                          className="shrink-0 rounded-md border border-blue-600 px-2.5 py-1 text-xs font-semibold text-blue-600 transition-colors hover:bg-blue-50"
+                        >
+                          {tx("Change plan")}
+                        </button>
+                      )}
+                    </span>
+                  }
+                />
+                <DataRow
                   label={tx("Coverage Amount")}
                   value={fmtCoverage(policy.coverage_amount)}
                 />
@@ -3663,6 +3698,27 @@ export default function CasePage({ params }: { params: { id: string } }) {
                 error={waiveError}
                 onCancel={() => setWaiveModal(null)}
                 onConfirm={confirmReinstateAcr}
+              />
+            )}
+
+            {showChangePlan && policy && (
+              <ChangePlanModal
+                tenantId={tenantId}
+                caseId={caseId}
+                policy={policy}
+                customer={customer ?? null}
+                onClose={() => setShowChangePlan(false)}
+                onDone={(message) => {
+                  setShowChangePlan(false);
+                  setSuccessMessage(message);
+                  window.setTimeout(() => setSuccessMessage(null), 5000);
+                  fetchDetail();
+                  fetchRequirements();
+                  fetchArtifacts();
+                  fetchHistory();
+                  fetchMedical();
+                  fetchIpp();
+                }}
               />
             )}
 

@@ -4,12 +4,14 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select, delete
 from typing import List, Literal, Optional
 from uuid import UUID
-from datetime import datetime
+from datetime import date, datetime
+from pydantic import BaseModel
 
 from database import get_session
 from document_requirements import get_required_documents
+from services import document_requests as docreq
 from routers.auth import oauth2_scheme, optional_oauth2_scheme, source_scope, _get_current_user, _role_name
-from services import compliance_engine, underwriting_gate
+from services import compliance_engine, plan_change, underwriting_gate
 from shared.models.core import (
     Customer,
     Artifact,
@@ -160,6 +162,9 @@ async def create_case(
     await session.commit()
     await session.refresh(case)
 
+    # Documents the customer already uploaded through the proposal's document link join this case.
+    await docreq.adopt_documents(session, case)
+
     # Generate Audit Trail
     audit = CaseAuditTrail(
         caseld=case.caseld,
@@ -252,7 +257,7 @@ async def list_cases(
     case_ids = [c.caseld for c in cases]
     assessments_stmt = (
         select(RiskAssessment)
-        .where(RiskAssessment.case_id.in_(case_ids))
+        .where(RiskAssessment.case_id.in_(case_ids), RiskAssessment.superseded_at.is_(None))
         .order_by(RiskAssessment.created_at.desc())
     )
     latest_by_case: dict = {}
@@ -496,7 +501,9 @@ async def get_case_detail(
         .order_by(RiskAssessment.created_at.desc())
     )
     assessments = (await session.execute(assessments_stmt)).scalars().all()
-    latest = assessments[0] if assessments else None
+    # A run made on a plan the case has since moved off is history, not the current result.
+    current = [a for a in assessments if a.superseded_at is None]
+    latest = current[0] if current else None
 
     principal_participant_name = None
     is_principal_participant = False
@@ -1251,3 +1258,35 @@ async def advance_case_workflow(
         "previousStep": workflow.previousStep,
         "workflowState": workflow.workflowState.value,
     }
+
+
+class ChangePlanBody(BaseModel):
+    plan_id: UUID
+    coverage_amount: float
+    term_years: int
+    dependent_name: Optional[str] = None
+    dependent_dob: Optional[date] = None
+    reason: Optional[str] = None
+    dry_run: bool = False
+
+
+_PLAN_CHANGE_ROLES = {"Underwriter", "Admin", "SuperAdmin"}
+
+
+@router.post("/{case_id}/change-plan")
+async def change_case_plan(
+    tenant_id: UUID,
+    case_id: UUID,
+    body: ChangePlanBody,
+    session: AsyncSession = Depends(get_session),
+    token: str = Depends(oauth2_scheme),
+):
+    """Move the proposal on this case to another plan. dry_run=true previews the impact without changing anything."""
+    user = await _get_current_user(token, session)
+    role_name = await _role_name(user, session)
+    if role_name not in _PLAN_CHANGE_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Changing the plan requires one of: {', '.join(sorted(_PLAN_CHANGE_ROLES))} (you are {role_name}).",
+        )
+    return await plan_change.run(session, tenant_id, case_id, body, user)

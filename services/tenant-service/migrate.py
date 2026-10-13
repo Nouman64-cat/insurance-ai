@@ -1385,6 +1385,29 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v57c-enum — add EXPIRED to policystatusenum",
         "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'EXPIRED'",
     ),
+    # ── Document-submission links: uploads remember the request they came through
+    #    (document_requests itself is a new table, built by create_all).
+    (
+        "v58a — add source_request_id to artifacts",
+        "ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS source_request_id UUID",
+    ),
+    (
+        "v58b — index artifacts.source_request_id",
+        "CREATE INDEX IF NOT EXISTS ix_artifacts_source_request_id ON artifacts (source_request_id)",
+    ),
+    # ── Plan change mid-underwriting: the old AI run is kept but marked superseded.
+    (
+        "v59a — add superseded_at to risk_assessments",
+        "ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS superseded_at TIMESTAMP WITHOUT TIME ZONE",
+    ),
+    (
+        "v59b — add superseded_reason to risk_assessments",
+        "ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS superseded_reason TEXT",
+    ),
+    (
+        "v60 — add submitted_at to document_requests",
+        "ALTER TABLE document_requests ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMP WITHOUT TIME ZONE",
+    ),
 ]
 
 

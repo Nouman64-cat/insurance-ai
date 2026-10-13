@@ -20,7 +20,7 @@ import SourcePicker, { useAcquisitionSources } from "@/components/entities/Sourc
 import { Pagination, usePagination } from "@/components/Pagination";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import { tx } from "@/lib/i18n/tx";
-import { appHref } from "@/lib/appLinks";
+import { appHref, portalUrl } from "@/lib/appLinks";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -91,7 +91,7 @@ function dedupeQuotesByCustomer(quotes: QuoteListItem[]): QuoteListItem[] {
 }
 
 const STATUS_TABS = [
-  { id: "ALL", label: "All Proposals" },
+  { id: "ALL", label: "All" },
   { id: "Quoted", label: "Draft" },
   { id: "Proposed", label: "Submitted" },
   { id: "UnderReview", label: "Under Review" },
@@ -308,7 +308,7 @@ function getAvailableActions(
     if (!forBatch && hasMissingFields) {
       opts.push({ value: "save_info", label: "Save Information", tier: "submission" });
     }
-    opts.push({ value: "status:Proposed", label: "Re-Submit Proposal", tier: "submission" });
+    opts.push({ value: "status:Proposed", label: "Re-Submit Application", tier: "submission" });
     opts.push({ value: "status:UnderReview", label: "Return to Under Review", tier: "submission" });
   } else {
     // Approved / AcceptedWithLoadings / Declined / Issued: no actions here —
@@ -316,8 +316,12 @@ function getAvailableActions(
     return [];
   }
 
+  // "On hold" is offered at every one of those steps: it changes nothing and leaves the proposal exactly where it is.
+  opts.push({ value: "hold", label: "On hold", tier: "submission" });
+
   // Reject is legal directly from any of the four statuses above
-  opts.push({ value: "status:Declined", label: "Reject Proposal", tier: "decision" });
+  // A Draft is still a proposal; once submitted it is an application.
+  opts.push({ value: "status:Declined", label: status === "Quoted" ? "Reject Proposal" : "Reject Application", tier: "decision" });
 
   return opts;
 }
@@ -612,7 +616,7 @@ export default function QuotePage() {
   };
 
   const getBatchConfirmMessage = (option: ProposalActionOption, selectedCount: number) =>
-    option.tier === "decision" ? tx("Reject {count} proposal(s)? This cannot be undone.", { count: selectedCount }) : undefined;
+    option.tier === "decision" ? tx("Reject {count} selected? This cannot be undone.", { count: selectedCount }) : undefined;
 
   const openQuote = useCallback(async (quoteId: string) => {
     if (quoteId.startsWith("draft-")) {
@@ -792,7 +796,7 @@ export default function QuotePage() {
     const totalCoverage = fullyFilteredQuotes.reduce((sum, qt) => sum + qt.coverage_amount, 0);
     const totalPremium = fullyFilteredQuotes.reduce((sum, qt) => sum + qt.total_premium, 0);
     return [
-      { title: tx("Proposals"), value: fullyFilteredQuotes.length, subtitle: tx("plans generated"), accent: "blue" as const, icon: <KpiIcon name="document" /> },
+      { title: activeTab === "Quoted" ? tx("Proposals") : activeTab === "ALL" ? tx("Proposals & Applications") : tx("Applications"), value: fullyFilteredQuotes.length, subtitle: tx("plans generated"), accent: "blue" as const, icon: <KpiIcon name="document" /> },
       { title: tx("Total Coverage"), value: fullyFilteredQuotes.length > 0 ? fmtCoverage(totalCoverage) : "—", subtitle: tx("sum assured"), accent: "blue" as const, icon: <KpiIcon name="shield" /> },
       { title: tx("Total Premium"), value: fullyFilteredQuotes.length > 0 ? fmtCoverage(totalPremium) : "—", subtitle: tx("annualized"), accent: "blue" as const, icon: <KpiIcon name="coin" /> },
     ];
@@ -910,6 +914,8 @@ export default function QuotePage() {
   const individualQuotes = useMemo(() => individualGroups.flatMap((g) => g.quotes), [individualGroups]);
   const { pageItems: pagedIndividualQuotes, pagination: individualPagination } = usePagination(individualQuotes);
   const activeTabLabel = tx(STATUS_TABS.find((t) => t.id === activeTab)?.label ?? activeTab);
+  // A draft is a proposal; from Submitted onward it is an application.
+  const entryNoun = activeTab === "Quoted" ? "proposals" : activeTab === "ALL" ? "proposals & applications" : "applications";
   const activeFilterCount = [dateFrom, dateTo, agentFilter, sourceFilter].filter(Boolean).length;
   const clearFilters = () => {
     setDateFrom("");
@@ -930,9 +936,9 @@ export default function QuotePage() {
             </svg>
           </div>
           <div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Proposals")}</h1>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Proposals & Applications")}</h1>
             <p className="text-sm text-slate-500 mt-0.5 max-w-2xl">
-              {tx("Generated automatically the moment a customer is registered — no form to fill in. Corporate proposals nest by organization and master policy; family proposals by family and floater/life-bundle policy.")}
+              {tx("A draft is a proposal. Once it is submitted it becomes an application and moves through review and underwriting. Corporate entries nest by organization and master policy; family entries by family and floater/life-bundle policy.")}
             </p>
           </div>
         </div>
@@ -948,7 +954,7 @@ export default function QuotePage() {
 
       <div className="flex flex-col gap-3">
         {/* Stage filter: one tap to see only the proposals at that stage, with how many; "All proposals" until one is picked */}
-        <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label={tx("Proposal stage")}>
+        <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label={tx("Stage")}>
           {STATUS_TABS.map((t) => {
             const on = activeTab === t.id;
             const dot: Record<string, string> = {
@@ -1109,14 +1115,14 @@ export default function QuotePage() {
             </div>
             <p className="text-sm font-semibold text-slate-600">
               {quotes.length === 0
-                ? tx("No proposals yet")
+                ? tx("No proposals or applications yet")
                 : segmentQuotes.length === 0
-                  ? activeTab === "ALL" ? tx("No proposals") : tx("No proposals in “{stage}”", { stage: activeTabLabel })
-                  : tx("No proposals match your search")}
+                  ? activeTab === "ALL" ? tx("No proposals or applications") : activeTab === "Quoted" ? tx("No proposals in “{stage}”", { stage: activeTabLabel }) : tx("No applications in “{stage}”", { stage: activeTabLabel })
+                  : tx("No {0} match your search", { 0: tx(entryNoun) })}
             </p>
             <p className="text-xs text-slate-400 mt-1.5 max-w-xs leading-relaxed">
               {quotes.length === 0
-                ? tx("Register a customer and a proposal will be generated automatically in the background.")
+                ? tx("Send a lead to Draft from the Leads page and its proposal will appear here.")
                 : segmentQuotes.length === 0
                   ? tx("Try a different stage or switch the segment filter to All Cases.")
                   : tx("Try a different customer name, CNIC, organization, or plan.")}
@@ -1344,7 +1350,7 @@ export default function QuotePage() {
                             openQuote={openQuote}
                           />
                         )}
-                        <Pagination pagination={individualPagination} noun={tx("proposals")} inline />
+                        <Pagination pagination={individualPagination} noun={tx(entryNoun)} inline />
                       </div>
                     );
                   })()}
@@ -1405,6 +1411,11 @@ const ACTION_ICON_PROPS = {
 };
 
 function ActionIcon({ value }: { value: string }) {
+  if (value === "hold") {
+    return (
+      <svg {...ACTION_ICON_PROPS}><line x1="9" y1="5" x2="9" y2="19" /><line x1="15" y1="5" x2="15" y2="19" /></svg>
+    );
+  }
   if (value === "status:Declined") {
     return (
       <svg {...ACTION_ICON_PROPS}><circle cx="12" cy="12" r="9" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
@@ -1453,6 +1464,7 @@ function ActionDropdown({
   const visible = options.filter((o) => (o.tier === "decision" ? canDecide : canAct));
   const [selected, setSelected] = useState(visible[0]?.value ?? "");
   const [applying, setApplying] = useState(false);
+  const [held, setHeld] = useState(false);
 
   useEffect(() => {
     if (!visible.find((o) => o.value === selected)) {
@@ -1477,6 +1489,12 @@ function ActionDropdown({
 
   const handleApply = async () => {
     if (!selectedOption) return;
+    if (selectedOption.value === "hold") {
+      // Deliberately does nothing: no status change, no request. The note only confirms it.
+      setHeld(true);
+      window.setTimeout(() => setHeld(false), 4000);
+      return;
+    }
     const confirmMessage = getConfirmMessage?.(selectedOption);
     if (confirmMessage && !window.confirm(confirmMessage)) return;
     setApplying(true);
@@ -1488,10 +1506,10 @@ function ActionDropdown({
   };
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <FancyDropdown
         value={selected}
-        onChange={setSelected}
+        onChange={(v) => { setSelected(v); setHeld(false); }}
         options={dropdownOptions}
         disabled={disabled || applying}
         size="sm"
@@ -1518,6 +1536,9 @@ function ActionDropdown({
         )}
         {applying ? tx("Applying…") : tx("Apply")}
       </button>
+      {held && (
+        <span role="status" className="text-xs font-semibold text-blue-700">{tx("On hold — nothing was changed.")}</span>
+      )}
     </div>
   );
 }
@@ -1687,8 +1708,13 @@ function ProposalsTable({
                   {tx("Lead ID:")} {formatLeadDisplayId(row.customer_id, row.created_at, quoteSegment(row))}
                 </p>
                 {row.acquisition_source_name && (
-                  <p className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[150px]" title={row.acquisition_source_name}>
-                    {row.acquisition_source_name}
+                  // Labelled with what the source is (Agent, Broker, Bancassurance…), so a name never stands alone.
+                  <p
+                    className="text-[11px] font-medium text-slate-500 mt-0.5 truncate max-w-[180px]"
+                    title={`${tx(SOURCE_TYPE_LABELS[row.acquisition_source_type ?? ""] ?? "Source")}: ${row.acquisition_source_name}`}
+                  >
+                    {tx(SOURCE_TYPE_LABELS[row.acquisition_source_type ?? ""] ?? "Source")}:{" "}
+                    <span className="text-slate-700">{row.acquisition_source_name}</span>
                   </p>
                 )}
               </td>
@@ -1823,7 +1849,7 @@ function ProposalProgress({ status }: { status: string }) {
   const { current, note, tone } = proposalProgress(status);
   return (
     <div>
-      <ol className="flex items-start" aria-label={tx("Proposal progress")}>
+      <ol className="flex items-start" aria-label={tx("Progress")}>
         {PROPOSAL_STEPS_UI.map((st, i) => {
           const done = st.n < current;
           const now = st.n === current;
@@ -1887,6 +1913,8 @@ function QuoteDetailModal({
   const { locale, tx } = useI18n();
 
   const [startError, setStartError] = useState<string | null>(null);
+  // A Draft is a proposal; from Submitted onward it is an application.
+  const isApp = !!detail && detail.status !== "Quoted";
 
   // Edit / delete the proposal itself. Only while it is still a Draft (or the team has asked for more
   // information); once it is with the admin team or decided, it is changed on its underwriting case.
@@ -2126,6 +2154,66 @@ function QuoteDetailModal({
     }
   };
 
+  // The documents this proposal's plan requires, and the link the customer uploads them through. Created when the
+  // plan is attached; read here so staff can copy the link and see what has arrived.
+  type DocRequest = {
+    requirements: { document_type: string; state: "received" | "missing" | "reupload"; files: { file_name: string }[] }[];
+    received: number;
+    total: number;
+    expires_at: string;
+    expired: boolean;
+    link_path: string;
+  };
+  const [docReq, setDocReq] = useState<DocRequest | null>(null);
+  const [docReqError, setDocReqError] = useState<string | null>(null);
+  const [docBusy, setDocBusy] = useState(false);
+  const [confirmRenew, setConfirmRenew] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const docPath = detail
+    ? `/tenants/${typeof window !== "undefined" ? localStorage.getItem("tenant_id") : ""}/customers/${detail.customer_id}/policies/${detail.policy_id}/document-request`
+    : "";
+
+  useEffect(() => {
+    if (!detail?.policy_id || !docPath) return;
+    let alive = true;
+    api.get(docPath)
+      .then((r) => { if (alive) { setDocReq(r.data); setDocReqError(null); } })
+      .catch((err) => { if (alive) setDocReqError(errorText(err, tx("Could not load the document list."))); });
+    return () => { alive = false; };
+    // plan_label: editing the plan can change which documents are required
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail?.policy_id, detail?.customer_id, detail?.plan_label]);
+
+  const copyDocLink = async () => {
+    if (!docReq) return;
+    const url = portalUrl(docReq.link_path);
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const box = document.createElement("textarea");
+      box.value = url;
+      document.body.appendChild(box);
+      box.select();
+      document.execCommand("copy");
+      box.remove();
+    }
+    setLinkCopied(true);
+    window.setTimeout(() => setLinkCopied(false), 2000);
+  };
+
+  const renewDocLink = async () => {
+    setDocBusy(true);
+    try {
+      const r = await api.post(`${docPath}/renew`);
+      setDocReq(r.data);
+      setConfirmRenew(false);
+    } catch (err: any) {
+      setDocReqError(errorText(err, tx("Could not renew the link.")));
+    } finally {
+      setDocBusy(false);
+    }
+  };
+
   const missingFields = useMemo(() => {
     if (!detail) return [];
     const missing: { key: string; label: string; type: string }[] = [];
@@ -2185,7 +2273,7 @@ function QuoteDetailModal({
       >
         <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <p className="text-sm font-semibold text-slate-700">{tx("Proposal Details")}</p>
+            <p className="text-sm font-semibold text-slate-700">{tx(isApp ? "Application Details" : "Proposal Details")}</p>
             {detail && <StatusBadge status={detail.status} />}
           </div>
           <button
@@ -2203,7 +2291,7 @@ function QuoteDetailModal({
             <ProposalProgress status={detail.status} />
             {isAgent && modalOptions.length === 0 && ["Proposed", "UnderReview", "Approved", "AcceptedWithLoadings", "Declined", "Issued"].includes(detail.status) && (
               <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-500" title={tx("Currently, you have no access to do this, ask your manager")}>
-                {tx("This proposal has been sent to the admin team for further review, so it can no longer be changed from here. You can follow its progress on this page.")}
+                {tx("This application has been sent to the admin team for further review, so it can no longer be changed from here. You can follow its progress on this page.")}
               </div>
             )}
             {/* The next move: only what is legal from here */}
@@ -2216,7 +2304,7 @@ function QuoteDetailModal({
                   options={modalOptions}
                   onApply={handleApplyAction}
                   isOptionDisabled={(value) => value === "save_info" && Object.keys(missingFormData).length === 0}
-                  getConfirmMessage={(o) => (o.tier === "decision" ? tx("Reject this proposal? This cannot be undone.") : undefined)}
+                  getConfirmMessage={(o) => (o.tier === "decision" ? tx(isApp ? "Reject this application? This cannot be undone." : "Reject this proposal? This cannot be undone.") : undefined)}
                   canAct={canAct}
                   canDecide={canDecide}
                 />
@@ -2246,7 +2334,7 @@ function QuoteDetailModal({
             {/* Proposal Statement */}
             <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-5 py-4 space-y-1.5">
               <div className="flex items-center justify-between mb-1">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500">{tx("Proposal Statement")}</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500">{tx(isApp ? "Application Statement" : "Proposal Statement")}</p>
                 <span className="text-[10px] font-mono text-slate-400">{tx("Ref:")} {detail.quote_id.slice(0, 8).toUpperCase()}</span>
               </div>
               {detail.organization_name && (
@@ -2267,7 +2355,7 @@ function QuoteDetailModal({
                 <>
                   <p className="text-sm text-slate-700 leading-relaxed">
                     ہمیں{" "}<span className="font-semibold text-slate-900">{detail.customer_name}</span>{" "}کے لیے درج ذیل انشورنس
-                    پروپوزل پیش کرتے ہوئے خوشی ہے۔ فراہم کردہ معلومات کی بنیاد پر ہم{" "}
+                    {isApp ? "درخواست موصول ہوئی ہے۔" : "پروپوزل پیش کرتے ہوئے خوشی ہے۔"} فراہم کردہ معلومات کی بنیاد پر ہم{" "}
                     <span className="font-semibold text-slate-900">{detail.plan_label}</span>{" "}پلان کے تحت{" "}
                     <span className="font-semibold text-slate-900">{tx(INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type)}</span>{" "}
                     پالیسی تجویز کرتے ہیں، جو{" "}
@@ -2277,7 +2365,7 @@ function QuoteDetailModal({
                   <p className="text-sm text-slate-700 leading-relaxed">
                     اس کوریج کا کل سالانہ پریمیم{" "}
                     <span className="font-bold text-slate-900">{formatPKR(detail.total_premium)}</span>{" "}ہے
-                    (متوقع پریمیم {formatPKR(detail.base_premium)} اور رسک {formatPKR(detail.loading_applied)})۔ یہ پروپوزل
+                    (متوقع پریمیم {formatPKR(detail.base_premium)} اور رسک {formatPKR(detail.loading_applied)})۔ یہ{" "}{isApp ? "درخواست" : "پروپوزل"}
                     تسلی بخش انڈر رائٹنگ جائزے سے مشروط ہے اور{" "}
                     <span className="font-medium text-slate-800">{formatDate(detail.created_at)}</span>{" "}کو تیار کیا گیا۔
                   </p>
@@ -2285,7 +2373,7 @@ function QuoteDetailModal({
               ) : (
                 <>
                   <p className="text-sm text-slate-700 leading-relaxed">
-                    {tx("We are pleased to present the following insurance proposal for")}{" "}
+                    {tx(isApp ? "We have received the following insurance application for" : "We are pleased to present the following insurance proposal for")}{" "}
                     <span className="font-semibold text-slate-900">{detail.customer_name}</span>{tx(". Based on the information provided, we propose a")}{" "}
                     <span className="font-semibold text-slate-900">
                       {tx(INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type)}
@@ -2301,7 +2389,7 @@ function QuoteDetailModal({
                     {tx("The total annual premium for this coverage is")}{" "}
                     <span className="font-bold text-slate-900">{formatPKR(detail.total_premium)}</span>{" "}
                     {tx("(expected premium of")}{" "}{formatPKR(detail.base_premium)}{" "}{tx("plus a risk of")}{" "}
-                    {formatPKR(detail.loading_applied)}{tx("). This proposal is valid subject to satisfactory underwriting assessment and is generated as of")}{" "}
+                    {formatPKR(detail.loading_applied)}{tx(isApp ? "). This application is subject to satisfactory underwriting assessment and is generated as of" : "). This proposal is valid subject to satisfactory underwriting assessment and is generated as of")}{" "}
                     <span className="font-medium text-slate-800">{formatDate(detail.created_at)}</span>.
                   </p>
                 </>
@@ -2309,7 +2397,7 @@ function QuoteDetailModal({
             </div>
 
             <p className="text-[11px] text-slate-500 mt-1 mb-2 text-center italic">
-              {tx("Opens an Underwriting case for this customer on this exact proposal — documents, AI risk scoring, and the final decision all happen there.")}
+              {tx(isApp ? "Opens an Underwriting case for this customer on this exact application — documents, AI risk scoring, and the final decision all happen there." : "Opens an Underwriting case for this customer on this exact proposal — documents, AI risk scoring, and the final decision all happen there.")}
             </p>
 
             {/* Headline */}
@@ -2613,6 +2701,98 @@ function QuoteDetailModal({
               )}
             </section>
 
+            {/* Documents the plan requires, and the link the customer uploads them through */}
+            <section>
+              <div className="mb-2.5 flex items-center justify-between">
+                <SectionLabel>{tx("Documents")}</SectionLabel>
+                {docReq && docReq.total > 0 && (
+                  <span className="mb-2.5 rounded-full border border-blue-100 bg-blue-50 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">
+                    {tx("{0} of {1} received", { 0: docReq.received, 1: docReq.total })}
+                  </span>
+                )}
+              </div>
+              {docReqError && (
+                <p className="mb-3 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-700">{docReqError}</p>
+              )}
+              {!docReq && !docReqError && <p className="text-xs text-slate-400">{tx("Loading…")}</p>}
+              {docReq && docReq.total === 0 && (
+                <p className="text-sm text-slate-500">{tx("This plan needs no documents.")}</p>
+              )}
+              {docReq && docReq.total > 0 && (
+                <div className="space-y-3">
+                  <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
+                    {docReq.requirements.map((r) => (
+                      <li key={r.document_type} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                        <span className="min-w-0">
+                          <span className="font-medium text-slate-800">{r.document_type}</span>
+                          {r.files.length > 0 && (
+                            <span className="ml-2 truncate text-xs text-slate-400">{r.files[r.files.length - 1].file_name}</span>
+                          )}
+                        </span>
+                        <span
+                          className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${
+                            r.state === "received"
+                              ? "border-blue-600 bg-blue-600 text-white"
+                              : r.state === "reupload"
+                                ? "border-slate-700 bg-slate-700 text-white"
+                                : "border-slate-300 bg-white text-slate-600"
+                          }`}
+                        >
+                          {r.state === "received" ? tx("Received") : r.state === "reupload" ? tx("Needs re-upload") : tx("Waiting")}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <div className="space-y-2.5 rounded-xl border border-blue-100 bg-blue-50/50 p-3.5">
+                    <p className="text-xs font-semibold text-slate-700">{tx("Customer upload link")}</p>
+                    <div className="flex items-center gap-2">
+                      <input
+                        readOnly
+                        value={portalUrl(docReq.link_path)}
+                        onFocus={(e) => e.currentTarget.select()}
+                        aria-label={tx("Customer upload link")}
+                        className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-mono text-xs text-slate-700"
+                      />
+                      <button
+                        type="button"
+                        onClick={copyDocLink}
+                        className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-blue-700"
+                      >
+                        {linkCopied ? tx("Copied") : tx("Copy link")}
+                      </button>
+                      <a
+                        href={portalUrl(docReq.link_path)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                      >
+                        {tx("Open")}
+                      </a>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                      <span>{docReq.expired ? tx("This link has expired.") : tx("Expires {0}", { 0: formatDate(docReq.expires_at) })}</span>
+                      {confirmRenew ? (
+                        <span className="flex items-center gap-2">
+                          {tx("The old link will stop working.")}
+                          <button type="button" disabled={docBusy} onClick={renewDocLink} className="font-semibold text-blue-700 hover:underline disabled:opacity-50">
+                            {docBusy ? tx("Renewing…") : tx("Renew")}
+                          </button>
+                          <button type="button" disabled={docBusy} onClick={() => setConfirmRenew(false)} className="font-semibold text-slate-600 hover:underline">
+                            {tx("Cancel")}
+                          </button>
+                        </span>
+                      ) : (
+                        <button type="button" onClick={() => setConfirmRenew(true)} className="font-semibold text-blue-700 hover:underline">
+                          {tx("Renew link")}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+
             {/* Premium breakdown */}
             <section>
               <SectionLabel>{tx("Premium Breakdown")}</SectionLabel>
@@ -2678,7 +2858,7 @@ function QuoteDetailModal({
 
             {(detail.status === "Approved" || detail.status === "AcceptedWithLoadings" || detail.status === "Declined") && (
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-500">
-                {tx("This proposal's outcome was decided on its underwriting case, not here — open the case to review the decision.")}
+                {tx("This application's outcome was decided on its underwriting case, not here — open the case to review the decision.")}
               </div>
             )}
           </div>

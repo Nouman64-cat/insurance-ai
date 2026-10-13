@@ -200,6 +200,12 @@ const urText: Record<string, string> = {
   "Info requested: add the details and re-submit": "معلومات طلب کی گئی ہیں: تفصیلات شامل کر کے دوبارہ جمع کریں",
   // detail window
   "Proposal Details": "پروپوزل کی تفصیلات",
+  "Application Details": "درخواست کی تفصیلات",
+  "Application Statement": "درخواست کا بیان",
+  "Reject Application": "درخواست مسترد کریں",
+  "Re-Submit Application": "درخواست دوبارہ جمع کریں",
+  "Proposals & Applications": "پروپوزلز اور درخواستیں",
+  "Open Application": "درخواست کھولیں",
   "This proposal has been sent to the admin team for further review, so it can no longer be changed from here. You can follow its progress on this page.":
     "یہ پروپوزل مزید جائزے کے لیے ایڈمن ٹیم کو بھیج دیا گیا ہے، اس لیے اب یہاں سے تبدیل نہیں ہو سکتا۔ آپ اس صفحے پر اس کی پیش رفت دیکھ سکتے ہیں۔",
   "Loading details…": "تفصیلات لوڈ ہو رہی ہیں…",
