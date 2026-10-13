@@ -56,6 +56,14 @@ export const TYPE_LABEL: Record<string, string> = {
   commission_dispute: "Commission dispute",
 };
 
+export const CATEGORY_LABEL: Record<string, string> = {
+  ACCESS: "Access or permission", DATA_FIX: "Data fix", PROCESS_EXCEPTION: "Process exception", DOCUMENT: "Document", OTHER: "Other",
+};
+
+export const DISPUTE_LABEL: Record<string, string> = {
+  AMOUNT: "Wrong amount", RATE: "Wrong rate", SPLIT: "Wrong split between producers", MISSING_RECEIPT: "Missing premium receipt", OTHER: "Other",
+};
+
 export function ReviewBadge({ status }: { status: ReviewStatus }) {
   return (
     <span className={`inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold ${REVIEW_STYLE[status]}`}>

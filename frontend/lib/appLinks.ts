@@ -13,13 +13,14 @@ export const UNDERWRITING_URL = trimSlash(process.env.NEXT_PUBLIC_UNDERWRITING_U
 export const AUTOMATION_URL = trimSlash(process.env.NEXT_PUBLIC_AUTOMATION_URL || "http://localhost:3004");
 export const REQUESTS_URL = trimSlash(process.env.NEXT_PUBLIC_REQUESTS_URL || "http://localhost:3007");
 
-export type AppName = "portal" | "underwriting" | "requests";
+export const CUSTOMER_SERVICE_URL = trimSlash(process.env.NEXT_PUBLIC_CUSTOMER_SERVICE_URL || "http://localhost:3008");
+export type AppName = "portal" | "underwriting" | "requests" | "customer-service";
 
 /** The app this code is running in. Each satellite app sets NEXT_PUBLIC_APP_NAME in its next.config. */
 export const CURRENT_APP: AppName =
   process.env.NEXT_PUBLIC_APP_NAME === "underwriting" ? "underwriting"
     : process.env.NEXT_PUBLIC_APP_NAME === "requests" ? "requests"
-      : "portal";
+      : process.env.NEXT_PUBLIC_APP_NAME === "customer-service" ? "customer-service" : "portal";
 
 /** Pages served by Request Management. */
 export const REQUEST_ROUTES = ["/requests"] as const;
@@ -53,11 +54,12 @@ export function isRequestsPath(href: string): boolean {
 /** The app that serves a path. */
 export function appFor(href: string): AppName {
   if (isUnderwritingPath(href)) return "underwriting";
+  if (pathOf(href) === "/customer-service" || pathOf(href).startsWith("/customer-service/")) return "customer-service";
   if (isRequestsPath(href)) return "requests";
   return "portal";
 }
 
-const APP_URLS: Record<AppName, string> = { portal: PORTAL_URL, underwriting: UNDERWRITING_URL, requests: REQUESTS_URL };
+const APP_URLS: Record<AppName, string> = { portal: PORTAL_URL, underwriting: UNDERWRITING_URL, requests: REQUESTS_URL, "customer-service": CUSTOMER_SERVICE_URL };
 
 function withSlash(href: string): string {
   return href.startsWith("/") ? href : `/${href}`;
@@ -96,7 +98,7 @@ function originOf(url: string): string | null {
 
 /** Origins a sign-in may send the user back to: the configured apps. */
 export function trustedOrigins(): string[] {
-  return [PORTAL_URL, UNDERWRITING_URL, AUTOMATION_URL, REQUESTS_URL].map(originOf).filter((o): o is string => !!o);
+  return [PORTAL_URL, UNDERWRITING_URL, AUTOMATION_URL, REQUESTS_URL, CUSTOMER_SERVICE_URL].map(originOf).filter((o): o is string => !!o);
 }
 
 /**

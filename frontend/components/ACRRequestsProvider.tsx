@@ -64,7 +64,7 @@ export function ACRRequestsProvider({ children }: { children: ReactNode }) {
       fresh.forEach((r) => {
         const who = r.applicant_name || r.case_number || "a case";
         const group = r.group_name ? ` (${r.group_name})` : "";
-        notify(tx("ACR requested: {0}{1} · {2} {3} — click to file", { 0: who, 1: group, 2: SEGMENT[r.segment] ?? "Case", 3: r.case_number ?? "" }), true, tx("case/{0}", { 0: r.case_id }));
+        notify(tx("ACR requested: {0}{1} · {2} {3} — click to file", { 0: who, 1: group, 2: SEGMENT[r.segment] ?? "Case", 3: r.case_number ?? "" }), true, "/acr");
         seen.add(r.case_id);
       });
       // Forget cases that are no longer pending, so a re-request later is announced again.

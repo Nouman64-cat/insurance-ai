@@ -481,3 +481,60 @@ export const demoOrganizationExtraction = () => {
     found: 40,
   };
 };
+
+// ── Request Management (request-management-app) ──────────────────────────────
+
+const GENERAL_REQUESTS = [
+  { category: "ACCESS", title: "Access to the persistency report", description: "Please grant me read access to the monthly persistency report so I can follow up on lapsing policies in my portfolio.", outcome: "Read-only access to the report for my branch." },
+  { category: "PROCESS_EXCEPTION", title: "Extend the free-look window for a customer", description: "The customer received the policy pack late because of a courier delay and asks for the free-look period to start from delivery.", outcome: "Free-look counted from the courier delivery date." },
+  { category: "DATA_FIX", title: "Branch shown wrongly on a lead", description: "A lead I entered last week is showing under the Lahore branch, but the customer was onboarded at our Karachi branch.", outcome: "Lead moved to the Karachi branch." },
+  { category: "DOCUMENT", title: "Duplicate policy schedule", description: "The customer lost their policy schedule and needs a duplicate copy for a bank loan application.", outcome: "A duplicate schedule issued and emailed to the customer." },
+  { category: "OTHER", title: "Training slot for new underwriting rules", description: "Requesting a short session on the updated non-medical limits before they take effect next month.", outcome: "A one-hour session for the agents in my team." },
+] as const;
+
+const DISPUTE_TEXTS = [
+  { kind: "RATE", explanation: "The earning was calculated at the renewal rate, but this receipt is the first-year premium, so the first-year rate should apply." },
+  { kind: "AMOUNT", explanation: "The basis amount excludes the policy fee that the agreement says is part of the commission base." },
+  { kind: "SPLIT", explanation: "This policy was co-produced and the agreed split was 60/40, but the full earning was allocated to one producer." },
+  { kind: "MISSING_RECEIPT", explanation: "The customer paid the second installment on time, but no earning was raised against that receipt." },
+] as const;
+
+const PRIORITIES = ["LOW", "NORMAL", "NORMAL", "HIGH", "URGENT"] as const;
+
+export const demoPriority = () => pick(PRIORITIES);
+
+export const demoGeneralRequest = () => {
+  const r = pick(GENERAL_REQUESTS);
+  return { title: r.title, category: r.category as string, description: r.description, desiredOutcome: r.outcome as string };
+};
+
+/** New values for a few allowlisted customer fields (shared/requests/customer_corrections.py). */
+export const demoProfileCorrection = () => {
+  const c = pick(CITIES);
+  const options: Record<string, string> = {
+    "contact.mobile_number": demoMobile(),
+    "address.street_address": `House ${int(1, 250)}, Street ${int(1, 40)}, ${pick(c.areas)}`,
+    "address.postal_code": c.postal,
+    city: c.city,
+    province: c.province,
+    "contact.emergency_contact_name": demoPerson().full,
+  };
+  const keys = Object.keys(options).sort(() => Math.random() - 0.5).slice(0, int(2, 3));
+  // A city change only makes sense with its province.
+  if (keys.includes("city") && !keys.includes("province")) keys.push("province");
+  return {
+    changes: Object.fromEntries(keys.map((k) => [k, options[k]])),
+    reason: pick([
+      "The customer moved house and shared their new address at the branch.",
+      "The customer changed their mobile number and confirmed it on a verified call.",
+      "Contact details were captured incorrectly at onboarding; the customer provided the correct ones.",
+    ]),
+  };
+};
+
+export const demoDispute = (grossAmount?: string | number | null) => {
+  const d = pick(DISPUTE_TEXTS);
+  const gross = Number(grossAmount);
+  const claimed = Number.isFinite(gross) && gross > 0 ? (gross * (1 + int(5, 40) / 100)).toFixed(2) : "";
+  return { kind: d.kind as string, explanation: d.explanation as string, claimed };
+};

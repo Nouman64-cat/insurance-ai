@@ -1,0 +1,11 @@
+**
+!customer-service-app/
+!customer-service-app/**
+!frontend/
+!frontend/components/**
+!frontend/lib/**
+!frontend/app/services/**
+!frontend/app/globals.css
+**/node_modules
+**/.next
+**/.env*

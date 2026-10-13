@@ -773,6 +773,20 @@ async def proxy_request_management(path: str, request: Request):
     return Response(content=resp.content, status_code=resp.status_code, headers=out_headers)
 
 
+# Customer Service validates tenant identity and ticket access in its own backend.
+@app.api_route("/customer-service/{path:path}", methods=["GET", "POST"], include_in_schema=False)
+async def proxy_customer_service(path: str, request: Request):
+    if not path.startswith("v1/"):
+        raise HTTPException(status_code=404, detail="Unknown Customer Service API version")
+    headers = {k:v for k,v in request.headers.items() if k.lower() not in _HOP_HEADERS}
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            response = await client.request(request.method, os.environ.get("CUSTOMER_SERVICE_URL", "http://customer-service:8008")+"/"+path, headers=headers, params=request.query_params, content=await request.body())
+        except httpx.HTTPError:
+            return JSONResponse(status_code=502, content={"detail":"Customer Service is unavailable"})
+    return Response(content=response.content,status_code=response.status_code,headers={k:v for k,v in response.headers.items() if k.lower() not in _HOP_HEADERS and not k.lower().startswith("access-control-") and k.lower()!="content-encoding"})
+
+
 # ── Catch-all proxy (hidden from Swagger) ──────────────────────────────────────
 
 @app.api_route("/auth/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)

@@ -40,6 +40,8 @@ const en = {
     notice: "Authorized personnel only. All access is logged and monitored.",
   },
   nav: {
+    "Customer Service": "Customer Service",
+    "Confidential Reports (ACR)": "Confidential Reports (ACR)",
     "Request Management": "Request Management",
     // groups
     "Dashboard": "Dashboard",
