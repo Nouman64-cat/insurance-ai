@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from "react";
@@ -177,4 +176,3 @@ export function ACRModal({ caseId, initial, onClose, onDone }: {
     </div>
   );
 }
-export { ACRModal } from "../../../frontend/components/entities/ACRModal";
