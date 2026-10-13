@@ -201,8 +201,8 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
               : undefined);
           setPendingInterrupt(
             kind === "confirm"
-              ? { kind: "confirm", question, options: evt.options, toolCall }
-              : { kind: "clarify", question, options: evt.options, toolCall }
+              ? { kind: "confirm", canRevise: evt.can_revise, question, options: evt.options, toolCall }
+              : { kind: "clarify", canRevise: evt.can_revise, question, options: evt.options, toolCall }
           );
           setMessages((prev) => {
             const last = prev[prev.length - 1];

@@ -112,6 +112,7 @@ MUTATING_TOOLS = {
 # Read-only + navigation. Never gated, never confirmed — asking "shall I open
 # the cases page?" before every navigation makes the agent unusable.
 SAFE_TOOLS = {
+    "prepare_family_insurance",
     "resolve_customer_type",
     "navigate_to_page",
     "show_record",
@@ -243,6 +244,7 @@ REQUIRED_ARGS: dict[str, list[str]] = {
     "register_group_claim": ["member_name"],
     "add_group_class_coverage": ["coverage_type", "percent_of_base"],
     "add_family_group": ["name"],
+    "prepare_family_insurance": ["customer_id"],
     "bulk_add_customers": ["customers_json"],
     "upload_document": ["document_type"],
     "show_record": ["record_type", "identifier"],
@@ -289,6 +291,7 @@ STEP_LABELS: dict[str, str] = {
     "delete_user": "Removing user",
     "add_organization": "Creating organization",
     "add_family_group": "Creating family group",
+    "prepare_family_insurance": "Preparing family insurance with existing customer",
     "create_case": "Opening case",
     "update_case_status": "Updating case status",
     "assign_case": "Assigning case",
@@ -434,6 +437,7 @@ AGENT_ALLOWED_TOOLS = {
     "update_customer",
     "add_organization",
     "add_family_group",
+    "prepare_family_insurance",
     "bulk_add_customers",
     "quick_start_workflow",
     "list_customers",
@@ -593,6 +597,7 @@ UNDERWRITER_ALLOWED_TOOLS = SAFE_TOOLS | {
     "bulk_add_customers",
     "add_organization",
     "add_family_group",
+    "prepare_family_insurance",
     "create_case",
     "update_case_status",
     "assign_case",

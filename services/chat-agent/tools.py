@@ -368,6 +368,15 @@ class FamilyMember(BaseModel):
     weight_kg: Optional[float] = None
 
 
+class PrepareFamilyInsuranceArgs(BaseModel):
+    customer_id: str = Field(description="Existing customer's UUID. Reuse the customer's identity instead of creating another person.")
+
+@tool(args_schema=PrepareFamilyInsuranceArgs)
+def prepare_family_insurance(**kwargs) -> str:
+    """Prepare family insurance for an existing individual customer without changing their current proposal. Opens a prefilled review form."""
+    return ""
+
+
 class AddFamilyGroupArgs(BaseModel):
     name: str
     contact_person: Optional[str] = None
@@ -1909,6 +1918,7 @@ ALL_TOOLS = [
     delete_user,
     add_organization,
     add_family_group,
+    prepare_family_insurance,
     # cases & policies
     create_case,
     update_case_status,

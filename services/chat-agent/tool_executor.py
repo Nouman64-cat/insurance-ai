@@ -1151,6 +1151,22 @@ async def _add_organization(args: dict, ctx: Ctx) -> dict:
     }
 
 
+@handles("prepare_family_insurance")
+async def _prepare_family_insurance(args: dict, ctx: Ctx) -> dict:
+    from uuid import UUID
+    customer_id = str(UUID(args["customer_id"]))
+    response = await ctx.client.get(ctx.tsvc(f"/customers/{customer_id}"))
+    response.raise_for_status()
+    customer = response.json()
+    if customer.get("organization_id"):
+        return {"success": False, "error": "This customer belongs to a corporate roster. Open their existing organization instead of converting them to a family."}
+    if customer.get("family_group_id"):
+        return {"success": True, "message": "This customer already belongs to a family. Continue the existing family without creating another.", "quick_actions": [{"label": "Open existing family", "actionType": "embed", "payload": "admin/families/" + str(customer["family_group_id"])}]}
+    if not customer.get("cnic"):
+        return {"success": False, "error": "Complete the customer's CNIC before reusing them as a family member."}
+    return {"success": True, "message": "We can continue with family insurance using the existing customer as the head. Their individual proposal stays unchanged. Review family cover and add the other members before submitting.", "quick_actions": [{"label": "Review family insurance", "actionType": "embed", "payload": f"admin/leads?add=family&head={customer_id}"}]}
+
+
 @handles("add_family_group")
 async def _add_family_group(args: dict, ctx: Ctx) -> dict:
     agent, error = await _resolve_lead_agent(args, ctx)
