@@ -128,6 +128,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       CHAT_AGENT_URL: http://chat-agent:8006
       REQUEST_MANAGEMENT_SERVICE_URL: http://request-management-service:8007 # /request-management/* is proxied there
+      CUSTOMER_MANAGEMENT_URL: http://customer-management:8009 # /customer-management/v1/* is proxied there
     depends_on:
       kafka:
         condition: service_healthy
@@ -158,6 +159,10 @@ services:
       RISK_ENGINE_URL: http://risk-engine:8002
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       OPENSANCTIONS_API_KEY: ${OPENSANCTIONS_API_KEY}
+      # Customer portal: provisioning hands accounts to Customer Management (PORTAL_PROVISIONING_MODE=legacy turns that off).
+      CUSTOMER_MANAGEMENT_URL: http://customer-management:8009
+      CUSTOMER_PORTAL_URL: ${CUSTOMER_PORTAL_URL:-http://localhost:3009/login}
+      PORTAL_PROVISIONING_MODE: ${PORTAL_PROVISIONING_MODE:-dual}
     depends_on:
       kafka:
         condition: service_healthy
@@ -304,6 +309,84 @@ services:
       REQUEST_MGMT_PROVISION_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
       REQUEST_MGMT_DB_OWNER_PASSWORD: ${REQUEST_MGMT_DB_OWNER_PASSWORD:-}
       REQUEST_MGMT_DB_APP_PASSWORD: ${REQUEST_MGMT_DB_APP_PASSWORD:-}
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Customer Management — the individual customer portal's back end (services/customer-management)
+  # Schema customer_management in the shared Postgres, least-privilege roles, signed calls to tenant-service.
+  # Public API (via the gateway): /customer-management/v1/...  ·  Direct (dev): http://localhost:8019/v1/healthz
+  # ───────────────────────────────────────────────────────────────────────────
+  # Creates the customer_management schema and its two database roles, then exits. Safe to repeat.
+  customer-management-provision:
+    build:
+      context: .
+      dockerfile: services/customer-management/Dockerfile
+    restart: "no"
+    networks: [insurance-net]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    env_file: [.env]
+    command: ["python", "-m", "app.provision"]
+    environment:
+      CM_PROVISION_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+
+  customer-management:
+    <<: *fastapi-defaults
+    build:
+      context: .
+      dockerfile: services/customer-management/Dockerfile
+    container_name: insurance-customer-management
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8009", "--reload"]
+    ports:
+      - "8019:8009"
+    volumes:
+      - ./services/customer-management:/app
+      - ./shared:/app/shared
+    environment:
+      PYTHONPATH: /app
+      WATCHFILES_FORCE_POLLING: "true"
+      CM_DATABASE_URL: postgresql+asyncpg://customer_management_app:${CM_DB_APP_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+      CM_MIGRATION_DATABASE_URL: postgresql+asyncpg://customer_management_owner:${CM_DB_OWNER_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+      TENANT_SERVICE_URL: http://tenant-service:8001
+    depends_on:
+      tenant-service:
+        condition: service_started
+      customer-management-provision:
+        condition: service_completed_successfully # schema and roles exist before migrations run
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8009/v1/healthz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+
+  # Customer portal (individual policyholders) — http://localhost:3009
+  # Self-contained Next.js app (it imports nothing from the staff app). The browser talks only to this app; it holds the
+  # session in httpOnly cookies and calls Customer Management through the API gateway, server-to-server.
+  customer-portal:
+    build:
+      context: ./customer-portal
+      dockerfile: Dockerfile
+      target: dev
+    container_name: insurance-customer-portal
+    restart: unless-stopped
+    networks: [insurance-net]
+    ports:
+      - "3009:3009"
+    volumes:
+      - ./customer-portal:/workspace/customer-portal
+      - /workspace/customer-portal/node_modules
+      - /workspace/customer-portal/.next
+    environment:
+      CM_API_URL: http://api-gateway:8000/customer-management
+      COOKIE_SECURE: ${PORTAL_COOKIE_SECURE:-false} # set to true behind HTTPS
+      WATCHPACK_POLLING: "true"
+    depends_on: [api-gateway, customer-management]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3009/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
 
   customer-service:
     <<: *fastapi-defaults

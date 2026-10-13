@@ -76,8 +76,11 @@ export interface OnboardingStatus {
 
 export interface PortalCredentials {
   reset: boolean;
+  /** The customer already signed in and chose their own password: nothing was changed and there is no temporary password. */
+  already_active?: boolean;
+  suspended?: boolean;
   username: string;
-  temp_password: string;   // shown ONCE
+  temp_password: string | null;   // shown ONCE
   portal_url: string;
   invite_expires_at: string;
 }
@@ -112,9 +115,10 @@ export function welcomeKitDownloadUrl(policyId: string): string {
   return `${base}/tenants/${tid}/policies/${policyId}/onboarding/welcome-kit/download`;
 }
 
-export async function provisionPortal(policyId: string): Promise<PortalCredentials> {
+/** `reset: true` is the deliberate staff reset of a customer's password; without it an already-active customer is left untouched. */
+export async function provisionPortal(policyId: string, reset = false): Promise<PortalCredentials> {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/policies/${policyId}/onboarding/portal`);
+  const res = await api.post(`/tenants/${tid}/policies/${policyId}/onboarding/portal`, reset ? { reset: true, reason: "Reset from post-issuance onboarding" } : undefined);
   return res.data;
 }
 

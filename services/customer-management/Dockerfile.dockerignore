@@ -1,0 +1,5 @@
+*
+!services/customer-management
+!shared
+**/__pycache__
+**/*.pyc

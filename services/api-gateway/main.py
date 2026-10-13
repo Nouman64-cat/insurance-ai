@@ -835,6 +835,29 @@ async def proxy_customer_service(path: str, request: Request):
     return Response(content=response.content,status_code=response.status_code,headers={k:v for k,v in response.headers.items() if k.lower() not in _HOP_HEADERS and not k.lower().startswith("access-control-") and k.lower()!="content-encoding"})
 
 
+# ── Customer Management (services/customer-management) ───────────────────────
+# The customer portal's back end, at /customer-management/v1/... Only the public, versioned API is reachable: the
+# service's /internal/* endpoints (tenant-service only, HMAC-signed) are never proxied. The service authenticates its
+# own customer sessions; a staff token is not accepted there and a customer token is not accepted anywhere else.
+CUSTOMER_MANAGEMENT_URL = os.environ.get("CUSTOMER_MANAGEMENT_URL", "http://customer-management:8009")
+
+
+@app.api_route("/customer-management/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"], include_in_schema=False)
+async def proxy_customer_management(path: str, request: Request):
+    if not path.startswith("v1/"):
+        return JSONResponse(status_code=404, content={"error": {"code": "NOT_FOUND", "message": "Unknown Customer Management API version"}})
+    headers = {k: v for k, v in request.headers.items() if k.lower() not in _HOP_HEADERS}
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.request(request.method, f"{CUSTOMER_MANAGEMENT_URL}/{path}", headers=headers,
+                                        params=request.query_params, content=await request.body(), timeout=60.0)
+        except httpx.HTTPError:
+            return JSONResponse(status_code=502, content={"error": {"code": "SERVICE_UNAVAILABLE", "message": "The customer portal service is unavailable. Try again shortly."}})
+    out_headers = {k: v for k, v in resp.headers.items()
+                   if k.lower() not in _HOP_HEADERS and not k.lower().startswith("access-control-") and k.lower() != "content-encoding"}
+    return Response(content=resp.content, status_code=resp.status_code, headers=out_headers)
+
+
 # ── Catch-all proxy (hidden from Swagger) ──────────────────────────────────────
 
 @app.api_route("/auth/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)

@@ -1632,7 +1632,19 @@ function OnboardingPanel({
       {err && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2">{err}</div>}
 
       {/* One-time credential reveal */}
-      {creds && (
+      {creds && creds.already_active && (
+        <div className="rounded-2xl border border-emerald-300 bg-emerald-50 p-5">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-bold text-emerald-800">{creds.suspended ? tx("Portal access is suspended") : tx("Customer already has portal access")}</p>
+            <button onClick={() => setCreds(null)} className="text-emerald-600 hover:text-emerald-800 text-sm">×</button>
+          </div>
+          <p className="text-[11px] text-emerald-800/80 mt-1">
+            {tx("This policy shows up under the customer's existing login")}{" "}<span className="font-mono">{creds.username}</span>.{" "}
+            {tx("Nothing was changed and no new password was issued. Use “Reset password” only if the customer asks for new sign-in details.")}
+          </p>
+        </div>
+      )}
+      {creds && !creds.already_active && (
         <div className="rounded-2xl border border-blue-300 bg-blue-50 p-5">
           <div className="flex items-center justify-between">
             <p className="text-sm font-bold text-blue-800">{tx("Portal credentials")}{" "}{creds.reset ? tx("reset") : tx("created")}</p>
@@ -1651,7 +1663,7 @@ function OnboardingPanel({
               <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">{tx("Temporary password")}</p>
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-mono text-slate-800 truncate">{creds.temp_password}</p>
-                <button onClick={() => copy(creds.temp_password)} className="text-[11px] text-blue-600 hover:text-blue-700 font-semibold">{tx("Copy")}</button>
+                <button onClick={() => copy(creds.temp_password || "")} className="text-[11px] text-blue-600 hover:text-blue-700 font-semibold">{tx("Copy")}</button>
               </div>
             </div>
           </div>
@@ -1694,7 +1706,7 @@ function OnboardingPanel({
           {s.portal.done ? (
             <div className="space-y-2">
               <p className="text-xs text-slate-600">{tx("Username:")}{" "}<span className="font-mono text-slate-800">{s.portal.username}</span> · <span className="text-slate-400">{s.portal.status}</span></p>
-              <OnboardingBtn disabled={locked} onClick={() => run(async () => setCreds(await provisionPortal(policyId)))}>{tx("Reset password")}</OnboardingBtn>
+              <OnboardingBtn disabled={locked} onClick={() => run(async () => setCreds(await provisionPortal(policyId, true)))}>{tx("Reset password")}</OnboardingBtn>
             </div>
           ) : (
             <OnboardingBtn tone="emerald" disabled={locked} onClick={() => run(async () => setCreds(await provisionPortal(policyId)))}>{tx("Provision portal access")}</OnboardingBtn>

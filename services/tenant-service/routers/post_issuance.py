@@ -35,6 +35,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 import email_utils
 from services import payment_gateway, portal_service, document_generator, insurer_config
+from services import customer_management_client as customer_management
 from services.onboarding_gate import ONBOARDING_STATUSES, compute_onboarding
 from services.billing_gate import IN_FORCE_STATUSES, compute_billing, surcharge_for, _row_state
 from services.pricing_engine import GRACE_PERIOD_DAYS as _GRACE_DAYS
@@ -399,19 +400,30 @@ async def download_welcome_kit(
     return FileResponse(row.welcome_kit_path, media_type="application/pdf", filename=filename)
 
 
+class PortalBody(BaseModel):
+    # Only a deliberate staff reset may replace the password of a customer who has already signed in.
+    reset: bool = False
+    reason: Optional[str] = None
+
+
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/onboarding/portal")
 async def provision_portal(
     tenant_id: UUID, policy_id: UUID,
     request: Request,
+    body: Optional[PortalBody] = None,
     session: AsyncSession = Depends(get_session),
 ):
-    """Provision (or reset) the customer's mock portal account. Returns the
-    one-time temporary password — surfaced ONCE and never stored in plaintext."""
+    """Provision (or reset) the customer's portal account. Returns the one-time temporary password — surfaced ONCE
+    and never stored in plaintext.
+
+    One account per customer: a second policy never creates or resets credentials. When the customer has already
+    changed their password, the account is left untouched ("already_active") unless the caller sends reset=true."""
     policy = await _get_policy(session, tenant_id, policy_id)
     _assert_onboardable(policy)
     customer = await session.get(Customer, policy.customer_id)
     if customer is None:
         raise HTTPException(404, "Customer not found")
+    body = body or PortalBody()
 
     details = customer.details or {}
     email = details.get("contact_email") or details.get("email")
@@ -421,6 +433,27 @@ async def provision_portal(
         select(CustomerPortalAccount).where(CustomerPortalAccount.customer_id == customer.id)
     )).first()
     reset = portal is not None
+
+    # Customer Management is the sign-in authority. Hand it the account FIRST: if it says the customer is already
+    # active we must not touch the legacy row or hand ops a password that would not work.
+    if customer_management.enabled():
+        tenant = await session.get(Tenant, tenant_id)
+        try:
+            result = await customer_management.ensure_account(
+                tenant_id=tenant_id, tenant_code=tenant.code if tenant else "", customer_id=customer.id,
+                username=creds.username, password_hash=creds.password_hash, display_name=customer.name,
+                credential_expires_at=creds.invite_expires_at, reset=body.reset, reason=body.reason)
+        except customer_management.CustomerManagementUnavailable:
+            raise HTTPException(503, "The customer portal service is unavailable. Nothing was changed — try again shortly.")
+        if result.get("status") in ("already_active", "suspended"):
+            await _get_or_create_onboarding(session, policy)
+            await session.commit()
+            return {"reset": False, "already_active": True, "suspended": result.get("status") == "suspended",
+                    "username": result.get("username"), "temp_password": None, "portal_url": portal_service.PORTAL_BASE_URL,
+                    "invite_expires_at": None}
+        if result.get("username"):
+            creds.username = result["username"]
+
     if portal is None:
         portal = CustomerPortalAccount(tenant_id=tenant_id, customer_id=customer.id, username=creds.username,
                                        password_hash=creds.password_hash)
@@ -442,7 +475,7 @@ async def provision_portal(
     )
     await session.commit()
     await _publish_policy_event(request, policy, event)
-    return {"reset": reset, **creds.public_dict()}
+    return {"reset": reset, "already_active": False, **creds.public_dict()}
 
 
 class ContactBody(BaseModel):
