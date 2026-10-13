@@ -1,0 +1,11 @@
+# Build context is the repository root (see Dockerfile). Send only this app and the portal folders it shares.
+*
+!underwriting-app
+!frontend/app/services
+!frontend/app/globals.css
+!frontend/components
+!frontend/lib
+underwriting-app/node_modules
+underwriting-app/.next
+underwriting-app/tsconfig.tsbuildinfo
+underwriting-app/.env*

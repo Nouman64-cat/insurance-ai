@@ -168,12 +168,8 @@ export const ADMIN_TOUR_STEPS: TourStep[] = [
       "Click the highlighted row, then open the proposal.",
       "Press “Submit Proposal”.",
       "Press “Start Review”. Use “Request Info” instead if details are missing.",
-      "Press “Send to Underwriting”. That opens the underwriting case, and the tour moves on.",
+      "Press “Send to Underwriting”. That opens the case in the Underwriting Workbench; come back here and press Next.",
     ],
-    waitHint: "Waiting for the proposal to be sent to underwriting…",
-    doneWhen: (_ctx, pathname) => pathname.startsWith("/case/"),
-    doneNote: "Sent to underwriting. Next, see where it landed…",
-    advanceDelayMs: 3500,
   },
   {
     id: "underwriting",
@@ -188,7 +184,7 @@ export const ADMIN_TOUR_STEPS: TourStep[] = [
     },
     title: "Underwriting for {lead}",
     summary:
-      "Each case is checked before a decision. Six gates come first: e-application, the agent's confidential report, sanctions screening, first premium, insurance history and medical. Then the AI scores the risk and the rules decide. {lead}'s case is highlighted when it is on this page.",
+      "Underwriting has its own app, the Underwriting Workbench: the highlighted Underwriting link opens it, signed in as you. Each case is checked before a decision. Six gates come first: e-application, the agent's confidential report, sanctions screening, first premium, insurance history and medical. Then the AI scores the risk and the rules decide. {lead}'s case is highlighted when it is on this page.",
     todo: [
       "Open the highlighted case and work through its gates in order; each one unlocks the next.",
       "When the gates are clear, run the AI risk assessment.",

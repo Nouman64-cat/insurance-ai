@@ -1,5 +1,5 @@
 import axios from "axios";
-import { endSso } from "@/lib/sso";
+import { sessionExpired } from "@/lib/sso";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 export const OCR_BASE_URL = process.env.NEXT_PUBLIC_OCR_URL;
@@ -34,11 +34,8 @@ api.interceptors.response.use(
       if (typeof window !== "undefined" && window.location.pathname === "/login") {
         return Promise.reject(err);
       }
-      localStorage.removeItem("jwt_token");
-      localStorage.removeItem("tenant_id");
-      localStorage.removeItem("user_email");
-      endSso();
-      window.location.href = "/login";
+      // Clears this app's session and sends the user to sign in (the portal's login page, from either app).
+      sessionExpired();
       return Promise.reject(new Error("Session expired. Redirecting to login..."));
     }
     const message = getErrorMessage(err, "An unexpected error occurred.");
@@ -55,10 +52,7 @@ ocrApi.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem("jwt_token");
-      localStorage.removeItem("tenant_id");
-      localStorage.removeItem("user_email");
-      window.location.href = "/login";
+      sessionExpired();
       return Promise.reject(new Error("Session expired. Redirecting to login..."));
     }
     const message = getErrorMessage(err, "OCR processing failed.");
@@ -78,10 +72,7 @@ summarizerApi.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem("jwt_token");
-      localStorage.removeItem("tenant_id");
-      localStorage.removeItem("user_email");
-      window.location.href = "/login";
+      sessionExpired();
       return Promise.reject(new Error("Session expired. Redirecting to login..."));
     }
     const message = getErrorMessage(err, "Summarization failed.");

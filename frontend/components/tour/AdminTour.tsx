@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { ADMIN_TOUR_STEPS, fillLead, type TourContext } from "@/lib/tour/adminTour";
 import { TOUR_LEAD_EVENT, type TourLead } from "@/lib/tour/events";
 import { tx } from "@/lib/i18n/tx";
+import { isUnderwritingPath } from "@/lib/appLinks";
 
 // Welcome tour for an Admin's first sign-in. The login page sets `tour_pending` (to the user's email) when the
 // server says it was their first ever sign-in.
@@ -127,7 +128,8 @@ export default function AdminTour() {
     warmed.current = true;
     let cancelled = false;
     // Step 1's page is already open; start with the page the Admin will reach next.
-    const routes = Array.from(new Set(steps.map((st) => st.route))).slice(1);
+    // Workbench pages are another app: the portal's router can't prefetch them.
+    const routes = Array.from(new Set(steps.map((st) => st.route))).slice(1).filter((r) => !isUnderwritingPath(r));
     (async () => {
       await new Promise((r) => window.setTimeout(r, 100));
       for (const route of routes) {
@@ -143,7 +145,8 @@ export default function AdminTour() {
   useEffect(() => {
     if (!active || !step || openedStep.current === index) return;
     openedStep.current = index;
-    if (pathname !== step.route) router.push(step.route);
+    // A workbench step stays on the current page and points at the sidebar link, which opens the workbench.
+    if (pathname !== step.route && !isUnderwritingPath(step.route)) router.push(step.route);
   }, [active, step, index, pathname, router]);
 
   // A lead was saved: remember it, and if this step was waiting for it, move on.

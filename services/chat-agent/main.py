@@ -48,6 +48,8 @@ app = FastAPI(title="Chat Agent", version="0.1.0", lifespan=lifespan)
 from routers.chat import router as chat_router  # noqa: E402
 
 app.include_router(chat_router)
+from routers.voice import router as voice_router
+app.include_router(voice_router)
 
 
 @app.get("/health")

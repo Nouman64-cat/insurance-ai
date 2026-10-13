@@ -10,6 +10,7 @@ import { listCases, CaseQueueItem } from "@/app/services/cases";
 import api from "@/app/services/api";
 import { Pagination, usePagination } from "@/components/Pagination";
 import { tx } from "@/lib/i18n/tx";
+import { appHref } from "@/lib/appLinks";
 
 const CASE_STATUS_STYLE: Record<string, string> = {
   New: "bg-slate-100 text-slate-600 border-slate-200",
@@ -276,7 +277,7 @@ export default function ApplicationsPage() {
                             const busy = downloadingId === c.caseld;
                             return (
                               <tr key={c.caseld} className="hover:bg-slate-50 transition-colors">
-                                <td className="px-5 py-3 font-mono text-xs text-slate-500 cursor-pointer" onClick={() => router.push(`/case/${c.caseld}`)}>{c.caseNumber}</td>
+                                <td className="px-5 py-3 font-mono text-xs text-slate-500 cursor-pointer" onClick={() => router.push(appHref(`/case/${c.caseld}`))}>{c.caseNumber}</td>
                                 <td className="px-5 py-3 text-slate-600 text-xs">{c.product_name ?? "—"}</td>
                                 <td className="px-5 py-3 text-right font-semibold text-slate-700">{c.coverage_amount != null ? fmtCoverage(c.coverage_amount) : "—"}</td>
                                 <td className="px-5 py-3">
@@ -305,7 +306,7 @@ export default function ApplicationsPage() {
                                     </button>
                                   ) : (
                                     <button
-                                      onClick={() => router.push(`/case/${c.caseld}`)}
+                                      onClick={() => router.push(appHref(`/case/${c.caseld}`))}
                                       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
                                       title={tx("Run AI underwriting on this case first")}
                                     >

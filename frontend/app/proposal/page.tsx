@@ -17,6 +17,7 @@ import { updateCustomer } from "../services/customers";
 import { Pagination, usePagination } from "@/components/Pagination";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import { tx } from "@/lib/i18n/tx";
+import { appHref } from "@/lib/appLinks";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -518,7 +519,7 @@ export default function QuotePage() {
           caseType: "Underwriting",
           sourceChannel: "Online",
         });
-        router.push(`/case/${caseRes.data.caseld}?autoRun=true`);
+        router.push(appHref(`/case/${caseRes.data.caseld}?autoRun=true`));
         setSelectedProposalIds(new Set());
         setIsBulkProceeding(false);
         return;
@@ -548,7 +549,7 @@ export default function QuotePage() {
       sessionStorage.setItem("underwriting_group", JSON.stringify(group));
 
       // 3. Navigate to the first plan's case and auto-run underwriting there.
-      router.push(`/case/${group[0].caseId}?autoRun=true`);
+      router.push(appHref(`/case/${group[0].caseId}?autoRun=true`));
 
       setSelectedProposalIds(new Set());
     } catch (err: any) {
@@ -1375,7 +1376,7 @@ export default function QuotePage() {
               sourceChannel: "Online",
             });
             const caseId = res.data.caseld;
-            router.push(`/case/${caseId}?autoRun=true`);
+            router.push(appHref(`/case/${caseId}?autoRun=true`));
           }}
         />
       )}

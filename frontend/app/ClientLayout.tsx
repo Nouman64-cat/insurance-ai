@@ -3,7 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
-import { safeNext, startSso } from "@/lib/sso";
+import { endSso, publishSso, safeNext, startSso } from "@/lib/sso";
 import AdminTour from "@/components/tour/AdminTour";
 import { useEffect, useState } from "react";
 import api from "@/app/services/api";
@@ -53,6 +53,22 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   useRecordHighlighter();
 
   useEffect(() => {
+    if (isLoginPage && new URLSearchParams(window.location.search).get("signout") === "1") {
+      // Signed out from another app (the Underwriting Workbench): end this app's session too, so the stored
+      // token doesn't sign the user straight back in. Done before anything below can re-publish the shared
+      // cookie. The ?next= stays, for whoever signs in next.
+      localStorage.clear();
+      try { sessionStorage.removeItem("sso_published"); } catch { /* storage unavailable */ }
+      delete api.defaults.headers.common["Authorization"];
+      delete api.defaults.headers.common["X-Tenant-Id"];
+      endSso();
+      const params = new URLSearchParams(window.location.search);
+      params.delete("signout");
+      const rest = params.toString();
+      window.history.replaceState(null, "", `/login${rest ? `?${rest}` : ""}`);
+      return;
+    }
+
     const token = localStorage.getItem("jwt_token");
     const tenantId = localStorage.getItem("tenant_id");
     const tName = localStorage.getItem("tenant_name");
@@ -81,10 +97,21 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
     } else if (!token && !isLoginPage) {
       router.push("/login");
     } else if (token && isLoginPage) {
-      // Already signed in here: make sure the shared session exists too, and honour a ?next= back to the chat app.
-      const back = safeNext(new URLSearchParams(window.location.search).get("next"));
-      startSso(token).finally(() => {
-        if (back) window.location.assign(back);
+      const params = new URLSearchParams(window.location.search);
+      // Already signed in here: make sure the shared session exists too, and honour a ?next= back to another app.
+      const back = safeNext(params.get("next"));
+      publishSso(token).then((result) => {
+        if (result === "invalid") {
+          // The stored token has expired: sending the user back to `next` would only bounce them here again.
+          // Forget it and show the sign-in form; `next` is kept for after they sign in.
+          localStorage.removeItem("jwt_token");
+          localStorage.removeItem("tenant_id");
+          delete api.defaults.headers.common["Authorization"];
+          delete api.defaults.headers.common["X-Tenant-Id"];
+          return;
+        }
+        // Another app is only reachable with the shared cookie set; without it, stay in the portal.
+        if (back && result === "ok") window.location.assign(back);
         else router.push(isSuperAdmin ? "/super-admin/tenants" : "/");
       });
     } else if (token && isSuperAdmin && pathname === "/") {

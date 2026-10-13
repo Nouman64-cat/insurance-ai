@@ -134,6 +134,7 @@ Provider credentials are encrypted at rest and services automatically fall back 
 insurance-ai/
 ├── frontend/                 # Next.js operations/admin portal
 ├── automation-chat/          # Next.js Automation Chat (AI copilot) app, own container, :3004 (opt-in)
+├── underwriting-app/         # Next.js Underwriting Workbench (queue, case workspace), own container, :3005
 ├── marketing-site/           # Next.js public marketing site (demo content, :3002)
 ├── agent-app/                # React Native / Expo agent application
 ├── services/
@@ -239,6 +240,26 @@ portal you are sent to its login page and brought back. Signing out of the porta
 The chat uses the same API Gateway and Chat Agent as before; it needs the rest of the stack running. Details:
 [`automation-chat/README.md`](automation-chat/README.md).
 
+## Underwriting Workbench
+
+The underwriting queue, case workspace, post-underwriting verification, live evaluation and assessment history run as
+their own app (`underwriting-app/`, port **3005**). It starts with the stack, signs in from the portal's session (the
+same `insurance_sso` cookie as the Automation Chat) and uses the same backend. The portal's Underwriting links open
+it, and old portal URLs (`/underwriting`, `/case/<id>`…) redirect there with their query string.
+
+```bash
+docker compose up -d --build underwriting-app   # the workbench and the backend it needs
+docker compose up -d frontend                   # the portal, where sign-in happens
+```
+
+| Setting                        | Where                         | Purpose                                                    |
+| ------------------------------ | ----------------------------- | ---------------------------------------------------------- |
+| `NEXT_PUBLIC_UNDERWRITING_URL` | portal, chat, workbench       | The workbench's public URL (default `http://localhost:3005`) |
+| `NEXT_PUBLIC_PORTAL_URL`       | portal, chat, workbench       | The portal's public URL: sign-in and return links (default `http://localhost:3000`) |
+| `SSO_COOKIE_NAME` / `SSO_COOKIE_DOMAIN` | all three            | As for the Automation Chat above                           |
+
+Details, the shared-code setup, production builds and benchmarking: [`underwriting-app/README.md`](underwriting-app/README.md).
+
 ## Agent Mobile App
 
 The agent application runs separately through Expo:
@@ -263,6 +284,7 @@ A physical device must use an address reachable from the device rather than `loc
 | --------------- | --------------------: |
 | Web Portal      | http://localhost:3000 |
 | Automation Chat | http://localhost:3004 (opt-in, see above) |
+| Underwriting Workbench | http://localhost:3005 |
 | API Gateway     | http://localhost:8010 |
 | Tenant Service  | http://localhost:8011 |
 | Risk Engine     | http://localhost:8012 |

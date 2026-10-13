@@ -1,4 +1,5 @@
 "use client";
+import type { PlatformReply } from "../voice/protocol";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNotify } from "@/components/NotificationContext";
@@ -354,11 +355,12 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
   );
 
   const consumeStream = useCallback(
-    async (res: Response) => {
+    async (res: Response): Promise<PlatformReply> => {
+      const reply: PlatformReply = {message: ""};
       if (!res.ok || !res.body) {
         setMessages((prev) => [...prev, { id: newId(), role: "assistant", text: "⚠️ Error connecting to the server. Please try again." }]);
         setIsLoading(false);
-        return;
+        return {message: "The platform connection failed. Please retry.", error: "connection_failed"};
       }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -374,15 +376,25 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
             const line = part.trim();
             if (!line.startsWith("data: ")) continue;
             try {
-              handleEvent(JSON.parse(line.slice(6)) as AgentStreamEvent);
+              const event = JSON.parse(line.slice(6)) as AgentStreamEvent;
+              handleEvent(event);
+              if (event.type === "token" && event.content) reply.message = event.content;
+              if (event.type === "interrupt") {
+                reply.pending = event.kind;
+                reply.options = event.options;
+                reply.message = event.question || (event.kind === "client_execute" ? "Please finish the form or upload shown in the chat." : "Please answer the question shown in the chat.");
+              }
+              if (event.type === "error") { reply.message = event.message; reply.error = event.message; }
             } catch {
               // ignore malformed chunk
             }
           }
         }
       } finally {
+        reader.releaseLock();
         setIsLoading(false);
       }
+      return reply.message ? reply : {...reply, message: "The result is shown in your chat."};
     },
     [handleEvent]
   );
@@ -409,7 +421,7 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
   }, []);
 
   const send = useCallback(
-    async (text: string, attachments?: { name: string, url: string }[]) => {
+    async (text: string, attachments?: { name: string, url: string }[], source?: "voice") => {
       if ((!text.trim() && (!attachments || attachments.length === 0)) || isLoading) return;
       setPendingInterrupt(null);
       setSteps([]);
@@ -425,22 +437,23 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
         if (attachments && attachments.length > 0) {
             payload.attachments = attachments;
         }
-        const res = await fetch("/api/chat/stream", {
+        const res = await fetch(source === "voice" ? "/api/voice/stream" : "/api/chat/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeaders() },
           body: JSON.stringify(payload),
         });
-        await consumeStream(res);
+        return await consumeStream(res);
       } catch {
         setMessages((prev) => [...prev, { id: newId(), role: "assistant", text: "⚠️ Error connecting to the server. Please try again." }]);
         setIsLoading(false);
+        return {message: "The platform connection failed. Please retry.", error: "connection_failed"} as PlatformReply;
       }
     },
     [isLoading, consumeStream]
   );
 
   const resolveInterrupt = useCallback(
-    async (resumeValue: any) => {
+    async (resumeValue: any, source?: "voice") => {
       if (!pendingInterrupt) return;
       setPendingInterrupt(null);
       // A resume continues the same turn, so the process graph keeps growing
@@ -454,15 +467,16 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
       setTurnActions([]);
       setIsLoading(true);
       try {
-        const res = await fetch("/api/chat/resume", {
+        const res = await fetch(source === "voice" ? "/api/voice/resume" : "/api/chat/resume", {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeaders() },
           body: JSON.stringify({ thread_id: threadIdRef.current, resume_value: resumeValue }),
         });
-        await consumeStream(res);
+        return await consumeStream(res);
       } catch {
         setMessages((prev) => [...prev, { id: newId(), role: "assistant", text: "⚠️ Error connecting to the server. Please try again." }]);
         setIsLoading(false);
+        return {message: "The platform connection failed. Please retry.", error: "connection_failed"} as PlatformReply;
       }
     },
     [pendingInterrupt, consumeStream]

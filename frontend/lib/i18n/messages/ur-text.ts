@@ -14,6 +14,7 @@ import pages from "./ur-text/pages";
 import platform from "./ur-text/platform";
 import policy from "./ur-text/policy";
 import rules from "./ur-text/rules";
+import workbench from "./ur-text/workbench";
 
 const urText: Record<string, string> = {
   ...admin,
@@ -28,6 +29,7 @@ const urText: Record<string, string> = {
   ...platform,
   ...policy,
   ...rules,
+  ...workbench,
   // ── Shared ────────────────────────────────────────────────────────────────
   "Apply": "لاگو کریں",
   "Applying…": "لاگو ہو رہا ہے…",

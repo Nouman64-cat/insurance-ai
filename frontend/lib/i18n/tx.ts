@@ -1,7 +1,6 @@
 import { DEFAULT_LOCALE, Locale, localeDir } from "./config";
 import en from "./messages/en";
 import ur from "./messages/ur";
-import urText from "./messages/ur-text";
 
 // The active UI language, for code that is not a React component or would rather not take a hook (page text, toasts,
 // confirm() prompts). I18nProvider sets it while rendering, before any page renders; switching language reloads
@@ -10,6 +9,15 @@ let current: Locale = DEFAULT_LOCALE;
 
 export function setCurrentLocale(locale: Locale): void {
   current = locale;
+}
+
+// The Urdu page text (messages/ur-text.ts) is ~110 KB compressed, so it is not part of the client bundle: the root
+// layout loads it on the server only when the language is Urdu and hands it to I18nProvider, which registers it here
+// before any page renders. English pages never download it.
+let urText: Record<string, string> = {};
+
+export function setUrduText(dictionary: Record<string, string>): void {
+  urText = dictionary;
 }
 
 export function currentLocale(): Locale {

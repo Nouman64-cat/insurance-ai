@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useMemo } from "react";
 import { LOCALE_COOKIE, Locale, localeDir } from "./config";
-import { setCurrentLocale, t, tx, type Vars } from "./tx";
+import { setCurrentLocale, setUrduText, t, tx, type Vars } from "./tx";
 
 const ONE_YEAR_S = 365 * 24 * 60 * 60;
 
@@ -23,16 +23,20 @@ const I18nContext = createContext<I18nValue | null>(null);
 
 export function I18nProvider({
   initialLocale,
+  urduText,
   cookieDomain,
   children,
 }: {
   initialLocale: Locale;
+  /** The Urdu page text, passed by the root layout only when the language is Urdu (see loadPageText). */
+  urduText?: Record<string, string>;
   /** Shared parent domain (SSO_COOKIE_DOMAIN) so the Automation Chat app sees the same choice; unset on localhost. */
   cookieDomain?: string;
   children: React.ReactNode;
 }) {
   // Set while rendering, before any page below renders, so the plain `tx()` / `t()` functions see it too.
   setCurrentLocale(initialLocale);
+  if (urduText) setUrduText(urduText);
 
   const setLocale = useCallback((next: Locale) => {
     if (next === initialLocale) return;

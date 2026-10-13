@@ -2,7 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { portalUrl } from "@/lib/portal";
+import { pageUrl } from "@/lib/portal";
 
 // Extracted from app/ClientLayout.tsx's previously-local ToastMsg/ToastBanner/
 // showToast (and the near-identical copy in app/cases/page.tsx) so any
@@ -31,7 +31,7 @@ function ToastBanner({ notifications, onDismiss }: { notifications: Notification
         <div
           key={n.id}
           onClick={() => {
-            if (n.route) window.location.assign(portalUrl(`/${n.route}`));
+            if (n.route) window.location.assign(pageUrl(`/${n.route}`));
             onDismiss(n.id);
           }}
           className={`pointer-events-auto flex items-center gap-2.5 px-4 py-2.5 rounded-xl shadow-lg text-sm font-semibold border cursor-pointer select-none transition-all

@@ -82,3 +82,19 @@ async def chat_execute_tool(request: Request, token: str = Depends(oauth2_scheme
         resp = await client.post(f"{CHAT_AGENT_URL}/chat/execute-tool", content=body, headers=headers)
         from fastapi import Response
         return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+@router.post("/voice/{path}", summary="Authenticated voice session and dictation")
+async def voice_proxy(path: str, request: Request, token: str = Depends(oauth2_scheme)):
+    if path not in {"session", "transcribe"}:
+        from fastapi import HTTPException
+        raise HTTPException(404, "Voice endpoint not found")
+    headers = {"Content-Type": request.headers.get("content-type", "application/json"),
+               "Authorization": f"Bearer {token}", "X-Tenant-Id": request.headers.get("x-tenant-id", "")}
+    try:
+        async with httpx.AsyncClient(timeout=70) as client:
+            response = await client.post(f"{CHAT_AGENT_URL}/chat/voice/{path}", content=await request.body(), headers=headers)
+    except httpx.HTTPError:
+        return Response(content='{"detail":"Voice service is temporarily unavailable"}', status_code=503, media_type="application/json")
+    return Response(response.content, status_code=response.status_code,
+                    media_type=response.headers.get("content-type", "application/json"), headers={"Cache-Control": "no-store"})

@@ -290,7 +290,9 @@ services:
       API_GATEWAY_INTERNAL_URL: http://api-gateway:8000 # server-side (Next.js API routes); internal docker network
       CHOKIDAR_USEPOLLING: "true" # macOS Docker Desktop: FSEvents don't reach chokidar via inotify
       NEXT_PUBLIC_AUTOMATION_URL: ${NEXT_PUBLIC_AUTOMATION_URL:-http://localhost:3004} # the Automation Chat app (the "Automation" button opens it)
-      SSO_COOKIE_NAME: ${SSO_COOKIE_NAME:-insurance_sso} # single sign-on cookie shared with the Automation Chat app
+      NEXT_PUBLIC_UNDERWRITING_URL: ${NEXT_PUBLIC_UNDERWRITING_URL:-http://localhost:3005} # the Underwriting Workbench: underwriting links and old-URL redirects go there
+      NEXT_PUBLIC_PORTAL_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000} # this app's own public URL (trusted sign-in return, redirect-loop guard)
+      SSO_COOKIE_NAME: ${SSO_COOKIE_NAME:-insurance_sso} # single sign-on cookie shared with the Automation Chat and Underwriting Workbench
       SSO_COOKIE_DOMAIN: ${SSO_COOKIE_DOMAIN:-} # empty on localhost; a shared parent domain (.example.com) across subdomains
 
   # ───────────────────────────────────────────────────────────────────────────
@@ -320,12 +322,99 @@ services:
       NEXT_PUBLIC_OCR_URL: ${NEXT_PUBLIC_OCR_URL:-http://localhost:8014}
       NEXT_PUBLIC_SUMMARIZER_URL: ${NEXT_PUBLIC_SUMMARIZER_URL:-http://localhost:8015}
       NEXT_PUBLIC_PORTAL_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000} # the dashboard: embedded pages and the sign-in redirect
+      NEXT_PUBLIC_UNDERWRITING_URL: ${NEXT_PUBLIC_UNDERWRITING_URL:-http://localhost:3005} # case views and other underwriting pages it opens or embeds
       API_GATEWAY_INTERNAL_URL: http://api-gateway:8000
       SSO_COOKIE_NAME: ${SSO_COOKIE_NAME:-insurance_sso}
       SSO_COOKIE_DOMAIN: ${SSO_COOKIE_DOMAIN:-}
       CHOKIDAR_USEPOLLING: "true"
     depends_on:
       - api-gateway
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Underwriting Workbench (Next.js) — the underwriting queue and case workspace as their own app,
+  # http://localhost:3005. Signs in from the portal's session (single sign-on cookie); see underwriting-app/README.md.
+  # Start it with just its backend:   docker compose up -d --build underwriting-app
+  # (pulls in api-gateway and tenant-service; sign-in still happens on the portal: add `frontend` if it isn't running)
+  # ───────────────────────────────────────────────────────────────────────────
+  underwriting-app:
+    build:
+      context: . # repository root: the image also needs the portal code it shares (frontend/app/services, components, lib)
+      dockerfile: underwriting-app/Dockerfile
+      target: dev
+    container_name: insurance-underwriting-app
+    restart: unless-stopped
+    networks:
+      - insurance-net
+    ports:
+      - "3005:3005"
+    volumes:
+      - ./underwriting-app:/repo/underwriting-app # hot-reload source files
+      - /repo/underwriting-app/node_modules # keep the container's node_modules
+      - /repo/underwriting-app/.next # preserve the build cache between restarts
+      # The portal code the workbench shares, read-only, so edits to it reload here too.
+      - ./frontend/app/services:/repo/frontend/app/services:ro
+      - ./frontend/app/globals.css:/repo/frontend/app/globals.css:ro
+      - ./frontend/components:/repo/frontend/components:ro
+      - ./frontend/lib:/repo/frontend/lib:ro
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010} # browser-side API gateway
+      NEXT_PUBLIC_OCR_URL: ${NEXT_PUBLIC_OCR_URL:-http://localhost:8014}
+      NEXT_PUBLIC_SUMMARIZER_URL: ${NEXT_PUBLIC_SUMMARIZER_URL:-http://localhost:8015}
+      NEXT_PUBLIC_PORTAL_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000} # sign-in, "Back to the portal", portal pages
+      NEXT_PUBLIC_UNDERWRITING_URL: ${NEXT_PUBLIC_UNDERWRITING_URL:-http://localhost:3005} # this app's own public URL
+      NEXT_PUBLIC_AUTOMATION_URL: ${NEXT_PUBLIC_AUTOMATION_URL:-http://localhost:3004} # the chat that embeds case views
+      API_GATEWAY_INTERNAL_URL: http://api-gateway:8000 # server-side: session check and the live-event stream
+      SSO_COOKIE_NAME: ${SSO_COOKIE_NAME:-insurance_sso}
+      SSO_COOKIE_DOMAIN: ${SSO_COOKIE_DOMAIN:-}
+      ENV_VAR: ${ENV_VAR:-}
+      CHOKIDAR_USEPOLLING: "true" # macOS Docker Desktop: file events don't reach the container
+      WATCHPACK_POLLING: "true"
+    depends_on:
+      - api-gateway
+      - tenant-service
+    healthcheck:
+      test: [ "CMD", "node", "-e", "fetch('http://localhost:3005/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s # first compile in dev
+
+  # Production build of the workbench, for measuring real speed (the dev service compiles pages on first visit and
+  # runs unminified React). Runs beside the dev service:
+  #   docker compose --profile prod up --build -d underwriting-app-prod   ->  http://localhost:3006
+  underwriting-app-prod:
+    profiles: ["prod"]
+    build:
+      context: .
+      dockerfile: underwriting-app/Dockerfile
+      target: runner
+      args: # compiled into the browser bundle
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010}
+        NEXT_PUBLIC_OCR_URL: ${NEXT_PUBLIC_OCR_URL:-http://localhost:8014}
+        NEXT_PUBLIC_SUMMARIZER_URL: ${NEXT_PUBLIC_SUMMARIZER_URL:-http://localhost:8015}
+        NEXT_PUBLIC_PORTAL_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000}
+        NEXT_PUBLIC_UNDERWRITING_URL: ${UNDERWRITING_PROD_URL:-http://localhost:3006}
+        NEXT_PUBLIC_AUTOMATION_URL: ${NEXT_PUBLIC_AUTOMATION_URL:-http://localhost:3004}
+        ENV_VAR: ${ENV_VAR:-}
+    container_name: insurance-underwriting-app-prod
+    restart: unless-stopped
+    networks:
+      - insurance-net
+    ports:
+      - "3006:3005"
+    environment:
+      API_GATEWAY_INTERNAL_URL: http://api-gateway:8000
+      SSO_COOKIE_NAME: ${SSO_COOKIE_NAME:-insurance_sso}
+      SSO_COOKIE_DOMAIN: ${SSO_COOKIE_DOMAIN:-}
+    depends_on:
+      - api-gateway
+      - tenant-service
+    healthcheck:
+      test: [ "CMD", "node", "-e", "fetch('http://localhost:3005/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   # ───────────────────────────────────────────────────────────────────────────
   # Marketing site (Next.js App Router) — public site at http://localhost:3002

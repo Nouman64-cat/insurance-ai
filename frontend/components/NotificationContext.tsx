@@ -4,6 +4,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { tx } from "@/lib/i18n/tx";
+import { appHref } from "@/lib/appLinks";
 
 // Extracted from app/ClientLayout.tsx's previously-local ToastMsg/ToastBanner/
 // showToast (and the near-identical copy in app/cases/page.tsx) so any
@@ -33,7 +34,7 @@ function ToastBanner({ notifications, onDismiss }: { notifications: Notification
         <div
           key={n.id}
           onClick={() => {
-            if (n.route) router.push(`/${n.route}`);
+            if (n.route) router.push(appHref(`/${n.route}`));
             onDismiss(n.id);
           }}
           className={`pointer-events-auto flex items-center gap-2.5 px-4 py-2.5 rounded-xl shadow-lg text-sm font-semibold border cursor-pointer select-none transition-all

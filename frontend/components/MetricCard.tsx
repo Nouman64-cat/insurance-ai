@@ -7,7 +7,7 @@ interface MetricCardProps {
   title: string;
   value: string | number;
   subtitle?: string;
-  accent?: "slate" | "emerald" | "amber" | "blue" | "red" | "purple" | "violet" | "orange";
+  accent?: "slate" | "emerald" | "amber" | "blue" | "sky" | "red" | "purple" | "violet" | "orange";
   trend?: { value: string; direction: "up" | "down" | "neutral" };
   icon?: ReactNode;
   size?: "default" | "compact";
@@ -18,6 +18,7 @@ const ACCENT_GRADIENT: Record<NonNullable<MetricCardProps["accent"]>, string> = 
   emerald: "from-blue-500/10 to-blue-400/5",
   amber:   "from-amber-500/10 to-orange-400/5",
   blue:    "from-blue-600/10 to-blue-400/5",
+  sky:     "from-sky-500/10 to-sky-400/5",
   red:     "from-rose-500/10 to-red-400/5",
   purple:  "from-blue-500/10 to-fuchsia-400/5",
   violet:  "from-blue-500/10 to-blue-400/5",
@@ -29,6 +30,7 @@ const ACCENT_TEXT: Record<NonNullable<MetricCardProps["accent"]>, string> = {
   emerald: "text-blue-800",
   amber:   "text-amber-800",
   blue:    "text-blue-800",
+  sky:     "text-sky-800",
   red:     "text-red-800",
   purple:  "text-blue-800",
   violet:  "text-blue-800",
@@ -40,6 +42,7 @@ const ACCENT_ICON_BG: Record<NonNullable<MetricCardProps["accent"]>, string> = {
   emerald: "bg-white text-blue-600 shadow-blue-200/50",
   amber:   "bg-white text-amber-600 shadow-amber-200/50",
   blue:    "bg-white text-blue-600 shadow-blue-200/50",
+  sky:     "bg-white text-sky-600 shadow-sky-200/50",
   red:     "bg-white text-rose-600 shadow-rose-200/50",
   purple:  "bg-white text-blue-600 shadow-blue-200/50",
   violet:  "bg-white text-blue-600 shadow-blue-200/50",

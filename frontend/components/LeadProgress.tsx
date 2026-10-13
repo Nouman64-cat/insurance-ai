@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { tx } from "@/lib/i18n/tx";
+import { appHref } from "@/lib/appLinks";
 
 // Where a lead is on its way to a policy, readable at a glance in a list.
 //
@@ -101,7 +102,7 @@ export default function LeadProgress({ lead }: { lead: LeadLike }) {
         <p className="text-[11px] leading-none text-slate-400">{tx(s.note)}</p>
         {s.href && (
           <Link
-            href={s.href}
+            href={appHref(s.href)}
             // the row itself opens the lead's details; this link goes to the page for its current step instead
             onClick={(e) => e.stopPropagation()}
             className="whitespace-nowrap text-[11px] font-semibold leading-none text-blue-600 hover:text-blue-800 hover:underline"

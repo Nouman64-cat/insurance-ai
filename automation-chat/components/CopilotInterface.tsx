@@ -1,4 +1,5 @@
 "use client";
+import { confirmationAnswer } from "@/lib/voice/protocol";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -35,7 +36,7 @@ import type { IssuanceResult, PaymentConfirmResult } from "@/app/services/polici
 import { requestACR } from "@/app/services/agentConfidentialReport";
 import RuleBuilderModal from "./rule-engine/RuleBuilderModal";
 import { IS_DEMO } from "@/lib/envMode";
-import { PORTAL_ORIGIN } from "@/lib/portal";
+import { EMBED_ORIGINS, UNDERWRITING_ORIGIN, originOf, pageOrigin } from "@/lib/portal";
 import GroupCensusClientTool from "@/components/group/GroupCensusClientTool";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { useI18n } from "@/lib/i18n/I18nProvider";
@@ -523,7 +524,7 @@ function getRecommendedActions(lastMessage: AgentMessage | undefined): QuickActi
 }
 
 export function CopilotInterface() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const welcome = useMemo<AgentMessage>(() => ({ id: WELCOME_ID, role: "assistant", text: t("composer.greeting") }), [t]);
   const router = useRouter();
   const { notify } = useNotify();
@@ -543,7 +544,8 @@ export function CopilotInterface() {
       }
       const path = route.startsWith('/') ? route : `/${route}`;
       const sep = path.includes('?') ? '&' : '?';
-      const targetUrl = `${PORTAL_ORIGIN}${path}${sep}_portal=1`;
+      // Underwriting pages (case views) come from the Underwriting Workbench, everything else from the portal.
+      const targetUrl = `${pageOrigin(path)}${path}${sep}_portal=1`;
       if (embed) {
         // A case view that is open is a piece of work in progress (requirements being completed, documents being
         // uploaded). A reply from the model must not swap it for some other page; another case may replace it.
@@ -596,6 +598,7 @@ export function CopilotInterface() {
   const [input, setInput] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [showVoice, setShowVoice] = useState(false);
+  const [voiceMinimized, setVoiceMinimized] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedFileUrl, setSelectedFileUrl] = useState<string | null>(null);
   const [autoSubmitPrompt, setAutoSubmitPrompt] = useState("");
@@ -628,9 +631,12 @@ export function CopilotInterface() {
     casePanelScrollRef.current?.scrollBy({ left: dir * 360, behavior: "smooth" });
   useEffect(() => {
     if (!casePanel) return;
+    // Addressed to the app the panel was opened on; the browser drops it if the frame has since moved elsewhere.
+    const frameOrigin = originOf(casePanel.url);
+    if (!frameOrigin) return;
     casePanelFrameRef.current?.contentWindow?.postMessage(
       { source: "insurance-ai-copilot", type: "refresh" },
-      PORTAL_ORIGIN
+      frameOrigin
     );
   }, [messages.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -907,7 +913,8 @@ export function CopilotInterface() {
   // just because it happened inside the embed rather than via a chat click.
   useEffect(() => {
     const handler = (event: MessageEvent) => {
-      if (event.origin !== PORTAL_ORIGIN) return;
+      // Only the portal and the Underwriting Workbench embed pages here.
+      if (!EMBED_ORIGINS.has(event.origin)) return;
       if (event.data?.source !== "insurance-ai-portal") return;
       if (!casePanel || isLoading) return;
       if (event.data.type === "quick_lead_saved") {
@@ -947,7 +954,7 @@ export function CopilotInterface() {
         // The case view is open and already re-reads its own checklist after an upload. Asking the model to
         // "re-check" sent it off on a turn whose tools navigate — which swapped this panel for another page
         // in the middle of the requirements. Leave the panel where it is; the page refreshes itself.
-        casePanelFrameRef.current?.contentWindow?.postMessage({ source: "insurance-ai-copilot", type: "refresh" }, PORTAL_ORIGIN);
+        casePanelFrameRef.current?.contentWindow?.postMessage({ source: "insurance-ai-copilot", type: "refresh" }, event.origin);
       } else if (event.data.type === "gates_cleared") {
         // All 6 gates are done — the case view has nothing further for the
         // user to act on there, so close it and hand off to the chat rather
@@ -971,7 +978,7 @@ export function CopilotInterface() {
             addAssistantMessage(
               `**${queue[at].name}**'s requirements are complete. Continuing with **${next.name}** (${next.relationship === "Self" ? "head" : "fully insured spouse"}) — their tab is open now.`
             );
-            setCasePanel({ url: `${PORTAL_ORIGIN}/case/${next.case_id}?_portal=1`, title: `Case · ${next.name}` });
+            setCasePanel({ url: `${UNDERWRITING_ORIGIN}/case/${next.case_id}?_portal=1`, title: `Case · ${next.name}` });
             return;
           }
           setCasePanel(null);
@@ -1846,14 +1853,14 @@ export function CopilotInterface() {
       }
       const path = action.payload.startsWith('/') ? action.payload : `/${action.payload}`;
       const sep = path.includes('?') ? '&' : '?';
-      window.open(`${PORTAL_ORIGIN}${path}${sep}_portal=1`, "_blank");
+      window.open(`${pageOrigin(path)}${path}${sep}_portal=1`, "_blank");
     } else if (action.actionType === "embed") {
       // Opens the page inline in the chat panel. Used for the 6 pre-underwriting
       // gate stages and the customer intake form ("Fill the form instead") —
       // everything else uses "navigate" above and opens a normal new tab.
       const path = action.payload.startsWith('/') ? action.payload : `/${action.payload}`;
       const sep = path.includes('?') ? '&' : '?';
-      setCasePanel({ url: `${PORTAL_ORIGIN}${path}${sep}_portal=1`, title: routeLabel(action.payload) });
+      setCasePanel({ url: `${pageOrigin(path)}${path}${sep}_portal=1`, title: routeLabel(action.payload) });
     } else if (action.actionType === "proposal_step") {
       runProposalStep(JSON.parse(action.payload));
     } else if (action.actionType === "uw_requirements") {
@@ -2582,7 +2589,8 @@ export function CopilotInterface() {
         try {
           const fd = new FormData();
           fd.append("audio", blob, "recording.webm");
-          const sttRes = await fetch("/api/stt", { method: "POST", body: fd });
+          const sttRes = await fetch("/api/stt", { method: "POST", credentials: "same-origin",
+            headers: {Authorization: `Bearer ${localStorage.getItem("jwt_token") || ""}`, "X-Tenant-Id": localStorage.getItem("tenant_id") || ""}, body: fd });
           if (!sttRes.ok) throw new Error("STT failed");
           const { transcript } = await sttRes.json();
           if (transcript?.trim()) await handleSubmit(undefined, transcript);
@@ -2602,9 +2610,34 @@ export function CopilotInterface() {
     setIsRecording(false);
   };
 
+  const liveVoice = showVoice ? (
+    <div className={voiceMinimized ? "fixed bottom-4 right-4 z-[100] max-w-[calc(100vw-24px)]" : "fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/40 p-3"}>
+      <div className={voiceMinimized ? "relative" : "relative w-full max-w-3xl h-[min(780px,calc(100dvh-24px))]"}>
+        <VoiceOverlay
+        minimized={voiceMinimized}
+        onMinimize={() => setVoiceMinimized(true)}
+        onRestore={() => setVoiceMinimized(false)}
+        onClose={() => setShowVoice(false)}
+        context={messages.filter(m => typeof m.text === "string").map(m => ({role: m.role, text: m.text}))}
+        onPlatformRequest={async (request, heardDirectly) => {
+          if (isLoading) return {message: "A chat request is still running. Please wait for its result."};
+          if (pendingInterrupt?.kind === "client_execute") return {message: "Please finish the form or upload in the chat.", pending: "client_execute"};
+          if (pendingInterrupt?.kind === "confirm") {
+            const answer = heardDirectly ? confirmationAnswer(request) : null;
+            if (answer === null) return {message: pendingInterrupt.question + " Please say yes or cancel clearly, or use the buttons in chat.", pending: "confirm"};
+            return resolveInterrupt(answer, "voice");
+          }
+          if (pendingInterrupt?.kind === "clarify") return resolveInterrupt(request, "voice");
+          return send(request, undefined, "voice");
+        }} />
+      </div>
+    </div>
+  ) : null;
+
   if (isAutomationMode) {
     return (
       <div className="flex h-full w-full bg-white text-slate-900 font-sans overflow-hidden">
+        {liveVoice}
         <>
           {issuanceModalPolicy && (
             <IssuanceModal
@@ -3083,6 +3116,11 @@ export function CopilotInterface() {
              </div>
              <div className="flex items-center gap-3">
                <LanguageSwitcher />
+               <button type="button" onClick={() => {setVoiceMinimized(false); setShowVoice(true);}} title={t("composer.voiceAgent")} aria-label={t("composer.voiceAgent")}
+                 className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors">
+                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg>
+                 <span className="hidden sm:inline">{locale === "ur" ? "وائس" : "Voice"}</span>
+               </button>
                <button
                  onClick={() => setShowJourneyMap((v) => !v)}
                  aria-pressed={showJourneyMap}
@@ -3793,7 +3831,8 @@ export function CopilotInterface() {
       {/* ── Clean white backdrop ───────────────────────────────────────── */}
       <div className="absolute inset-0 bg-slate-50" />
 
-      {showVoice && <VoiceOverlay onClose={() => setShowVoice(false)} />}
+      {liveVoice}
+
 
       {confirmDialog}
       {docDialog && (
@@ -4219,7 +4258,7 @@ export function CopilotInterface() {
                     className="flex-1 bg-transparent text-slate-900 py-1.5 focus:outline-none text-[14px] placeholder:text-slate-400 min-w-0 disabled:opacity-50"
                     disabled={isLoading || isUploading}
                   />
-                  <button type="button" onClick={() => setShowVoice(true)} title={t("composer.voiceAgent")}
+                  <button type="button" onClick={() => {setVoiceMinimized(false); setShowVoice(true);}} title={t("composer.voiceAgent")}
                     className="p-2 text-slate-400 hover:text-blue-600 rounded-full transition-all shrink-0">
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 18v-6a9 9 0 0118 0v6M3 18a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3v5zm16 0a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3v5z" /></svg>
                   </button>

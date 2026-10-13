@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { globalSearch, type SearchResult, type SearchResultType } from "@/app/services/search";
 import { tx } from "@/lib/i18n/tx";
+import { appHref } from "@/lib/appLinks";
 
 function SearchIcon() {
   return (
@@ -130,7 +131,7 @@ export default function GlobalSearch() {
       setQuery("");
       setResults([]);
       inputRef.current?.blur();
-      router.push(result.url);
+      router.push(appHref(result.url));
     },
     [router],
   );

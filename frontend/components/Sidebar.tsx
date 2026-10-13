@@ -10,6 +10,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 
 import { useEffect, useState } from "react";
 import { tx } from "@/lib/i18n/tx";
+import { appHref } from "@/lib/appLinks";
 
 
 
@@ -767,7 +768,7 @@ export function Sidebar() {
                       className={`relative group ${isDraggingThis ? "opacity-50 border border-dashed border-slate-300 rounded-xl" : ""}`}
                     >
                       <Link
-                        href={link.subLinks ? "#" : link.href}
+                        href={link.subLinks ? "#" : appHref(link.href)}
                         data-tour={link.href}
                         title={collapsed ? t(`nav.${link.label}`) : undefined}
                         onClick={(e) => {
@@ -829,7 +830,7 @@ export function Sidebar() {
                             return (
                               <Link
                                 key={sub.href}
-                                href={sub.href}
+                                href={appHref(sub.href)}
                                 onClick={() => setActiveHref(sub.href)}
                                 className={`
                                   group relative flex items-center ps-7 pe-3 py-1.5 text-[12px] rounded-lg transition-all duration-200

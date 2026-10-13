@@ -320,7 +320,7 @@ export async function downloadDocument(policyId: string, docId: string): Promise
     responseType: "blob",
   });
   
-  const blob = new Blob([res.data], { type: res.headers['content-type'] || 'application/pdf' });
+  const blob = new Blob([res.data], { type: String(res.headers['content-type'] || 'application/pdf') });
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

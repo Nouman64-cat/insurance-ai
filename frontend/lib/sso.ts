@@ -1,18 +1,18 @@
 // Single sign-on from the portal. The portal keeps its own copy of the token in localStorage for its own pages; for
-// the Automation Chat app (a separate app on another port) it also puts the token in an httpOnly cookie that the
-// browser sends to every port of this host (and every subdomain when SSO_COOKIE_DOMAIN is set).
-export const AUTOMATION_URL = (process.env.NEXT_PUBLIC_AUTOMATION_URL || "http://localhost:3004").replace(/\/+$/, "");
+// the Automation Chat and the Underwriting Workbench (separate apps on other ports or subdomains) it also puts the
+// token in an httpOnly cookie that the browser sends to every port of this host (and every subdomain when
+// SSO_COOKIE_DOMAIN is set).
+//
+// The Underwriting Workbench has its own lib/sso.ts with the same exports that shared code uses (endSso,
+// sessionExpired): shared modules import "@/lib/sso" and get the version for the app they run in.
+import { AUTOMATION_URL, safeRedirect } from "@/lib/appLinks";
 
-/** Where a post-login `?next=` may send the user: this app, or the Automation Chat app. Anything else is ignored. */
+export { AUTOMATION_URL };
+
+/** Where a post-login `?next=` may send the user: this app or another configured app. Anything else is ignored. */
 export function safeNext(next: string | null | undefined): string | null {
-  if (!next || typeof window === "undefined") return null;
-  try {
-    const target = new URL(next, window.location.origin);
-    const allowed = [window.location.origin, new URL(AUTOMATION_URL).origin];
-    return allowed.includes(target.origin) ? target.toString() : null;
-  } catch {
-    return null;
-  }
+  if (typeof window === "undefined") return null;
+  return safeRedirect(next, window.location.origin);
 }
 
 /**
@@ -34,8 +34,11 @@ export async function openAutomationChat(): Promise<boolean> {
   return true;
 }
 
-/** Publish the signed-in token for the Automation Chat app. Safe to call repeatedly. */
-export async function startSso(token: string): Promise<boolean> {
+/**
+ * Publish the signed-in token for the other apps. "invalid" means the gateway rejected the token (expired or
+ * revoked); "unavailable" means the sign-in service could not be reached, so nothing is known about the token.
+ */
+export async function publishSso(token: string): Promise<"ok" | "invalid" | "unavailable"> {
   try {
     const res = await fetch("/api/sso/session", {
       method: "POST",
@@ -43,13 +46,30 @@ export async function startSso(token: string): Promise<boolean> {
       credentials: "same-origin",
       body: JSON.stringify({ token }),
     });
-    return res.ok;
+    if (res.ok) return "ok";
+    return res.status === 401 || res.status === 400 ? "invalid" : "unavailable";
   } catch {
-    return false;
+    return "unavailable";
   }
 }
 
-/** Sign out of the shared session (the Automation Chat app signs out with it). */
+/** Publish the signed-in token for the other apps. Safe to call repeatedly. */
+export async function startSso(token: string): Promise<boolean> {
+  return (await publishSso(token)) === "ok";
+}
+
+/** Sign out of the shared session (the Automation Chat and the workbench sign out with it). */
 export function endSso(): Promise<unknown> {
   return fetch("/api/sso/session", { method: "DELETE", credentials: "same-origin", keepalive: true }).catch(() => undefined);
+}
+
+/** The API answered 401: forget this tab's session and go to the sign-in page. */
+export function sessionExpired(): void {
+  try {
+    localStorage.removeItem("jwt_token");
+    localStorage.removeItem("tenant_id");
+    localStorage.removeItem("user_email");
+  } catch { /* storage unavailable */ }
+  endSso();
+  window.location.href = "/login";
 }

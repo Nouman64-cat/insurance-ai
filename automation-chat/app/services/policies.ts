@@ -59,6 +59,7 @@ export interface PaymentMethod {
 }
 
 export interface IssuanceResult {
+  policy_id: string;
   policy_number: string;
   status: string;
   effective_date: string;
@@ -100,6 +101,8 @@ export interface IssuancePreview {
 }
 
 export interface PaymentConfirmResult {
+  delivery_date?: string | null;
+  free_look_end_date?: string | null;
   policy_id: string;
   policy_number: string;
   status: string;
@@ -320,7 +323,7 @@ export async function downloadDocument(policyId: string, docId: string): Promise
     responseType: "blob",
   });
   
-  const blob = new Blob([res.data], { type: res.headers['content-type'] || 'application/pdf' });
+  const blob = new Blob([res.data], { type: typeof res.headers['content-type'] === 'string' ? res.headers['content-type'] : 'application/pdf' });
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

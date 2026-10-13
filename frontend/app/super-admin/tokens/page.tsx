@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import api from "@/app/services/api";
 import { tx } from "@/lib/i18n/tx";
+import { appHref } from "@/lib/appLinks";
 
 // --- Per-model pricing ------------------------------------------------------
 // USD per 1M tokens. Sources (verify periodically):
@@ -909,7 +910,7 @@ function TokenManagementContent() {
                               </div>
                               {svc.routeLink && (
                                 <Link
-                                  href={svc.routeLink}
+                                  href={appHref(svc.routeLink)}
                                   className="text-[11px] font-bold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-0.5"
                                 >
                                   {svc.routeLabel}{" "}{tx("→")}
