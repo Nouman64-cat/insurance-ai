@@ -38,6 +38,9 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
   const [tab, setTab] = useState<Tab>("family");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [headLoading, setHeadLoading] = useState(false);
+  const [headBlocked, setHeadBlocked] = useState(false);
+  const existingHeadCnic = useRef<string | null>(null);
   const [notice, setNotice] = useState<{ tone: "ok" | "warn" | "error"; text: string } | null>(null);
 
   // Tab 1
@@ -80,6 +83,8 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
 
   useEffect(() => {
     if (!open) return;
+    let active = true;
+    setHeadBlocked(false); setHeadLoading(false); existingHeadCnic.current = null;
     setTab("family"); setError(""); setNotice(null); setFlagged(new Set());
     setName(""); setContactPerson(""); setContactEmail(""); setContactPhone(""); setHouseholdIncome("");
     setCity(""); setProvince(""); setBranchId(""); setAssignedAgentId(""); setAcquisitionSourceId("");
@@ -88,11 +93,35 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
     created.current = {};
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId) return;
+    const existingHead = new URLSearchParams(window.location.search).get("head");
+    if (existingHead) {
+      setHeadLoading(true);
+      api.get(`/tenants/${tenantId}/customers/${encodeURIComponent(existingHead)}`).then(({ data: c }) => {
+        if (!active) return;
+        if (c.organization_id || c.family_group_id) {
+          setHeadBlocked(true); setError("This customer already belongs to a group. Continue their existing group instead."); return;
+        }
+        if (!c.cnic) { setHeadBlocked(true); setError("Complete the customer's CNIC before continuing with family insurance."); return; }
+        existingHeadCnic.current = String(c.cnic).replace(/\D/g, "");
+        setName(`${c.name} Family`); setContactPerson(c.name);
+        setHouseholdIncome(String(c.declared_income ?? ""));
+        setContactEmail(c.details?.contact?.email || "");
+        setContactPhone(c.details?.contact?.mobile_number || c.details?.contact?.phone_number || "");
+        setCity(c.details?.address?.city || ""); setProvince(c.details?.address?.province || "");
+        setAssignedAgentId(c.assigned_agent_id || ""); setAcquisitionSourceId(c.acquisition_source_id || "");
+        setRows([{ ...blankRow("Self"), name: c.name || "", cnic: c.cnic,
+          dob: String(c.dob || "").slice(0,10), gender: c.gender || "", occupation: c.occupation || "",
+          declared_income: String(c.declared_income ?? ""), is_smoker: c.is_smoker ? "yes" : "no",
+          height_cm: String(c.height_cm ?? ""), weight_kg: String(c.weight_kg ?? "") }, blankRow("Spouse")]);
+        setNotice({tone: "ok", text: "Existing customer details loaded. Enrolment reuses their CNIC. Their individual proposal remains unchanged. Review family cover and add the other members before creating the family."});
+      }).catch(() => { if (active) { setHeadBlocked(true); setError("Could not load the existing customer. Close this form and retry from the chat."); } }).finally(() => { if (active) setHeadLoading(false); });
+    }
     listAgents(tenantId).then(setAgentOptions).catch(() => setAgentOptions([]));
     listBranches(tenantId).then(setBranchOptions).catch(() => setBranchOptions([]));
     listInsurancePlans(tenantId)
       .then((plans) => setLifePlans(plans.filter((p) => (p.insurance_type === "TERM_LIFE" || p.insurance_type === "WHOLE_LIFE") && p.is_active)))
       .catch(() => setLifePlans([]));
+    return () => { active = false; };
   }, [open]);
 
   const empty = (v: unknown) => v === undefined || v === null || String(v).trim() === "";
@@ -225,6 +254,10 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
   };
 
   const submit = async () => {
+    if (headLoading || headBlocked) return;
+    if (existingHeadCnic.current && rows.find((r) => r.kind === "Self")?.cnic.replace(/\D/g, "") !== existingHeadCnic.current) {
+      setError("Keep the existing customer's CNIC as the family head. Correct their identity in the customer record first if needed."); return;
+    }
     setError("");
     if (!name.trim()) { setTab("family"); setError(tx("Family name is required.")); return; }
     if (!(parseInt(term) > 0) || !effective) { setTab("policy"); setError(tx("The policy needs a term and an effective date.")); return; }
@@ -456,7 +489,7 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
             {tab !== "members" ? (
               <button type="button" onClick={() => setTab(tab === "family" ? "policy" : "members")} className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg">{tx("Next")}</button>
             ) : (
-              <button type="button" onClick={submit} disabled={saving || extracting} className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg">
+              <button type="button" onClick={submit} disabled={saving || extracting || headLoading || headBlocked} className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg">
                 {saving ? tx("Creating…") : tx("Create family & enrol")}
               </button>
             )}

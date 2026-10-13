@@ -57,3 +57,33 @@ docker build --target builder -t insurance-ai-automation-chat-voice-check automa
 Tests cover credential/session boundaries, tenant checks, server-derived roles, safe confirmation, duplicate tool delivery, delayed captions, audio interruption, microphone cleanup, and call closure during pending work. Live-provider smoke testing should separately verify WebRTC audio and captions with the actual configured account. Real microphone quality, noise handling, and Urdu pronunciation should be checked on the browsers and devices used by staff.
 
 Reference: [OpenAI WebRTC guide](https://developers.openai.com/api/docs/guides/voice-webrtc).
+
+## Revisiting choices and changing insurance type
+
+At a guided question or confirmation, use **Change an earlier choice**, type a correction such as
+“Actually, I need family insurance”, or say that correction in live voice. Revision-capable questions
+also offer **Family insurance instead**. Corrections supersede the pending action without treating them
+as consent. Saved customer and proposal records remain unchanged. Existing customer-intake Go back
+buttons retain their one-step behavior.
+
+Draft individual proposals offer **Family insurance instead**. The agent's read-only
+`prepare_family_insurance` tool verifies the existing customer and opens a family review form with
+that person's details as the head. Add household members and select family cover, then explicitly
+submit the form. Enrolment reuses the existing customer by tenant/CNIC. An existing family opens
+its current workspace instead of creating another. Corporate roster customers are not converted.
+
+This starts a separate family proposal. It does not cancel, overwrite, or refund an individual proposal
+or issued policy. Those changes require their owning workflow. Missing identity or inaccessible
+customer data blocks submission. The existing head's CNIC must remain unchanged.
+
+Unknown or ambiguous plan answers no longer select the first recommendation automatically. Plan
+selection continues through normal validation and confirmation. Client-executed forms and uploads
+retain their own completion protocol rather than being treated as conversational corrections.
+
+Regression checks:
+
+```sh
+# pytest must be available in the test environment.
+python -m pytest test_registries.py test_family_proposal_step.py test_conversation_revision.py -q
+node --test tests/revision.test.cjs tests/realtime.test.cjs tests/voice-proxy.test.cjs
+```

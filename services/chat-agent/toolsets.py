@@ -51,6 +51,7 @@ CORE_TOOLS: set[str] = {
     # be bound whenever that instruction is in front of the model.
     "add_organization",
     "add_family_group",
+    "prepare_family_insurance",
     "create_case",
     "update_case_status",
     "assign_case",

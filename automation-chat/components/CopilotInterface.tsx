@@ -1,4 +1,5 @@
 "use client";
+import { isRevisionText, revision } from "../lib/agent/revision";
 import { confirmationAnswer } from "@/lib/voice/protocol";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -693,11 +694,14 @@ export function CopilotInterface() {
         ]
       : PROPOSAL_OPTIONS[state].ids
       .filter((step) => !(step === "submit" && base.hasMissing))
-      .map((step) => ({
+      .map<QuickAction>((step) => ({
       label: step === "underwrite" ? "Send to Underwriting" : PROPOSAL_STEPS[step].label,
-      actionType: "proposal_step",
+      actionType: "proposal_step" as const,
       payload: JSON.stringify({ ...base, step, from: state }),
-    }));
+    })).concat(!base.memberCases && base.customerId && ["draft", "adjusted"].includes(state) ? [{
+      label: "Family insurance instead", actionType: "submit" as const,
+      payload: `Prepare family insurance for existing customer_id ${base.customerId}. Keep the individual proposal unchanged and ask for missing family details before saving.`,
+    }] : []);
 
   // The summary shown under each step. Built from the live proposal (the same
   // data the Proposal page's detail window reads), so it follows what actually
@@ -1629,7 +1633,9 @@ export function CopilotInterface() {
         }
     }
 
-    if (pendingInterrupt?.kind === "clarify") {
+    if (pendingInterrupt && pendingInterrupt.kind !== "client_execute" && pendingInterrupt.canRevise && isRevisionText(text) && !(pendingInterrupt.toolCall.name === "resolve_customer_type" && /^go back/i.test(text.trim()))) {
+      resolveInterrupt(revision(text));
+    } else if (pendingInterrupt?.kind === "clarify") {
       resolveInterrupt(text.trim());
     } else if (pendingInterrupt?.kind === "confirm") {
       const lowerText = text.trim().toLowerCase();
@@ -1637,6 +1643,8 @@ export function CopilotInterface() {
         resolveInterrupt(true);
       } else if (lowerText === "no" || lowerText === "n" || lowerText === "cancel") {
         resolveInterrupt(false);
+      } else if (pendingInterrupt.canRevise) {
+        resolveInterrupt(revision(text));
       } else {
         send(text.trim(), attachments);
       }
@@ -2610,6 +2618,7 @@ export function CopilotInterface() {
     setIsRecording(false);
   };
 
+  const canSwitchToFamily = pendingInterrupt && ["resolve_customer_type", "add_customer", "create_proposal", "update_customer", "quick_start_workflow", "add_family_group"].includes(pendingInterrupt.toolCall.name);
   const liveVoice = showVoice ? (
     <div className={voiceMinimized ? "fixed bottom-4 right-4 z-[100] max-w-[calc(100vw-24px)]" : "fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/40 p-3"}>
       <div className={voiceMinimized ? "relative" : "relative w-full max-w-3xl h-[min(780px,calc(100dvh-24px))]"}>
@@ -2622,6 +2631,10 @@ export function CopilotInterface() {
         onPlatformRequest={async (request, heardDirectly) => {
           if (isLoading) return {message: "A chat request is still running. Please wait for its result."};
           if (pendingInterrupt?.kind === "client_execute") return {message: "Please finish the form or upload in the chat.", pending: "client_execute"};
+          if (pendingInterrupt && pendingInterrupt.canRevise && isRevisionText(request) && !(pendingInterrupt.toolCall.name === "resolve_customer_type" && /^go back/i.test(request.trim()))) {
+            if (!heardDirectly) return {message: "Please say the change directly, or type it in chat."};
+            return resolveInterrupt(revision(request), "voice");
+          }
           if (pendingInterrupt?.kind === "confirm") {
             const answer = heardDirectly ? confirmationAnswer(request) : null;
             if (answer === null) return {message: pendingInterrupt.question + " Please say yes or cancel clearly, or use the buttons in chat.", pending: "confirm"};
@@ -3244,6 +3257,13 @@ export function CopilotInterface() {
                            </div>
                          </div>
                        )}
+                       {pendingInterrupt && pendingInterrupt.kind !== "client_execute" && pendingInterrupt.canRevise && (
+                         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                           <span>You can change an earlier choice without starting again.</span>
+                           <button type="button" disabled={isLoading} className="rounded border px-2 py-1 text-blue-700 disabled:opacity-50" onClick={() => { setInput("Actually, I want to change "); }}>Change an earlier choice</button>
+                           {canSwitchToFamily && <button type="button" disabled={isLoading} className="rounded border px-2 py-1 text-blue-700 disabled:opacity-50" onClick={() => handleSubmit(undefined, "Actually, I need family insurance. Reuse the existing customer if already saved, keep their current proposal unchanged, and ask me for the family details before creating anything.")}>Family insurance instead</button>}
+                         </div>
+                       )}
                        <form onSubmit={handleSubmit} className="flex flex-col w-full">
                          <textarea 
                            rows={1}
@@ -3728,7 +3748,14 @@ export function CopilotInterface() {
                        </div>
                      </div>
                    )}
-                   <form onSubmit={handleSubmit} className="flex flex-col w-full">
+                   {pendingInterrupt && pendingInterrupt.kind !== "client_execute" && pendingInterrupt.canRevise && (
+                         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                           <span>You can change an earlier choice without starting again.</span>
+                           <button type="button" disabled={isLoading} className="rounded border px-2 py-1 text-blue-700 disabled:opacity-50" onClick={() => { setInput("Actually, I want to change "); }}>Change an earlier choice</button>
+                           {canSwitchToFamily && <button type="button" disabled={isLoading} className="rounded border px-2 py-1 text-blue-700 disabled:opacity-50" onClick={() => handleSubmit(undefined, "Actually, I need family insurance. Reuse the existing customer if already saved, keep their current proposal unchanged, and ask me for the family details before creating anything.")}>Family insurance instead</button>}
+                         </div>
+                       )}
+                       <form onSubmit={handleSubmit} className="flex flex-col w-full">
                      <textarea 
                        rows={1}
                        value={input}
@@ -4194,7 +4221,14 @@ export function CopilotInterface() {
                   </div>
                 </div>
               )}
-              <form onSubmit={handleSubmit} className="flex items-end gap-2">
+              {pendingInterrupt && pendingInterrupt.kind !== "client_execute" && pendingInterrupt.canRevise && (
+                         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                           <span>You can change an earlier choice without starting again.</span>
+                           <button type="button" disabled={isLoading} className="rounded border px-2 py-1 text-blue-700 disabled:opacity-50" onClick={() => { setInput("Actually, I want to change "); }}>Change an earlier choice</button>
+                           {canSwitchToFamily && <button type="button" disabled={isLoading} className="rounded border px-2 py-1 text-blue-700 disabled:opacity-50" onClick={() => handleSubmit(undefined, "Actually, I need family insurance. Reuse the existing customer if already saved, keep their current proposal unchanged, and ask me for the family details before creating anything.")}>Family insurance instead</button>}
+                         </div>
+                       )}
+                       <form onSubmit={handleSubmit} className="flex items-end gap-2">
                 <GroupCensusClientTool interrupt={pendingInterrupt} resolve={resolveInterrupt} notify={notify} />
                 <input
                   type="file"

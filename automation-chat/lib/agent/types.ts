@@ -60,8 +60,8 @@ export interface AssessmentScores {
 }
 
 export type PendingInterrupt =
-  | { kind: "clarify"; question: string; options?: string[]; toolCall: { name: string; args: Record<string, any> } }
-  | { kind: "confirm"; question: string; options?: string[]; toolCall: { name: string; args: Record<string, any> } }
+  | { kind: "clarify"; canRevise?: boolean; question: string; options?: string[]; toolCall: { name: string; args: Record<string, any> } }
+  | { kind: "confirm"; canRevise?: boolean; question: string; options?: string[]; toolCall: { name: string; args: Record<string, any> } }
   | { kind: "client_execute"; toolCall: { name: string; args: Record<string, any> } };
 
 /** One enrolled employee, as listed under a corporate's enrolment summary. */
@@ -157,7 +157,7 @@ export interface ProcessStep {
 export type AgentStreamEvent =
   | { type: "token"; content: string }
   | {
-      type: "interrupt";
+      type: "interrupt"; can_revise?: boolean;
       thread_id: string;
       kind: "clarify" | "confirm" | "client_execute";
       question?: string;

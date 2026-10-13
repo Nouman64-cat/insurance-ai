@@ -116,7 +116,7 @@ async def _consume(graph, config, input_):
                         except Exception:
                             result = {}
                         status = "done" if result.get("success", True) else "error"
-                        yield step(f"tool:{m.name}:{seq}", step_label(m.name or ""), status)
+                        yield step(f"tool:{m.name}:{seq}", "Changed direction; previous action not executed" if result.get("cancelled") else step_label(m.name or ""), "done" if result.get("cancelled") else status)
                         if result.get("navigate"):
                             yield _event({"type": "navigate", **result["navigate"]})
                         if result.get("last_action"):

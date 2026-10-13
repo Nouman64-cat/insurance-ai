@@ -27,7 +27,27 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Command, interrupt
+from langgraph.types import Command, interrupt as graph_interrupt
+from conversation_revision import ReviseConversation, revision_message, is_revision_text, select_plan
+
+
+def interrupt(payload):
+    # Only permission-gate questions advertise revision support. Client-side
+    # executions and autonomous journeys retain their own completion protocol.
+    if payload.get("kind") in {"clarify", "confirm"}:
+        payload = {**payload, "can_revise": True}
+    answer = graph_interrupt(payload)
+    message = revision_message(answer)
+    if message:
+        raise ReviseConversation(message)
+    # A correction spoken or typed into a question is not a plan selection or consent.
+    labels = payload.get("options") or []
+    if isinstance(answer, str) and answer not in labels and is_revision_text(answer):
+        # The customer-type wizard already implements its own one-step Go back.
+        if not (answer.lower().startswith("go back") and payload.get("tool_call", {}).get("name") == "resolve_customer_type"):
+            raise ReviseConversation(answer)
+    return answer
+
 from pydantic import BaseModel, Field
 
 import providers
@@ -94,6 +114,8 @@ correctly report what's still needed; guessing at a different tool instead just 
 derails the resume.
 
 ## MANUAL STEP-BY-STEP (when the user drives one stage at a time)
+
+When the user changes direction, revise the pending plan rather than restarting intake. Reuse known customer identifiers and supplied details. Never silently delete, cancel, or replace a saved proposal. For an existing individual customer who wants family insurance, use prepare_family_insurance with their customer_id. This opens a prefilled family form and reuses the customer by CNIC at enrolment. Ask for missing family members and obtain explicit submission. Do not invent relatives, generate demo data, or rerun customer creation unless the user explicitly requests it. If a proposal is already submitted or issued, explain that its existing workflow remains separate and do not imply that it was converted.
 
 1. **add_customer / add_organization / add_family_group** → Register the applicant. **CRITICAL:** If the user asks to "add a customer" but does not specify the type, call **resolve_customer_type** — do NOT ask which type it is yourself in plain text, the tool presents Individual / Corporate (Organization) / Family group as clickable buttons and its result tells you which of `add_customer` / `add_organization` / `add_family_group` to call next.
 2. create_case → open the underwriting case
@@ -1358,7 +1380,7 @@ async def _ensure_subcategory(name: str, args: dict, ctx: ExecCtx, category: dic
     return {**(created.get("subcategory") or {}), "eligibility_profiles": []}
 
 
-async def permission_gate(state: ChatState) -> Command:
+async def _permission_gate(state: ChatState) -> Command:
     last = state["messages"][-1]
     # One action per turn — matches the platform's existing "ask, then act"
     # convention rather than letting the model batch several mutations at once.
@@ -1709,21 +1731,15 @@ async def permission_gate(state: ChatState) -> Command:
                 # Inject the selected plan directly into args and execute immediately —
                 # avoids a second LLM round-trip that sometimes misparses the choice.
                 selected = str(answer).strip()
-                if selected in valid_options:
-                    args["product_name"] = selected
-                else:
-                    # Fuzzy-match: pick the first option that starts with or contains the answer
-                    for opt in valid_options:
-                        if selected.lower() in opt.lower() or opt.lower() in selected.lower():
-                            args["product_name"] = opt
-                            break
-                    else:
-                        args["product_name"] = options[0]  # default to first recommendation
-                result = await execute_tool(name, args, ctx)
-                update: dict = {"messages": [_tool_result_message(name, call_id, result)]}
-                if result.get("last_action"):
-                    update["last_action"] = result["last_action"]
-                return back_to_agent(update)
+                chosen = select_plan(selected, valid_options)
+                if not chosen:
+                    return back_to_agent({"messages": [
+                        _tool_result_message(name, call_id, {"success": False, "message": "No plan selected. Ask the user to choose a valid plan or revise the insurance type. Do not choose a default."}),
+                        HumanMessage(content=selected),
+                    ]})
+                args["product_name"] = chosen
+                # Continue through the standard validation and confirmation gate.
+                # Choosing a plan is not permission to create a proposal.
 
     # ── Rules engine: standalone create_rule_category and create_rule_subcategory ──
     if name == "create_rule_category" and not args.get("name"):
@@ -2521,6 +2537,21 @@ async def permission_gate(state: ChatState) -> Command:
     if result.get("family_members"):
         update["family_members"] = result["family_members"]
     return back_to_agent(update)
+
+
+async def permission_gate(state: ChatState) -> Command:
+    try:
+        return await _permission_gate(state)
+    except ReviseConversation as revision:
+        last = state["messages"][-1]
+        replies = [_tool_result_message(call["name"], call["id"], {
+            "success": False, "cancelled": True,
+            "message": "Pending action superseded by a user correction. No pending action was executed. Already saved records remain unchanged."
+        }) for call in last.tool_calls]
+        return Command(goto="agent", update={
+            "messages": [*replies, HumanMessage(content=revision.message)],
+            "lead_tool": None, "last_action": None,
+        })
 
 
 async def client_executor_node(state: ChatState) -> Command:
