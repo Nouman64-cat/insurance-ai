@@ -42,6 +42,8 @@ const ur: Messages = {
     notice: "صرف مجاز عملے کے لیے۔ تمام رسائی ریکارڈ اور مانیٹر کی جاتی ہے۔",
   },
   nav: {
+    "Customer Service": "کسٹمر سروس",
+    "Confidential Reports (ACR)": "خفیہ رپورٹس (ACR)",
     "Request Management": "درخواستوں کا انتظام",
     // groups
     "Dashboard": "ڈیش بورڈ",

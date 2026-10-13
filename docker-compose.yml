@@ -305,6 +305,74 @@ services:
       REQUEST_MGMT_DB_OWNER_PASSWORD: ${REQUEST_MGMT_DB_OWNER_PASSWORD:-}
       REQUEST_MGMT_DB_APP_PASSWORD: ${REQUEST_MGMT_DB_APP_PASSWORD:-}
 
+  customer-service:
+    <<: *fastapi-defaults
+    build: ./services/customer-service
+    ports:
+      - "8018:8008"
+    volumes:
+      - ./services/customer-service:/app
+    environment:
+      CS_DATABASE_URL: postgresql+asyncpg://customer_service_app:${CS_DB_APP_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+      CS_MIGRATION_DATABASE_URL: postgresql+asyncpg://customer_service_owner:${CS_DB_OWNER_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+      TENANT_SERVICE_URL: http://tenant-service:8001
+    depends_on:
+      tenant-service:
+        condition: service_started
+      customer-service-provision:
+        condition: service_completed_successfully # schema and users exist before migrations run
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8008/v1/healthz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # Creates the customer_service schema and its two database users in the existing database, then exits. Runs on
+  # every `docker compose up` (it is safe to repeat) and customer-service waits for it to finish.
+  customer-service-provision:
+    build: ./services/customer-service
+    restart: "no"
+    networks: [insurance-net]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    env_file: [.env]
+    command: ["python", "provision.py"]
+    environment:
+      CS_PROVISION_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+
+  customer-service-app:
+    build:
+      context: .
+      dockerfile: customer-service-app/Dockerfile
+      target: dev
+    restart: unless-stopped
+    networks: [insurance-net]
+    ports:
+      - "3008:3008"
+    volumes:
+      - ./customer-service-app:/workspace/customer-service-app
+      - ./frontend/components:/workspace/frontend/components
+      - ./frontend/lib:/workspace/frontend/lib
+      - ./frontend/app/services:/workspace/frontend/app/services
+      - ./frontend/app/globals.css:/workspace/frontend/app/globals.css
+      - /workspace/customer-service-app/node_modules
+      - /workspace/customer-service-app/.next
+    environment:
+      ENV_VAR: ${ENV_VAR:-}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010}
+      NEXT_PUBLIC_PORTAL_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000}
+      NEXT_PUBLIC_CUSTOMER_SERVICE_URL: ${NEXT_PUBLIC_CUSTOMER_SERVICE_URL:-http://localhost:3008}
+      API_GATEWAY_INTERNAL_URL: http://api-gateway:8000
+      SSO_COOKIE_NAME: ${SSO_COOKIE_NAME:-insurance_sso}
+      SSO_COOKIE_DOMAIN: ${SSO_COOKIE_DOMAIN:-}
+      WATCHPACK_POLLING: "true"
+    depends_on: [api-gateway, customer-service]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3008/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+
   # ───────────────────────────────────────────────────────────────────────────
   # Docs (Docusaurus) — http://localhost:4991
   # ───────────────────────────────────────────────────────────────────────────
@@ -343,6 +411,7 @@ services:
       - /app/node_modules # prevent host node_modules from overwriting container's
       - /app/.next # preserve Next.js build cache between restarts
     environment:
+      NEXT_PUBLIC_CUSTOMER_SERVICE_URL: ${NEXT_PUBLIC_CUSTOMER_SERVICE_URL:-http://localhost:3008}
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010} # browser-side; host port that maps to gateway container port 8000
       NEXT_PUBLIC_OCR_URL: ${NEXT_PUBLIC_OCR_URL:-http://localhost:8014} # browser-side; host port mapping to ocr-engine
       NEXT_PUBLIC_SUMMARIZER_URL: ${NEXT_PUBLIC_SUMMARIZER_URL:-http://localhost:8015} # browser-side; host port mapping to text-summarizer

@@ -136,6 +136,7 @@ insurance-ai/
 ├── frontend/                 # Next.js operations/admin portal
 ├── automation-chat/          # Next.js Automation Chat (AI copilot) app, own container, :3004 (opt-in)
 ├── underwriting-app/         # Next.js Underwriting Workbench (queue, case workspace), own container, :3005
+├── customer-service-app/     # Next.js Customer Service desk, :3008
 ├── request-management-app/   # Next.js Request Management app, :3007 (run separately)
 ├── marketing-site/           # Next.js public marketing site (demo content, :3002)
 ├── agent-app/                # React Native / Expo agent application
@@ -146,6 +147,7 @@ insurance-ai/
 │   ├── chat-agent/
 │   ├── ocr-engine/
 │   ├── text-summarizer/
+│   ├── customer-service/     # FastAPI service desk, isolated PostgreSQL schema, :8018
 │   ├── request-management-service/ # FastAPI request workflows, isolated PostgreSQL schema, :8017
 │   └── decision-engine/
 ├── shared/
@@ -190,8 +192,8 @@ AWS S3, SES, OpenSanctions, and provider environment fallbacks are optional depe
 
 ### 2. Start the platform
 
-Before the first start, provision the Request Management database roles and schema as described in
-[Request Management](#request-management) below. Its service starts with the main stack.
+Before the first start, provision the Customer Service and Request Management database roles and schemas as described in
+[Request Management](#request-management) and [Customer Service](#customer-service) below. Both backends start with the main stack.
 
 ```bash
 docker compose up --build -d
@@ -273,6 +275,9 @@ Request Management has a separate FastAPI backend (`services/request-management-
 the reviewer approves, rejects, or asks for more information. It includes revisions, reassignment, comments,
 private attachments, audit history, notifications, and overdue reminders. Reviewers cannot approve their own requests.
 
+Details: [service README](services/request-management-service/README.md) (permissions, lifecycle, routing,
+execution, API, tests) and [app README](request-management-app/README.md) (pages, sign-in, running).
+
 | Request type | Outcome |
 | ------------ | ------- |
 | General operational request | Records the review decision without executing an external action |
@@ -343,7 +348,8 @@ npm run dev
 Sign in through the portal, then open http://localhost:3007. The app reuses the portal's `insurance_sso` session
 and verifies identity through the gateway. Set `NEXT_PUBLIC_REQUESTS_URL` on the portal to change the destination
 and allowed SSO return origin. For HTTPS subdomains, use the same SSO cookie name and parent domain across apps.
-Configure an eligible routing rule in the Request Management administration interface before submitting requests.
+A tenant administrator must add a routing rule for each request type (Request Management → Routing) before
+requests of that type can be submitted.
 
 ### Backend configuration
 
@@ -361,6 +367,34 @@ Configure an eligible routing rule in the Request Management administration inte
 Attachments support PDF, PNG, and JPEG. Compose mounts a persistent local attachment volume for development.
 For S3, supply the bucket, region, and AWS credentials to this service. The public API is exposed through the gateway
 at `/request-management/v1`; backend health is available at http://localhost:8017/v1/healthz.
+
+## Customer Service
+
+Customer Service runs as a separate Next.js app (`customer-service-app/`, port **3008**) and FastAPI backend
+(`services/customer-service/`, host port **8018**). Open **Operations → Customer Service** in the portal sidebar.
+It uses the portal SSO and includes customer/policy-linked tickets, search, status filters, priorities and due dates,
+claim/release assignment, replies, internal staff notes, resolution, reopening, and audit history.
+
+Agents and brokers see their own tickets. Admin and ClaimsManager users handle the tenant queue.
+Review and policy mutation approvals remain in their owning modules; this release does not execute financial or
+policy changes. Customer-visible replies are recorded in the ticket, not sent by email/SMS.
+
+The backend owns the `customer_service` PostgreSQL schema with distinct migration/application roles.
+Add generated `CS_DB_OWNER_PASSWORD` and `CS_DB_APP_PASSWORD` values to `.env`, ensure `POSTGRES_DB` matches
+`DATABASE_URL`, then start. `customer-service` first runs `customer-service-provision`, which creates the
+`customer_service` schema and its two users inside the existing database (safe to repeat), then migrates:
+
+```bash
+docker compose up -d --build customer-service customer-service-app api-gateway frontend
+```
+
+The provisioner uses `POSTGRES_USER` and `POSTGRES_PASSWORD` with PostgreSQL administrative privileges. Compose currently uses
+`host.docker.internal:5432` for the application and migration connections; customize these for a remote database.
+The frontend/backend start with the main stack after provisioning. At custom origins, set
+`NEXT_PUBLIC_CUSTOMER_SERVICE_URL` on the portal and app and use matching SSO cookie settings.
+
+Details: [backend setup and scope](services/customer-service/README.md),
+[frontend setup and production build](customer-service-app/README.md).
 
 ## Agent Mobile App
 
@@ -395,6 +429,8 @@ A physical device must use an address reachable from the device rather than `loc
 | OCR Engine      | http://localhost:8014 |
 | Text Summarizer | http://localhost:8015 |
 | Chat Agent      | http://localhost:8016 |
+| Customer Service App | http://localhost:3008 |
+| Customer Service Backend | http://localhost:8018 |
 | Request Management Service | http://localhost:8017 |
 | Documentation   | http://localhost:4991 |
 | Kafka UI        | http://localhost:8090 |
@@ -458,3 +494,7 @@ http://localhost:4991
 Insurance AI is under active development. The `dev` branch contains the latest platform work and may include experimental or incomplete workflows.
 
 The underwriting rules currently included in the repository are engineering/demo rules and must undergo actuarial, compliance, security, and regulatory validation before production insurance use.
+
+In `ENV_VAR=demo`, tenant Admin users can use **Fill demo data** in Customer Service to add eight
+clearly marked sample tickets with replies, internal notes, and overdue examples. Repeated fills do not
+duplicate or overwrite tickets. Samples do not link to or modify real customer/policy records.

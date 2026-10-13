@@ -57,11 +57,22 @@ async def find_rule(conn: AsyncConnection, tenant_id: UUID, request_type: str, b
     return dict(row) if row else None
 
 
+async def tenant_admin_names(tenant_id: UUID) -> list[str]:
+    """Who can fix routing, so a requester knows whom to ask. Best effort: an unreachable directory just means no names."""
+    try:
+        users = await tenant_client.get_client().users(tenant_id, roles=["Admin"])
+    except tenant_client.TenantServiceUnavailable:
+        return []
+    return sorted(u["full_name"] for u in users if u.get("is_active"))[:5]
+
+
 async def resolve(conn: AsyncConnection, tenant_id: UUID, rtype: RequestType, branch_id: Optional[UUID], requester_id: UUID) -> Route:
     rule = await find_rule(conn, tenant_id, rtype.code, branch_id)
     if not rule:
-        raise routing_failed(f"No reviewer is set up for “{rtype.label}” requests yet. Ask your administrator to configure routing.",
-                             request_type=rtype.code, branch_id=str(branch_id) if branch_id else None)
+        admins = await tenant_admin_names(tenant_id)
+        who = f"Ask {' or '.join(admins)} (tenant administrator) to set up routing for it." if admins else "Ask your administrator to configure routing."
+        raise routing_failed(f"No reviewer is set up for “{rtype.label}” requests yet. {who}",
+                             request_type=rtype.code, branch_id=str(branch_id) if branch_id else None, administrators=admins)
     now = datetime.now(timezone.utc)
     if rule["target_kind"] == "USER":
         if rule["target_user_id"] == requester_id:

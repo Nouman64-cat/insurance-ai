@@ -194,6 +194,8 @@ const NAV_ITEMS = [
   {
     group: "Operations",
     links: [
+      { href: "/customer-service", label: "Customer Service", icon: <ShieldIcon />, badge: null },
+      { href: "/acr", label: "Confidential Reports (ACR)", icon: <ShieldIcon />, badge: null, hideForAdmin: true },
       {
         href: "/requests",
         label: "Request Management",
@@ -672,7 +674,7 @@ export function Sidebar() {
     links: g.links.map((href: string) => allLinksMap.get(href)).filter(Boolean)
   }));
 
-  const workingHrefs = ["/profile", "/cases", "/requests", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/users", "/admin/leads", "/admin/policyholders", "/financial", "/claims", "/claims/dashboard", "/claims/register"];
+  const workingHrefs = ["/customer-service", "/acr", "/profile", "/cases", "/requests", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/users", "/admin/leads", "/admin/policyholders", "/financial", "/claims", "/claims/dashboard", "/claims/register"];
   const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/roles", "/super-admin/tokens", "/super-admin/llm-config"];
 
   const displayGroups = (userRole === "SuperAdmin"
@@ -745,6 +747,7 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-5" aria-label={t("sidebar.navLabel")}>
         {displayGroups.map((group: any, gIndex: number) => {
           const visibleLinks = group.links.filter((link: any) => {
+            if (link.hideForAdmin && userRole === "Admin") return false;
             if (link.adminOnly && userRole !== "Admin" && !(link.agentToo && (userRole === "Agent" || userRole === "Broker"))) return false;
             if (link.superAdminOnly && userRole !== "SuperAdmin") return false;
             return true;
