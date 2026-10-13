@@ -40,7 +40,9 @@ const CASE_NOTE: Record<string, string> = {
 };
 
 export function leadStage(lead: LeadLike): LeadStageInfo {
+  // A draft is a proposal; once submitted it is an application.
   const proposal = { href: "/proposal", linkLabel: "Open Proposal" };
+  const application = { href: "/proposal", linkLabel: "Open Application" };
   const underwriting = { href: "/underwriting?tab=pre-underwriting", linkLabel: "Open Underwriting" };
   const issuance = { href: "/policy-issuance", linkLabel: "Open Issuance" };
 
@@ -59,10 +61,10 @@ export function leadStage(lead: LeadLike): LeadStageInfo {
   switch (lead.proposalStatus) {
     case "Approved":
     case "AcceptedWithLoadings": return { step: 4, label: "Approved", note: "Ready to issue", tone: "green", ...issuance };
-    case "Declined": return { step: 2, label: "Proposal rejected", note: "Stopped at proposal", tone: "red", ...proposal };
-    case "InformationRequested": return { step: 2, label: "Info requested", note: "Waiting on details", tone: "amber", ...proposal };
-    case "UnderReview": return { step: 3, label: "Proposal under review", note: "Before underwriting", tone: "blue", ...proposal };
-    case "Proposed": return { step: 2, label: "Proposal submitted", note: "Awaiting review", tone: "blue", ...proposal };
+    case "Declined": return { step: 2, label: "Rejected", note: "Stopped before underwriting", tone: "red", ...application };
+    case "InformationRequested": return { step: 2, label: "Info requested", note: "Waiting on details", tone: "amber", ...application };
+    case "UnderReview": return { step: 3, label: "Application under review", note: "Before underwriting", tone: "blue", ...application };
+    case "Proposed": return { step: 2, label: "Application submitted", note: "Awaiting review", tone: "blue", ...application };
     case "Quoted": return { step: 2, label: "Proposal draft", note: "Not submitted yet", tone: "blue", ...proposal };
   }
   if (lead.proposalStatus)

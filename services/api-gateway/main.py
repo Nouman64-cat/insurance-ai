@@ -494,6 +494,34 @@ async def public_submit_e_application(raw_token: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/e-application/{raw_token}/submit")
 
 
+# Public — document submission by link. No auth; the signed token in the link is the only credential.
+@app.get(
+    "/public/documents/{raw_token}",
+    tags=["Document Submission"],
+    summary="[Public] The documents a proposal's plan requires, and which have arrived",
+)
+async def public_get_documents(raw_token: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/documents/{raw_token}")
+
+
+@app.post(
+    "/public/documents/{raw_token}/upload",
+    tags=["Document Submission"],
+    summary="[Public] Upload one of the required documents",
+)
+async def public_upload_document(raw_token: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/documents/{raw_token}/upload")
+
+
+@app.post(
+    "/public/documents/{raw_token}/submit",
+    tags=["Document Submission"],
+    summary="[Public] The customer is done: lock the submitted documents",
+)
+async def public_submit_documents(raw_token: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/documents/{raw_token}/submit")
+
+
 # ── Pre-Underwriting — Medical Examination (panel clinics) ────────────────────
 
 @app.post(

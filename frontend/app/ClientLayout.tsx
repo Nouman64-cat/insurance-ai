@@ -41,6 +41,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
     pathname?.startsWith("/e-application/") ||
     pathname?.startsWith("/e-app/") ||
     pathname?.startsWith("/medical-exam/") ||
+    pathname?.startsWith("/documents/") ||
     false;
   const bypassAuthShell = isLoginPage || isPublicStandalonePage;
   const [authChecked, setAuthChecked] = useState(false);

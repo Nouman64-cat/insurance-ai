@@ -331,6 +331,29 @@ async def list_case_artifacts(
     return [_artifact_response(a, a.storage_url.split(".amazonaws.com/", 1)[1] if a.storage_url and ".amazonaws.com/" in a.storage_url else None, request) for a in rows]
 
 
+@router.get("/{tenant_id}/customers/{customer_id}/artifacts", summary="Documents a customer sent through their upload link, before any case exists")
+async def list_customer_uploaded_artifacts(
+    request: Request,
+    tenant_id: UUID,
+    customer_id: UUID,
+    token: str = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+):
+    await _get_current_user_id(token)
+    rows = (await session.exec(
+        select(Artifact).where(
+            Artifact.tenant_id == tenant_id,
+            Artifact.customer_id == customer_id,
+            Artifact.case_id.is_(None),
+            Artifact.claim_id.is_(None),
+        ).order_by(Artifact.created_at.desc())
+    )).all()
+    return [
+        _artifact_response(a, a.storage_url.split(".amazonaws.com/", 1)[1] if a.storage_url and ".amazonaws.com/" in a.storage_url else None, request)
+        for a in rows
+    ]
+
+
 @router.get("/{tenant_id}/artifacts/{artifact_id}/download", summary="Download/View artifact file")
 @router.get("/{tenant_id}/artifacts/{artifact_id}/view", summary="View artifact document preview")
 async def view_artifact_file(

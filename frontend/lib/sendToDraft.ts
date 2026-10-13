@@ -13,7 +13,12 @@ const COLLECTION: Record<DraftEntityType, string> = {
  * Sends a lead to Proposals by marking it DRAFT. A plan chosen on the full customer form waits in
  * details.pending_plan until now, when it becomes the proposal's policy.
  */
-export async function sendLeadToDraft(type: DraftEntityType, id: string, name: string): Promise<void> {
+export async function sendLeadToDraft(
+  type: DraftEntityType,
+  id: string,
+  name: string,
+  opts: { clear?: string[] } = {},
+): Promise<void> {
   const tenantId = localStorage.getItem("tenant_id");
   if (!tenantId) throw new Error("No active tenant found.");
   const path = `/tenants/${tenantId}/${COLLECTION[type]}/${id}`;
@@ -21,11 +26,14 @@ export async function sendLeadToDraft(type: DraftEntityType, id: string, name: s
   if (type === "INDIVIDUAL") {
     const { data: customer } = await api.get(path);
     const { pending_plan, ...restDetails } = customer.details || {};
-    if (pending_plan) {
+    for (const key of opts.clear ?? []) delete restDetails[key];
+    const detailsChanged = !!pending_plan || (opts.clear ?? []).some((k) => customer.details && k in customer.details);
+    // A proposal made at Plan Selection already exists; one chosen on the old entry form is created now.
+    if (pending_plan && !customer.details?.plan_policy_id) {
       await api.post(`${path}/policies`, pending_plan);
       registerPendingQuote(id, name);
     }
-    await api.put(path, pending_plan ? { profile_status: "DRAFT", details: restDetails } : { profile_status: "DRAFT" });
+    await api.put(path, detailsChanged ? { profile_status: "DRAFT", details: restDetails } : { profile_status: "DRAFT" });
   } else {
     await api.patch(path, { profile_status: "DRAFT" });
   }

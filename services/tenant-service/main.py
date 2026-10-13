@@ -81,6 +81,7 @@ from routers.renewals import router as renewals_router
 from routers.claim_workflow import router as claim_workflow_router
 from routers.policy_exit import router as policy_exit_router
 from routers.e_application import router as e_application_router
+from routers.document_requests import router as document_requests_router
 from routers.agent_confidential_report import router as agent_confidential_report_router
 from routers.initial_premium_payment import router as initial_premium_payment_router
 from routers.insurance_history import router as insurance_history_router
@@ -244,6 +245,7 @@ app.include_router(renewals_router)
 app.include_router(claim_workflow_router)
 app.include_router(policy_exit_router)
 app.include_router(e_application_router)
+app.include_router(document_requests_router)
 app.include_router(agent_confidential_report_router)
 app.include_router(initial_premium_payment_router)
 # Pre-underwriting clearance gates 5 & 6 — insurance history, panel medicals.

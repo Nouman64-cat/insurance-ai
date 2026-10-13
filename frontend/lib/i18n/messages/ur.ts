@@ -62,6 +62,7 @@ const ur: Messages = {
     "Policy Holders": "پالیسی ہولڈرز",
     "Cases": "کیسز",
     "Acquisition Sources": "حصول کے ذرائع",
+    "Plan Selection": "پلان کا انتخاب",
     "Underwriting": "انڈر رائٹنگ",
     "Pre-Underwriting": "پری انڈر رائٹنگ",
     "Risk Engine & OCR OPS": "رسک انجن اور OCR آپریشنز",

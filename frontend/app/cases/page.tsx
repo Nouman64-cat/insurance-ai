@@ -929,6 +929,16 @@ export default function CasesPage() {
   const { notify: showToast } = useNotify();
 
   const tenantId = typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
+  // Documents the customer sent through their upload link before any case was opened for them.
+  const [linkUploads, setLinkUploads] = useState<Artifact[]>([]);
+  useEffect(() => {
+    if (view !== "cases" || !activeCustomer || !tenantId) { setLinkUploads([]); return; }
+    let alive = true;
+    api.get(`/tenants/${tenantId}/customers/${activeCustomer.id}/artifacts`)
+      .then(r => { if (alive) setLinkUploads(r.data); })
+      .catch(() => { if (alive) setLinkUploads([]); });
+    return () => { alive = false; };
+  }, [view, activeCustomer, tenantId]);
 
   // Poll every 3 s while any artifact in the current case view is "Processing".
   // useEffect re-runs whenever artifacts changes so the timeout always resets to
@@ -1383,6 +1393,31 @@ export default function CasesPage() {
                 <Pagination pagination={casePagination} noun={tx("cases")} />
                 </>
               )
+            )}
+
+            {view === "cases" && linkUploads.length > 0 && (
+              <div className="mx-6 mb-6 rounded-2xl border border-blue-100 bg-blue-50/50 p-5">
+                <p className="text-sm font-bold text-slate-800">{tx("Sent by the customer")}</p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {tx("Uploaded through the document link. They join the case automatically when one is opened.")}
+                </p>
+                <ul className="mt-3 divide-y divide-blue-100 rounded-xl border border-blue-100 bg-white">
+                  {linkUploads.map(a => (
+                    <li key={a.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-slate-800">{a.document_type}</p>
+                        <p className="truncate text-xs text-slate-500">{a.file_name} · {new Date(a.created_at).toLocaleDateString()}</p>
+                      </div>
+                      <button
+                        onClick={() => setViewingArtifact(a)}
+                        className="shrink-0 rounded-md border border-blue-600 px-3 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50"
+                      >
+                        {tx("View")}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
 
             {/* ── All Cases Grid ───────────────────────────────────────────── */}

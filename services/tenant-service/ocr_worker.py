@@ -143,7 +143,10 @@ async def _process(event: ArtifactOCRRequestedEvent) -> None:
         ocr_text = await _run_ocr(file_bytes, p.file_name, p.mime_type)
         logger.info("OCR done | artifact=%s chars=%d", p.artifact_id, len(ocr_text))
     except Exception as exc:
-        logger.exception("OCR engine error | artifact=%s", p.artifact_id)
+        # The engine itself failed (quota, outage). That says nothing about the document, so it is not marked
+        # unreadable: the customer is not asked to upload again for our fault. It stays as uploaded.
+        logger.exception("OCR engine error | artifact=%s — left as uploaded, not marked unreadable", p.artifact_id)
+        return
 
     # 3. Derive confidence + status
     confidence = _confidence(ocr_text)

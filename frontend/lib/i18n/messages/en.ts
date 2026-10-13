@@ -60,6 +60,7 @@ const en = {
     "Policy Holders": "Policy Holders",
     "Cases": "Cases",
     "Acquisition Sources": "Acquisition Sources",
+    "Plan Selection": "Plan Selection",
     "Underwriting": "Underwriting",
     "Pre-Underwriting": "Pre-Underwriting",
     "Risk Engine & OCR OPS": "Risk Engine & OCR OPS",

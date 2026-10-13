@@ -15,10 +15,11 @@ from schemas import CustomerCreate, CustomerRead, CustomerStatsRead, CustomerUpd
 from shared.events.kafka_events import CUSTOMER_CREATED_TOPIC, CustomerCreatedEvent, CustomerCreatedPayload
 from shared.models.core import (
     AcquisitionSource, Beneficiary, Case, ComplianceCheck, CounterOffer,
-    Customer, Policy, PolicyDocument, PolicyEvent, PolicyRequirement,
+    Customer, DocumentRequest, Policy, PolicyDocument, PolicyEvent, PolicyRequirement,
     PolicyVersion, PremiumQuote, PremiumSchedule, Tenant,
     ProfileStatusEnum, PolicyStatusEnum, InsurancePlan,
 )
+from services import document_requests as docreq
 from shared.pricing.calculator import calculate_premium
 from routers.auth import optional_oauth2_scheme, source_scope
 from routers.users import verify_admin   # reuse existing Admin guard
@@ -484,6 +485,12 @@ async def create_customer_policy(
     await sync_policy_premium_quote(policy, customer, session)
     await session.commit()
     await session.refresh(policy)
+
+    # A plan is now attached: set up the document-submission link for the documents that plan requires.
+    try:
+        await docreq.ensure_document_request(session, policy)
+    except Exception:
+        logger.exception("could not create the document request for policy %s", policy.id)
     return policy
 
 
@@ -514,7 +521,7 @@ async def delete_customer(
         for model in (
             PolicyEvent, PolicyDocument, PolicyVersion, PremiumSchedule,
             PremiumQuote, PolicyRequirement, ComplianceCheck, CounterOffer,
-            Beneficiary,
+            Beneficiary, DocumentRequest,
         ):
             for row in (await session.exec(select(model).where(model.policy_id == pid))).all():  # type: ignore[attr-defined]
                 await session.delete(row)
@@ -545,6 +552,8 @@ async def delete_customer_policy(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Policy not found"
         )
+    for request_row in (await session.exec(select(DocumentRequest).where(DocumentRequest.policy_id == policy_id))).all():
+        await session.delete(request_row)
     await session.delete(policy)
     await session.commit()
     return None
@@ -582,6 +591,62 @@ async def update_customer_policy(
         
     await session.commit()
     await session.refresh(policy)
+
+    # The plan (and so the documents it requires) may have changed.
+    try:
+        await docreq.ensure_document_request(session, policy)
+    except Exception:
+        logger.exception("could not refresh the document request for policy %s", policy.id)
+    return policy
+
+
+@router.get(
+    "/{tenant_id}/customers/{customer_id}/policies/{policy_id}/document-request",
+    dependencies=[Depends(verify_admin)],
+)
+async def get_policy_document_request(
+    tenant_id: UUID,
+    customer_id: UUID,
+    policy_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    """The documents this proposal's plan requires, which have arrived, and the link the customer uploads them
+    through. Created on first request for policies that were made some other way (e.g. generated quotes)."""
+    policy = await _policy_in_scope(session, tenant_id, customer_id, policy_id, token)
+    req = await docreq.ensure_document_request(session, policy)
+    return {**(await docreq.summary(session, req)), "link_path": f"/documents/{docreq.make_token(req)}"}
+
+
+@router.post(
+    "/{tenant_id}/customers/{customer_id}/policies/{policy_id}/document-request/renew",
+    dependencies=[Depends(verify_admin)],
+)
+async def renew_policy_document_request(
+    tenant_id: UUID,
+    customer_id: UUID,
+    policy_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    """A new link with a fresh expiry. The previous link stops working."""
+    policy = await _policy_in_scope(session, tenant_id, customer_id, policy_id, token)
+    req = await docreq.ensure_document_request(session, policy)
+    req = await docreq.renew_link(session, req)
+    return {**(await docreq.summary(session, req)), "link_path": f"/documents/{docreq.make_token(req)}"}
+
+
+async def _policy_in_scope(
+    session: AsyncSession, tenant_id: UUID, customer_id: UUID, policy_id: UUID, token: Optional[str],
+) -> Policy:
+    policy = await session.get(Policy, policy_id)
+    customer = await session.get(Customer, customer_id)
+    scope = await source_scope(token, session)
+    if (
+        not policy or policy.tenant_id != tenant_id or policy.customer_id != customer_id
+        or not customer or (scope is not None and customer.acquisition_source_id not in scope)
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Policy not found")
     return policy
 
 
