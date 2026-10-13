@@ -1,8 +1,12 @@
-"""Who is responsible for a request. Decided by the server at submission; the requester never chooses.
+"""Who is responsible for a request. Decided by the server at submission.
 
 A tenant administrator configures routing rules per request type, optionally per branch. A rule sends requests to
 one named reviewer (USER) or to a team queue (ROLE, any eligible user with that role may claim it). The most
 specific active rule wins: the request's branch first, then the tenant-wide rule.
+
+The requester may name a preferred reviewer, but only from the team the rule routes to: it never widens who can
+review. The choice is checked here against the live directory like any other target; the request then goes straight
+to that person, still owned by the team (they can release it back to the queue).
 
 At submission the rule's target is checked against the live user directory: a named reviewer must be active, in the
 same tenant, hold a role allowed to review the type, and not be the requester; a queue must have at least one such
@@ -66,7 +70,25 @@ async def tenant_admin_names(tenant_id: UUID) -> list[str]:
     return sorted(u["full_name"] for u in users if u.get("is_active"))[:5]
 
 
-async def resolve(conn: AsyncConnection, tenant_id: UUID, rtype: RequestType, branch_id: Optional[UUID], requester_id: UUID) -> Route:
+async def options(conn: AsyncConnection, tenant_id: UUID, rtype: RequestType, branch_id: Optional[UUID], requester_id: UUID) -> dict:
+    """What submitting would do now, for the request form: the team or reviewer, and whom the requester may name.
+    Advisory only; submission resolves and checks everything again."""
+    rule = await find_rule(conn, tenant_id, rtype.code, branch_id)
+    if not rule:
+        return {"configured": False, "administrators": await tenant_admin_names(tenant_id), "reviewers": []}
+    if rule["target_kind"] == "USER":
+        people = [] if rule["target_user_id"] == requester_id else await eligible_reviewers(
+            tenant_id, rtype, user_ids=[rule["target_user_id"]], exclude=requester_id)
+    else:
+        people = await eligible_reviewers(tenant_id, rtype, role=rule["target_role"], exclude=requester_id)
+    return {"configured": True, "target_kind": rule["target_kind"], "target_label": rule["target_label"],
+            "queue_role": rule["target_role"], "sla_hours": rule["sla_hours"],
+            "reviewers": sorted(({"id": u["id"], "full_name": u["full_name"], "role_name": u["role_name"]} for u in people),
+                                key=lambda u: u["full_name"].lower())}
+
+
+async def resolve(conn: AsyncConnection, tenant_id: UUID, rtype: RequestType, branch_id: Optional[UUID], requester_id: UUID,
+                  preferred: Optional[UUID] = None) -> Route:
     rule = await find_rule(conn, tenant_id, rtype.code, branch_id)
     if not rule:
         admins = await tenant_admin_names(tenant_id)
@@ -74,7 +96,12 @@ async def resolve(conn: AsyncConnection, tenant_id: UUID, rtype: RequestType, br
         raise routing_failed(f"No reviewer is set up for “{rtype.label}” requests yet. {who}",
                              request_type=rtype.code, branch_id=str(branch_id) if branch_id else None, administrators=admins)
     now = datetime.now(timezone.utc)
+    if preferred == requester_id:
+        raise routing_failed("You can't review your own request. Choose someone else, or leave it to the team.", field="reviewer_id")
     if rule["target_kind"] == "USER":
+        if preferred and preferred != rule["target_user_id"]:
+            raise routing_failed(f"“{rtype.label}” requests are reviewed by {rule['target_label']}. Leave the reviewer empty to send it to them.",
+                                 field="reviewer_id")
         if rule["target_user_id"] == requester_id:
             raise routing_failed("This request would be routed to you, and nobody may review their own request. Ask your administrator to adjust routing.")
         matches = await eligible_reviewers(tenant_id, rtype, user_ids=[rule["target_user_id"]], exclude=requester_id)
@@ -91,12 +118,18 @@ async def resolve(conn: AsyncConnection, tenant_id: UUID, rtype: RequestType, br
             raise routing_failed(f"No active {rule['target_role']} other than you can review this request. Ask your administrator to update routing.",
                                  rule_id=str(rule["id"]))
         assignee_id, assignee_name, queue_role, candidates = None, None, rule["target_role"], len(members)
+        if preferred:
+            chosen = next((u for u in members if u["id"] == str(preferred)), None)
+            if not chosen:
+                raise routing_failed(f"That person can't review this request. Choose someone from the {rule['target_role']} team, "
+                                     "or leave it to the team.", field="reviewer_id")
+            assignee_id, assignee_name = preferred, chosen["full_name"]
     snapshot = {
         "rule_id": str(rule["id"]), "rule_version": rule["version"], "target_kind": rule["target_kind"],
         "target_label": rule["target_label"], "target_user_id": str(rule["target_user_id"]) if rule["target_user_id"] else None,
         "target_role": rule["target_role"], "rule_branch_id": str(rule["branch_id"]) if rule["branch_id"] else None,
         "request_branch_id": str(branch_id) if branch_id else None, "sla_hours": rule["sla_hours"],
-        "eligible_reviewers": candidates, "resolved_at": now.isoformat(),
+        "eligible_reviewers": candidates, "chosen_by_requester": bool(preferred), "resolved_at": now.isoformat(),
     }
     return Route(rule["id"], rule["version"], rule["target_kind"], assignee_id, assignee_name, queue_role,
                  now + timedelta(hours=rule["sla_hours"]), snapshot)

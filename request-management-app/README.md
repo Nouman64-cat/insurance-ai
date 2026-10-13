@@ -17,6 +17,15 @@ Lists are filtered, searched and paged on the server (status, type, priority, as
 the search box is debounced. Every screen has loading, empty, error and "not allowed" states. English and Urdu
 (right-to-left) follow the language chosen in the portal.
 
+## Live updates
+
+Statuses update without reloading. `RequestsShell` opens one Server-Sent Events stream per tab (`lib/requestEvents.ts`,
+service endpoint `GET /v1/events`) and shows **Live** or **Offline** in the header. Lists reload in place, the
+request page reloads and says "This request was just updated", and the section counts refresh. The stream reconnects
+with backoff and everything reloads after a reconnect. Notifications and overdue counts are still polled, every
+minute while live and every 30 s while offline. Pages subscribe with `useRequestEvents(handler)` from
+`components/RequestsShell.tsx`.
+
 ## Sign-in
 
 - **Route check:** `middleware.ts` sends a visitor without the portal's `insurance_sso` cookie to the portal login,

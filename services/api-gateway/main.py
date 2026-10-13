@@ -762,6 +762,8 @@ async def proxy_request_management(path: str, request: Request):
     if not path.startswith("v1/"):
         return JSONResponse(status_code=404, content={"error": {"code": "NOT_FOUND", "message": "Unknown Request Management API version"}})
     headers = {k: v for k, v in request.headers.items() if k.lower() not in _HOP_HEADERS}
+    if path == "v1/events" and request.method == "GET":
+        return await _stream_request_management_events(request, headers)
     async with httpx.AsyncClient() as client:
         try:
             resp = await client.request(request.method, f"{REQUEST_MANAGEMENT_SERVICE_URL}/{path}", headers=headers,
@@ -771,6 +773,34 @@ async def proxy_request_management(path: str, request: Request):
     out_headers = {k: v for k, v in resp.headers.items()
                    if k.lower() not in _HOP_HEADERS and not k.lower().startswith("access-control-") and k.lower() != "content-encoding"}
     return Response(content=resp.content, status_code=resp.status_code, headers=out_headers)
+
+
+async def _stream_request_management_events(request: Request, headers: dict):
+    """Server-Sent Events: relayed chunk by chunk, with no read timeout (the service sends a heartbeat every 20 s)."""
+    client = httpx.AsyncClient(timeout=httpx.Timeout(10.0, read=None))
+    try:
+        upstream = await client.send(client.build_request("GET", f"{REQUEST_MANAGEMENT_SERVICE_URL}/v1/events", headers=headers), stream=True)
+    except httpx.HTTPError:
+        await client.aclose()
+        return JSONResponse(status_code=502, content={"error": {"code": "SERVICE_UNAVAILABLE", "message": "Request Management is unavailable. Try again shortly."}})
+    if upstream.status_code != 200:
+        body = await upstream.aread()
+        await upstream.aclose()
+        await client.aclose()
+        return Response(content=body, status_code=upstream.status_code, media_type=upstream.headers.get("content-type"))
+
+    async def relay():
+        try:
+            async for chunk in upstream.aiter_raw():
+                yield chunk
+        except httpx.HTTPError:
+            return
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+
+    return StreamingResponse(relay(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"})
 
 
 # Customer Service validates tenant identity and ticket access in its own backend.

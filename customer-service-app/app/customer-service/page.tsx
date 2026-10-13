@@ -1,45 +1,176 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
-import { api } from "@/lib/api";
-import { useSatelliteUser } from "@/components/satellite/SsoGate";
-import { portalUrl } from "@/lib/appLinks";
-import { signOut } from "@/lib/sso";
-import { IS_DEMO } from "@/lib/envMode";
-import { tx } from "@/lib/i18n/tx";
 
-type Ticket={id:string;title:string;description:string;status:string;priority:string;category:string;version:number;requester_name:string;assignee_name:string|null;due_at:string;customer_id:string|null;policy_id:string|null;overdue?:boolean;resolution:string|null;events?:{id:number;actor_name:string;kind:string;body:string;internal:boolean;created_at:string}[]};
-const categories=["GENERAL","POLICY_SERVICING","BILLING","CLAIM_ENQUIRY","COMPLAINT","DOCUMENTS"];
-const statuses=["OPEN","IN_PROGRESS","WAITING_CUSTOMER","RESOLVED","CLOSED","CANCELLED"];
-const transitions:Record<string,string[]>={OPEN:["IN_PROGRESS","CANCELLED"],IN_PROGRESS:["WAITING_CUSTOMER","RESOLVED","CANCELLED"],WAITING_CUSTOMER:["IN_PROGRESS","RESOLVED","CANCELLED"],RESOLVED:["CLOSED","IN_PROGRESS"],CLOSED:["IN_PROGRESS"],CANCELLED:[]};
-const input="w-full rounded border border-slate-300 p-2 text-sm";
-const button="rounded bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50";
-export default function Desk(){
- const user=useSatelliteUser();
- const [staff,setStaff]=useState(false),[rows,setRows]=useState<Ticket[]>([]),[total,setTotal]=useState(0),[page,setPage]=useState(1),[status,setStatus]=useState(""),[search,setSearch]=useState(""),[q,setQ]=useState(""),[error,setError]=useState(""),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[selected,setSelected]=useState<Ticket|null>(null),[creating,setCreating]=useState(false),[body,setBody]=useState(""),[internal,setInternal]=useState(false),[target,setTarget]=useState(""),[reason,setReason]=useState("");
- const [form,setForm]=useState({title:"",description:"",category:"GENERAL",priority:"NORMAL",customer_id:"",policy_id:""});
- const [key,setKey]=useState("");
- useEffect(()=>{const timer=setTimeout(()=>{setQ(search);setPage(1);},300);return()=>clearTimeout(timer);},[search]);
- useEffect(()=>{api.get("/me").then(r=>setStaff(r.data.staff)).catch(e=>setError(e.message));},[]);
- const load=useCallback(async()=>{setLoading(true);try{const r=await api.get("/tickets",{params:{page,status:status||undefined,q}});setRows(r.data.items);setTotal(r.data.total);}catch(e){setError((e as Error).message);}finally{setLoading(false);}},[page,status,q]);
- useEffect(()=>{load();},[load]);
- async function open(id:string){setError("");try{setSelected((await api.get("/tickets/"+id)).data);setBody("");setReason("");setTarget("");}catch(e){setError((e as Error).message);}}
- async function action(path:string,payload:unknown){if(!selected)return;setBusy(true);setError("");try{await api.post(`/tickets/${selected.id}/${path}`,payload);await open(selected.id);await load();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
- async function create(e:React.FormEvent){e.preventDefault();setBusy(true);setError("");try{const r=await api.post("/tickets",{...form,customer_id:form.customer_id||null,policy_id:form.policy_id||null,idempotency_key:key});setCreating(false);setForm({title:"",description:"",category:"GENERAL",priority:"NORMAL",customer_id:"",policy_id:""});await load();await open(r.data.id);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
- const allowed=selected?(staff?transitions[selected.status]:transitions[selected.status].filter(s=>(s==="CANCELLED"&&selected.status==="OPEN")||(s==="IN_PROGRESS"&&["RESOLVED","CLOSED"].includes(selected.status)))):[];
- return <div className="mx-auto max-w-7xl space-y-5 p-6">
-  <header className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-2xl font-bold">{tx("Customer Service")}</h1><p className="text-sm text-slate-500">{user.tenant_name} · {user.full_name}</p></div><div className="flex gap-4"><a href={portalUrl("/")}>{tx("Portal")}</a><button onClick={()=>signOut()}>{tx("Sign out")}</button></div></header>
-  <p className="text-sm text-slate-600">{tx("Customer enquiries, policy servicing, billing questions, and complaints.")}</p>
-  {error&&<div role="alert" className="rounded border border-red-300 bg-red-50 p-3 text-red-700">{error}<button className="ml-4 underline" onClick={()=>{setError("");load();}}>{tx("Retry")}</button></div>}
-  <div className="flex flex-wrap gap-3"><input aria-label="Search tickets" className={input+" max-w-sm"} placeholder="Search tickets" value={search} onChange={e=>setSearch(e.target.value)}/><select aria-label="Filter status" className={input+" max-w-xs"} value={status} onChange={e=>{setStatus(e.target.value);setPage(1);}}><option value="">All statuses</option>{statuses.map(s=><option key={s}>{s}</option>)}</select><button className={button} onClick={()=>{setCreating(true);setKey(crypto.randomUUID());setSelected(null);}}>New ticket</button><button onClick={load}>Refresh</button>{IS_DEMO&&user.role_name==="Admin"&&<button disabled={busy} className={button} onClick={async()=>{setBusy(true);setError("");try{await api.post("/demo/seed");await load();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}}>Fill demo data</button>}</div>
-  {creating&&<form onSubmit={create} className="space-y-3 rounded border bg-white p-5"><h2 className="font-bold">New service ticket</h2>{["title","description","customer_id","policy_id"].map(k=><label className="block text-sm" key={k}>{k.replaceAll("_"," ")}{k==="description"?<textarea required minLength={10} maxLength={5000} className={input} value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/>:<input className={input} required={k==="title"} minLength={k==="title"?3:undefined} maxLength={k==="title"?200:36} placeholder={k.endsWith("_id")?"Optional record UUID":""} value={form[k as keyof typeof form]} onChange={e=>setForm({...form,[k]:e.target.value})}/>}</label>)}<label className="block">Category<select className={input} value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>{categories.map(c=><option key={c}>{c}</option>)}</select></label><label className="block">Priority<select className={input} value={form.priority} onChange={e=>setForm({...form,priority:e.target.value})}>{["LOW","NORMAL","HIGH","URGENT"].map(c=><option key={c}>{c}</option>)}</select></label><button disabled={busy} className={button}>Create ticket</button><button type="button" className="ml-4" disabled={busy} onClick={()=>setCreating(false)}>Cancel</button></form>}
-  {loading?<p role="status">Loading tickets…</p>:rows.length===0?<p>No tickets found.</p>:<div className="overflow-auto rounded border bg-white"><table className="w-full text-left text-sm"><thead className="bg-slate-100"><tr>{["Ticket","Customer / policy","Status","Priority","Assignee","Due"].map(h=><th className="p-3" key={h}>{h}</th>)}</tr></thead><tbody>{rows.map(r=><tr key={r.id} className="border-t"><td className="p-3"><button className="font-semibold text-blue-700 underline" onClick={()=>open(r.id)}>{r.title}</button><p className="text-xs text-slate-500">{r.requester_name}</p></td><td className="p-3 text-xs">{r.customer_id?.slice(0,8)||r.policy_id?.slice(0,8)||"General"}</td><td className="p-3">{r.status}</td><td className="p-3">{r.priority}</td><td className="p-3">{r.assignee_name||"Unassigned"}</td><td className={"p-3 "+(r.overdue?"text-red-700 font-bold":"")}>{new Date(r.due_at).toLocaleString()}</td></tr>)}</tbody></table></div>}
-  <div className="flex gap-4"><button disabled={page===1} onClick={()=>setPage(p=>p-1)}>Previous</button><span>Page {page} · {total} tickets</span><button disabled={page*20>=total} onClick={()=>setPage(p=>p+1)}>Next</button></div>
-  {selected&&<section className="space-y-4 rounded border bg-white p-5"><div className="flex justify-between"><h2 className="text-lg font-bold">{selected.title}</h2><button onClick={()=>setSelected(null)}>Close details</button></div><p className="whitespace-pre-wrap">{selected.description}</p><p>{selected.status} · {selected.priority} · {selected.assignee_name||"Unassigned"}</p>{selected.resolution&&<p className="rounded bg-green-50 p-3">Resolution: {selected.resolution}</p>}
-  <div className="flex gap-4">{selected.customer_id&&<a className="text-blue-700 underline" href={portalUrl(`/admin/customers/${selected.customer_id}/plans`)}>Customer plans</a>}{selected.policy_id&&<a className="text-blue-700 underline" href={portalUrl(`/post-issuance/${selected.policy_id}`)}>Policy servicing</a>}</div>
-  {staff&&!["CLOSED","CANCELLED"].includes(selected.status)&&<div className="flex gap-3"><button disabled={busy} className={button} onClick={()=>action("assignment",{version:selected.version,user_id:user.id})}>Claim ticket</button><button disabled={busy} onClick={()=>action("assignment",{version:selected.version,user_id:null})}>Release assignment</button></div>}
-  {allowed.length>0&&<form onSubmit={e=>{e.preventDefault();action("status",{version:selected.version,status:target,reason});}} className="flex flex-wrap gap-3"><select required className={input+" max-w-xs"} value={target} onChange={e=>setTarget(e.target.value)}><option value="">Change status</option>{allowed.map(s=><option key={s}>{s}</option>)}</select><input required minLength={5} maxLength={2000} className={input+" max-w-lg"} placeholder="Reason / resolution" value={reason} onChange={e=>setReason(e.target.value)}/><button disabled={busy} className={button}>Update status</button></form>}
-  <h3 className="font-bold">Conversation and history</h3><div className="space-y-3">{selected.events?.map(e=><div key={e.id} className={"border-l-4 p-3 "+(e.internal?"border-amber-400 bg-amber-50":"border-blue-300 bg-slate-50")}><p className="text-xs text-slate-500">{e.actor_name} · {e.kind}{e.internal?" (Internal)":""} · {new Date(e.created_at).toLocaleString()}</p><p className="whitespace-pre-wrap">{e.body}</p></div>)}</div>
-  {!["CLOSED","CANCELLED"].includes(selected.status)&&<form onSubmit={e=>{e.preventDefault();action("comments",{body,internal});}} className="space-y-3"><textarea required maxLength={5000} aria-label="Reply" className={input} value={body} onChange={e=>setBody(e.target.value)}/>{staff&&<label className="block"><input type="checkbox" checked={internal} onChange={e=>setInternal(e.target.checked)}/> Internal staff note</label>}<button disabled={busy} className={button}>Send reply</button></form>}
-  </section>}
- </div>;
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { tx } from "@/lib/i18n/tx";
+import { IS_DEMO } from "@/lib/envMode";
+import { api, type Me, type Status, type Ticket } from "@/lib/api";
+import { CATEGORY_LABEL, STATUS_LABEL, STATUS_TONE } from "@/lib/labels";
+import AppHeader from "@/components/satellite/AppHeader";
+import {
+  Badge, Card, DueLabel, Empty, ErrorNote, Pager, Priority, Segmented, SkeletonRows, inputClass, primaryButton, relativeTime, useDebounced,
+} from "@/components/satellite/ui";
+import NewTicketDialog from "@/components/NewTicketDialog";
+import TicketPanel from "@/components/TicketPanel";
+
+// The service desk: the ticket queue on the left, the open ticket on the right. Staff see the tenant's tickets and
+// work them; everyone else sees the tickets they raised.
+
+const PAGE_SIZE = 20;
+type Tab = "" | Status;
+
+function Desk() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const selected = params.get("ticket");
+  const [me, setMe] = useState<Me | null>(null);
+  const [tab, setTab] = useState<Tab>("");
+  const [search, setSearch] = useState("");
+  const q = useDebounced(search, 300);
+  const [page, setPage] = useState(1);
+  const [rows, setRows] = useState<Ticket[] | null>(null);
+  const [total, setTotal] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [seeding, setSeeding] = useState(false);
+
+  const select = (id: string | null) => {
+    const next = new URLSearchParams(params.toString());
+    if (id) next.set("ticket", id); else next.delete("ticket");
+    router.replace(`${pathname}${next.toString() ? `?${next}` : ""}`, { scroll: false });
+  };
+
+  useEffect(() => { api.get("/me").then((r) => setMe(r.data)).catch((e) => setError(e.message)); }, []);
+  useEffect(() => { setPage(1); }, [tab, q]);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await api.get("/tickets", { params: { page, page_size: PAGE_SIZE, status: tab || undefined, q: q || undefined } });
+      setRows(r.data.items); setTotal(r.data.total); setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, [page, tab, q]);
+  useEffect(() => { setRows(null); load(); }, [load]);
+
+  const seed = async () => {
+    setSeeding(true);
+    try { await api.post("/demo/seed"); await load(); } catch (e) { setError((e as Error).message); } finally { setSeeding(false); }
+  };
+
+  const tabs: { value: Tab; label: string }[] = [
+    { value: "", label: tx("All") },
+    ...(["OPEN", "IN_PROGRESS", "WAITING_CUSTOMER", "RESOLVED", "CLOSED", "CANCELLED"] as Status[]).map((s) => ({ value: s, label: tx(STATUS_LABEL[s]) })),
+  ];
+
+  return (
+    <div className="flex h-screen flex-col overflow-hidden bg-slate-50">
+      <AppHeader
+        title={tx("Customer Service")}
+        home="/customer-service"
+        icon={
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+        }
+        actions={
+          <>
+            {IS_DEMO && me?.role_name === "Admin" && (
+              <button type="button" onClick={seed} disabled={seeding} title={tx("Add sample tickets to this tenant")}
+                className="hidden rounded-lg border border-dashed border-violet-300 bg-violet-50 px-2.5 py-1.5 text-[11px] font-semibold text-violet-700 hover:bg-violet-100 sm:inline-flex">
+                {seeding ? tx("Adding…") : tx("Load demo tickets")}
+              </button>
+            )}
+            <button type="button" className={`${primaryButton} !px-3 !py-1.5 text-xs`} onClick={() => setCreating(true)}>{tx("+ New ticket")}</button>
+          </>
+        }
+      />
+
+      <div className="flex min-h-0 flex-1 gap-4 p-4 lg:p-6">
+        <Card className={`flex min-h-0 flex-col overflow-hidden ${selected ? "hidden w-full lg:flex lg:w-[44%]" : "w-full"}`}>
+          <div className="space-y-3 border-b border-slate-100 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h1 className="text-base font-bold text-slate-900">{me?.staff ? tx("Service queue") : tx("My tickets")}</h1>
+                <p className="text-[11px] text-slate-500">
+                  {me?.staff ? tx("Customer enquiries, policy servicing, billing questions and complaints for your tenant.") : tx("Tickets you raised for customers, and their progress.")}
+                </p>
+              </div>
+            </div>
+            <Segmented label={tx("Status")} value={tab} onChange={setTab} options={tabs} />
+            <div className="relative">
+              <svg viewBox="0 0 20 20" fill="currentColor" className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true">
+                <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" clipRule="evenodd" />
+              </svg>
+              <input className={`${inputClass} !py-1.5 ps-9 text-xs`} placeholder={tx("Search subject or description…")} value={search}
+                onChange={(e) => setSearch(e.target.value)} aria-label={tx("Search tickets")} />
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {error ? <div className="p-4"><ErrorNote message={error} onRetry={load} /></div>
+              : !rows ? <SkeletonRows rows={6} />
+                : rows.length === 0 ? (
+                  <Empty
+                    title={q || tab ? tx("No tickets match.") : me?.staff ? tx("The queue is empty.") : tx("You haven't raised any tickets yet.")}
+                    hint={q || tab ? tx("Try another status or search.") : tx("Log a customer's enquiry or complaint with “New ticket”.")}
+                    action={!q && !tab ? <button type="button" className={`${primaryButton} mt-2`} onClick={() => setCreating(true)}>{tx("+ New ticket")}</button> : undefined}
+                  />
+                ) : (
+                  <ul className="divide-y divide-slate-100">
+                    {rows.map((t) => {
+                      const active = t.id === selected;
+                      const open = !["RESOLVED", "CLOSED", "CANCELLED"].includes(t.status);
+                      return (
+                        <li key={t.id}>
+                          <button type="button" onClick={() => select(t.id)} aria-current={active ? "true" : undefined}
+                            className={`w-full px-4 py-3 text-start transition-colors focus:outline-none ${active ? "bg-blue-50/70 shadow-[inset_3px_0_0_#2563eb]" : "hover:bg-slate-50"}`}>
+                            <div className="flex items-start justify-between gap-3">
+                              <span className="min-w-0">
+                                <span className="flex items-center gap-2">
+                                  <span className="truncate text-sm font-semibold text-slate-900">{t.title}</span>
+                                  {t.overdue && <span className="shrink-0 rounded bg-red-600 px-1.5 text-[10px] font-bold uppercase text-white">{tx("Overdue")}</span>}
+                                </span>
+                                <span className="mt-0.5 block truncate text-[11px] text-slate-500">
+                                  {tx(CATEGORY_LABEL[t.category] ?? t.category)} · {t.requester_name}
+                                  {t.assignee_name ? ` → ${t.assignee_name}` : ` · ${tx("Unassigned")}`}
+                                </span>
+                              </span>
+                              <Badge tone={STATUS_TONE[t.status]}>{tx(STATUS_LABEL[t.status])}</Badge>
+                            </div>
+                            <div className="mt-2 flex items-center justify-between">
+                              <Priority value={t.priority} />
+                              {open ? <DueLabel due={t.due_at} open overdue={t.overdue} />
+                                : <span className="text-[11px] text-slate-400">{t.updated_at ? tx("Updated {when}", { when: relativeTime(t.updated_at) }) : ""}</span>}
+                            </div>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+          </div>
+          {rows && rows.length > 0 && <Pager page={page} pageSize={PAGE_SIZE} total={total} onPage={setPage} />}
+        </Card>
+
+        {selected && me ? (
+          <Card className="flex min-h-0 w-full flex-col overflow-hidden lg:flex-1">
+            <TicketPanel id={selected} me={me} onChanged={load} onClose={() => select(null)} />
+          </Card>
+        ) : (
+          <div className="hidden flex-1 items-center justify-center rounded-xl border border-dashed border-slate-300 lg:flex">
+            <Empty title={tx("Select a ticket")} hint={tx("Its details, next step and conversation open here.")} />
+          </div>
+        )}
+      </div>
+
+      <NewTicketDialog open={creating} onClose={() => setCreating(false)}
+        onCreated={(id) => { setCreating(false); setTab(""); load(); select(id); }} />
+    </div>
+  );
+}
+
+export default function CustomerServicePage() {
+  return <Suspense fallback={null}><Desk /></Suspense>;
 }

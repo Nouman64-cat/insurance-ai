@@ -4,7 +4,7 @@
 import axios, { AxiosError } from "axios";
 import { sessionExpired } from "@/lib/sso";
 
-const BASE = `${(process.env.NEXT_PUBLIC_API_URL || "http://localhost:8010").replace(/\/+$/, "")}/request-management/v1`;
+export const BASE = `${(process.env.NEXT_PUBLIC_API_URL || "http://localhost:8010").replace(/\/+$/, "")}/request-management/v1`;
 
 export class RequestsError extends Error {
   constructor(public status: number, public code: string, message: string, public details: Record<string, any> = {}) {
@@ -159,6 +159,12 @@ export interface RoutingRule {
 
 export interface Reviewer { id: string; full_name: string; role_name: string; branch_id: string | null }
 
+/** Where a new request of a type would go, and whom the requester may name (only people in that team). */
+export interface RoutePreview {
+  configured: boolean; target_kind?: "USER" | "ROLE"; target_label?: string; queue_role?: string | null; sla_hours?: number;
+  reviewers: Pick<Reviewer, "id" | "full_name" | "role_name">[]; administrators?: string[];
+}
+
 const data = <T>(p: Promise<{ data: T }>) => p.then((r) => r.data);
 const idem = (key?: string) => (key ? { headers: { "Idempotency-Key": key } } : undefined);
 
@@ -190,6 +196,7 @@ export const requestsApi = {
   createRule: (body: Record<string, any>) => data<RoutingRule>(http.post("/routing-rules", body)),
   updateRule: (id: string, body: Record<string, any>) => data<RoutingRule>(http.put(`/routing-rules/${id}`, body)),
   deactivateRule: (id: string, reason: string) => data<RoutingRule>(http.post(`/routing-rules/${id}/deactivate`, { reason })),
+  routePreview: (requestType: string) => data<RoutePreview>(http.get("/route-preview", { params: { request_type: requestType } })),
   reviewers: (requestType: string, excludeRequester?: string) =>
     data<Reviewer[]>(http.get("/reviewers", { params: { request_type: requestType, exclude_requester: excludeRequester } })),
 };

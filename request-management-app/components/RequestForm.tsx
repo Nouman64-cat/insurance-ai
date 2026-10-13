@@ -9,7 +9,7 @@ import { PAKISTAN_PROVINCES } from "@/lib/pakistanProvinces";
 import DemoFillButton from "@/components/DemoFillButton";
 import { useSummary } from "./RequestsShell";
 import { demoDispute, demoGeneralRequest, demoPriority, demoProfileCorrection } from "@/lib/demoData";
-import { newKey, requestsApi, RequestsError, type Priority, type RequestDetail, type RequestType } from "@/lib/requestsApi";
+import { newKey, requestsApi, RequestsError, type Priority, type RequestDetail, type RequestType, type RoutePreview } from "@/lib/requestsApi";
 import {
   CATEGORY_LABEL, Card, DISPUTE_LABEL, ErrorNote, PRIORITY_LABEL, Spinner, TYPE_LABEL, inputClass, labelClass, primaryButton, secondaryButton,
 } from "./ui";
@@ -56,6 +56,11 @@ export function NewRequestForm({ editing }: { editing?: RequestDetail }) {
   const [claimed, setClaimed] = useState<string>(initial.claimed_amount ?? "");
   const [explanation, setExplanation] = useState<string>(initial.explanation ?? "");
 
+  // Reviewer: routing picks the team; the requester may name one person in it (the server checks the choice again).
+  const [route, setRoute] = useState<RoutePreview | null>(null);
+  const [routeError, setRouteError] = useState(false);
+  const [reviewerId, setReviewerId] = useState("");
+
   const [busy, setBusy] = useState<"draft" | "submit" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -77,6 +82,15 @@ export function NewRequestForm({ editing }: { editing?: RequestDetail }) {
   }, []);
 
   const type = useMemo(() => types?.find((t) => t.code === code) ?? null, [types, code]);
+
+  useEffect(() => {
+    setRoute(null); setRouteError(false); setReviewerId("");
+    if (!type || !canSubmitHere) return;
+    let current = true;
+    requestsApi.routePreview(type.code).then((r) => { if (current) setRoute(r); }).catch(() => { if (current) setRouteError(true); });
+    return () => { current = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type?.code]);
   const tenantId = typeof window !== "undefined" ? localStorage.getItem("tenant_id") : null;
 
   // The referenced record, loaded with the user's own access (an agent only finds their own customers and earnings).
@@ -160,17 +174,17 @@ export function NewRequestForm({ editing }: { editing?: RequestDetail }) {
         id = created.id;
         setDraftId(id);
         if (!andSubmit) { router.push(`/requests/${id}`); return; }
-        await requestsApi.action(id, "submit", { expected_version: created.version }, submitKey.current);
+        await requestsApi.action(id, "submit", { expected_version: created.version, reviewer_id: reviewerId || undefined }, submitKey.current);
       } else {
         const latest = await requestsApi.updateDraft(id, { expected_version: (await requestsApi.get(id)).version, title: title.trim(), priority, payload: payload() });
-        if (andSubmit) await requestsApi.action(id, "submit", { expected_version: latest.version }, submitKey.current);
+        if (andSubmit) await requestsApi.action(id, "submit", { expected_version: latest.version, reviewer_id: reviewerId || undefined }, submitKey.current);
       }
       router.push(`/requests/${id}`);
     } catch (e) {
       if (e instanceof RequestsError) {
         setFieldErrors(e.fieldErrors());
         setError(e.code === "ROUTING_FAILED" ? `${e.message} ${tx("Your request was saved as a draft.")}` : e.message);
-        setRoutingMissing(e.code === "ROUTING_FAILED");
+        setRoutingMissing(e.code === "ROUTING_FAILED" && !e.details?.field);
       } else {
         setError(tx("Something went wrong. Try again."));
       }
@@ -321,6 +335,44 @@ export function NewRequestForm({ editing }: { editing?: RequestDetail }) {
               </div>
               <p className="rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-600">{tx("The decision on a dispute is recorded here. Any correction to the commission itself is made separately by the commission team.")}</p>
             </>
+          )}
+
+          {canSubmitHere && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <label className={labelClass} htmlFor="reviewer">{tx("Reviewer")}</label>
+              {routeError ? (
+                <p className="text-xs text-slate-500">{tx("Couldn't check who reviews this. It will be routed when you submit.")}</p>
+              ) : !route ? (
+                <p className="text-xs text-slate-400">{tx("Checking who reviews this…")}</p>
+              ) : !route.configured ? (
+                <p className="text-xs text-amber-800">
+                  {route.administrators?.length
+                    ? tx("No reviewer is set up for this request type yet. Ask {names} (tenant administrator) to set up routing.", { names: route.administrators.join(tx(" or ")) })
+                    : tx("No reviewer is set up for this request type yet. Ask your administrator to set up routing.")}
+                  {summary?.is_admin && <> <Link href="/requests/routing" className="font-semibold text-blue-600">{tx("Set up routing now →")}</Link></>}
+                </p>
+              ) : route.reviewers.length === 0 ? (
+                <p className="text-xs text-amber-800">{tx("Nobody other than you can review this in {team} yet. Ask your administrator to update routing.", { team: route.target_label ?? "" })}</p>
+              ) : route.target_kind === "USER" ? (
+                <p className="text-sm text-slate-800">{route.reviewers[0].full_name} <span className="text-xs text-slate-500">· {route.reviewers[0].role_name}</span></p>
+              ) : (
+                <>
+                  <select id="reviewer" className={inputClass} value={reviewerId} onChange={(e) => setReviewerId(e.target.value)}>
+                    <option value="">{tx("Anyone in the {role} team (first available)", { role: route.queue_role ?? "" })}</option>
+                    {route.reviewers.map((r) => <option key={r.id} value={r.id}>{r.full_name}</option>)}
+                  </select>
+                  {fieldError("reviewer_id")}
+                </>
+              )}
+              {route?.configured && route.reviewers.length > 0 && (
+                <p className="mt-1.5 text-[11px] text-slate-500">
+                  {route.target_kind === "USER"
+                    ? tx("Your administrator routes these requests to this reviewer.")
+                    : tx("Only people in the team your administrator routes these requests to are listed. Leave it to the team to let the first available reviewer pick it up.")}
+                  {route.sla_hours ? ` ${tx("Target decision time: {hours} h.", { hours: route.sla_hours })}` : ""}
+                </p>
+              )}
+            </div>
           )}
 
           {error && <ErrorNote message={error} />}
