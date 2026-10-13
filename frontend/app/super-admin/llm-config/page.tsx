@@ -177,10 +177,10 @@ function ProviderCard({
           <span
             className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded border ${roleBadge}`}
           >
-            {ROLE_LABEL[status.role]}
+            {tx(ROLE_LABEL[status.role])}
           </span>
         </div>
-        <h3 className="text-base font-bold text-slate-900 mt-3">{meta.label}</h3>
+        <h3 className="text-base font-bold text-slate-900 mt-3">{tx(meta.label)}</h3>
         <p className="text-xs text-slate-500 mt-0.5 min-h-[2rem]">{meta.blurb}</p>
         <span
           className={`inline-block mt-2 text-[11px] font-medium px-2 py-0.5 rounded-full ${
@@ -216,7 +216,7 @@ function ProviderCard({
                     : "text-slate-500 hover:text-slate-700"
                 }`}
               >
-                {ROLE_LABEL[r]}
+                {tx(ROLE_LABEL[r])}
                 {roleTaken(r) && role !== r && (
                   <span className="ml-0.5 text-[10px] opacity-60">*</span>
                 )}

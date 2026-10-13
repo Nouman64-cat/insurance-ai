@@ -421,7 +421,7 @@ export default function TenantManagementPage() {
                           className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold border bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 transition-colors"
                           title={tx("Show remaining setup steps")}
                         >
-                          {setupProgress(setupStatus[tenant.id])}/3 · {nextSetupStep(tenant.id, setupStatus[tenant.id])!.label}
+                          {setupProgress(setupStatus[tenant.id])}/3 · {tx(nextSetupStep(tenant.id, setupStatus[tenant.id])!.label)}
                         </button>
                       ) : (
                         <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200">

@@ -107,7 +107,7 @@ export function UnderwritingCard({ policies, claims, policyStats, riskIndex }: U
                     style={{ backgroundColor: d.color.includes("blue") ? "#3b82f6" : d.color.includes("amber") ? "#f59e0b" : d.color.includes("red") ? "#ef4444" : "#64748b" }}
                   />
                   <span className="text-[9px] font-semibold text-slate-500 text-center leading-tight">
-                    {d.label}
+                    {tx(d.label)}
                   </span>
                 </div>
               ))}

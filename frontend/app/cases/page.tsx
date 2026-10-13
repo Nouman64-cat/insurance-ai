@@ -1305,7 +1305,7 @@ export default function CasesPage() {
                         id={app.id}
                         icon={<FolderSvg color="#FBBF24" accent="#D97706" size={52} />}
                         name={app.name}
-                        line2={<>{app.cnic}<br />{count} case{count !== 1 ? "s" : ""}</>}
+                        line2={<>{app.cnic}<br />{tx(count !== 1 ? "{count} cases" : "{count} case", { count })}</>}
                         isSelected={selectedId === app.id}
                         onSingleClick={() => setSelectedId(app.id)}
                         onDoubleClick={() => openCustomer(app)}
@@ -1331,7 +1331,7 @@ export default function CasesPage() {
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
                         <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
                       </svg>
-                      New Case
+                      {tx("New Case")}
                     </button>
                   }
                 />
@@ -1505,7 +1505,7 @@ export default function CasesPage() {
                         <polyline points="17 8 12 3 7 8" />
                         <line x1="12" y1="3" x2="12" y2="15" />
                       </svg>
-                      Upload Document
+                      {tx("Upload Document")}
                     </button>
                   }
                 />

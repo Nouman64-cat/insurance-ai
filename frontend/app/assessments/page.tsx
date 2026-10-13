@@ -396,7 +396,7 @@ export default function AssessmentHistoryPage() {
                 }`}
               >
                 <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
-                {meta.label}
+                {tx(meta.label)}
                 {count != null && (
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${active ? "bg-white/50" : "bg-slate-100 text-slate-500"}`}>
                     {count}
@@ -492,7 +492,7 @@ export default function AssessmentHistoryPage() {
                         <p className="font-bold text-slate-800">{a.customer_name}</p>
                         {segment === "all" && a.customer_segment && (
                           <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold border uppercase tracking-wide ${SEGMENT_BADGE_STYLE[a.customer_segment]}`}>
-                            {SEGMENT_LABEL[a.customer_segment]}
+                            {tx(SEGMENT_LABEL[a.customer_segment])}
                           </span>
                         )}
                       </div>

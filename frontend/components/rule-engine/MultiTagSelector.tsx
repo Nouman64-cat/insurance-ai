@@ -147,7 +147,7 @@ export default function MultiTagSelector({ selected = [], onChange, options, pla
                       readOnly
                       className="w-3.5 h-3.5 text-blue-600 rounded border-slate-300"
                     />
-                    <span>{opt.label}</span>
+                    <span>{tx(opt.label)}</span>
                   </div>
                   <code className="text-[10px] font-mono text-slate-400 ml-2">{opt.code}</code>
                 </button>

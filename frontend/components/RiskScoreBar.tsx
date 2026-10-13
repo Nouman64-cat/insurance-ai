@@ -58,7 +58,7 @@ export function RiskScoreBar({
         <span className="text-sm font-medium text-slate-700">{label}</span>
         <div className="flex items-center gap-2">
           {showTier && (
-            <span className={`text-xs font-medium ${tier.color}`}>{tier.label}</span>
+            <span className={`text-xs font-medium ${tier.color}`}>{tx(tier.label)}</span>
           )}
           <span className="text-sm font-bold text-slate-900 tabular-nums">
             {valueLabel ?? (
@@ -110,7 +110,7 @@ export function CompositeScoreRing({ score }: { score: number }) {
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
           {tx("Composite Risk Score")}
         </p>
-        <p className={`text-lg font-bold mt-0.5 ${tier.color}`}>{tier.label}</p>
+        <p className={`text-lg font-bold mt-0.5 ${tier.color}`}>{tx(tier.label)}</p>
 
       </div>
     </div>

@@ -89,7 +89,7 @@ export default function SchemePanel({ tenantId, orgId, mp, reload }: PanelProps)
                   <span className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] ${done ? "bg-emerald-50 border-emerald-300" : current ? "bg-blue-50 border-blue-300" : "border-slate-200"}`}>
                     {done ? "✓" : i + 1}
                   </span>
-                  {s.label}
+                  {tx(s.label)}
                 </span>
                 {i < STAGES.length - 1 && <span className="mx-3 h-px w-6 bg-slate-200" />}
               </li>

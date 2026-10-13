@@ -864,7 +864,7 @@ function TokenManagementContent() {
                             </div>
                           </div>
                           {svc.description && (
-                            <p className="text-[11px] text-slate-500 mt-0.5">{svc.description}</p>
+                            <p className="text-[11px] text-slate-500 mt-0.5">{tx(svc.description)}</p>
                           )}
 
                           <div className="mt-3 space-y-1 text-xs">

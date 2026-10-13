@@ -2075,7 +2075,7 @@ function QuoteDetailModal({
                     {tx("We are pleased to present the following insurance proposal for")}{" "}
                     <span className="font-semibold text-slate-900">{detail.customer_name}</span>{tx(". Based on the information provided, we propose a")}{" "}
                     <span className="font-semibold text-slate-900">
-                      {INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type}
+                      {tx(INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type)}
                     </span>{" "}
                     {tx("policy under the")}{" "}
                     <span className="font-semibold text-slate-900">{detail.plan_label}</span>{" "}

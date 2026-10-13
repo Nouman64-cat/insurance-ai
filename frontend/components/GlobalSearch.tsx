@@ -195,7 +195,7 @@ export default function GlobalSearch() {
           {grouped.map((group) => (
             <div key={group.type} className="py-1">
               <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
-                {group.label}
+                {tx(group.label)}
               </p>
               {group.items.map((item) => {
                 const idx = flat.indexOf(item);

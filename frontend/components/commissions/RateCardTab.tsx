@@ -161,7 +161,7 @@ export default function RateCardTab({
               }}
               className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5"
             >
-              <span>+ Add Commission Type</span>
+              <span>{tx("+ Add Commission Type")}</span>
             </button>
           </>
         }
@@ -191,7 +191,7 @@ export default function RateCardTab({
             <option value="all">{tx("All Channels")}</option>
             {CHANNELS.map((c) => (
               <option key={c} value={c}>
-                {CHANNEL_LABELS[c]}
+                {tx(CHANNEL_LABELS[c])}
               </option>
             ))}
           </select>
@@ -215,7 +215,7 @@ export default function RateCardTab({
             <option value="all">{tx("All Roles")}</option>
             {PAYEE_TYPES.map((pt) => (
               <option key={pt} value={pt}>
-                {PAYEE_TYPE_LABELS[pt]}
+                {tx(PAYEE_TYPE_LABELS[pt])}
               </option>
             ))}
           </select>
@@ -239,7 +239,7 @@ export default function RateCardTab({
             <div key={group.channel} className="border-b border-slate-100 last:border-b-0">
               <div className="px-5 py-3 bg-slate-50/70 flex items-center justify-between">
                 <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  {CHANNEL_LABELS[group.channel]}
+                  {tx(CHANNEL_LABELS[group.channel])}
                 </h3>
                 <span className="text-[10px] font-mono text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
                   {group.rules.length} {group.rules.length === 1 ? tx("rule") : tx("rules")}
@@ -289,7 +289,7 @@ export default function RateCardTab({
                           </td>
                           <td className="py-3 px-4 text-center">
                             <span className={`inline-flex px-2 py-0.5 rounded text-[10px] border font-medium ${info.className}`}>
-                              {info.label}
+                              {tx(info.label)}
                             </span>
                           </td>
                           <td className="py-3 px-4 text-right">
@@ -298,7 +298,7 @@ export default function RateCardTab({
                             </span>
                           </td>
                           <td className="py-3 px-4">
-                            <span className="text-[10px] font-semibold text-slate-700">{BASIS_LABELS[rule.basis]}</span>
+                            <span className="text-[10px] font-semibold text-slate-700">{tx(BASIS_LABELS[rule.basis])}</span>
                           </td>
                           <td className="py-3 px-4">
                             <div className="flex flex-col gap-1">
@@ -309,7 +309,7 @@ export default function RateCardTab({
                                 >
                                   <span className="text-blue-700 font-mono font-bold">{event.code}</span>
                                   <span className="text-slate-300">|</span>
-                                  <span className="text-slate-600 font-medium">{event.label}</span>
+                                  <span className="text-slate-600 font-medium">{tx(event.label)}</span>
                                 </div>
                               ))}
                             </div>
@@ -638,7 +638,7 @@ function AddEditRuleModal({
             >
               {CHANNELS.map((c) => (
                 <option key={c} value={c}>
-                  {CHANNEL_LABELS[c]}
+                  {tx(CHANNEL_LABELS[c])}
                 </option>
               ))}
             </select>
@@ -652,7 +652,7 @@ function AddEditRuleModal({
             >
               {PAYEE_TYPES.map((pt) => (
                 <option key={pt} value={pt}>
-                  {PAYEE_TYPE_LABELS[pt]}
+                  {tx(PAYEE_TYPE_LABELS[pt])}
                 </option>
               ))}
             </select>

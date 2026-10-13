@@ -195,7 +195,7 @@ export default function IncentivesTab({
               }}
               className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5"
             >
-              + Create Bonus Plan
+              {tx("+ Create Bonus Plan")}
             </button>
           }
         >
@@ -658,7 +658,7 @@ function AddEditSchemeModal({
                     }`}
                   >
                     {checked ? "✓ " : "+ "}
-                    {PAYEE_TYPE_LABELS[pt]}
+                    {tx(PAYEE_TYPE_LABELS[pt])}
                   </button>
                 );
               })}

@@ -144,7 +144,7 @@ export default function PayoutRunsTab({
               <option value="ALL">{tx("All channels")}</option>
               {(Object.keys(CHANNEL_LABELS) as DistributionChannel[]).map((c) => (
                 <option key={c} value={c}>
-                  {CHANNEL_LABELS[c]}
+                  {tx(CHANNEL_LABELS[c])}
                 </option>
               ))}
             </select>
@@ -198,7 +198,7 @@ export default function PayoutRunsTab({
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono font-bold text-sm text-slate-900">{run.id}</span>
                         <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border ${RUN_STATUS_STYLES[run.status]}`}>
-                          {RUN_STATUS_LABELS[run.status]}
+                          {tx(RUN_STATUS_LABELS[run.status])}
                         </span>
                         <span className="text-[11px] font-semibold text-slate-600">
                           {run.period} · {run.channel === "ALL" ? tx("All channels") : CHANNEL_LABELS[run.channel]}
@@ -355,7 +355,7 @@ export default function PayoutRunsTab({
                               </td>
                               <td className="p-3 font-mono text-[10px] text-slate-500">{entry.policyNumber}</td>
                               <td className="p-3">
-                                <p className="font-semibold text-slate-800">{stage.label}</p>
+                                <p className="font-semibold text-slate-800">{tx(stage.label)}</p>
                                 <p className="text-[10px] text-slate-400">
                                   {stage.sharePct}{tx("% of")}{" "}{fmtPKR(entry.netCommission)}
                                 </p>

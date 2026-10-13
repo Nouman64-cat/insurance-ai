@@ -744,7 +744,7 @@ function PremiumCollectionPanel({
                               {s.reminder_count > 0 && <span className="block mt-0.5 text-[10px] text-slate-400">🔔 {s.reminder_count}{" "}{tx("reminder(s)")}</span>}
                             </td>
                             <td className="px-4 py-2.5">
-                              <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border ${chip.cls}`}>{chip.label}</span>
+                              <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border ${chip.cls}`}>{tx(chip.label)}</span>
                             </td>
                             <td className="px-4 py-2.5 text-left">
                               {collectable ? (
@@ -791,7 +791,7 @@ function PremiumCollectionPanel({
                           <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-1">{tx("INST Number")}</p>
                           <p className="text-xl font-black text-slate-800">{String(s.installment_no).padStart(2, '0')}</p>
                         </div>
-                        <span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold border ${chip.cls}`}>{chip.label}</span>
+                        <span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold border ${chip.cls}`}>{tx(chip.label)}</span>
                       </div>
                       <div className="space-y-3 flex-1">
                         <div className="flex justify-between border-b border-slate-50 pb-3">
@@ -892,7 +892,7 @@ function PremiumCollectionPanel({
               <div className="flex items-center justify-between mb-4">
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{tx("INST #")}{String(selectedInstallment.installment_no).padStart(2, '0')}</p>
                 <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${(STATE_CHIP[selectedInstallment.state] ?? STATE_CHIP.upcoming).cls}`}>
-                  {(STATE_CHIP[selectedInstallment.state] ?? STATE_CHIP.upcoming).label}
+                  {tx((STATE_CHIP[selectedInstallment.state] ?? STATE_CHIP.upcoming).label ?? "")}
                 </span>
               </div>
 
@@ -1174,7 +1174,7 @@ export default function PostIssuancePage() {
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className={`block text-sm font-semibold truncate ${isActive ? "text-blue-800" : "text-slate-700"}`}>
-                      {step.title}
+                      {tx(step.title)}
                     </span>
                     <span className="block text-[11px] text-slate-400 truncate">{step.blurb}</span>
                   </span>
@@ -1196,7 +1196,7 @@ export default function PostIssuancePage() {
                 {activeStep.n}
               </span>
               <div>
-                <h2 className="text-sm font-bold text-slate-800">{activeStep.title}</h2>
+                <h2 className="text-sm font-bold text-slate-800">{tx(activeStep.title)}</h2>
                 <p className="text-[11px] text-slate-400">{activeStep.blurb}</p>
               </div>
             </header>
@@ -2220,7 +2220,7 @@ function ComingSoon({ step }: Readonly<{ step: StageBStep }>) {
           <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
         </svg>
       </span>
-      <p className="text-base font-semibold text-slate-600">{step.title}</p>
+      <p className="text-base font-semibold text-slate-600">{tx(step.title)}</p>
       <p className="text-sm text-slate-400 mt-1 max-w-sm">{step.blurb}</p>
       <span className="mt-4 text-[10px] font-semibold uppercase tracking-wider text-slate-400 bg-slate-100 border border-slate-200 rounded-full px-3 py-1">
         {tx("Coming soon")}

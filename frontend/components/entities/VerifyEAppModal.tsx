@@ -109,7 +109,7 @@ export default function VerifyEAppModal({
                   : "border-transparent text-slate-500 hover:text-slate-800"
               }`}
             >
-              {t.label}
+              {tx(t.label)}
             </button>
           ))}
         </div>
@@ -143,7 +143,7 @@ export default function VerifyEAppModal({
                   <div className="space-y-2">
                     {medical.conditions.filter((c: any) => c.checked).map((c: any) => (
                       <div key={c.key} className="bg-amber-50/60 border border-amber-200 rounded-xl p-3 space-y-1">
-                        <span className="font-bold text-amber-900">⚠️ {c.label}</span>
+                        <span className="font-bold text-amber-900">⚠️ {tx(c.label)}</span>
                         <div className="grid grid-cols-2 gap-2 text-[11px] text-amber-800 pt-1">
                           <p>{tx("Year of Diagnosis:")}{" "}<span className="font-semibold">{c.year_of_diagnosis || "N/A"}</span></p>
                           <p>{tx("Under Treatment:")}{" "}<span className="font-semibold">{c.under_treatment ? tx("Yes") : tx("No")}</span></p>

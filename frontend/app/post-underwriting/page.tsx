@@ -314,7 +314,7 @@ function GateStepItem({ step, isLast, isExpanded, onToggle }: { step: any; isLas
                     : "text-slate-600"
                 }`}
               >
-                {tx("Gate")}{" "}{step.num}: {step.title}
+                {tx("Gate")}{tx(" ")}{step.num}: {tx(step.title)}
               </h4>
               
               <span className={`text-[10px] text-slate-400 font-mono transition-all duration-300 hidden sm:inline-block ${isExpanded ? "opacity-100 max-w-full ml-1" : "opacity-0 max-w-0 overflow-hidden m-0"}`}>
@@ -352,7 +352,7 @@ function GateStepItem({ step, isLast, isExpanded, onToggle }: { step: any; isLas
             <div className="overflow-hidden">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  {step.desc}
+                  {tx(step.desc)}
                 </p>
                 <div 
                   className="shrink-0"
@@ -1420,7 +1420,7 @@ export default function PostUnderwritingPage() {
                             {isDone ? "✓" : idx + 1}
                           </div>
                           <span className={`text-[10px] font-semibold leading-tight ${isCurrent ? "text-sky-900 font-extrabold" : "text-slate-500"}`}>
-                            {step.label}
+                            {tx(step.label)}
                           </span>
                         </div>
                       );
@@ -1601,7 +1601,7 @@ export default function PostUnderwritingPage() {
                         {tx("Underwriting Authority Routing Matrix (Sign-Off Control)")}
                       </h3>
                       <p className="text-[11px] text-sky-800 mt-0.5">
-                        {authority.description}
+                        {tx(authority.description)}
                       </p>
                     </div>
                     <span className={`px-3 py-1 rounded-full text-xs font-extrabold border ${authority.badgeClass}`}>

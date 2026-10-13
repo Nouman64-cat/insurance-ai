@@ -54,7 +54,7 @@ export function RiskPulseCard({ riskIndex, avgOpenFraudProb, atRiskPolicyShare, 
           sublabel="/ 100"
         />
         <span className={`mt-3 text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border ${band.chip}`}>
-          {band.label}
+          {tx(band.label)}
         </span>
         {trend && (
           <p className={`mt-1.5 text-[10px] font-semibold ${TREND_COLOR[trend.direction]}`}>{trend.value}</p>

@@ -182,9 +182,9 @@ export default function ClaimsPanel({ tenantId, orgId, mp }: PanelProps) {
               <button onClick={() => toggle(c)} className="w-full px-5 py-3 flex items-center gap-4 text-left hover:bg-slate-50">
                 <span className="font-mono text-xs text-slate-500 w-28 truncate">{c.claim_number}</span>
                 <span className="text-sm font-semibold text-slate-800 w-44 truncate">{c.member}{c.dependent ? " " + tx("· for {0}", { 0: c.dependent }) : ""}</span>
-                <span className="text-xs text-slate-500 w-36">{RIDER_LABEL[c.coverage_type ?? ""] ?? c.claim_type}</span>
+                <span className="text-xs text-slate-500 w-36">{tx(RIDER_LABEL[c.coverage_type ?? ""] ?? c.claim_type)}</span>
                 <Chip status={claimTone(c.status)}>{c.status}</Chip>
-                {(c.missing_documents?.length ?? 0) > 0 && !CLOSED.has(c.status) && <span className="text-[11px] text-amber-700 font-medium">{c.missing_documents!.length}{" "}{tx("document")}{c.missing_documents!.length === 1 ? "" : "s"}{" "}{tx("missing")}</span>}
+                {(c.missing_documents?.length ?? 0) > 0 && !CLOSED.has(c.status) && <span className="text-[11px] text-amber-700 font-medium">{tx(c.missing_documents!.length === 1 ? "{count} document missing" : "{count} documents missing", { count: c.missing_documents!.length })}</span>}
                 <span className="ml-auto text-sm tabular-nums font-semibold text-slate-800">{pkr(c.submitted_amount)}</span>
               </button>
 

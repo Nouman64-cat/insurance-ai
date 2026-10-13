@@ -91,7 +91,7 @@ export default function CensusUpload({ tenantId, orgId, mp, reload }: PanelProps
       {parsed && (
         <div className="space-y-3">
           <p className="text-xs text-slate-600">
-            <strong>{parsed.filename}</strong> — {parsed.row_count}{" "}{tx("employee row")}{parsed.row_count === 1 ? "" : "s"}
+            <strong>{parsed.filename}</strong> — {tx(parsed.row_count === 1 ? "{count} employee row" : "{count} employee rows", { count: parsed.row_count })}
             {parsed.ignored_columns.length > 0 && <span className="text-amber-700">{" "}{tx("· ignored columns:")}{" "}{parsed.ignored_columns.join(", ")}</span>}
           </p>
           {parsed.warnings.map((w) => <p key={w} className="text-xs text-amber-700">{w}</p>)}
@@ -107,7 +107,7 @@ export default function CensusUpload({ tenantId, orgId, mp, reload }: PanelProps
               </tbody>
             </table>
           </div>
-          {parsed.row_count > preview.length && <p className="text-[11px] text-slate-400">{tx("Showing the first")}{" "}{preview.length}{" "}{tx("rows.")}</p>}
+          {parsed.row_count > preview.length && <p className="text-[11px] text-slate-400">{tx("Showing the first {count} rows.", { count: preview.length })}</p>}
 
           {verdict && (verdict.is_valid ? (
             <div className="flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
@@ -125,7 +125,7 @@ export default function CensusUpload({ tenantId, orgId, mp, reload }: PanelProps
             <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-1">
               <p className="text-sm font-bold text-red-700">{tx("Fix these before enrolling — nothing has been saved:")}</p>
               {problems.slice(0, 12).map((p, i) => <p key={i} className="text-xs text-red-700">• {p}</p>)}
-              {problems.length > 12 && <p className="text-xs text-red-700">{tx("…and")}{" "}{problems.length - 12}{" "}{tx("more.")}</p>}
+              {problems.length > 12 && <p className="text-xs text-red-700">{tx("…and {count} more.", { count: problems.length - 12 })}</p>}
               {verdict.duplicate_cnics.length > 0 && <p className="text-xs text-red-700">{tx("• Duplicate CNICs:")}{" "}{verdict.duplicate_cnics.join(", ")}</p>}
               <button onClick={reset} className="mt-1 text-xs font-semibold text-red-700 underline">{tx("Choose a corrected file")}</button>
             </div>

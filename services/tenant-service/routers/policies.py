@@ -983,6 +983,7 @@ async def initiate_payment(
     session: AsyncSession = Depends(get_session),
 ):
     policy = await _get_policy(session, tenant_id, policy_id)
+    await session.refresh(policy, with_for_update=True)
     if _st(policy) != PolicyStatusEnum.PENDING_PAYMENT.value:
         raise HTTPException(400, f"Policy is not awaiting payment (current: {_st(policy)})")
 
@@ -990,8 +991,12 @@ async def initiate_payment(
     if schedule is None:
         raise HTTPException(400, "No pending premium installment found for this policy")
 
+    from shared.commissions.calculator import money
+    balance = money(schedule.amount_due) - money(schedule.amount_paid)
+    if balance <= 0:
+        raise HTTPException(409, "No outstanding first-premium balance")
     try:
-        intent = payment_gateway.initiate_payment(schedule.amount_due, body.method)
+        intent = payment_gateway.initiate_payment(float(balance), body.method)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -1001,7 +1006,7 @@ async def initiate_payment(
 
     return {
         "policy_id": str(policy_id),
-        "amount_due": round(schedule.amount_due, 2),
+        "amount_due": float(balance),
         "payment": intent.to_dict(),
         "available_payment_methods": payment_gateway.available_methods(),
     }

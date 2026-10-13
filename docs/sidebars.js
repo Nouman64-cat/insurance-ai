@@ -12,7 +12,7 @@ const sidebars = {
       type: 'category',
       label: 'Underwriting & Policies',
       collapsed: false,
-      items: ['policy-lifecycle', 'cases', 'artifacts', 'fraud-layer'],
+      items: ['policy-lifecycle', 'commission-earnings', 'cases', 'artifacts', 'fraud-layer'],
     },
     {
       type: 'category',

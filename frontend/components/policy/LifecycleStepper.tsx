@@ -91,7 +91,7 @@ export function LifecycleStepper({ status, compact = false }: Readonly<Lifecycle
                     state === "upcoming" ? "text-slate-400" : "text-slate-700"
                   }`}
                 >
-                  {stage.label}
+                  {tx(stage.label)}
                 </p>
               </div>
             )}

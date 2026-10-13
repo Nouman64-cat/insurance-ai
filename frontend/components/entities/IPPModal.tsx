@@ -96,7 +96,7 @@ export function IPPModal({ caseId, customerName, onClose, onConfirmed }: {
                   onClick={() => setSelected(m.code)}
                   className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${selected === m.code ? "bg-blue-50 border-blue-300 text-blue-800" : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"}`}
                 >
-                  {m.label}
+                  {tx(m.label)}
                 </button>
               ))}
             </div>

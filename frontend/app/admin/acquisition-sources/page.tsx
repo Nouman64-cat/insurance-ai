@@ -425,7 +425,7 @@ export default function AcquisitionSourcesPage() {
               key={chip.key}
               className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-medium"
             >
-              {chip.label}
+              {tx(chip.label)}
               <button
                 onClick={chip.onRemove}
                 className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-blue-100 text-blue-400 hover:text-blue-700"
@@ -461,7 +461,7 @@ export default function AcquisitionSourcesPage() {
                   <div className="flex items-center gap-2">
                     <span className={`w-2.5 h-2.5 rounded-full ${SOURCE_TYPE_STYLE[type].split(' ')[0]}`} />
                     <span className="text-xs font-bold tabular-nums text-slate-400">{SOURCE_TYPE_NUMBER[type]}</span>
-                    <h3 className="text-sm font-bold text-slate-800 tracking-wide uppercase">{SOURCE_TYPE_LABELS[type]}</h3>
+                    <h3 className="text-sm font-bold text-slate-800 tracking-wide uppercase">{tx(SOURCE_TYPE_LABELS[type])}</h3>
                   </div>
                   <span className="px-2.5 py-0.5 bg-white border border-slate-200 text-slate-600 text-xs font-bold rounded-full shadow-sm">{colSources.length}</span>
                 </div>
@@ -538,7 +538,7 @@ export default function AcquisitionSourcesPage() {
                     </td>
                     <td className="px-5 py-4">
                       <span className={`inline-flex px-2.5 py-1 rounded-md text-[10px] font-bold border ${SOURCE_TYPE_STYLE[s.source_type]}`}>
-                        {SOURCE_TYPE_LABELS[s.source_type]}
+                        {tx(SOURCE_TYPE_LABELS[s.source_type])}
                       </span>
                     </td>
                     <td className="px-5 py-4">
@@ -675,7 +675,7 @@ export default function AcquisitionSourcesPage() {
                     className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
                   >
                     {SOURCE_TYPES.map((t) => (
-                      <option key={t} value={t}>{SOURCE_TYPE_NUMBER[t]}. {SOURCE_TYPE_LABELS[t]}</option>
+                      <option key={t} value={t}>{SOURCE_TYPE_NUMBER[t]}. {tx(SOURCE_TYPE_LABELS[t])}</option>
                     ))}
                   </select>
                 </div>

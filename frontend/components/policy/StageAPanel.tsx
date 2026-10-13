@@ -191,7 +191,7 @@ export function StageAPanel({ policyId, onChanged }: StageAPanelProps) {
       {/* Demo-bypass audit - mandatory gates waved through in demo mode */}
       {bypass && bypass !== "NotFlagged" && (
         <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-800">
-          <span className="font-semibold">{tx("⚠ Demo bypass:")}</span> {BYPASS_LABEL[bypass] ?? bypass}{tx(". Blocked in production - backfill before this contract is treated as production-grade.")}
+          <span className="font-semibold">{tx("⚠ Demo bypass:")}</span> {tx(BYPASS_LABEL[bypass] ?? bypass)}{tx(". Blocked in production - backfill before this contract is treated as production-grade.")}
         </div>
       )}
       {err && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2">{err}</div>}
@@ -243,7 +243,7 @@ export function StageAPanel({ policyId, onChanged }: StageAPanelProps) {
               {reqs.map((r) => (
                 <div key={r.id} className="flex items-center justify-between gap-2 bg-slate-50 rounded-md px-2.5 py-1.5">
                   <div className="min-w-0">
-                    <p className="text-xs font-medium text-slate-700 truncate">{r.label}</p>
+                    <p className="text-xs font-medium text-slate-700 truncate">{tx(r.label)}</p>
                     <p className="text-[10px] text-slate-400">{r.status}</p>
                   </div>
                   {r.status !== "Verified" && r.status !== "Waived" && (

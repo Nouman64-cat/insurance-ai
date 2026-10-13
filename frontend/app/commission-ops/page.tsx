@@ -402,7 +402,7 @@ export default function CommissionOpsPage() {
               <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl space-y-1">
                 <p className="font-bold text-slate-900">
                   {tx("Reversing")}{" "}{fmtPKR(clawbackTarget.netCommission)}{" "}{tx("from")}{" "}{clawbackTarget.payeeName} (
-                  {PAYEE_TYPE_LABELS[clawbackTarget.payeeType]})
+                  {tx(PAYEE_TYPE_LABELS[clawbackTarget.payeeType])})
                 </p>
                 <p className="text-[11px] text-slate-600">
                   {clawbackTarget.status === "DISBURSED"
@@ -608,7 +608,7 @@ function OpsOverviewTab({ stats, ledger }: { stats: CommissionSummaryStats; ledg
               const pct = channelTotalNet > 0 ? Math.round((c.net / channelTotalNet) * 100) : 0;
               return (
                 <div key={c.channel} className="flex justify-between items-center text-xs py-1 border-b border-slate-100">
-                  <span className="font-semibold text-slate-700">{CHANNEL_LABELS[c.channel]}</span>
+                  <span className="font-semibold text-slate-700">{tx(CHANNEL_LABELS[c.channel])}</span>
                   <span className="font-mono font-bold text-slate-900">{fmtPKRCompact(c.net)} ({pct}%)</span>
                 </div>
               );

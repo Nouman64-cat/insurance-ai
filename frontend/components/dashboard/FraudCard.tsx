@@ -67,7 +67,7 @@ export function FraudCard({ claims }: { claims: Claim[] }) {
             <div key={a.label} className="flex items-center gap-2 py-2 border-b border-slate-100 last:border-0">
               <span className={`w-2 h-2 rounded-full flex-shrink-0 ${DOT[a.severity]}`} />
               <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-semibold text-slate-800 leading-tight truncate">{a.label}</p>
+                <p className="text-[11px] font-semibold text-slate-800 leading-tight truncate">{tx(a.label)}</p>
                 <p className="text-[9px] text-slate-400 leading-tight truncate">{a.detail}</p>
               </div>
               <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${BADGE[a.severity]}`}>

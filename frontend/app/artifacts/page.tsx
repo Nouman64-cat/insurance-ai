@@ -709,7 +709,7 @@ function OcrStatusBadge({ status }: { status: OcrStatus }) {
   const cfg = OCR_STATUS_CFG[status];
   return (
     <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${cfg.color}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />{cfg.label}
+      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />{tx(cfg.label)}
     </span>
   );
 }

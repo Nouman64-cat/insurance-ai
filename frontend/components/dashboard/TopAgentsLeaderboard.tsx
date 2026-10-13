@@ -52,7 +52,7 @@ export function TopAgentsLeaderboard({ payees, ledger }: TopAgentsLeaderboardPro
       barClass="bg-amber-500"
       iconBg="bg-amber-50"
       iconColor="text-amber-600"
-      headerExtra={<span className="text-[10px] font-semibold text-slate-400">Selected range</span>}
+      headerExtra={<span className="text-[10px] font-semibold text-slate-400">{tx("Selected range")}</span>}
     >
       {ranked.length === 0 ? (
         <p className="text-xs text-slate-400 py-2">{tx("No commission activity yet in the selected range.")}</p>

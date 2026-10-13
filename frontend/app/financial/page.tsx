@@ -68,7 +68,7 @@ export default function FinancialPage() {
               ].map(s => (
                 <div key={s.label} className="text-center">
                   <p className="text-xs font-bold text-slate-800">{s.value}</p>
-                  <p className="text-[10px] text-slate-400">{s.label}</p>
+                  <p className="text-[10px] text-slate-400">{tx(s.label)}</p>
                 </div>
               ))}
             </div>

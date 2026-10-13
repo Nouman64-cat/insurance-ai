@@ -365,7 +365,7 @@ function BranchManagementContent() {
           </span>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-slate-800">{success}</p>
-            {successNext && <p className="mt-1 text-xs text-slate-500">{successNext.hint}</p>}
+            {successNext && <p className="mt-1 text-xs text-slate-500">{tx(successNext.hint)}</p>}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {successNext && (
@@ -373,7 +373,7 @@ function BranchManagementContent() {
                 href={successNext.href}
                 className="px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors whitespace-nowrap"
               >
-                {successNext.label} →
+                {tx(successNext.label)} →
               </Link>
             )}
             <button
@@ -554,7 +554,7 @@ function BranchManagementContent() {
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
                   >
                     {BRANCH_TYPES.map((t) => (
-                      <option key={t.value} value={t.value}>{t.label}</option>
+                      <option key={t.value} value={t.value}>{tx(t.label)}</option>
                     ))}
                   </select>
                 </div>
@@ -709,7 +709,7 @@ function BranchManagementContent() {
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
                   >
                     {BRANCH_TYPES.map((t) => (
-                      <option key={t.value} value={t.value}>{t.label}</option>
+                      <option key={t.value} value={t.value}>{tx(t.label)}</option>
                     ))}
                   </select>
                 </div>

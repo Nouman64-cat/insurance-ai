@@ -209,7 +209,7 @@ function GateStepItem({
                       : "text-slate-600"
                 }`}
               >
-                {tx("Gate")} {step.num}: {step.title}
+                {tx("Gate")} {step.num}: {tx(step.title)}
               </h4>
 
               <span
@@ -254,7 +254,7 @@ function GateStepItem({
             <div className="overflow-hidden">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  {step.desc}
+                  {tx(step.desc)}
                 </p>
                 <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
                   {readOnly ? (
@@ -1189,7 +1189,7 @@ function UnderwritingMainContent() {
                               <span
                                 className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider border ${SEGMENT_BADGE_STYLE[c.customer_segment]}`}
                               >
-                                {SEGMENT_LABEL[c.customer_segment]}
+                                {tx(SEGMENT_LABEL[c.customer_segment])}
                               </span>
                             )}
                           </div>
@@ -2092,7 +2092,7 @@ function UnderwritingMainContent() {
                               <span
                                 className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold border uppercase tracking-wide ${SEGMENT_BADGE_STYLE[folder.customer_segment]}`}
                               >
-                                {SEGMENT_LABEL[folder.customer_segment]}
+                                {tx(SEGMENT_LABEL[folder.customer_segment])}
                               </span>
                               {decidedCount > 0 && (
                                 <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">
@@ -2761,7 +2761,7 @@ export default function UnderwritingPage() {
     <Suspense
       fallback={
         <div className="p-8 text-center text-slate-500">
-          Loading Underwriting Hub…
+          {tx("Loading Underwriting Hub…")}
         </div>
       }
     >

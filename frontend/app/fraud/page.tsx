@@ -70,9 +70,9 @@ export default function FraudPage() {
           { label: "Suspicious Patterns", desc: "Behavioral & network anomalies", count: "8 monitored", color: "border-amber-200 bg-amber-50" },
         ].map(c => (
           <div key={c.label} className={`rounded-xl border-2 p-4 ${c.color}`}>
-            <p className="text-xs font-bold text-slate-600 uppercase tracking-wider">{c.label}</p>
+            <p className="text-xs font-bold text-slate-600 uppercase tracking-wider">{tx(c.label)}</p>
             <p className="text-2xl font-extrabold text-slate-800 mt-2">{c.count}</p>
-            <p className="text-[11px] text-slate-500 mt-1">{c.desc}</p>
+            <p className="text-[11px] text-slate-500 mt-1">{tx(c.desc)}</p>
           </div>
         ))}
       </div>

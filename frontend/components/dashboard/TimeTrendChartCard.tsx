@@ -265,8 +265,8 @@ export function TimeTrendChartCard({ policies, claims, ledger, title }: TimeTren
             onChange={(e) => setViewMetric(e.target.value as ViewMetric)}
             className="text-[10px] font-bold bg-slate-100/90 border border-slate-200 rounded-lg px-2 py-1 text-slate-700 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-200"
           >
-            <option value="financials">Financial Dynamics</option>
-            <option value="volume">Policy / Claim Volume</option>
+            <option value="financials">{tx("Financial Dynamics")}</option>
+            <option value="volume">{tx("Policy / Claim Volume")}</option>
           </select>
 
           {/* Chart style toggle */}

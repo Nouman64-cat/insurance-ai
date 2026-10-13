@@ -51,6 +51,8 @@ export function t(key: string, vars?: Vars): string {
  * messages/ur-text.ts. Wording with no translation yet is returned as it is, so it still reads as English.
  */
 export function tx(text: string, vars?: Vars): string {
+  // Labels looked up from a map (tx(LABELS[code])) can be missing for an unknown code: render nothing, don't throw.
+  if (typeof text !== "string") return text == null ? "" : String(text);
   const translated = current === "ur" ? urText[text.trim()] : undefined;
   return translated === undefined ? fill(text, vars) : marked(fill(translated, vars, true));
 }

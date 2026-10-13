@@ -97,7 +97,7 @@ export function StatusDropdown({ value, onChange, counts, className = "" }: Stat
           <span className="text-slate-400 font-medium">{tx("Pipeline:")}</span> 
           <span className="flex items-center gap-1.5 ml-1">
             <span className={`w-2 h-2 rounded-full ${selected.dot}`} />
-            {selected.label}
+            {tx(selected.label)}
           </span>
         </div>
         {counts?.[value] != null && (
@@ -152,8 +152,8 @@ export function StatusDropdown({ value, onChange, counts, className = "" }: Stat
                        <div className={`w-2.5 h-2.5 rounded-full ring-4 ${isSelected ? 'ring-white/50' : 'ring-white'} ${opt.dot} shadow-sm group-hover:scale-125 transition-transform`} />
                      </div>
                      <div className="flex-1 min-w-0">
-                       <div className={`text-sm font-bold truncate ${isSelected ? '' : 'text-slate-700'}`}>{opt.label}</div>
-                       <div className={`text-[11px] leading-snug truncate ${isSelected ? 'opacity-80' : 'text-slate-500'}`}>{opt.description}</div>
+                       <div className={`text-sm font-bold truncate ${isSelected ? '' : 'text-slate-700'}`}>{tx(opt.label)}</div>
+                       <div className={`text-[11px] leading-snug truncate ${isSelected ? 'opacity-80' : 'text-slate-500'}`}>{tx(opt.description)}</div>
                      </div>
                      {counts?.[opt.value] != null && (
                        <div className={`text-xs font-bold mt-0.5 ${isSelected ? 'opacity-90' : 'text-slate-400'}`}>{counts[opt.value]}</div>

@@ -397,7 +397,7 @@ export function Density3DMapCardImpl({
                     : "text-slate-500 hover:text-slate-800 hover:bg-white/50"
                 }`}
               >
-                {METRIC_LABELS[mode]}
+                {tx(METRIC_LABELS[mode])}
               </button>
             ))}
           </div>
@@ -500,7 +500,7 @@ export function Density3DMapCardImpl({
 
         {/* By Province — selectable region leaderboard */}
         <div className="space-y-1.5 pt-1">
-          <h4 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">{tx("By Province —")}{" "}{METRIC_LABELS[metricMode]}</h4>
+          <h4 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">{tx("By Province —")}{tx(" ")}{tx(METRIC_LABELS[metricMode])}</h4>
           <div className="space-y-1">
             {provinceStats.map((p) => {
               const share = maxProvinceValue > 0 ? (p.value / maxProvinceValue) * 100 : 0;
@@ -555,7 +555,7 @@ export function Density3DMapCardImpl({
         {/* Top Cities Leaderboard */}
         <div className="space-y-1.5 pt-1">
           <div className="flex justify-between items-center">
-            <h4 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">{tx("Top Cities —")}{" "}{METRIC_LABELS[metricMode]}</h4>
+            <h4 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">{tx("Top Cities —")}{tx(" ")}{tx(METRIC_LABELS[metricMode])}</h4>
             <span className="text-[10px] text-slate-400 font-semibold">{topCities.length}{" "}{tx("cities")}</span>
           </div>
 

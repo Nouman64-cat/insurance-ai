@@ -278,7 +278,7 @@ function SuccessModal({ result, policyName, onClose }: SuccessModalProps) {
             ...(isPending && result.payment ? [{ label: "Payment Reference", value: result.payment.reference }] : []),
           ].map(row => (
             <div key={row.label} className="flex justify-between items-center py-1.5 border-b border-slate-50 last:border-0">
-              <p className="text-xs text-slate-500">{row.label}</p>
+              <p className="text-xs text-slate-500">{tx(row.label)}</p>
               <p className="text-xs font-bold text-slate-900">{row.value}</p>
             </div>
           ))}
@@ -410,7 +410,7 @@ function PaymentModal({ policy, onClose, onConfirmed, userRole }: PaymentModalPr
                   onClick={() => setSelected(m.code)}
                   className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${selected === m.code ? "bg-blue-50 border-blue-300 text-blue-800" : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"}`}
                 >
-                  {m.label}
+                  {tx(m.label)}
                 </button>
               ))}
             </div>
@@ -715,7 +715,7 @@ function PolicyIssuanceContent() {
               key={chip.key}
               className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-medium"
             >
-              {chip.label}
+              {tx(chip.label)}
               <button
                 onClick={chip.onRemove}
                 className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-blue-100 text-blue-400 hover:text-blue-700"
@@ -926,7 +926,7 @@ function PolicyIssuanceContent() {
 
 export default function PolicyIssuancePage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center text-slate-500">Loading Policy Issuance Hub…</div>}>
+    <Suspense fallback={<div className="p-8 text-center text-slate-500">{tx("Loading Policy Issuance Hub…")}</div>}>
       <PolicyIssuanceContent />
     </Suspense>
   );

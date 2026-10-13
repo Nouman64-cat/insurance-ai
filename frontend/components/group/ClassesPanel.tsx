@@ -121,7 +121,7 @@ export default function ClassesPanel({ tenantId, orgId, mp, reload }: PanelProps
                     <div className="flex flex-wrap items-center gap-1.5">
                       {(c.coverages ?? []).filter((v) => v.coverage_type !== "Life").map((v) => (
                         <span key={v.id ?? v.coverage_type} className="inline-flex items-center gap-1 text-[11px] border border-slate-200 rounded px-1.5 py-0.5 text-slate-700">
-                          {RIDER_LABEL[v.coverage_type] ?? v.coverage_type} {v.percent_of_base}%{v.max_amount ? " " + tx("(max {0})", { 0: pkr(v.max_amount) }) : ""}
+                          {tx(RIDER_LABEL[v.coverage_type] ?? v.coverage_type)} {v.percent_of_base}%{v.max_amount ? " " + tx("(max {0})", { 0: pkr(v.max_amount) }) : ""}
                           {!benefitsLocked && v.id && <button onClick={() => removeRider(c, v.id!)} className="text-slate-400 hover:text-red-600" aria-label={tx("Remove benefit")}>✕</button>}
                         </span>
                       ))}

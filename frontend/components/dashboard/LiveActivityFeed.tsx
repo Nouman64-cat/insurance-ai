@@ -74,7 +74,7 @@ export function LiveActivityFeed({ policies, claims, limit = 8 }: LiveActivityFe
             <span className="absolute inline-flex w-full h-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
             <span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-emerald-500" />
           </span>
-          Live
+          {tx("Live")}
         </span>
       }
     >
@@ -87,7 +87,7 @@ export function LiveActivityFeed({ policies, claims, limit = 8 }: LiveActivityFe
               <span className={`w-2 h-2 rounded-full shrink-0 ${e.dot}`} />
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-semibold text-slate-800 truncate">
-                  {e.label} <span className="font-normal text-slate-500">{e.detail}</span>
+                  {tx(e.label)} <span className="font-normal text-slate-500">{e.detail}</span>
                 </p>
               </div>
               <span className="text-[10px] text-slate-400 shrink-0 tabular-nums">{formatRelativeTime(e.at)}</span>

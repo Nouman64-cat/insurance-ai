@@ -857,7 +857,7 @@ export default function LeadsHubPage() {
                     }`}
                   >
                     {st.id !== "ALL" && <span className={`h-2 w-2 rounded-full ${on ? "bg-white" : st.dot}`} />}
-                    {st.label}
+                    {tx(st.label)}
                     <span className={`tabular-nums ${on ? "text-blue-100" : "text-slate-400"}`}>{count}</span>
                   </button>
                 );
@@ -873,7 +873,7 @@ export default function LeadsHubPage() {
                 key={chip.key}
                 className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-medium"
               >
-                {chip.label}
+                {tx(chip.label)}
                 <button
                   onClick={chip.onRemove}
                   className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-blue-100 text-blue-400 hover:text-blue-700"

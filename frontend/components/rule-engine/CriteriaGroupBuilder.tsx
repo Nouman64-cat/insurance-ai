@@ -118,7 +118,7 @@ export default function CriteriaGroupBuilder({ criteria, onChange }: Props) {
                         >
                           {OPERATOR_OPTIONS.map((op) => (
                             <option key={op.value} value={op.value}>
-                              {op.label}
+                              {tx(op.label)}
                             </option>
                           ))}
                         </select>

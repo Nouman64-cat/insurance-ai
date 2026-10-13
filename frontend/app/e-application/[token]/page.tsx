@@ -855,7 +855,7 @@ function StepMedical({
                     updateCondition(c.key, { checked: e.target.checked })
                   }
                 />
-                {c.label}
+                {tx(c.label)}
               </label>
               {c.checked && (
                 <div className="grid grid-cols-2 gap-2 mt-2 pl-5">
@@ -1058,7 +1058,7 @@ function StepMedical({
             key={q.key}
             className="border-b border-slate-100 py-2.5 last:border-0"
           >
-            <p className="text-sm text-slate-700">{q.label}</p>
+            <p className="text-sm text-slate-700">{tx(q.label)}</p>
             <div className="flex gap-4 mt-1.5">
               {(["Yes", "No"] as const).map((opt) => (
                 <label
@@ -1540,7 +1540,7 @@ function StepDeclaration({
               checked={!!declaration[it.key]}
               onChange={(e) => set({ [it.key]: e.target.checked })}
             />
-            {it.label}
+            {tx(it.label)}
           </label>
         ))}
       </div>

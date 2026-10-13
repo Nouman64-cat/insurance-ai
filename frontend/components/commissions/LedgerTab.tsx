@@ -74,7 +74,7 @@ function PolicyEventBar({
                 }`}
             >
               <span className={at ? "text-emerald-600 mr-1" : "text-slate-300 mr-1"}>{at ? "✓" : "○"}</span>
-              {POLICY_EVENT_LABELS[event]}
+              {tx(POLICY_EVENT_LABELS[event])}
             </button>
           ))}
         </div>
@@ -247,7 +247,7 @@ export default function LedgerTab({
             <option value="all">{tx("All Channels")}</option>
             {(Object.keys(CHANNEL_LABELS) as DistributionChannel[]).map((c) => (
               <option key={c} value={c}>
-                {CHANNEL_LABELS[c]}
+                {tx(CHANNEL_LABELS[c])}
               </option>
             ))}
           </select>
@@ -256,7 +256,7 @@ export default function LedgerTab({
             <option value="all">{tx("All Roles")}</option>
             {(Object.keys(PAYEE_TYPE_LABELS) as PayeeType[]).map((t) => (
               <option key={t} value={t}>
-                {PAYEE_TYPE_LABELS[t]}
+                {tx(PAYEE_TYPE_LABELS[t])}
               </option>
             ))}
           </select>

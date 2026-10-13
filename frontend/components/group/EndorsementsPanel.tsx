@@ -134,7 +134,7 @@ export default function EndorsementsPanel({ tenantId, orgId, mp, reload }: Panel
           <div className="flex items-center gap-2 flex-wrap">
             {(Object.keys(KIND_LABEL) as Kind[]).map((k) => (
               <button key={k} onClick={() => { setKind(k); setPicked(new Set()); setPreview(null); }}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg border ${kind === k ? "bg-blue-600 text-white border-blue-600" : "text-slate-600 border-slate-200 hover:bg-slate-50"}`}>{KIND_LABEL[k]}</button>
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg border ${kind === k ? "bg-blue-600 text-white border-blue-600" : "text-slate-600 border-slate-200 hover:bg-slate-50"}`}>{tx(KIND_LABEL[k])}</button>
             ))}
             <label className="ml-auto text-xs font-semibold text-slate-600 flex items-center gap-2">{tx("Effective")}
               <input type="date" className={field} value={effective} min={mp.effective_date} max={mp.expiry_date ?? undefined} onChange={(e) => { setEffective(e.target.value); setPreview(null); }} /></label>
@@ -159,7 +159,7 @@ export default function EndorsementsPanel({ tenantId, orgId, mp, reload }: Panel
                 <button onClick={addQuick} disabled={!quick.name || !quick.cnic || !quick.dob} className="px-3 py-1.5 text-xs font-semibold text-white bg-slate-700 hover:bg-slate-800 disabled:opacity-40 rounded-lg">{tx("Add to list")}</button>
               </div>
               {rows.length > 0 && (
-                <p className="text-xs text-slate-600">{rows.length}{" "}{tx("joiner")}{rows.length === 1 ? "" : "s"}: {rows.slice(0, 5).map((r) => r.name).join(", ")}{rows.length > 5 ? "…" : ""}
+                <p className="text-xs text-slate-600">{tx(rows.length === 1 ? "{count} joiner" : "{count} joiners", { count: rows.length })}: {rows.slice(0, 5).map((r) => r.name).join(", ")}{rows.length > 5 ? "…" : ""}
                   <button onClick={() => { setRows([]); setPreview(null); }} className="ml-3 text-red-600 font-semibold">{tx("Clear")}</button></p>
               )}
             </div>
@@ -221,7 +221,7 @@ export default function EndorsementsPanel({ tenantId, orgId, mp, reload }: Panel
             <div key={e.id} className="border-b border-slate-100 last:border-0">
               <button onClick={() => setOpen(open === e.id ? null : e.id)} className="w-full px-5 py-3 flex items-center gap-4 text-left hover:bg-slate-50">
                 <span className="font-mono text-xs text-slate-500 w-44 truncate">{e.number}</span>
-                <span className="text-sm font-semibold text-slate-800 w-28">{KIND_LABEL[e.endorsement_type]}</span>
+                <span className="text-sm font-semibold text-slate-800 w-28">{tx(KIND_LABEL[e.endorsement_type])}</span>
                 <span className="text-xs text-slate-500 w-24">{e.effective_date}</span>
                 <Chip status={e.status === "Applied" ? "Active" : e.status === "PendingUnderwriting" ? "Pending" : e.status}>{e.status === "PendingUnderwriting" ? tx("Awaiting underwriting") : e.status}</Chip>
                 <span className="ml-auto text-sm tabular-nums font-semibold text-slate-800">{signedPkr(e.premium_delta)}</span>

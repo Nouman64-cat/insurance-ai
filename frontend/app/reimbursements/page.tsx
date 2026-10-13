@@ -59,7 +59,7 @@ export default function ReimbursementsPage() {
           { label: "Fraud Control Score", score: 90, color: "bg-blue-500" },
         ].map(s => (
           <div key={s.label} className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">{s.label}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">{tx(s.label)}</p>
             <p className="text-3xl font-extrabold text-slate-800 mb-2">{s.score}</p>
             <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
               <div className={`h-full rounded-full ${s.color}`} style={{ width: `${s.score}%` }} />

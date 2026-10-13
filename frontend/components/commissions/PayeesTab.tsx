@@ -113,7 +113,7 @@ export default function PayeesTab({
                 : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
               }`}
           >
-            {PAYEE_TYPE_LABELS[c.type]}
+            {tx(PAYEE_TYPE_LABELS[c.type])}
             <span className={`ml-2 font-mono ${typeFilter === c.type ? "text-blue-100" : "text-slate-400"}`}>
               {c.count}
             </span>
@@ -131,7 +131,7 @@ export default function PayeesTab({
                 onClick={() => setView("table")}
                 className={`px-3 py-1.5 text-[11px] font-bold ${view === "table" ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
               >
-                Table View
+                {tx("Table View")}
               </button>
               {/* <button
                 onClick={() => setView("hierarchy")}
@@ -144,7 +144,7 @@ export default function PayeesTab({
               onClick={() => setShowAdd(true)}
               className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold"
             >
-              + Add Payee
+              {tx("+ Add Payee")}
             </button>
           </>
         }
@@ -171,7 +171,7 @@ export default function PayeesTab({
             <option value="all">{tx("All Channels")}</option>
             {CHANNELS.map((c) => (
               <option key={c} value={c}>
-                {CHANNEL_LABELS[c]}
+                {tx(CHANNEL_LABELS[c])}
               </option>
             ))}
           </select>
@@ -183,7 +183,7 @@ export default function PayeesTab({
             <option value="all">{tx("All Roles")}</option>
             {PAYEE_TYPES.map((t) => (
               <option key={t} value={t}>
-                {PAYEE_TYPE_LABELS[t]}
+                {tx(PAYEE_TYPE_LABELS[t])}
               </option>
             ))}
           </select>
@@ -396,7 +396,7 @@ function HierarchyView({ payees, allPayees }: { payees: CommissionPayee[]; allPa
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
                     <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider">
-                      {CHANNEL_LABELS[root.channel]}{" "}{tx("Team")}
+                      {tx(CHANNEL_LABELS[root.channel])}{tx(" ")}{tx("Team")}
                     </h4>
                     <span className="text-[10px] text-slate-400 font-medium">
                       {tx("· Main Head:")}{" "}<span className="font-semibold text-slate-700">{root.name}</span>
@@ -502,7 +502,7 @@ function AddPayeeModal({
             >
               {PAYEE_TYPES.map((t) => (
                 <option key={t} value={t}>
-                  {PAYEE_TYPE_LABELS[t]}
+                  {tx(PAYEE_TYPE_LABELS[t])}
                 </option>
               ))}
             </select>
@@ -515,7 +515,7 @@ function AddPayeeModal({
             >
               {CHANNELS.map((c) => (
                 <option key={c} value={c}>
-                  {CHANNEL_LABELS[c]}
+                  {tx(CHANNEL_LABELS[c])}
                 </option>
               ))}
             </select>
@@ -529,7 +529,7 @@ function AddPayeeModal({
               <option value="">{tx("— None (Top Manager) —")}</option>
               {payees.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name} ({PAYEE_TYPE_LABELS[p.type]})
+                  {p.name} ({tx(PAYEE_TYPE_LABELS[p.type])})
                 </option>
               ))}
             </select>

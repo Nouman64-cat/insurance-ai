@@ -136,7 +136,7 @@ export function StatusPill({ status, title }: { status: CommissionStatus; title?
       title={title}
       className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border inline-block whitespace-nowrap ${title ? "cursor-help" : ""} ${STATUS_STYLES[status]}`}
     >
-      {STATUS_LABELS[status]}
+      {tx(STATUS_LABELS[status])}
     </span>
   );
 }
@@ -161,7 +161,7 @@ const PAYEE_TYPE_STYLES: Record<PayeeType, string> = {
 export function PayeeTypeBadge({ type }: { type: PayeeType }) {
   return (
     <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border whitespace-nowrap ${PAYEE_TYPE_STYLES[type]}`}>
-      {PAYEE_TYPE_LABELS[type]}
+      {tx(PAYEE_TYPE_LABELS[type])}
     </span>
   );
 }
@@ -169,7 +169,7 @@ export function PayeeTypeBadge({ type }: { type: PayeeType }) {
 export function ChannelBadge({ channel }: { channel: DistributionChannel }) {
   return (
     <span className="px-2 py-0.5 rounded text-[10px] font-semibold border bg-slate-50 text-slate-700 border-slate-200 whitespace-nowrap">
-      {CHANNEL_LABELS[channel]}
+      {tx(CHANNEL_LABELS[channel])}
     </span>
   );
 }
@@ -196,7 +196,7 @@ const ENTRY_KIND_STYLES: Record<CommissionEntryKind, string> = {
 export function EntryKindBadge({ kind }: { kind: CommissionEntryKind }) {
   return (
     <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border whitespace-nowrap ${ENTRY_KIND_STYLES[kind]}`}>
-      {ENTRY_KIND_LABELS[kind]}
+      {tx(ENTRY_KIND_LABELS[kind])}
     </span>
   );
 }
@@ -204,7 +204,7 @@ export function EntryKindBadge({ kind }: { kind: CommissionEntryKind }) {
 export function BasisLabel({ basis, amount }: { basis: CommissionBasis; amount: number }) {
   return (
     <div className="leading-tight">
-      <p className="text-[10px] font-semibold text-slate-600">{BASIS_LABELS[basis]}</p>
+      <p className="text-[10px] font-semibold text-slate-600">{tx(BASIS_LABELS[basis])}</p>
       <p className="text-[10px] font-mono text-slate-400">{fmtPKR(amount)}</p>
     </div>
   );
@@ -306,7 +306,7 @@ export function GatingList({
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-1">
-                <p className="font-extrabold text-slate-900 text-xs">{c.label}</p>
+                <p className="font-extrabold text-slate-900 text-xs">{tx(c.label)}</p>
                 <span
                   className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
                     c.passed
@@ -343,7 +343,7 @@ export function StageStatusPill({ status }: { status: StageStatus }) {
   const style = STAGE_STATUS_STYLES[status];
   return (
     <span className={`px-2 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap ${style.pill}`}>
-      {style.label}
+      {tx(style.label)}
     </span>
   );
 }
@@ -473,7 +473,7 @@ export function StageTimeline({
 
               {/* Body: Milestone Title + Amount + Reason */}
               <div className="space-y-1">
-                <p className="font-extrabold text-slate-900 text-xs">{s.label}</p>
+                <p className="font-extrabold text-slate-900 text-xs">{tx(s.label)}</p>
                 <p
                   className={`font-mono text-base font-black tracking-tight ${
                     isDue

@@ -200,7 +200,7 @@ export default function CustomerPlansPage() {
                     </span>
                   )}
                   <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${INSURANCE_TYPE_COLORS[policy.insurance_type] ?? "bg-slate-100 text-slate-700 border-slate-200"}`}>
-                    {INSURANCE_TYPE_LABELS[policy.insurance_type] ?? policy.insurance_type}
+                    {tx(INSURANCE_TYPE_LABELS[policy.insurance_type] ?? policy.insurance_type)}
                   </span>
                 </div>
               </div>

@@ -55,33 +55,33 @@ export function UnderwritingInsights({ policyStats, issuanceVelocity }: Underwri
     const atRisk = policyStats.grace_period + policyStats.lapsed;
     const atRiskSharePct = (atRisk / policyStats.total) * 100;
     if (atRiskSharePct >= 15) {
-      insights.push({ key: "lapse", severity: "critical", text: `High lapse risk: ${atRisk} ${atRisk === 1 ? "policy is" : "policies are"} in grace period or lapsed.` });
+      insights.push({ key: "lapse", severity: "critical", text: tx(atRisk === 1 ? "High lapse risk: {count} policy is in grace period or lapsed." : "High lapse risk: {count} policies are in grace period or lapsed.", { count: atRisk }) });
     } else if (atRiskSharePct >= 8) {
-      insights.push({ key: "lapse", severity: "warning", text: `${atRisk} ${atRisk === 1 ? "policy" : "policies"} sitting in grace period or lapsed — worth a retention push.` });
+      insights.push({ key: "lapse", severity: "warning", text: tx(atRisk === 1 ? "{count} policy sitting in grace period or lapsed — worth a retention push." : "{count} policies sitting in grace period or lapsed — worth a retention push.", { count: atRisk }) });
     }
 
     if (policyStats.expiring_30d > 0) {
-      insights.push({ key: "renewals", severity: "warning", text: `${policyStats.expiring_30d} ${policyStats.expiring_30d === 1 ? "policy expires" : "policies expire"} within 30 days.` });
+      insights.push({ key: "renewals", severity: "warning", text: tx(policyStats.expiring_30d === 1 ? "{count} policy expires within 30 days." : "{count} policies expire within 30 days.", { count: policyStats.expiring_30d }) });
     }
   }
 
   const worstLob = worstLossRatioLine();
   if (worstLob.lossRatio >= 45) {
-    insights.push({ key: "lob", severity: "critical", text: `${worstLob.name} loss ratio elevated at ${worstLob.lossRatio}% — review pricing.` });
+    insights.push({ key: "lob", severity: "critical", text: tx("{line} loss ratio elevated at {ratio}% — review pricing.", { line: tx(worstLob.name), ratio: worstLob.lossRatio }) });
   } else if (worstLob.lossRatio >= 38) {
-    insights.push({ key: "lob", severity: "warning", text: `${worstLob.name} loss ratio at ${worstLob.lossRatio}%, trending toward the review threshold.` });
+    insights.push({ key: "lob", severity: "warning", text: tx("{line} loss ratio at {ratio}%, trending toward the review threshold.", { line: tx(worstLob.name), ratio: worstLob.lossRatio }) });
   }
 
   if (issuanceVelocity) {
     if (issuanceVelocity.direction === "up") {
-      insights.push({ key: "velocity", severity: "success", text: `Issuance velocity ${issuanceVelocity.value} — new business is accelerating.` });
+      insights.push({ key: "velocity", severity: "success", text: tx("Issuance velocity {value} — new business is accelerating.", { value: issuanceVelocity.value }) });
     } else if (issuanceVelocity.direction === "down") {
-      insights.push({ key: "velocity", severity: "warning", text: `Issuance velocity ${issuanceVelocity.value} vs the prior period.` });
+      insights.push({ key: "velocity", severity: "warning", text: tx("Issuance velocity {value} vs the prior period.", { value: issuanceVelocity.value }) });
     }
   }
 
   if (insights.length === 0) {
-    insights.push({ key: "clear", severity: "success", text: "No elevated risk signals in the selected range — portfolio is tracking within normal bounds." });
+    insights.push({ key: "clear", severity: "success", text: tx("No elevated risk signals in the selected range — portfolio is tracking within normal bounds.") });
   }
 
   return (

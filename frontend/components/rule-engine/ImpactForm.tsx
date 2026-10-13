@@ -105,7 +105,7 @@ export default function ImpactForm({ impactType, impactData, onChange }: Props) 
                 <svg className={`w-4 h-4 shrink-0 ${isSelected ? "text-blue-700" : "text-slate-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={cfg.iconPath} />
                 </svg>
-                <span className="text-xs truncate">{cfg.label}</span>
+                <span className="text-xs truncate">{tx(cfg.label)}</span>
               </button>
             );
           })}

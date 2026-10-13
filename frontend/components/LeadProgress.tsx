@@ -96,9 +96,9 @@ export default function LeadProgress({ lead }: { lead: LeadLike }) {
           />
         ))}
       </div>
-      <p className={`mt-1.5 text-xs font-semibold leading-none ${TEXT[s.tone]}`}>{s.label}</p>
+      <p className={`mt-1.5 text-xs font-semibold leading-none ${TEXT[s.tone]}`}>{tx(s.label)}</p>
       <div className="mt-1 flex items-center justify-between gap-3">
-        <p className="text-[11px] leading-none text-slate-400">{s.note}</p>
+        <p className="text-[11px] leading-none text-slate-400">{tx(s.note)}</p>
         {s.href && (
           <Link
             href={s.href}

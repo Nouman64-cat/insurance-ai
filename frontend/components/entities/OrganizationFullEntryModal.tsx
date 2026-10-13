@@ -601,7 +601,7 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
           {tabs.map((t) => (
             <button key={t.id} type="button" onClick={() => setTab(t.id)}
               className={`px-4 py-3 text-xs font-semibold border-b-2 transition-all ${tab === t.id ? "border-blue-600 text-blue-600" : "border-transparent text-slate-400 hover:text-slate-600"}`}>
-              {t.label}
+              {tx(t.label)}
               {tabHasMissing[t.id] && <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-amber-500" title={tx("Fields to fill in on this tab")} />}
             </button>
           ))}
@@ -617,7 +617,7 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
           )}
           {notice && (
             <div className={`rounded-xl p-3.5 text-xs font-medium flex justify-between items-start gap-3 border ${notice.tone === "ok" ? "bg-emerald-50 border-emerald-200 text-emerald-700" : notice.tone === "warn" ? "bg-amber-50 border-amber-200 text-amber-800" : "bg-red-50 border-red-200 text-red-600"}`}>
-              <span>{notice.text}</span>
+              <span>{tx(notice.text)}</span>
               <button type="button" onClick={() => setNotice(null)} className="opacity-60 hover:opacity-100 leading-none">✕</button>
             </div>
           )}

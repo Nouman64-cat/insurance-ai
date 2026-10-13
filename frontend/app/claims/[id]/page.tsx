@@ -1598,14 +1598,14 @@ export default function ClaimDetailPage() {
                       >
                         {options.map(opt => (
                           <option key={opt.value} value={opt.value}>
-                            {opt.label}
+                            {tx(opt.label)}
                           </option>
                         ))}
                       </select>
                       {currentOpt && (
                         <div className="text-[11px] text-slate-600 font-medium mt-2 bg-slate-50 border border-slate-200/80 p-2.5 rounded-lg flex items-start gap-2 leading-relaxed">
                           <span className="text-blue-500 font-bold shrink-0 text-xs">ℹ️</span>
-                          <span>{currentOpt.desc}</span>
+                          <span>{tx(currentOpt.desc)}</span>
                         </div>
                       )}
                     </div>
@@ -1651,12 +1651,12 @@ export default function ClaimDetailPage() {
                       <div className="p-3 bg-white rounded-lg border border-amber-200/80 space-y-2 text-xs">
                         <div className="flex justify-between items-start gap-3">
                           <span className="text-[11px] font-semibold text-slate-500 shrink-0">{tx("Selected Action:")}</span>
-                          <span className="font-bold text-slate-900 text-right">{currentOpt?.label}</span>
+                          <span className="font-bold text-slate-900 text-right">{tx(currentOpt?.label ?? "")}</span>
                         </div>
 
                         <div className="flex justify-between items-start gap-3 pt-2 border-t border-slate-100">
                           <span className="text-[11px] font-semibold text-slate-500 shrink-0">{tx("Policy Impact:")}</span>
-                          <span className="font-medium text-slate-700 text-right leading-snug">{currentOpt?.desc}</span>
+                          <span className="font-medium text-slate-700 text-right leading-snug">{tx(currentOpt?.desc ?? "")}</span>
                         </div>
 
                         <div className="flex justify-between items-start gap-3 pt-2 border-t border-slate-100">

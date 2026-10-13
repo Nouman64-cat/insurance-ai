@@ -216,7 +216,7 @@ export default function ProfilePage() {
           <dl className="border-t border-slate-100 divide-y divide-slate-100">
             {facts.map((f) => (
               <div key={f.label} className="px-5 py-2.5 flex items-center justify-between gap-3">
-                <dt className="text-xs text-slate-500">{f.label}</dt>
+                <dt className="text-xs text-slate-500">{tx(f.label)}</dt>
                 <dd className="text-xs font-medium text-slate-800 text-right truncate">{f.value}</dd>
               </div>
             ))}

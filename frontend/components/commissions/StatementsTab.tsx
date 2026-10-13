@@ -181,7 +181,7 @@ export default function StatementsTab({
                 onChange={(e) => setRoleFilter(e.target.value)}
                 className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700 font-medium focus:outline-hidden focus:border-blue-500 max-w-[110px]"
               >
-                <option value="all">All Roles</option>
+                <option value="all">{tx("All Roles")}</option>
                 {availableRoles.map((role) => (
                   <option key={role} value={role}>
                     {PAYEE_TYPE_LABELS[role as PayeeType] || role}
@@ -258,7 +258,7 @@ export default function StatementsTab({
                     <svg className="w-3.5 h-3.5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                     </svg>
-                    <span>Print Stub</span>
+                    <span>{tx("Print Stub")}</span>
                   </button>
                 </div>
               }

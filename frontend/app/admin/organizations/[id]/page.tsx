@@ -670,7 +670,7 @@ export default function OrganizationDetailPage() {
                   tab === t.id ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-800"
                 }`}
               >
-                {t.label}
+                {tx(t.label)}
               </button>
             ))}
           </div>
@@ -1017,7 +1017,7 @@ export default function OrganizationDetailPage() {
               {tx("Product")}
               <select value={mpForm.plan} onChange={(e) => setMpForm((f) => ({ ...f, plan: e.target.value }))}
                 className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
-                {GROUP_PLANS.map((p) => <option key={p.code} value={p.code}>{p.label}</option>)}
+                {GROUP_PLANS.map((p) => <option key={p.code} value={p.code}>{tx(p.label)}</option>)}
               </select>
             </label>
             <label className="block text-xs font-semibold text-slate-600">
@@ -1059,7 +1059,7 @@ export default function OrganizationDetailPage() {
                 <label className="block text-xs font-semibold text-slate-600">{tx("Product *")}</label>
                 <select value={planCode} onChange={(e) => setPlanCode(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm">
-                  {GROUP_PLANS.map((p) => <option key={p.code} value={p.code}>{p.label}</option>)}
+                  {GROUP_PLANS.map((p) => <option key={p.code} value={p.code}>{tx(p.label)}</option>)}
                 </select>
                 {planCode === "GROUP_CREDIT_LIFE" && (
                   <p className="text-[11px] text-slate-400">{tx("Credit life: cover follows each borrower's outstanding loan — add a class with the “Outstanding loan balance” basis and give a loan_amount column in the census.")}</p>
@@ -1125,7 +1125,7 @@ export default function OrganizationDetailPage() {
                     : "border-transparent text-slate-400 hover:text-slate-600"
                     }`}
                 >
-                  {tab.label}
+                  {tx(tab.label)}
                 </button>
               ))}
             </div>

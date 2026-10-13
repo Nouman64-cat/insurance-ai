@@ -101,7 +101,7 @@ export default function NewLeadAlert({
           <p className="mt-1 text-sm text-slate-500">
             <span className="font-semibold text-slate-700">{primary.name}</span>
             {" · "}
-            {TYPE_LABEL[primary.type]}
+            {tx(TYPE_LABEL[primary.type])}
             {extra > 0 ? " " + tx("and {0} more", { 0: extra }) : ""}
           </p>
 

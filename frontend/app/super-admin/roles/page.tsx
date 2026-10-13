@@ -228,7 +228,7 @@ export default function RoleManagementPage() {
                     typeFilter === tab.key ? "bg-blue-600 text-white" : "text-slate-500 hover:text-slate-700"
                   }`}
                 >
-                  {tab.label}
+                  {tx(tab.label)}
                   <span className={`ml-1.5 ${typeFilter === tab.key ? "text-white/80" : "text-slate-400"}`}>{tab.count}</span>
                 </button>
               ))}

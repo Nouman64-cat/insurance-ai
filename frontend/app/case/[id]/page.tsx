@@ -657,7 +657,7 @@ function ReasonTable({ sections }: { sections: ReasonSection[] }) {
                   <span
                     className={`font-bold uppercase tracking-wide text-xs ${row.accentColor}`}
                   >
-                    {row.short}
+                    {tx(row.short)}
                   </span>
                 </div>
               </td>
@@ -3352,7 +3352,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   label={tx("Marital Status")}
                   value={
                     customer.marital_status || (
-                      <span className="text-slate-400 italic">Missing</span>
+                      <span className="text-slate-400 italic">{tx("Missing")}</span>
                     )
                   }
                 />
@@ -3360,7 +3360,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   label={tx("Occupation")}
                   value={
                     customer.occupation || (
-                      <span className="text-slate-400 italic">Missing</span>
+                      <span className="text-slate-400 italic">{tx("Missing")}</span>
                     )
                   }
                 />
@@ -3370,7 +3370,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                     customer.declared_income ? (
                       fmtIncome(customer.declared_income)
                     ) : (
-                      <span className="text-slate-400 italic">Missing</span>
+                      <span className="text-slate-400 italic">{tx("Missing")}</span>
                     )
                   }
                 />
@@ -3383,7 +3383,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                     const addr = customer.details?.address;
                     if (!addr)
                       return (
-                        <span className="text-slate-400 italic">Missing</span>
+                        <span className="text-slate-400 italic">{tx("Missing")}</span>
                       );
                     if (typeof addr === "string") return addr;
                     const str = [
@@ -3396,7 +3396,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                       .join(", ");
                     return (
                       str || (
-                        <span className="text-slate-400 italic">Missing</span>
+                        <span className="text-slate-400 italic">{tx("Missing")}</span>
                       )
                     );
                   })()}
@@ -3406,7 +3406,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   value={
                     customer.details?.address?.city ||
                     customer.details?.city || (
-                      <span className="text-slate-400 italic">Missing</span>
+                      <span className="text-slate-400 italic">{tx("Missing")}</span>
                     )
                   }
                 />
@@ -3414,7 +3414,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   label={tx("Phone")}
                   value={
                     customer.details?.phone || (
-                      <span className="text-slate-400 italic">Missing</span>
+                      <span className="text-slate-400 italic">{tx("Missing")}</span>
                     )
                   }
                 />
@@ -3422,7 +3422,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   label={tx("Email")}
                   value={
                     customer.details?.email || (
-                      <span className="text-slate-400 italic">Missing</span>
+                      <span className="text-slate-400 italic">{tx("Missing")}</span>
                     )
                   }
                 />
@@ -3439,7 +3439,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                     customer.height_cm ? (
                       `${customer.height_cm} cm`
                     ) : (
-                      <span className="text-slate-400 italic">Missing</span>
+                      <span className="text-slate-400 italic">{tx("Missing")}</span>
                     )
                   }
                 />
@@ -3449,7 +3449,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                     customer.weight_kg ? (
                       `${customer.weight_kg} kg`
                     ) : (
-                      <span className="text-slate-400 italic">Missing</span>
+                      <span className="text-slate-400 italic">{tx("Missing")}</span>
                     )
                   }
                 />
@@ -3466,9 +3466,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
                       label={tx("Channel")}
                       value={
                         <span className="inline-flex px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                          {SOURCE_TYPE_LABELS[
+                          {tx(SOURCE_TYPE_LABELS[
                             customer.acquisition_source.source_type
-                          ] ?? customer.acquisition_source.source_type}
+                          ] ?? customer.acquisition_source.source_type)}
                         </span>
                       }
                     />
@@ -3603,7 +3603,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   }
                   className={`text-xs font-semibold ${userRole === "Agent" ? "text-slate-400 opacity-50 cursor-not-allowed" : "text-blue-600 hover:text-blue-700"}`}
                 >
-                  + Upload
+                  {tx("+ Upload")}
                 </button>
               }
             >
@@ -3868,7 +3868,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                             <span
                               className={`text-xs ${step.done ? "font-bold text-slate-800" : "font-extrabold text-slate-900"}`}
                             >
-                              {step.title}
+                              {tx(step.title)}
                             </span>
                             <span
                               className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
@@ -3881,7 +3881,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                             </span>
                           </div>
                           <p className="text-xs text-slate-500 mt-1 leading-snug">
-                            {step.description}
+                            {tx(step.description)}
                           </p>
                         </div>
 
@@ -4537,7 +4537,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   >
                     <div className="flex justify-between items-start mb-4">
                       <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-widest">
-                        {section.label}
+                        {tx(section.label)}
                       </span>
                       <span
                         className={`text-2xl font-black ${section.accentColor}`}

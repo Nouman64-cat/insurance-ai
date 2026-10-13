@@ -199,13 +199,16 @@ class CommissionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(schedule.amount_paid, 200)
 
     async def test_first_premium_topup_posts_total_once(self):
-        from routers.policies import confirm_payment, PaymentConfirmRequest
+        from routers.policies import confirm_payment, PaymentConfirmRequest, initiate_payment, PaymentInitiateRequest
         from shared.models.core import PolicyStatusEnum
         async with factory() as s:
             policy = await s.get(Policy, self.policy.id); policy.status = PolicyStatusEnum.PENDING_PAYMENT
             schedule = await s.get(PremiumSchedule, self.schedule.id)
             schedule.amount_paid, schedule.status = 200, PremiumScheduleStatusEnum.PENDING
             s.add_all([policy, schedule]); await s.commit()
+            initiated = await initiate_payment(self.tenant.id, policy.id, PaymentInitiateRequest(method='BankTransfer'), s)
+            self.assertEqual(initiated['amount_due'], 800)
+            self.assertEqual(initiated['payment']['amount'], 800)
             with patch('routers.policies.generate_and_store_documents', new=AsyncMock()):
                 result = await confirm_payment(self.tenant.id, policy.id, None,
                     PaymentConfirmRequest(amount=800, reference='TEST', method='BankTransfer'), s)

@@ -235,7 +235,7 @@ export default function ApplicationsPage() {
                         <div className="flex flex-wrap gap-1.5 mt-2">
                           {segment === "all" && (
                             <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold border uppercase tracking-wide ${SEGMENT_BADGE_STYLE[folder.customer_segment]}`}>
-                              {SEGMENT_LABEL[folder.customer_segment]}
+                              {tx(SEGMENT_LABEL[folder.customer_segment])}
                             </span>
                           )}
                           {readyCount > 0 && (

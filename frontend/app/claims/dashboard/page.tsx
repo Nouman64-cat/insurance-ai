@@ -489,7 +489,7 @@ export default function ClaimsDashboardPage() {
                 return (
                   <div key={st.label} className="space-y-0.5">
                     <div className="flex justify-between text-[11px] font-semibold text-slate-700">
-                      <span>{st.label}</span>
+                      <span>{tx(st.label)}</span>
                       <span className="font-extrabold text-slate-900">{st.count} ({pct.toFixed(0)}%)</span>
                     </div>
                     <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">

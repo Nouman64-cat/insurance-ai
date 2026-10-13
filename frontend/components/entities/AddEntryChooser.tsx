@@ -39,7 +39,7 @@ export default function AddEntryChooser({ entityType, onClose, onSelect }: Props
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-5">
         <div className="flex justify-between items-start">
           <div>
-            <h3 className="text-lg font-bold text-slate-900">{meta.title}</h3>
+            <h3 className="text-lg font-bold text-slate-900">{tx(meta.title)}</h3>
             <p className="text-xs text-slate-500 mt-0.5">{tx("How much do you want to capture right now?")}</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-full p-1 transition-colors">

@@ -71,8 +71,8 @@ export default function ScoreEnginePage() {
               <div key={inp.label}>
                 <div className="flex items-center justify-between mb-1">
                   <div>
-                    <span className="text-xs font-semibold text-slate-700">{inp.label}</span>
-                    <span className="ml-2 text-[10px] text-slate-400">{inp.desc}</span>
+                    <span className="text-xs font-semibold text-slate-700">{tx(inp.label)}</span>
+                    <span className="ml-2 text-[10px] text-slate-400">{tx(inp.desc)}</span>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{inp.weight}</span>
@@ -100,7 +100,7 @@ export default function ScoreEnginePage() {
                 <div key={o.label} className="flex items-start gap-2.5">
                   <div className={`w-2 h-2 rounded-full mt-1 flex-shrink-0 ${o.color}`} />
                   <div>
-                    <p className="text-xs font-semibold text-slate-700">{o.label}</p>
+                    <p className="text-xs font-semibold text-slate-700">{tx(o.label)}</p>
                     <p className="text-[10px] text-slate-400">{o.value}</p>
                   </div>
                 </div>

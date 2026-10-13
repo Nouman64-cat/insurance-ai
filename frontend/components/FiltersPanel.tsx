@@ -172,7 +172,7 @@ export default function FiltersPanel({
               <select value={statusFilter || ""} onChange={(e) => onStatusChange(e.target.value)} className={inputClass}>
                 <option value="ALL">{tx("All Statuses")}</option>
                 {statusOptions.map((s) => (
-                  <option key={s.value} value={s.value}>{s.label}</option>
+                  <option key={s.value} value={s.value}>{tx(s.label)}</option>
                 ))}
               </select>
             </div>
@@ -184,7 +184,7 @@ export default function FiltersPanel({
               <select value={typeFilter || ""} onChange={(e) => onTypeChange(e.target.value)} className={inputClass}>
                 <option value="ALL">{tx("All Types")}</option>
                 {typeOptions.map((t) => (
-                  <option key={t.value} value={t.value}>{t.label}</option>
+                  <option key={t.value} value={t.value}>{tx(t.label)}</option>
                 ))}
               </select>
             </div>

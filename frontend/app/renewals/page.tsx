@@ -65,7 +65,7 @@ function RenewalCard({
           </div>
           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${cfg.color} shrink-0`}>
             <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-            {cfg.label}
+            {tx(cfg.label)}
           </span>
         </div>
 
@@ -256,7 +256,7 @@ export default function RenewalsPage() {
                 {/* Column header */}
                 <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${cfg.header} mb-3`}>
                   <span className={`w-2.5 h-2.5 rounded-full ${cfg.dot}`} />
-                  <h3 className="text-sm font-bold text-slate-700">{cfg.label}{" "}{tx("Out")}</h3>
+                  <h3 className="text-sm font-bold text-slate-700">{tx(cfg.label)}{tx(" ")}{tx("Out")}</h3>
                   <span className="ml-auto text-xs font-semibold text-slate-500">{total} {total === 1 ? tx("policy") : tx("policies")}</span>
                 </div>
                 {total === 0 ? (

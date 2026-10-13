@@ -152,7 +152,7 @@ export function DateRangeFilter({ preset, range, onPresetChange, size = "md", al
                     : "text-slate-700 hover:bg-slate-50"
                 }`}
               >
-                {p.label}
+                {tx(p.label)}
               </button>
             ))}
           </div>

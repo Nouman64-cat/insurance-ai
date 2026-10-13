@@ -77,7 +77,7 @@ export function FilterDropdown({ value, options, onChange, className = "", place
               }`}
             >
               {opt.icon}
-              {opt.label}
+              {tx(opt.label)}
               {value === opt.value && (
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-4 h-4 ml-auto text-blue-600"><polyline points="20 6 9 17 4 12"/></svg>
               )}

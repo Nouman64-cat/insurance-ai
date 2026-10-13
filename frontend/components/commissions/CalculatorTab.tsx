@@ -179,7 +179,7 @@ export default function CalculatorTab({
                 >
                   {(Object.keys(CHANNEL_LABELS) as DistributionChannel[]).map((c) => (
                     <option key={c} value={c}>
-                      {CHANNEL_LABELS[c]}
+                      {tx(CHANNEL_LABELS[c])}
                     </option>
                   ))}
                 </select>

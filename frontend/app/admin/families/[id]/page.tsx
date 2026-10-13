@@ -1164,7 +1164,7 @@ export default function FamilyDetailPage() {
                     : "border-transparent text-slate-400 hover:text-slate-600"
                     }`}
                 >
-                  {tab.label}
+                  {tx(tab.label)}
                 </button>
               ))}
             </div>

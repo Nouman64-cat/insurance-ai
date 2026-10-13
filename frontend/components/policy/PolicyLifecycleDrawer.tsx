@@ -172,7 +172,7 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
                 <LifecycleStepper status={status} />
                 {currentStage && (
                   <p className="mt-4 text-xs text-slate-500 leading-relaxed border-t border-slate-200 pt-3">
-                    <span className="font-semibold text-slate-700">{currentStage.label}: </span>
+                    <span className="font-semibold text-slate-700">{tx(currentStage.label)}: </span>
                     {currentStage.blurb}
                   </p>
                 )}

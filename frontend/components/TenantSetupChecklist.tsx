@@ -97,7 +97,7 @@ export default function TenantSetupChecklist({
           <li key={step.title} className="flex items-start gap-3">
             <StepIcon state={state} n={i + 1} />
             <div className="flex-1 min-w-0">
-              <p className={`text-sm font-semibold ${state === "todo" ? "text-slate-400" : "text-slate-800"}`}>{step.title}</p>
+              <p className={`text-sm font-semibold ${state === "todo" ? "text-slate-400" : "text-slate-800"}`}>{tx(step.title)}</p>
               <p className="text-xs text-slate-500 mt-0.5">{step.detail}</p>
             </div>
             {!step.done && step.action && (
@@ -108,7 +108,7 @@ export default function TenantSetupChecklist({
                   href={step.action.href}
                   className="shrink-0 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
                 >
-                  {step.action.label} →
+                  {tx(step.action.label)} →
                 </Link>
               )
             )}

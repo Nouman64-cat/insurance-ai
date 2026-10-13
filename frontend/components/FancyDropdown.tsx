@@ -202,7 +202,7 @@ export function FancyDropdown({
                   <span className={`block text-sm font-semibold truncate ${isSelected ? "text-blue-700" : "text-slate-700"}`}>
                     {tx(option.label)}
                   </span>
-                  {option.description && <span className="block text-xs text-slate-400 truncate">{option.description}</span>}
+                  {option.description && <span className="block text-xs text-slate-400 truncate">{tx(option.description)}</span>}
                 </span>
                 {isSelected && (
                   <svg

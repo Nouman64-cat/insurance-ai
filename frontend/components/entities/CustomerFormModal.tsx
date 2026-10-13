@@ -959,7 +959,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                 : "border-transparent text-slate-400 hover:text-slate-600"
                 }`}
             >
-              {tab.label}
+              {tx(tab.label)}
               {missingInTab(tab.id) && (
                 <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-amber-500" title={tx("Fields to fill in on this tab")} />
               )}
@@ -1010,7 +1010,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                   : "bg-red-50 border-red-200 text-red-600"
               }`}
             >
-              <span>{extractNotice.text}</span>
+              <span>{tx(extractNotice.text)}</span>
               <button type="button" onClick={() => setExtractNotice(null)} className="opacity-60 hover:opacity-100 leading-none" title={tx("Close")}>✕</button>
             </div>
           )}
@@ -1993,7 +1993,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                             <div>
                               <p className={`text-sm font-bold ${textClass}`}>{pol.product_name}</p>
                               <p className="text-[10px] text-slate-400 mt-0.5 font-semibold uppercase tracking-wider">
-                                {INSURANCE_TYPE_LABELS[pol.insurance_type] ?? pol.insurance_type}
+                                {tx(INSURANCE_TYPE_LABELS[pol.insurance_type] ?? pol.insurance_type)}
                               </p>
                             </div>
                             <span className={`shrink-0 text-xs font-bold px-2.5 py-1 rounded-full ${textClass} bg-white/70`}>{pol.term_years}{" "}{tx("yr")}</span>
@@ -2102,7 +2102,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                               )}
                               <p className={`text-sm font-bold ${isSelected ? textClass : "text-slate-800"}`}>{plan.label}</p>
                               <p className="text-[10px] text-slate-400 mt-0.5 font-semibold uppercase tracking-wider">
-                                {INSURANCE_TYPE_LABELS[plan.insurance_type] ?? plan.insurance_type}
+                                {tx(INSURANCE_TYPE_LABELS[plan.insurance_type] ?? plan.insurance_type)}
                               </p>
                               <div className="flex gap-3 mt-2 text-[10px] font-semibold text-slate-500">
                                 <span>{tx("Age")}{" "}{plan.entry_age_min}–{plan.entry_age_max}</span>
@@ -2384,7 +2384,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                           )}
                           <p className={`text-sm font-bold ${isSelected ? textClass : "text-slate-800"}`}>{plan.label}</p>
                           <p className="text-[10px] text-slate-400 mt-0.5 font-semibold uppercase tracking-wider">
-                            {INSURANCE_TYPE_LABELS[plan.insurance_type] ?? plan.insurance_type}
+                            {tx(INSURANCE_TYPE_LABELS[plan.insurance_type] ?? plan.insurance_type)}
                           </p>
                           <p className="text-xs text-slate-500 mt-2 line-clamp-2">{plan.description}</p>
                           <div className="flex gap-3 mt-3 text-[10px] font-semibold text-slate-500">

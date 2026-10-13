@@ -80,14 +80,14 @@ export default function SourcePicker({ sources, sourceId, onChange, labelClass, 
         >
           <option value="">{tx("-- Direct / Unassigned --")}</option>
           {kinds.map((t) => (
-            <option key={t} value={t}>{SOURCE_TYPE_LABELS[t] ?? t}</option>
+            <option key={t} value={t}>{tx(SOURCE_TYPE_LABELS[t] ?? t)}</option>
           ))}
         </select>
       </div>
 
       {type && (
         <div className={fieldClass}>
-          <label className={labelClass}>{SOURCE_TYPE_LABELS[type] ?? type}</label>
+          <label className={labelClass}>{tx(SOURCE_TYPE_LABELS[type] ?? type)}</label>
           <select
             value={sourceId}
             onChange={(e) => onChange(sources.find((s) => s.id === e.target.value) ?? null)}

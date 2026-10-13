@@ -45,12 +45,14 @@ export default function MembersPanel(props: PanelProps) {
       {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 font-medium">{error}</div>}
       {pending > 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 font-medium">
-          {pending}{" "}{tx("member")}{pending === 1 ? " " + tx("is") : tx("s are")}{" "}{tx("above the Free Cover Limit and awaiting an underwriting decision — the scheme can't be quoted until they're decided.")}
+          {tx(pending === 1
+            ? "{count} member is above the Free Cover Limit and awaiting an underwriting decision — the scheme can't be quoted until they're decided."
+            : "{count} members are above the Free Cover Limit and awaiting an underwriting decision — the scheme can't be quoted until they're decided.", { count: pending })}
         </div>
       )}
       {missingNominee > 0 && (
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-          {missingNominee}{" "}{tx("member")}{missingNominee === 1 ? " " + tx("has") : tx("s have")}{" "}{tx("no nominee recorded yet.")}
+          {tx(missingNominee === 1 ? "{count} member has no nominee recorded yet." : "{count} members have no nominee recorded yet.", { count: missingNominee })}
         </div>
       )}
 

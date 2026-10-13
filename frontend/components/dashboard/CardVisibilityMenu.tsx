@@ -70,7 +70,7 @@ export function CardVisibilityMenu({ items, isVisible, onToggle }: CardVisibilit
                   onChange={() => onToggle(item.id)}
                   className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500/30"
                 />
-                <span className="truncate">{item.label}</span>
+                <span className="truncate">{tx(item.label)}</span>
               </label>
             ))}
           </div>

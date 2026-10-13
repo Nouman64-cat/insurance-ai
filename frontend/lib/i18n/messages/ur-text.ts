@@ -5,11 +5,29 @@
 import admin from "./ur-text/admin";
 import cases from "./ur-text/cases";
 import claims from "./ur-text/claims";
+import commissions from "./ur-text/commissions";
+import dashboard from "./ur-text/dashboard";
+import entities from "./ur-text/entities";
+import group from "./ur-text/group";
+import lifecycle from "./ur-text/lifecycle";
+import pages from "./ur-text/pages";
+import platform from "./ur-text/platform";
+import policy from "./ur-text/policy";
+import rules from "./ur-text/rules";
 
 const urText: Record<string, string> = {
   ...admin,
   ...cases,
   ...claims,
+  ...commissions,
+  ...dashboard,
+  ...entities,
+  ...group,
+  ...lifecycle,
+  ...pages,
+  ...platform,
+  ...policy,
+  ...rules,
   // ── Shared ────────────────────────────────────────────────────────────────
   "Apply": "لاگو کریں",
   "Applying…": "لاگو ہو رہا ہے…",

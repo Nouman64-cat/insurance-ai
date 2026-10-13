@@ -949,7 +949,7 @@ export default function CaseSummarizerPage() {
                           className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
                         >
                           {INSURANCE_TYPE_OPTIONS.map(o => (
-                            <option key={o.value} value={o.value}>{o.label}</option>
+                            <option key={o.value} value={o.value}>{tx(o.label)}</option>
                           ))}
                         </select>
                       </div>
@@ -1027,7 +1027,7 @@ export default function CaseSummarizerPage() {
                                 {done ? "✓" : i + 1}
                               </div>
                               <span className="text-[9px] font-medium text-slate-500 text-center leading-tight w-14 whitespace-pre-line">
-                                {node.label}
+                                {tx(node.label)}
                               </span>
                             </div>
                             {i < PIPELINE_NODES.length - 1 && (

@@ -69,7 +69,7 @@ export function PolicyProcessRail({ policies }: Readonly<RailProps>) {
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] font-semibold text-slate-800 mt-1.5 leading-tight">{st.label}</p>
+                  <p className="text-[11px] font-semibold text-slate-800 mt-1.5 leading-tight">{tx(st.label)}</p>
                   <p className="text-[10px] text-slate-500 mt-0.5 leading-snug">{st.blurb}</p>
                 </div>
                 {i < ISSUANCE_STAGES.length - 1 && <Arrow />}
