@@ -15,6 +15,7 @@ the result to insurance.risk.evaluated.v1. A downstream result consumer
 POST /evaluate/stream is kept intact for synchronous dev/testing workflows.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -393,83 +394,91 @@ async def evaluate_stream(
 
         # ── Persist to DB ─────────────────────────────────────────────────────
         try:
-            async with _session_factory() as db:
-                stmt = select(Customer).where(
-                    Customer.tenant_id == tenant_id,
-                    Customer.cnic == request.customer.cnic,
-                )
-                existing = (await db.exec(stmt)).first()
-                if existing is not None:
-                    customer = existing
-                else:
-                    customer = Customer(
-                        tenant_id=tenant_id,
-                        cnic=request.customer.cnic,
-                        name=request.customer.name,
-                        dob=request.customer.dob,
-                        gender=request.customer.gender,
-                        occupation=request.customer.occupation,
-                        declared_income=request.customer.declared_income,
-                        # Live Evaluation is a quick what-if risk check, not formal
-                        # onboarding — it doesn't collect these pricing-relevant
-                        # fields, so they're recorded as unknown placeholders here.
-                        is_smoker=False,
-                        height_cm=170,
-                        weight_kg=70,
+            # The save runs as its own task, shielded from cancellation: if the browser goes away (the case page
+            # aborts a run when another starts) mid-commit, the transaction still finishes or rolls back. Cancelled
+            # half-way, the connection was left idle in a transaction holding the case's row lock, and every later
+            # write to that case (the underwriter's Override buttons included) waited on it forever.
+            async def _save():
+                async with _session_factory() as db:
+                    stmt = select(Customer).where(
+                        Customer.tenant_id == tenant_id,
+                        Customer.cnic == request.customer.cnic,
                     )
-                    db.add(customer)
-                    await db.flush()
+                    existing = (await db.exec(stmt)).first()
+                    if existing is not None:
+                        customer = existing
+                    else:
+                        customer = Customer(
+                            tenant_id=tenant_id,
+                            cnic=request.customer.cnic,
+                            name=request.customer.name,
+                            dob=request.customer.dob,
+                            gender=request.customer.gender,
+                            occupation=request.customer.occupation,
+                            declared_income=request.customer.declared_income,
+                            # Live Evaluation is a quick what-if risk check, not formal
+                            # onboarding — it doesn't collect these pricing-relevant
+                            # fields, so they're recorded as unknown placeholders here.
+                            is_smoker=False,
+                            height_cm=170,
+                            weight_kg=70,
+                        )
+                        db.add(customer)
+                        await db.flush()
 
-                # A case-driven evaluation (Case Detail's "Run AI Underwriting")
-                # re-evaluates the one Policy the case already opened underwriting
-                # on — reuse it instead of minting a duplicate row each run. Only
-                # a case-less call (Live Evaluation's what-if check) creates a
-                # fresh throwaway Policy, per the existing convention below.
-                case: Case | None = None
-                if request.case_id is not None:
-                    case = await db.get(Case, request.case_id)
-                    if case is not None and case.tenant_id != tenant_id:
-                        case = None
+                    # A case-driven evaluation (Case Detail's "Run AI Underwriting")
+                    # re-evaluates the one Policy the case already opened underwriting
+                    # on — reuse it instead of minting a duplicate row each run. Only
+                    # a case-less call (Live Evaluation's what-if check) creates a
+                    # fresh throwaway Policy, per the existing convention below.
+                    case: Case | None = None
+                    if request.case_id is not None:
+                        case = await db.get(Case, request.case_id)
+                        if case is not None and case.tenant_id != tenant_id:
+                            case = None
 
-                policy: Policy | None = None
-                if case is not None and case.policy_id is not None:
-                    policy = await db.get(Policy, case.policy_id)
+                    policy: Policy | None = None
+                    if case is not None and case.policy_id is not None:
+                        policy = await db.get(Policy, case.policy_id)
 
-                if policy is None:
-                    policy = Policy(
-                        tenant_id=tenant_id,
-                        customer_id=customer.id,
-                        product_name=request.policy.product_name,
-                        insurance_type=request.policy.insurance_type,
-                        coverage_amount=request.policy.coverage_amount,
-                        term_years=request.policy.term_years,
-                        dependent_name=request.policy.dependent_name,
-                        dependent_dob=request.policy.dependent_dob,
+                    if policy is None:
+                        policy = Policy(
+                            tenant_id=tenant_id,
+                            customer_id=customer.id,
+                            product_name=request.policy.product_name,
+                            insurance_type=request.policy.insurance_type,
+                            coverage_amount=request.policy.coverage_amount,
+                            term_years=request.policy.term_years,
+                            dependent_name=request.policy.dependent_name,
+                            dependent_dob=request.policy.dependent_dob,
+                        )
+                        db.add(policy)
+                        await db.flush()
+
+                    # Writes the RiskAssessment and parks the Policy (and the Case,
+                    # when this evaluation belongs to one) at Under Review — every
+                    # decision band lands there so the underwriter always makes the
+                    # final Approve/Decline call. Shared with the Kafka result worker
+                    # so both evaluation paths record a result identically.
+                    #
+                    # NOTE: the customer is NOT promoted to POLICYHOLDER here. That
+                    # only happens once cover actually binds — see tenant-service
+                    # routers/policies.py::_bind_cover (reached from payment
+                    # confirmation), and the identical note in routers/cases.py.
+                    assessment = await persist_assessment(
+                        db, tenant_id,
+                        customer=customer,
+                        policy=policy,
+                        case=case,
+                        final_risk=final_risk,
+                        ai_summary=request.ai_summary,
                     )
-                    db.add(policy)
-                    await db.flush()
 
-                # Writes the RiskAssessment and parks the Policy (and the Case,
-                # when this evaluation belongs to one) at Under Review — every
-                # decision band lands there so the underwriter always makes the
-                # final Approve/Decline call. Shared with the Kafka result worker
-                # so both evaluation paths record a result identically.
-                #
-                # NOTE: the customer is NOT promoted to POLICYHOLDER here. That
-                # only happens once cover actually binds — see tenant-service
-                # routers/policies.py::_bind_cover (reached from payment
-                # confirmation), and the identical note in routers/cases.py.
-                assessment = await persist_assessment(
-                    db, tenant_id,
-                    customer=customer,
-                    policy=policy,
-                    case=case,
-                    final_risk=final_risk,
-                    ai_summary=request.ai_summary,
-                )
+                    await db.commit()
+                    await db.refresh(assessment)
+                return customer, policy, case, assessment
 
-                await db.commit()
-                await db.refresh(assessment)
+            customer, policy, case, assessment = await asyncio.shield(asyncio.create_task(_save()))
 
             if case is not None:
                 step = "human_review" if assessment.ai_decision.value in (
