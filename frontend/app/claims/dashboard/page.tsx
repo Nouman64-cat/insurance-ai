@@ -18,6 +18,7 @@ import { InteractiveMapCard } from "@/components/dashboard/InteractiveMapCard";
 import { TimeTrendChartCard } from "@/components/dashboard/TimeTrendChartCard";
 import { listCommissionLedger, type CommissionLedgerEntry } from "@/app/services/commissions";
 import { tx } from "@/lib/i18n/tx";
+import { PolicyPicker, usePolicyFilters } from "@/components/claims/PolicyPicker";
 
 function RiskBadge({ prob, flag }: { prob: number; flag: boolean }) {
   if (flag) {
@@ -127,7 +128,7 @@ export default function ClaimsDashboardPage() {
     return true;
   });
 
-  const [policySearch, setPolicySearch] = useState("");
+  const policyFilters = usePolicyFilters();
 
   const [form, setForm] = useState<CreateClaimRequest>({
     policy_id: "",
@@ -159,15 +160,6 @@ export default function ClaimsDashboardPage() {
       listBranches(tid).then((b) => setRegions(distinctRegions(b))).catch(() => { });
     }
   }, []);
-
-  const filteredPolicies = policies.filter((p) => {
-    if (!policySearch.trim()) return true;
-    const q = policySearch.toLowerCase();
-    const num = (p.policy_number || p.id).toLowerCase();
-    const name = (p.customer_name || "").toLowerCase();
-    const prod = (p.product_name || "").toLowerCase();
-    return num.includes(q) || name.includes(q) || prod.includes(q);
-  });
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -322,7 +314,7 @@ export default function ClaimsDashboardPage() {
             <span>{tx("Register")}</span>
           </Link>
           <button
-            onClick={() => setShowModal(true)}
+            onClick={() => { policyFilters.reset(); setShowModal(true); }}
             className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -583,7 +575,7 @@ export default function ClaimsDashboardPage() {
       {/* ── FNOL Claim Modal ────────────────────────────────────────────────── */}
       {showModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl max-h-[90vh] flex flex-col relative my-auto">
+          <div className={`bg-white rounded-2xl shadow-2xl border border-slate-200 w-full ${step === 1 ? "max-w-4xl" : "max-w-2xl"} max-h-[90vh] flex flex-col relative my-auto transition-[max-width]`}>
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/90 rounded-t-2xl shrink-0">
               <div>
                 <h3 className="text-sm font-bold text-slate-900">{tx("File First Notice of Loss (FNOL)")}</h3>
@@ -612,70 +604,12 @@ export default function ClaimsDashboardPage() {
                     )}
                   </div>
 
-                  <div className="relative">
-                    <input
-                      type="text"
-                      autoFocus
-                      placeholder={tx("Type customer name, policy #, or product to filter...")}
-                      value={policySearch}
-                      onChange={(e) => setPolicySearch(e.target.value)}
-                      className="w-full text-xs px-3.5 py-2.5 pl-9 pr-8 rounded-xl border border-slate-200 focus:outline-hidden focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 bg-white font-medium text-slate-800 placeholder-slate-400 shadow-2xs"
-                    />
-                    <svg className="w-4 h-4 text-slate-400 absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                    {policySearch && (
-                      <button
-                        type="button"
-                        onClick={() => setPolicySearch("")}
-                        className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 text-xs font-bold w-4 h-4 flex items-center justify-center rounded-full hover:bg-slate-100"
-                      >
-                        {tx("×")}
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="max-h-72 sm:max-h-80 overflow-y-auto divide-y divide-slate-100 border border-slate-200/90 rounded-xl bg-white shadow-2xs">
-                    {filteredPolicies.length === 0 ? (
-                      <div className="p-6 text-center text-slate-400 text-xs font-medium">
-                        {tx("No policies found matching \"")}{policySearch}{tx("\"")}
-                      </div>
-                    ) : (
-                      filteredPolicies.map((p) => {
-                        const isSelected = form.policy_id === p.id;
-                        return (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => {
-                              setForm({ ...form, policy_id: p.id });
-                            }}
-                            className={`w-full text-left px-3.5 py-2.5 text-xs transition-colors flex items-center justify-between ${isSelected ? "bg-blue-50/90 text-blue-800 font-semibold" : "hover:bg-slate-50 text-slate-700"
-                              }`}
-                          >
-                            <div className="flex flex-col min-w-0 pr-2 space-y-0.5">
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-slate-900">{p.customer_name}</span>
-                                <span className="font-mono text-slate-400 text-[11px]">({p.policy_number ?? p.id.slice(0, 8)})</span>
-                              </div>
-                              <span className="text-[10px] text-slate-500 truncate">
-                                {p.product_name}
-                              </span>
-                            </div>
-                            {isSelected ? (
-                              <span className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-blue-600 text-white shrink-0 shadow-2xs">
-                                {tx("Selected ✓")}
-                              </span>
-                            ) : (
-                              <span className="text-[11px] text-slate-400 font-medium shrink-0">
-                                {tx("Select →")}
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
+                  <PolicyPicker
+                    policies={policies}
+                    filters={policyFilters}
+                    selectedId={form.policy_id}
+                    onSelect={(p) => setForm({ ...form, policy_id: p.id })}
+                  />
 
                   <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
                     <button

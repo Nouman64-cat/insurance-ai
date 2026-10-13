@@ -17,6 +17,7 @@ import { useNotify } from "@/components/NotificationContext";
 import CustomerFormModal from "@/components/entities/CustomerFormModal";
 import CustomerQuickLeadModal from "@/components/entities/CustomerQuickLeadModal";
 import { notifyParentPortal } from "@/lib/agent/portalMessage";
+import { sendLeadToDraft, isEmbedded } from "@/lib/sendToDraft";
 import FamilyFormModal from "@/components/entities/FamilyFormModal";
 import { leadAnnouncementsPaused } from "@/lib/leadAnnouncements";
 import OrganizationFormModal from "@/components/entities/OrganizationFormModal";
@@ -26,7 +27,7 @@ import LeadProgress, { leadStage } from "@/components/LeadProgress";
 import { tx } from "@/lib/i18n/tx";
 
 type EntityType = "INDIVIDUAL" | "FAMILY" | "CORPORATE";
-type ProfileStatus = "LEAD" | "PROSPECT" | "UNDERWRITING_READY" | "NOT_INTERESTED" | "POLICYHOLDER";
+type ProfileStatus = "LEAD" | "PROSPECT" | "DRAFT" | "UNDERWRITING_READY" | "NOT_INTERESTED" | "POLICYHOLDER";
 
 interface UnifiedLead {
   id: string;
@@ -612,6 +613,25 @@ export default function LeadsHubPage() {
   const handleMoveInProgress = (lead: UnifiedLead) =>
     changeLeadStatus(lead, "PROSPECT", `"${lead.name}" moved to In Progress.`);
 
+  // "Send Draft" is what moves a lead into Proposals, and takes you there.
+  const handleSendDraft = async (lead: UnifiedLead) => {
+    setActionBusyId(lead.id);
+    setError("");
+    try {
+      await sendLeadToDraft(lead.type, lead.id, lead.name);
+      if (isEmbedded()) {
+        setNotice(tx("\"{0}\" sent to Proposals as a draft.", { 0: lead.name }));
+        await fetchLeads();
+      } else {
+        router.push("/proposal");
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to send draft."));
+    } finally {
+      setActionBusyId(null);
+    }
+  };
+
   const handleMarkNotInterested = (lead: UnifiedLead) =>
     changeLeadStatus(lead, "NOT_INTERESTED", `"${lead.name}" moved to Dead Leads.`);
 
@@ -937,6 +957,7 @@ export default function LeadsHubPage() {
                         busy={actionBusyId === lead.id}
                         onClick={() => handleCardClick(lead)}
                         onMoveInProgress={() => handleMoveInProgress(lead)}
+                        onSendDraft={() => handleSendDraft(lead)}
                         onMarkNotInterested={() => handleMarkNotInterested(lead)}
                         onReactivate={() => handleReactivate(lead)}
                         onDelete={isAgent ? undefined : () => handleDeleteLead(lead)}
@@ -962,6 +983,7 @@ export default function LeadsHubPage() {
                         busy={actionBusyId === lead.id}
                         onClick={() => handleCardClick(lead)}
                         onMoveInProgress={() => handleMoveInProgress(lead)}
+                        onSendDraft={() => handleSendDraft(lead)}
                         onMarkNotInterested={() => handleMarkNotInterested(lead)}
                         onReactivate={() => handleReactivate(lead)}
                         onDelete={isAgent ? undefined : () => handleDeleteLead(lead)}
@@ -988,6 +1010,7 @@ export default function LeadsHubPage() {
                         busy={actionBusyId === lead.id}
                         onClick={() => handleCardClick(lead)}
                         onMoveInProgress={() => handleMoveInProgress(lead)}
+                        onSendDraft={() => handleSendDraft(lead)}
                         onMarkNotInterested={() => handleMarkNotInterested(lead)}
                         onReactivate={() => handleReactivate(lead)}
                         onDelete={isAgent ? undefined : () => handleDeleteLead(lead)}
@@ -1013,6 +1036,7 @@ export default function LeadsHubPage() {
                         busy={actionBusyId === lead.id}
                         onClick={() => handleCardClick(lead)}
                         onMoveInProgress={() => handleMoveInProgress(lead)}
+                        onSendDraft={() => handleSendDraft(lead)}
                         onMarkNotInterested={() => handleMarkNotInterested(lead)}
                         onReactivate={() => handleReactivate(lead)}
                         onDelete={isAgent ? undefined : () => handleDeleteLead(lead)}
@@ -1114,6 +1138,15 @@ export default function LeadsHubPage() {
                                             className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
                                           >
                                             {tx("In Progress")}
+                                          </button>
+                                        )}
+                                        {lead.status !== "DRAFT" && (
+                                          <button
+                                            disabled={busy}
+                                            onClick={() => handleSendDraft(lead)}
+                                            className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-fuchsia-50 text-fuchsia-700 hover:bg-fuchsia-100 transition-colors"
+                                          >
+                                            {tx("Send Draft")}
                                           </button>
                                         )}
                                         <button
@@ -1301,6 +1334,7 @@ function LeadCard({
   onClick,
   busy,
   onMoveInProgress,
+  onSendDraft,
   onMarkNotInterested,
   onReactivate,
   onDelete,
@@ -1309,6 +1343,7 @@ function LeadCard({
   onClick: () => void;
   busy: boolean;
   onMoveInProgress: () => void;
+  onSendDraft: () => void;
   onMarkNotInterested: () => void;
   onReactivate: () => void;
   onDelete?: () => void;
@@ -1380,6 +1415,11 @@ function LeadCard({
             {isLead && (
               <button disabled={busy} onClick={act(onMoveInProgress)} className={`${btnBase} text-blue-700 bg-blue-50 hover:bg-blue-100`}>
                 {tx("In Progress")}
+              </button>
+            )}
+            {lead.status !== "DRAFT" && (
+              <button disabled={busy} onClick={act(onSendDraft)} className={`${btnBase} text-fuchsia-700 bg-fuchsia-50 hover:bg-fuchsia-100`}>
+                {tx("Send Draft")}
               </button>
             )}
             <button disabled={busy} onClick={act(onMarkNotInterested)} className={`${btnBase} text-rose-600 bg-rose-50 hover:bg-rose-100`}>

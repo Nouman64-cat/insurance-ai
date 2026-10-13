@@ -31,6 +31,8 @@ export function ACRModal({ caseId, initial, onClose, onDone }: {
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // A report the agent has already submitted is read-only here — staff review it, they never edit or re-file it.
+  const readOnly = initial?.status === "Submitted";
 
   const submit = async () => {
     setBusy(true); setErr(null);
@@ -56,6 +58,12 @@ export function ACRModal({ caseId, initial, onClose, onDone }: {
           <h2 className="text-white text-lg font-bold">{tx("Agent's Confidential Report")}</h2>
         </div>
         <div className="p-5 space-y-4 overflow-y-auto">
+          {readOnly && (
+            <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+              {tx("Submitted by the agent — read only.")}
+            </p>
+          )}
+          <fieldset disabled={readOnly} className="space-y-4 min-w-0 border-0 m-0 p-0">
           <div>
             <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">{tx("Moral Hazard")}</p>
             <div className="space-y-2">
@@ -152,14 +160,17 @@ export function ACRModal({ caseId, initial, onClose, onDone }: {
             <textarea className={input} rows={2} value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} />
           </div>
 
+          </fieldset>
           {err && <p className="text-xs text-red-600">{err}</p>}
         </div>
         <div className="flex justify-end gap-2 px-5 py-3 border-t border-slate-100 flex-shrink-0">
-          <button onClick={onClose} className="px-3 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700">{tx("Cancel")}</button>
-          <button onClick={submit} disabled={busy}
-            className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40">
-            {busy ? tx("Submitting…") : tx("Submit ACR")}
-          </button>
+          <button onClick={onClose} className="px-3 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700">{readOnly ? tx("Close") : tx("Cancel")}</button>
+          {!readOnly && (
+            <button onClick={submit} disabled={busy}
+              className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40">
+              {busy ? tx("Submitting…") : tx("Submit ACR")}
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -525,6 +525,9 @@ class CustomerUpdate(BaseModel):
     weight_kg:        Optional[float] = None
     profile_status:   Optional[ProfileStatusEnum] = None
     acquisition_source_id: Optional[UUID] = None
+    # Sending null can't mean "clear" (null is also what every other form sends for "unchanged"),
+    # so moving a lead back to Direct / Unassigned is an explicit flag.
+    clear_acquisition_source: bool = False
     branch_id:        Optional[UUID] = None
     assigned_agent_id: Optional[UUID] = None
     city:             Optional[str] = None

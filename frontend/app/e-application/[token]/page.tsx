@@ -19,6 +19,10 @@ const publicApi = axios.create({
   timeout: 30_000,
 });
 
+// The demo fill answers every question with made-up data under a signed declaration, so it is for
+// development and demos only — never offered on a production build.
+const SHOW_DEMO_FILL = process.env.NODE_ENV !== "production";
+
 type LoadState =
   | "loading"
   | "ready"
@@ -557,8 +561,18 @@ export default function EApplicationPage({
           >
             {tx("← Back")}
           </button>
-          {saving && (
-            <span className="text-[11px] text-slate-400">{tx("Saving…")}</span>
+          {step === 0 && SHOW_DEMO_FILL ? (
+            <button
+              type="button"
+              onClick={fillDemoData}
+              className="px-4 py-2 rounded-lg text-sm font-semibold text-fuchsia-700 bg-fuchsia-50 border border-fuchsia-200 hover:bg-fuchsia-100"
+            >
+              {tx("Fill demo details")}
+            </button>
+          ) : (
+            saving && (
+              <span className="text-[11px] text-slate-400">{tx("Saving…")}</span>
+            )
           )}
           {step < STEPS.length - 1 ? (
             <button

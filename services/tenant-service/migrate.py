@@ -1357,6 +1357,19 @@ MIGRATIONS: list[tuple[str, str]] = [
         "DELETE FROM tenants t WHERE t.code = 'PLATFORM' AND t.name = 'Platform' "
         "AND NOT EXISTS (SELECT 1 FROM users u WHERE u.tenant_id = t.id)",
     ),
+    # ── ACR Gate 2 waiver: an underwriter can bypass it when the agent's report never arrives.
+    (
+        "v57a — add waived_by to agent_confidential_reports",
+        "ALTER TABLE agent_confidential_reports ADD COLUMN IF NOT EXISTS waived_by VARCHAR(255)",
+    ),
+    (
+        "v57b — add waived_at to agent_confidential_reports",
+        "ALTER TABLE agent_confidential_reports ADD COLUMN IF NOT EXISTS waived_at TIMESTAMP WITHOUT TIME ZONE",
+    ),
+    (
+        "v57c — add waiver_reason to agent_confidential_reports",
+        "ALTER TABLE agent_confidential_reports ADD COLUMN IF NOT EXISTS waiver_reason TEXT",
+    ),
 ]
 
 

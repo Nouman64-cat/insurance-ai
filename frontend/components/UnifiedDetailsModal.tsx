@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import api from "@/app/services/api";
+import { sendLeadToDraft, isEmbedded } from "@/lib/sendToDraft";
 import CustomerFormModal from "@/components/entities/CustomerFormModal";
 import FamilyFormModal from "@/components/entities/FamilyFormModal";
 import OrganizationFormModal from "@/components/entities/OrganizationFormModal";
@@ -18,6 +20,7 @@ interface UnifiedDetailsModalProps {
 }
 
 export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityType, onSaved }: UnifiedDetailsModalProps) {
+  const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -36,16 +39,14 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
     setLoading(true);
     setError("");
     try {
-      let endpoint = "";
-      if (entityType === "INDIVIDUAL") {
-        await api.put(`/tenants/${tenantId}/customers/${entityId}`, { profile_status: "DRAFT" });
-      } else if (entityType === "FAMILY") {
-        await api.patch(`/tenants/${tenantId}/families/${entityId}`, { profile_status: "DRAFT" });
-      } else if (entityType === "CORPORATE") {
-        await api.patch(`/tenants/${tenantId}/organizations/${entityId}`, { profile_status: "DRAFT" });
-      }
-      fetchDetails();
+      await sendLeadToDraft(entityType, entityId, data?.name ?? "");
       if (onSaved) onSaved();
+      if (isEmbedded()) {
+        fetchDetails();
+      } else {
+        onClose();
+        router.push("/proposal");
+      }
     } catch (err: any) {
       setError(err.message || tx("Failed to update status to DRAFT."));
       setLoading(false);
