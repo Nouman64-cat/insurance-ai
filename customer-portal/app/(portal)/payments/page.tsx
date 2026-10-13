@@ -1,19 +1,21 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { Banner, Card, EmptyState, ErrorState, InstallmentState, PageHeader, PolicyStatus, Skeleton, tOr } from "@/components/ui";
 import { DownloadButton } from "@/components/DownloadButton";
 import { MetricCard } from "@/components/MetricCard";
 import { PayModal } from "@/components/PayModal";
 import { Icon } from "@/components/ui";
+import { SegmentTabs, useSegment } from "@/components/SegmentTabs";
 import { useApi } from "@/lib/api";
 import { date, dateTime, money } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { Installment, PaymentsOverview, PolicyCard } from "@/lib/types";
 
-export default function PaymentsPage() {
+function PaymentsInner() {
   const { t, locale } = useI18n();
-  const { data, error, loading, reload } = useApi<PaymentsOverview>("payments");
+  const [segment, setSegment, hasFamily] = useSegment();
+  const { data, error, loading, reload } = useApi<PaymentsOverview>(segment === "family" ? "payments?segment=family" : "payments");
   const [paying, setPaying] = useState<{ policy: PolicyCard; installment: Installment } | null>(null);
 
   if (error && !data) return <div className="card"><ErrorState error={error} onRetry={reload} /></div>;
@@ -23,6 +25,8 @@ export default function PaymentsPage() {
   return (
     <div className="space-y-6">
       <PageHeader title={t("payments.title")} subtitle={t("payments.subtitle")} />
+      {hasFamily && <SegmentTabs segment={segment} onChange={setSegment} />}
+      {segment === "family" && <Banner tone="info">{t("family.paymentsNote")}</Banner>}
       {data?.simulated_payments && <Banner tone="warning" title={t("pay.simulated.title")}>{t("pay.simulated.text")}</Banner>}
       {data && !data.payments_enabled && <Banner tone="info">{t("payments.disabled")}</Banner>}
       {data?.partial && <Banner tone="warning" title={t("payments.partial")} action={<button type="button" className="btn-secondary" onClick={reload}>{t("common.retry")}</button>} />}
@@ -42,7 +46,8 @@ export default function PaymentsPage() {
           <div className="space-y-5">
             {withSchedule.length === 0 && <div className="card"><EmptyState title={t("payments.noSchedule")} text={t("payments.noScheduleText")} /></div>}
             {withSchedule.map(({ policy, premiums }) => premiums && (
-              <Card key={policy.id} title={<span className="flex flex-wrap items-center gap-2"><Link href={`/policies/${policy.id}`} className="hover:text-blue-700">{policy.product_name} · <span className="ltr-num">{policy.policy_number}</span></Link><PolicyStatus statusKey={policy.status_key} /></span>}
+              <Card key={policy.id} title={<span className="flex flex-wrap items-center gap-2"><Link href={`/policies/${policy.id}`} className="hover:text-blue-700">{policy.product_name} · <span className="ltr-num">{policy.policy_number}</span></Link><PolicyStatus statusKey={policy.status_key} />
+                {policy.family && <span className="text-xs font-medium text-slate-400">{t(`plan.${policy.family.plan_type}`)}{policy.holder_name ? ` · ${policy.holder_name}` : ""}</span>}</span>}
                 action={<span className="text-xs text-slate-400">{t("payments.progress", { paid: premiums.summary.paid, total: premiums.summary.total })}</span>}>
                 {premiums.summary.in_grace && <div className="mb-4"><Banner tone="warning" title={t("payments.grace.title")}>{t("payments.grace.text", { date: date(premiums.summary.grace_until, locale), days: premiums.summary.grace_days_left ?? 0 })}</Banner></div>}
                 {!policy.in_force && !policy.pending_issuance && <div className="mb-4"><Banner tone="info">{t("payments.notInForce")}</Banner></div>}
@@ -79,3 +84,5 @@ export default function PaymentsPage() {
     </div>
   );
 }
+
+export default function PaymentsPage() { return <Suspense><PaymentsInner /></Suspense>; }

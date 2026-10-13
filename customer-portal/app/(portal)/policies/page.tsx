@@ -1,7 +1,9 @@
 "use client";
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { EmptyState, ErrorState, PageHeader, Skeleton } from "@/components/ui";
 import { PolicyCardItem } from "@/components/PolicyCardItem";
+import { FamilyPolicyList } from "@/components/FamilyPolicyList";
+import { SegmentTabs, useSegment } from "@/components/SegmentTabs";
 import { useApi } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { PolicyCard } from "@/lib/types";
@@ -10,8 +12,9 @@ const FILTERS = ["all", "active", "attention", "closed"] as const;
 const ATTENTION = ["grace_period", "lapsed", "pending_issuance", "issued"];
 const CLOSED = ["cancelled", "expired", "matured", "surrendered"];
 
-export default function PoliciesPage() {
+function PoliciesInner() {
   const { t } = useI18n();
+  const [segment, setSegment, hasFamily] = useSegment();
   const { data, error, loading, reload } = useApi<{ items: PolicyCard[] }>("policies");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
   const [q, setQ] = useState("");
@@ -27,6 +30,8 @@ export default function PoliciesPage() {
   return (
     <div>
       <PageHeader title={t("policies.title")} subtitle={t("policies.subtitle")} />
+      {hasFamily && <SegmentTabs segment={segment} onChange={setSegment} />}
+      {segment === "family" ? <FamilyPolicyList /> : <>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div role="group" aria-label={t("policies.filter")} className="flex flex-wrap gap-1.5">
           {FILTERS.map((f) => (
@@ -41,6 +46,9 @@ export default function PoliciesPage() {
         : (data?.items.length ?? 0) === 0 ? <div className="card"><EmptyState title={t("policies.none")} text={t("policies.noneText")} /></div>
         : items.length === 0 ? <div className="card"><EmptyState title={t("policies.noMatch")} /></div>
         : <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">{items.map((p) => <PolicyCardItem key={p.id} p={p} />)}</div>}
+      </>}
     </div>
   );
 }
+
+export default function PoliciesPage() { return <Suspense><PoliciesInner /></Suspense>; }

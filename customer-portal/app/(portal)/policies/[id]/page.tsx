@@ -2,14 +2,51 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
-import { Banner, Card, EmptyState, ErrorState, InstallmentState, KeyValue, PageHeader, PolicyStatus, Skeleton } from "@/components/ui";
+import { Banner, Card, EmptyState, ErrorState, InstallmentState, KeyValue, PageHeader, PolicyStatus, Skeleton, tOr } from "@/components/ui";
 import { DownloadButton } from "@/components/DownloadButton";
-import { ApiError, useApi } from "@/lib/api";
+import { ApiError, api, useApi } from "@/lib/api";
+import { RequestKind, RequestModal } from "@/components/RequestModal";
+import type { RenewalView } from "@/lib/types";
 import { compactMoney, date, dateTime, daysUntil, money } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { PolicyDetail } from "@/lib/types";
 
 const TABS = ["overview", "coverage", "premiums", "documents", "activity"] as const;
+const FAMILY_TABS = ["overview", "coverage", "premiums", "documents", "activity", "servicing"] as const;
+type TabKey = (typeof FAMILY_TABS)[number];
+
+/** Renewal status and, only when the renewal engine is waiting for it, acceptance of renewed terms. */
+function Renewal({ policyId }: { policyId: string }) {
+  const { t, locale } = useI18n();
+  const { data, error, reload } = useApi<RenewalView>(`policies/${encodeURIComponent(policyId)}/renewal`);
+  const [busy, setBusy] = useState(false);
+  if (error || !data) return null;
+  const n = data.next;
+  async function answer(accepted: boolean) {
+    setBusy(true);
+    try { await api(`policies/${encodeURIComponent(policyId)}/renewal/acceptance`, { method: "POST", body: { accepted } }); reload(); } finally { setBusy(false); }
+  }
+  return (
+    <Card title={t("renewal.title")}>
+      {n ? (
+        <>
+          <KeyValue label={t("renewal.next")}>{date(n.due_date, locale)} · <span className="ltr-num">{money(n.payable)}</span></KeyValue>
+          <KeyValue label={t("renewal.type")}>{n.renewal_type_label}</KeyValue>
+          <KeyValue label={t("renewal.window")}>{n.days_until >= 0 ? t("renewal.inDays", { days: n.days_until }) : t("renewal.overdueBy", { days: Math.abs(n.days_until) })}</KeyValue>
+        </>
+      ) : <p className="text-sm text-slate-500">{t("renewal.none")}</p>}
+      {data.eligible === false && data.eligibility_message && <p className="text-xs text-amber-800 bg-amber-50 rounded-lg px-3 py-2 mt-3">{data.eligibility_message}</p>}
+      {data.case?.can.accept && (
+        <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
+          <p className="text-sm font-bold text-blue-900">{t("renewal.acceptTitle")}</p>
+          <p className="text-xs text-blue-800 mt-1">{t("renewal.acceptText", { amount: money(data.case.quoted_amount) })}</p>
+          <div className="flex gap-2 mt-3"><button type="button" className="btn-primary" disabled={busy} onClick={() => answer(true)}>{t("renewal.accept")}</button>
+            <button type="button" className="btn-secondary" disabled={busy} onClick={() => answer(false)}>{t("renewal.decline")}</button></div>
+        </div>)}
+      {data.case?.can.pay && <p className="text-xs text-slate-500 mt-3">{t("renewal.payFromPayments")}</p>}
+    </Card>
+  );
+}
 
 function StatusBanner({ p }: { p: PolicyDetail }) {
   const { t, locale } = useI18n();
@@ -31,7 +68,8 @@ export default function PolicyDetailPage() {
   const { t, locale } = useI18n();
   const { id } = useParams<{ id: string }>();
   const { data: p, error, loading, reload } = useApi<PolicyDetail>(`policies/${encodeURIComponent(id)}`);
-  const [tab, setTab] = useState<(typeof TABS)[number]>("overview");
+  const [tab, setTab] = useState<TabKey>("overview");
+  const [dialog, setDialog] = useState<RequestKind | null>(null);
 
   if (error && !p) {
     const missing = (error as ApiError).code === "NOT_FOUND";
@@ -48,12 +86,15 @@ export default function PolicyDetailPage() {
     <div className="space-y-5">
       <PageHeader
         title={p.product_name}
-        subtitle={<><span className="ltr-num">{p.policy_number || t("policies.numberPending")}</span> · <PolicyStatus statusKey={p.status_key} /></>}
+        subtitle={<><span className="ltr-num">{p.policy_number || t("policies.numberPending")}</span> · <PolicyStatus statusKey={p.status_key} />
+          {p.family && <span className="ms-2 text-xs font-semibold text-blue-700 bg-blue-50 rounded-full px-2 py-0.5">{t(`plan.${p.family.plan_type}`)} · {p.family.family_name}</span>}</>}
         actions={<>
           <Link href="/policies" className="btn-secondary">{t("policy.backToPolicies")}</Link>
-          {p.in_force && <Link href={`/claims/new?policy=${p.id}`} className="btn-secondary">{t("policy.fileClaim")}</Link>}
-          {p.in_force && <Link href="/payments" className="btn-primary">{t("policy.premiums")}</Link>}
+          {p.family && <Link href={`/family/${p.family.family_id}`} className="btn-secondary">{t("family.backToFamily")}</Link>}
+          {p.in_force && !p.restricted && <Link href={`/claims/new?policy=${p.id}`} className="btn-secondary">{t("policy.fileClaim")}</Link>}
+          {p.in_force && !p.restricted && <Link href={p.segment === "family" ? "/payments?segment=family" : "/payments"} className="btn-primary">{t("policy.premiums")}</Link>}
         </>} />
+      {p.restricted && <Banner tone="info" title={t("family.restricted.title")}>{t("family.restricted.text", { name: p.policyholder.name || "" })}</Banner>}
       <StatusBanner p={p} />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -64,7 +105,7 @@ export default function PolicyDetailPage() {
       </div>
 
       <div role="tablist" aria-label={t("policy.sections")} className="flex gap-1 overflow-x-auto border-b border-slate-200">
-        {TABS.map((k) => (
+        {(p.segment === "family" ? (p.restricted ? (["overview", "coverage"] as const) : FAMILY_TABS) : TABS).map((k) => (
           <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
             className={`px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors ${tab === k ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}>{t(`policy.tab.${k}`)}</button>
         ))}
@@ -72,6 +113,9 @@ export default function PolicyDetailPage() {
 
       {tab === "overview" && (
         <div className="grid lg:grid-cols-2 gap-5">
+          {p.restricted ? (
+            <Card title={t("policy.policyholder")}><KeyValue label={t("profile.name")}>{p.policyholder.name}</KeyValue><p className="text-xs text-slate-400 pt-3">{t("family.restricted.private")}</p></Card>
+          ) : (
           <Card title={t("policy.policyholder")}>
             <KeyValue label={t("profile.name")}>{p.policyholder.name}</KeyValue>
             <KeyValue label={t("profile.policyholderId")}><span className="ltr-num">{p.policyholder.policyholder_id}</span></KeyValue>
@@ -79,12 +123,22 @@ export default function PolicyDetailPage() {
             <KeyValue label={t("profile.dob")}>{date(p.policyholder.dob, locale)}</KeyValue>
             <KeyValue label={t("profile.email")}>{p.policyholder.email}</KeyValue>
             <KeyValue label={t("profile.phone")}><span className="ltr-num">{p.policyholder.phone}</span></KeyValue>
-          </Card>
+          </Card>)}
+          {p.insured_lives ? (
+            <Card title={t("family.insuredPersons")}>
+              <p className="text-xs text-slate-500 mb-2">{p.family?.plan_type === "Floater" ? t("family.floaterInsuredNote") : t("family.bundleInsuredNote")}</p>
+              {p.insured_lives.map((c) => (
+                <KeyValue key={c.customer_id} label={tOr(t, `relationship.${c.relationship}`, c.relationship)}>{c.name}{c.is_you && <span className="ms-2 text-[10px] text-blue-700 bg-blue-50 rounded-full px-2 py-0.5">{t("family.you")}</span>}
+                  {c.is_minor && <span className="ms-2 text-[10px] text-amber-700 bg-amber-50 rounded-full px-2 py-0.5">{t("policy.minor")}</span>}
+                  <span className="block text-xs font-medium text-slate-400">{c.dob ? date(c.dob, locale) : c.age != null ? t("family.ageYears", { count: c.age }) : ""}</span></KeyValue>))}
+            </Card>
+          ) : (
           <Card title={t("policy.insured")}>
             <KeyValue label={t("profile.name")}>{p.insured.name}</KeyValue>
             <KeyValue label={t("policy.relationship")}>{p.insured.relationship === "Self" ? t("policy.self") : p.insured.relationship}</KeyValue>
             <KeyValue label={t("profile.dob")}>{date(p.insured.dob, locale)}</KeyValue>
-          </Card>
+          </Card>)}
+          {p.segment === "family" && !p.restricted && p.in_force && <Renewal policyId={p.id} />}
           <Card title={t("policy.plan")}>
             <KeyValue label={t("policy.product")}>{p.plan.product_name}</KeyValue>
             <KeyValue label={t("policy.planType")}>{t(`insuranceType.${p.plan.insurance_type}`)}</KeyValue>
@@ -142,6 +196,19 @@ export default function PolicyDetailPage() {
         </Card>
       )}
 
+      {tab === "servicing" && p.segment === "family" && !p.restricted && (
+        <Card title={t("family.servicing")}>
+          <p className="text-xs text-slate-500 mb-4">{t("family.servicingNote")}</p>
+          {p.actions.filter((a) => a.available).length === 0 ? <EmptyState title={t("family.noActions")} text={t("family.noActionsText")} /> : (
+            <div className="grid sm:grid-cols-2 gap-3">{p.actions.filter((a) => a.available).map((a) => (
+              <button key={a.kind} type="button" onClick={() => setDialog(a.kind as RequestKind)}
+                className="card text-start px-4 py-3 hover:bg-blue-50/40 hover:border-blue-200 transition-colors">
+                <span className="block text-sm font-semibold text-slate-800">{t(`request.kind.${a.kind}`)}</span>
+                <span className="block text-xs text-slate-500 mt-0.5">{t(`request.hint.${a.kind}`)}</span></button>))}</div>)}
+          {p.actions.some((a) => !a.available && a.reason === "POLICY_NOT_IN_FORCE") && <p className="text-xs text-slate-400 mt-4">{t("family.notInForceNote")}</p>}
+        </Card>
+      )}
+
       {tab === "activity" && (
         <Card title={t("policy.activity")}>
           {p.timeline.length === 0 ? <EmptyState title={t("policy.noActivity")} /> : (
@@ -152,6 +219,9 @@ export default function PolicyDetailPage() {
           )}
         </Card>
       )}
+
+      {dialog && p.family && <RequestModal familyId={p.family.family_id} kind={dialog} policy={{ id: p.id, policy_number: p.policy_number, sum_assured: p.sum_assured }}
+        onClose={() => setDialog(null)} onDone={() => undefined} />}
     </div>
   );
 }

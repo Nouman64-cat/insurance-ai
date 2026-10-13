@@ -49,8 +49,24 @@ async def _safe(coro: Awaitable[Any]) -> tuple[bool, Any]:
         return False, None
 
 
+SEGMENTS = ("individual", "family", "all")
+
+
+def _segment(value: str) -> str:
+    if value not in SEGMENTS:
+        raise validation("Unknown segment", segments=list(SEGMENTS))
+    return value
+
+
 def _policies(items: list[dict]) -> list[dict]:
     return [labels.decorate_policy(p) for p in items]
+
+
+def _family_summary(g: dict) -> dict:
+    """What the dashboard's Family section shows per family. The floater pool is counted once and the bundle's certificates
+    each by their own cover — tenant-service did that arithmetic; this only passes it on."""
+    return {"id": g["id"], "name": g["name"], "role": g["role"], "plan_types": g["plan_types"], "arrangements": g["arrangements"],
+            "members": g["members"], "totals": g["totals"]}
 
 
 # ── dashboard ─────────────────────────────────────────────────────────────────
@@ -58,8 +74,8 @@ def _policies(items: list[dict]) -> list[dict]:
 @router.get("/dashboard")
 async def dashboard(p: Principal = Depends(current_customer)):
     c, scope = _up(p)
-    (ok_prof, profile), (ok_pol, policies), (ok_clm, claims) = await asyncio.gather(
-        _safe(c.get(f"{scope}/profile")), _safe(c.get(f"{scope}/policies")), _safe(c.get(f"{scope}/claims")))
+    (ok_prof, profile), (ok_pol, policies), (ok_clm, claims), (ok_fam, families) = await asyncio.gather(
+        _safe(c.get(f"{scope}/profile")), _safe(c.get(f"{scope}/policies")), _safe(c.get(f"{scope}/claims")), _safe(c.get(f"{scope}/family")))
     policies = _policies(policies or [])
     claims = claims or []
     in_force = [x for x in policies if x["in_force"]]
@@ -95,16 +111,18 @@ async def dashboard(p: Principal = Depends(current_customer)):
         "policies": policies[:5], "claims": claims[:3],
         "notices": [dict(n, read=n["key"] in read) for n in all_notices[:6]],
         "unread_notices": sum(1 for n in all_notices if n["key"] not in read),
-        "sections": {"profile": ok_prof, "policies": ok_pol, "claims": ok_clm},
+        # Present only for customers who belong to a family with issued policies; otherwise the dashboard is exactly as before.
+        "family": [_family_summary(g) for g in (families or [])] or None,
+        "sections": {"profile": ok_prof, "policies": ok_pol, "claims": ok_clm, "family": ok_fam},
     }
 
 
 # ── policies ──────────────────────────────────────────────────────────────────
 
 @router.get("/policies")
-async def list_policies(p: Principal = Depends(current_customer)):
+async def list_policies(segment: str = Query("individual"), p: Principal = Depends(current_customer)):
     c, scope = _up(p)
-    items = _policies(await c.get(f"{scope}/policies"))
+    items = _policies(await c.get(f"{scope}/policies", segment=_segment(segment)))
     return {"items": items, "total": len(items)}
 
 
@@ -117,10 +135,11 @@ async def policy_detail(policy_id: UUID, p: Principal = Depends(current_customer
 # ── premiums & payments ───────────────────────────────────────────────────────
 
 @router.get("/payments")
-async def payments_overview(p: Principal = Depends(current_customer)):
-    """Every policy's premium position in one view, plus the combined payment history."""
+async def payments_overview(segment: str = Query("individual"), p: Principal = Depends(current_customer)):
+    """Every policy's premium position in one view, plus the combined payment history. segment=family shows the family
+    policies the caller may pay (a floater once; each life-bundle certificate on its own policy)."""
     c, scope = _up(p)
-    policies = _policies(await c.get(f"{scope}/policies"))
+    policies = _policies(await c.get(f"{scope}/policies", segment=_segment(segment)))
     results = await asyncio.gather(*[_safe(c.get(f"{scope}/policies/{x['id']}/premiums")) for x in policies])
     rows, history, failed = [], [], 0
     for pol, (ok, prem) in zip(policies, results):
@@ -225,9 +244,9 @@ def _claim_decorate(c: dict) -> dict:
 
 
 @router.get("/claims")
-async def list_claims(p: Principal = Depends(current_customer)):
+async def list_claims(segment: str = Query("individual"), p: Principal = Depends(current_customer)):
     c, scope = _up(p)
-    items = await c.get(f"{scope}/claims")
+    items = await c.get(f"{scope}/claims", segment=_segment(segment))
     return {"items": items, "total": len(items)}
 
 
@@ -252,6 +271,9 @@ class ClaimIn(Strict):
     description: str = Field(min_length=10, max_length=4000)
     claimed_amount: float = Field(gt=0, le=1_000_000_000)
     event_details: dict = Field(default_factory=dict)
+    # Family policies: who the claim is for (defaults to the caller) and, for another adult, that they agreed to it.
+    covered_person_id: Optional[UUID] = None
+    consent_confirmed: bool = False
 
 
 async def _idempotent(p: Principal, scope: str, key: str, payload: dict, run) -> Any:
@@ -319,9 +341,9 @@ async def upload_claim_document(claim_id: UUID, doc_key: str, request: Request, 
 # ── documents ─────────────────────────────────────────────────────────────────
 
 @router.get("/documents")
-async def list_documents(p: Principal = Depends(current_customer)):
+async def list_documents(segment: str = Query("individual"), p: Principal = Depends(current_customer)):
     c, scope = _up(p)
-    items = await c.get(f"{scope}/documents")
+    items = await c.get(f"{scope}/documents", segment=_segment(segment))
     return {"items": items, "total": len(items)}
 
 
@@ -372,8 +394,8 @@ async def update_contact(body: ContactIn, request: Request, p: Principal = Depen
 @router.get("/notifications")
 async def list_notifications(p: Principal = Depends(current_customer)):
     c, scope = _up(p)
-    ok_pol, policies = await _safe(c.get(f"{scope}/policies"))
-    ok_clm, claims = await _safe(c.get(f"{scope}/claims"))
+    ok_pol, policies = await _safe(c.get(f"{scope}/policies", segment="all"))
+    ok_clm, claims = await _safe(c.get(f"{scope}/claims", segment="all"))
     if not ok_pol and not ok_clm:
         raise ApiError(503, "DOMAIN_UNAVAILABLE", "Notifications are temporarily unavailable.")
     built = notices.build(_policies(policies or []), claims or [])
@@ -393,10 +415,32 @@ async def mark_read(body: ReadIn, p: Principal = Depends(current_customer)):
     keys = body.keys
     if body.all:
         c, scope = _up(p)
-        _, policies = await _safe(c.get(f"{scope}/policies"))
-        _, claims = await _safe(c.get(f"{scope}/claims"))
+        _, policies = await _safe(c.get(f"{scope}/policies", segment="all"))
+        _, claims = await _safe(c.get(f"{scope}/claims", segment="all"))
         keys = [n["key"] for n in notices.build(_policies(policies or []), claims or [])]
     async with db.transaction() as conn:
         for k in keys[:500]:
             await conn.execute(text("INSERT INTO notification_state (account_id, notice_key) VALUES (:a, :k) ON CONFLICT DO NOTHING"), {"a": p.account_id, "k": k[:200]})
     return {"marked": len(keys)}
+
+
+# ── renewals (the existing renewal engine, customer-safe) ─────────────────────
+
+@router.get("/policies/{policy_id}/renewal")
+async def renewal_status(policy_id: UUID, p: Principal = Depends(current_customer)):
+    c, scope = _up(p)
+    return await c.get(f"{scope}/policies/{policy_id}/renewal")
+
+
+class RenewalAcceptanceIn(Strict):
+    accepted: bool
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
+@router.post("/policies/{policy_id}/renewal/acceptance")
+async def renewal_acceptance(policy_id: UUID, body: RenewalAcceptanceIn, p: Principal = Depends(current_customer)):
+    c, scope = _up(p)
+    result = await c.post(f"{scope}/policies/{policy_id}/renewal/acceptance", body.model_dump(exclude_none=True))
+    async with db.transaction() as conn:
+        await accounts.audit(conn, "RENEWAL_TERMS_ACCEPTED" if body.accepted else "RENEWAL_TERMS_DECLINED", account_id=p.account_id, tenant_id=p.tenant_id, policy_id=str(policy_id))
+    return result

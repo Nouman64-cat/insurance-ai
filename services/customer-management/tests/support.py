@@ -39,7 +39,7 @@ class FakeTenant:
         raise ApiError(404, "NOT_FOUND", "Record not found")
 
     async def get(self, path, **q):
-        return self._answer("GET", path)
+        return self._answer("GET", path, q or None)
 
     async def post(self, path, payload=None):
         return self._answer("POST", path, payload)

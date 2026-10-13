@@ -46,6 +46,10 @@ Browser ── customer-portal (Next.js, :3009) ── BFF, httpOnly cookies
 | `GET /notifications` · `POST /notifications/read` | derived from live data; only read marks are stored |
 | `GET /healthz` · `/readyz` | liveness / readiness |
 
+**Family** (same session, same account): `GET /family`, `/family/{id}`, `/family/{id}/policies`, `/family/{id}/members[/{key}]`, `/family/{id}/beneficiaries`,
+`POST /family/{id}/requests` (+ `GET /family/requests`, `POST /family/requests/{id}/withdraw`), `GET|POST /policies/{id}/renewal[/acceptance]`; the list endpoints
+take `?segment=individual|family|all`. See `docs/customer-portal/implementation-status.md` for the access model.
+
 Internal (`/internal/v1`, HMAC `TENANT_TO_CM_KEY`, caller `tenant-service`): `PUT /accounts`, `GET /accounts/by-customer/{id}`, `POST /accounts/{id}/suspend|release`.
 
 Errors: `{"error":{"code","message","details"}}` with stable codes; the portal translates by code.
@@ -62,8 +66,8 @@ Errors: `{"error":{"code","message","details"}}` with stable codes; the portal t
 
 ```bash
 docker compose up -d --build customer-management      # provisions the schema + roles, migrates, starts (host :8019)
-docker compose exec customer-management python -m unittest discover -s tests -t .      # 34 tests, disposable DB
-docker compose exec tenant-service python test_customer_portal_internal.py              # 14 adapter tests
+docker compose exec customer-management python -m unittest discover -s tests -t .      # 47 tests, disposable DB
+docker compose exec tenant-service python test_customer_portal_internal.py              # 14 individual + 20 family adapter tests (test_customer_portal_family.py)
 docker compose exec customer-management python -m app.backfill --dry-run                # legacy accounts
 ```
 

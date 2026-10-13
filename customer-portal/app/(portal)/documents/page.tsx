@@ -1,5 +1,6 @@
 "use client";
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
+import { SegmentTabs, useSegment } from "@/components/SegmentTabs";
 import { Card, EmptyState, ErrorState, PageHeader, Skeleton, tOr } from "@/components/ui";
 import { DownloadButton } from "@/components/DownloadButton";
 import { useApi } from "@/lib/api";
@@ -14,9 +15,10 @@ const GROUPS: Record<string, string[]> = {
   claims: ["claim_checklist", "claim_confirmation", "claim_document"],
 };
 
-export default function DocumentsPage() {
+function DocumentsInner() {
   const { t, locale } = useI18n();
-  const { data, error, loading, reload } = useApi<{ items: DocumentItem[] }>("documents");
+  const [segment, setSegment, hasFamily] = useSegment();
+  const { data, error, loading, reload } = useApi<{ items: DocumentItem[] }>(segment === "family" ? "documents?segment=family" : "documents");
   const [group, setGroup] = useState<"all" | keyof typeof GROUPS>("all");
   const [q, setQ] = useState("");
 
@@ -29,6 +31,7 @@ export default function DocumentsPage() {
   return (
     <div>
       <PageHeader title={t("documents.title")} subtitle={t("documents.subtitle")} />
+      {hasFamily && <SegmentTabs segment={segment} onChange={setSegment} />}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div role="group" aria-label={t("documents.filter")} className="flex flex-wrap gap-1.5">
           {(["all", ...Object.keys(GROUPS)] as const).map((g) => (
@@ -54,3 +57,5 @@ export default function DocumentsPage() {
     </div>
   );
 }
+
+export default function DocumentsPage() { return <Suspense><DocumentsInner /></Suspense>; }

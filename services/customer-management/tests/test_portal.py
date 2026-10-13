@@ -70,6 +70,7 @@ class Dashboard(Base):
                           policy(number="C", status="Lapsed", sum_assured=9_000_000, in_force=False, due_now=99_000, remaining=99_000),
                           policy(number="D", status="Cancelled", sum_assured=4_000_000, in_force=False),
                           policy(number="E", status="Matured", sum_assured=2_000_000, in_force=False)],
+            "/family": [],
             "/claims": [{"id": str(uuid4()), "status_key": "assessment", "policy_id": None, "policy_number": "A", "last_update": date.today().isoformat(), "claim_number": "C1"},
                         {"id": str(uuid4()), "status_key": "settled", "policy_id": None, "policy_number": "A", "last_update": date.today().isoformat(), "claim_number": "C2"}]})
         d = (await self.client.get("/v1/dashboard", headers=self.bearer(token))).json()
@@ -85,18 +86,18 @@ class Dashboard(Base):
 
     async def test_a_failing_section_degrades_the_page_instead_of_failing_it(self):
         token, _ = await self.active_session()
-        self.fake.routes.update({"/profile": {"name": "Z", "tenant": {}}, "/policies": [policy(number="A", due_now=100)],
+        self.fake.routes.update({"/profile": {"name": "Z", "tenant": {}}, "/policies": [policy(number="A", due_now=100)], "/family": [],
                                  "/claims": ApiError(503, "DOMAIN_UNAVAILABLE", "x")})
         r = await self.client.get("/v1/dashboard", headers=self.bearer(token))
         d = r.json()
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(d["sections"], {"profile": True, "policies": True, "claims": False})
+        self.assertEqual(d["sections"], {"profile": True, "policies": True, "claims": False, "family": True})
         self.assertEqual(d["summary"]["total_policies"], 1)
         self.assertEqual(d["summary"]["open_claims"], 0)   # falls back to the per-policy counts
 
     async def test_empty_customer_gets_an_empty_dashboard(self):
         token, _ = await self.active_session()
-        self.fake.routes.update({"/profile": {"name": "Z", "tenant": {}}, "/policies": [], "/claims": []})
+        self.fake.routes.update({"/profile": {"name": "Z", "tenant": {}}, "/policies": [], "/claims": [], "/family": []})
         d = (await self.client.get("/v1/dashboard", headers=self.bearer(token))).json()
         self.assertEqual((d["summary"]["total_policies"], d["summary"]["coverage_total"], d["summary"]["next_premium"]), (0, 0, None))
         self.assertEqual((d["notices"], d["unread_notices"]), ([], 0))

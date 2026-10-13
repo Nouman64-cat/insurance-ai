@@ -16,7 +16,25 @@ export interface PremiumInfo {
   can_pay: boolean;
 }
 
+export type AccessLevel = "owner" | "guardian" | "summary";
+export type PlanType = "Floater" | "LifeBundle";
+
+export interface FamilyRef {
+  family_id: string;
+  family_name: string;
+  family_policy_id: string;
+  plan_type: PlanType;
+  role: "head" | "member";
+  holder_customer_id: string;
+}
+
 export interface PolicyCard {
+  /** "family" policies belong to a Floater or Life Bundle arrangement; `access` says how much of it this customer may use. */
+  segment: "individual" | "family";
+  access: AccessLevel;
+  family: FamilyRef | null;
+  holder_name?: string;
+  insured_names?: string[];
   id: string;
   policy_number: string | null;
   product_name: string;
@@ -38,7 +56,7 @@ export interface PolicyCard {
   grace_period_end_date: string | null;
   free_look_end_date: string | null;
   premium: PremiumInfo;
-  claims: { total: number; open: number };
+  claims: { total: number; open: number } | null;
 }
 
 export interface DocumentItem {
@@ -65,6 +83,9 @@ export interface PolicyDetail extends PolicyCard {
   premium_schedule: { id: string; installment_no: number; due_date: string; amount_due: number; amount_paid: number; payable: number; state: string; status: string }[];
   versions: { version_number: string; effective_from: string; total_premium: number; event_type: string }[];
   documents: DocumentItem[];
+  insured_lives: { customer_id: string; name: string; age: number | null; dob: string | null; relationship: string; is_policyholder: boolean; is_you: boolean; is_minor: boolean }[] | null;
+  restricted: boolean;
+  actions: { kind: string; available: boolean; reason: string | null }[];
   timeline: { id: string; event: string; title: string; at: string; to_status: string | null; detail: { amount?: number; receipt_no?: string; claim_number?: string } }[];
 }
 
@@ -141,6 +162,9 @@ export interface ClaimRow {
   closed_at: string | null;
   last_update: string;
   own_claim: boolean;
+  segment?: "individual" | "family";
+  family?: FamilyRef | null;
+  covered_person?: { name: string | null; relationship: string | null } | null;
 }
 
 export interface ClaimDetail extends ClaimRow {
@@ -164,6 +188,9 @@ export interface ClaimOptions {
   in_force_today: boolean;
   note: string | null;
   out_of_scope: string[];
+  segment?: "individual" | "family";
+  family?: FamilyRef | null;
+  covered_persons: { id: string; name: string; relationship: string; is_minor: boolean; needs_consent: boolean; is_you: boolean }[];
 }
 
 export interface Notice {
@@ -190,11 +217,13 @@ export interface Dashboard {
     open_claims: number | null;
     upcoming_expiry: { policy_id: string; policy_number: string; date: string }[];
   };
+  /** Present only when the customer belongs to a family with issued policies. */
+  family: FamilyGroupSummary[] | null;
   policies: PolicyCard[];
   claims: ClaimRow[];
   notices: Notice[];
   unread_notices: number;
-  sections: { profile: boolean; policies: boolean; claims: boolean };
+  sections: { profile: boolean; policies: boolean; claims: boolean; family: boolean };
 }
 
 export interface Profile {
@@ -223,4 +252,108 @@ export interface Me {
   tenant_code: string;
   must_change_password: boolean;
   scope: string;
+}
+
+// ── family ────────────────────────────────────────────────────────────────────
+export interface FamilyTotals {
+  coverage: number;
+  policies_in_force: number;
+  policies_total: number;
+  next_premium: { date: string; amount: number; policy_number: string; policy_id: string; can_pay: boolean } | null;
+  outstanding: number;
+  remaining: number;
+  open_claims: number;
+  renewals_soon: { policy_id: string; policy_number: string; date: string }[];
+}
+
+export interface FamilyCounts { listed: number; insured: number; insured_total: number; nominees: number }
+
+export interface FamilyGroupSummary {
+  id: string;
+  name: string;
+  role: "head" | "member";
+  plan_types: PlanType[];
+  arrangements: { family_policy_id: string; plan_type: PlanType; plan_label: string; status: string; policy_count: number }[];
+  members: FamilyCounts;
+  totals: FamilyTotals;
+}
+
+export interface Arrangement {
+  family_policy_id: string;
+  plan_type: PlanType;
+  plan_label: string;
+  status: string;
+  term_years: number;
+  effective_date: string | null;
+  shared_sum_insured: number | null;
+  discount_percentage: number | null;
+  policies: PolicyCard[];
+}
+
+export interface MemberRow {
+  key: string;
+  kind: "insured" | "nominee";
+  name: string;
+  insured: boolean;
+  relationship: string;
+  age: number | null;
+  dob: string | null;
+  is_minor: boolean;
+  is_you: boolean;
+  guardian_name?: string | null;
+  share_pct?: number;
+  also_insured?: boolean;
+  policy_id: string;
+  policy_number: string | null;
+  plan_type: PlanType;
+  family_policy_id: string;
+  access: AccessLevel;
+  coverage: { kind: "shared_pool" | "own"; amount: number; note: string | null } | null;
+  coverage_effective_date?: string | null;
+  policy_status: string;
+  eligibility: "covered" | "pending" | "ended" | "nominee_only";
+  can_manage: boolean;
+}
+
+export interface FamilyOverview extends Omit<FamilyGroupSummary, "arrangements"> {
+  arrangements: Arrangement[];
+  members_list: MemberRow[];
+}
+
+export interface BeneficiariesView {
+  policy_id: string;
+  policy_number: string | null;
+  plan_type: PlanType;
+  beneficiaries: { id: string; name: string; relationship: string; share_pct: number; is_minor: boolean; guardian_name: string | null; cnic_masked: string | null; date_of_birth: string | null }[];
+  total_share: number;
+  complete: boolean;
+  can_request_change: boolean;
+  change_blocked_reason: string | null;
+  versions: { sequence: number; at: string; total_share: number; reason: string | null; changed_by: "insurer" | "you"; beneficiaries: { name: string; relationship: string; share_pct: number; is_minor: boolean }[] }[];
+}
+
+export interface FamilyRequest {
+  id: string;
+  family_id: string;
+  policy_id: string | null;
+  policy_number: string | null;
+  kind: string;
+  reference: string;
+  summary: Record<string, unknown>;
+  reason: string | null;
+  status: "SUBMITTED" | "WITHDRAWN";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RenewalView {
+  policy_id: string;
+  policy_number: string | null;
+  status: string;
+  contract_renewable: boolean | null;
+  annual_premium: number | null;
+  next: { due_date: string; amount: number | null; surcharge: number; payable: number; renewal_type_label: string; frequency: string | null; in_ledger: boolean; installment_no: number | null; window_opens_on: string; days_until: number; state: string; period_end: string | null } | null;
+  eligible: boolean | null;
+  eligibility_message: string | null;
+  case: { id: string; status: string; renewal_type_label: string; due_date: string; quoted_amount: number | null; acceptance: { required: boolean; accepted_at: string | null }; closed_reason: string | null; can: { accept: boolean; pay: boolean } } | null;
 }

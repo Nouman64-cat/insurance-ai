@@ -8,16 +8,24 @@ import { initials } from "@/lib/format";
 import type { Me } from "@/lib/types";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { Icon, ToastProvider, Skeleton } from "./ui";
+import { FamilyProvider, useFamilies } from "@/lib/family";
 
 const NAV = [
   { href: "/dashboard", key: "dashboard", icon: "dashboard" },
   { href: "/policies", key: "policies", icon: "policies" },
+  { href: "/family", key: "family", icon: "family", familyOnly: true },
   { href: "/payments", key: "payments", icon: "payments" },
   { href: "/claims", key: "claims", icon: "claims" },
   { href: "/documents", key: "documents", icon: "documents" },
   { href: "/profile", key: "profile", icon: "profile" },
   { href: "/support", key: "support", icon: "support" },
 ] as const;
+
+/** The navigation for this customer: "My Family" appears only when they belong to a family with issued policies. */
+function useNav() {
+  const { has } = useFamilies();
+  return NAV.filter((n) => !("familyOnly" in n && n.familyOnly) || has);
+}
 
 export const NOTICES_CHANGED = "cp:notices-changed";
 
@@ -39,9 +47,10 @@ function Brand({ collapsed }: { collapsed: boolean }) {
 function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
   const { t } = useI18n();
   const pathname = usePathname();
+  const nav = useNav();
   return (
     <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5" aria-label={t("nav.label")}>
-      {NAV.map((item) => {
+      {nav.map((item) => {
         const active = pathname === item.href || pathname.startsWith(item.href + "/");
         return (
           <Link key={item.href} href={item.href} onClick={onNavigate} title={collapsed ? t(`nav.${item.key}`) : undefined} aria-current={active ? "page" : undefined}
@@ -102,7 +111,12 @@ function AccountMenu({ me, onSignOut }: { me: Me | null; onSignOut: () => void }
 }
 
 export function Shell({ children }: { children: ReactNode }) {
+  return <FamilyProvider><ShellInner>{children}</ShellInner></FamilyProvider>;
+}
+
+function ShellInner({ children }: { children: ReactNode }) {
   const { t } = useI18n();
+  const nav = useNav();
   const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
@@ -126,7 +140,7 @@ export function Shell({ children }: { children: ReactNode }) {
   }, [router]);
 
   const unread = notices.data?.unread ?? 0;
-  const current = NAV.find((n) => pathname === n.href || pathname.startsWith(n.href + "/"));
+  const current = nav.find((n) => pathname === n.href || pathname.startsWith(n.href + "/"));
   const title = pathname.startsWith("/notifications") ? t("nav.notifications") : current ? t(`nav.${current.key}`) : t("brand.name");
 
   return (

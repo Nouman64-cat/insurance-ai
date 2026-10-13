@@ -70,6 +70,9 @@ from shared.models.core import (
     PremiumScheduleStatusEnum,
     Tenant,
 )
+from group_underwriting import age_from_dob
+from services import customer_portal_family as fam
+from services.customer_portal_family import PENDING_ISSUANCE, VISIBLE_STATUSES
 from shared.security.service_auth import CALLER_HEADER, verify
 from shared.services.policy_state_machine import record_event
 
@@ -78,10 +81,7 @@ router = APIRouter(prefix="/internal/customer-portal/v1", tags=["Internal: Custo
 
 CALLER = "customer-management"
 
-# Statuses a customer sees as "their policy". Earlier statuses are proposals/quotes, not policies.
-PENDING_ISSUANCE = ("Approved", "AcceptedWithLoadings", "PendingPayment")
-VISIBLE_STATUSES = frozenset(PENDING_ISSUANCE + ("Issued", "Active", "GracePeriod", "Lapsed", "Cancelled",
-                                                  "Matured", "Surrendered", "Expired"))
+# PENDING_ISSUANCE / VISIBLE_STATUSES (what a customer sees as "their policy") live with the family access rules.
 # A claim can be intimated for any policy that has ever carried cover.
 CLAIMABLE_STATUSES = frozenset({"Issued", "Active", "GracePeriod", "Lapsed", "Cancelled", "Matured", "Surrendered", "Expired"})
 SELF_CLAIM_CATEGORIES = ("Hospitalization", "Disability")  # death claims need claimant verification — out of scope
@@ -162,18 +162,34 @@ def _contact(c: Customer) -> dict:
 
 async def _customer(session: AsyncSession, tenant_id: UUID, customer_id: UUID) -> Customer:
     c = await session.get(Customer, customer_id)
-    if c is None or c.tenant_id != tenant_id or c.organization_id or c.family_group_id:
+    if c is None or c.tenant_id != tenant_id or c.organization_id:     # corporate employees have no retail portal
         raise HTTPException(404, "Customer not found")
     return c
 
 
-async def _owned_policy(session: AsyncSession, tenant_id: UUID, customer_id: UUID, policy_id: UUID) -> Policy:
-    """Gates 1-2: the policy must be this individual customer's own, customer-visible policy."""
+async def _owned_policy_access(session: AsyncSession, tenant_id: UUID, customer_id: UUID, policy_id: UUID, family: str = "none"
+                               ) -> tuple[Policy, fam.PolicyAccess]:
+    """Gates 1-2: the policy must be the caller's own, customer-visible policy.
+
+    family="none"  individual policies only (the original behaviour; a family policy id is a plain 404)
+    family="full"  also family policies the caller may fully act on (owner / guardian)
+    family="any"   also family policies the caller may only SEE in summary"""
     policy = await session.get(Policy, policy_id)
-    if (policy is None or policy.tenant_id != tenant_id or policy.customer_id != customer_id
-            or policy.master_policy_id or policy.family_policy_id or _st(policy) not in VISIBLE_STATUSES):
+    if policy is None or policy.tenant_id != tenant_id:
         raise HTTPException(404, "Policy not found")
-    return policy
+    if family == "none":
+        if (policy.customer_id != customer_id or policy.master_policy_id or policy.family_policy_id or _st(policy) not in VISIBLE_STATUSES):
+            raise HTTPException(404, "Policy not found")
+        return policy, fam.PolicyAccess("individual", "owner", owner_customer_id=policy.customer_id)
+    customer = await _customer(session, tenant_id, customer_id)
+    access = await fam.resolve(session, tenant_id, customer, policy)
+    if access is None or (family == "full" and not access.full):
+        raise HTTPException(404, "Policy not found")
+    return policy, access
+
+
+async def _owned_policy(session: AsyncSession, tenant_id: UUID, customer_id: UUID, policy_id: UUID, family: str = "none") -> Policy:
+    return (await _owned_policy_access(session, tenant_id, customer_id, policy_id, family))[0]
 
 
 async def _own_policies(session: AsyncSession, tenant_id: UUID, customer_id: UUID) -> list[Policy]:
@@ -273,7 +289,16 @@ def _frequency(schedules: list[PremiumSchedule]) -> Optional[str]:
     return _v(schedules[0].billing_frequency) if schedules else None
 
 
-async def _card(session: AsyncSession, policy: Policy, billing: Optional[dict] = None) -> dict:
+def _access_block(access: Optional[fam.PolicyAccess]) -> dict:
+    """Which arrangement a card belongs to and how much of it the caller may use. Individual policies carry only the segment."""
+    if access is None or access.segment == "individual":
+        return {"segment": "individual", "access": "owner", "family": None}
+    return {"segment": "family", "access": access.level, "family": {
+        "family_id": str(access.family_id), "family_name": access.family_name, "family_policy_id": str(access.family_policy_id),
+        "plan_type": access.plan_type, "role": access.role, "holder_customer_id": str(access.owner_customer_id)}}
+
+
+async def _card(session: AsyncSession, policy: Policy, billing: Optional[dict] = None, access: Optional[fam.PolicyAccess] = None) -> dict:
     billing = billing or await compute_billing(session, policy)
     schedules = sorted((await session.exec(select(PremiumSchedule).where(PremiumSchedule.policy_id == policy.id))).all(),
                        key=lambda s: (s.due_date, s.installment_no))
@@ -284,7 +309,9 @@ async def _card(session: AsyncSession, policy: Policy, billing: Optional[dict] =
     reinstated = (await session.exec(select(PolicyEvent.id).where(
         PolicyEvent.policy_id == policy.id, PolicyEvent.event_type == "PolicyReinstated"))).first() is not None
     next_inst = next((i for i in billing["installments"] if i["status"] in ("Pending", "Overdue")), None)
+    summary_only = access is not None and not access.full          # someone else's certificate: position only, nothing to act on
     return {
+        **_access_block(access),
         "id": str(policy.id), "policy_number": policy.policy_number, "product_name": policy.product_name,
         "insurance_type": _v(policy.insurance_type), "status": st, "pending_issuance": st in PENDING_ISSUANCE,
         "in_force": st in IN_FORCE_STATUSES, "reinstated": reinstated,
@@ -301,18 +328,27 @@ async def _card(session: AsyncSession, policy: Policy, billing: Optional[dict] =
             "due_now": _due_now(billing), "remaining": summary["total_outstanding"], "arrears_count": summary["arrears_count"],
             "in_grace": summary["in_grace"], "grace_until": summary["grace_until"], "grace_days_left": summary["grace_days_left"],
             "lapse_due": summary["lapse_due"], "paid_count": summary["paid"], "installments_total": summary["total"],
-            "total_paid": billing["dashboard"]["total_collected"], "can_pay": bool(billing["can_collect"]),
+            "total_paid": billing["dashboard"]["total_collected"], "can_pay": bool(billing["can_collect"]) and not summary_only,
         },
-        "claims": {"total": len(open_claims), "open": sum(
+        # claims are confidential to the life they concern: a summary view never reveals whether the other adult has any
+        "claims": None if summary_only else {"total": len(open_claims), "open": sum(
             1 for c in open_claims if _v(c.status) not in (ClaimStatusEnum.CLOSED.value, ClaimStatusEnum.DECLINED.value,
                                                            ClaimStatusEnum.SETTLED.value))},
     }
 
 
 @router.get("/tenants/{tenant_id}/customers/{customer_id}/policies")
-async def list_policies(tenant_id: UUID, customer_id: UUID, session: AsyncSession = Depends(get_session)):
-    await _customer(session, tenant_id, customer_id)
-    return [await _card(session, p) for p in await _own_policies(session, tenant_id, customer_id)]
+async def list_policies(tenant_id: UUID, customer_id: UUID, segment: str = "individual", session: AsyncSession = Depends(get_session)):
+    """segment=individual (default, unchanged) | family (family policies the caller may act on) | all (both)."""
+    customer = await _customer(session, tenant_id, customer_id)
+    if segment not in ("individual", "family", "all"):
+        raise HTTPException(422, detail={"code": "VALIDATION", "message": "Unknown segment"})
+    out: list[dict] = []
+    if segment in ("individual", "all"):
+        out += [await _card(session, p) for p in await _own_policies(session, tenant_id, customer_id)]
+    if segment in ("family", "all"):
+        out += [await _card(session, p, access=a) for p, a in await fam.family_policies_for(session, tenant_id, customer, full_only=True)]
+    return out
 
 
 async def _nominees(session: AsyncSession, policy: Policy) -> list[dict]:
@@ -327,7 +363,7 @@ async def _nominees(session: AsyncSession, policy: Policy) -> list[dict]:
     return []
 
 
-async def _documents(session: AsyncSession, policy: Policy) -> list[dict]:
+async def _documents(session: AsyncSession, policy: Policy, viewer: Optional[Customer] = None, access: Optional[fam.PolicyAccess] = None) -> list[dict]:
     """Everything downloadable for one policy. `id` is an opaque handle; file paths never leave this service."""
     pid, out = str(policy.id), []
 
@@ -364,6 +400,8 @@ async def _documents(session: AsyncSession, policy: Policy) -> list[dict]:
         claim = await session.get(Claim, proc.claim_id)
         if claim is None:
             continue
+        if access is not None and access.segment == "family" and viewer is not None and not await _claim_visible(session, viewer, access, claim, proc):
+            continue                     # another adult's claim papers are not this customer's to download
         if proc.documents_json:
             add("claim_checklist", str(claim.id), f"Claim {claim.claim_number} — document checklist", proc.checklist_generated_at, True)
         if proc.confirmation_path:
@@ -395,22 +433,47 @@ async def _timeline(session: AsyncSession, policy: Policy) -> list[dict]:
     return out
 
 
+async def _insured_view(session: AsyncSession, policy: Policy, access: fam.PolicyAccess, caller: Customer) -> list[dict]:
+    """Who is actually covered by a family policy, from the authoritative records (never the roster).
+    A date of birth is shown only for the caller themself or a minor they look after."""
+    out = []
+    for c in await fam.insured_lives(session, policy, access.plan_type):
+        shown_dob = c.id == caller.id or (access.full and fam.is_minor(c.dob))
+        out.append({"customer_id": str(c.id), "name": c.name, "age": age_from_dob(c.dob) if c.dob else None, "dob": _iso(c.dob) if shown_dob else None,
+                    "relationship": _v(c.family_relationship) if c.family_relationship else "Self",
+                    "is_policyholder": c.id == policy.customer_id, "is_you": c.id == caller.id, "is_minor": fam.is_minor(c.dob)})
+    return out
+
+
+async def policy_actions(session: AsyncSession, policy: Policy, access: fam.PolicyAccess) -> list[dict]:
+    from services import reinstatement_engine as rein
+    eligible = False
+    if _st(policy) == "Lapsed" and access.full:
+        eligible = bool((await rein.evaluate_eligibility(session, policy)).get("eligible"))
+    return fam.available_actions(policy, access, reinstatement_eligible=eligible)
+
+
 @router.get("/tenants/{tenant_id}/customers/{customer_id}/policies/{policy_id}")
 async def policy_detail(tenant_id: UUID, customer_id: UUID, policy_id: UUID, session: AsyncSession = Depends(get_session)):
     customer = await _customer(session, tenant_id, customer_id)
-    policy = await _owned_policy(session, tenant_id, customer_id, policy_id)
+    policy, access = await _owned_policy_access(session, tenant_id, customer_id, policy_id, family="any")
+    holder = customer if policy.customer_id == customer.id else (await session.get(Customer, policy.customer_id))
     billing = await compute_billing(session, policy)
-    card = await _card(session, policy, billing)
+    card = await _card(session, policy, billing, access)
     facts = await eng.policy_facts(session, policy)
     versions = (await session.exec(select(PolicyVersion).where(PolicyVersion.policy_id == policy.id))).all()
     riders = (await session.exec(select(PolicyRider).where(PolicyRider.policy_id == policy.id))).all()
-    contact = _contact(customer)
-    return {
+    contact = _contact(holder) if (holder and access.full) else {"email": None, "phone": None, "address": None}
+    family = access.segment == "family"
+    insured_lives = await _insured_view(session, policy, access, customer) if family else None
+    detail = {
         **card,
-        "policyholder": {"name": customer.name, "policyholder_id": customer.policyholder_id, "cnic_masked": mask_cnic(customer.cnic),
-                         "dob": _iso(customer.dob), "email": contact["email"], "phone": contact["phone"], "address": contact["address"]},
-        "insured": {"name": policy.dependent_name or customer.name, "relationship": "Dependent" if policy.dependent_name else "Self",
-                    "dob": _iso(policy.dependent_dob or customer.dob)},
+        "policyholder": {"name": holder.name if holder else None, "policyholder_id": holder.policyholder_id if (holder and access.full) else None,
+                         "cnic_masked": mask_cnic(holder.cnic) if (holder and access.full) else None,
+                         "dob": _iso(holder.dob) if (holder and access.full) else None,
+                         "email": contact["email"], "phone": contact["phone"], "address": contact["address"]},
+        "insured": {"name": policy.dependent_name or (holder.name if holder else None), "relationship": "Dependent" if policy.dependent_name else "Self",
+                    "dob": _iso(policy.dependent_dob or (holder.dob if holder else None)) if access.full else None},
         "plan": {"product_name": policy.product_name, "insurance_type": _v(policy.insurance_type), "term_years": policy.term_years},
         "coverage": {
             "sum_assured": policy.coverage_amount,
@@ -418,14 +481,22 @@ async def policy_detail(tenant_id: UUID, customer_id: UUID, policy_id: UUID, ses
             "benefits": [{"category": b["category"], "label": b["label"], "sum_assured": b["sum_assured"], "detail": b["detail"]}
                          for b in eng.benefit_menu(policy, facts["riders"], date.today()) if b["available"]],
         },
+        "insured_lives": insured_lives,
+        "restricted": not access.full,
+    }
+    if not access.full:       # position only: no beneficiaries, schedule, papers or activity of someone else's policy
+        return {**detail, "nominees": [], "premium_schedule": [], "versions": [], "documents": [], "timeline": [], "actions": []}
+    return {
+        **detail,
         "nominees": await _nominees(session, policy),
         "premium_schedule": [{"id": i["id"], "installment_no": i["installment_no"], "due_date": i["due_date"], "amount_due": i["amount_due"],
                               "amount_paid": i["amount_paid"], "payable": i["payable"], "state": i["state"], "status": i["status"]}
                              for i in billing["installments"]],
         "versions": [{"version_number": v.version_number, "effective_from": _iso(v.effective_from), "total_premium": v.total_premium,
                       "event_type": v.event_type} for v in sorted(versions, key=lambda v: v.created_at)],
-        "documents": await _documents(session, policy),
+        "documents": await _documents(session, policy, customer, access),
         "timeline": await _timeline(session, policy),
+        "actions": await policy_actions(session, policy, access) if family else [],
     }
 
 
@@ -439,7 +510,7 @@ def _receipt_view(r: PremiumReceipt) -> dict:
 
 @router.get("/tenants/{tenant_id}/customers/{customer_id}/policies/{policy_id}/premiums")
 async def premiums(tenant_id: UUID, customer_id: UUID, policy_id: UUID, session: AsyncSession = Depends(get_session)):
-    policy = await _owned_policy(session, tenant_id, customer_id, policy_id)
+    policy = await _owned_policy(session, tenant_id, customer_id, policy_id, family="full")
     billing = await compute_billing(session, policy)
     receipts = (await session.exec(select(PremiumReceipt).where(PremiumReceipt.policy_id == policy.id)
                                    .order_by(PremiumReceipt.created_at.desc()))).all()  # type: ignore[attr-defined]
@@ -476,7 +547,7 @@ async def pay_installment(tenant_id: UUID, customer_id: UUID, policy_id: UUID, s
 
     The browser never supplies an amount: `expected_amount` is only what the customer SAW, and a mismatch with what
     is payable now (e.g. a late surcharge started overnight) is refused so they can review the new figure."""
-    policy = await _owned_policy(session, tenant_id, customer_id, policy_id)
+    policy = await _owned_policy(session, tenant_id, customer_id, policy_id, family="full")
     if _st(policy) not in IN_FORCE_STATUSES:
         raise HTTPException(409, detail={"code": "POLICY_NOT_PAYABLE", "message": "Premiums can only be paid while the policy is in force."})
     schedule = await session.get(PremiumSchedule, schedule_id)
@@ -526,16 +597,39 @@ CLAIM_EVENT_TITLES = {
 }
 
 
-async def _owned_claim(session: AsyncSession, tenant_id: UUID, customer_id: UUID, claim_id: UUID) -> tuple[Policy, Claim, Optional[ClaimProcess]]:
+async def _claim_visible(session: AsyncSession, customer: Customer, access: fam.PolicyAccess, claim: Claim, proc: Optional[ClaimProcess]) -> bool:
+    """Claims are confidential to the life they concern. On a family policy the caller sees a claim only if they filed it
+    through the portal, it is about them, or it is about a minor they are responsible for — so a family head holding the
+    shared contract cannot read a spouse's claim that the spouse (or the insurer's staff) registered."""
+    if access.segment == "individual":
+        return True
+    if proc is None:
+        return bool(claim.claimant_cnic and customer.cnic and claim.claimant_cnic == customer.cnic)
+    if proc.channel == "Portal" and proc.intimated_by == customer.name:
+        return True
+    cnic = (proc.covered_person_cnic or "").strip()
+    if not cnic:
+        return (proc.covered_person_relationship or "Self") == "Self" and (claim.claimant_cnic or "") == (customer.cnic or "")
+    if customer.cnic and cnic == customer.cnic:
+        return True
+    covered = (await session.exec(select(Customer).where(Customer.tenant_id == customer.tenant_id, Customer.cnic == cnic))).first()
+    return bool(covered and access.full and fam.is_minor(covered.dob))
+
+
+async def _owned_claim(session: AsyncSession, tenant_id: UUID, customer_id: UUID, claim_id: UUID
+                       ) -> tuple[Policy, Claim, Optional[ClaimProcess], fam.PolicyAccess]:
     claim = await session.get(Claim, claim_id)
     if claim is None or claim.tenant_id != tenant_id:
         raise HTTPException(404, "Claim not found")
-    policy = await _owned_policy(session, tenant_id, customer_id, claim.policy_id)
+    policy, access = await _owned_policy_access(session, tenant_id, customer_id, claim.policy_id, family="full")
     proc = (await session.exec(select(ClaimProcess).where(ClaimProcess.claim_id == claim.id))).first()
-    return policy, claim, proc
+    customer = await _customer(session, tenant_id, customer_id)
+    if not await _claim_visible(session, customer, access, claim, proc):
+        raise HTTPException(404, "Claim not found")
+    return policy, claim, proc, access
 
 
-async def _claim_row(session: AsyncSession, policy: Policy, claim: Claim, proc: Optional[ClaimProcess]) -> dict:
+async def _claim_row(session: AsyncSession, policy: Policy, claim: Claim, proc: Optional[ClaimProcess], access: Optional[fam.PolicyAccess] = None) -> dict:
     st = _v(claim.status)
     last = (await session.exec(select(ClaimStatusHistory).where(ClaimStatusHistory.claim_id == claim.id)
                                .order_by(ClaimStatusHistory.created_at.desc()))).first()  # type: ignore[attr-defined]
@@ -552,17 +646,28 @@ async def _claim_row(session: AsyncSession, policy: Policy, claim: Claim, proc: 
         "settled_at": _iso(claim.settled_at), "closed_at": _iso(claim.closed_at),
         "last_update": (last.created_at if last else claim.created_at).isoformat(),
         "own_claim": (claim.claimant_relationship or "Self") == "Self",
+        **_access_block(access),
+        "covered_person": ({"name": proc.covered_person_name, "relationship": proc.covered_person_relationship} if (proc and access and access.segment == "family") else None),
     }
 
 
 @router.get("/tenants/{tenant_id}/customers/{customer_id}/claims")
-async def list_claims(tenant_id: UUID, customer_id: UUID, session: AsyncSession = Depends(get_session)):
-    await _customer(session, tenant_id, customer_id)
+async def list_claims(tenant_id: UUID, customer_id: UUID, segment: str = "individual", session: AsyncSession = Depends(get_session)):
+    """segment=individual (default, unchanged) | family | all. Family claims are filtered by confidentiality (see _claim_visible)."""
+    customer = await _customer(session, tenant_id, customer_id)
+    if segment not in ("individual", "family", "all"):
+        raise HTTPException(422, detail={"code": "VALIDATION", "message": "Unknown segment"})
+    pairs: list[tuple[Policy, fam.PolicyAccess]] = []
+    if segment in ("individual", "all"):
+        pairs += [(p, fam.PolicyAccess("individual", "owner", owner_customer_id=p.customer_id)) for p in await _own_policies(session, tenant_id, customer_id)]
+    if segment in ("family", "all"):
+        pairs += await fam.family_policies_for(session, tenant_id, customer, full_only=True)
     out = []
-    for p in await _own_policies(session, tenant_id, customer_id):
+    for p, access in pairs:
         for c in (await session.exec(select(Claim).where(Claim.policy_id == p.id))).all():
             proc = (await session.exec(select(ClaimProcess).where(ClaimProcess.claim_id == c.id))).first()
-            out.append(await _claim_row(session, p, c, proc))
+            if await _claim_visible(session, customer, access, c, proc):
+                out.append(await _claim_row(session, p, c, proc, access))
     return sorted(out, key=lambda r: r["reported_date"] or "", reverse=True)
 
 
@@ -578,8 +683,8 @@ def _customer_stages(proc: ClaimProcess, claim: Claim, paid: float) -> list[dict
     return out
 
 
-async def _claim_detail(session: AsyncSession, policy: Policy, claim: Claim, proc: Optional[ClaimProcess]) -> dict:
-    row = await _claim_row(session, policy, claim, proc)
+async def _claim_detail(session: AsyncSession, policy: Policy, claim: Claim, proc: Optional[ClaimProcess], access: Optional[fam.PolicyAccess] = None) -> dict:
+    row = await _claim_row(session, policy, claim, proc, access)
     payouts = (await session.exec(select(ClaimPayout).where(ClaimPayout.claim_id == claim.id))).all()
     paid = round(sum(p.amount for p in payouts if p.status in ("Completed", "Paid", "Reconciled", "Settled")), 2)
     detail: dict = {**row, "stages": None, "documents": [], "timeline": [], "decision": None, "eligibility": None,
@@ -614,13 +719,32 @@ async def _claim_detail(session: AsyncSession, policy: Policy, claim: Claim, pro
 
 @router.get("/tenants/{tenant_id}/customers/{customer_id}/claims/{claim_id}")
 async def claim_detail(tenant_id: UUID, customer_id: UUID, claim_id: UUID, session: AsyncSession = Depends(get_session)):
-    policy, claim, proc = await _owned_claim(session, tenant_id, customer_id, claim_id)
-    return await _claim_detail(session, policy, claim, proc)
+    policy, claim, proc, access = await _owned_claim(session, tenant_id, customer_id, claim_id)
+    return await _claim_detail(session, policy, claim, proc, access)
+
+
+async def _covered_choices(session: AsyncSession, policy: Policy, access: fam.PolicyAccess, caller: Customer) -> list[dict]:
+    """Whom a claim on this policy may be for: only actually insured lives, from authoritative records."""
+    if access.segment == "individual":
+        return [{"id": str(caller.id), "name": caller.name, "relationship": "Self", "is_minor": False, "needs_consent": False, "is_you": True}]
+    out = []
+    for c in await fam.insured_lives(session, policy, access.plan_type):
+        mine = c.id == caller.id
+        minor = fam.is_minor(c.dob)
+        # A guardian may act for a minor; an adult other than the caller must consent to their health information being shared.
+        if not mine and not (minor and access.full):
+            if access.plan_type == "LifeBundle":
+                continue                      # a bundle certificate insures its own holder only
+        rel = _v(c.family_relationship) if c.family_relationship else "Self"
+        out.append({"id": str(c.id), "name": c.name, "relationship": "Self" if mine else rel, "is_minor": minor,
+                    "needs_consent": (not mine) and not minor, "is_you": mine})
+    return out
 
 
 @router.get("/tenants/{tenant_id}/customers/{customer_id}/policies/{policy_id}/claims/options")
 async def claim_options(tenant_id: UUID, customer_id: UUID, policy_id: UUID, session: AsyncSession = Depends(get_session)):
-    policy = await _owned_policy(session, tenant_id, customer_id, policy_id)
+    customer = await _customer(session, tenant_id, customer_id)
+    policy, access = await _owned_policy_access(session, tenant_id, customer_id, policy_id, family="full")
     facts = await eng.policy_facts(session, policy)
     menu = {b["category"]: b for b in eng.benefit_menu(policy, facts["riders"], date.today())}
     claimable = _st(policy) in CLAIMABLE_STATUSES
@@ -633,6 +757,8 @@ async def claim_options(tenant_id: UUID, customer_id: UUID, policy_id: UUID, ses
         "note": ("Claims for events that happened while cover was in force can still be reported, even if the policy is not in force today."
                  if not eng.covered_on(facts["periods"], date.today()) and facts["periods"] else None),
         "out_of_scope": ["Death", "AccidentalDeath"],
+        "covered_persons": await _covered_choices(session, policy, access, customer),
+        **_access_block(access),
     }
 
 
@@ -645,29 +771,54 @@ class ClaimIntimation(BaseModel):
     description: str = PField(min_length=10, max_length=4000)
     claimed_amount: float = PField(gt=0, le=1_000_000_000)
     event_details: dict = PField(default_factory=dict)
+    # Family policies: who the claim is for (defaults to the caller) and, for another adult, that they agreed.
+    covered_person_id: Optional[UUID] = None
+    consent_confirmed: bool = False
 
 
 @router.post("/tenants/{tenant_id}/customers/{customer_id}/policies/{policy_id}/claims", status_code=201)
 async def intimate_claim(tenant_id: UUID, customer_id: UUID, policy_id: UUID, body: ClaimIntimation, request: Request,
                          session: AsyncSession = Depends(get_session)):
-    """A customer's own claim, registered through the existing claims workflow (channel "Portal"). Whether it is
-    payable is still decided by the existing eligibility check on the EVENT date — a claim reported after expiry for
-    an event during cover is registered, not refused."""
+    """A customer's claim, registered through the existing claims workflow (channel "Portal"). Whether it is payable is
+    still decided by the existing eligibility check on the EVENT date — a claim reported after expiry for an event during
+    cover is registered, not refused. On a family policy the claim must be for a person who is actually insured under it."""
     customer = await _customer(session, tenant_id, customer_id)
-    policy = await _owned_policy(session, tenant_id, customer_id, policy_id)
+    policy, access = await _owned_policy_access(session, tenant_id, customer_id, policy_id, family="full")
     if _st(policy) not in CLAIMABLE_STATUSES:
         raise HTTPException(409, detail={"code": "CLAIM_NOT_ALLOWED", "message": "Claims can be made once the policy has been issued."})
     if body.category not in SELF_CLAIM_CATEGORIES:
         raise HTTPException(422, detail={"code": "CLAIM_TYPE_NOT_SUPPORTED_ONLINE",
                                          "message": "This type of claim cannot be submitted online. Please contact your insurer."})
+
+    covered = customer
+    covered_rel, claimant_rel = "Self", "Self"
+    if access.segment == "family":
+        choices = {c["id"]: c for c in await _covered_choices(session, policy, access, customer)}
+        # Default: the caller if they are an insured life here; otherwise the policy's only insured person (a child's certificate).
+        wanted = str(body.covered_person_id) if body.covered_person_id else (str(customer.id) if str(customer.id) in choices else next(iter(choices), ""))
+        choice = choices.get(wanted)
+        if choice is None:
+            raise HTTPException(422, detail={"code": "COVERED_PERSON_NOT_INSURED",
+                                             "message": "That person is not insured under this policy, so a claim cannot be made for them."})
+        if choice["needs_consent"] and not body.consent_confirmed:
+            raise HTTPException(422, detail={"code": "CONSENT_REQUIRED",
+                                             "message": "Confirm that the insured person has agreed to this claim being made on their behalf."})
+        covered = await session.get(Customer, UUID(wanted))
+        if covered.id != customer.id:
+            claimant_rel = "Representative" if choice["is_minor"] else "Self"
+            # A floater insures the spouse under the head's contract; a bundle certificate's life assured is its own holder.
+            covered_rel = "Spouse" if access.plan_type == "Floater" and not choice["is_minor"] else "Self"
+
     facts = await eng.policy_facts(session, policy)
     menu = {b["category"]: b for b in eng.benefit_menu(policy, facts["riders"], body.event_date)}
     if not menu.get(body.category, {}).get("available"):
         raise HTTPException(422, detail={"code": "INELIGIBLE_CLAIM_TYPE", "message": "Your plan does not include this benefit."})
-    # Duplicate: another live claim of the same type for the same event date.
+    # Duplicate: another live claim of the same type, for the same person, for the same event date.
     for proc in (await session.exec(select(ClaimProcess).where(ClaimProcess.policy_id == policy.id,
                                                               ClaimProcess.category == body.category,
                                                               ClaimProcess.event_date == body.event_date))).all():
+        if access.segment == "family" and (proc.covered_person_name or "").strip().lower() != (covered.name or "").strip().lower():
+            continue
         other = await session.get(Claim, proc.claim_id)
         if other and _v(other.status) not in (ClaimStatusEnum.DECLINED.value,):
             raise HTTPException(409, detail={"code": "DUPLICATE_CLAIM", "message": "A claim for this event has already been submitted.",
@@ -677,13 +828,13 @@ async def intimate_claim(tenant_id: UUID, customer_id: UUID, policy_id: UUID, bo
         category=body.category, event_date=body.event_date, event_end_date=body.event_end_date, cause=body.cause,
         event_place=body.event_place, event_description=body.description, event_details=body.event_details,
         claimed_amount=body.claimed_amount, claimant_name=customer.name, claimant_cnic=customer.cnic,
-        claimant_relationship="Self", claimant_phone=contact["phone"], claimant_email=contact["email"],
-        covered_person_name=customer.name, covered_person_cnic=customer.cnic, covered_person_relationship="Self",
+        claimant_relationship=claimant_rel, claimant_phone=contact["phone"], claimant_email=contact["email"],
+        covered_person_name=covered.name, covered_person_cnic=covered.cnic, covered_person_relationship=covered_rel,
         channel="Portal", notes="Submitted by the policyholder through the customer portal.")
     await register_claim(tenant_id, policy.id, reg, request, user=_portal_actor(customer), session=session)
     claim = (await session.exec(select(Claim).where(Claim.policy_id == policy.id).order_by(Claim.created_at.desc()))).first()  # type: ignore[attr-defined]
     proc = (await session.exec(select(ClaimProcess).where(ClaimProcess.claim_id == claim.id))).first()
-    return await _claim_detail(session, policy, claim, proc)
+    return await _claim_detail(session, policy, claim, proc, access)
 
 
 @router.post("/tenants/{tenant_id}/customers/{customer_id}/claims/{claim_id}/documents/{key}")
@@ -691,24 +842,30 @@ async def upload_claim_document(tenant_id: UUID, customer_id: UUID, claim_id: UU
                                 note: Optional[str] = Form(None), file: UploadFile = File(...),
                                 session: AsyncSession = Depends(get_session)):
     customer = await _customer(session, tenant_id, customer_id)
-    policy, claim, proc = await _owned_claim(session, tenant_id, customer_id, claim_id)
+    policy, claim, proc, access = await _owned_claim(session, tenant_id, customer_id, claim_id)
     if proc is None:
         raise HTTPException(409, detail={"code": "CLAIM_NOT_READY", "message": "This claim is not ready for documents yet."})
     await receive_document(tenant_id, policy.id, claim.id, key, request, note=note, file=file,
                            user=_portal_actor(customer), session=session)
     await session.refresh(claim)
     proc = (await session.exec(select(ClaimProcess).where(ClaimProcess.claim_id == claim.id))).first()
-    return await _claim_detail(session, policy, claim, proc)
+    return await _claim_detail(session, policy, claim, proc, access)
 
 
 # ── documents ─────────────────────────────────────────────────────────────────
 
 @router.get("/tenants/{tenant_id}/customers/{customer_id}/documents")
-async def list_documents(tenant_id: UUID, customer_id: UUID, session: AsyncSession = Depends(get_session)):
-    await _customer(session, tenant_id, customer_id)
+async def list_documents(tenant_id: UUID, customer_id: UUID, segment: str = "individual", session: AsyncSession = Depends(get_session)):
+    customer = await _customer(session, tenant_id, customer_id)
+    if segment not in ("individual", "family", "all"):
+        raise HTTPException(422, detail={"code": "VALIDATION", "message": "Unknown segment"})
     out: list[dict] = []
-    for p in await _own_policies(session, tenant_id, customer_id):
-        out.extend(await _documents(session, p))
+    if segment in ("individual", "all"):
+        for p in await _own_policies(session, tenant_id, customer_id):
+            out.extend(await _documents(session, p))
+    if segment in ("family", "all"):
+        for p, access in await fam.family_policies_for(session, tenant_id, customer, full_only=True):
+            out.extend({**d, "segment": "family", "family_name": access.family_name} for d in await _documents(session, p, customer, access))
     return sorted(out, key=lambda d: d["date"] or "", reverse=True)
 
 
@@ -721,10 +878,10 @@ def _file_response(path: str, filename: str, media: str = "application/pdf") -> 
 @router.get("/tenants/{tenant_id}/customers/{customer_id}/documents/download")
 async def download_document(tenant_id: UUID, customer_id: UUID, handle: str, session: AsyncSession = Depends(get_session)):
     """`handle` = kind:policy_id:item_id from the listing. Ownership is checked through the policy; unknown kinds 404."""
-    await _customer(session, tenant_id, customer_id)
+    customer = await _customer(session, tenant_id, customer_id)
     try:
         kind, pid, item = handle.split(":", 2)
-        policy = await _owned_policy(session, tenant_id, customer_id, UUID(pid))
+        policy, access = await _owned_policy_access(session, tenant_id, customer_id, UUID(pid), family="full")
     except (ValueError, HTTPException):
         raise HTTPException(404, "The document is not available")
 
@@ -762,7 +919,7 @@ async def download_document(tenant_id: UUID, customer_id: UUID, handle: str, ses
         claim_id = item.split(".", 1)[0]
         claim = await get(Claim, claim_id)
         proc = (await session.exec(select(ClaimProcess).where(ClaimProcess.claim_id == claim.id))).first()
-        if proc is None:
+        if proc is None or not await _claim_visible(session, customer, access, claim, proc):
             raise HTTPException(404, "The document is not available")
         if kind == "claim_checklist":
             from routers.claim_workflow import _render_checklist

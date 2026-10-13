@@ -37,13 +37,14 @@ def raise_for(resp: Upstream) -> None:
         return
     if resp.status == 404:
         raise not_found()
-    if resp.status >= 500 or resp.status in (401, 403):
-        log.error("tenant-service returned %s", resp.status)
-        raise unavailable()
     detail = (resp.body or {}).get("detail") if isinstance(resp.body, dict) else None
+    business_refusal = isinstance(detail, dict) and detail.get("code") and detail.get("code") != "SERVICE_AUTH_FAILED"
+    if resp.status >= 500 or (resp.status in (401, 403) and not business_refusal):
+        log.error("tenant-service returned %s", resp.status)       # a failed service signature is our fault, not the customer's
+        raise unavailable()
     if isinstance(detail, dict) and detail.get("code"):
         extra = {k: v for k, v in detail.items() if k not in ("code", "message")}
-        raise ApiError(409 if resp.status == 409 else resp.status, str(detail["code"]), str(detail.get("message") or "Request refused"), extra)
+        raise ApiError(resp.status, str(detail["code"]), str(detail.get("message") or "Request refused"), extra)
     message = detail if isinstance(detail, str) else "The request could not be completed"
     code = {402: "PAYMENT_DECLINED", 409: "CONFLICT", 413: "FILE_TOO_LARGE", 422: "VALIDATION"}.get(resp.status, "REJECTED")
     raise ApiError(resp.status if resp.status in (400, 402, 409, 413, 422) else 400, code, message)

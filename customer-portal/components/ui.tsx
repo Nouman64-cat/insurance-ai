@@ -209,6 +209,7 @@ export function Icon({ name, className = "w-5 h-5" }: { name: string; className?
     download: <><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M8 12l4 4 4-4M12 4v12" /></>,
     shield: <><path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6l8-3z" /></>,
     money: <><circle cx="12" cy="12" r="9" /><path d="M14.5 9.2c-.4-.8-1.4-1.2-2.5-1.2-1.4 0-2.5.8-2.5 1.8s1 1.5 2.5 1.8c1.5.3 2.5.8 2.5 1.8s-1.1 1.8-2.5 1.8c-1.1 0-2.1-.4-2.5-1.2M12 6.5V8m0 8v1.5" /></>,
+    family: <><circle cx="9" cy="8" r="3.2" /><circle cx="17" cy="9" r="2.5" /><path d="M3 20v-1a5 5 0 0110 0v1M15 14.5a4 4 0 016 3.5v2" /></>,
     calendar: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></>,
     alert: <><path d="M12 9v4m0 4h.01M10.3 3.9L2.4 18a2 2 0 001.7 3h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" /></>,
     menu: <><path d="M4 6h16M4 12h16M4 18h16" /></>,

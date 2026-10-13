@@ -24,6 +24,8 @@ browser ──(httpOnly cookies cp_at / cp_rt / cp_scope)──▶ this app's /a
 
 `/login` · `/first-login` · `/dashboard` · `/policies` · `/policies/[id]` · `/payments` · `/claims` · `/claims/new` · `/claims/[id]` · `/documents` · `/profile` · `/notifications` · `/support`
 
+Family (only shown to customers who belong to a family with issued policies): `/family` · `/family/[id]` (Policies · Members · Beneficiaries · My requests). The policies, payments, claims and documents pages gain an Individual / Family switch (`?segment=family`).
+
 ## Run / check (always inside Docker — never run `next dev`/`build` from the host)
 
 ```bash

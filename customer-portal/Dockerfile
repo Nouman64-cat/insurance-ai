@@ -1,8 +1,8 @@
 # Customer portal (individual policyholders). Self-contained: it shares no code with the staff app.
-FROM node:20-alpine AS base
+FROM node:20-slim AS base
 WORKDIR /workspace/customer-portal
 COPY package*.json ./
-RUN npm install --no-audit --no-fund --fetch-retries=6 --fetch-retry-mintimeout=15000 --fetch-timeout=180000
+RUN npm install --no-audit --no-fund
 COPY . .
 
 FROM base AS dev

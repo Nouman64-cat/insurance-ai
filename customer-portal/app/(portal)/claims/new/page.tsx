@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Banner, Card, EmptyState, ErrorState, Field, PageHeader, Skeleton, Spinner, errorText } from "@/components/ui";
+import { Banner, Card, EmptyState, ErrorState, Field, PageHeader, Skeleton, Spinner, errorText, tOr } from "@/components/ui";
 import { ApiError, api, useApi } from "@/lib/api";
 import { money, newIdempotencyKey } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/I18nProvider";
@@ -12,12 +12,14 @@ function NewClaim() {
   const { t } = useI18n();
   const router = useRouter();
   const params = useSearchParams();
-  const policies = useApi<{ items: PolicyCard[] }>("policies");
+  const policies = useApi<{ items: PolicyCard[] }>("policies?segment=all");   // individual + the family policies this customer may act on
   const [policyId, setPolicyId] = useState(params.get("policy") || "");
   const options = useApi<ClaimOptions>(policyId ? `policies/${encodeURIComponent(policyId)}/claims/options` : null);
   const today = new Date().toISOString().slice(0, 10);
   const [f, setF] = useState({ category: "", event_date: "", event_end_date: "", cause: "", event_place: "", description: "", claimed_amount: "", hospital: "", diagnosis: "" });
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [coveredId, setCoveredId] = useState("");
+  const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const key = useRef(newIdempotencyKey());
@@ -26,10 +28,14 @@ function NewClaim() {
   useEffect(() => { if (!policyId && eligible.length === 1) setPolicyId(eligible[0].id); }, [policyId, eligible.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const opt = options.data;
   const cats = (opt?.categories || []).filter((c) => c.available);
+  const persons = opt?.covered_persons || [];
+  const isFamily = opt?.segment === "family";
+  const covered = persons.find((c) => c.id === (coveredId || persons.find((x) => x.is_you)?.id)) || persons[0];
+  useEffect(() => { setCoveredId(""); setConsent(false); }, [policyId]);
   useEffect(() => { if (cats.length && !cats.some((c) => c.key === f.category)) setF((x) => ({ ...x, category: cats[0].key })); }, [opt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const amount = Number(f.claimed_amount);
-  const valid1 = !!policyId && !!opt?.can_claim_online && cats.length > 0 && !!f.category;
+  const valid1 = !!policyId && !!opt?.can_claim_online && cats.length > 0 && !!f.category && (!isFamily || (!!covered && (!covered.needs_consent || consent)));
   const valid2 = !!f.event_date && f.event_date <= today && (!f.event_end_date || f.event_end_date >= f.event_date) && f.description.trim().length >= 10 && amount > 0
     && (f.category !== "Hospitalization" || (f.hospital.trim().length > 1));
 
@@ -39,6 +45,7 @@ function NewClaim() {
       const body = {
         category: f.category, event_date: f.event_date, event_end_date: f.event_end_date || null, cause: f.cause || null, event_place: f.event_place || null,
         description: f.description.trim(), claimed_amount: amount,
+        ...(isFamily && covered ? { covered_person_id: covered.id, consent_confirmed: consent } : {}),
         event_details: Object.fromEntries(Object.entries({ hospital: f.hospital.trim(), diagnosis: f.diagnosis.trim() }).filter(([, v]) => v)),
       };
       const created = await api<ClaimDetail>(`policies/${encodeURIComponent(policyId)}/claims`, { method: "POST", body, idempotencyKey: key.current });
@@ -78,7 +85,7 @@ function NewClaim() {
                 <Field label={t("claimNew.policy")} htmlFor="policy">
                   <select id="policy" className="input" value={policyId} onChange={(e) => { setPolicyId(e.target.value); setF((x) => ({ ...x, category: "" })); }}>
                     <option value="">{t("claimNew.choosePolicy")}</option>
-                    {eligible.map((p) => <option key={p.id} value={p.id}>{p.policy_number} — {p.product_name} ({t(`policyStatus.${p.status_key}`)})</option>)}
+                    {eligible.map((p) => <option key={p.id} value={p.id}>{p.policy_number} — {p.product_name}{p.family ? ` · ${t(`plan.${p.family.plan_type}`)}` : ""} ({t(`policyStatus.${p.status_key}`)})</option>)}
                   </select>
                 </Field>
                 {policyId && options.loading && <Skeleton className="h-10" />}
@@ -93,7 +100,17 @@ function NewClaim() {
                           <select id="category" className="input" value={f.category} onChange={set("category")}>{cats.map((c) => <option key={c.key} value={c.key}>{t(`claimType.${c.key}`)}</option>)}</select>
                         </Field>
                       )}
-                    <Banner tone="info" title={t("claims.death.title")}>{t("claims.death.text")}</Banner>
+                    {isFamily && persons.length > 0 && (
+                      <Field label={t("claimNew.forPerson")} htmlFor="covered" hint={t("claimNew.forPersonHint")}>
+                        <select id="covered" className="input" value={covered?.id || ""} onChange={(e) => { setCoveredId(e.target.value); setConsent(false); }}>
+                          {persons.map((c) => <option key={c.id} value={c.id}>{c.name} — {tOr(t, `relationship.${c.relationship}`, c.relationship)}{c.is_you ? ` (${t("family.you")})` : ""}</option>)}</select>
+                      </Field>)}
+                    {isFamily && covered?.needs_consent && (
+                      <label className="flex items-start gap-2 text-sm text-slate-700 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                        <input type="checkbox" className="mt-1" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+                        <span>{t("claimNew.consent", { name: covered.name })}<span className="block text-xs text-amber-800 mt-0.5">{t("claimNew.consentHint")}</span></span></label>)}
+                    {isFamily && <Banner tone="info" title={t("claimNew.nomineeNotCovered.title")}>{t("claimNew.nomineeNotCovered.text")}</Banner>}
+                    <Banner tone="info" title={t("claims.death.title")}>{isFamily ? t("claims.death.familyText") : t("claims.death.text")}</Banner>
                   </>
                 )}
                 <div className="flex justify-end"><button type="button" className="btn-primary" disabled={!valid1} onClick={() => setStep(2)}>{t("common.next")}</button></div>
@@ -122,7 +139,7 @@ function NewClaim() {
           {step === 3 && (
             <Card title={t("claimNew.step.3")}>
               <dl className="divide-y divide-slate-100 text-sm">
-                {[[t("claimNew.policy"), `${policy?.policy_number} — ${policy?.product_name}`], [t("claimNew.type"), t(`claimType.${f.category}`)], [t("claimNew.eventDate"), f.event_date],
+                {[[t("claimNew.policy"), `${policy?.policy_number} — ${policy?.product_name}`], ...(isFamily && covered ? [[t("claimNew.forPerson"), covered.name]] : []), [t("claimNew.type"), t(`claimType.${f.category}`)], [t("claimNew.eventDate"), f.event_date],
                   [t("claimNew.amount"), money(amount)], [t("claimNew.description"), f.description]].map(([k, v]) => (
                   <div key={k} className="flex flex-col sm:flex-row sm:justify-between gap-1 py-2.5"><dt className="text-slate-500">{k}</dt><dd className="font-semibold text-slate-800 sm:text-end sm:max-w-md break-words">{v}</dd></div>))}
               </dl>

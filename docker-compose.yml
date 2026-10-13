@@ -421,6 +421,8 @@ services:
     command: ["python", "provision.py"]
     environment:
       CS_PROVISION_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+      CS_DB_OWNER_PASSWORD: ${CS_DB_OWNER_PASSWORD:-69d600fc74731edaf89834f7bebce346}
+      CS_DB_APP_PASSWORD: ${CS_DB_APP_PASSWORD:-5a511f3af5bb1c398d10b628d70bfef4}
 
   customer-service-app:
     build:

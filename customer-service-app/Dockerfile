@@ -1,7 +1,7 @@
-FROM node:20-alpine AS base
+FROM node:20-slim AS base
 WORKDIR /workspace/customer-service-app
 COPY customer-service-app/package*.json ./
-RUN npm install
+RUN npm install --no-audit --no-fund
 COPY customer-service-app/ ./
 COPY frontend/ /workspace/frontend/
 FROM base AS dev

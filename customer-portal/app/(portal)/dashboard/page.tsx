@@ -61,6 +61,30 @@ export default function DashboardPage() {
           subtitle={t("dashboard.inForceNote")} />
       </div>
 
+      {data && !data.sections.family && <Banner tone="warning" title={t("dashboard.partialFamily")} />}
+      {data?.family && data.family.length > 0 && (
+        <section aria-label={t("dashboard.family")} className="space-y-3">
+          <div className="flex items-center justify-between"><p className="section-label">{t("dashboard.family")}</p><Link href="/family" className="text-xs font-semibold text-blue-600 hover:text-blue-700">{t("common.viewAll")}</Link></div>
+          {data.family.map((g) => (
+            <Link key={g.id} href={`/family/${g.id}`} className="card block p-5 hover:shadow-md transition-shadow">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                <div><p className="text-base font-bold text-slate-900">{g.name}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{g.plan_types.map((p) => t(`plan.${p}`)).join(" · ")} · {t(`family.role.${g.role}`)}</p></div>
+                <span className="text-xs font-semibold text-blue-600">{t("family.open")} →</span>
+              </div>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <MetricCard title={t("family.members")} value={g.members.listed} accent="blue" icon={<Icon name="family" />} subtitle={t("family.insuredCount", { count: g.members.insured })} />
+                <MetricCard title={t("family.coverage")} value={compactMoney(g.totals.coverage)} accent="emerald" icon={<Icon name="shield" />} subtitle={t("family.coverageNote")} />
+                <MetricCard title={t("dashboard.nextPremium")} value={g.totals.next_premium ? money(g.totals.next_premium.amount) : t("dashboard.none")} accent="sky" icon={<Icon name="calendar" />}
+                  subtitle={g.totals.next_premium ? `${date(g.totals.next_premium.date, locale)} · ${g.totals.next_premium.policy_number}` : t("dashboard.noUpcoming")} />
+                <MetricCard title={t("dashboard.outstanding")} value={money(g.totals.outstanding)} accent={g.totals.outstanding > 0 ? "red" : "slate"} icon={<Icon name="money" />}
+                  subtitle={t("family.openClaimsLine", { count: g.totals.open_claims })} />
+              </div>
+              {g.totals.renewals_soon.length > 0 && <p className="mt-3 text-xs text-amber-800 bg-amber-50 rounded-lg px-3 py-2">{t("family.renewalSoon", { policy: g.totals.renewals_soon[0].policy_number, date: date(g.totals.renewals_soon[0].date, locale) })}</p>}
+            </Link>))}
+        </section>
+      )}
+
       <div>
         <p className="section-label mb-2">{t("dashboard.quickActions")}</p>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

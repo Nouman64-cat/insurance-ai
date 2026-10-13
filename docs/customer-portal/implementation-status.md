@@ -22,3 +22,41 @@ the build **deliberately differs** from the blueprint and what is still open.
 2. Real payment provider; OTP/SMS provider; malware scanning of uploads; external penetration test; data-protection review.
 3. Death claims by nominees (claimant verification) — deliberately not in the portal.
 4. Operational: secrets in a secret manager, TLS (`PORTAL_COOKIE_SECURE=true`), per-tenant domain/tenant resolution, backups, alerting.
+
+
+---
+
+# Family insurance extension
+
+Extends the SAME service and app (no new service, no second set of credentials). A family head signs in with the credentials
+already issued by post-issuance and sees their individual policies exactly as before, plus a **My Family** section.
+
+## Access model (tenant-service decides; the browser's family/member ids are only requests)
+
+| Level | Who | Can |
+|---|---|---|
+| `owner` | policyholder of the policy; the head of a Family Floater | everything on it: premiums, claims, documents, beneficiaries, servicing requests |
+| `guardian` | the family head, for a certificate whose insured life is a **minor** | the same, on the child's behalf |
+| `summary` | the head looking at another **adult's** life-bundle certificate; an insured spouse looking at the floater | status, cover, premium position, dates — **no** claims, documents, beneficiaries, receipts, payments or actions |
+| none | anyone else (other family, other tenant, a member's sibling certificate) | plain 404 |
+
+* Claims are confidential to the life they concern: on a family policy the caller sees a claim only if they filed it in the portal, it is about them, or it is about a minor they look after. A spouse's claim registered by the insurer's staff is **not** visible to the head.
+* A claim can only be made for a person who is **actually insured** (from the policy's cases / certificate holder, never from the family roster); another adult must have consented. Death claims stay out of the portal (claimant verification).
+* Insured people ≠ nominees ≠ policyholder: nominees are `Beneficiary` rows with no cover; a spouse can be both and counts once.
+* Coverage totals: a floater's shared pool counts **once**; a life bundle sums each certificate's own cover; only policies in force count.
+* Servicing (add/remove/correct member, change cover, change nominees, contact, cancel, reinstate) is **requests**: validated against ownership and the policy's state (the portal shows only actions the backend allows), recorded on the policy's audit trail (`CustomerServiceRequested`) and in the customer's "My requests". Nothing on an issued contract changes by itself.
+
+## New / extended API (Customer Management `/v1`, all via the existing session)
+
+`GET /family` · `/family/{id}` · `/family/{id}/policies` · `/family/{id}/members[/{key}]` · `/family/{id}/beneficiaries?policy_id=` ·
+`POST /family/{id}/requests` · `GET /family/requests` · `POST /family/requests/{id}/withdraw` · `GET /policies/{id}/renewal` · `POST /policies/{id}/renewal/acceptance`.
+Extended (default behaviour unchanged): `GET /policies|claims|documents|payments?segment=individual|family|all`, `GET /policies/{id}` and the premium / pay / claim endpoints now accept family policies the caller may act on, claims take `covered_person_id` + `consent_confirmed`, the dashboard gains a `family` section.
+
+## Still unsupported for family
+
+* **Staff-side queue for customer requests:** requests land on the policy's audit trail and in the customer's list; there is no staff approval screen for them yet, and the customer's status stays "With the insurer" (no automatic outcome sync).
+* Nominee / member / cover changes are never applied by the portal (the existing endorsement endpoint applies immediately and has no approval step).
+* Death claims by nominees (secure claimant process); online cancellation / reinstatement are requests only.
+* Renewal **payment** uses the normal premium payment; renewed-terms acceptance is offered only when the renewal engine is waiting for it.
+* A dependant with no account of their own sees nothing; there is no member invitation flow (each adult needs their own provisioning).
+* Existing platform issue found while testing: `Case.caseNumber` is globally unique but claim numbers restart per tenant, so two tenants registering their first claim in the same year collide on the case number.
