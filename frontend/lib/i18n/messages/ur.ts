@@ -42,6 +42,7 @@ const ur: Messages = {
     notice: "صرف مجاز عملے کے لیے۔ تمام رسائی ریکارڈ اور مانیٹر کی جاتی ہے۔",
   },
   nav: {
+    "Request Management": "درخواستوں کا انتظام",
     // groups
     "Dashboard": "ڈیش بورڈ",
     "Customers": "صارفین",

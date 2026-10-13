@@ -8,7 +8,11 @@ import { NextRequest, NextResponse } from "next/server";
 // 401 means "send them to the portal to sign in".
 // DELETE: sign out. It clears the shared cookie, so the portal and the other apps sign out with it.
 const COOKIE_NAME = process.env.SSO_COOKIE_NAME || "insurance_sso";
-const API_GATEWAY_INTERNAL_URL = process.env.API_GATEWAY_INTERNAL_URL || "http://api-gateway:8000";
+// Docker deployments set the internal URL explicitly. Native development reaches
+// the gateway through its published port, just like the browser API client.
+const API_GATEWAY_INTERNAL_URL = (
+  process.env.API_GATEWAY_INTERNAL_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8010"
+).replace(/\/+$/, "");
 
 function clearCookie(res: NextResponse) {
   // Same attributes the portal set it with, or the browser keeps it.

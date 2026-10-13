@@ -17,6 +17,7 @@ The platform combines deterministic insurance rules with LLM-assisted analysis, 
 - **Multi-tenant administration** with JWT-based authentication and role-aware workflows
 - **Agent mobile application** for leads, proposals, e-applications, underwriting, policies, commissions, and AI assistance
 - **Policy, claims, commission, and post-issuance workflows**
+- **Request management** with reviewer routing, approvals, audit history, and approved customer corrections
 
 ## Architecture
 
@@ -135,6 +136,7 @@ insurance-ai/
 ├── frontend/                 # Next.js operations/admin portal
 ├── automation-chat/          # Next.js Automation Chat (AI copilot) app, own container, :3004 (opt-in)
 ├── underwriting-app/         # Next.js Underwriting Workbench (queue, case workspace), own container, :3005
+├── request-management-app/   # Next.js Request Management app, :3007 (run separately)
 ├── marketing-site/           # Next.js public marketing site (demo content, :3002)
 ├── agent-app/                # React Native / Expo agent application
 ├── services/
@@ -144,6 +146,7 @@ insurance-ai/
 │   ├── chat-agent/
 │   ├── ocr-engine/
 │   ├── text-summarizer/
+│   ├── request-management-service/ # FastAPI request workflows, isolated PostgreSQL schema, :8017
 │   └── decision-engine/
 ├── shared/
 │   ├── models/
@@ -186,6 +189,9 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 AWS S3, SES, OpenSanctions, and provider environment fallbacks are optional depending on the workflow being used.
 
 ### 2. Start the platform
+
+Before the first start, provision the Request Management database roles and schema as described in
+[Request Management](#request-management) below. Its service starts with the main stack.
 
 ```bash
 docker compose up --build -d
@@ -260,6 +266,102 @@ docker compose up -d frontend                   # the portal, where sign-in happ
 
 Details, the shared-code setup, production builds and benchmarking: [`underwriting-app/README.md`](underwriting-app/README.md).
 
+## Request Management
+
+Request Management has a separate FastAPI backend (`services/request-management-service/`) and Next.js frontend
+(`request-management-app/`). Staff submit a request, the service routes it to an eligible reviewer or queue, and
+the reviewer approves, rejects, or asks for more information. It includes revisions, reassignment, comments,
+private attachments, audit history, notifications, and overdue reminders. Reviewers cannot approve their own requests.
+
+| Request type | Outcome |
+| ------------ | ------- |
+| General operational request | Records the review decision without executing an external action |
+| Customer profile correction | Queues an approved, allowlisted correction through tenant-service, with conflict checks and duplicate protection |
+| Commission dispute | Records a resolution against an existing earning; does not rewrite the ledger or create a payout |
+
+**Approval and execution are separate.** An approved customer correction can still have pending or failed execution.
+The service uses a transactional outbox and retryable workers to coordinate delivery and execution. Existing
+underwriting, claims, and commission approval flows remain in their owning services.
+
+### Database and first-time setup
+
+The backend shares the existing PostgreSQL instance but owns the `request_management` schema. The
+`request_mgmt_owner` role runs versioned SQL migrations, and `request_mgmt_app` accesses application rows.
+Business records stay in tenant-service and are accessed through its APIs. No separate PostgreSQL server is required.
+
+Add these values to the root `.env` (use distinct generated secrets):
+
+```env
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=<existing PostgreSQL admin password>
+POSTGRES_DB=insurance-ai
+REQUEST_MGMT_DB_OWNER_PASSWORD=<schema owner password>
+REQUEST_MGMT_DB_APP_PASSWORD=<application role password>
+REQUEST_MGMT_SERVICE_KEY=<shared internal service secret>
+```
+
+Use the name of your existing platform database for `POSTGRES_DB`. Compose currently constructs the Request
+Management connection URLs against `host.docker.internal:5432`; update its connection settings if PostgreSQL is
+elsewhere. The internal service key must match between Request Management and tenant-service.
+
+Provision the roles and schema once, then start the backend and portal:
+
+```bash
+docker compose --profile tools run --rm --build request-management-provision
+docker compose up -d --build request-management-service tenant-service api-gateway frontend
+```
+
+Migrations run on startup when the migration URL is configured. Inspect migration status with:
+
+```bash
+docker compose exec request-management-service python -m app.migrate --status
+```
+
+For production, run migrations as a separate deployment step and set `REQUEST_MGMT_RUN_MIGRATIONS=false` on
+application instances, keeping schema-owner credentials out of the running application.
+
+### Frontend and SSO
+
+The frontend is not currently a Docker Compose service. Create `request-management-app/.env.local`:
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8010
+NEXT_PUBLIC_PORTAL_URL=http://localhost:3000
+NEXT_PUBLIC_REQUESTS_URL=http://localhost:3007
+API_GATEWAY_INTERNAL_URL=http://localhost:8010
+SSO_COOKIE_NAME=insurance_sso
+```
+
+Start it separately:
+
+```bash
+cd request-management-app
+npm install
+npm run dev
+```
+
+Sign in through the portal, then open http://localhost:3007. The app reuses the portal's `insurance_sso` session
+and verifies identity through the gateway. Set `NEXT_PUBLIC_REQUESTS_URL` on the portal to change the destination
+and allowed SSO return origin. For HTTPS subdomains, use the same SSO cookie name and parent domain across apps.
+Configure an eligible routing rule in the Request Management administration interface before submitting requests.
+
+### Backend configuration
+
+| Setting | Purpose |
+| ------- | ------- |
+| `REQUEST_MGMT_DATABASE_URL` | Application-role PostgreSQL connection |
+| `REQUEST_MGMT_MIGRATION_DATABASE_URL` | Schema-owner connection for migrations |
+| `REQUEST_MGMT_SERVICE_KEY` | Authenticates supported internal operations with tenant-service |
+| `TENANT_SERVICE_URL` | Identity verification, directory lookups, and domain operations |
+| `KAFKA_BOOTSTRAP_SERVERS` | Outbox event publishing |
+| `REQUEST_MGMT_WORKERS` | Enables execution, notification, and reminder workers (default `true`) |
+| `REQUEST_MGMT_STORAGE` | Attachment storage backend (default `s3`, with local fallback when no bucket is configured) |
+| `REQUEST_MGMT_MAX_ATTACHMENT_BYTES` | Attachment size limit (default 10 MiB) |
+
+Attachments support PDF, PNG, and JPEG. Compose mounts a persistent local attachment volume for development.
+For S3, supply the bucket, region, and AWS credentials to this service. The public API is exposed through the gateway
+at `/request-management/v1`; backend health is available at http://localhost:8017/v1/healthz.
+
 ## Agent Mobile App
 
 The agent application runs separately through Expo:
@@ -285,6 +387,7 @@ A physical device must use an address reachable from the device rather than `loc
 | Web Portal      | http://localhost:3000 |
 | Automation Chat | http://localhost:3004 (opt-in, see above) |
 | Underwriting Workbench | http://localhost:3005 |
+| Request Management App | http://localhost:3007 (run separately, see above) |
 | API Gateway     | http://localhost:8010 |
 | Tenant Service  | http://localhost:8011 |
 | Risk Engine     | http://localhost:8012 |
@@ -292,6 +395,7 @@ A physical device must use an address reachable from the device rather than `loc
 | OCR Engine      | http://localhost:8014 |
 | Text Summarizer | http://localhost:8015 |
 | Chat Agent      | http://localhost:8016 |
+| Request Management Service | http://localhost:8017 |
 | Documentation   | http://localhost:4991 |
 | Kafka UI        | http://localhost:8090 |
 | Memgraph Lab    | http://localhost:3001 |

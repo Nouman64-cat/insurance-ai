@@ -195,6 +195,17 @@ const NAV_ITEMS = [
     group: "Operations",
     links: [
       {
+        href: "/requests",
+        label: "Request Management",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5" aria-hidden="true">
+            <rect x="5" y="4" width="14" height="17" rx="2" />
+            <path d="M9 4V2h6v2M9 10h6M9 14l2 2 4-4" />
+          </svg>
+        ),
+        badge: null,
+      },
+      {
         href: "/underwriting",
         label: "Underwriting",
         icon: (
@@ -661,7 +672,7 @@ export function Sidebar() {
     links: g.links.map((href: string) => allLinksMap.get(href)).filter(Boolean)
   }));
 
-  const workingHrefs = ["/profile", "/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/users", "/admin/leads", "/admin/policyholders", "/financial", "/claims", "/claims/dashboard", "/claims/register"];
+  const workingHrefs = ["/profile", "/cases", "/requests", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/users", "/admin/leads", "/admin/policyholders", "/financial", "/claims", "/claims/dashboard", "/claims/register"];
   const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/roles", "/super-admin/tokens", "/super-admin/llm-config"];
 
   const displayGroups = (userRole === "SuperAdmin"
