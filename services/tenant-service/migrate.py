@@ -1369,6 +1369,21 @@ MIGRATIONS: list[tuple[str, str]] = [
     (
         "v57c — add waiver_reason to agent_confidential_reports",
         "ALTER TABLE agent_confidential_reports ADD COLUMN IF NOT EXISTS waiver_reason TEXT",
+    # ── v57: Stage B step 9 (Policy Maturity & Exit) ─────────────────────────
+    # policy_exits / policy_loans are brand-new tables (create_all builds them). Only the
+    # native policystatusenum needs new labels — they are the Python member NAMES.
+    ),
+    (
+        "v57a-enum — add MATURED to policystatusenum",
+        "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'MATURED'",
+    ),
+    (
+        "v57b-enum — add SURRENDERED to policystatusenum",
+        "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'SURRENDERED'",
+    ),
+    (
+        "v57c-enum — add EXPIRED to policystatusenum",
+        "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'EXPIRED'",
     ),
 ]
 

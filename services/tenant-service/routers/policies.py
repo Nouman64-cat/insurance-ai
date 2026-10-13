@@ -670,10 +670,17 @@ async def get_policy_detail(
         for d in (await session.exec(select(PolicyDocument).where(PolicyDocument.policy_id == policy_id))).all()
     ]
 
+    segment = "individual"
+    if getattr(policy, "family_policy_id", None):
+        segment = "family"
+    elif getattr(policy, "master_policy_id", None):
+        segment = "organization"
+
     return {
         "id": str(policy.id), "policy_number": policy.policy_number,
         "customer_id": str(policy.customer_id), "customer_name": cust.name if cust else "—",
         "product_name": policy.product_name,
+        "segment": segment,
         "insurance_type": policy.insurance_type.value if hasattr(policy.insurance_type, "value") else str(policy.insurance_type),
         "coverage_amount": policy.coverage_amount, "term_years": policy.term_years,
         "nominee_name": policy.nominee_name, "nominee_relationship": policy.nominee_relationship,

@@ -1053,8 +1053,12 @@ async def monitor_premiums(
     event = None
     if target is not None and target.value != cur:
         try:
-            event = apply_transition(session, policy, target, event_type=ev_type, actor="system",
-                                     detail={"as_of": today.isoformat()})
+            detail = {"as_of": today.isoformat()}
+            if target == PolicyStatusEnum.LAPSED and grace_until:
+                # Cover really ends with the grace window, not whenever this check ran —
+                # claims management reconstructs cover-in-force from this date.
+                detail["grace_until"] = grace_until.isoformat()
+            event = apply_transition(session, policy, target, event_type=ev_type, actor="system", detail=detail)
         except IllegalStateTransition:
             event = None
     await session.commit()

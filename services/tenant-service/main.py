@@ -76,6 +76,10 @@ from routers.agent import router as agent_router
 from routers.policies import router as policies_router
 from routers.pre_issuance import router as pre_issuance_router
 from routers.post_issuance import router as post_issuance_router
+from routers.reinstatement import router as reinstatement_router
+from routers.renewals import router as renewals_router
+from routers.claim_workflow import router as claim_workflow_router
+from routers.policy_exit import router as policy_exit_router
 from routers.e_application import router as e_application_router
 from routers.agent_confidential_report import router as agent_confidential_report_router
 from routers.initial_premium_payment import router as initial_premium_payment_router
@@ -233,6 +237,10 @@ app.include_router(agent_router)
 app.include_router(policies_router)
 app.include_router(pre_issuance_router)
 app.include_router(post_issuance_router)
+app.include_router(reinstatement_router)
+app.include_router(renewals_router)
+app.include_router(claim_workflow_router)
+app.include_router(policy_exit_router)
 app.include_router(e_application_router)
 app.include_router(agent_confidential_report_router)
 app.include_router(initial_premium_payment_router)

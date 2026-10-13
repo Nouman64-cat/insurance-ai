@@ -117,6 +117,7 @@ class PolicyStatusEnum(str, Enum):
                           during the grace window (configurable, default 30 days).
     Lapsed             — Coverage terminated — non-payment past grace period.
     Cancelled          — Coverage terminated at customer or insurer request.
+    Matured / Surrendered / Expired — final states of Policy Maturity & Exit (step 9).
     PendingPayment     — Binding initiated; awaiting payment confirmation before
                           coverage activates. Phase 2: payment gateway flips this
                           to Active on settlement webhook.
@@ -138,6 +139,10 @@ class PolicyStatusEnum(str, Enum):
     POSTPONED = "Postponed"
     REINSURER_REFERRED = "ReinsurerReferred"
     NOT_TAKEN_UP = "NotTakenUp"
+    # Final states of Stage B step 9 (Policy Maturity & Exit). Terminal — nothing leaves them.
+    MATURED = "Matured"          # a savings policy reached maturity and the benefit was paid
+    SURRENDERED = "Surrendered"  # the policyholder exited early and the net surrender value was paid
+    EXPIRED = "Expired"          # a term ended with no maturity benefit (protection / group certificate)
 
 
 class ProfileStatusEnum(str, Enum):
@@ -2764,6 +2769,376 @@ class PolicyEndorsement(SQLModel, table=True):
     actor: Optional[str] = Field(default=None, max_length=255)
     document_path: Optional[str] = Field(default=None, max_length=1000)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STAGE B — REINSTATEMENT (revive a lapsed policy)
+# A reinstatement is NOT a new issuance: the original policy number and history
+# are kept and this case is attached to them. Each case owns its own workflow,
+# requirements, financial record, underwriting decision and audit trail (the
+# audit rows are PolicyEvents carrying this case_no). Status / category columns
+# are plain strings (no new PG enum types). Queried by policy_id directly.
+# ═════════════════════════════════════════════════════════════════════════════
+
+class PolicyReinstatement(SQLModel, table=True):
+    """One request to restore a lapsed policy.
+
+    status: Open | EvidenceRequested | TermsOffered | Approved | Reinstated |
+            Declined | Withdrawn
+    Open statuses (Open/EvidenceRequested/TermsOffered/Approved) are "resumable" —
+    only one may exist per policy at a time.
+    """
+    __tablename__ = "policy_reinstatements"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+
+    case_no: str = Field(max_length=30, index=True)             # RN-2026-00001
+    status: str = Field(default="Open", max_length=30, index=True)
+
+    # ── Request ───────────────────────────────────────────────────────────────
+    applicant_name: Optional[str] = Field(default=None, max_length=255)
+    applicant_relationship: Optional[str] = Field(default=None, max_length=50)  # Policyholder | Nominee | Agent | Representative
+    request_channel: Optional[str] = Field(default=None, max_length=30)         # Branch | Portal | Agent | Phone | Email
+    reason: Optional[str] = Field(default=None, max_length=500)
+    requested_by: Optional[str] = Field(default=None, max_length=255)
+
+    # ── Lapse facts + eligibility captured when the case was opened ───────────
+    lapse_date: Optional[date] = Field(default=None)
+    window_ends_on: Optional[date] = Field(default=None)
+    eligibility_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    rules_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))   # product rules in force
+
+    # ── Arrears + authorised charges (frozen until payment) ───────────────────
+    arrears_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    arrears_calculated_at: Optional[datetime] = Field(default=None)
+    total_payable: float = Field(default=0.0, ge=0)
+
+    # ── Health declaration + supporting documents ─────────────────────────────
+    declaration_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    declaration_signed_at: Optional[datetime] = Field(default=None)
+    declaration_signed_by: Optional[str] = Field(default=None, max_length=255)
+    # [{key, label, reason, required, source, status: Requested|Received, requested_at,
+    #   received_at, note, file_name, file_path}]
+    evidence_json: Optional[list] = Field(default=None, sa_column=Column(JSON, nullable=True))
+
+    # ── Underwriting ──────────────────────────────────────────────────────────
+    assessment_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    assessed_at: Optional[datetime] = Field(default=None)
+    decision: Optional[str] = Field(default=None, max_length=30)    # Approve | ApproveWithTerms | RequestEvidence | Decline
+    decision_notes: Optional[str] = Field(default=None, max_length=1000)
+    decided_by: Optional[str] = Field(default=None, max_length=255)
+    decided_at: Optional[datetime] = Field(default=None)
+    terms_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))     # {loading_pct, exclusions, ...}
+    terms_response: Optional[str] = Field(default=None, max_length=20)                          # Accepted | Rejected
+    terms_responded_at: Optional[datetime] = Field(default=None)
+    terms_responded_by: Optional[str] = Field(default=None, max_length=255)
+    decision_history_json: Optional[list] = Field(default=None, sa_column=Column(JSON, nullable=True))
+
+    # ── Payment (funds are held against the case until cover is restored) ─────
+    payment_amount: float = Field(default=0.0, ge=0)
+    payment_method: Optional[str] = Field(default=None, max_length=30)
+    payment_reference: Optional[str] = Field(default=None, max_length=255)
+    payment_realized_at: Optional[datetime] = Field(default=None)
+    refund_reference: Optional[str] = Field(default=None, max_length=255)
+
+    # ── Restoration + confirmation ────────────────────────────────────────────
+    reinstated_at: Optional[datetime] = Field(default=None)
+    effective_date: Optional[date] = Field(default=None)
+    new_version_id: Optional[UUID] = Field(default=None, nullable=True)
+    receipts_json: Optional[list] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    confirmation_path: Optional[str] = Field(default=None, max_length=1000)
+    confirmation_generated_at: Optional[datetime] = Field(default=None)
+    confirmation_sent_at: Optional[datetime] = Field(default=None)
+    confirmation_sent_to: Optional[str] = Field(default=None, max_length=255)
+
+    closed_reason: Optional[str] = Field(default=None, max_length=500)   # Declined / Withdrawn explanation
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STAGE B — RENEWALS (premium renewal vs contract renewal)
+# One PolicyRenewal row per renewal CYCLE. A Premium Renewal collects the next
+# scheduled premium of a policy that simply continues; a Contract Renewal renews
+# cover for another contractual term (new PolicyVersion N.0 + RenewalTransaction).
+# The premium itself always lives in the PremiumSchedule ledger — this case only
+# orchestrates the cycle (notice, risk, acceptance, collection check,
+# reconciliation, completion, documents) and may be driven from Step 3 too.
+# Status / category columns are plain strings. Queried by policy_id directly.
+# ═════════════════════════════════════════════════════════════════════════════
+
+class PolicyRenewal(SQLModel, table=True):
+    """status: Open | Referred | Completed | Declined | Cancelled"""
+    __tablename__ = "policy_renewals"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+
+    renewal_no: str = Field(max_length=30, index=True)             # RW-2026-00001
+    renewal_type: str = Field(max_length=20)                       # PremiumRenewal | ContractRenewal
+    status: str = Field(default="Open", max_length=20, index=True)
+    cycle_label: Optional[str] = Field(default=None, max_length=100)   # "Premium due 12 Oct 2027" / "Renewal year 2"
+    renewal_year: Optional[int] = Field(default=None)              # contract renewals: the year being entered
+
+    due_date: date = Field(nullable=False, index=True)             # premium due / contract renewal date
+    period_start: Optional[date] = Field(default=None)             # contract renewals: renewed period
+    period_end: Optional[date] = Field(default=None)
+    schedule_id: Optional[UUID] = Field(default=None, index=True, nullable=True)   # the PremiumSchedule row collected
+    schedule_created: bool = Field(default=False)                  # this case created the ledger row (so cancelling may remove it)
+
+    opened_by: Optional[str] = Field(default=None, max_length=255)
+    source: str = Field(default="Manual", max_length=20)           # Manual | Sweep
+
+    eligibility_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    rules_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    # {current_annual, renewal_annual, loading_pct, additional_annual, instalment, frequency, rating_basis}
+    quote_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    quoted_amount: float = Field(default=0.0, ge=0)                # amount of the instalment to collect
+
+    # ── Notice ────────────────────────────────────────────────────────────────
+    notice_sent_at: Optional[datetime] = Field(default=None)
+    notice_channel: Optional[str] = Field(default=None, max_length=20)
+    notice_count: int = Field(default=0, ge=0)
+    notice_delivered: Optional[bool] = Field(default=None)   # False = generated but the channel did not deliver it
+    notice_path: Optional[str] = Field(default=None, max_length=1000)
+
+    # ── Risk evaluation (contract renewals / product-required reassessment) ───
+    risk_required: bool = Field(default=False)
+    risk_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    risk_outcome: Optional[str] = Field(default=None, max_length=20)   # NotRequired | STP | Referred | Approved | Declined
+    risk_evaluated_at: Optional[datetime] = Field(default=None)
+    risk_decided_by: Optional[str] = Field(default=None, max_length=255)
+    risk_decided_at: Optional[datetime] = Field(default=None)
+    risk_notes: Optional[str] = Field(default=None, max_length=1000)
+    loading_pct: float = Field(default=0.0, ge=0)                  # revised terms from an underwriter
+
+    # ── Acceptance of renewed / revised terms ─────────────────────────────────
+    acceptance_required: bool = Field(default=False)
+    accepted_at: Optional[datetime] = Field(default=None)
+    accepted_by: Optional[str] = Field(default=None, max_length=255)
+    acceptance_method: Optional[str] = Field(default=None, max_length=30)
+
+    # ── Reconciliation of the actual payment against the amount due ───────────
+    reconciliation_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    reconciled_at: Optional[datetime] = Field(default=None)
+    reconciled_by: Optional[str] = Field(default=None, max_length=255)
+    reconciliation_note: Optional[str] = Field(default=None, max_length=500)
+
+    # ── Completion + documents ────────────────────────────────────────────────
+    completed_at: Optional[datetime] = Field(default=None)
+    completed_by: Optional[str] = Field(default=None, max_length=255)
+    new_version_id: Optional[UUID] = Field(default=None, nullable=True)
+    next_due_date: Optional[date] = Field(default=None)
+    confirmation_path: Optional[str] = Field(default=None, max_length=1000)
+    confirmation_generated_at: Optional[datetime] = Field(default=None)
+    confirmation_sent_at: Optional[datetime] = Field(default=None)
+    confirmation_sent_to: Optional[str] = Field(default=None, max_length=255)
+
+    closed_reason: Optional[str] = Field(default=None, max_length=500)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STAGE B — CLAIMS MANAGEMENT WORKFLOW (step 8)
+# The Claim row (above) stays the single record the register, dashboard,
+# reinsurance and group claims already use. ClaimProcess adds the structured
+# 7-step workflow data to it, one row per claim: event + covered person,
+# eligibility on the event date, the document checklist, investigation and
+# benefit assessment, the decision, payee verification / disbursement /
+# reconciliation, and closure. Claim.status is kept in step through
+# ClaimStatusHistory. Status / category columns are plain strings.
+# ═════════════════════════════════════════════════════════════════════════════
+
+class ClaimProcess(SQLModel, table=True):
+    __tablename__ = "claim_processes"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+    claim_id: UUID = Field(foreign_key="claims.id", index=True, nullable=False, unique=True)
+
+    category: str = Field(max_length=30)                    # Death | AccidentalDeath | Disability | Hospitalization
+    segment: str = Field(default="Individual", max_length=20)   # Individual | Family | Corporate
+    channel: Optional[str] = Field(default=None, max_length=20)
+    intimated_by: Optional[str] = Field(default=None, max_length=255)
+    claimant_email: Optional[str] = Field(default=None, max_length=255)
+
+    # ── 1 Intimation: covered person + event ──────────────────────────────────
+    covered_person_name: Optional[str] = Field(default=None, max_length=255)
+    covered_person_cnic: Optional[str] = Field(default=None, max_length=20)
+    covered_person_relationship: Optional[str] = Field(default="Self", max_length=30)
+    event_date: date = Field(nullable=False, index=True)
+    event_end_date: Optional[date] = Field(default=None)    # discharge date / disability onset end
+    event_place: Optional[str] = Field(default=None, max_length=255)
+    event_cause: Optional[str] = Field(default=None, max_length=40)
+    event_description: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    event_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))   # hospital, diagnosis, admission…
+
+    # ── 2 Eligibility on the event date ───────────────────────────────────────
+    eligibility_status: Optional[str] = Field(default=None, max_length=20)   # Eligible | Referred | Ineligible
+    eligibility_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    eligibility_verified_at: Optional[datetime] = Field(default=None)
+    eligibility_verified_by: Optional[str] = Field(default=None, max_length=255)
+    eligibility_override_by: Optional[str] = Field(default=None, max_length=255)
+    eligibility_override_note: Optional[str] = Field(default=None, max_length=500)
+
+    # ── 3 Documents ───────────────────────────────────────────────────────────
+    # [{key,label,required,when,reason,status: Requested|Received|Waived|Rejected,
+    #   requested_at,received_at,artifact_id,file_name,note}]
+    documents_json: Optional[list] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    checklist_generated_at: Optional[datetime] = Field(default=None)
+    docs_complete_at: Optional[datetime] = Field(default=None)       # starts the 5–7 working-day decision clock
+
+    # ── 4 Investigation + benefit assessment ──────────────────────────────────
+    investigation_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    investigation_completed_at: Optional[datetime] = Field(default=None)
+    assessment_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    assessed_at: Optional[datetime] = Field(default=None)
+    assessed_by: Optional[str] = Field(default=None, max_length=255)
+
+    # ── 5 Decision ────────────────────────────────────────────────────────────
+    decision: Optional[str] = Field(default=None, max_length=20)     # Approve | PartialApprove | Reject | RequestInfo | Refer
+    decision_amount: float = Field(default=0.0, ge=0)
+    decision_reason: Optional[str] = Field(default=None, max_length=1000)
+    decision_by: Optional[str] = Field(default=None, max_length=255)
+    decision_at: Optional[datetime] = Field(default=None)
+    decision_history_json: Optional[list] = Field(default=None, sa_column=Column(JSON, nullable=True))
+
+    # ── 6 Settlement ──────────────────────────────────────────────────────────
+    payees_json: Optional[list] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    payees_verified_at: Optional[datetime] = Field(default=None)
+    authorized_by: Optional[str] = Field(default=None, max_length=255)
+    authorized_at: Optional[datetime] = Field(default=None)
+    authorized_amount: float = Field(default=0.0, ge=0)
+    disbursed_at: Optional[datetime] = Field(default=None)
+    reconciliation_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    reconciled_at: Optional[datetime] = Field(default=None)
+    reconciled_by: Optional[str] = Field(default=None, max_length=255)
+
+    # ── 7 Closure ─────────────────────────────────────────────────────────────
+    closure_outcome: Optional[str] = Field(default=None, max_length=20)     # Settled | Rejected
+    closed_by: Optional[str] = Field(default=None, max_length=255)
+    closed_at: Optional[datetime] = Field(default=None)
+    coverage_update_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    confirmation_path: Optional[str] = Field(default=None, max_length=1000)
+    confirmation_generated_at: Optional[datetime] = Field(default=None)
+    confirmation_sent_at: Optional[datetime] = Field(default=None)
+    confirmation_sent_to: Optional[str] = Field(default=None, max_length=255)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STAGE B — POLICY MATURITY & EXIT (step 9)
+# One PolicyExit per exit attempt: maturity with a benefit, expiry without one, early
+# surrender, corporate certificate expiry, or the closure that follows a paid death
+# claim. It owns the 7-step workflow data; the policy itself ends in Matured /
+# Surrendered / Expired only when the case is closed. PolicyLoan is the minimal ledger
+# of money lent against a policy — the "outstanding indebtedness" deducted from
+# proceeds. Status / category columns are plain strings.
+# ═════════════════════════════════════════════════════════════════════════════
+
+class PolicyLoan(SQLModel, table=True):
+    """A loan against the policy's value (e.g. Tahafuzz allows up to 50% of surrender
+    value). Simple interest from `disbursed_on`; the balance is repaid from exit proceeds."""
+    __tablename__ = "policy_loans"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+
+    principal: float = Field(ge=0)
+    annual_interest_pct: float = Field(default=0.0, ge=0)
+    disbursed_on: date = Field(nullable=False)
+    repaid_amount: float = Field(default=0.0, ge=0)
+    status: str = Field(default="Outstanding", max_length=30)     # Outstanding | Repaid | RecoveredFromExit
+    reference: Optional[str] = Field(default=None, max_length=100)
+    note: Optional[str] = Field(default=None, max_length=500)
+    recorded_by: Optional[str] = Field(default=None, max_length=255)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class PolicyExit(SQLModel, table=True):
+    """status: Open | Completed | Declined | Cancelled"""
+    __tablename__ = "policy_exits"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+
+    exit_no: str = Field(max_length=30, index=True)             # EX-2026-00001
+    exit_type: str = Field(max_length=25)                       # Maturity | Expiry | Surrender | CorporateExpiry | DeathClaimClosure
+    profile: Optional[str] = Field(default=None, max_length=20)  # Savings | Protection | Group
+    status: str = Field(default="Open", max_length=20, index=True)
+    source: str = Field(default="Manual", max_length=20)        # Manual | Sweep
+
+    # Request (a surrender is requested; the others are detected)
+    requested_by: Optional[str] = Field(default=None, max_length=255)
+    requested_relationship: Optional[str] = Field(default=None, max_length=50)
+    channel: Optional[str] = Field(default=None, max_length=20)
+    reason: Optional[str] = Field(default=None, max_length=500)
+    maturity_date: Optional[date] = Field(default=None)
+    effective_date: Optional[date] = Field(default=None)        # the day cover ends
+    rules_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+
+    # 2 Extension / renewal check
+    extension_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    extension_decision: Optional[str] = Field(default=None, max_length=20)    # NotApplicable | Declined | Redirected
+    extension_decided_by: Optional[str] = Field(default=None, max_length=255)
+    extension_decided_at: Optional[datetime] = Field(default=None)
+
+    # 3 Eligibility + financial verification
+    eligibility_status: Optional[str] = Field(default=None, max_length=20)    # Eligible | Referred | Ineligible
+    eligibility_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    verified_at: Optional[datetime] = Field(default=None)
+    verified_by: Optional[str] = Field(default=None, max_length=255)
+
+    # 4 Documents + consent
+    documents_json: Optional[list] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    docs_complete_at: Optional[datetime] = Field(default=None)
+    consent_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    consent_at: Optional[datetime] = Field(default=None)
+
+    # 5 Final settlement + the customer's acceptance of it
+    settlement_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    net_payable: float = Field(default=0.0, ge=0)
+    calculated_at: Optional[datetime] = Field(default=None)
+    calculated_by: Optional[str] = Field(default=None, max_length=255)
+    quote_valid_until: Optional[date] = Field(default=None)
+    accepted_at: Optional[datetime] = Field(default=None)
+    accepted_by: Optional[str] = Field(default=None, max_length=255)
+    acceptance_method: Optional[str] = Field(default=None, max_length=30)
+
+    # 6 Payee, authorisation, disbursement, reconciliation
+    payee_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    payee_verified_at: Optional[datetime] = Field(default=None)
+    authorized_by: Optional[str] = Field(default=None, max_length=255)
+    authorized_at: Optional[datetime] = Field(default=None)
+    payouts_json: Optional[list] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    disbursed_at: Optional[datetime] = Field(default=None)
+    reconciliation_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    reconciled_at: Optional[datetime] = Field(default=None)
+    reconciled_by: Optional[str] = Field(default=None, max_length=255)
+
+    # 7 Closure + archive
+    closed_at: Optional[datetime] = Field(default=None)
+    closed_by: Optional[str] = Field(default=None, max_length=255)
+    coverage_update_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    confirmation_path: Optional[str] = Field(default=None, max_length=1000)
+    statement_path: Optional[str] = Field(default=None, max_length=1000)
+    confirmation_generated_at: Optional[datetime] = Field(default=None)
+    confirmation_sent_at: Optional[datetime] = Field(default=None)
+    confirmation_sent_to: Optional[str] = Field(default=None, max_length=255)
+
+    closed_reason: Optional[str] = Field(default=None, max_length=500)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
 
 # ═════════════════════════════════════════════════════════════════════════════

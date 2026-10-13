@@ -21,6 +21,10 @@ import {
 } from "@/app/services/postIssuance";
 import { fmtCoverage } from "@/lib/mock-data";
 import { tx } from "@/lib/i18n/tx";
+import ReinstatementPanel from "@/components/policy/ReinstatementPanel";
+import RenewalsPanel from "@/components/policy/RenewalsPanel";
+import ClaimsPanel from "@/components/policy/ClaimsPanel";
+import ExitPanel from "@/components/policy/ExitPanel";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stage B roadmap — the canonical post-issuance journey. `live` steps are wired;
@@ -46,10 +50,10 @@ const STAGE_B_STEPS: StageBStep[] = [
   { id: "premiums", n: 3, title: "Premium Collection Status", blurb: "Reminders, collection, grace-period monitoring.", live: true },
   { id: "endorsements", n: 4, title: "Policy Issuance", blurb: "Issuance record, contract dates & the policy document pack.", live: true },
   { id: "servicing", n: 5, title: "Policy Servicing & Endorsements", blurb: "Nominee, address, sum-assured & rider changes.", live: true },
-  { id: "reinstatement", n: 6, title: "Reinstatement", blurb: "Revive a lapsed policy after arrears + underwriting.", live: false },
-  { id: "renewals", n: 7, title: "Renewals", blurb: "Annual renewal via STP or manual referral.", live: false },
-  { id: "claims", n: 8, title: "Claims Management", blurb: "Death, health and reimbursement claims.", live: false },
-  { id: "exit", n: 9, title: "Policy Maturity & Exit", blurb: "Maturity, surrender or death-benefit payout.", live: false },
+  { id: "reinstatement", n: 6, title: "Reinstatement", blurb: "Revive a lapsed policy after arrears + underwriting.", live: true },
+  { id: "renewals", n: 7, title: "Policy Renewals", blurb: "Premium renewal or contract renewal — notice, collection, reconciliation.", live: true },
+  { id: "claims", n: 8, title: "Claims Management", blurb: "Death, accidental death, disability and hospitalization claims.", live: true },
+  { id: "exit", n: 9, title: "Policy Maturity & Exit", blurb: "Maturity, expiry, early surrender and corporate cover expiry.", live: true },
 ];
 
 const STATUS_TONE: Record<string, string> = {
@@ -57,6 +61,9 @@ const STATUS_TONE: Record<string, string> = {
   GracePeriod: "bg-amber-50 text-amber-700 border-amber-200",
   Lapsed: "bg-red-50 text-red-700 border-red-200",
   Cancelled: "bg-slate-100 text-slate-600 border-slate-300",
+  Matured: "bg-blue-100 text-blue-800 border-blue-300",
+  Surrendered: "bg-slate-100 text-slate-600 border-slate-300",
+  Expired: "bg-slate-100 text-slate-600 border-slate-300",
 };
 
 // ── Live countdown ───────────────────────────────────────────────────────────
@@ -281,8 +288,8 @@ function CustomPaymentModal({
 }
 
 function PremiumCollectionPanel({
-  policyId, billing, onChanged,
-}: Readonly<{ policyId: string; billing: BillingLedger | null; onChanged: () => Promise<void> }>) {
+  policyId, billing, onChanged, onOpenReinstatement,
+}: Readonly<{ policyId: string; billing: BillingLedger | null; onChanged: () => Promise<void>; onOpenReinstatement?: () => void }>) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const { notify } = useNotify();
@@ -384,8 +391,13 @@ function PremiumCollectionPanel({
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm">
           <p className="font-bold text-red-700">{tx("Policy has lapsed")}</p>
           <p className="text-xs text-red-600/90 mt-1 max-w-xl">
-            {tx("Cover has stopped because a premium stayed unpaid past the grace period. A lapsed policy can only be revived through")}{" "}<b>{tx("Reinstatement (Step 5)")}</b>{tx(". Premium collection stays locked until then.")}
+            {tx("Cover has stopped because a premium stayed unpaid past the grace period. A lapsed policy can only be revived through")}{" "}<b>{tx("Reinstatement (Step 6)")}</b>{tx(". Premium collection stays locked until then.")}
           </p>
+          {onOpenReinstatement && (
+            <button onClick={onOpenReinstatement} className="mt-2.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-red-200 text-red-700 hover:bg-red-100">
+              {tx("Go to Reinstatement")}
+            </button>
+          )}
         </div>
       ) : sum.lapse_due && billing.can_collect ? (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm flex flex-wrap items-center justify-between gap-2">
@@ -1084,6 +1096,11 @@ export default function PostIssuancePage() {
               <p className="text-[10px] font-bold text-blue-700 uppercase tracking-widest">{tx("Stage B · Policy Management")}</p>
             </div>
             <h1 className="text-3xl font-black text-slate-900 tracking-tight">{detail?.customer_name ?? tx("Policy")}</h1>
+            {detail?.segment && (
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mt-1">
+                {detail.segment === "organization" ? tx("Corporate") : detail.segment === "family" ? tx("Family") : tx("Individual")}{" "}{tx("Lead")}
+              </p>
+            )}
             <div className="flex items-center gap-3 mt-2">
               <span className="text-xs font-bold font-mono text-slate-700 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">{detail?.policy_number?.replace('POL-', 'PL-') ?? "—"}</span>
               {detail?.product_name && <span className="text-sm font-semibold text-slate-500 px-1 border-l-2 border-slate-200 pl-3">{detail.product_name}</span>}
@@ -1178,9 +1195,11 @@ export default function PostIssuancePage() {
                     </span>
                     <span className="block text-[11px] text-slate-400 truncate">{step.blurb}</span>
                   </span>
-                  <span className={`text-[9px] font-semibold uppercase flex-shrink-0 ${step.live ? "text-blue-600" : "text-slate-400"}`}>
-                    {step.live ? tx("Live") : tx("Soon")}
-                  </span>
+                  {!step.live && (
+                    <span className="text-[9px] font-semibold uppercase flex-shrink-0 text-slate-400">
+                      {tx("Soon")}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -1215,7 +1234,7 @@ export default function PostIssuancePage() {
                 <OnboardingPanel detail={detail} onboarding={onboarding} onChanged={load} onOpenJourney={() => setJourneyOpen(true)} />
               )}
               {active === "premiums" && (
-                <PremiumCollectionPanel policyId={policyId} billing={billing} onChanged={load} />
+                <PremiumCollectionPanel policyId={policyId} billing={billing} onChanged={load} onOpenReinstatement={() => setActive("reinstatement")} />
               )}
               {active === "endorsements" && detail && (
                 <PolicyIssuancePanel detail={detail} policyId={policyId} billing={billing} />
@@ -1223,7 +1242,19 @@ export default function PostIssuancePage() {
               {active === "servicing" && (
                 <ServicingPanel policyId={policyId} onChanged={load} />
               )}
-              {active !== "free-look" && active !== "onboarding" && active !== "premiums" && active !== "endorsements" && active !== "servicing" && (
+              {active === "reinstatement" && (
+                <ReinstatementPanel policyId={policyId} onChanged={load} />
+              )}
+              {active === "renewals" && (
+                <RenewalsPanel policyId={policyId} onChanged={load} onOpenReinstatement={() => setActive("reinstatement")} />
+              )}
+              {active === "claims" && (
+                <ClaimsPanel policyId={policyId} onChanged={load} />
+              )}
+              {active === "exit" && (
+                <ExitPanel policyId={policyId} onChanged={load} onOpenRenewals={() => setActive("renewals")} onOpenReinstatement={() => setActive("reinstatement")} />
+              )}
+              {!["free-look", "onboarding", "premiums", "endorsements", "servicing", "reinstatement", "renewals", "claims", "exit"].includes(active) && (
                 <ComingSoon step={activeStep} />
               )}
             </div>
@@ -1424,7 +1455,7 @@ function FreeLookStateCard({
   if (freeLook.status === "Active") {
     return (
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
-        {tx("Free-look window closed")}{freeLook.free_look_end_date ? " " + tx("on {0}", { 0: freeLook.free_look_end_date }) : ""}{tx(". Cancellation now follows standard surrender rules (step 8).")}
+        {tx("Free-look window closed")}{freeLook.free_look_end_date ? " " + tx("on {0}", { 0: freeLook.free_look_end_date }) : ""}{tx(". Cancellation now follows standard surrender rules (step 9).")}
       </div>
     );
   }

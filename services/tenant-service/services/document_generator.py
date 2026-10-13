@@ -604,3 +604,369 @@ def generate_endorsement_letter(ctx: dict) -> dict:
     story += _footer(ss)
     _build(path, story)
     return {"document_name": f"Endorsement {eno}", "file_path": path}
+
+
+def generate_reinstatement_confirmation(ctx: dict) -> dict:
+    """Render the reinstatement confirmation PDF: effective date, what was paid,
+    any revised terms, and the statement that no cover existed during the lapse.
+    Returns {document_name, file_path}."""
+    ss = _styles()
+    pid = ctx["policy_id"]
+    tenant_name = ctx.get("tenant_name", "Insurer")
+    case_no = ctx.get("case_no", "RN")
+    out_dir = os.path.join(MEDIA_ROOT, str(pid))
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f"reinstatement_{case_no}.pdf")
+
+    terms = ctx.get("terms") or {}
+    story: list = []
+    story += _header(ss, tenant_name, "Policy Reinstatement Confirmation",
+                     f"Policy {ctx.get('policy_number', '—')} · Case {case_no}")
+    story.append(Paragraph(f"Dear {ctx.get('customer_name') or 'Policyholder'},", ss["Body"]))
+    story.append(Paragraph(
+        "We are pleased to confirm that your lapsed policy has been <b>reinstated</b>. Your original "
+        "policy number and history are unchanged.", ss["Body"]))
+    story.append(Spacer(1, 6))
+    story.append(_card_table([
+        ("Policy Number", ctx.get("policy_number") or "—"),
+        ("Product", ctx.get("product_name") or "—"),
+        ("Sum Assured", _pkr(ctx.get("sum_assured"))),
+        ("Lapsed On", str(ctx.get("lapse_date") or "—")),
+        ("Reinstated (Effective)", str(ctx.get("effective_date") or "—")),
+        ("Policy Version", str(ctx.get("version_number") or "—")),
+    ], title="Reinstatement Details"))
+
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("Amount received", ss["H"]))
+    rows = [
+        ("Overdue premiums", _pkr(ctx.get("premiums"))),
+        ("Late-payment surcharge", _pkr(ctx.get("surcharges"))),
+    ]
+    if (ctx.get("interest") or 0) > 0:
+        rows.append(("Interest", _pkr(ctx.get("interest"))))
+    if (ctx.get("fee") or 0) > 0:
+        rows.append(("Reinstatement fee", _pkr(ctx.get("fee"))))
+    rows += [("Total received", _pkr(ctx.get("total"))), ("Payment reference", ctx.get("payment_reference") or "—")]
+    story.append(_kv_table(rows))
+
+    if terms.get("loading_pct") or terms.get("exclusions"):
+        story.append(Spacer(1, 8))
+        story.append(Paragraph("Revised terms accepted", ss["H"]))
+        term_rows = []
+        if terms.get("loading_pct"):
+            term_rows.append(("Premium loading", f"{terms['loading_pct']:g}% "
+                              f"(+{_pkr(terms.get('additional_annual_premium'))} per year)"))
+        if terms.get("exclusions"):
+            term_rows.append(("Exclusions", terms["exclusions"]))
+        story.append(_kv_table(term_rows))
+
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("Important", ss["H"]))
+    story.append(Paragraph(
+        f"No insurance cover was in force between <b>{ctx.get('lapse_date') or 'the lapse date'}</b> and "
+        f"<b>{ctx.get('effective_date') or 'the reinstatement date'}</b>. Claims arising from events during that "
+        "period are not covered. Reinstatement was granted on the basis of the signed declaration of good health; "
+        "any misstatement or non-disclosure may void the policy.", ss["Body"]))
+    story += _footer(ss)
+    _build(path, story)
+    return {"document_name": f"Reinstatement {case_no}", "file_path": path}
+
+
+def generate_renewal_notice(ctx: dict) -> dict:
+    """Render the renewal notice PDF — what is due, when, how to pay and what happens
+    if it is missed. Works for both a Premium Renewal and a Contract Renewal.
+    Returns {document_name, file_path}."""
+    from services import insurer_config
+    ss = _styles()
+    pid = ctx["policy_id"]
+    tenant_name = ctx.get("tenant_name", "Insurer")
+    no = ctx.get("renewal_no", "RW")
+    out_dir = os.path.join(MEDIA_ROOT, str(pid))
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f"renewal_notice_{no}.pdf")
+
+    contract = ctx.get("renewal_type") == "ContractRenewal"
+    story: list = []
+    story += _header(ss, tenant_name, "Contract Renewal Notice" if contract else "Premium Renewal Notice",
+                     f"Policy {ctx.get('policy_number', '—')} · {no}")
+    story.append(Paragraph(f"Dear {ctx.get('customer_name') or 'Policyholder'},", ss["Body"]))
+    if contract:
+        story.append(Paragraph(
+            "Your insurance contract is due for renewal. Subject to the terms below, cover can continue for "
+            f"another period from <b>{ctx.get('period_start') or ctx.get('due_date')}</b> to "
+            f"<b>{ctx.get('period_end') or '—'}</b>.", ss["Body"]))
+    else:
+        story.append(Paragraph(
+            "A premium on your policy is falling due. Your policy continues unchanged — this notice is a reminder "
+            "to pay the premium shown below by the due date.", ss["Body"]))
+    story.append(Spacer(1, 6))
+    rows = [
+        ("Policy Number", ctx.get("policy_number") or "—"),
+        ("Product", ctx.get("product_name") or "—"),
+        ("Sum Assured", _pkr(ctx.get("sum_assured"))),
+        ("Due Date", str(ctx.get("due_date") or "—")),
+        ("Premium Payable", _pkr(ctx.get("amount"))),
+        ("Billing Mode", str(ctx.get("frequency") or "—")),
+    ]
+    if contract and ctx.get("new_annual") is not None:
+        rows.append(("Renewed Annual Premium", _pkr(ctx.get("new_annual"))))
+    story.append(_card_table(rows, title="Renewal Details"))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("How to pay", ss["H"]))
+    for ch in insurer_config.PAYMENT_CHANNELS:
+        story.append(Paragraph(f"<b>{ch['label']}</b> — {ch['detail']}", ss["Body"]))
+    story.append(Spacer(1, 6))
+    story.append(Paragraph(insurer_config.NOTICE_GRACE_LAPSE, ss["Fine"]))
+    if contract:
+        story.append(Paragraph(
+            "Renewal of the contract is subject to your acceptance of the renewed terms and to any underwriting "
+            "evaluation required by the product.", ss["Fine"]))
+    story += _footer(ss)
+    _build(path, story)
+    return {"document_name": f"Renewal Notice {no}", "file_path": path}
+
+
+def generate_renewal_confirmation(ctx: dict) -> dict:
+    """Render the renewal confirmation PDF — a premium-renewal acknowledgement or the
+    renewed-contract schedule. Returns {document_name, file_path}."""
+    ss = _styles()
+    pid = ctx["policy_id"]
+    tenant_name = ctx.get("tenant_name", "Insurer")
+    no = ctx.get("renewal_no", "RW")
+    out_dir = os.path.join(MEDIA_ROOT, str(pid))
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f"renewal_confirmation_{no}.pdf")
+
+    contract = ctx.get("renewal_type") == "ContractRenewal"
+    story: list = []
+    story += _header(ss, tenant_name, "Contract Renewal Confirmation" if contract else "Premium Renewal Confirmation",
+                     f"Policy {ctx.get('policy_number', '—')} · {no}")
+    story.append(Paragraph(f"Dear {ctx.get('customer_name') or 'Policyholder'},", ss["Body"]))
+    story.append(Paragraph(
+        ("Your insurance contract has been <b>renewed</b>. The updated schedule is below."
+         if contract else
+         "We confirm receipt of your premium. Your policy remains in force on its existing terms."), ss["Body"]))
+    story.append(Spacer(1, 6))
+    rows = [
+        ("Policy Number", ctx.get("policy_number") or "—"),
+        ("Product", ctx.get("product_name") or "—"),
+        ("Sum Assured", _pkr(ctx.get("sum_assured"))),
+        ("Premium Received", _pkr(ctx.get("amount_received"))),
+        ("Payment Reference", ctx.get("payment_reference") or "—"),
+        ("Receipt No.", ctx.get("receipt_no") or "—"),
+    ]
+    if contract:
+        rows += [("Renewed Period", f"{ctx.get('period_start', '—')} to {ctx.get('period_end', '—')}"),
+                 ("Policy Version", str(ctx.get("version_number") or "—")),
+                 ("Annual Premium", _pkr(ctx.get("new_annual")))]
+        if ctx.get("loading_pct"):
+            rows.append(("Premium Loading", f"{ctx['loading_pct']:g}%"))
+    if ctx.get("next_due_date"):
+        rows.append(("Next Premium Due", str(ctx["next_due_date"])))
+    story.append(_card_table(rows, title="Renewal Details"))
+    story += _footer(ss)
+    _build(path, story)
+    return {"document_name": f"Renewal Confirmation {no}", "file_path": path}
+
+
+def generate_claim_checklist(ctx: dict) -> dict:
+    """Render the claim document checklist handed to the claimant: what to submit, what is
+    already received, and the service level once the file is complete.
+    Returns {document_name, file_path}."""
+    ss = _styles()
+    pid = ctx["policy_id"]
+    tenant_name = ctx.get("tenant_name", "Insurer")
+    no = ctx.get("claim_number", "CLM")
+    out_dir = os.path.join(MEDIA_ROOT, str(pid))
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f"claim_checklist_{no}.pdf")
+
+    story: list = []
+    story += _header(ss, tenant_name, "Claim Document Checklist", f"Claim {no} · Policy {ctx.get('policy_number', '—')}")
+    story.append(Paragraph(f"Dear {ctx.get('claimant_name') or 'Claimant'},", ss["Body"]))
+    story.append(Paragraph(
+        f"We have registered your <b>{ctx.get('claim_label', 'claim')}</b> for an event on <b>{ctx.get('event_date', '—')}</b>. "
+        "Please submit the documents below. Your claim is normally decided within "
+        f"<b>{ctx.get('sla_days', 7)} working days</b> of receiving the complete set; additional verification can extend this.",
+        ss["Body"]))
+    story.append(Spacer(1, 6))
+    data = [[Paragraph("<b>Document</b>", ss["Body"]), Paragraph("<b>Needed</b>", ss["Body"]), Paragraph("<b>Status</b>", ss["Body"])]]
+    for d in ctx.get("documents", []):
+        data.append([Paragraph(d["label"] + (f"<br/><font size=7 color='#64748b'>{d['reason']}</font>" if d.get("reason") else ""), ss["Body"]),
+                     Paragraph("Required" if d.get("required") else "If asked", ss["Body"]),
+                     Paragraph(d.get("status", "Requested"), ss["Body"])])
+    t = Table(data, colWidths=[100 * mm, 28 * mm, 32 * mm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.4, colors.HexColor("#e2e8f0")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("Original documents may be needed for verification. Misstatement or concealment of facts can void the claim.", ss["Fine"]))
+    story += _footer(ss)
+    _build(path, story)
+    return {"document_name": f"Claim Checklist {no}", "file_path": path}
+
+
+def generate_claim_letter(ctx: dict) -> dict:
+    """Render the closing letter of a claim — a settlement confirmation or a rejection
+    notice with the reason and the way to escalate. Returns {document_name, file_path}."""
+    from services import insurer_config
+    ss = _styles()
+    pid = ctx["policy_id"]
+    tenant_name = ctx.get("tenant_name", "Insurer")
+    no = ctx.get("claim_number", "CLM")
+    out_dir = os.path.join(MEDIA_ROOT, str(pid))
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f"claim_letter_{no}.pdf")
+
+    settled = ctx.get("outcome") == "Settled"
+    story: list = []
+    story += _header(ss, tenant_name, "Claim Settlement Confirmation" if settled else "Claim Decision",
+                     f"Claim {no} · Policy {ctx.get('policy_number', '—')}")
+    story.append(Paragraph(f"Dear {ctx.get('claimant_name') or 'Claimant'},", ss["Body"]))
+    rows = [("Claim", f"{no} — {ctx.get('claim_label', '')}"), ("Event Date", str(ctx.get("event_date") or "—")),
+            ("Covered Person", ctx.get("covered_person") or "—"), ("Amount Claimed", _pkr(ctx.get("claimed_amount")))]
+    if settled:
+        story.append(Paragraph("Your claim has been <b>approved and paid</b>. Details are below.", ss["Body"]))
+        rows += [("Benefit Approved", _pkr(ctx.get("approved_amount"))), ("Total Paid", _pkr(ctx.get("paid_amount")))]
+        story.append(Spacer(1, 6))
+        story.append(_card_table(rows, title="Claim Details"))
+        story.append(Spacer(1, 8))
+        story.append(Paragraph("Payments", ss["H"]))
+        pay = [[Paragraph("<b>Payee</b>", ss["Body"]), Paragraph("<b>Amount</b>", ss["Body"]), Paragraph("<b>Reference</b>", ss["Body"])]]
+        for p in ctx.get("payouts", []):
+            pay.append([Paragraph(p.get("payee_name") or "—", ss["Body"]), Paragraph(_pkr(p.get("amount")), ss["Body"]),
+                        Paragraph(p.get("reference_number") or "—", ss["Body"])])
+        t = Table(pay, colWidths=[70 * mm, 40 * mm, 50 * mm])
+        t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
+                               ("LINEBELOW", (0, 0), (-1, -1), 0.4, colors.HexColor("#e2e8f0")),
+                               ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
+        story.append(t)
+        if ctx.get("deductions"):
+            story.append(Spacer(1, 6))
+            story.append(Paragraph("Adjustments made to the benefit", ss["H"]))
+            for d in ctx["deductions"]:
+                story.append(Paragraph(f"{d['label']}: {_pkr(d['amount'])}", ss["Body"]))
+        if ctx.get("coverage_note"):
+            story.append(Spacer(1, 6))
+            story.append(Paragraph(ctx["coverage_note"], ss["Body"]))
+    else:
+        story.append(Paragraph("After careful review we are <b>unable to accept this claim</b>.", ss["Body"]))
+        story.append(Spacer(1, 6))
+        story.append(_card_table(rows, title="Claim Details"))
+        story.append(Spacer(1, 8))
+        story.append(Paragraph("Reason", ss["H"]))
+        story.append(Paragraph(ctx.get("reason") or "—", ss["Body"]))
+        story.append(Spacer(1, 6))
+        story.append(Paragraph(insurer_config.NOTICE_GRIEVANCE, ss["Fine"]))
+    story += _footer(ss)
+    _build(path, story)
+    return {"document_name": f"Claim Letter {no}", "file_path": path}
+
+
+def generate_exit_statement(ctx: dict) -> dict:
+    """Render the settlement statement a policyholder is asked to accept — how the maturity
+    or surrender amount was reached, what was deducted, and until when the figure holds.
+    Returns {document_name, file_path}."""
+    ss = _styles()
+    pid = ctx["policy_id"]
+    tenant_name = ctx.get("tenant_name", "Insurer")
+    no = ctx.get("exit_no", "EX")
+    out_dir = os.path.join(MEDIA_ROOT, str(pid))
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f"exit_statement_{no}.pdf")
+    s = ctx["settlement"]
+    surrender = ctx.get("exit_type") == "Surrender"
+
+    story: list = []
+    story += _header(ss, tenant_name, "Surrender Settlement Statement" if surrender else "Maturity Settlement Statement",
+                     f"Policy {ctx.get('policy_number', '—')} · {no}")
+    story.append(Paragraph(f"Dear {ctx.get('customer_name') or 'Policyholder'},", ss["Body"]))
+    story.append(Paragraph(
+        ("Below is the amount payable if you surrender your policy. Surrender ends all cover and cannot be undone."
+         if surrender else "Your policy has reached maturity. Below is the amount payable under it."), ss["Body"]))
+    story.append(Spacer(1, 6))
+    story.append(_card_table([
+        ("Policy Number", ctx.get("policy_number") or "—"), ("Product", ctx.get("product_name") or "—"),
+        ("Valued On", str(s.get("valuation_date"))), ("Completed Policy Years", str(s.get("completed_years"))),
+        ("Premiums Paid", _pkr(s["fund"]["premiums_paid"])),
+    ], title="Policy"))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("How the amount was reached", ss["H"]))
+    rows = [("Basis", s["basis"])] + [(ln["label"], ("− " if ln["amount"] < 0 else "") + _pkr(abs(ln["amount"]))) for ln in s["lines"]]
+    rows.append(("Gross value", _pkr(s["gross"])))
+    story.append(_kv_table(rows))
+    if s["deductions"]:
+        story.append(Spacer(1, 6))
+        story.append(Paragraph("Deductions", ss["H"]))
+        story.append(_kv_table([(d["label"], "− " + _pkr(d["amount"])) for d in s["deductions"]]))
+    if s.get("tax"):
+        story.append(_kv_table([(f"Tax withheld ({s['tax_pct']:g}%)", "− " + _pkr(s["tax"]))]))
+    story.append(Spacer(1, 6))
+    story.append(_card_table([("NET AMOUNT PAYABLE", _pkr(s["net"]))]))
+    if s.get("shortfall"):
+        story.append(Spacer(1, 4))
+        story.append(Paragraph(f"The deductions exceed the value by {_pkr(s['shortfall'])}; nothing is payable.", ss["Body"]))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph(
+        f"This figure is valid until <b>{ctx.get('valid_until') or '—'}</b>. By accepting it you confirm the amount and the deductions above.", ss["Body"]))
+    story += _footer(ss)
+    _build(path, story)
+    return {"document_name": f"Settlement Statement {no}", "file_path": path}
+
+
+def generate_exit_letter(ctx: dict) -> dict:
+    """Render the closing letter of a policy: maturity, surrender, expiry, corporate expiry or the
+    closure after a death claim — final coverage end, what was paid, billing stopped.
+    Returns {document_name, file_path}."""
+    ss = _styles()
+    pid = ctx["policy_id"]
+    tenant_name = ctx.get("tenant_name", "Insurer")
+    no = ctx.get("exit_no", "EX")
+    out_dir = os.path.join(MEDIA_ROOT, str(pid))
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f"exit_letter_{no}.pdf")
+    t = ctx.get("exit_type")
+    title = {"Maturity": "Policy Maturity Confirmation", "Surrender": "Policy Surrender Confirmation", "Expiry": "Policy Expiry Notice",
+             "CorporateExpiry": "Group Cover Expiry Notice", "DeathClaimClosure": "Policy Closure Confirmation"}.get(t, "Policy Closure")
+    intro = {
+        "Maturity": "Your policy has matured and the maturity benefit has been paid. The policy is now closed.",
+        "Surrender": "Your policy has been surrendered and the net surrender value has been paid. The policy is now closed and cover has ended.",
+        "Expiry": "Your policy has reached the end of its term. As a protection-only plan it carries no maturity benefit, and it is now closed.",
+        "CorporateExpiry": "The group master policy under which you were covered has ended and was not renewed. Your certificate of insurance is now closed.",
+        "DeathClaimClosure": "Following the settlement of the death claim, your policy has been formally closed.",
+    }.get(t, "Your policy has been closed.")
+
+    story: list = []
+    story += _header(ss, tenant_name, title, f"Policy {ctx.get('policy_number', '—')} · {no}")
+    story.append(Paragraph(f"Dear {ctx.get('customer_name') or 'Policyholder'},", ss["Body"]))
+    story.append(Paragraph(intro, ss["Body"]))
+    story.append(Spacer(1, 6))
+    rows = [("Policy Number", ctx.get("policy_number") or "—"), ("Product", ctx.get("product_name") or "—"),
+            ("Final Status", ctx.get("final_status") or "—"), ("Cover Ended", str(ctx.get("coverage_ended") or "—")),
+            ("Closure Reference", no)]
+    story.append(_card_table(rows, title="Closure Details"))
+    if ctx.get("payouts"):
+        story.append(Spacer(1, 8))
+        story.append(Paragraph("Payment", ss["H"]))
+        for p in ctx["payouts"]:
+            story.append(Paragraph(f"{_pkr(p.get('amount'))} paid to <b>{p.get('payee_name')}</b> by {p.get('method')} — reference {p.get('reference')}", ss["Body"]))
+        if ctx.get("net"):
+            story.append(Paragraph(f"Gross value {_pkr(ctx.get('gross'))}, less deductions {_pkr(ctx.get('deductions'))}"
+                                   + (f" and tax {_pkr(ctx.get('tax'))}" if ctx.get("tax") else "") + ".", ss["Fine"]))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("What happens next", ss["H"]))
+    bits = ["No further premiums will be billed on this policy and any scheduled reminders have been stopped."]
+    if ctx.get("instalments_waived"):
+        bits.append(f"{ctx['instalments_waived']} unpaid instalment(s) were cancelled.")
+    if ctx.get("riders_closed"):
+        bits.append(f"{ctx['riders_closed']} rider(s) ended with the policy.")
+    bits.append("A permanent record of this policy and its closure is retained by the company.")
+    for b in bits:
+        story.append(Paragraph("• " + b, ss["Body"]))
+    story += _footer(ss)
+    _build(path, story)
+    return {"document_name": f"Policy Closure {no}", "file_path": path}
