@@ -8,7 +8,8 @@ from uuid import UUID
 import httpx
 from sqlalchemy import text
 
-from app import db, queries, routing_admin, service, workers, attachments
+from app import db, live, queries, routing, routing_admin, service, workers, attachments
+from app.types.registry import get_type
 from app.config import settings
 from app.errors import ApiError
 from app.main import app
@@ -192,6 +193,69 @@ class SeparationOfDuties(World):
         d = await self.detail(self.uw2, rid)
         self.assertEqual(d["assignee_user_id"], str(self.fake.uid(self.uw2)))
         self.assertEqual([e["reason"] for e in await queries.timeline(await self.me(self.agent), rid) if e["event_type"] == "REASSIGNED"], [None])  # internal reason hidden
+
+
+class ChosenReviewer(World):
+    async def test_requester_may_name_a_reviewer_only_from_the_routed_team(self):
+        me = await self.me(self.agent)
+        async with db.transaction() as conn:
+            preview = await routing.options(conn, self.tenant_a, get_type("customer_profile_correction"), me.branch_id, me.user_id)
+        self.assertEqual(preview["queue_role"], "Underwriter")
+        self.assertEqual({r["full_name"] for r in preview["reviewers"]}, {"Umar Underwriter", "Usman Underwriter"})
+
+        rid = await self.correction(submit=False)
+        # Outside the team (an admin), a stranger, and garbage are all refused; the request stays a draft.
+        for bad, code in ((str(self.fake.uid(self.admin)), "ROUTING_FAILED"), (str(self.fake.uid(self.admin_b)), "ROUTING_FAILED"),
+                          (str(self.fake.uid(self.agent)), "ROUTING_FAILED"), ("not-an-id", "VALIDATION")):
+            await self.expect(service.submit(me, rid, {"expected_version": 1, "reviewer_id": bad}, None), code)
+        self.assertEqual((await self.detail(self.agent, rid))["review_status"], "DRAFT")
+
+        uw2 = str(self.fake.uid(self.uw2))
+        await service.submit(me, rid, {"expected_version": 1, "reviewer_id": uw2}, None)
+        d = await self.detail(self.uw2, rid)
+        self.assertEqual((d["assignee_user_id"], d["queue_role"]), (uw2, "Underwriter"))   # straight to them, still the team's
+        await self.expect(self.detail(self.uw1, rid), "NOT_FOUND")                       # not up for grabs by the rest of the team
+        d = await self.claim(self.uw2, rid)
+        await service.release(await self.me(self.uw2), rid, {"expected_version": d["version"]})
+        self.assertTrue((await self.detail(self.uw1, rid))["viewer"]["in_queue"])        # released back to the team
+
+    async def test_named_reviewer_rule_accepts_only_that_reviewer(self):
+        me = await self.me(self.agent)
+        rid = await service.create_draft(me, {"request_type": "general", "title": "Need a letter",
+                                              "payload": {"category": "OTHER", "description": "Please issue a letter for the customer"}}, None)
+        await self.expect(service.submit(me, rid, {"expected_version": 1, "reviewer_id": str(self.fake.uid(self.uw2))}, None), "ROUTING_FAILED")
+        await service.submit(me, rid, {"expected_version": 1, "reviewer_id": str(self.fake.uid(self.uw1))}, None)
+        self.assertEqual((await self.detail(self.uw1, rid))["assignee_user_id"], str(self.fake.uid(self.uw1)))
+
+
+class LiveUpdates(World):
+    async def asyncTearDown(self):
+        await live.hub.stop()
+        await super().asyncTearDown()
+
+    async def test_each_subscriber_learns_only_what_they_may_see(self):
+        rid = await self.correction()
+        notice = {"tenant_id": str(self.tenant_a), "request_id": str(rid)}
+        kind, data = await live.view(await self.me(self.agent), notice)
+        self.assertEqual((kind, data["review_status"]), ("request", "SUBMITTED"))
+        self.assertIsNone(await live.view(await self.me(self.agent2), notice))      # someone else's request
+        self.assertIsNone(await live.view(await self.me(self.admin_b), notice))     # another tenant
+        await self.claim(self.uw1, rid)
+        self.assertEqual((await live.view(await self.me(self.uw1), notice))[1]["review_status"], "IN_REVIEW")
+        self.assertEqual(await live.view(await self.me(self.uw2), notice), ("queue", {}))   # claimed: only "the queue changed"
+
+    async def test_committed_changes_reach_subscribers_of_that_tenant_only(self):
+        async with live.hub.subscribe(self.tenant_a) as mine, live.hub.subscribe(self.tenant_b) as theirs:
+            await asyncio.sleep(0.5)                       # let the listener connect
+            rid = await self.correction()
+            notices = []
+            while True:
+                try:
+                    notices.append(await asyncio.wait_for(mine.get(), timeout=2))
+                except asyncio.TimeoutError:
+                    break
+            self.assertIn("SUBMITTED", [n["review_status"] for n in notices if n.get("request_id") == str(rid)])
+            self.assertTrue(theirs.empty())
 
 
 class Lifecycle(World):

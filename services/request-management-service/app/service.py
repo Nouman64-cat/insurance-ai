@@ -170,7 +170,16 @@ async def update_draft(identity: Identity, request_id: UUID, body: dict) -> None
 
 # ── Submission ───────────────────────────────────────────────────────────────
 
-async def _prepare(identity: Identity, request_id: UUID, *, resubmitting: bool):
+def _preferred(value: Any) -> Optional[UUID]:
+    if value in (None, ""):
+        return None
+    try:
+        return UUID(str(value))
+    except ValueError:
+        raise validation("Choose a reviewer from the list", field="reviewer_id")
+
+
+async def _prepare(identity: Identity, request_id: UUID, *, resubmitting: bool, preferred: Optional[UUID] = None):
     """Validate the proposal fully and resolve its subject and route, outside any lock."""
     async with db.transaction() as conn:
         req = await records.load_request(conn, request_id, identity.tenant_id)
@@ -181,7 +190,7 @@ async def _prepare(identity: Identity, request_id: UUID, *, resubmitting: bool):
     route = None
     if not resubmitting or (not req.get("assignee_user_id") and not req.get("queue_role")):
         async with db.transaction() as conn:
-            route = await routing.resolve(conn, identity.tenant_id, rtype, subject.branch_id, identity.user_id)
+            route = await routing.resolve(conn, identity.tenant_id, rtype, subject.branch_id, identity.user_id, preferred)
     return req, rtype, payload, subject, route
 
 
@@ -194,7 +203,7 @@ async def submit(identity: Identity, request_id: UUID, body: dict, idem_key: Opt
         req = await records.load_request(conn, request_id, identity.tenant_id)
         _authorize("submit", identity, req, expected_version=body.get("expected_version"))
 
-    _, rtype, payload, subject, route = await _prepare(identity, request_id, resubmitting=False)
+    _, rtype, payload, subject, route = await _prepare(identity, request_id, resubmitting=False, preferred=_preferred(body.get("reviewer_id")))
 
     async with db.transaction() as conn:
         replay = await _replay(conn, identity, scope, idem_key, body)
@@ -209,7 +218,9 @@ async def submit(identity: Identity, request_id: UUID, body: dict, idem_key: Opt
                     subject_kind=subject.kind, subject_id=subject.id, subject_label=subject.label, branch_id=subject.branch_id,
                     assignee_user_id=route.assignee_user_id, assignee_name=route.assignee_name, queue_role=route.queue_role,
                     routing_rule_id=route.rule_id, routing_snapshot=j(route.snapshot), due_at=route.due_at, submitted_at=now())
-        await _assignment(conn, identity.tenant_id, request_id, "ROUTED", route.assignee_user_id, route.assignee_name, route.queue_role, None, None)
+        await _assignment(conn, identity.tenant_id, request_id, "ROUTED", route.assignee_user_id, route.assignee_name, route.queue_role,
+                          identity.user_id if route.snapshot["chosen_by_requester"] else None,
+                          "Chosen by the requester from the team" if route.snapshot["chosen_by_requester"] else None)
         await audit(conn, tenant_id=identity.tenant_id, request_id=request_id, event_type="SUBMITTED", actor_id=identity.user_id,
                     actor_name=identity.name, actor_role=identity.role, revision_no=revision_no, from_review="DRAFT", to_review="SUBMITTED",
                     data={"routing": route.snapshot})

@@ -146,6 +146,12 @@ Tenant administrators manage rules on the frontend's **Routing** page (`/v1/rout
   submission (active, same tenant, allowed to review the type, not the requester).
   - If nothing qualifies, submission fails with `ROUTING_FAILED` and the request stays a draft. An open request
     always has an accountable owner (a database check enforces this).
+- **Choosing a reviewer:** the requester may name one reviewer on submit (`reviewer_id`), but only someone in the
+  team the rule routes to (never themselves, never outside the team). The form lists them from
+  `GET /route-preview`. The choice is checked again at submission; anything else fails with `ROUTING_FAILED` and the
+  request stays a draft. A chosen reviewer gets the request directly. It still belongs to the team's queue, so they
+  can release it back. With a named-reviewer rule there is nothing to choose. Leaving it empty sends the request to the
+  team queue as before.
 - **Audit:** the rule id, version and resolved target are stored on the request and in its audit history. Rule edits
   bump the version and are audited too.
 - **Overdue:** overdue requests (past `due_at`, still SUBMITTED or IN_REVIEW) appear in the queues and trigger a
@@ -204,6 +210,24 @@ Commission payout runs have no backend approval yet. `app/adapters.py` describes
 move here later: an adapter, plus the owning service refusing the action unless it comes from that adapter. That way
 two engines never independently authorize the same action.
 
+## Live status updates
+
+`GET /v1/events` is a Server-Sent Events stream of status changes to the requests the caller may see. The frontend
+opens one per tab, reading it with `fetch` so the token stays in the `Authorization` header and never appears in a URL.
+
+- **Source:** a trigger on `requests` (migration `0002_live_status.sql`) calls `pg_notify` on every change to status,
+  assignment or version. Postgres delivers it only on commit. That covers API actions, the executor and the
+  scheduler, on any instance. Each instance holds one `LISTEN` connection (`app/live.py`) and fans out to its streams.
+- **Authorization:** the notice is never forwarded as is. For each subscriber the request is reloaded and checked with
+  the detail page's rules. Someone who may see it gets `event: request` with
+  `{request_id, reference_no, version, review_status, execution_status}`. A team member who can no longer open it
+  (a teammate claimed it) gets `event: queue` with no details. Anyone else, and any other tenant, gets nothing.
+- **Session:** re-verified every minute. A revoked or expired session gets `event: end` and the stream closes.
+- **Missed changes:** if the listener reconnects or a client falls behind, the stream sends `event: resync`. The client
+  reloads what it shows, and also reloads after reconnecting. A comment heartbeat goes out every 20 s.
+- **Gateway:** `/request-management/v1/events` is relayed unbuffered with no read timeout. Any proxy in front of it must
+  not buffer `text/event-stream` (the response sets `X-Accel-Buffering: no`).
+
 ## API
 
 All under `/v1` (through the gateway: `/request-management/v1`).
@@ -221,6 +245,8 @@ All under `/v1` (through the gateway: `/request-management/v1`).
 | `POST /requests/{id}/attachments`, `GET .../attachments/{aid}/content` | Upload (multipart; PDF, PNG or JPEG, 10 MB, type checked on content); authorized download |
 | `GET /notifications`, `POST /notifications/{id}/read`, `POST /notifications/read-all` | In-app notifications |
 | `GET/POST /routing-rules`, `PUT /routing-rules/{id}`, `POST /routing-rules/{id}/deactivate` | Routing administration (tenant administrators) |
+| `GET /events` | Live status changes, as Server-Sent Events (see "Live status updates") |
+| `GET /route-preview?request_type=` | Where a new request would go and which reviewers in that team the requester may name |
 | `GET /reviewers?request_type=` | Eligible reviewers, for routing and reassignment pickers (administrators) |
 | `GET /healthz` | Health |
 

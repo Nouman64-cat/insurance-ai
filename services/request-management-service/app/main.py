@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 
-from app import db, migrate, workers
+from app import db, live, migrate, workers
 from app.api.routes import router
 from app.config import settings
 from app.errors import ApiError, api_error_handler, validation_error_handler
@@ -29,6 +29,7 @@ async def lifespan(app: FastAPI):
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        await live.hub.stop()
         await db.dispose()
 
 

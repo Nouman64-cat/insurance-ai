@@ -3,14 +3,11 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { NavigationProgress } from "@/components/NavigationProgress";
-import { useSatelliteUser } from "@/components/satellite/SsoGate";
-import { useI18n } from "@/lib/i18n/I18nProvider";
+import AppHeader from "@/components/satellite/AppHeader";
 import { tx } from "@/lib/i18n/tx";
-import { portalUrl } from "@/lib/appLinks";
-import { signOut } from "@/lib/sso";
 import { requestsApi, type Notification, type Summary } from "@/lib/requestsApi";
+import { connectRequestEvents, type LiveEvent } from "@/lib/requestEvents";
 import { formatDate } from "./ui";
 
 // The app's frame: sections, the "New request" button, notifications, language, the way back to the portal.
@@ -19,11 +16,26 @@ import { formatDate } from "./ui";
 const SummaryContext = createContext<{ summary: Summary | null; refresh: () => void }>({ summary: null, refresh: () => {} });
 export const useSummary = () => useContext(SummaryContext);
 
-function portalHome(role: string): string {
-  if (role === "Admin") return portalUrl("/");
-  if (role === "Agent" || role === "Broker") return portalUrl("/proposal");
-  if (role === "ClaimsAdjuster" || role === "ClaimsManager") return portalUrl("/claims");
-  return portalUrl("/cases");
+// Live status changes (Server-Sent Events). Pages subscribe with useRequestEvents and reload what they show.
+type Listener = (e: LiveEvent) => void;
+const LiveContext = createContext<{ subscribe: (l: Listener) => () => void; live: boolean }>({ subscribe: () => () => {}, live: false });
+
+/** Call `handler` for every live change this user may see (and for "resync" after missed changes). */
+export function useRequestEvents(handler: Listener) {
+  const { subscribe } = useContext(LiveContext);
+  const latest = useRef(handler);
+  latest.current = handler;
+  useEffect(() => subscribe((e) => latest.current(e)), [subscribe]);
+}
+
+function LiveDot({ live }: { live: boolean }) {
+  return (
+    <span className="hidden items-center gap-1.5 text-[11px] font-medium text-slate-500 sm:inline-flex"
+      title={live ? tx("Statuses update live") : tx("Reconnecting… statuses refresh when the connection is back")}>
+      <span className={`h-2 w-2 rounded-full ${live ? "bg-emerald-500" : "bg-slate-300"}`} />
+      {live ? tx("Live") : tx("Offline")}
+    </span>
+  );
 }
 
 function Bell({ unread, onChanged }: { unread: number; onChanged: () => void }) {
@@ -100,22 +112,43 @@ function useEmbedded(): boolean {
 }
 
 export default function RequestsShell({ children }: { children: ReactNode }) {
-  const { t } = useI18n();
-  const user = useSatelliteUser();
   const pathname = usePathname();
   const embedded = useEmbedded();
   const [summary, setSummary] = useState<Summary | null>(null);
+
+  const [live, setLive] = useState(false);
+  const listeners = useRef(new Set<Listener>());
 
   const refresh = useCallback(() => {
     requestsApi.summary().then(setSummary).catch(() => undefined);
   }, []);
 
-  // Counts on every page change, and every 30 seconds while the tab is visible (notifications arrive in between).
+  const subscribe = useCallback((l: Listener) => {
+    listeners.current.add(l);
+    return () => { listeners.current.delete(l); };
+  }, []);
+
+  // One stream per tab. Every change refreshes the counts (coalesced: a burst of changes is one reload).
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const close = connectRequestEvents({
+      onLive: setLive,
+      onEvent: (e) => {
+        listeners.current.forEach((l) => l(e));
+        clearTimeout(timer);
+        timer = setTimeout(refresh, 300);
+      },
+    });
+    return () => { clearTimeout(timer); close(); };
+  }, [refresh]);
+
+  // Counts on every page change. Notifications and overdue counts aren't status changes, so they're still polled:
+  // every minute while live, every 30 seconds while the stream is down.
   useEffect(() => { refresh(); }, [pathname, refresh]);
   useEffect(() => {
-    const id = setInterval(() => { if (document.visibilityState === "visible") refresh(); }, 30_000);
+    const id = setInterval(() => { if (document.visibilityState === "visible") refresh(); }, live ? 60_000 : 30_000);
     return () => clearInterval(id);
-  }, [refresh]);
+  }, [refresh, live]);
 
   const sections = [
     { href: "/requests", label: tx("My requests"), count: summary?.my_needs_information || 0, show: true },
@@ -126,60 +159,43 @@ export default function RequestsShell({ children }: { children: ReactNode }) {
   const active = (href: string) => href === "/requests" ? pathname === "/requests" : pathname.startsWith(href);
 
   const value = { summary, refresh };
+  const liveValue = { subscribe, live };
   if (embedded) {
-    return <SummaryContext.Provider value={value}><NavigationProgress /><main className="h-screen overflow-auto bg-slate-50">{children}</main></SummaryContext.Provider>;
+    return (
+      <LiveContext.Provider value={liveValue}>
+        <SummaryContext.Provider value={value}><NavigationProgress /><main className="h-screen overflow-auto bg-slate-50">{children}</main></SummaryContext.Provider>
+      </LiveContext.Provider>
+    );
   }
 
   return (
+    <LiveContext.Provider value={liveValue}>
     <SummaryContext.Provider value={value}>
       <div className="flex h-screen flex-col overflow-hidden bg-slate-50">
         <NavigationProgress />
-        <header className="shrink-0 border-b border-slate-200 bg-white">
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-2.5">
-            <Link href="/requests" className="flex items-center gap-2.5">
-              <span className="text-blue-600" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6">
-                  <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-                </svg>
-              </span>
-              <span className="flex flex-col leading-tight">
-                <span className="text-[15px] font-bold tracking-tight text-slate-900">{tx("Request Management")}</span>
-                <span className="text-[11px] font-medium text-blue-500">{user.tenant_name ?? t("sidebar.brand")}</span>
-              </span>
-            </Link>
-            <div className="ms-auto flex items-center gap-3">
-              <Link href="/requests/new" className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700">
+        <AppHeader
+          title={tx("Request Management")}
+          home="/requests"
+          icon={
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+              <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+            </svg>
+          }
+          actions={
+            <>
+              <LiveDot live={live} />
+              <Link href="/requests/new" className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700">
                 {tx("+ New request")}
               </Link>
               <Bell unread={summary?.unread_notifications ?? 0} onChanged={refresh} />
-              <LanguageSwitcher />
-              <a href={portalHome(user.role_name)} className="whitespace-nowrap rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                {tx("← Back to the portal")}
-              </a>
-              <div className="hidden min-w-0 text-end sm:block">
-                <p className="max-w-[12rem] truncate text-xs font-bold text-slate-900">{user.full_name || user.email}</p>
-                <p className="text-[10px] text-slate-500">{user.role_name}</p>
-              </div>
-              <button type="button" onClick={signOut} title={t("sidebar.logout")} aria-label={t("sidebar.logout")}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 rtl:-scale-x-100">
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
-                </svg>
-              </button>
-            </div>
-            <nav aria-label={tx("Request sections")} className="order-last -mb-1 flex w-full gap-1 overflow-x-auto pb-1">
-              {sections.map((s) => (
-                <Link key={s.href} href={s.href} aria-current={active(s.href) ? "page" : undefined}
-                  className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold ${active(s.href) ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"}`}>
-                  {s.label}
-                  {s.count > 0 && <span className="rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-800">{s.count}</span>}
-                </Link>
-              ))}
-            </nav>
-          </div>
-        </header>
+            </>
+          }
+          sections={sections.map((s) => ({ href: s.href, label: s.label, count: s.count, active: active(s.href) }))}
+          sectionsLabel={tx("Request sections")}
+        />
         <main className="relative flex-1 overflow-auto bg-slate-50">{children}</main>
       </div>
     </SummaryContext.Provider>
+    </LiveContext.Provider>
   );
 }

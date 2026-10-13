@@ -8,11 +8,12 @@ from typing import Any, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, Header, Query, Request, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import text
 
-from app import attachments, db, queries, routing_admin, service
-from app.errors import validation
+from app import attachments, db, live, queries, routing, routing_admin, service
+from app.errors import forbidden, validation
+from app.types.registry import get_type
 from app.identity import Identity, current_identity
 
 router = APIRouter(prefix="/v1")
@@ -51,6 +52,13 @@ async def me(identity: Identity = Me) -> dict:
             "branch_id": str(identity.branch_id) if identity.branch_id else None}
 
 
+@router.get("/events")
+async def events(request: Request, identity: Identity = Me) -> StreamingResponse:
+    """Server-Sent Events: live status changes of the requests the caller may see (app/live.py)."""
+    return StreamingResponse(live.stream(request, identity), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"})
+
+
 @router.get("/request-types")
 async def request_types(identity: Identity = Me) -> list[dict]:
     return await queries.types_for(identity)
@@ -59,6 +67,17 @@ async def request_types(identity: Identity = Me) -> list[dict]:
 @router.get("/summary")
 async def summary(identity: Identity = Me) -> dict:
     return await queries.summary(identity)
+
+
+@router.get("/route-preview")
+async def route_preview(identity: Identity = Me, request_type: str = Query(...)) -> dict:
+    """Where a new request of this type would go, and which reviewers in that team the requester may name.
+    Uses the requester's branch; submission routes on the request's own subject and checks the choice again."""
+    rtype = get_type(request_type)
+    if identity.role not in rtype.submit_roles:
+        raise forbidden("Your role can't submit this type of request.", code="TYPE_NOT_ALLOWED")
+    async with db.transaction() as conn:
+        return await routing.options(conn, identity.tenant_id, rtype, identity.branch_id, identity.user_id)
 
 
 # ── Requests ─────────────────────────────────────────────────────────────────

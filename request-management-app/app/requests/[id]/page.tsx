@@ -7,7 +7,7 @@ import { appHref } from "@/lib/appLinks";
 import {
   newKey, requestsApi, RequestsError, type Action, type RequestDetail, type Reviewer, type TimelineEvent,
 } from "@/lib/requestsApi";
-import { useSummary } from "@/components/RequestsShell";
+import { useRequestEvents, useSummary } from "@/components/RequestsShell";
 import {
   CATEGORY_LABEL, Card, DISPUTE_LABEL, EXECUTION_LABEL, Empty, ErrorNote, ExecutionBadge, PriorityText, ReviewBadge, Spinner, TYPE_LABEL, dangerButton, formatDate,
   inputClass, labelClass, primaryButton, secondaryButton,
@@ -109,6 +109,46 @@ function Proposal({ req }: { req: RequestDetail }) {
   );
 }
 
+/** Where the request is in its life, at a glance. */
+function Progress({ req }: { req: RequestDetail }) {
+  const s = req.review_status;
+  const decided = s === "APPROVED" || s === "REJECTED";
+  const steps: { label: string; state: "done" | "current" | "todo" | "warn" | "bad"; note?: string }[] = [
+    { label: tx("Draft"), state: s === "DRAFT" ? "current" : "done" },
+    { label: tx("Submitted"), state: s === "DRAFT" ? "todo" : s === "SUBMITTED" ? "current" : "done",
+      note: s === "SUBMITTED" ? (req.assignee_name ? tx("Waiting for {name}", { name: req.assignee_name }) : req.queue_role ? tx("Waiting in the {role} queue", { role: req.queue_role }) : undefined) : undefined },
+    { label: tx("In review"), state: s === "IN_REVIEW" ? "current" : s === "NEEDS_INFORMATION" ? "warn" : decided ? "done" : "todo",
+      note: s === "NEEDS_INFORMATION" ? tx("Waiting for the requester") : s === "IN_REVIEW" && req.assignee_name ? req.assignee_name : undefined },
+    { label: s === "REJECTED" ? tx("Rejected") : tx("Approved"), state: s === "APPROVED" ? "done" : s === "REJECTED" ? "bad" : "todo" },
+  ];
+  if (req.type.executes) {
+    const e = req.execution_status;
+    steps.push({ label: tx("Applied"), state: e === "SUCCEEDED" ? "done" : e === "FAILED" ? "bad" : e === "PENDING" || e === "RUNNING" ? "current" : "todo",
+      note: e === "FAILED" ? tx("Couldn't apply") : e === "PENDING" || e === "RUNNING" ? tx("In progress") : undefined });
+  }
+  if (s === "CANCELLED") {
+    return <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-600">{tx("This request was cancelled by the requester.")}</p>;
+  }
+  const dot = { done: "bg-emerald-500 text-white", current: "bg-blue-600 text-white ring-4 ring-blue-100", todo: "bg-slate-200 text-slate-500", warn: "bg-amber-500 text-white ring-4 ring-amber-100", bad: "bg-red-500 text-white" };
+  const line = { done: "bg-emerald-400", current: "bg-slate-200", todo: "bg-slate-200", warn: "bg-slate-200", bad: "bg-slate-200" };
+  return (
+    <ol className="flex items-start" aria-label={tx("Request progress")}>
+      {steps.map((step, i) => (
+        <li key={step.label} className="flex flex-1 items-start last:flex-none">
+          <div className="flex w-28 flex-col items-center text-center">
+            <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${dot[step.state]}`}>
+              {step.state === "done" ? "✓" : step.state === "bad" ? "!" : i + 1}
+            </span>
+            <span className={`mt-1.5 text-xs font-semibold ${step.state === "todo" ? "text-slate-400" : "text-slate-800"}`}>{step.label}</span>
+            {step.note && <span className="mt-0.5 text-[10px] leading-tight text-slate-500">{step.note}</span>}
+          </div>
+          {i < steps.length - 1 && <span className={`mt-3.5 h-0.5 flex-1 rounded ${line[step.state]}`} aria-hidden="true" />}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 export default function RequestDetailPage({ params }: { params: { id: string } }) {
   const id = params.id;
   const { refresh: refreshSummary } = useSummary();
@@ -125,17 +165,35 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
   const [sideError, setSideError] = useState<string | null>(null);
   const actionKey = useRef<string>(newKey());
 
+  const current = useRef<RequestDetail | null>(null);
+  current.current = req;
+  const [liveNote, setLiveNote] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     try {
       const [d, t] = await Promise.all([requestsApi.get(id), requestsApi.timeline(id)]);
       setReq(d); setTimeline(t); setLoadError(null);
     } catch (e) {
       const err = e as RequestsError;
-      setLoadError({ message: err.message ?? tx("Couldn't load the request."), notFound: err.status === 404 });
+      // Watching it from the team queue and it vanished: a teammate picked it up.
+      const claimed = err.status === 404 && !!current.current?.viewer.in_queue;
+      setLoadError({ message: claimed ? tx("Someone in your team picked this request up.") : err.message ?? tx("Couldn't load the request."),
+                     notFound: err.status === 404 && !claimed });
     }
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Live: reload when this request changes elsewhere (another reviewer, the executor), and say so.
+  useRequestEvents((e) => {
+    const shown = current.current;
+    if (e.type === "resync" || (e.type === "queue" && shown?.viewer.in_queue)) { load(); return; }
+    if (e.type !== "request" || e.request_id !== id || (shown && e.version <= shown.version)) return;
+    load();
+    if (shown && !busy && (e.review_status !== shown.review_status || e.execution_status !== shown.execution_status)) {
+      setLiveNote(tx("This request was just updated."));
+    }
+  });
 
   useEffect(() => {
     if (form?.action !== "reassign" || !req) return;
@@ -264,6 +322,15 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
           ))}
         </div>
       </div>
+
+      {liveNote && (
+        <div role="status" className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-xs text-blue-800">
+          <span>{liveNote}</span>
+          <button type="button" className="font-semibold" onClick={() => setLiveNote(null)}>{tx("Dismiss")}</button>
+        </div>
+      )}
+
+      <Card className="overflow-x-auto px-5 py-4"><Progress req={req} /></Card>
 
       {form && copy && (
         <Card className="space-y-3 border-blue-200 p-5">
@@ -418,7 +485,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
               <div className="mt-3 space-y-2">
                 <label className="block text-xs font-semibold text-slate-600">
                   {tx("Attach a PDF, PNG or JPEG (up to 10 MB)")}
-                  <input type="file" accept="application/pdf,image/png,image/jpeg" className="mt-1 block w-full text-xs"
+                  <input type="file" accept="application/pdf,image/png,image/jpeg" className="mt-1.5 block w-full text-xs text-slate-500 file:me-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-blue-50 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-blue-700 hover:file:bg-blue-100"
                     onChange={(e) => { upload(e.target.files?.[0]); e.target.value = ""; }} />
                 </label>
                 {req.viewer.sees_internal && (
