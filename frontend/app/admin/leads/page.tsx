@@ -682,18 +682,6 @@ export default function LeadsHubPage() {
         </div>
         <div className="flex items-center gap-2 self-start">
           <button
-            onClick={() => router.push("/plans")}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all shadow-sm"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-              <line x1="9" y1="13" x2="15" y2="13" />
-              <line x1="9" y1="17" x2="13" y2="17" />
-            </svg>
-            {tx("Insurance Plans")}
-          </button>
-          <button
             onClick={() => setChooserType("INDIVIDUAL")}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow active:scale-95"
           >
@@ -1063,18 +1051,13 @@ export default function LeadsHubPage() {
                         <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-100">
                           <tr>
                             <th className="px-6 py-4">{tx("Lead ID")}</th>
-                            <th className="px-6 py-4">
-                              {filterType === "INDIVIDUAL" ? tx("Lead/Individual Name") :
-                                filterType === "FAMILY" ? tx("Lead/Family Member Name") :
-                                  filterType === "CORPORATE" ? tx("Lead/Corporate Name") :
-                                    tx("All Leads")}
-                            </th>
+                            <th className="px-6 py-4">{tx("Leads")}</th>
                             <th className="px-6 py-4">{tx("Type")}</th>
                             <th className="px-6 py-4">{tx("Agent")}</th>
                             <th className="px-6 py-4">{tx("Contact")}</th>
                             <th className="px-6 py-4">{tx("CNIC")}</th>
                             <th className="px-6 py-4">{tx("Date Added")}</th>
-                            <th className="px-6 py-4">{tx("Progress")}</th>
+                            <th className="px-6 py-4">{tx("Status")}</th>
                             <th className="px-4 py-4 w-10"></th>
                             <th className="px-6 py-4 text-right">{tx("Actions")}</th>
                           </tr>
