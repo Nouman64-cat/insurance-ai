@@ -749,6 +749,30 @@ async def list_roles(request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/roles")
 
 
+# ── Request Management (services/request-management-service) ─────────────────
+# Versioned API under /request-management/v1/... The caller's Authorization header is forwarded as-is; the service
+# verifies it against /auth/me itself and derives tenant and role from the session, so nothing here is trusted.
+
+REQUEST_MANAGEMENT_SERVICE_URL = os.environ.get("REQUEST_MANAGEMENT_SERVICE_URL", "http://request-management-service:8007")
+_HOP_HEADERS = {"host", "content-length", "transfer-encoding", "connection", "keep-alive"}
+
+
+@app.api_route("/request-management/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"], include_in_schema=False)
+async def proxy_request_management(path: str, request: Request):
+    if not path.startswith("v1/"):
+        return JSONResponse(status_code=404, content={"error": {"code": "NOT_FOUND", "message": "Unknown Request Management API version"}})
+    headers = {k: v for k, v in request.headers.items() if k.lower() not in _HOP_HEADERS}
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.request(request.method, f"{REQUEST_MANAGEMENT_SERVICE_URL}/{path}", headers=headers,
+                                        params=request.query_params, content=await request.body(), timeout=60.0)
+        except httpx.HTTPError:
+            return JSONResponse(status_code=502, content={"error": {"code": "SERVICE_UNAVAILABLE", "message": "Request Management is unavailable. Try again shortly."}})
+    out_headers = {k: v for k, v in resp.headers.items()
+                   if k.lower() not in _HOP_HEADERS and not k.lower().startswith("access-control-") and k.lower() != "content-encoding"}
+    return Response(content=resp.content, status_code=resp.status_code, headers=out_headers)
+
+
 # ── Catch-all proxy (hidden from Swagger) ──────────────────────────────────────
 
 @app.api_route("/auth/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)

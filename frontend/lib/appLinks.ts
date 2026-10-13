@@ -1,7 +1,8 @@
 // Where each front-end app lives, and which app owns a page. The underwriting pages (queue, case workspace,
-// post-underwriting, live evaluation, assessments) run as their own app, the Underwriting Workbench; everything else
-// is the portal. Both apps use this module, so a link to "/case/123" from the portal goes to the workbench and a
-// link to "/policy-issuance" from the workbench goes to the portal. No imports: it is also loaded by the node tests.
+// post-underwriting, live evaluation, assessments) run as the Underwriting Workbench; "/requests…" is Request
+// Management; everything else is the portal. All three use this module, so a link to "/case/123" from the portal goes
+// to the workbench, "/requests/new" goes to Request Management, and "/policy-issuance" from either goes to the portal.
+// No imports: it is also loaded by the node tests.
 //
 // The URLs are build-time settings (NEXT_PUBLIC_*), written out literally so Next.js can inline them.
 
@@ -10,11 +11,18 @@ const trimSlash = (url: string) => url.replace(/\/+$/, "");
 export const PORTAL_URL = trimSlash(process.env.NEXT_PUBLIC_PORTAL_URL || "http://localhost:3000");
 export const UNDERWRITING_URL = trimSlash(process.env.NEXT_PUBLIC_UNDERWRITING_URL || "http://localhost:3005");
 export const AUTOMATION_URL = trimSlash(process.env.NEXT_PUBLIC_AUTOMATION_URL || "http://localhost:3004");
+export const REQUESTS_URL = trimSlash(process.env.NEXT_PUBLIC_REQUESTS_URL || "http://localhost:3007");
 
-export type AppName = "portal" | "underwriting";
+export type AppName = "portal" | "underwriting" | "requests";
 
-/** The app this code is running in. The workbench sets NEXT_PUBLIC_APP_NAME=underwriting in its next.config. */
-export const CURRENT_APP: AppName = process.env.NEXT_PUBLIC_APP_NAME === "underwriting" ? "underwriting" : "portal";
+/** The app this code is running in. Each satellite app sets NEXT_PUBLIC_APP_NAME in its next.config. */
+export const CURRENT_APP: AppName =
+  process.env.NEXT_PUBLIC_APP_NAME === "underwriting" ? "underwriting"
+    : process.env.NEXT_PUBLIC_APP_NAME === "requests" ? "requests"
+      : "portal";
+
+/** Pages served by Request Management. */
+export const REQUEST_ROUTES = ["/requests"] as const;
 
 /** First path segments served by the Underwriting Workbench. "/case" is the case workspace (/case/<id>). */
 export const UNDERWRITING_ROUTES = [
@@ -37,10 +45,19 @@ export function isUnderwritingPath(href: string): boolean {
   return UNDERWRITING_ROUTES.some((route) => path === route || path.startsWith(`${route}/`));
 }
 
+export function isRequestsPath(href: string): boolean {
+  const path = pathOf(href);
+  return REQUEST_ROUTES.some((route) => path === route || path.startsWith(`${route}/`));
+}
+
 /** The app that serves a path. */
 export function appFor(href: string): AppName {
-  return isUnderwritingPath(href) ? "underwriting" : "portal";
+  if (isUnderwritingPath(href)) return "underwriting";
+  if (isRequestsPath(href)) return "requests";
+  return "portal";
 }
+
+const APP_URLS: Record<AppName, string> = { portal: PORTAL_URL, underwriting: UNDERWRITING_URL, requests: REQUESTS_URL };
 
 function withSlash(href: string): string {
   return href.startsWith("/") ? href : `/${href}`;
@@ -48,7 +65,7 @@ function withSlash(href: string): string {
 
 /** Absolute URL of a path on whichever app serves it. */
 export function appUrl(href: string): string {
-  return `${appFor(href) === "underwriting" ? UNDERWRITING_URL : PORTAL_URL}${withSlash(href)}`;
+  return `${APP_URLS[appFor(href)]}${withSlash(href)}`;
 }
 
 /**
@@ -77,9 +94,9 @@ function originOf(url: string): string | null {
   }
 }
 
-/** Origins a sign-in may send the user back to: the three configured apps. */
+/** Origins a sign-in may send the user back to: the configured apps. */
 export function trustedOrigins(): string[] {
-  return [PORTAL_URL, UNDERWRITING_URL, AUTOMATION_URL].map(originOf).filter((o): o is string => !!o);
+  return [PORTAL_URL, UNDERWRITING_URL, AUTOMATION_URL, REQUESTS_URL].map(originOf).filter((o): o is string => !!o);
 }
 
 /**

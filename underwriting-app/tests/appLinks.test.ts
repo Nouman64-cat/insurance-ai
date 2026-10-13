@@ -7,10 +7,13 @@ import assert from "node:assert/strict";
 process.env.NEXT_PUBLIC_PORTAL_URL = "https://portal.example.com/";
 process.env.NEXT_PUBLIC_UNDERWRITING_URL = "https://underwriting.example.com";
 process.env.NEXT_PUBLIC_AUTOMATION_URL = "https://chat.example.com";
+process.env.NEXT_PUBLIC_REQUESTS_URL = "https://requests.example.com";
 
 const portalSide = await import("../../frontend/lib/appLinks.ts?portal");
 process.env.NEXT_PUBLIC_APP_NAME = "underwriting";
 const workbenchSide = await import("../../frontend/lib/appLinks.ts?workbench");
+process.env.NEXT_PUBLIC_APP_NAME = "requests";
+const requestsSide = await import("../../frontend/lib/appLinks.ts?requests");
 
 test("underwriting pages belong to the workbench, everything else to the portal", () => {
   const { isUnderwritingPath } = portalSide;
@@ -53,4 +56,17 @@ test("sign-in return URLs are limited to the configured apps", () => {
     portalLoginUrl("https://underwriting.example.com/case/1?autoRun=true"),
     "https://portal.example.com/login?next=https%3A%2F%2Funderwriting.example.com%2Fcase%2F1%3FautoRun%3Dtrue",
   );
+});
+
+test("Request Management owns /requests, and links to and from it cross apps", () => {
+  assert.equal(portalSide.appFor("/requests"), "requests");
+  assert.equal(portalSide.appFor("/requests/new?type=general"), "requests");
+  assert.equal(portalSide.appFor("/requestsx"), "portal");
+  assert.equal(portalSide.appHref("/requests/new?customer_id=1"), "https://requests.example.com/requests/new?customer_id=1");
+  assert.equal(workbenchSide.appHref("/requests/abc"), "https://requests.example.com/requests/abc");
+  assert.equal(requestsSide.CURRENT_APP, "requests");
+  assert.equal(requestsSide.appHref("/requests/abc"), "/requests/abc");
+  assert.equal(requestsSide.appHref("/case/1"), "https://underwriting.example.com/case/1");
+  assert.equal(requestsSide.appHref("/admin/customers/1/plans"), "https://portal.example.com/admin/customers/1/plans");
+  assert.equal(portalSide.safeRedirect("https://requests.example.com/requests/1", "https://portal.example.com"), "https://requests.example.com/requests/1");
 });

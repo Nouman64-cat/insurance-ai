@@ -1,0 +1,5 @@
+*
+!services/request-management-service
+!shared
+**/__pycache__
+**/*.pyc

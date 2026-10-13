@@ -12,6 +12,7 @@ networks:
 volumes:
   memgraph-data:
   kafka-data:
+  request-attachments:
 
     # ─────────────────────────────────────────────────────────────────────────────
     # Re-usable FastAPI service defaults
@@ -126,6 +127,7 @@ services:
       PYTHONPATH: /app
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       CHAT_AGENT_URL: http://chat-agent:8006
+      REQUEST_MANAGEMENT_SERVICE_URL: http://request-management-service:8007 # /request-management/* is proxied there
     depends_on:
       kafka:
         condition: service_healthy
@@ -245,6 +247,63 @@ services:
       - "8015:8005"
     volumes:
       - ./services/text-summarizer:/app
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Request Management — requests, routing, review decisions and approved-action execution.
+  # Own schema (request_management) and least-privilege database role in the shared Postgres; see
+  # services/request-management-service/README.md. First time only, create the roles and schema:
+  #   docker compose --profile tools run --rm request-management-provision
+  # ───────────────────────────────────────────────────────────────────────────
+  request-management-service:
+    <<: *fastapi-defaults
+    build:
+      context: . # repository root: the image also carries shared/ (event, signing and allowlist contracts)
+      dockerfile: services/request-management-service/Dockerfile
+    container_name: insurance-request-management
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8007", "--reload"]
+    ports:
+      - "8017:8007"
+    volumes:
+      - ./services/request-management-service:/app
+      - ./shared:/app/shared
+      - request-attachments:/data/request-attachments # local attachment store when S3 isn't configured
+    environment:
+      PYTHONPATH: /app
+      WATCHFILES_FORCE_POLLING: "true"
+      # The service connects as the application role (rows in request_management only) ...
+      REQUEST_MGMT_DATABASE_URL: postgresql+asyncpg://request_mgmt_app:${REQUEST_MGMT_DB_APP_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+      # ... and migrates as the schema owner.
+      REQUEST_MGMT_MIGRATION_DATABASE_URL: postgresql+asyncpg://request_mgmt_owner:${REQUEST_MGMT_DB_OWNER_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+      TENANT_SERVICE_URL: http://tenant-service:8001
+      REQUEST_MGMT_SERVICE_KEY: ${REQUEST_MGMT_SERVICE_KEY:-}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+      tenant-service:
+        condition: service_started
+    healthcheck:
+      test: [ "CMD-SHELL", 'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8007/v1/healthz'')"' ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # One-off: create the request_management schema and its two database roles (needs Postgres admin credentials).
+  request-management-provision:
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: services/request-management-service/Dockerfile
+    networks:
+      - insurance-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["python", "-m", "app.provision"]
+    environment:
+      REQUEST_MGMT_PROVISION_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+      REQUEST_MGMT_DB_OWNER_PASSWORD: ${REQUEST_MGMT_DB_OWNER_PASSWORD:-}
+      REQUEST_MGMT_DB_APP_PASSWORD: ${REQUEST_MGMT_DB_APP_PASSWORD:-}
 
   # ───────────────────────────────────────────────────────────────────────────
   # Docs (Docusaurus) — http://localhost:4991

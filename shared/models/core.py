@@ -3296,3 +3296,6 @@ class RuleEvaluationLog(SQLModel, table=True):
 from shared.models.commission import (  # noqa: E402,F401
     CommissionAgreement, CommissionAssignment, CommissionAccrual, CommissionEarning,
 )
+
+# Register tenant-service's Request Management integration table (see request_integration.py).
+from shared.models.request_integration import CustomerProfileCorrection  # noqa: E402,F401

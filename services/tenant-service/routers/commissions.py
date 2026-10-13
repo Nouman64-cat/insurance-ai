@@ -182,6 +182,16 @@ async def earnings(tenant_id: UUID, offset: int = Query(0, ge=0), limit: int = Q
     return {"items": rows, "total": total, "offset": offset, "limit": limit}
 
 
+@router.get("/earnings/{earning_id}")
+async def earning(tenant_id: UUID, earning_id: UUID, identity=Depends(caller), session: AsyncSession = Depends(get_session)):
+    """One earning, with the same scoping as the list (an agent sees only their own). Used by Request
+    Management to check that a commission dispute references a real earning the requester may see."""
+    row = (await session.exec(scoped_earnings(tenant_id, identity).where(CommissionEarning.id == earning_id))).first()
+    if not row:
+        raise HTTPException(404, "Earning not found")
+    return row
+
+
 @router.get("/summary")
 async def summary(tenant_id: UUID, source_id: UUID | None = None, date_from: date | None = None, date_to: date | None = None, identity=Depends(caller), session: AsyncSession = Depends(get_session)):
     sub = scoped_earnings(tenant_id, identity, source_id, date_from, date_to).subquery()
