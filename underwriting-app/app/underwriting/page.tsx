@@ -32,6 +32,7 @@ import {
 import {
   getACR,
   requestACR,
+  waiveACR,
   type AgentConfidentialReport,
 } from "@/app/services/agentConfidentialReport";
 import { createCounterOffer } from "@/app/services/preIssuance";
@@ -53,6 +54,7 @@ import dynamic from "next/dynamic";
 
 // Dialogs are loaded when first opened, not with the page.
 const ACRModal = dynamic(() => import("@/components/entities/ACRModal").then((m) => m.ACRModal), { ssr: false });
+const WaiveAcrModal = dynamic(() => import("@/components/entities/WaiveAcrModal").then((m) => m.WaiveAcrModal), { ssr: false });
 const IPPModal = dynamic(() => import("@/components/entities/IPPModal").then((m) => m.IPPModal), { ssr: false });
 const CustomizeEAppModal = dynamic(() => import("@/components/entities/CustomizeEAppModal"), { ssr: false });
 const VerifyEAppModal = dynamic(() => import("@/components/entities/VerifyEAppModal"), { ssr: false });
@@ -563,10 +565,14 @@ function UnderwritingMainContent() {
   const medicalCleared = (c: CaseQueueItem) =>
     MEDICAL_CLEARED.has((c.medical_exam_status ?? "NotAssessed") as any);
 
+  // Gate 2 is cleared by a submitted report, or by an underwriter's waiver.
+  const acrCleared = (c: CaseQueueItem) =>
+    c.acr_status === "Submitted" || c.acr_status === "Waived";
+
   const isFullyReady = (c: CaseQueueItem) =>
     (c.e_application_status === "Verified" ||
       c.e_application_status === "Submitted") &&
-    c.acr_status === "Submitted" &&
+    acrCleared(c) &&
     c.compliance_status === "Passed" &&
     c.ipp_status === "Realized" &&
     c.insurance_history_status === "Clear" &&
@@ -602,9 +608,7 @@ function UnderwritingMainContent() {
         c.e_application_status !== "Verified" &&
         c.e_application_status !== "Submitted",
     ).length;
-    const missingAcr = active.filter(
-      (c) => c.acr_status !== "Submitted",
-    ).length;
+    const missingAcr = active.filter((c) => !acrCleared(c)).length;
     const missingComp = active.filter(
       (c) => c.compliance_status !== "Passed",
     ).length;
@@ -771,7 +775,33 @@ function UnderwritingMainContent() {
     }
   };
 
-  const canFileAcr = userRole === "Agent" || userRole === "Admin";
+  // Only the agent fills in the report (staff never do); an underwriter/admin can instead waive Gate 2 when it never arrives.
+  const canWaiveAcr =
+    userRole === "Underwriter" || userRole === "Admin" || userRole === "SuperAdmin";
+  const [waiveTarget, setWaiveTarget] = useState<CaseQueueItem | null>(null);
+  const [waiveBusy, setWaiveBusy] = useState(false);
+  const [waiveError, setWaiveError] = useState<string | null>(null);
+  const waiveAcr = (c: CaseQueueItem) => {
+    setWaiveError(null);
+    setWaiveTarget(c);
+  };
+  const confirmWaiveAcr = async (reason: string) => {
+    if (!waiveTarget) return;
+    setWaiveBusy(true);
+    setWaiveError(null);
+    try {
+      await waiveACR(waiveTarget.caseld, reason);
+      setWaiveTarget(null);
+      notify(tx("ACR waived — Gate 2 is cleared."), true);
+      await loadData();
+    } catch (e: any) {
+      setWaiveError(
+        e?.response?.data?.detail ?? e?.message ?? tx("Couldn't waive the ACR."),
+      );
+    } finally {
+      setWaiveBusy(false);
+    }
+  };
 
   // Risk Engine helpers
   const segmentCases = useMemo(() => {
@@ -1144,7 +1174,7 @@ function UnderwritingMainContent() {
               pagedPre.map((c) => {
                 const cleared = isFullyReady(c);
                 const g1Done = c.e_application_status === "Verified";
-                const g2Done = c.acr_status === "Submitted";
+                const g2Done = acrCleared(c);
                 const g3Done = c.compliance_status === "Passed";
                 const g4Done = c.ipp_status === "Realized";
                 const g5Done = c.insurance_history_status === "Clear";
@@ -1290,7 +1320,7 @@ function UnderwritingMainContent() {
                       const g1Submitted =
                         c.e_application_status === "Submitted";
                       const g2Unlocked = g1Done;
-                      const g2Done = c.acr_status === "Submitted";
+                      const g2Done = acrCleared(c);
                       const g3Unlocked = g2Done;
                       const g3Done = c.compliance_status === "Passed";
                       const g4Unlocked = g3Done;
@@ -1483,7 +1513,7 @@ function UnderwritingMainContent() {
                             <StatusPill
                               done={g2Done}
                               pending={c.acr_status ?? "Not Started"}
-                              label={tx("Submitted")}
+                              label={c.acr_status === "Waived" ? tx("Waived") : tx("Submitted")}
                             />
                           ),
                           action: !g2Unlocked ? (
@@ -1501,16 +1531,22 @@ function UnderwritingMainContent() {
                           ) : g2Done ? (
                             <div className="flex items-center gap-2">
                               <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                                <span>{tx("✓ Report Filed")}</span>
+                                <span>
+                                  {c.acr_status === "Waived"
+                                    ? tx("✓ Waived")
+                                    : tx("✓ Report Filed")}
+                                </span>
                               </span>
-                              <button
-                                onClick={() => openAcrModal(c)}
-                                className="text-[11px] font-bold text-blue-800 hover:text-blue-950 underline px-2 py-1 bg-blue-50/80 rounded-lg border border-blue-200/80"
-                              >
-                                {tx("View ACR →")}
-                              </button>
+                              {c.acr_status !== "Waived" && (
+                                <button
+                                  onClick={() => openAcrModal(c)}
+                                  className="text-[11px] font-bold text-blue-800 hover:text-blue-950 underline px-2 py-1 bg-blue-50/80 rounded-lg border border-blue-200/80"
+                                >
+                                  {tx("View ACR →")}
+                                </button>
+                              )}
                             </div>
-                          ) : (
+                          ) : userRole === "Agent" ? (
                             <button
                               disabled={
                                 !canFileAcr || acrLoadingFor === c.caseld
@@ -1524,6 +1560,32 @@ function UnderwritingMainContent() {
                                   ? tx("Continue ACR →")
                                   : tx("File ACR →")}
                             </button>
+                          ) : (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-xs text-slate-500 font-medium italic">
+                                {tx("Awaiting the agent's report")}
+                              </span>
+                              <button
+                                disabled={acrLoadingFor === c.caseld}
+                                onClick={() => askAgentForAcr(c)}
+                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-all disabled:opacity-50"
+                              >
+                                {acrLoadingFor === c.caseld
+                                  ? tx("Loading…")
+                                  : c.acr_status === "Requested"
+                                    ? tx("Remind agent")
+                                    : tx("Request from agent")}
+                              </button>
+                              {canWaiveAcr && (
+                                <button
+                                  disabled={acrLoadingFor === c.caseld}
+                                  onClick={() => waiveAcr(c)}
+                                  className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-lg border border-slate-200/90 transition-all disabled:opacity-50"
+                                >
+                                  {tx("Waive")}
+                                </button>
+                              )}
+                            </div>
                           ),
                         },
                         {
@@ -2247,6 +2309,17 @@ function UnderwritingMainContent() {
             )}
           </div>
         </div>
+      )}
+
+      {/* Waive ACR (Gate 2) */}
+      {waiveTarget && (
+        <WaiveAcrModal
+          applicantName={waiveTarget.customer_name}
+          busy={waiveBusy}
+          error={waiveError}
+          onCancel={() => setWaiveTarget(null)}
+          onConfirm={confirmWaiveAcr}
+        />
       )}
 
       {/* ACR Modal */}

@@ -2037,6 +2037,13 @@ class AgentConfidentialReport(SQLModel, table=True):
     requested_source_id: Optional[UUID] = Field(default=None, foreign_key="acquisition_sources.id", nullable=True)
     requested_user_id: Optional[UUID] = Field(default=None, foreign_key="users.id", index=True, nullable=True)
 
+    # An underwriter can waive Gate 2 when the agent's report never arrives. Kept apart
+    # from `status` so a report the agent files later still submits normally, and the
+    # waiver (who, when, why) stays on record as an audit trail.
+    waived_by: Optional[str] = Field(default=None, max_length=255, nullable=True)
+    waived_at: Optional[datetime] = Field(default=None, nullable=True)
+    waiver_reason: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+
     submitted_at: Optional[datetime] = Field(default=None, nullable=True)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)

@@ -16,6 +16,10 @@ export interface AgentConfidentialReport {
   submitted_at: string | null;
   /** When the agent was last asked to file it (null if never asked). */
   requested_at?: string | null;
+  /** Set when an underwriter bypassed Gate 2 without a submitted report. */
+  waived_by?: string | null;
+  waived_at?: string | null;
+  waiver_reason?: string | null;
 
   known_proposer_since: string | null;
   relationship_to_proposer: string | null;
@@ -42,8 +46,15 @@ export interface AgentConfidentialReport {
 }
 
 export type ACRUpsert = Partial<
-  Omit<AgentConfidentialReport, "status" | "agent_id" | "submitted_at">
+  Omit<
+    AgentConfidentialReport,
+    "status" | "agent_id" | "submitted_at" | "waived_by" | "waived_at" | "waiver_reason"
+  >
 >;
+
+/** Gate 2 is cleared by a submitted report, or by an underwriter's waiver. */
+export const isACRCleared = (acr?: Pick<AgentConfidentialReport, "status" | "waived_at"> | null): boolean =>
+  acr?.status === "Submitted" || !!acr?.waived_at;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // API
@@ -81,6 +92,20 @@ export interface ACRRequestResult {
 export async function requestACR(caseId: string): Promise<ACRRequestResult> {
   const tid = tenantId();
   const res = await api.post(`/tenants/${tid}/cases/${caseId}/acr/request`);
+  return res.data;
+}
+
+/** Underwriter / Admin: bypass Gate 2 when the agent's report never arrives. A reason is required. */
+export async function waiveACR(caseId: string, reason: string): Promise<AgentConfidentialReport> {
+  const tid = tenantId();
+  const res = await api.post(`/tenants/${tid}/cases/${caseId}/acr/waive`, { reason });
+  return res.data;
+}
+
+/** Undo a waiver, so Gate 2 needs the submitted report again. */
+export async function reinstateACR(caseId: string): Promise<AgentConfidentialReport> {
+  const tid = tenantId();
+  const res = await api.delete(`/tenants/${tid}/cases/${caseId}/acr/waive`);
   return res.data;
 }
 

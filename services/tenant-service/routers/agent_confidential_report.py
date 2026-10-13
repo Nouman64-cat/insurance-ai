@@ -26,7 +26,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
-from routers.auth import decode_access_token, oauth2_scheme, source_scope
+from routers.auth import _get_current_user, _role_name, decode_access_token, oauth2_scheme, source_scope
 from services.case_events import publish_case_event
 from shared.models.core import (
     ACRRecommendationEnum,
@@ -95,6 +95,9 @@ class ACRRead(ACRUpsert):
     agent_id: Optional[UUID]
     submitted_at: Optional[datetime]
     requested_at: Optional[datetime] = None
+    waived_by: Optional[str] = None
+    waived_at: Optional[datetime] = None
+    waiver_reason: Optional[str] = None
 
 
 def _to_read(acr: AgentConfidentialReport) -> ACRRead:
@@ -103,6 +106,9 @@ def _to_read(acr: AgentConfidentialReport) -> ACRRead:
         agent_id=acr.agent_id,
         submitted_at=acr.submitted_at,
         requested_at=acr.requested_at,
+        waived_by=acr.waived_by,
+        waived_at=acr.waived_at,
+        waiver_reason=acr.waiver_reason,
         known_proposer_since=acr.known_proposer_since,
         relationship_to_proposer=acr.relationship_to_proposer,
         purpose_of_insurance=acr.purpose_of_insurance,
@@ -393,6 +399,92 @@ async def request_acr(
         case_id=case_id, status=acr.status, requested_at=acr.requested_at, recipient=recipient,
         already_requested=already, self_request=False,
     )
+
+
+_WAIVER_ROLES = {"Underwriter", "Admin", "SuperAdmin"}
+_MIN_WAIVER_REASON = 5
+
+
+class ACRWaive(BaseModel):
+    reason: str
+
+
+async def _require_waiver_role(token: str, session: AsyncSession) -> User:
+    user = await _get_current_user(token, session)
+    role = await _role_name(user, session)
+    if role not in _WAIVER_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Waiving the Agent's Confidential Report requires one of: "
+                   f"{', '.join(sorted(_WAIVER_ROLES))} (you are {role}).",
+        )
+    return user
+
+
+@router.post("/tenants/{tenant_id}/cases/{case_id}/acr/waive", response_model=ACRRead)
+async def waive_acr(
+    tenant_id: UUID,
+    case_id: UUID,
+    body: ACRWaive,
+    token: str = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+):
+    """Underwriter bypasses Gate 2 when the agent's report never arrives. The reason, the
+    person and the time are kept on the report; if the agent files it later it still submits
+    normally. A report that is already submitted has nothing to waive."""
+    user = await _require_waiver_role(token, session)
+    reason = body.reason.strip()
+    if len(reason) < _MIN_WAIVER_REASON:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Give a reason for waiving the ACR (at least {_MIN_WAIVER_REASON} characters).",
+        )
+    case_id = await owner_case_id(session, await _get_case(session, tenant_id, case_id), "acr")   # the head's, for an insured spouse
+
+    acr = (await session.execute(
+        select(AgentConfidentialReport).where(AgentConfidentialReport.case_id == case_id)
+    )).scalars().first()
+    if acr is not None and acr.status == ACRStatusEnum.SUBMITTED:
+        raise HTTPException(status_code=409, detail="The ACR is already submitted — nothing to waive.")
+    if acr is None:
+        acr = AgentConfidentialReport(tenant_id=tenant_id, case_id=case_id, status=ACRStatusEnum.NOT_STARTED)
+
+    now = datetime.utcnow()
+    acr.waived_by = user.email
+    acr.waived_at = now
+    acr.waiver_reason = reason
+    acr.updated_at = now
+    session.add(acr)
+    await session.commit()
+    await session.refresh(acr)
+    return _to_read(acr)
+
+
+@router.delete("/tenants/{tenant_id}/cases/{case_id}/acr/waive", response_model=ACRRead)
+async def reinstate_acr(
+    tenant_id: UUID,
+    case_id: UUID,
+    token: str = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+):
+    """Undo a waiver, so Gate 2 needs the submitted report again."""
+    await _require_waiver_role(token, session)
+    case_id = await owner_case_id(session, await _get_case(session, tenant_id, case_id), "acr")
+
+    acr = (await session.execute(
+        select(AgentConfidentialReport).where(AgentConfidentialReport.case_id == case_id)
+    )).scalars().first()
+    if acr is None or acr.waived_at is None:
+        raise HTTPException(status_code=409, detail="The ACR is not waived.")
+
+    acr.waived_by = None
+    acr.waived_at = None
+    acr.waiver_reason = None
+    acr.updated_at = datetime.utcnow()
+    session.add(acr)
+    await session.commit()
+    await session.refresh(acr)
+    return _to_read(acr)
 
 
 class ACRRequestItem(BaseModel):

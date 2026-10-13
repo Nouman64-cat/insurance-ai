@@ -36,6 +36,9 @@ import {
 import {
   getACR,
   requestACR,
+  waiveACR,
+  reinstateACR,
+  isACRCleared,
   type AgentConfidentialReport,
 } from "@/app/services/agentConfidentialReport";
 import ModalPortal from "@/components/ModalPortal";
@@ -69,6 +72,8 @@ import dynamic from "next/dynamic";
 
 // Dialogs are loaded when first opened, not with the page.
 const ACRModal = dynamic(() => import("@/components/entities/ACRModal").then((m) => m.ACRModal), { ssr: false });
+const WaiveAcrModal = dynamic(() => import("@/components/entities/WaiveAcrModal").then((m) => m.WaiveAcrModal), { ssr: false });
+const UndoWaiverModal = dynamic(() => import("@/components/entities/WaiveAcrModal").then((m) => m.UndoWaiverModal), { ssr: false });
 const IPPModal = dynamic(() => import("@/components/entities/IPPModal").then((m) => m.IPPModal), { ssr: false });
 
 // When this page is embedded in the Copilot chat's in-conversation iframe
@@ -1699,6 +1704,55 @@ export default function CasePage({ params }: { params: { id: string } }) {
     }
   };
 
+  // Gate 2 can be bypassed by an underwriter when the agent's report never arrives. The reason is kept on record.
+  const canWaiveAcr =
+    userRole === "Underwriter" || userRole === "Admin" || userRole === "SuperAdmin";
+  const [acrWaiving, setAcrWaiving] = useState(false);
+  const [waiveModal, setWaiveModal] = useState<"waive" | "undo" | null>(null);
+  const [waiveError, setWaiveError] = useState<string | null>(null);
+  const handleWaiveAcr = () => {
+    setWaiveError(null);
+    setWaiveModal("waive");
+  };
+  const handleReinstateAcr = () => {
+    setWaiveError(null);
+    setWaiveModal("undo");
+  };
+  const confirmWaiveAcr = async (reason: string) => {
+    setAcrWaiving(true);
+    setWaiveError(null);
+    try {
+      setAcr(await waiveACR(caseId, reason));
+      setWaiveModal(null);
+      setSuccessMessage("ACR waived — Gate 2 is cleared.");
+      window.setTimeout(() => setSuccessMessage(null), 4000);
+      await fetchDetail();
+    } catch (e: any) {
+      setWaiveError(
+        e?.response?.data?.detail ?? e?.message ?? "Couldn't waive the ACR.",
+      );
+    } finally {
+      setAcrWaiving(false);
+    }
+  };
+  const confirmReinstateAcr = async () => {
+    setAcrWaiving(true);
+    setWaiveError(null);
+    try {
+      setAcr(await reinstateACR(caseId));
+      setWaiveModal(null);
+      await fetchDetail();
+    } catch (e: any) {
+      setWaiveError(
+        e?.response?.data?.detail ??
+          e?.message ??
+          "Couldn't undo the ACR waiver.",
+      );
+    } finally {
+      setAcrWaiving(false);
+    }
+  };
+
   const handleHistoryOverride = async (accept: boolean) => {
     setHistBusy(true);
     try {
@@ -1936,7 +1990,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
     const docsReady = (detail.document_checklist?.missing ?? []).length === 0;
     const eAppReady =
       eApp?.status === "Submitted" || eApp?.status === "Verified";
-    const acrReady = acr?.status === "Submitted";
+    const acrReady = isACRCleared(acr);
     const ippReady = ipp?.status === "Realized";
     const pepReady =
       checks.length > 0 && checks.every((ck) => ck.status === "Passed");
@@ -1977,7 +2031,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
     const missingDocs = detail?.document_checklist?.missing ?? [];
     const checksMissing =
       eApp?.status !== "Submitted" ||
-      acr?.status !== "Submitted" ||
+      !isACRCleared(acr) ||
       ipp?.status !== "Realized";
     // A family member is never assessed on their own as soon as their gates clear: the head and the insured spouse are
     // underwritten first, and the assessments run together afterwards (from the chat).
@@ -2013,6 +2067,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
     isGroup,
     eApp?.status,
     acr?.status,
+    acr?.waived_at,
     ipp?.status,
   ]);
 
@@ -2539,7 +2594,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
     missingPreChecks.push(`Docs: ${missingRequiredDocs.join(", ")}`);
   if (eApp?.status !== "Submitted" && eApp?.status !== "Verified")
     missingPreChecks.push("E-Application");
-  if (acr?.status !== "Submitted")
+  if (!isACRCleared(acr))
     missingPreChecks.push("Agent's Confidential Report");
   if (ipp?.status !== "Realized")
     missingPreChecks.push("Initial Premium Payment");
@@ -2590,19 +2645,23 @@ export default function CasePage({ params }: { params: { id: string } }) {
     {
       id: "acr",
       title: "Agent's Confidential Report (ACR)",
-      done: acr?.status === "Submitted",
+      done: isACRCleared(acr),
       statusLabel:
         acr?.status === "Submitted"
           ? "Submitted"
-          : acr?.requested_at
-            ? "Awaiting agent"
-            : (acr?.status ?? "Not Started"),
+          : acr?.waived_at
+            ? "Waived"
+            : acr?.requested_at
+              ? "Awaiting agent"
+              : (acr?.status ?? "Not Started"),
       description:
         acr?.status === "Submitted"
           ? `Moral hazard & financial standing report filed by field agent.${detail?.family_head_case ? ` Filed once for the whole family (recorded on the head's case ${detail.family_head_case.case_number}) — one proposer, one report.` : ""}`
-          : detail?.family_head_case
-            ? `The agent's report on the proposer is filed once for the whole family — it is recorded on the head's case ${detail.family_head_case.case_number}.`
-            : "Waiting for the agent to submit the confidential report from the agent app.",
+          : acr?.waived_at
+            ? `Waived by ${acr.waived_by ?? "an underwriter"} on ${new Date(acr.waived_at).toLocaleDateString()}${acr.waiver_reason ? ` — “${acr.waiver_reason}”` : ""}. The agent can still file the report.`
+            : detail?.family_head_case
+              ? `The agent's report on the proposer is filed once for the whole family — it is recorded on the head's case ${detail.family_head_case.case_number}.`
+              : "Waiting for the agent to submit the confidential report from the agent app.",
       // The report is the agent's own, filed from the app: staff can read it once it is in, and ask for it until then.
       actionLabel:
         acr?.status === "Submitted"
@@ -2617,6 +2676,17 @@ export default function CasePage({ params }: { params: { id: string } }) {
         acr?.status === "Submitted"
           ? () => setShowACRModal(true)
           : handleRequestAcr,
+      // Bypass for when the report never arrives (underwriter / admin only; nothing to waive once submitted).
+      secondaryActionLabel:
+        canWaiveAcr && acr?.status !== "Submitted"
+          ? acrWaiving
+            ? "Saving…"
+            : acr?.waived_at
+              ? "Undo waiver"
+              : "Waive"
+          : undefined,
+      onSecondaryAction: acr?.waived_at ? handleReinstateAcr : handleWaiveAcr,
+      secondaryBusy: acrWaiving,
     },
     {
       id: "pep",
@@ -3577,6 +3647,25 @@ export default function CasePage({ params }: { params: { id: string } }) {
               />
             )}
 
+            {waiveModal === "waive" && (
+              <WaiveAcrModal
+                applicantName={customer?.name}
+                busy={acrWaiving}
+                error={waiveError}
+                onCancel={() => setWaiveModal(null)}
+                onConfirm={confirmWaiveAcr}
+              />
+            )}
+
+            {waiveModal === "undo" && (
+              <UndoWaiverModal
+                busy={acrWaiving}
+                error={waiveError}
+                onCancel={() => setWaiveModal(null)}
+                onConfirm={confirmReinstateAcr}
+              />
+            )}
+
             {showACRModal && (
               <ACRModal
                 caseId={caseId}
@@ -3903,7 +3992,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                         </div>
 
                         {/* Action Link / Button */}
-                        <div className="shrink-0 pl-1 sm:pl-0">
+                        <div className="shrink-0 pl-1 sm:pl-0 flex items-center gap-2">
                           {step.actionHref ? (
                             <Link
                               href={step.actionHref}
@@ -3935,6 +4024,15 @@ export default function CasePage({ params }: { params: { id: string } }) {
                               <span>{step.actionLabel}</span>
                             </button>
                           ) : null}
+                          {step.secondaryActionLabel && step.onSecondaryAction && (
+                            <button
+                              onClick={step.onSecondaryAction}
+                              disabled={step.secondaryBusy}
+                              className="px-3 py-1.5 text-xs font-bold rounded-lg border bg-white hover:bg-slate-100 text-slate-700 border-slate-200/90 transition-all disabled:opacity-50"
+                            >
+                              {step.secondaryActionLabel}
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}

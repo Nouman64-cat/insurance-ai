@@ -2132,7 +2132,7 @@ async def _run_compliance_screening(args: dict, ctx: Ctx) -> dict:
     if done:
         return done
 
-    if acr_status != "Submitted" and not args.get("bypass_prerequisites"):
+    if acr_status not in ("Submitted", "Waived") and not args.get("bypass_prerequisites"):
         return {
             "success": False,
             "message": (

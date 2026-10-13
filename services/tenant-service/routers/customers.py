@@ -182,10 +182,9 @@ async def create_customer(
     if customer.acquisition_source_id:
         await session.refresh(customer, ["acquisition_source"])
 
-    # Kick off background quotation generation (Kafka) — see quote_worker.py
-    # in api-gateway. Runs after commit so the worker never races the read.
-    await _publish_customer_created(request, tenant_id, customer)
-
+    # No quotation is generated here: a new customer stays a lead on the Leads
+    # board and only reaches Proposals when an agent sends it as a Draft — see
+    # update_customer, which publishes CustomerCreated at that point.
     return customer
 
 @router.get(
@@ -596,7 +595,9 @@ async def update_customer(
     tenant_id: UUID,
     customer_id: UUID,
     body: CustomerUpdate,
+    request: Request,
     session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
 ) -> Customer:
     customer = await session.get(Customer, customer_id)
     if not customer or customer.tenant_id != tenant_id:
@@ -604,6 +605,24 @@ async def update_customer(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Customer not found"
         )
+    was_draft = customer.profile_status == ProfileStatusEnum.DRAFT
+
+    # Moving a lead to another source (or back to Direct) changes who can see it, so a login that is itself
+    # an acquisition source (agent, broker, bank desk) can't do it. Re-saving the current source is fine —
+    # the edit form always sends it.
+    changing_source = body.clear_acquisition_source or (
+        body.acquisition_source_id is not None and body.acquisition_source_id != customer.acquisition_source_id
+    )
+    if changing_source:
+        if await source_scope(token, session) is not None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Changing a lead's acquisition source is limited to staff accounts.",
+            )
+        if body.acquisition_source_id is not None and not body.clear_acquisition_source:
+            new_source = await session.get(AcquisitionSource, body.acquisition_source_id)
+            if new_source is None or new_source.tenant_id != tenant_id:
+                raise HTTPException(status_code=404, detail="Acquisition source not found")
 
     # Update identity fields
     if body.cnic is not None:
@@ -656,6 +675,9 @@ async def update_customer(
         customer.branch_id = body.branch_id
     if body.assigned_agent_id is not None:
         customer.assigned_agent_id = body.assigned_agent_id
+    if body.clear_acquisition_source:
+        customer.acquisition_source_id = None
+        customer.assigned_agent_id = None
     if body.city is not None:
         customer.city = body.city
     if body.province is not None:
@@ -667,9 +689,11 @@ async def update_customer(
     # Skip auto-promotion once a customer has been explicitly marked NOT_INTERESTED —
     # that's a sticky terminal state an unrelated field edit shouldn't silently clear;
     # only an explicit profile_status in the request (a manual "Reactivate") can move it.
+    # DRAFT is the same: it means "sent to Proposal" by an explicit click, so a later
+    # edit must not silently pull the lead back out of the proposal list.
     if body.profile_status is not None:
         customer.profile_status = body.profile_status
-    elif customer.profile_status != ProfileStatusEnum.NOT_INTERESTED:
+    elif customer.profile_status not in (ProfileStatusEnum.NOT_INTERESTED, ProfileStatusEnum.DRAFT):
         if customer.cnic and customer.dob and customer.declared_income and customer.occupation:
             customer.profile_status = ProfileStatusEnum.UNDERWRITING_READY
         elif customer.dob or customer.declared_income or customer.occupation or customer.cnic:
@@ -681,4 +705,14 @@ async def update_customer(
     await session.refresh(customer)
     if customer.acquisition_source_id:
         await session.refresh(customer, ["acquisition_source"])
+
+    # First time this customer is sent to Draft: have the quote worker generate
+    # offers — unless a policy already exists (e.g. the plan chosen at entry was
+    # just created from "Send Draft"), so nothing is duplicated.
+    if customer.profile_status == ProfileStatusEnum.DRAFT and not was_draft:
+        has_policy = (
+            await session.exec(select(Policy.id).where(Policy.customer_id == customer.id).limit(1))
+        ).first()
+        if has_policy is None:
+            await _publish_customer_created(request, tenant_id, customer)
     return customer

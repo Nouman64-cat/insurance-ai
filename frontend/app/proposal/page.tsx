@@ -14,6 +14,9 @@ import { updateQuote } from "../services/quotes";
 import { listUnderwriters, Agent } from "../services/agents";
 import { listAcquisitionSources, AcquisitionSource } from "../services/acquisitionSources";
 import { updateCustomer } from "../services/customers";
+import { listInsurancePlans, InsurancePlan } from "../services/insurancePlans";
+import { getPlanValidationError } from "@/components/entities/customerShared";
+import SourcePicker, { useAcquisitionSources } from "@/components/entities/SourcePicker";
 import { Pagination, usePagination } from "@/components/Pagination";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import { tx } from "@/lib/i18n/tx";
@@ -660,18 +663,18 @@ export default function QuotePage() {
       const data = await listQuotes(filters);
       let quotesList = data || [];
 
-      // Fetch customers still moving through the Leads pipeline (no status yet,
-      // Lead, In Progress, or explicit Draft) that don't have a real quote yet,
-      // so they still show up in the Draft tab. `customers` has no server-side
-      // status filter, so the pipeline/dead-lead/policyholder split happens
-      // client-side here.
+      // Fetch customers an agent has explicitly sent here with "Send Draft" on the
+      // Leads board (profile_status DRAFT) that don't have a real quote yet, so they
+      // show up in the Draft tab. Leads and In Progress customers stay on the Leads
+      // board until sent. `customers` has no server-side status filter, so the
+      // split happens client-side here.
       const tenantId = localStorage.getItem("tenant_id");
       if (tenantId) {
         try {
           const draftRes = await api.get(`/tenants/${tenantId}/customers`);
           if (draftRes.data && Array.isArray(draftRes.data)) {
             const pipelineCustomers = draftRes.data.filter(
-              (c: any) => !c.profile_status || !["NOT_INTERESTED", "POLICYHOLDER"].includes(c.profile_status)
+              (c: any) => c.profile_status === "DRAFT"
             );
             // Filter out customers that already have a quoted policy
             const unquoted = pipelineCustomers.filter(
@@ -1882,37 +1885,246 @@ function QuoteDetailModal({
   isAgent: boolean;
 }) {
   const { locale, tx } = useI18n();
-  const [underwriters, setUnderwriters] = useState<Agent[]>([]);
-  const [updating, setUpdating] = useState(false);
 
-  useEffect(() => {
+  const [startError, setStartError] = useState<string | null>(null);
+
+  // Edit / delete the proposal itself. Only while it is still a Draft (or the team has asked for more
+  // information); once it is with the admin team or decided, it is changed on its underwriting case.
+  const canEditProposal = !!detail && canAct && ["Quoted", "InformationRequested"].includes(detail.status);
+  const canDeleteProposal = !!detail && canAct && detail.status === "Quoted";
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [plans, setPlans] = useState<InsurancePlan[]>([]);
+  const [form, setForm] = useState({ planId: "", coverage: "", term: "", nomineeName: "", nomineeRelationship: "", dependentName: "", dependentDob: "" });
+  const editPlan = plans.find((p) => p.id === form.planId);
+  const editShowsDependent = (editPlan?.insurance_type ?? detail?.insurance_type) === "CHILD_EDUCATION_MARRIAGE";
+
+  const errorText = (err: any, fallback: string) => {
+    const d = err?.response?.data?.detail;
+    return typeof d === "string" ? d : err?.message ?? fallback;
+  };
+
+  const ensurePlans = async (): Promise<InsurancePlan[]> => {
+    if (plans.length > 0) return plans;
     const tenantId = localStorage.getItem("tenant_id");
-    if (tenantId) listUnderwriters(tenantId).then(setUnderwriters).catch(console.error);
-  }, []);
-
-  const underwriterOptions: FancyDropdownOption[] = useMemo(
-    () => [
-      { value: "", label: tx("Unassigned") },
-      ...underwriters.map((u) => ({ value: u.id, label: u.full_name, description: u.email, icon: <UnderwriterInitial name={u.full_name} /> })),
-    ],
-    [underwriters, tx]
-  );
-
-  const handleUpdate = async (updates: { status?: string; assigned_underwriter_id?: string | null }) => {
-    if (!detail) return;
-    setUpdating(true);
+    if (!tenantId) return [];
     try {
-      await updateQuote(detail.quote_id, updates);
-      onRefresh();
-      onClose(); // Alternatively just refresh details, but close is simpler.
-    } catch (err: any) {
-      alert(err.message || tx("Update failed"));
-    } finally {
-      setUpdating(false);
+      const list = (await listInsurancePlans(tenantId)).filter((p) => p.status === "Active");
+      setPlans(list);
+      return list;
+    } catch {
+      return []; // the plan stays as it is if the list can't load
     }
   };
 
-  const [startError, setStartError] = useState<string | null>(null);
+  const startEdit = async () => {
+    if (!detail) return;
+    setEditError(null);
+    const list = await ensurePlans();
+    const current = list.find((p) => p.label === detail.plan_label) ?? list.find((p) => p.insurance_type === detail.insurance_type);
+    setForm({
+      planId: current?.id ?? "",
+      coverage: String(detail.coverage_amount),
+      term: String(detail.term_years),
+      nomineeName: detail.nominee_name ?? "",
+      nomineeRelationship: detail.nominee_relationship ?? "",
+      dependentName: detail.dependent_name ?? "",
+      dependentDob: detail.dependent_dob ? detail.dependent_dob.slice(0, 10) : "",
+    });
+    setEditing(true);
+  };
+
+  const saveEdit = async () => {
+    if (!detail) return;
+    if (editPlan) {
+      const err = getPlanValidationError(
+        editPlan, form.coverage, form.term, detail.customer_declared_income, detail.customer_dob,
+        form.dependentName, form.dependentDob
+      );
+      if (err) { setEditError(tx(err)); return; }
+    } else if (!(Number(form.coverage) > 0) || !Number.isInteger(Number(form.term)) || Number(form.term) <= 0) {
+      setEditError(tx("Enter a valid coverage amount and term."));
+      return;
+    }
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId) return;
+    setSaving(true);
+    setEditError(null);
+    try {
+      const body: Record<string, unknown> = {
+        coverage_amount: Number(form.coverage),
+        term_years: Number(form.term),
+        nominee_name: form.nomineeName.trim() || null,
+        nominee_relationship: form.nomineeRelationship.trim() || null,
+      };
+      if (editPlan) {
+        body.product_name = editPlan.label;
+        body.insurance_type = editPlan.insurance_type;
+      }
+      if (editShowsDependent) {
+        body.dependent_name = form.dependentName.trim() || null;
+        body.dependent_dob = form.dependentDob || null;
+      }
+      // The premium is recalculated server-side from the new plan, cover and term.
+      await api.put(`/tenants/${tenantId}/customers/${detail.customer_id}/policies/${detail.policy_id}`, body);
+      setEditing(false);
+      onRefresh();
+      await onReloadDetail();
+    } catch (err: any) {
+      setEditError(errorText(err, tx("Failed to save changes.")));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteProposal = async () => {
+    if (!detail) return;
+    if (!confirm(tx("Delete this proposal for \"{0}\"? The customer stays on the Leads board. This cannot be undone.", { 0: detail.customer_name }))) return;
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId) return;
+    setDeleting(true);
+    setEditError(null);
+    try {
+      await api.delete(`/tenants/${tenantId}/customers/${detail.customer_id}/policies/${detail.policy_id}`);
+      // Back to the Leads board — a customer left as DRAFT would reappear here as an "Unassigned Plan" row.
+      const complete = detail.customer_cnic && detail.customer_dob && detail.customer_occupation && detail.customer_declared_income;
+      await updateCustomer(tenantId, detail.customer_id, { profile_status: complete ? "UNDERWRITING_READY" : "PROSPECT" });
+      onRefresh();
+      onClose();
+    } catch (err: any) {
+      setEditError(errorText(err, tx("Failed to delete the proposal.")));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Edit the customer's own details from here. Same window of time as the proposal (Draft / Information Requested).
+  // The CNIC is the identity key behind compliance and verification, so it is shown but not editable here.
+  const canEditCustomer = canEditProposal;
+  const [editingCustomer, setEditingCustomer] = useState(false);
+  const [custSaving, setCustSaving] = useState(false);
+  const [custError, setCustError] = useState<string | null>(null);
+  const [custForm, setCustForm] = useState({
+    firstName: "", lastName: "", dob: "", gender: "", occupation: "", income: "", isSmoker: false, height: "", weight: "",
+  });
+
+  const startEditCustomer = () => {
+    if (!detail) return;
+    const [first, ...rest] = (detail.customer_name ?? "").split(" ");
+    setCustForm({
+      firstName: first ?? "",
+      lastName: rest.join(" "),
+      dob: detail.customer_dob ? detail.customer_dob.slice(0, 10) : "",
+      gender: detail.customer_gender ?? "",
+      occupation: detail.customer_occupation ?? "",
+      income: detail.customer_declared_income ? String(detail.customer_declared_income) : "",
+      isSmoker: !!detail.customer_is_smoker,
+      height: detail.customer_height_cm ? String(detail.customer_height_cm) : "",
+      weight: detail.customer_weight_kg ? String(detail.customer_weight_kg) : "",
+    });
+    setCustError(null);
+    setEditingCustomer(true);
+  };
+
+  const saveCustomer = async () => {
+    if (!detail) return;
+    const income = Number(custForm.income);
+    const height = Number(custForm.height);
+    const weight = Number(custForm.weight);
+    if (!custForm.firstName.trim()) { setCustError(tx("First name is required.")); return; }
+    if (custForm.dob && new Date(custForm.dob) > new Date()) { setCustError(tx("Date of birth cannot be in the future.")); return; }
+    if (!(income > 0)) { setCustError(tx("Enter an annual income greater than 0.")); return; }
+    if (!(height > 0) || !(weight > 0)) { setCustError(tx("Enter a valid height and weight.")); return; }
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId) return;
+
+    // The new details must still fit the proposal's plan (entry age, income multiple, ...).
+    const list = await ensurePlans();
+    const plan = list.find((p) => p.label === detail.plan_label) ?? list.find((p) => p.insurance_type === detail.insurance_type);
+    if (plan) {
+      const planErr = getPlanValidationError(
+        plan, detail.coverage_amount, detail.term_years, income, custForm.dob || detail.customer_dob,
+        detail.dependent_name, detail.dependent_dob
+      );
+      if (planErr) { setCustError(tx(planErr)); return; }
+    }
+
+    setCustSaving(true);
+    setCustError(null);
+    try {
+      await updateCustomer(tenantId, detail.customer_id, {
+        first_name: custForm.firstName.trim(),
+        last_name: custForm.lastName.trim(),
+        date_of_birth: custForm.dob || undefined,
+        gender: custForm.gender || undefined,
+        occupation: custForm.occupation.trim() || undefined,
+        declared_income: income,
+        is_smoker: custForm.isSmoker,
+        height_cm: height,
+        weight_kg: weight,
+      });
+      // Age, smoking status and BMI feed the premium, so re-price the proposal from the new details.
+      await api.put(`/tenants/${tenantId}/customers/${detail.customer_id}/policies/${detail.policy_id}`, {});
+      setEditingCustomer(false);
+      onRefresh();
+      await onReloadDetail();
+    } catch (err: any) {
+      setCustError(errorText(err, tx("Failed to save customer details.")));
+    } finally {
+      setCustSaving(false);
+    }
+  };
+
+  // The lead's acquisition source (agent, broker, bank desk…) — the same sources the admin forms offer. Moving a lead
+  // between sources changes who can see it, so it is staff-only (the server enforces the same).
+  const canEditSource = canEditCustomer && !isAgent;
+  const [editingSource, setEditingSource] = useState(false);
+  const [sourceId, setSourceId] = useState("");
+  const [sourceSaving, setSourceSaving] = useState(false);
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const sources = useAcquisitionSources(editingSource);
+  const chosenSource = sources.find((s) => s.id === sourceId) ?? null;
+
+  const startEditSource = () => {
+    if (!detail) return;
+    setSourceId(detail.acquisition_source_id ?? "");
+    setSourceError(null);
+    setEditingSource(true);
+  };
+
+  const saveSource = async () => {
+    if (!detail) return;
+    if (sourceId === (detail.acquisition_source_id ?? "")) {
+      setEditingSource(false);
+      return;
+    }
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId) return;
+    setSourceSaving(true);
+    setSourceError(null);
+    try {
+      await updateCustomer(
+        tenantId,
+        detail.customer_id,
+        sourceId
+          ? {
+              acquisition_source_id: sourceId,
+              // An Agent source is a login of its own: choosing one hands the lead to that agent.
+              ...(chosenSource?.source_type === "AGENT" && chosenSource.user_id ? { assigned_agent_id: chosenSource.user_id } : {}),
+            }
+          : { clear_acquisition_source: true },
+      );
+      setEditingSource(false);
+      onRefresh();
+      await onReloadDetail();
+    } catch (err: any) {
+      setSourceError(errorText(err, tx("Failed to update the lead source.")));
+    } finally {
+      setSourceSaving(false);
+    }
+  };
 
   const missingFields = useMemo(() => {
     if (!detail) return [];
@@ -2100,27 +2312,20 @@ function QuoteDetailModal({
               {tx("Opens an Underwriting case for this customer on this exact proposal — documents, AI risk scoring, and the final decision all happen there.")}
             </p>
 
-            
-            {/* Status and Underwriter Update */}
-            <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl">
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Assigned Underwriter")}</label>
-                <FancyDropdown
-                  className="w-full max-w-sm"
-                  value={detail.assigned_underwriter_id || ""}
-                  onChange={(v) => handleUpdate({ assigned_underwriter_id: v || null })}
-                  options={underwriterOptions}
-                  placeholder={tx("Unassigned")}
-                  searchable={underwriters.length > 6}
-                  disabled={updating}
-                />
-              </div>
-            </div>
-
             {/* Headline */}
             <div className="flex items-start justify-between">
               <div>
-                <h2 className="text-lg font-bold text-slate-900">{detail.customer_name}</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-bold text-slate-900">{detail.customer_name}</h2>
+                  {canEditCustomer && !editingCustomer && (
+                    <button
+                      onClick={startEditCustomer}
+                      className="px-2.5 py-1 text-[11px] font-semibold rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors"
+                    >
+                      {tx("Edit")}
+                    </button>
+                  )}
+                </div>
                 <p className="text-xs text-slate-400">{detail.customer_cnic}</p>
               </div>
               <p className="text-[11px] text-slate-400 text-end mt-1.5">
@@ -2131,6 +2336,70 @@ function QuoteDetailModal({
             {/* Customer */}
             <section>
               <SectionLabel>{tx("Customer")}</SectionLabel>
+              {editingCustomer ? (
+                <div className="space-y-3 rounded-xl border border-blue-100 bg-blue-50/40 p-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {([
+                      ["firstName", "First Name", "text"],
+                      ["lastName", "Last Name", "text"],
+                      ["dob", "Date of Birth", "date"],
+                      ["occupation", "Occupation", "text"],
+                      ["income", "Annual Income (PKR)", "number"],
+                      ["height", "Height (cm)", "number"],
+                      ["weight", "Weight (kg)", "number"],
+                    ] as const).map(([key, label, type]) => (
+                      <div key={key}>
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx(label)}</label>
+                        <input
+                          type={type} value={custForm[key]} disabled={custSaving}
+                          onChange={(e) => setCustForm({ ...custForm, [key]: e.target.value })}
+                          className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                        />
+                      </div>
+                    ))}
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Gender")}</label>
+                      <FancyDropdown
+                        className="w-full"
+                        value={custForm.gender}
+                        onChange={(v) => setCustForm({ ...custForm, gender: v })}
+                        options={[{ value: "Male", label: tx("Male") }, { value: "Female", label: tx("Female") }]}
+                        placeholder={tx("Select gender")}
+                        disabled={custSaving}
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 text-sm text-slate-700 sm:col-span-2">
+                      <input
+                        type="checkbox" checked={custForm.isSmoker} disabled={custSaving}
+                        onChange={(e) => setCustForm({ ...custForm, isSmoker: e.target.checked })}
+                      />
+                      {tx("Smoker")}
+                    </label>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    {tx("The premium is recalculated from these details when you save. The CNIC cannot be changed here.")}
+                  </p>
+                  {custError && (
+                    <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{custError}</p>
+                  )}
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => { setEditingCustomer(false); setCustError(null); }}
+                      disabled={custSaving}
+                      className="px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                    >
+                      {tx("Cancel")}
+                    </button>
+                    <button
+                      onClick={saveCustomer}
+                      disabled={custSaving}
+                      className="px-3 py-1.5 text-xs font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50"
+                    >
+                      {custSaving ? tx("Saving…") : tx("Save Changes")}
+                    </button>
+                  </div>
+                </div>
+              ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <DetailField label={tx("Date of Birth")} value={`${formatDate(detail.customer_dob)} (${tx("{age} yrs", { age: detail.customer_age })})`} />
                 <DetailField label={tx("Gender")} value={detail.customer_gender} />
@@ -2141,18 +2410,194 @@ function QuoteDetailModal({
                   label={tx("Height / Weight")}
                   value={`${detail.customer_height_cm} cm / ${detail.customer_weight_kg} kg${detail.customer_bmi ? ` (BMI ${detail.customer_bmi})` : ""}`}
                 />
-                {detail.acquisition_source_name && (
-                  <DetailField
-                    label={tx("Lead Generated By")}
-                    value={`${detail.acquisition_source_name} (${tx(SOURCE_TYPE_LABELS[detail.acquisition_source_type ?? ""] ?? detail.acquisition_source_type ?? "")})${detail.acquisition_source_partner ? ` — ${detail.acquisition_source_partner}` : ""}`}
-                  />
+                {(detail.acquisition_source_name || canEditSource) && (
+                  <div className="col-span-2 sm:col-span-3">
+                    {editingSource ? (
+                      <div className="space-y-3 rounded-xl border border-blue-100 bg-blue-50/40 p-4">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{tx("Lead Generated By")}</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <SourcePicker
+                            sources={sources}
+                            sourceId={sourceId}
+                            onChange={(src) => setSourceId(src?.id ?? "")}
+                            fieldClass="space-y-1"
+                            labelClass="text-xs font-semibold text-slate-600"
+                            selectClass="w-full bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-900"
+                          />
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          {tx("Choose “Direct / Unassigned” to remove the source. Need a new one?")}{" "}
+                          <a href="/admin/acquisition-sources" className="font-semibold text-blue-700 hover:underline">
+                            {tx("Manage acquisition sources →")}
+                          </a>
+                        </p>
+                        {sourceError && (
+                          <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{sourceError}</p>
+                        )}
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => { setEditingSource(false); setSourceError(null); }}
+                            disabled={sourceSaving}
+                            className="px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                          >
+                            {tx("Cancel")}
+                          </button>
+                          <button
+                            onClick={saveSource}
+                            disabled={sourceSaving}
+                            className="px-3 py-1.5 text-xs font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50"
+                          >
+                            {sourceSaving ? tx("Saving…") : tx("Save Changes")}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-start justify-between gap-3">
+                        <DetailField
+                          label={tx("Lead Generated By")}
+                          value={
+                            detail.acquisition_source_name
+                              ? `${detail.acquisition_source_name} (${tx(SOURCE_TYPE_LABELS[detail.acquisition_source_type ?? ""] ?? detail.acquisition_source_type ?? "")})${detail.acquisition_source_partner ? ` — ${detail.acquisition_source_partner}` : ""}`
+                              : tx("Direct / Unassigned")
+                          }
+                        />
+                        {canEditSource && (
+                          <button
+                            onClick={startEditSource}
+                            className="shrink-0 px-2.5 py-1 text-[11px] font-semibold rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors"
+                          >
+                            {tx("Edit")}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
+              )}
             </section>
 
             {/* Policy */}
             <section>
-              <SectionLabel>{tx("Policy")}</SectionLabel>
+              <div className="flex items-center justify-between mb-2.5">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{tx("Policy")}</p>
+                {!editing && (canEditProposal || canDeleteProposal) && (
+                  <div className="flex items-center gap-1.5">
+                    {canEditProposal && (
+                      <button
+                        onClick={startEdit}
+                        disabled={deleting}
+                        className="px-2.5 py-1 text-[11px] font-semibold rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors disabled:opacity-50"
+                      >
+                        {tx("Edit")}
+                      </button>
+                    )}
+                    {canDeleteProposal && (
+                      <button
+                        onClick={deleteProposal}
+                        disabled={deleting}
+                        className="px-2.5 py-1 text-[11px] font-semibold rounded-md text-red-600 bg-white border border-red-100 hover:bg-red-50 transition-colors disabled:opacity-50"
+                      >
+                        {deleting ? tx("Deleting…") : tx("Delete")}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+              {editError && !editing && (
+                <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{editError}</p>
+              )}
+              {editing ? (
+                <div className="space-y-3 rounded-xl border border-blue-100 bg-blue-50/40 p-4">
+                  {plans.length > 0 && (
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Plan")}</label>
+                      <FancyDropdown
+                        className="w-full"
+                        value={form.planId}
+                        onChange={(v) => setForm({ ...form, planId: v })}
+                        options={plans.map((p) => ({ value: p.id, label: p.label }))}
+                        placeholder={tx("Select plan")}
+                        searchable={plans.length > 6}
+                        disabled={saving}
+                      />
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Coverage (PKR)")}</label>
+                      <input
+                        type="number" min={0} value={form.coverage} disabled={saving}
+                        onChange={(e) => setForm({ ...form, coverage: e.target.value })}
+                        className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Term (years)")}</label>
+                      <input
+                        type="number" min={1} value={form.term} disabled={saving}
+                        onChange={(e) => setForm({ ...form, term: e.target.value })}
+                        className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Nominee")}</label>
+                      <input
+                        type="text" value={form.nomineeName} disabled={saving}
+                        onChange={(e) => setForm({ ...form, nomineeName: e.target.value })}
+                        className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Nominee Relationship")}</label>
+                      <input
+                        type="text" value={form.nomineeRelationship} disabled={saving}
+                        onChange={(e) => setForm({ ...form, nomineeRelationship: e.target.value })}
+                        className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                      />
+                    </div>
+                    {editShowsDependent && (
+                      <>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Dependent")}</label>
+                          <input
+                            type="text" value={form.dependentName} disabled={saving}
+                            onChange={(e) => setForm({ ...form, dependentName: e.target.value })}
+                            className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Dependent Date of Birth")}</label>
+                          <input
+                            type="date" value={form.dependentDob} disabled={saving}
+                            onChange={(e) => setForm({ ...form, dependentDob: e.target.value })}
+                            className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  {editError && (
+                    <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{editError}</p>
+                  )}
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => { setEditing(false); setEditError(null); }}
+                      disabled={saving}
+                      className="px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                    >
+                      {tx("Cancel")}
+                    </button>
+                    <button
+                      onClick={saveEdit}
+                      disabled={saving}
+                      className="px-3 py-1.5 text-xs font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50"
+                    >
+                      {saving ? tx("Saving…") : tx("Save Changes")}
+                    </button>
+                  </div>
+                </div>
+              ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <DetailField label={tx("Plan")} value={detail.plan_label} />
                 <DetailField label={tx("Type")} value={tx(INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type)} />
@@ -2165,6 +2610,7 @@ function QuoteDetailModal({
                 {detail.nominee_name && <DetailField label={tx("Nominee")} value={`${detail.nominee_name}${detail.nominee_relationship ? ` (${detail.nominee_relationship})` : ""}`} />}
                 {detail.dependent_name && <DetailField label={tx("Dependent")} value={`${detail.dependent_name}${detail.dependent_dob ? ` — b. ${formatDate(detail.dependent_dob)}` : ""}`} />}
               </div>
+              )}
             </section>
 
             {/* Premium breakdown */}

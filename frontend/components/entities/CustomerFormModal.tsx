@@ -730,6 +730,26 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
         }
       }
 
+      let policyPayload: any = null;
+      if (data.selectedPlanId && data.policyCoverage && data.policyTerm) {
+        const selectedPlan = availablePlans.find((p) => p.id === data.selectedPlanId);
+        if (selectedPlan) {
+          policyPayload = {
+            product_name: selectedPlan.label,
+            insurance_type: selectedPlan.insurance_type,
+            coverage_amount: data.policyCoverage,
+            term_years: data.policyTerm,
+          };
+          if (selectedPlan.insurance_type === "CHILD_EDUCATION_MARRIAGE") {
+            policyPayload.dependent_name = data.policyDependentName || null;
+            policyPayload.dependent_dob = data.policyDependentDob || null;
+          }
+        }
+      }
+      // Outside the Copilot chat the new lead stays on the Leads board; its chosen plan
+      // waits on the customer until "Send Draft" turns it into a proposal.
+      const holdPlan = !!policyPayload && !inChatPanel;
+
       const customerResp = await api.post<Customer>(`/tenants/${tenantId}/customers`, {
         cnic: data.cnic,
         first_name: data.firstName,
@@ -749,29 +769,16 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
         branch_id: branchId || null,
         assigned_agent_id: assignedAgentId || null,
         acquisition_source_id: acquisitionSourceId || null,
-        details: payloadDetails,
+        details: holdPlan ? { ...payloadDetails, pending_plan: policyPayload } : payloadDetails,
       });
 
       let proposalCreated = false;
-      if (data.selectedPlanId && data.policyCoverage && data.policyTerm) {
-        const selectedPlan = availablePlans.find((p) => p.id === data.selectedPlanId);
-        if (selectedPlan) {
-          const policyPayload: any = {
-            product_name: selectedPlan.label,
-            insurance_type: selectedPlan.insurance_type,
-            coverage_amount: data.policyCoverage,
-            term_years: data.policyTerm,
-          };
-          if (selectedPlan.insurance_type === "CHILD_EDUCATION_MARRIAGE") {
-            policyPayload.dependent_name = data.policyDependentName || null;
-            policyPayload.dependent_dob = data.policyDependentDob || null;
-          }
-          await api.post(`/tenants/${tenantId}/customers/${customerResp.data.id}/policies`, policyPayload);
-          proposalCreated = true;
-        }
+      if (policyPayload && !holdPlan) {
+        await api.post(`/tenants/${tenantId}/customers/${customerResp.data.id}/policies`, policyPayload);
+        proposalCreated = true;
       }
 
-      registerPendingQuote(customerResp.data.id, customerResp.data.name);
+      if (proposalCreated) registerPendingQuote(customerResp.data.id, customerResp.data.name);
       onSaved("Customer registered successfully with full diagnostic profile!", {
         id: customerResp.data.id,
         isNew: true,

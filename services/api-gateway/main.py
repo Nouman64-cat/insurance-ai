@@ -674,6 +674,24 @@ async def request_acr(tenant_id: UUID, case_id: UUID, request: Request, token: s
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/acr/request")
 
 
+@app.post(
+    "/tenants/{tenant_id}/cases/{case_id}/acr/waive",
+    tags=["Pre-Underwriting"],
+    summary="Waive Gate 2 when the agent's report never arrives (underwriter / admin)",
+)
+async def waive_acr(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/acr/waive")
+
+
+@app.delete(
+    "/tenants/{tenant_id}/cases/{case_id}/acr/waive",
+    tags=["Pre-Underwriting"],
+    summary="Undo an ACR waiver",
+)
+async def reinstate_acr(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/acr/waive")
+
+
 @app.get(
     "/tenants/{tenant_id}/acr-requests",
     tags=["Pre-Underwriting"],
