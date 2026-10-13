@@ -329,3 +329,203 @@ def endorsement_email(
   </table>
 </td></tr></table></body></html>"""
     return subject, text, html
+
+
+def reinstatement_email(
+    *,
+    customer_name: str,
+    tenant_name: str,
+    policy_number: str,
+    case_no: str,
+    lapse_date: Optional[str],
+    effective_date: str,
+    total_paid: float,
+    revised_terms: Optional[str] = None,
+    tenant_phone=None,
+    tenant_email=None,
+) -> tuple[str, str, str]:
+    """Return (subject, text, html) confirming a lapsed policy has been reinstated."""
+    subject = f"Policy {policy_number} reinstated — {tenant_name}"
+    gap = (f"Please note that no cover was in force between {lapse_date} and {effective_date}; "
+           "claims arising in that period are not covered.") if lapse_date else \
+          "Please note that no cover was in force while the policy was lapsed."
+    terms_line = f"Revised terms applied: {revised_terms}." if revised_terms else ""
+
+    text = (
+        f"Dear {customer_name},\n\n"
+        f"Your policy {policy_number} has been reinstated with effect from {effective_date}.\n\n"
+        f"  Reinstatement case: {case_no}\n"
+        f"  Amount received: {_pkr(total_paid)}\n"
+        + (f"  {terms_line}\n" if terms_line else "")
+        + f"\n{gap}\n\n"
+        "Your confirmation letter is available from your servicing branch or the customer portal.\n\n"
+        f"{tenant_name}\n"
+        + (f"UAN: {tenant_phone}  " if tenant_phone else "")
+        + (f"Email: {tenant_email}" if tenant_email else "")
+    )
+
+    rows = [
+        ("Policy Number", policy_number),
+        ("Reinstatement case", case_no),
+        ("Effective Date", effective_date),
+        ("Amount received", _pkr(total_paid)),
+    ]
+    detail_rows = "".join(
+        f'<tr><td style="padding:10px 0;border-bottom:1px solid {_LINE};color:{_MUTE};font-size:13px;">{_html.escape(str(k))}</td>'
+        f'<td style="padding:10px 0;border-bottom:1px solid {_LINE};color:{_INK};font-size:13px;font-weight:600;text-align:right;">{_html.escape(str(v))}</td></tr>'
+        for k, v in rows
+    )
+    contact_bits = "  ·  ".join(b for b in [f"UAN: {tenant_phone}" if tenant_phone else "", f"Email: {tenant_email}" if tenant_email else ""] if b)
+    terms_html = (f'<p style="color:{_INK};font-size:13px;line-height:20px;margin:0 0 6px;">{_html.escape(terms_line)}</p>'
+                  if terms_line else "")
+
+    html = f"""\
+<!doctype html><html><body style="margin:0;padding:0;background:{_BG};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{_BG};padding:24px 0;"><tr><td align="center">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">
+    <tr><td style="background:{_BRAND};padding:22px 28px;">
+      <div style="color:#ffffff;font-size:13px;letter-spacing:1px;text-transform:uppercase;opacity:.85;">{_html.escape(tenant_name)}</div>
+      <div style="color:#ffffff;font-size:22px;font-weight:700;margin-top:4px;">Your policy has been reinstated</div>
+    </td></tr>
+    <tr><td style="padding:28px;">
+      <p style="color:{_INK};font-size:15px;margin:0 0 12px;">Dear {_html.escape(customer_name)},</p>
+      <p style="color:{_INK};font-size:14px;line-height:22px;margin:0 0 18px;">
+        Your lapsed policy is back in force. Your original policy number and history are unchanged.
+      </p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 16px;">{detail_rows}</table>
+      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:14px 16px;margin:0 0 18px;">
+        <div style="color:#92400e;font-size:13px;font-weight:700;margin-bottom:4px;">Important</div>
+        {terms_html}
+        <p style="color:{_INK};font-size:13px;line-height:20px;margin:0;">{_html.escape(gap)}</p>
+      </div>
+    </td></tr>
+    <tr><td style="background:#f8fafc;padding:18px 28px;border-top:1px solid {_LINE};">
+      <div style="color:{_INK};font-size:13px;font-weight:600;">{_html.escape(tenant_name)}</div>
+      {f'<div style="color:{_MUTE};font-size:12px;margin-top:4px;">{contact_bits}</div>' if contact_bits else ''}
+      <div style="color:{_MUTE};font-size:11px;margin-top:8px;">This is a system-generated confirmation. Please do not reply to this email.</div>
+    </td></tr>
+  </table>
+</td></tr></table></body></html>"""
+    return subject, text, html
+
+
+def _simple_email(*, tenant_name: str, heading: str, greeting: str, intro: str,
+                  rows: list[tuple[str, str]], note: str, tenant_phone=None, tenant_email=None) -> str:
+    detail_rows = "".join(
+        f'<tr><td style="padding:10px 0;border-bottom:1px solid {_LINE};color:{_MUTE};font-size:13px;">{_html.escape(str(k))}</td>'
+        f'<td style="padding:10px 0;border-bottom:1px solid {_LINE};color:{_INK};font-size:13px;font-weight:600;text-align:right;">{_html.escape(str(v))}</td></tr>'
+        for k, v in rows
+    )
+    contact_bits = "  ·  ".join(b for b in [f"UAN: {tenant_phone}" if tenant_phone else "", f"Email: {tenant_email}" if tenant_email else ""] if b)
+    return f"""\
+<!doctype html><html><body style="margin:0;padding:0;background:{_BG};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{_BG};padding:24px 0;"><tr><td align="center">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">
+    <tr><td style="background:{_BRAND};padding:22px 28px;">
+      <div style="color:#ffffff;font-size:13px;letter-spacing:1px;text-transform:uppercase;opacity:.85;">{_html.escape(tenant_name)}</div>
+      <div style="color:#ffffff;font-size:22px;font-weight:700;margin-top:4px;">{_html.escape(heading)}</div>
+    </td></tr>
+    <tr><td style="padding:28px;">
+      <p style="color:{_INK};font-size:15px;margin:0 0 12px;">{_html.escape(greeting)}</p>
+      <p style="color:{_INK};font-size:14px;line-height:22px;margin:0 0 18px;">{_html.escape(intro)}</p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 16px;">{detail_rows}</table>
+      <p style="color:{_MUTE};font-size:12px;line-height:18px;margin:0;">{_html.escape(note)}</p>
+    </td></tr>
+    <tr><td style="background:#f8fafc;padding:18px 28px;border-top:1px solid {_LINE};">
+      <div style="color:{_INK};font-size:13px;font-weight:600;">{_html.escape(tenant_name)}</div>
+      {f'<div style="color:{_MUTE};font-size:12px;margin-top:4px;">{contact_bits}</div>' if contact_bits else ''}
+      <div style="color:{_MUTE};font-size:11px;margin-top:8px;">This is a system-generated message. Please do not reply to this email.</div>
+    </td></tr>
+  </table>
+</td></tr></table></body></html>"""
+
+
+def renewal_notice_email(
+    *, customer_name: str, tenant_name: str, policy_number: str, renewal_no: str, renewal_type: str,
+    due_date: str, amount: float, frequency: str, tenant_phone=None, tenant_email=None,
+) -> tuple[str, str, str]:
+    """Return (subject, text, html) for a renewal notice."""
+    contract = renewal_type == "ContractRenewal"
+    label = "Contract renewal" if contract else "Premium renewal"
+    subject = f"{label} notice — policy {policy_number}"
+    intro = ("Your insurance contract is due for renewal. Please review the attached notice and pay by the due date to continue your cover."
+             if contract else
+             "A premium on your policy is falling due. Your policy continues unchanged — please pay by the due date to keep it in force.")
+    text = (
+        f"Dear {customer_name},\n\n{intro}\n\n"
+        f"  Policy: {policy_number}\n  Reference: {renewal_no}\n  Due date: {due_date}\n"
+        f"  Amount payable: {_pkr(amount)} ({frequency})\n\n"
+        "A 30-day grace period applies; if the premium is not received by the end of it the policy will lapse.\n\n"
+        f"{tenant_name}\n" + (f"UAN: {tenant_phone}  " if tenant_phone else "") + (f"Email: {tenant_email}" if tenant_email else "")
+    )
+    html = _simple_email(
+        tenant_name=tenant_name, heading=f"{label} notice", greeting=f"Dear {customer_name},", intro=intro,
+        rows=[("Policy Number", policy_number), ("Reference", renewal_no), ("Due Date", due_date),
+              ("Amount Payable", _pkr(amount)), ("Billing Mode", frequency)],
+        note="A 30-day grace period applies. If the premium is not received by the end of it, the policy will lapse.",
+        tenant_phone=tenant_phone, tenant_email=tenant_email)
+    return subject, text, html
+
+
+def renewal_confirmation_email(
+    *, customer_name: str, tenant_name: str, policy_number: str, renewal_no: str, renewal_type: str,
+    amount_received: float, next_due_date: Optional[str], period_end: Optional[str] = None,
+    tenant_phone=None, tenant_email=None,
+) -> tuple[str, str, str]:
+    """Return (subject, text, html) confirming a completed renewal."""
+    contract = renewal_type == "ContractRenewal"
+    subject = f"{'Policy renewed' if contract else 'Premium received'} — {policy_number}"
+    intro = ("Your insurance contract has been renewed. The confirmation is attached."
+             if contract else "Thank you — we have received your premium and your policy remains in force.")
+    rows = [("Policy Number", policy_number), ("Reference", renewal_no), ("Amount Received", _pkr(amount_received))]
+    if contract and period_end:
+        rows.append(("Covered Until", period_end))
+    if next_due_date:
+        rows.append(("Next Premium Due", next_due_date))
+    text = f"Dear {customer_name},\n\n{intro}\n\n" + "\n".join(f"  {k}: {v}" for k, v in rows) + f"\n\n{tenant_name}"
+    html = _simple_email(
+        tenant_name=tenant_name, heading="Renewal confirmed", greeting=f"Dear {customer_name},", intro=intro, rows=rows,
+        note="Keep this message with your policy documents.", tenant_phone=tenant_phone, tenant_email=tenant_email)
+    return subject, text, html
+
+
+def claim_closure_email(
+    *, customer_name: str, tenant_name: str, policy_number: str, claim_number: str, claim_label: str,
+    outcome: str, approved_amount: float = 0.0, reason: Optional[str] = None, tenant_phone=None, tenant_email=None,
+) -> tuple[str, str, str]:
+    """Return (subject, text, html) for the final claim communication (settled or rejected)."""
+    settled = outcome == "Settled"
+    subject = f"Claim {claim_number} {'settled' if settled else 'decision'} — {tenant_name}"
+    intro = (f"Your {claim_label.lower()} has been approved and paid. The settlement confirmation is attached."
+             if settled else f"We have reviewed your {claim_label.lower()} and are unable to accept it. The decision letter is attached.")
+    rows = [("Claim", claim_number), ("Policy Number", policy_number)]
+    rows += [("Amount Paid", _pkr(approved_amount))] if settled else [("Reason", reason or "—")]
+    text = f"Dear {customer_name},\n\n{intro}\n\n" + "\n".join(f"  {k}: {v}" for k, v in rows) + f"\n\n{tenant_name}"
+    html = _simple_email(
+        tenant_name=tenant_name, heading="Claim settled" if settled else "Claim decision", greeting=f"Dear {customer_name},",
+        intro=intro, rows=rows,
+        note="Keep this message with your policy documents." if settled else "If you disagree, you may escalate to our Compliance Officer or to the SECP.",
+        tenant_phone=tenant_phone, tenant_email=tenant_email)
+    return subject, text, html
+
+
+def exit_closure_email(
+    *, customer_name: str, tenant_name: str, policy_number: str, exit_no: str, exit_type: str, final_status: str,
+    amount_paid: float = 0.0, tenant_phone=None, tenant_email=None,
+) -> tuple[str, str, str]:
+    """Return (subject, text, html) for the closing communication of a policy."""
+    heading = {"Maturity": "Your policy has matured", "Surrender": "Your policy has been surrendered", "Expiry": "Your policy has expired",
+               "CorporateExpiry": "Your group cover has ended", "DeathClaimClosure": "Policy closure confirmation"}.get(exit_type, "Policy closed")
+    subject = f"{heading} — {policy_number}"
+    paid = exit_type in ("Maturity", "Surrender") and amount_paid > 0
+    intro = ("The closure confirmation is attached." + (" The proceeds have been paid to your verified bank account." if paid else
+                                                         " No payment is due under this policy."))
+    rows = [("Policy Number", policy_number), ("Reference", exit_no), ("Final Status", final_status)]
+    if paid:
+        rows.append(("Amount Paid", _pkr(amount_paid)))
+    text = f"Dear {customer_name},\n\n{heading}. {intro}\n\n" + "\n".join(f"  {k}: {v}" for k, v in rows) + f"\n\n{tenant_name}"
+    html = _simple_email(
+        tenant_name=tenant_name, heading=heading, greeting=f"Dear {customer_name},", intro=intro, rows=rows,
+        note="Please keep this message with your records. No further premiums will be billed.",
+        tenant_phone=tenant_phone, tenant_email=tenant_email)
+    return subject, text, html

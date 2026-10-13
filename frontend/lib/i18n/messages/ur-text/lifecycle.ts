@@ -136,7 +136,7 @@ const lifecycle: Record<string, string> = {
   // ── Post-issuance servicing ───────────────────────────────────────────────
   "— Comprehensive View": "— جامع منظر",
   ". A change re-prices the premium.": "۔ تبدیلی سے پریمیم دوبارہ طے ہوتا ہے۔",
-  ". Cancellation now follows standard surrender rules (step 8).": "۔ منسوخی اب معیاری سرنڈر قواعد (مرحلہ 8) کے مطابق ہوگی۔",
+  ". Cancellation now follows standard surrender rules (step 9).": "۔ منسوخی اب معیاری سرنڈر قواعد (مرحلہ 9) کے مطابق ہوگی۔",
   ". Premium collection stays locked until then.": "۔ تب تک پریمیم کی وصولی مقفل رہے گی۔",
   ". This cannot be undone.": "۔ یہ عمل واپس نہیں ہو سکتا۔",
   "· by {0}": "· از {0}",
@@ -348,7 +348,7 @@ const lifecycle: Record<string, string> = {
   "Reference": "حوالہ",
   "Refunded": "رقم واپس",
   "Regenerate": "دوبارہ بنائیں",
-  "Reinstatement (Step 5)": "بحالی (مرحلہ 5)",
+  "Reinstatement (Step 6)": "بحالی (مرحلہ 6)",
   "Remind": "یاد دلائیں",
   "Reminder history": "یاد دہانیوں کی تاریخ",
   "reminder(s)": "یاد دہانیاں",

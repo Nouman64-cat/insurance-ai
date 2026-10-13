@@ -75,6 +75,7 @@ const urText: Record<string, string> = {
   "Family": "فیملی",
   "Organization": "ادارہ",
   "Corporate": "کارپوریٹ",
+  "Lead": "لیڈ",
   "{count} organization": "{count} ادارہ",
   "{count} organizations": "{count} ادارے",
   "{count} family": "{count} فیملی",
