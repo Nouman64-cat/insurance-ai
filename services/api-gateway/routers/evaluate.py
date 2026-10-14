@@ -282,6 +282,8 @@ async def evaluate_stream(
     completes, then persists to DB and emits a final `saved` event.
 
     Event types:
+    - `stage`    — a gateway step started/finished: {stage, status, detail?}
+                   (stage ∈ requirements | evidence | saving; status ∈ running | done)
     - `progress` — a workflow node finished: {node, data}
     - `invalid`  — input validation failed: {errors}
     - `saved`    — DB write done, full result: {assessment_id, ...}
@@ -310,6 +312,9 @@ async def evaluate_stream(
 
     policy_payload = request.policy.model_dump(mode="json")
 
+    def stage(name: str, state: str, detail: str | None = None) -> str:
+        return f"data: {json.dumps({'type': 'stage', 'stage': name, 'status': state, 'detail': detail})}\n\n"
+
     async def generate():
         final_risk: dict | None = None
 
@@ -317,6 +322,7 @@ async def evaluate_stream(
         #    what-if check has no case to gate on, and skips straight through) ──
         evidence: dict | None = None
         if request.case_id is not None:
+            yield stage("requirements", "running")
             try:
                 gate = await _determine_requirements(tenant_id, request.case_id)
             except Exception as exc:
@@ -325,11 +331,20 @@ async def evaluate_stream(
             if not gate.get("satisfied", True):
                 yield f"data: {json.dumps({'type': 'pending_requirements', 'data': gate})}\n\n"
                 return
+            met = sum(1 for r in gate.get("requirements") or [] if r.get("status") in ("Satisfied", "Waived"))
+            yield stage("requirements", "done", f"{met} requirement{'s' if met != 1 else ''} met" if met else None)
+            yield stage("evidence", "running")
             try:
                 evidence = await _fetch_evidence_bundle(tenant_id, request.case_id)
             except Exception as exc:
                 yield f"data: {json.dumps({'type': 'error', 'message': f'Evidence assembly failed: {exc}'})}\n\n"
                 return
+            gathered = [label for label, present in (
+                ("e-application", evidence.get("e_application")),
+                ("agent's report", evidence.get("acr")),
+                (f"{len(evidence.get('document_evidence') or [])} documents", evidence.get("document_evidence")),
+            ) if present]
+            yield stage("evidence", "done", ", ".join(gathered) or None)
 
         risk_request_body: dict = {"customer": customer_payload, "policy": policy_payload}
         if evidence is not None:
@@ -393,6 +408,7 @@ async def evaluate_stream(
             return
 
         # ── Persist to DB ─────────────────────────────────────────────────────
+        yield stage("saving", "running")
         try:
             # The save runs as its own task, shielded from cancellation: if the browser goes away (the case page
             # aborts a run when another starts) mid-commit, the transaction still finishes or rolls back. Cancelled
@@ -486,6 +502,7 @@ async def evaluate_stream(
                 ) else "decision"
                 await advance_case_workflow(tenant_id, case.caseld, step)
 
+            yield stage("saving", "done")
             yield f"data: {json.dumps({'type': 'saved', 'data': {'assessment_id': str(assessment.id), 'customer_id': str(customer.id), 'policy_id': str(policy.id), 'tenant_id': str(tenant_id), 'case_id': str(case.caseld) if case else None, 'policy_status': policy.status.value, 'case_status': case.caseStatus.value if case else None, 'medical_score': assessment.medical_score, 'financial_score': assessment.financial_score, 'fraud_probability': assessment.fraud_probability, 'composite_risk_score': final_risk['composite_risk_score'], 'ai_decision': assessment.ai_decision.value, 'suggested_loading': assessment.suggested_loading, 'reasons': assessment.reasons or [], 'underwriting_results': assessment.underwriting_results, 'created_at': assessment.created_at.isoformat()}})}\n\n"
 
         except Exception as exc:

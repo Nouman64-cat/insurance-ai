@@ -353,19 +353,25 @@ async def internal_llm_config(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bad internal secret")
 
     rows = await _all_rows(session)
-
-    def _resolved(role: str) -> Optional[dict]:
-        row = next((r for r in rows if r.role == role), None)
-        if row is None or not row.api_key_encrypted:
-            return None
-        try:
-            key = decrypt_secret(row.api_key_encrypted)
-        except EncryptionUnavailable:
-            return None
-        return {"provider": row.provider, "model": row.model_name, "api_key": key}
-
     return {
         "version": _version(rows),
-        "primary": _resolved("primary"),
-        "fallback": _resolved("fallback"),
+        "primary": _resolved(rows, "primary"),
+        "fallback": _resolved(rows, "fallback"),
     }
+
+
+def _resolved(rows: list[LLMProviderConfig], role: str) -> Optional[dict]:
+    row = next((r for r in rows if r.role == role), None)
+    if row is None or not row.api_key_encrypted:
+        return None
+    try:
+        key = decrypt_secret(row.api_key_encrypted)
+    except EncryptionUnavailable:
+        return None
+    return {"provider": row.provider, "model": row.model_name, "api_key": key}
+
+
+async def resolved_providers(session: AsyncSession) -> list[dict]:
+    """Primary then fallback {provider, model, api_key}, for in-process callers."""
+    rows = list((await session.exec(select(LLMProviderConfig))).all())
+    return [entry for entry in (_resolved(rows, "primary"), _resolved(rows, "fallback")) if entry]

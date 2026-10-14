@@ -55,7 +55,7 @@ def _build(entry: dict):
     if provider == "anthropic":
         if ChatAnthropic is None:
             raise RuntimeError("langchain-anthropic is not installed")
-        return ChatAnthropic(model=model, api_key=api_key, temperature=0.1, timeout=40, max_tokens=4096)
+        return ChatAnthropic(model=model, api_key=api_key, timeout=40, max_tokens=4096)
     raise RuntimeError(f"unknown LLM provider {provider!r}")
 
 

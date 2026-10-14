@@ -63,9 +63,13 @@ import {
   inviteMedicalExam,
   waiveMedicalExam,
   recordMedicalResult,
+  aiReviewMedicalReports,
   MEDICAL_CLEARED,
+  usableReport,
   type MedicalExamOrder,
+  type AiReadTest,
 } from "@/app/services/medicalExam";
+import { getArtifactUrl } from "@/app/services/artifacts";
 import { tx } from "@/lib/i18n/tx";
 import { appHref, portalUrl } from "@/lib/appLinks";
 import dynamic from "next/dynamic";
@@ -282,6 +286,8 @@ interface ArtifactData {
   file_size: number;
   ocr_result: string | null;
   status: string;
+  file_type?: string;
+  download_url?: string;
 }
 
 // Mirrors GET /tenants/{tenantId}/cases/{id}/requirements and
@@ -384,6 +390,481 @@ const EMPTY_LIVE: LiveResult = {
   reasons: [],
   underwritingResults: null,
 };
+
+// ── Live run tracker ────────────────────────────────────────────────────────
+// What the underwriter sees while "Run AI Underwriting" streams. Stages mirror
+// the real pipeline: the gateway's own steps (requirements, evidence, saving),
+// then the risk-engine graph nodes, then the report generated on this page.
+
+type TraceStageState = { status: "running" | "done"; detail?: string | null };
+
+interface RunTrace {
+  open: boolean;
+  startedAt: number;
+  stages: Record<string, TraceStageState>;
+  profile: Record<string, any> | null;
+  error: string | null;
+}
+
+const CLOSED_TRACE: RunTrace = { open: false, startedAt: 0, stages: {}, profile: null, error: null };
+
+const TRACE_STAGES: { id: string; label: string; hint: string; after: string[] }[] = [
+  { id: "requirements", label: "Checking underwriting requirements", hint: "Re-running the Requirements Engine against the case's documents", after: [] },
+  { id: "evidence", label: "Gathering evidence", hint: "E-application, agent's confidential report and OCR'd documents", after: ["requirements"] },
+  { id: "validate_input", label: "Validating plan eligibility", hint: "Age, term and sum-assured rules for this plan", after: ["evidence"] },
+  { id: "load_underwriting_profile", label: "Building the applicant profile", hint: "Demographics, occupation, lifestyle, medical and financial facts", after: ["validate_input"] },
+  { id: "medical_scoring", label: "Medical underwriting", hint: "Disclosures, BMI, habits and the uploaded medical reports", after: ["load_underwriting_profile"] },
+  { id: "financial_scoring", label: "Financial underwriting", hint: "Income vs. cover, term exposure and the agent's income opinion", after: ["load_underwriting_profile"] },
+  { id: "fraud_detection", label: "Fraud & anomaly screening", hint: "Peer income and coverage clusters in the risk graph", after: ["load_underwriting_profile"] },
+  { id: "decision_engine", label: "Finalising the decision", hint: "Combining scores, applying medical floors and loadings", after: ["medical_scoring", "financial_scoring", "fraud_detection"] },
+  { id: "saving", label: "Saving the assessment", hint: "Recording the result and moving the case to review", after: ["decision_engine"] },
+  { id: "report", label: "Generating the underwriting report", hint: "Underwriter notes and the PDF report", after: ["saving"] },
+];
+
+function traceStatus(trace: RunTrace, id: string, after: string[]): "waiting" | "running" | "done" {
+  const own = trace.stages[id]?.status;
+  if (own === "done") return "done";
+  if (own === "running") return "running";
+  // Graph nodes only report completion — a node is running once its inputs are done.
+  return after.length > 0 && after.every((dep) => trace.stages[dep]?.status === "done") ? "running" : "waiting";
+}
+
+function profileFacts(profile: Record<string, any>): { label: string; value: string }[] {
+  const d = profile.demographics ?? {};
+  const o = profile.occupation ?? {};
+  const l = profile.lifestyle ?? {};
+  const m = profile.medical_history ?? {};
+  const f = profile.financial ?? {};
+  const join = (parts: unknown[]) => parts.filter((p) => p !== null && p !== undefined && p !== "").join(" · ");
+  const money = (n: unknown) => (typeof n === "number" ? `PKR ${n.toLocaleString()}` : null);
+  return [
+    { label: "Demographics", value: join([d.age != null ? `${d.age} yrs` : null, d.gender, d.marital_status]) },
+    { label: "Occupation", value: join([o.declared, o.hazard_level ? `${o.hazard_level} hazard` : "hazard unclassified"]) },
+    { label: "Lifestyle", value: join([l.is_smoker == null ? null : l.is_smoker ? "Smoker" : "Non-smoker", ...(Array.isArray(l.habits) ? l.habits.slice(0, 2) : [])]) },
+    { label: "Medical", value: join([m.bmi != null ? `BMI ${Number(m.bmi).toFixed(1)}${m.bmi_category ? ` (${m.bmi_category})` : ""}` : null, Array.isArray(m.report_evidence) && m.report_evidence.length ? `${m.report_evidence.length} medical reports` : null]) },
+    { label: "Financial", value: join([money(f.verified_income ?? f.declared_income) ? `income ${money(f.verified_income ?? f.declared_income)}` : null, f.coverage_to_income_ratio != null ? `cover ${Number(f.coverage_to_income_ratio).toFixed(1)}× income` : null]) },
+  ].filter((fact) => fact.value);
+}
+
+// The five phases shown on the stepper, each covering one or more real stages.
+const TRACE_PHASES: { label: string; stages: string[] }[] = [
+  { label: "Prep", stages: ["requirements", "evidence", "validate_input"] },
+  { label: "Profile", stages: ["load_underwriting_profile"] },
+  { label: "Risk analysis", stages: ["medical_scoring", "financial_scoring", "fraud_detection"] },
+  { label: "Decision", stages: ["decision_engine"] },
+  { label: "Report", stages: ["saving", "report"] },
+];
+
+function RunTracker({ trace, onDismiss }: Readonly<{ trace: RunTrace; onDismiss: () => void }>) {
+  const [now, setNow] = useState(Date.now());
+  const states = Object.fromEntries(TRACE_STAGES.map((st) => [st.id, traceStatus(trace, st.id, st.after)]));
+  const complete = TRACE_STAGES.every((st) => states[st.id] === "done");
+  useEffect(() => {
+    if (trace.error || complete) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 500);
+    return () => window.clearInterval(timer);
+  }, [trace.error, complete]);
+  const elapsed = Math.max(0, Math.floor((now - trace.startedAt) / 1000));
+  const clock = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`;
+
+  const phaseState = (stages: string[]) =>
+    stages.every((id) => states[id] === "done") ? "done" : stages.some((id) => states[id] !== "waiting") ? "active" : "waiting";
+  const phases = TRACE_PHASES.map((ph) => ({ ...ph, state: phaseState(ph.stages) }));
+  const active = TRACE_STAGES.filter((st) => states[st.id] === "running");
+  const failedStage = trace.error ? (active[0] ?? TRACE_STAGES[0]) : null;
+
+  // Context for the current step, from the profile once it is built.
+  const p = trace.profile;
+  const m = p?.medical_history ?? {};
+  const f = p?.financial ?? {};
+  const context: Record<string, string | null> = {
+    medical_scoring: p
+      ? [m.bmi != null ? `BMI ${Number(m.bmi).toFixed(1)}` : null,
+         p.lifestyle?.is_smoker == null ? null : p.lifestyle.is_smoker ? "smoker" : "non-smoker",
+         Array.isArray(m.report_evidence) && m.report_evidence.length ? `${m.report_evidence.length} medical reports` : null]
+          .filter(Boolean).join(", ")
+      : null,
+    financial_scoring: f.coverage_to_income_ratio != null ? `cover is ${Number(f.coverage_to_income_ratio).toFixed(1)}× income` : null,
+  };
+  const activeTitle = active.length > 1
+    ? active.map((st) => tx(st.label)).join(" · ")
+    : active[0] ? tx(active[0].label) : null;
+  const activeHint = active.length === 1
+    ? [tx(active[0].hint), context[active[0].id]].filter(Boolean).join(" — ")
+    : active.map((st) => context[st.id]).filter(Boolean).join(" · ") || (active[0] ? tx("Running in parallel") : null);
+
+  const score = (id: string, label: string, value: string | null | undefined) => (
+    <div className="min-w-0 flex-1 rounded-lg border border-slate-100 bg-white px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{tx(label)}</p>
+      {states[id] === "done" && value ? (
+        <p className="truncate text-sm font-bold text-slate-800">{value}</p>
+      ) : (
+        <div className={`mt-1 h-4 rounded ${states[id] === "running" ? "animate-pulse bg-violet-100" : "bg-slate-100"}`} />
+      )}
+    </div>
+  );
+  const detailOf = (id: string) => trace.stages[id]?.detail?.match(/[\d.]+%?(?:\s*\/\s*100)?/)?.[0] ?? null;
+
+  return (
+    <div
+      className={`rounded-xl border p-4 ${trace.error ? "border-red-200 bg-red-50/40" : complete ? "border-emerald-200 bg-emerald-50/40" : "border-violet-200 bg-violet-50/40"}`}
+      role="status"
+      aria-live="polite"
+    >
+      {/* Stepper */}
+      <ol className="flex items-start">
+        {phases.map((ph, i) => {
+          const failed = !!failedStage && ph.stages.includes(failedStage.id);
+          return (
+            <li key={ph.label} className="flex flex-1 flex-col items-center last:flex-none" style={{ minWidth: 0 }}>
+              <div className="flex w-full items-center">
+                <span
+                  className={`relative flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-bold transition-colors ${
+                    failed ? "bg-red-500 text-white"
+                      : ph.state === "done" ? "bg-emerald-500 text-white"
+                      : ph.state === "active" ? "bg-violet-600 text-white"
+                      : "border-2 border-slate-200 bg-white text-slate-400"
+                  }`}
+                >
+                  {failed ? "!" : ph.state === "done" ? "✓" : i + 1}
+                  {ph.state === "active" && !failed && (
+                    <span className="absolute inset-0 animate-ping rounded-full bg-violet-400 opacity-40" />
+                  )}
+                </span>
+                {i < phases.length - 1 && (
+                  <span className="mx-1 h-0.5 flex-1 overflow-hidden rounded bg-slate-200">
+                    <span
+                      className={`block h-full transition-all duration-700 ${ph.state === "done" ? "w-full bg-emerald-400" : ph.state === "active" ? "w-1/2 bg-violet-300" : "w-0"}`}
+                    />
+                  </span>
+                )}
+              </div>
+              <span
+                className={`mt-1.5 self-start truncate text-[10px] font-semibold ${
+                  ph.state === "done" ? "text-emerald-700" : ph.state === "active" ? "text-violet-700" : "text-slate-400"
+                }`}
+              >
+                {tx(ph.label)}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+
+      {/* What is happening now */}
+      <div className="mt-4 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          {trace.error ? (
+            <>
+              <p className="text-sm font-semibold text-red-700">{tx("Stopped at: {0}", { 0: tx(failedStage!.label) })}</p>
+              <p className="mt-0.5 text-xs text-red-600">{trace.error}</p>
+            </>
+          ) : complete ? (
+            <p className="text-sm font-semibold text-emerald-700">✓ {tx("Underwriting complete — opening the report")}</p>
+          ) : (
+            <>
+              <p className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <span className="inline-block h-3.5 w-3.5 flex-shrink-0 animate-spin rounded-full border-2 border-violet-200 border-t-violet-600" />
+                {activeTitle ?? tx("Starting…")}
+              </p>
+              {activeHint && <p className="mt-0.5 pl-[22px] text-xs text-slate-500">{activeHint}</p>}
+            </>
+          )}
+        </div>
+        {trace.error ? (
+          <button onClick={onDismiss} className="flex-shrink-0 text-xs font-semibold text-red-700 hover:text-red-900">
+            {tx("Dismiss")}
+          </button>
+        ) : (
+          <span className="flex-shrink-0 font-mono text-xs text-slate-500">{clock}</span>
+        )}
+      </div>
+
+      {/* Applicant facts, once the profile is built */}
+      {p && (
+        <p className="mt-2 truncate pl-[22px] text-[11px] text-slate-500" title={profileFacts(p).map((x) => `${x.label}: ${x.value}`).join("\n")}>
+          {profileFacts(p).map((x) => x.value).join(" · ")}
+        </p>
+      )}
+
+      {/* Scores fill in as each analysis finishes */}
+      <div className="mt-3 flex gap-2">
+        {score("medical_scoring", "Medical", detailOf("medical_scoring"))}
+        {score("financial_scoring", "Financial", detailOf("financial_scoring"))}
+        {score("fraud_detection", "Fraud", detailOf("fraud_detection"))}
+        {score("decision_engine", "Decision", trace.stages.decision_engine?.detail?.replace(/^.*?:\s*/, "") ?? null)}
+      </div>
+    </div>
+  );
+}
+
+// ── Application folder ──────────────────────────────────────────────────────
+// Every document on file for the applicant — staff uploads, the customer's
+// upload-link files and their medical-exam reports — grouped by type.
+
+const DOC_STATUS_STYLE: Record<string, string> = {
+  Accepted: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  Uploaded: "bg-blue-50 text-blue-700 border-blue-200",
+  Processing: "bg-blue-50 text-blue-700 border-blue-200",
+  "OCR Pending": "bg-amber-50 text-amber-700 border-amber-200",
+  Rejected: "bg-red-50 text-red-700 border-red-200",
+  "Re-submission Requested": "bg-red-50 text-red-700 border-red-200",
+};
+const DOC_STATUS_LABEL: Record<string, string> = {
+  Accepted: "Read",
+  Uploaded: "Reading…",
+  Processing: "Reading…",
+  "OCR Pending": "Queued",
+  Rejected: "Unreadable",
+  "Re-submission Requested": "Re-upload requested",
+};
+
+function fileSize(bytes: number) {
+  return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+// A small portrait preview of one document. Images render directly; a PDF's
+// first page renders through the browser's viewer, scaled down. Both load only
+// once the card scrolls into view.
+function DocumentThumb({ doc }: Readonly<{ doc: ArtifactData }>) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [visible, setVisible] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setVisible(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: "120px" });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const ext = doc.file_name.split(".").pop()?.toLowerCase() ?? "";
+  const isPdf = doc.file_type === "application/pdf" || ext === "pdf";
+  const isImage = doc.file_type?.startsWith("image/") || ["png", "jpg", "jpeg", "gif", "webp", "bmp"].includes(ext);
+  const url = doc.download_url;
+  return (
+    <div ref={ref} className="relative h-full w-full overflow-hidden bg-slate-100">
+      {visible && url && !failed && isImage ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt="" onError={() => setFailed(true)} className="h-full w-full object-cover object-top" />
+      ) : visible && url && !failed && isPdf ? (
+        // Rendered at 3× and scaled to a third, so the first page fits the card.
+        <iframe
+          src={`${url}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+          title={doc.file_name}
+          tabIndex={-1}
+          className="pointer-events-none absolute left-0 top-0 origin-top-left border-0 bg-white"
+          style={{ width: "300%", height: "300%", transform: "scale(0.3333)" }}
+        />
+      ) : (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-slate-400">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-7 w-7" aria-hidden="true">
+            <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" />
+          </svg>
+          <span className="text-[10px] font-bold uppercase">{ext.slice(0, 4)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Full-size preview of one document, inside the page. A fresh signed link is
+// fetched on open, so it works however long the case page has been open.
+function DocumentPreviewModal({ doc, onClose }: Readonly<{ doc: ArtifactData; onClose: () => void }>) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    getArtifactUrl(doc.id)
+      .then((u) => alive && setUrl(u))
+      .catch(() => alive && setError(true));
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => {
+      alive = false;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [doc.id, onClose]);
+  const ext = doc.file_name.split(".").pop()?.toLowerCase() ?? "";
+  const isPdf = doc.file_type === "application/pdf" || ext === "pdf";
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-label={doc.file_name}
+        className="flex h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{doc.document_type}</p>
+            <h2 className="truncate text-sm font-bold text-slate-900">{doc.file_name}</h2>
+          </div>
+          <div className="flex flex-shrink-0 items-center gap-2">
+            {url && (
+              <a href={url} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                {tx("Open in new tab")} ↗
+              </a>
+            )}
+            <button onClick={onClose} aria-label={tx("Close")} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+              ✕
+            </button>
+          </div>
+        </div>
+        <div className="flex flex-1 items-center justify-center overflow-auto bg-slate-100">
+          {error ? (
+            <p className="text-sm text-red-600">{tx("Could not load the document. Please try again.")}</p>
+          ) : !url ? (
+            <span className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600" />
+          ) : isPdf ? (
+            <iframe src={url} title={doc.file_name} className="h-full w-full border-0 bg-white" />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={url} alt={doc.file_name} className="max-h-full max-w-full object-contain" />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ApplicationFolderModal({
+  caseNumber,
+  customerName,
+  artifacts,
+  portalHref,
+  onClose,
+}: Readonly<{
+  caseNumber: string;
+  customerName?: string;
+  artifacts: ArtifactData[];
+  portalHref: string;
+  onClose: () => void;
+}>) {
+  const [query, setQuery] = useState("");
+  const [openError, setOpenError] = useState<string | null>(null);
+  const groupOf = (a: ArtifactData) => (a.document_type.startsWith("Medical Report: ") ? "Medical Exam Reports" : a.document_type || "Other");
+  const visible = artifacts.filter((a) =>
+    `${a.file_name} ${a.document_type}`.toLowerCase().includes(query.trim().toLowerCase()),
+  );
+  const groups = Array.from(new Set(visible.map(groupOf))).sort((x, y) =>
+    x === "Medical Exam Reports" ? 1 : y === "Medical Exam Reports" ? -1 : x.localeCompare(y),
+  );
+  const open = async (id: string) => {
+    setOpenError(null);
+    // Open the tab synchronously so the popup blocker allows it, then point it at the signed link.
+    const tab = window.open("", "_blank");
+    try {
+      const url = await getArtifactUrl(id);
+      if (tab) tab.location.href = url;
+      else window.open(url, "_blank");
+    } catch {
+      tab?.close();
+      setOpenError(tx("Could not open the document. Please try again."));
+    }
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-label={tx("Application folder")}
+        className="flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{tx("Application folder")}</p>
+            <h2 className="truncate text-lg font-bold text-slate-900">
+              {customerName ?? caseNumber} <span className="font-medium text-slate-400">· {caseNumber}</span>
+            </h2>
+            <p className="text-xs text-slate-500">
+              {tx("{0} documents on file", { 0: artifacts.length })}
+            </p>
+          </div>
+          <button onClick={onClose} aria-label={tx("Close")} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+            ✕
+          </button>
+        </div>
+        {artifacts.length > 6 && (
+          <div className="border-b border-slate-100 px-5 py-2">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={tx("Search documents…")}
+              aria-label={tx("Search documents")}
+              className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-sm"
+            />
+          </div>
+        )}
+        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+          {groups.length === 0 && (
+            <p className="py-8 text-center text-sm text-slate-400">
+              {artifacts.length ? tx("No documents match your search.") : tx("No documents have been uploaded yet.")}
+            </p>
+          )}
+          {groups.map((group) => {
+            const docs = visible.filter((a) => groupOf(a) === group);
+            return (
+              <section key={group}>
+                <h3 className="mb-1.5 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                  {tx(group)} <span className="rounded-full bg-slate-100 px-1.5 text-[10px] font-semibold text-slate-500">{docs.length}</span>
+                </h3>
+                <ul className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(118px, 1fr))" }}>
+                  {docs.map((a) => (
+                    <li key={a.id}>
+                      <button
+                        type="button"
+                        onClick={() => void open(a.id)}
+                        title={`${a.file_name} — ${tx("click to open")}`}
+                        className="group flex w-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                      >
+                        <div className="relative aspect-[3/4] w-full border-b border-slate-100">
+                          <DocumentThumb doc={a} />
+                          <span className={`absolute right-1.5 top-1.5 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold shadow-sm ${DOC_STATUS_STYLE[a.status] ?? "border-slate-200 bg-slate-50 text-slate-600"}`}>
+                            {tx(DOC_STATUS_LABEL[a.status] ?? a.status)}
+                          </span>
+                          <span className="absolute inset-0 flex items-center justify-center bg-slate-900/0 text-xs font-semibold text-white opacity-0 transition-all group-hover:bg-slate-900/40 group-hover:opacity-100">
+                            {tx("Open")} ↗
+                          </span>
+                        </div>
+                        <div className="px-2 py-1.5">
+                          <p className="truncate text-[11px] font-semibold text-slate-800">{a.file_name}</p>
+                          <p className="truncate text-[10px] text-slate-400">
+                            {group === "Medical Exam Reports" ? `${a.document_type.replace("Medical Report: ", "")} · ` : ""}
+                            {fileSize(a.file_size)}
+                          </p>
+                        </div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
+          {openError && <p role="alert" className="text-xs text-red-600">{openError}</p>}
+        </div>
+        <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-5 py-3">
+          <a href={portalHref} className="text-xs font-semibold text-slate-500 hover:text-blue-700">
+            {tx("Open in Applications explorer ↗")}
+          </a>
+          <button onClick={onClose} className="rounded-lg bg-slate-800 px-4 py-1.5 text-sm font-semibold text-white hover:bg-slate-900">
+            {tx("Close")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-components
@@ -714,6 +1195,19 @@ function Spinner({ className = "w-3.5 h-3.5" }: { className?: string }) {
     />
   );
 }
+
+// Upload type per document-backed requirement. Each name contains the keyword
+// shared/underwriting/requirements_rules.py matches the requirement on.
+const REQUIREMENT_DOC_TYPES: Record<string, string> = {
+  CNIC: "CNIC",
+  SALARY_SLIP: "Salary Slip",
+  BANK_STATEMENT: "Bank Statement",
+  TAX_DOCUMENT: "Tax Return",
+  MEDICAL_EXAMINATION: "Medical Report",
+  ECG: "ECG",
+  LAB_REPORTS: "Lab Report",
+  PHYSICIAN_REPORT: "Physician Report",
+};
 
 const EXTRA_DOC_TYPES = [
   "Bank Statement",
@@ -1287,6 +1781,10 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const [status, setStatus] = useState<StreamStatus>("idle");
   const [live, setLive] = useState<LiveResult>(EMPTY_LIVE);
   const [streamError, setStreamError] = useState<string | null>(null);
+  const [trace, setTrace] = useState<RunTrace>(CLOSED_TRACE);
+  const traceStage = (id: string, update: TraceStageState) =>
+    setTrace((t) => ({ ...t, stages: { ...t.stages, [id]: update } }));
+  const traceFail = (message: string) => setTrace((t) => (t.startedAt ? { ...t, error: message } : t));
   const abortRef = useRef<AbortController | null>(null);
 
   const [overriding, setOverriding] = useState<string | null>(null);
@@ -1310,6 +1808,11 @@ export default function CasePage({ params }: { params: { id: string } }) {
     null,
   );
   const [showUpload, setShowUpload] = useState(false);
+  const [showDocuments, setShowDocuments] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<ArtifactData | null>(null);
+  // Set when the upload dialog was opened from a requirement row — the dialog
+  // then asks for just that document.
+  const [uploadForRequirement, setUploadForRequirement] = useState<string | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
   const [downloadingApp, setDownloadingApp] = useState(false);
 
@@ -1403,7 +1906,12 @@ export default function CasePage({ params }: { params: { id: string } }) {
       setTimeout(() => {
         downloadPDFRef.current?.();
         triggerNotesRef.current?.();
-        setShowReportModal(true);
+        traceStage("report", { status: "done", detail: tx("Report ready") });
+        // Leave the finished checklist on screen for a moment before the report replaces it.
+        setTimeout(() => {
+          setShowReportModal(true);
+          setTrace(CLOSED_TRACE);
+        }, 900);
       }, 500);
     }
   }, [effStatus, hasLive]);
@@ -1486,6 +1994,34 @@ export default function CasePage({ params }: { params: { id: string } }) {
       setRequirementsBusy(false);
     }
   }, [tenantId, caseId, fetchDetail]);
+
+  // A requirement's document only counts once OCR has accepted it, so while
+  // one is still being read, its row says so and the page keeps checking;
+  // once accepted, the Requirements Engine re-runs so the row turns Satisfied.
+  const requirementDoc = (req: CaseRequirement) => {
+    const type = REQUIREMENT_DOC_TYPES[req.code];
+    const docs = type ? artifacts.filter((a) => a.document_type === type) : [];
+    return {
+      processing: docs.some((a) => ["Uploaded", "OCR Pending", "Processing"].includes(a.status)),
+      accepted: docs.find((a) => a.status === "Accepted"),
+      unreadable: docs.length > 0 && docs.every((a) => ["Rejected", "Re-submission Requested"].includes(a.status)),
+    };
+  };
+  const openDocRequirements = requirements.filter((r) => ["Missing", "Invalid", "Requested"].includes(r.status));
+  const requirementDocsProcessing = openDocRequirements.some((r) => requirementDoc(r).processing);
+  const acceptedKey = openDocRequirements.map((r) => requirementDoc(r).accepted?.id).filter(Boolean).join(",");
+  const redeterminedFor = useRef<string>("");
+  useEffect(() => {
+    if (!requirementDocsProcessing) return;
+    const timer = window.setInterval(() => void fetchArtifacts(), 5000);
+    return () => window.clearInterval(timer);
+  }, [requirementDocsProcessing, fetchArtifacts]);
+  useEffect(() => {
+    if (!acceptedKey || redeterminedFor.current === acceptedKey || userRole === "Agent") return;
+    redeterminedFor.current = acceptedKey;
+    void runDetermineRequirements();
+  }, [acceptedKey, runDetermineRequirements, userRole]);
+
 
   const waiveRequirement = useCallback(
     async (requirementId: string) => {
@@ -2118,6 +2654,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
     setStatus("streaming");
     setLive(EMPTY_LIVE);
     setStreamError(null);
+    setTrace({ ...CLOSED_TRACE, open: true, startedAt: Date.now() });
 
     const { customer, policy } = detail;
     const payload = {
@@ -2191,9 +2728,28 @@ export default function CasePage({ params }: { params: { id: string } }) {
             continue;
           }
 
-          if (evt.type === "progress") {
+          if (evt.type === "stage") {
+            traceStage(evt.stage, { status: evt.status, detail: evt.detail });
+          } else if (evt.type === "progress") {
             const node = evt.node as string;
             const data = evt.data as Record<string, any>;
+            traceStage(node, {
+              status: "done",
+              detail:
+                node === "medical_scoring" && data.medical_score != null
+                  ? tx("Medical risk score {0} / 100", { 0: data.medical_score })
+                  : node === "financial_scoring" && data.financial_score != null
+                    ? tx("Financial risk score {0} / 100", { 0: data.financial_score })
+                    : node === "fraud_detection" && data.fraud_probability != null
+                      ? tx("Fraud probability {0}%", { 0: Math.round(Number(data.fraud_probability) * (Number(data.fraud_probability) <= 1 ? 100 : 1)) })
+                      : node === "decision_engine" && data.ai_decision
+                        ? tx("Recommendation: {0}", { 0: data.ai_decision })
+                        : node === "validate_input"
+                          ? tx("Plan rules passed")
+                          : null,
+            });
+            if (node === "load_underwriting_profile" && data.underwriting_profile)
+              setTrace((t) => ({ ...t, profile: data.underwriting_profile }));
             setLive((prev) => {
               const next: LiveResult = {
                 ...prev,
@@ -2218,32 +2774,37 @@ export default function CasePage({ params }: { params: { id: string } }) {
               }
               return next;
             });
-            if (node === "decision_engine") setStatus("done");
+            // "done" waits for the saved event, so the report is generated
+            // from an assessment that is already recorded.
           } else if (evt.type === "invalid") {
             setStatus("error");
-            setStreamError(
-              tx("Validation failed: {0}", {
-                0: (evt.errors as string[]).join("; "),
-              }),
-            );
+            const message = tx("Validation failed: {0}", {
+              0: (evt.errors as string[]).join("; "),
+            });
+            setStreamError(message);
+            traceFail(message);
             break outer;
           } else if (evt.type === "pending_requirements") {
             // The Requirements Engine found unmet mandatory items — risk-engine
             // was never called. Surface it as the case's current state rather
             // than a generic failure.
             setStatus("error");
-            setStreamError(
-              tx(
-                "Mandatory underwriting requirements are not yet satisfied — see the Requirements panel below.",
-              ),
+            const message = tx(
+              "Mandatory underwriting requirements are not yet satisfied — see the Requirements panel below.",
             );
+            setStreamError(message);
+            traceFail(message);
             fetchDetail();
             break outer;
           } else if (evt.type === "error") {
             setStatus("error");
             setStreamError(evt.message ?? tx("An unexpected error occurred."));
+            traceFail(evt.message ?? tx("An unexpected error occurred."));
             break outer;
           } else if (evt.type === "saved") {
+            traceStage("saving", { status: "done", detail: tx("Case moved to underwriter review") });
+            traceStage("report", { status: "running" });
+            setStatus("done");
             // Case/Policy status may have auto-transitioned — refresh the case shell.
             fetchDetail();
           }
@@ -2253,6 +2814,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
       if (err?.name === "AbortError") return;
       setStatus("error");
       setStreamError(err.message ?? tx("Connection failed."));
+      traceFail(err.message ?? tx("Connection failed."));
     }
   };
 
@@ -2605,6 +3167,13 @@ export default function CasePage({ params }: { params: { id: string } }) {
     medical?.status === "Completed" ||
     medical?.status === "NotRequired" ||
     medical?.status === "Waived";
+  // Customer-submitted reports leave the order Invited — only staff recording
+  // the review completes the gate, so the step has to offer that review.
+  const medicalReports = (medical?.reports ?? []).filter(usableReport);
+  const medicalReportsSubmitted = !medicalDone && !!medical?.reports_submitted;
+  const medicalReportsCoveredTests = new Set(medicalReports.map((r) => r.test_code)).size;
+  const medicalAwaitingReview =
+    !medicalDone && (medical?.status === "Scheduled" || medicalReportsSubmitted);
   const historyDone = history?.status === "Clear";
   const pepDone =
     checks.length > 0 && checks.every((ck) => ck.status === "Passed");
@@ -2648,19 +3217,28 @@ export default function CasePage({ params }: { params: { id: string } }) {
       id: "medical",
       title: "Medical Examination / NML Grid",
       done: medicalDone,
-      statusLabel: medical?.status ?? "Not Assessed",
+      statusLabel: medicalReportsSubmitted
+        ? "Reports Submitted"
+        : medical?.status === "Invited" && medicalReports.length > 0
+          ? "Reports Uploading"
+          : (medical?.status ?? "Not Assessed"),
       description: medicalDone
         ? `Medical examination status: ${medical?.status}`
-        : "Non-medical limit grid or panel diagnostic check required.",
+        : medicalReportsSubmitted
+          ? `Customer submitted ${medicalReports.length} report${medicalReports.length === 1 ? "" : "s"} covering ${medicalReportsCoveredTests} of ${medical?.required_tests.length ?? 0} required tests — review them and record the results.`
+          : medical?.status === "Invited" && medicalReports.length > 0
+            ? `Customer has uploaded reports for ${medicalReportsCoveredTests} of ${medical.required_tests.length} required tests and has not submitted yet.`
+            : "Non-medical limit grid or panel diagnostic check required.",
       actionLabel: medBusy
         ? "Assessing…"
-        : medical?.status === "Scheduled"
-          ? "Record Lab Results"
-          : "Assess Medical",
-      onAction:
-        medical?.status === "Scheduled"
-          ? () => setShowResultModal(true)
-          : handleAssessMedical,
+        : medicalReportsSubmitted
+          ? "Review Reports"
+          : medical?.status === "Scheduled"
+            ? "Record Lab Results"
+            : "Assess Medical",
+      onAction: medicalAwaitingReview
+        ? () => setShowResultModal(true)
+        : handleAssessMedical,
       busy: medBusy,
     },
     {
@@ -2948,26 +3526,10 @@ export default function CasePage({ params }: { params: { id: string } }) {
       <div className="flex flex-wrap items-center justify-end gap-2">
         {prereqsIncomplete && (
           <p className="mr-auto text-xs text-slate-500">
-            {tx("Override: Proceed unlocks when all 7 steps above are done (")}
+            {tx("Proceed unlocks when all 7 steps above are done (")}
             {7 - missingPreChecks.length} {tx("of 7 so far).")}
           </p>
         )}
-        <button
-          onClick={() => overrideStatus("Pending Documents")}
-          disabled={overriding !== null || userRole === "Agent"}
-          title={
-            userRole === "Agent"
-              ? tx("Currently, you have no access to do this, ask your manager")
-              : undefined
-          }
-          className={`px-4 py-2 text-sm font-semibold text-slate-700 border border-slate-300 rounded-lg transition-colors ${userRole === "Agent" ? "opacity-50 cursor-not-allowed bg-slate-100" : "hover:bg-slate-50"}`}
-        >
-          {overriding === "Pending Documents" ? (
-            <Spinner className="w-3.5 h-3.5 border-slate-400 border-t-slate-700" />
-          ) : (
-            tx("Request Info")
-          )}
-        </button>
         <button
           onClick={() => {
             // Deliberately changes nothing: no status, no decision, no API call. The toast only confirms it.
@@ -2997,7 +3559,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
           {overriding === "Rejected" ? (
             <Spinner className="w-3.5 h-3.5 border-red-300 border-t-red-700" />
           ) : (
-            tx("Override: Decline")
+            tx("Decline")
           )}
         </button>
         <button
@@ -3021,7 +3583,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
           }
           className={`px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg transition-colors shadow-sm ${userRole === "Agent" || prereqsIncomplete || !hasAny ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-700"}`}
         >
-          {overriding === "Approved" ? <Spinner /> : tx("Override: Proceed")}
+          {overriding === "Approved" ? <Spinner /> : tx("Proceed")}
         </button>
       </div>
     ) : null;
@@ -3067,7 +3629,12 @@ export default function CasePage({ params }: { params: { id: string } }) {
               {tx("← Dashboard")}
             </Link>
             <span className="text-slate-300">/</span>
-            <span className="text-xs text-slate-400">{tx("Applications")}</span>
+            <a
+              href={appHref("/cases")}
+              className="text-xs text-slate-500 hover:text-blue-700 font-medium transition-colors"
+            >
+              {tx("Applications")}
+            </a>
             <span className="text-slate-300">/</span>
             <span className="text-xs text-slate-700 font-semibold">
               {c.caseNumber}
@@ -3096,6 +3663,20 @@ export default function CasePage({ params }: { params: { id: string } }) {
               </>
             )}
           </p>
+          <button
+            type="button"
+            onClick={() => {
+              setShowDocuments(true);
+              void fetchArtifacts();
+            }}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:border-blue-300 hover:text-blue-700"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
+              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+            </svg>
+            {tx("Open Application Folder")}
+            <span className="rounded-full bg-slate-100 px-1.5 text-[10px] text-slate-500">{artifacts.length}</span>
+          </button>
         </div>
 
         {/* Final step after underwriting — generate the full application dossier */}
@@ -3658,6 +4239,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
             {showResultModal && medical && (
               <MedicalResultModal
                 order={medical}
+                caseId={caseId}
                 busy={medBusy}
                 onClose={() => setShowResultModal(false)}
                 onSubmit={handleRecordResults}
@@ -3953,6 +4535,11 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   ? tx("Running…")
                   : tx("Run AI Underwriting")}
               </button>
+              {trace.open && (
+                <div className="mt-2 w-full max-w-2xl text-left">
+                  <RunTracker trace={trace} onDismiss={() => setTrace(CLOSED_TRACE)} />
+                </div>
+              )}
               {requirementsOpen && !requiredDocsMissing && (
                 <div className="flex flex-col items-center gap-2 text-center">
                   <p className="max-w-md text-xs text-amber-700">
@@ -4245,12 +4832,15 @@ export default function CasePage({ params }: { params: { id: string } }) {
                     {effStatus === "streaming" ? (
                       <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" />
                     ) : null}
-                    {/* {effStatus === "streaming" ? "Re-running…" : "Re-run Underwriting"} */}
+                    {effStatus === "streaming"
+                      ? tx("Re-running…")
+                      : tx("↻ Re-run AI Underwriting")}
                   </button>
                 </div>
 
-                {aiDecision && <DecisionBanner decision={aiDecision} />}
-                {effStreamError && (
+                {trace.open && <RunTracker trace={trace} onDismiss={() => setTrace(CLOSED_TRACE)} />}
+                {aiDecision && !trace.open && <DecisionBanner decision={aiDecision} />}
+                {effStreamError && !trace.open && (
                   <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
                     {effStreamError}
                   </p>
@@ -4431,12 +5021,32 @@ export default function CasePage({ params }: { params: { id: string } }) {
                             {req.reason}
                           </p>
                         )}
-                        {req.satisfied_by_artifact_id && (
-                          <p className="text-[11px] text-blue-600 mt-0.5">
-                            {tx("Linked document:")}{" "}
-                            {req.satisfied_by_artifact_id.slice(0, 8)}…
-                          </p>
-                        )}
+                        {req.satisfied_by_artifact_id &&
+                          (() => {
+                            const doc = artifacts.find((a) => a.id === req.satisfied_by_artifact_id);
+                            return doc ? (
+                              <button
+                                type="button"
+                                onClick={() => setPreviewDoc(doc)}
+                                title={tx("Preview {0}", { 0: doc.file_name })}
+                                className="group mt-1.5 flex max-w-xs items-center gap-2.5 rounded-lg border border-slate-200 bg-white p-1.5 pr-3 text-left transition-colors hover:border-blue-300 hover:bg-blue-50/40"
+                              >
+                                <span className="relative block h-11 w-8 flex-shrink-0 overflow-hidden rounded border border-slate-200">
+                                  <DocumentThumb doc={doc} />
+                                </span>
+                                <span className="min-w-0">
+                                  <span className="block truncate text-[11px] font-semibold text-slate-700">{doc.file_name}</span>
+                                  <span className="text-[11px] font-semibold text-blue-600 group-hover:underline">
+                                    {tx("Preview")}
+                                  </span>
+                                </span>
+                              </button>
+                            ) : (
+                              <p className="mt-0.5 text-[11px] text-slate-400">
+                                {tx("Linked document is no longer on file")}
+                              </p>
+                            );
+                          })()}
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <span
@@ -4444,6 +5054,29 @@ export default function CasePage({ params }: { params: { id: string } }) {
                         >
                           {req.status}
                         </span>
+                        {REQUIREMENT_DOC_TYPES[req.code] &&
+                          ["Missing", "Invalid", "Requested"].includes(req.status) &&
+                          (requirementDoc(req).processing || requirementDoc(req).accepted) && (
+                            <span className="inline-flex items-center gap-1.5 rounded-md bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+                              <Spinner className="w-3 h-3 border-blue-200 border-t-blue-600" />
+                              {requirementDoc(req).accepted ? tx("Updating…") : tx("Reading document…")}
+                            </span>
+                          )}
+                        {REQUIREMENT_DOC_TYPES[req.code] &&
+                          ["Missing", "Invalid", "Requested"].includes(req.status) &&
+                          !requirementDoc(req).processing &&
+                          !requirementDoc(req).accepted && (
+                            <button
+                              onClick={() => {
+                                setUploadForRequirement(REQUIREMENT_DOC_TYPES[req.code]);
+                                setShowUpload(true);
+                              }}
+                              className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-blue-700"
+                              title={tx("Upload the {0} for this case", { 0: REQUIREMENT_DOC_TYPES[req.code] })}
+                            >
+                              ↑ {req.status === "Invalid" || requirementDoc(req).unreadable ? tx("Re-upload") : tx("Upload")}
+                            </button>
+                          )}
                         {req.status !== "Waived" &&
                           req.status !== "Satisfied" &&
                           userRole !== "Agent" && (
@@ -4595,15 +5228,21 @@ export default function CasePage({ params }: { params: { id: string } }) {
         <UploadModal
           tenantId={tenantId}
           caseId={caseId}
-          docTypes={docs.required}
-          missingTypes={docs.missing}
-          onClose={() => setShowUpload(false)}
+          docTypes={uploadForRequirement ? [uploadForRequirement] : docs.required}
+          missingTypes={uploadForRequirement ? [uploadForRequirement] : docs.missing}
+          onClose={() => {
+            setShowUpload(false);
+            setUploadForRequirement(null);
+          }}
           onUploaded={() => {
             setShowUpload(false);
+            setUploadForRequirement(null);
             fetchArtifacts();
             fetchDetail();
             // OCR runs asynchronously; a short delay gives the worker a
-            // chance to finish before re-checking requirement status.
+            // chance to finish before re-checking requirement status. A
+            // requirement upload is then tracked on its row until OCR accepts
+            // it (see the requirement-document effect).
             setTimeout(() => {
               fetchRequirements();
               fetchVerificationFindings();
@@ -4611,6 +5250,24 @@ export default function CasePage({ params }: { params: { id: string } }) {
             notifyParentPortal("document_uploaded", { caseId });
           }}
         />
+      )}
+
+      {previewDoc && (
+        <ModalPortal>
+          <DocumentPreviewModal doc={previewDoc} onClose={() => setPreviewDoc(null)} />
+        </ModalPortal>
+      )}
+
+      {showDocuments && (
+        <ModalPortal>
+          <ApplicationFolderModal
+            caseNumber={c.caseNumber}
+            customerName={customer?.name}
+            artifacts={artifacts}
+            portalHref={appHref(`/cases?case_id=${caseId}`)}
+            onClose={() => setShowDocuments(false)}
+          />
+        </ModalPortal>
       )}
 
       {/* ── AI Assessment Report Modal ────────────────────────────────────── */}
@@ -4985,20 +5642,101 @@ const QUALITATIVE_HINTS: Record<string, string> = {
   PAP: "Normal / abnormal",
 };
 
+type AiTestState = "waiting" | "reading" | "done" | "failed";
+const AI_CONCURRENCY = 4;
+
+function AiSpinner({ className = "h-3 w-3" }: Readonly<{ className?: string }>) {
+  return (
+    <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+      <path d="M22 12a10 10 0 0 0-10-10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function MedicalResultModal({
   order,
+  caseId,
   busy,
   onClose,
   onSubmit,
 }: Readonly<{
   order: MedicalExamOrder;
+  caseId: string;
   busy: boolean;
   onClose: () => void;
   onSubmit: (results: Record<string, string>) => void;
 }>) {
   const [values, setValues] = useState<Record<string, string>>({});
-
   const filled = Object.values(values).filter((v) => v.trim() !== "").length;
+  const reports = (order.reports ?? []).filter(usableReport);
+  const tests = order.required_tests;
+
+  // The AI reads each test from the customer's reports — one request per test,
+  // a few at a time — so every field shows its own progress and fills in as
+  // soon as its report is read. The underwriter checks and saves to rate them.
+  const [aiState, setAiState] = useState<Record<string, AiTestState>>({});
+  const [aiRead, setAiRead] = useState<Record<string, AiReadTest>>({});
+  const [edited, setEdited] = useState<Set<string>>(new Set());
+  // Read inside async AI callbacks, so a value typed mid-read is never overwritten.
+  const editedRef = useRef(edited);
+  editedRef.current = edited;
+  const [justFilled, setJustFilled] = useState<Set<string>>(new Set());
+  const readable = tests.filter((t) => reports.some((r) => r.test_code === t.code && r.status === "Accepted"));
+  const states = readable.map((t) => aiState[t.code]);
+  const aiRunning = states.some((s) => s === "waiting" || s === "reading");
+  const aiStarted = states.some(Boolean);
+  const aiDone = states.filter((s) => s === "done" || s === "failed").length;
+  const aiFilled = tests.filter((t) => aiRead[t.code]?.readable).length;
+  const aiFlagged = tests.filter((t) => aiRead[t.code]?.readable && aiRead[t.code].abnormal).length;
+  const aiManual = tests.length - aiFilled;
+  const nowReading = tests.filter((t) => aiState[t.code] === "reading").map((t) => t.name);
+
+  const readTest = async (code: string, refresh: boolean) => {
+    setAiState((s) => ({ ...s, [code]: "reading" }));
+    try {
+      const review = await aiReviewMedicalReports(caseId, { testCode: code, refresh });
+      const read = review.tests[code];
+      setAiRead((s) => ({ ...s, [code]: read }));
+      if (read?.readable && read.value) {
+        setValues((current) => (editedRef.current.has(code) && !refresh ? current : { ...current, [code]: read.value as string }));
+        setJustFilled((s) => new Set(s).add(code));
+        window.setTimeout(() => setJustFilled((s) => { const next = new Set(s); next.delete(code); return next; }), 1500);
+      }
+      setAiState((s) => ({ ...s, [code]: "done" }));
+    } catch {
+      setAiState((s) => ({ ...s, [code]: "failed" }));
+    }
+  };
+  const readAll = async (refresh = false) => {
+    const queue = readable.map((t) => t.code);
+    if (refresh) setEdited(new Set());
+    setAiState((s) => ({ ...s, ...Object.fromEntries(queue.map((code) => [code, "waiting" as const])) }));
+    const worker = async () => {
+      for (let code = queue.shift(); code; code = queue.shift()) await readTest(code, refresh);
+    };
+    await Promise.all(Array.from({ length: Math.min(AI_CONCURRENCY, queue.length) }, worker));
+  };
+  useEffect(() => {
+    void readAll();
+    // Read once per opening; the server caches each test until its reports change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [openError, setOpenError] = useState<string | null>(null);
+  const openReport = async (artifactId: string) => {
+    setOpenError(null);
+    // Open the tab synchronously so the popup blocker allows it, then point it at the signed link.
+    const tab = window.open("", "_blank");
+    try {
+      const url = await getArtifactUrl(artifactId);
+      if (tab) tab.location.href = url;
+      else window.open(url, "_blank");
+    } catch {
+      tab?.close();
+      setOpenError(tx("Could not open the report. Please try again."));
+    }
+  };
 
   const submit = () => {
     const payload: Record<string, string> = {};
@@ -5008,24 +5746,44 @@ function MedicalResultModal({
     onSubmit(payload);
   };
 
+  const fieldBadge = (code: string) => {
+    const state = aiState[code];
+    const read = aiRead[code];
+    if (state === "waiting")
+      return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-slate-500">{tx("Queued for AI")}</span>;
+    if (state === "reading")
+      return <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-violet-700"><AiSpinner className="h-2.5 w-2.5" />{tx("AI reading…")}</span>;
+    if (state === "failed")
+      return <button type="button" onClick={() => void readTest(code, true)} className="rounded-full bg-red-50 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-red-600 hover:bg-red-100">{tx("AI failed · Retry")}</button>;
+    if (state === "done" && edited.has(code))
+      return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-slate-600">{tx("Edited by you")}</span>;
+    if (state === "done" && read?.readable)
+      return <span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal ${read.abnormal ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-700"}`}>{read.abnormal ? "⚠ " + tx("AI · outside range") : "✨ " + tx("AI-filled")}</span>;
+    if (state === "done")
+      return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-slate-500">{tx("Enter manually")}</span>;
+    return null;
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden"
+        className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="bg-slate-800 px-5 py-3">
           <p className="text-white/70 text-[11px] font-semibold uppercase tracking-wider">
-            {tx("Panel Clinic Report")}
+            {readable.length > 0 ? "✨ " + tx("AI-assisted review") : tx("Panel Clinic Report")}
           </p>
           <h2 className="text-white text-lg font-bold">
             {tx("Record Medical Results")}
           </h2>
           <p className="text-white/70 text-xs">
-            {order.clinic?.name ?? tx("Panel clinic")}
+            {order.reports_submitted
+              ? tx("Reports submitted by the customer")
+              : (order.clinic?.name ?? tx("Panel clinic"))}
             {order.completed_at
               ? " " +
                 tx("· reported {0}", {
@@ -5035,25 +5793,159 @@ function MedicalResultModal({
           </p>
         </div>
 
-        <div className="p-5 space-y-3 max-h-[60vh] overflow-y-auto">
-          {order.required_tests.map((t) => (
-            <div key={t.code}>
-              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
-                {t.name}
-                <span className="text-[9px] font-mono text-slate-400 normal-case">
-                  {t.code}
+        {readable.length > 0 && (
+          <div
+            role="status"
+            aria-live="polite"
+            className={`border-b px-5 py-3 ${aiRunning ? "border-violet-100 bg-violet-50" : "border-slate-100 bg-slate-50"}`}
+          >
+            {aiRunning || !aiStarted ? (
+              <>
+                <div className="flex items-center justify-between gap-3 text-xs">
+                  <span className="flex items-center gap-2 font-semibold text-violet-800">
+                    <AiSpinner className="h-3.5 w-3.5" />
+                    {tx("AI is reading the customer's reports")}
+                  </span>
+                  <span className="font-mono text-[11px] text-violet-700">
+                    {aiDone} / {readable.length}
+                  </span>
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-violet-100">
+                  <div
+                    className="h-full rounded-full bg-violet-500 transition-all duration-500"
+                    style={{ width: `${Math.max(4, (aiDone / readable.length) * 100)}%` }}
+                  />
+                </div>
+                <p className="mt-1.5 truncate text-[10px] text-violet-700/80">
+                  {nowReading.length > 0
+                    ? tx("Now reading: {0}", { 0: nowReading.join(", ") })
+                    : tx("Starting…")}{" "}
+                  · {tx("values appear in each field as they are read")}
+                </p>
+              </>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="flex flex-wrap items-center gap-1.5">
+                  <span className="font-semibold text-slate-800">✨ {tx("AI review complete")}</span>
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                    {tx("{0} filled", { 0: aiFilled })}
+                  </span>
+                  {aiFlagged > 0 && (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                      ⚠ {tx("{0} outside normal range", { 0: aiFlagged })}
+                    </span>
+                  )}
+                  {aiManual > 0 && (
+                    <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                      {tx("{0} to enter manually", { 0: aiManual })}
+                    </span>
+                  )}
                 </span>
-              </label>
-              <input
-                value={values[t.code] ?? ""}
-                onChange={(e) =>
-                  setValues((s) => ({ ...s, [t.code]: e.target.value }))
-                }
-                placeholder={QUALITATIVE_HINTS[t.code] ?? tx("Reported value")}
-                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2"
-              />
-            </div>
-          ))}
+                <button
+                  onClick={() => void readAll(true)}
+                  className="text-[11px] font-semibold text-violet-700 hover:text-violet-900"
+                >
+                  ↻ {tx("Re-read all")}
+                </button>
+                <p className="w-full text-[10px] text-slate-500">
+                  {tx("Check the values against the reports, then Save & rate.")}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto">
+          {tests.map((t) => {
+            const state = aiState[t.code];
+            const read = aiRead[t.code];
+            const pending = state === "waiting" || state === "reading";
+            return (
+              <div key={t.code}>
+                <div className="flex items-center justify-between gap-2">
+                  <label
+                    htmlFor={`med-result-${t.code}`}
+                    className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1.5"
+                  >
+                    {t.name}
+                    <span className="text-[9px] font-mono text-slate-400 normal-case">
+                      {t.code}
+                    </span>
+                  </label>
+                  {fieldBadge(t.code)}
+                </div>
+                {reports.some((r) => r.test_code === t.code) && (
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {reports
+                      .filter((r) => r.test_code === t.code)
+                      .map((r) => (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onClick={() => void openReport(r.id)}
+                          title={r.file_name}
+                          className="max-w-full truncate rounded-md border border-blue-100 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 hover:bg-blue-100"
+                        >
+                          📄 {r.file_name}
+                          {r.status !== "Accepted" && (
+                            <span className="ml-1 text-amber-700">
+                              ({tx("processing")})
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                  </div>
+                )}
+                <div className="relative mt-1">
+                  <input
+                    id={`med-result-${t.code}`}
+                    value={values[t.code] ?? ""}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setValues((s) => ({ ...s, [t.code]: value }));
+                      setEdited((s) => new Set(s).add(t.code));
+                    }}
+                    placeholder={
+                      state === "reading"
+                        ? tx("AI is reading this report…")
+                        : state === "waiting"
+                          ? tx("Waiting for AI…")
+                          : (QUALITATIVE_HINTS[t.code] ?? tx("Reported value"))
+                    }
+                    className={`w-full text-sm border rounded-lg px-3 py-2 transition-all duration-500 ${
+                      pending
+                        ? "border-violet-200 bg-violet-50/60 animate-pulse pr-9"
+                        : justFilled.has(t.code)
+                          ? "border-violet-400 bg-violet-50 ring-2 ring-violet-200"
+                          : read?.readable && read.abnormal && !edited.has(t.code)
+                            ? "border-amber-300 bg-amber-50/50"
+                            : "border-slate-200"
+                    }`}
+                  />
+                  {state === "reading" && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-violet-500">
+                      <AiSpinner className="h-4 w-4" />
+                    </span>
+                  )}
+                </div>
+                {state === "done" && read && (
+                  <p
+                    title={read.evidence ?? undefined}
+                    className={`mt-1 line-clamp-2 text-[10px] ${!read.readable ? "text-slate-400" : read.abnormal ? "text-amber-700" : "text-slate-500"}`}
+                  >
+                    {!read.readable
+                      ? tx("AI could not find this result in the report — enter it manually.")
+                      : `${tx("From the report")}: “${read.evidence ?? read.value}”`}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+          {openError && (
+            <p role="alert" className="text-[11px] text-red-600">
+              {openError}
+            </p>
+          )}
           <p className="text-[11px] text-slate-400 pt-1">
             {tx(
               "Leave a test blank if the lab has not reported it yet — it will be listed as outstanding rather than rated. Values are graded against the underwriting manual on save.",
@@ -5062,8 +5954,17 @@ function MedicalResultModal({
         </div>
 
         <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
-          <span className="text-[11px] text-slate-500 font-medium">
-            {filled} {tx("of")} {order.required_tests.length} {tx("reported")}
+          <span className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium">
+            {aiRunning ? (
+              <>
+                <AiSpinner className="h-3 w-3 text-violet-500" />
+                {tx("AI reading {0} of {1}…", { 0: Math.min(aiDone + 1, readable.length), 1: readable.length })}
+              </>
+            ) : (
+              <>
+                {filled} {tx("of")} {tests.length} {tx("filled")}
+              </>
+            )}
           </span>
           <div className="flex gap-2">
             <button
@@ -5074,7 +5975,8 @@ function MedicalResultModal({
             </button>
             <button
               onClick={submit}
-              disabled={busy || filled === 0}
+              disabled={busy || filled === 0 || aiRunning}
+              title={aiRunning ? tx("Wait for the AI to finish reading the reports") : undefined}
               className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-slate-800 hover:bg-slate-900 text-white disabled:opacity-40"
             >
               {busy ? tx("Saving…") : tx("Save & rate")}

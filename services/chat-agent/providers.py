@@ -67,7 +67,6 @@ def build_chat(entry: dict, *, max_tokens: int = 2048, **kw):
         return ChatOpenAI(
             model=model,
             api_key=api_key,
-            temperature=0.1,
             max_tokens=max_tokens,
             max_retries=0,
             timeout=40,
@@ -79,7 +78,6 @@ def build_chat(entry: dict, *, max_tokens: int = 2048, **kw):
         return ChatAnthropic(
             model=model,
             api_key=api_key,
-            temperature=0.1,
             max_tokens=max_tokens,
             max_retries=0,
             timeout=40,

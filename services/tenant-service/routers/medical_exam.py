@@ -606,6 +606,61 @@ class ResultRequest(BaseModel):
     reported_by: Optional[str] = None
 
 
+async def _fetch_report(artifact: Artifact) -> tuple[bytes, str]:
+    import asyncio
+    from routers.artifacts import _s3_client, _S3_BUCKET
+    key = (artifact.storage_url or "").split(".amazonaws.com/", 1)[-1]
+    body = await asyncio.to_thread(lambda: _s3_client().get_object(Bucket=_S3_BUCKET, Key=key)["Body"].read())
+    return body, artifact.file_type
+
+
+@router.post("/tenants/{tenant_id}/cases/{case_id}/medical-exam/ai-review")
+async def ai_review_medical_reports(
+    tenant_id: UUID,
+    case_id: UUID,
+    refresh: bool = False,
+    test_code: Optional[str] = None,
+    token: str = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+):
+    """AI reading of the customer's reports — one suggested value per required
+    test, with the line it was read from. A pre-fill for the underwriter's
+    review: nothing is rated or recorded here. `test_code` reads a single test,
+    so the review screen can show each result as soon as it is ready."""
+    from services.medical_report_reader import read_results
+    await _get_current_user(token, session)
+    await _get_case(session, tenant_id, case_id)
+    order = await _load_order(session, case_id)
+    if order is None or order.status in (MedicalExamStatusEnum.NOT_ASSESSED, MedicalExamStatusEnum.NOT_REQUIRED):
+        raise HTTPException(409, "No medical examination was ordered for this case.")
+    reports = [a for a in await _uploaded_reports(session, order) if a.status == "Accepted"]
+    if not reports:
+        raise HTTPException(409, "The customer has not uploaded any processed reports yet.")
+    tests = [t for t in (order.required_tests or []) if test_code in (None, t.get("code"))]
+    if not tests:
+        raise HTTPException(400, "That test is not part of this examination.")
+    ids_by_test: dict[str, list[str]] = {}
+    for a in reports:
+        ids_by_test.setdefault(a.document_type.split(": ", 1)[-1], []).append(str(a.id))
+    # Cached per test, valid while that test's set of reports is unchanged.
+    cached = ((order.results_json or {}).get("ai_review") or {}).get("tests") or {}
+    stale = [t for t in tests if refresh or (cached.get(t.get("code")) or {}).get("report_ids") != sorted(ids_by_test.get(t.get("code"), []))]
+    fresh = await read_results(session, stale, reports, _fetch_report) if stale else {}
+    if fresh:
+        # Several tests are read in parallel requests: lock and re-read the row
+        # so one request's results never overwrite another's.
+        locked = (await session.exec(select(MedicalExamOrder).where(MedicalExamOrder.id == order.id)
+                                     .with_for_update().execution_options(populate_existing=True))).one()
+        review = dict((locked.results_json or {}).get("ai_review") or {})
+        review["tests"] = {**(review.get("tests") or {}), **fresh}
+        review["generated_at"] = datetime.utcnow().isoformat()
+        locked.results_json = {**(locked.results_json or {}), "ai_review": review}
+        session.add(locked)
+        await session.commit()
+        cached = review["tests"]
+    return {"tests": {t.get("code"): fresh.get(t.get("code")) or cached[t.get("code")] for t in tests}}
+
+
 @router.post("/tenants/{tenant_id}/cases/{case_id}/medical-exam/result")
 async def record_medical_result(
     tenant_id: UUID,
@@ -762,49 +817,85 @@ def _report_view(artifact: Artifact) -> dict:
             "status": artifact.status, "created_at": artifact.created_at.isoformat()}
 
 
-@router.post("/public/medical-exam/{raw_token}/reports", status_code=202)
-async def public_upload_medical_report(
-    raw_token: str, request: Request, test_code: str = Form(...),
-    file: UploadFile = File(...), session: AsyncSession = Depends(get_session),
-):
-    from services.medical_report_uploads import MAX_REPORT_BYTES, validate_report, store_report
-    from shared.events.kafka_events import ArtifactOCRPayload, ArtifactOCRRequestedEvent
-    from routers.artifacts import OCR_TOPIC
-    order = await _resolve_by_token(session, raw_token)
+def _ensure_reports_open(order: MedicalExamOrder) -> None:
     if order.status in (MedicalExamStatusEnum.WAIVED, MedicalExamStatusEnum.NOT_REQUIRED, MedicalExamStatusEnum.COMPLETED):
         raise HTTPException(409, "This examination is closed; contact your agent if another report is needed.")
-    if test_code not in {t.get("code") for t in (order.required_tests or [])}:
-        raise HTTPException(400, "Choose one of the tests required for your examination.")
-    if len(await _uploaded_reports(session, order)) >= 50:
+
+
+async def _save_reports(request: Request, session: AsyncSession, order: MedicalExamOrder,
+                        test_codes: list[str], data: bytes, filename: str, mime: str) -> list[Artifact]:
+    """One artifact per test the file covers, each stored and queued for OCR."""
+    from services.medical_report_uploads import store_report
+    from shared.events.kafka_events import ArtifactOCRPayload, ArtifactOCRRequestedEvent
+    from routers.artifacts import OCR_TOPIC
+    if len(await _uploaded_reports(session, order)) + len(test_codes) > 50:
         raise HTTPException(409, "Report limit reached. Please contact your agent.")
-    data = await file.read(MAX_REPORT_BYTES + 1)
-    filename, mime = validate_report(file.filename, data)
-    artifact_id = uuid4()
-    key = f"{order.tenant_id}/cases/{order.case_id}/{artifact_id}/{filename}"
-    storage_url = await store_report(data, key, mime)
-    artifact = Artifact(id=artifact_id, tenant_id=order.tenant_id, customer_id=order.customer_id,
-                        case_id=order.case_id, source_request_id=order.id, uploaded_by=None,
-                        document_type=f"Medical Report: {test_code}", file_name=filename,
-                        file_size=len(data), file_type=mime, storage_url=storage_url, status="Uploaded")
-    session.add(artifact)
+    stored = []
+    for test_code in test_codes:
+        artifact_id = uuid4()
+        key = f"{order.tenant_id}/cases/{order.case_id}/{artifact_id}/{filename}"
+        storage_url = await store_report(data, key, mime)
+        stored.append((Artifact(id=artifact_id, tenant_id=order.tenant_id, customer_id=order.customer_id,
+                                case_id=order.case_id, source_request_id=order.id, uploaded_by=None,
+                                document_type=f"Medical Report: {test_code}", file_name=filename,
+                                file_size=len(data), file_type=mime, storage_url=storage_url, status="Uploaded"), key))
+    for artifact, _ in stored:
+        session.add(artifact)
     result_data = dict(order.results_json or {})
     result_data.pop("customer_reports_submitted_at", None)
     order.results_json = result_data
     order.updated_at = datetime.utcnow()
     session.add(order)
     await session.commit()
-    event = ArtifactOCRRequestedEvent(tenant_id=order.tenant_id, payload=ArtifactOCRPayload(
-        artifact_id=artifact.id, tenant_id=order.tenant_id, case_id=order.case_id,
-        s3_key=key, file_name=filename, mime_type=mime))
-    try:
-        await request.app.state.kafka_producer.send_and_wait(OCR_TOPIC, value=event.model_dump_json(), key=str(artifact.id))
-    except Exception:
-        # Persist the file but don't imply it is being processed. The submit
-        # endpoint retries jobs that have not been accepted by the broker.
-        artifact.status = "OCR Pending"
-        session.add(artifact)
-        await session.commit()
-    return {"report": _report_view(artifact)}
+    for artifact, key in stored:
+        event = ArtifactOCRRequestedEvent(tenant_id=order.tenant_id, payload=ArtifactOCRPayload(
+            artifact_id=artifact.id, tenant_id=order.tenant_id, case_id=order.case_id,
+            s3_key=key, file_name=filename, mime_type=mime))
+        try:
+            await request.app.state.kafka_producer.send_and_wait(OCR_TOPIC, value=event.model_dump_json(), key=str(artifact.id))
+        except Exception:
+            # Persist the file but don't imply it is being processed. The submit
+            # endpoint retries jobs that have not been accepted by the broker.
+            artifact.status = "OCR Pending"
+            session.add(artifact)
+            await session.commit()
+    return [artifact for artifact, _ in stored]
+
+
+@router.post("/public/medical-exam/{raw_token}/reports", status_code=202)
+async def public_upload_medical_report(
+    raw_token: str, request: Request, test_code: str = Form(...),
+    file: UploadFile = File(...), session: AsyncSession = Depends(get_session),
+):
+    from services.medical_report_uploads import MAX_REPORT_BYTES, validate_report
+    order = await _resolve_by_token(session, raw_token)
+    _ensure_reports_open(order)
+    if test_code not in {t.get("code") for t in (order.required_tests or [])}:
+        raise HTTPException(400, "Choose one of the tests required for your examination.")
+    data = await file.read(MAX_REPORT_BYTES + 1)
+    filename, mime = validate_report(file.filename, data)
+    artifacts = await _save_reports(request, session, order, [test_code], data, filename, mime)
+    return {"report": _report_view(artifacts[0])}
+
+
+@router.post("/public/medical-exam/{raw_token}/reports/auto", status_code=202)
+async def public_auto_upload_medical_report(
+    raw_token: str, request: Request, file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session),
+):
+    """Bulk-upload path: read the report, work out which required tests it
+    covers and attach it to each. Nothing is stored when no test can be
+    identified — the customer is asked to choose one instead."""
+    from services.medical_report_uploads import MAX_REPORT_BYTES, validate_report
+    from services.medical_report_classifier import classify_report
+    order = await _resolve_by_token(session, raw_token)
+    _ensure_reports_open(order)
+    data = await file.read(MAX_REPORT_BYTES + 1)
+    filename, mime = validate_report(file.filename, data)
+    test_codes, method = await classify_report(session, data, mime, filename, order.required_tests or [])
+    artifacts = await _save_reports(request, session, order, test_codes, data, filename, mime) if test_codes else []
+    return {"file_name": filename, "test_codes": test_codes, "matched_by": method,
+            "reports": [_report_view(a) for a in artifacts]}
 
 
 @router.get("/public/medical-exam/{raw_token}")

@@ -83,3 +83,78 @@ class BookingDisabledTests(IsolatedAsyncioTestCase):
                 await medical_exam.public_book_medical_exam('valid-token', body, session)
         self.assertEqual(raised.exception.status_code, 410)
         session.commit.assert_not_awaited()
+
+class ReportClassificationTests(IsolatedAsyncioTestCase):
+    required = [{'code': 'FBS', 'name': 'Fasting Blood Sugar'}, {'code': 'LIPID', 'name': 'Lipid Profile'},
+                {'code': 'ECG', 'name': 'Resting ECG'}, {'code': 'TMT', 'name': 'Treadmill / Exercise Stress ECG'}]
+    def test_filename_keywords_only_return_required_tests(self):
+        from services.medical_report_classifier import classify_by_filename
+        self.assertEqual(classify_by_filename('Chughtai_FBS-and-Lipid.pdf', self.required), ['FBS', 'LIPID'])
+        self.assertEqual(classify_by_filename('stress_ecg_report.pdf', self.required), ['TMT'])
+        self.assertEqual(classify_by_filename('hba1c.pdf', self.required), [])
+        self.assertEqual(classify_by_filename('IMG_2031.jpg', self.required), [])
+    async def test_model_answer_is_filtered_to_the_ordered_panel(self):
+        from services import medical_report_classifier as clf
+        with patch.object(clf, 'classify_with_model', AsyncMock(return_value=['LIPID'])):
+            self.assertEqual(await clf.classify_report(None, b'%PDF', 'application/pdf', 'scan.pdf', self.required), (['LIPID'], 'content'))
+        with patch.object(clf, 'classify_with_model', AsyncMock(return_value=None)):
+            self.assertEqual(await clf.classify_report(None, b'%PDF', 'application/pdf', 'fbs.pdf', self.required), (['FBS'], 'filename'))
+            self.assertEqual(await clf.classify_report(None, b'%PDF', 'application/pdf', 'scan.pdf', self.required), ([], 'none'))
+    async def test_combined_report_attaches_to_every_covered_test(self):
+        order = SimpleNamespace(id=uuid4(), tenant_id=uuid4(), case_id=uuid4(), customer_id=uuid4(),
+                                required_tests=self.required, status=MedicalExamStatusEnum.SCHEDULED,
+                                results_json=None, updated_at=None)
+        session = SimpleNamespace(add=Mock(), commit=AsyncMock())
+        producer = SimpleNamespace(send_and_wait=AsyncMock())
+        request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(kafka_producer=producer)))
+        with patch.object(medical_exam, '_resolve_by_token', AsyncMock(return_value=order)), \
+             patch.object(medical_exam, '_uploaded_reports', AsyncMock(return_value=[])), \
+             patch('services.medical_report_classifier.classify_report', AsyncMock(return_value=(['FBS', 'LIPID'], 'content'))), \
+             patch('services.medical_report_uploads.store_report', AsyncMock(return_value='https://s3/r.pdf')):
+            result = await medical_exam.public_auto_upload_medical_report(
+                'token', request, UploadFile(filename='lab.pdf', file=BytesIO(b'%PDF-1.4')), session)
+        self.assertEqual([r['test_code'] for r in result['reports']], ['FBS', 'LIPID'])
+        self.assertEqual(producer.send_and_wait.await_count, 2)
+    async def test_unidentified_report_is_not_stored(self):
+        order = SimpleNamespace(required_tests=self.required, status=MedicalExamStatusEnum.SCHEDULED)
+        with patch.object(medical_exam, '_resolve_by_token', AsyncMock(return_value=order)), \
+             patch('services.medical_report_classifier.classify_report', AsyncMock(return_value=([], 'none'))), \
+             patch('services.medical_report_uploads.store_report', AsyncMock()) as store:
+            result = await medical_exam.public_auto_upload_medical_report(
+                'token', SimpleNamespace(), UploadFile(filename='scan.pdf', file=BytesIO(b'%PDF-1.4')), SimpleNamespace())
+        self.assertEqual(result['test_codes'], [])
+        store.assert_not_awaited()
+
+class AiReportReadingTests(IsolatedAsyncioTestCase):
+    def test_answers_are_normalised_to_the_rating_vocabulary(self):
+        from services.medical_report_reader import _normalise
+        self.assertEqual(_normalise('FBS', 'numeric', {'readable': True, 'value': '112 mg/dL', 'abnormal': False})['value'], '112')
+        self.assertTrue(_normalise('FBS', 'numeric', {'readable': True, 'value': 112, 'abnormal': False})['abnormal'])
+        self.assertFalse(_normalise('HIV', 'screen', {'readable': True, 'value': 'non-reactive'})['abnormal'])
+        self.assertEqual(_normalise('HIV', 'screen', {'readable': True, 'value': 'Positive'})['value'], 'reactive')
+        self.assertTrue(_normalise('ECG', 'qualitative', {'readable': True, 'value': 'ST depression'})['abnormal'])
+        for answer in (None, {'readable': False, 'value': '5'}, {'readable': True, 'value': 'see report'}):
+            self.assertFalse(_normalise('FBS', 'numeric', answer)['readable'])
+    async def test_reading_is_cached_per_test_until_its_reports_change(self):
+        fbs, lipid = (SimpleNamespace(id=uuid4(), status='Accepted', document_type=f'Medical Report: {c}') for c in ('FBS', 'LIPID'))
+        order = SimpleNamespace(id=uuid4(), status=MedicalExamStatusEnum.INVITED,
+                                required_tests=[{'code': 'FBS'}, {'code': 'LIPID'}], results_json={})
+        session = SimpleNamespace(add=Mock(), commit=AsyncMock(),
+                                  exec=AsyncMock(return_value=SimpleNamespace(one=lambda: order)))
+        async def read(_session, tests, reports, _fetch):
+            return {t['code']: {'value': '92', 'abnormal': False, 'evidence': 'x', 'readable': True,
+                                'report_ids': sorted(str(r.id) for r in reports if r.document_type.endswith(t['code']))} for t in tests}
+        reader = AsyncMock(side_effect=read)
+        call = lambda **kw: medical_exam.ai_review_medical_reports(uuid4(), uuid4(), token='t', session=session, **kw)
+        with patch.object(medical_exam, '_get_current_user', AsyncMock()), patch.object(medical_exam, '_get_case', AsyncMock()), \
+             patch.object(medical_exam, '_load_order', AsyncMock(return_value=order)), \
+             patch.object(medical_exam, '_uploaded_reports', AsyncMock(return_value=[fbs, lipid])), \
+             patch('services.medical_report_reader.read_results', reader):
+            one = await call(test_code='FBS')
+            both = await call()                      # only LIPID still needs reading
+            await call(test_code='FBS')              # cached
+            await call(test_code='FBS', refresh=True)
+        self.assertEqual(list(one['tests']), ['FBS'])
+        self.assertEqual(set(both['tests']), {'FBS', 'LIPID'})
+        self.assertEqual([[t['code'] for t in c.args[1]] for c in reader.await_args_list], [['FBS'], ['LIPID'], ['FBS']])
+        self.assertEqual(order.status, MedicalExamStatusEnum.INVITED)

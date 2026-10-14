@@ -85,7 +85,7 @@ def build_model(entry: dict, *, streaming: bool = False):
         if ChatAnthropic is None:
             raise RuntimeError("langchain-anthropic is not installed")
         return ChatAnthropic(
-            model=model, api_key=api_key, temperature=0, max_retries=0,
+            model=model, api_key=api_key, max_retries=0,
             timeout=LLM_TIMEOUT_SECONDS, max_tokens=8000,
         )
     raise RuntimeError(f"unknown LLM provider {provider!r}")

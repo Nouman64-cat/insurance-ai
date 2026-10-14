@@ -575,6 +575,11 @@ async def public_upload_medical_report(raw_token: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/medical-exam/{raw_token}/reports")
 
 
+@app.post("/public/medical-exam/{raw_token}/reports/auto", tags=["Pre-Underwriting"])
+async def public_auto_upload_medical_report(raw_token: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/medical-exam/{raw_token}/reports/auto")
+
+
 @app.post(
     "/public/medical-exam/{raw_token}/complete",
     tags=["Pre-Underwriting"],
@@ -582,6 +587,11 @@ async def public_upload_medical_report(raw_token: str, request: Request):
 )
 async def public_complete_medical_exam(raw_token: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/medical-exam/{raw_token}/complete")
+
+
+@app.post("/tenants/{tenant_id}/cases/{case_id}/medical-exam/ai-review", tags=["Pre-Underwriting"])
+async def ai_review_medical_reports(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/medical-exam/ai-review")
 
 
 @app.post(
