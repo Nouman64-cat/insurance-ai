@@ -58,6 +58,7 @@ logger = logging.getLogger(__name__)
 from claims_journey import register_claims_journey
 from group_journey import register_group_journey
 from journey import register_journey
+from operations import OPERATION_TOOLS, operation_status_result, plan_resume
 from toolsets import CORE_TOOLS, select_domains, tool_names_for
 
 # OpenAI's hard limit on tools per request (Gemini has none, but the fallback must fit too).
@@ -436,6 +437,28 @@ statutory defaults. Administrators create agreements in the portal; a different
 administrator approves them. Do not use underwriting rule tools to alter these
 agreements. Prototype mutation/calculator tools return an unavailable result;
 never describe them as having changed a financial record.
+"""
+
+DOMAIN_PROMPTS["documents"] = """
+
+## EVIDENCE & MEDICAL REVIEW
+
+- Bind every document action to ONE application. When a tool offers several matching applications as choices, let the user pick; never choose for them.
+- "What's missing / ask the customer for documents" → **request_missing_documents**. Report the email outcome exactly as returned (sent / failed / no email on file) and give the link; never say it was emailed when it was not.
+- A file uploaded under the wrong or a generic type → **link_document_to_requirement**.
+- "Are the medical reports in / ready?" → **get_medical_report_status**.
+- "Read the reports / what do they show?" → **read_medical_reports**. Its values are an AI pre-fill: say nothing has been recorded, show unreadable tests, and ask the user to confirm or correct each value.
+- **record_medical_review** only with values the user stated or explicitly confirmed in this conversation, staff_reviewed=true, and a value for every required test. Never record values taken unconfirmed from read_medical_reports. When the user wants to check reports side by side, use the Review Medical Reports button instead.
+"""
+
+DOMAIN_PROMPTS["support"] = """
+
+## RECOVERY & AVAILABILITY
+
+- "Did that go through? / what failed? / where did we stop?" → **get_operation_status**.
+- "Try again / continue where we stopped / the upload failed, continue" → **resume_operation**. It re-runs only the failed step and keeps everything that completed. If it reports the outcome is unknown (a timeout), re-read the record first and only then call it again with state_verified=true.
+- "Is the system down? / why won't Customer Service open?" → **get_service_health**.
+- "Sign in failed / server took too long / can't connect" → **diagnose_connection** with the exact message the user saw (and the app's API address if they gave it). Relay its diagnosis and numbered steps. Never claim to restart a service.
 """
 
 
@@ -1435,6 +1458,14 @@ async def _permission_gate(state: ChatState) -> Command:
 
     def back_to_agent(update: dict) -> Command:
         return Command(goto="agent", update={**update, **remember})
+
+    # ── Operation status / resume: read from the thread itself ────────────────
+    if name in OPERATION_TOOLS and is_role_allowed(name, state["user_role"], platform):
+        if name == "get_operation_status":
+            result = operation_status_result(state, args)
+        else:
+            result = await _resume_operation(state, args, ctx, platform)
+        return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
 
     if not is_role_allowed(name, state["user_role"], platform):
         if platform == "mobile" and name in MOBILE_PORTAL_ONLY_TOOLS:
@@ -2546,6 +2577,32 @@ async def _permission_gate(state: ChatState) -> Command:
     if result.get("family_members"):
         update["family_members"] = result["family_members"]
     return back_to_agent(update)
+
+
+async def _resume_operation(state: ChatState, args: dict, ctx: ExecCtx, platform: str) -> dict:
+    """Re-run the one failed step with its original inputs. The target tool's
+    RBAC is checked again — resuming never widens what the user may do."""
+    plan = plan_resume(state, args)
+    if "error" in plan:
+        return plan["error"]
+    tool, tool_args, op = plan["tool"], plan["args"], plan["operation"]
+    operation = {"id": op["operation_id"], "retry_of": op["operation_id"], "tool": tool}
+    if not is_role_allowed(tool, state["user_role"], platform):
+        return {"success": False, "error_code": "forbidden", "retryable": False, "operation": operation,
+                "error": f"You no longer have access to retry “{op['label']}”."}
+    if tool in CLIENT_EXECUTED_TOOLS:
+        # The browser no longer holds the file; ask for it again, bound to the same target.
+        payload = {k: tool_args.get(k) for k in ("document_type", "cnic", "case_number", "applicant_name") if tool_args.get(k)}
+        return {"success": True, "operation": {**operation, "status": "awaiting_file"},
+                "message": f"Choose the file again to retry **{op['label']}** — the earlier steps are kept.",
+                "quick_actions": [{"label": f"Upload {tool_args.get('document_type') or 'document'}",
+                                   "actionType": "upload", "payload": json.dumps(payload)}]}
+    tool_args, errors = validate_and_normalize(tool, tool_args)
+    if errors:
+        return {"success": False, "error": "; ".join(errors), "error_code": "validation", "operation": operation}
+    result = await execute_tool(tool, tool_args, ctx)
+    status = "failed" if result.get("success") is False else "completed"
+    return {**result, "operation": {**operation, "status": status}}
 
 
 async def permission_gate(state: ChatState) -> Command:

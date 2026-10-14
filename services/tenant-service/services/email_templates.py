@@ -538,7 +538,9 @@ def customer_action_link_email(
 ) -> tuple[str, str, str]:
     """The secure link a customer needs for their application: the
     e-application questionnaire (kind="e_application") or uploading their
-    medical examination reports (kind="medical_exam")."""
+    medical examination reports (kind="medical_exam") or the documents their
+    application still needs (kind="documents", with `tests` listing them)."""
+    list_title = "Documents still needed" if kind == "documents" else "Tests required"
     first = (customer_name or "").split(" ")[0] or "there"
     if kind == "medical_exam":
         subject = f"Your medical examination — {tenant_name}"
@@ -547,6 +549,12 @@ def customer_action_link_email(
                  "approved lab listed on the page below, then upload your reports using the same link. "
                  "The tests are arranged and paid for by us.")
         button = "View tests & upload reports"
+    elif kind == "documents":
+        subject = f"Documents needed for your application — {tenant_name}"
+        heading = "Upload your documents"
+        intro = ("To continue with your insurance application, we need a few documents from you. Open the secure "
+                 "page below to see what is still outstanding and upload each one.")
+        button = "Upload my documents"
     else:
         subject = f"Complete your insurance application — {tenant_name}"
         heading = "Complete your application"
@@ -579,7 +587,7 @@ def customer_action_link_email(
     <tr><td style="padding:28px;">
       <p style="color:{_INK};font-size:15px;margin:0 0 12px;">Dear {_html.escape(first)},</p>
       <p style="color:{_INK};font-size:14px;line-height:22px;margin:0 0 20px;">{_html.escape(intro)}</p>
-      {f'<p style="color:{_MUTE};font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin:0 0 6px;">Tests required</p><ul style="margin:0 0 20px;padding-left:18px;">{test_list}</ul>' if test_list else ''}
+      {f'<p style="color:{_MUTE};font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin:0 0 6px;">{list_title}</p><ul style="margin:0 0 20px;padding-left:18px;">{test_list}</ul>' if test_list else ''}
       <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 22px;"><tr><td style="border-radius:10px;background:{_BRAND};">
         <a href="{safe_url}" style="display:inline-block;padding:13px 26px;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;border-radius:10px;">{_html.escape(button)}</a>
       </td></tr></table>
@@ -596,6 +604,6 @@ def customer_action_link_email(
 </td></tr></table></body></html>"""
     text_lines = [f"Dear {first},", "", intro, ""]
     if tests:
-        text_lines += ["Tests required:", *[f"  - {t}" for t in tests], ""]
+        text_lines += [f"{list_title}:", *[f"  - {t}" for t in tests], ""]
     text_lines += [f"{button}: {url}", "", *[f"{k}: {v}" for k, v in rows], "", note, "", tenant_name]
     return subject, "\n".join(text_lines), html

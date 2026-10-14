@@ -40,6 +40,8 @@ GRAPH_ROUTED = {
     # Individual/Corporate/Family chip question, never mutates anything), so
     # it never reaches a tool_executor handler.
     "resolve_customer_type",
+    # Answered inside permission_gate from the thread's own messages (operations.py).
+    "get_operation_status", "resume_operation",
 }
 
 
@@ -211,10 +213,10 @@ def test_domain_prompt_sections_only_name_bound_tools():
         assert not stray, f"{domain} prompt names tools not in its pack: {stray}"
 
 
-def test_unmatched_conversation_falls_back_to_every_domain():
+def test_unmatched_conversation_falls_back_to_every_fallback_domain():
     """A missed keyword must degrade to 'costs what it used to', never to
     'the agent has lost the capability'."""
-    assert toolsets.select_domains(["hello there"]) == set(toolsets.DOMAIN_TOOLS)
+    assert toolsets.select_domains(["hello there"]) == set(toolsets.FALLBACK_DOMAINS)
 
 
 def test_sticky_domain_survives_a_keywordless_turn():
@@ -226,10 +228,40 @@ def test_core_is_always_bound():
         assert toolsets.CORE_TOOLS <= toolsets.tool_names_for([domain])
 
 
-def test_every_tool_fits_the_providers_tool_limit():
+def test_fallback_toolset_fits_the_providers_tool_limit():
     """OpenAI rejects a request with more than 128 tools ("array_above_max_length"), and a turn
-    that matches no domain binds every tool — so the whole registry has to fit. Adding a tool
-    past the cap makes the agent unable to answer at all; merge tools instead."""
+    that matches no domain binds CORE plus every FALLBACK pack — so that set has to fit. A pack
+    that would push it over the cap must be keyword-only (left out of FALLBACK_DOMAINS)."""
     from graph import MAX_BOUND_TOOLS
-    from tools import ALL_TOOLS
-    assert len(ALL_TOOLS) <= MAX_BOUND_TOOLS, f"{len(ALL_TOOLS)} tools registered, provider cap is {MAX_BOUND_TOOLS}"
+    bound = toolsets.tool_names_for(toolsets.FALLBACK_DOMAINS)
+    assert len(bound) <= MAX_BOUND_TOOLS, f"fallback binds {len(bound)} tools, provider cap is {MAX_BOUND_TOOLS}"
+
+
+@pytest.mark.parametrize("domain", sorted(toolsets.DOMAIN_TOOLS))
+def test_core_plus_any_one_pack_fits_the_providers_tool_limit(domain):
+    from graph import MAX_BOUND_TOOLS
+    bound = toolsets.tool_names_for([domain])
+    assert len(bound) <= MAX_BOUND_TOOLS, f"core + {domain} binds {len(bound)} tools"
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("the upload failed, continue where we stopped", "support"),
+        ("mobile app says server took too long, sign in failed", "support"),
+        ("why can't I open Customer Service?", "support"),
+        ("read these medical reports and show the findings", "documents"),
+        ("what is still required and where do I upload it?", "documents"),
+    ],
+)
+def test_new_pack_keywords_route_correctly(text, expected):
+    assert expected in toolsets.select_domains([text])
+
+
+def test_medical_values_are_staff_only():
+    """Reading or recording medical values is underwriting work: never an Agent, never a Viewer."""
+    for tool_name in ("read_medical_reports", "record_medical_review"):
+        assert is_role_allowed(tool_name, "Underwriter")
+        for role in ("Agent", "Viewer", "ClaimsAdjuster", "SomeRoleNobodyDefined"):
+            assert not is_role_allowed(tool_name, role), f"{role} may run {tool_name}"
+        assert not is_role_allowed(tool_name, "Agent", "mobile")

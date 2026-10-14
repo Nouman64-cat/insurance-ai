@@ -106,6 +106,15 @@ MUTATING_TOOLS = {
     "update_incentive_scheme",
     "delete_incentive_scheme",
     "toggle_incentive_scheme_active",
+    # Evidence — emails the customer, re-types an uploaded file, records the
+    # medical review. read_medical_reports writes only the AI reading cache, but
+    # it is kept off SAFE so Viewer and unknown roles never read medical values.
+    "request_missing_documents",
+    "link_document_to_requirement",
+    "read_medical_reports",
+    "record_medical_review",
+    # Re-runs a failed mutation; the target tool's own RBAC is checked again.
+    "resume_operation",
 }
 
 # Read-only + navigation. Never gated, never confirmed — asking "shall I open
@@ -169,6 +178,11 @@ SAFE_TOOLS = {
     "get_commission_summary",
     "list_commission_rules",
     "list_incentive_schemes",
+    # Evidence & recovery (read-only)
+    "get_medical_report_status",
+    "get_operation_status",
+    "get_service_health",
+    "diagnose_connection",
 }
 
 # Destructive enough that the confirmation prompt names the record explicitly
@@ -277,6 +291,9 @@ REQUIRED_ARGS: dict[str, list[str]] = {
     # exactly the thing this flow is for. Only upload_claim_document, whose
     # document_type the browser genuinely cannot guess, is required here.
     "upload_claim_document": ["document_type"],
+    "link_document_to_requirement": ["document_type"],
+    "record_medical_review": ["results_json"],
+    "diagnose_connection": ["symptom"],
 }
 
 # Tools that emit progress steps worth showing in the UI's process graph, with
@@ -328,6 +345,15 @@ STEP_LABELS: dict[str, str] = {
     "run_compliance_screening": "Running compliance screening",
     "override_compliance_screening": "Applying compliance override",
     "run_insurance_history_check": "Running insurance history check",
+    "request_missing_documents": "Requesting missing documents",
+    "link_document_to_requirement": "Linking document to requirement",
+    "get_medical_report_status": "Checking medical reports",
+    "read_medical_reports": "Reading medical reports",
+    "record_medical_review": "Recording medical review",
+    "get_operation_status": "Checking operation status",
+    "resume_operation": "Resuming failed step",
+    "get_service_health": "Checking service health",
+    "diagnose_connection": "Diagnosing connection",
     "assess_medical_examination": "Assessing medical examination requirements",
     "run_pre_underwriting_clearance": "Clearing all pre-underwriting gates",
     # Policy lifecycle (steps 5–7)
@@ -465,6 +491,14 @@ AGENT_ALLOWED_TOOLS = {
     "search_records",
     "get_dashboard_stats",
     "get_workflow_recommendation",
+    # Evidence collection & recovery
+    "request_missing_documents",
+    "link_document_to_requirement",
+    "get_medical_report_status",
+    "get_operation_status",
+    "resume_operation",
+    "get_service_health",
+    "diagnose_connection",
 }
 
 # The agent-app mobile client is Agent-only and covers onboarding through
@@ -579,6 +613,10 @@ CLAIMS_ADJUSTER_ALLOWED_TOOLS = CLAIMS_READ_TOOLS | {
     "add_case_comment",
     "get_dashboard_stats",
     "get_workflow_recommendation",
+    "get_operation_status",
+    "resume_operation",
+    "get_service_health",
+    "diagnose_connection",
 }
 
 CLAIMS_MANAGER_ALLOWED_TOOLS = CLAIMS_ADJUSTER_ALLOWED_TOOLS | CLAIMS_MANAGER_ONLY_TOOLS | {
@@ -636,6 +674,12 @@ UNDERWRITER_ALLOWED_TOOLS = SAFE_TOOLS | {
     # adjudicate, disburse, or open an FNOL: that is the adjuster's desk.
     *CLAIMS_READ_TOOLS,
     "resolve_claim_underwriting",
+    # Evidence & medical review — reviewing medical reports is underwriting work.
+    "request_missing_documents",
+    "link_document_to_requirement",
+    "read_medical_reports",
+    "record_medical_review",
+    "resume_operation",
 }
 
 

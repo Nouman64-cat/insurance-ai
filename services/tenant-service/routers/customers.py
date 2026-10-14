@@ -1,6 +1,6 @@
 import logging
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from datetime import date
 from typing import Literal, Optional
 from uuid import UUID
@@ -634,6 +634,55 @@ async def renew_policy_document_request(
     req = await docreq.ensure_document_request(session, policy)
     req = await docreq.renew_link(session, req)
     return {**(await docreq.summary(session, req)), "link_path": f"/documents/{docreq.make_token(req)}"}
+
+
+@router.post(
+    "/{tenant_id}/customers/{customer_id}/policies/{policy_id}/document-request/send",
+    dependencies=[Depends(verify_admin)],
+)
+async def send_policy_document_request(
+    tenant_id: UUID,
+    customer_id: UUID,
+    policy_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    """Email the customer their upload link, listing what is still outstanding. An expired link is renewed first.
+    Best-effort like every customer email: the link is returned either way, and email_status says honestly whether
+    it went ("sent"), failed ("failed") or had nowhere to go ("no_email")."""
+    import email_utils
+    from services.customer_links import PORTAL_PUBLIC_URL, customer_email
+    from services.email_templates import customer_action_link_email
+
+    policy = await _policy_in_scope(session, tenant_id, customer_id, policy_id, token)
+    req = await docreq.ensure_document_request(session, policy)
+    if req.expires_at < datetime.utcnow():
+        req = await docreq.renew_link(session, req)
+    summary = await docreq.summary(session, req)
+    link_path = f"/documents/{docreq.make_token(req)}"
+    url = f"{PORTAL_PUBLIC_URL}{link_path}"
+    outstanding = [i["document_type"] for i in summary["requirements"] if i["state"] != "received"]
+
+    customer = await session.get(Customer, customer_id)
+    to = customer_email(customer)
+    email_status = "no_email"
+    if to:
+        tenant = await session.get(Tenant, tenant_id)
+        case = await docreq.latest_case(session, req)
+        subject, text, html = customer_action_link_email(
+            kind="documents",
+            customer_name=customer.name if customer else "",
+            tenant_name=(tenant.name if tenant else None) or "Your insurer",
+            url=url,
+            expires_on=req.expires_at.strftime("%d %b %Y"),
+            case_number=case.caseNumber if case else None,
+            tests=outstanding,
+            tenant_phone=getattr(tenant, "contact_phone", None),
+            tenant_email=getattr(tenant, "contact_email", None),
+        )
+        email_status = "sent" if await email_utils.send_email(to, subject, text, html) else "failed"
+    return {**summary, "link_path": link_path, "url": url, "outstanding": outstanding,
+            "emailed_to": to, "email_status": email_status}
 
 
 async def _policy_in_scope(

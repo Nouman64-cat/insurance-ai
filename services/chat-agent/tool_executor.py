@@ -3989,30 +3989,43 @@ async def execute_tool(name: str, args: dict[str, Any], ctx: ExecCtx) -> dict[st
     except ChoiceNeeded as exc:
         # A "couldn't find it, but here's what does exist" path — offered as
         # chips instead of a dead-end string the user has to retype from.
-        return {"success": False, "error": str(exc), "quick_actions": exc.quick_actions}
+        return {"success": False, "error": str(exc), "error_code": "choice_needed", "retryable": False,
+                "needs_user_input": True, "quick_actions": exc.quick_actions}
     except LookupError as exc:
         # Expected "couldn't find it" paths — surfaced verbatim so the model can
         # relay a useful sentence instead of an HTTP trace.
-        return {"success": False, "error": str(exc)}
+        return {"success": False, "error": str(exc), "error_code": "not_found", "retryable": False,
+                "needs_user_input": True}
     except GraphInterrupt:
         # Allow LangGraph interrupts to bubble up and pause execution
         raise
     except httpx.HTTPStatusError as exc:
-        if exc.response.status_code in (401, 403):
+        code = exc.response.status_code
+        if code in (401, 403):
             return {
                 "success": False,
                 "error": "Currently, you have no access to do this, ask your manager.",
+                "error_code": "forbidden", "retryable": False,
             }
         detail = None
         try:
             detail = exc.response.json().get("detail")
         except Exception:
             pass
-        return {"success": False, "error": _readable_detail(detail) or str(exc)}
+        error_code = {404: "not_found", 409: "conflict", 410: "expired", 422: "validation"}.get(
+            code, "service_unavailable" if code >= 500 else "rejected")
+        return {"success": False, "error": _readable_detail(detail) or str(exc), "error_code": error_code,
+                "retryable": code >= 500, "needs_user_input": code in (400, 422)}
+    except httpx.TimeoutException:
+        # The request may have reached the service and still be running, so a
+        # mutation's outcome is unknown — re-read state before any retry.
+        return {"success": False, "error": "The platform took too long to respond.",
+                "error_code": "timeout", "retryable": True, "outcome_unknown": True}
     except httpx.RequestError:
-        return {"success": False, "error": "The platform service is unreachable right now."}
+        return {"success": False, "error": "The platform service is unreachable right now.",
+                "error_code": "unreachable", "retryable": True}
     except Exception as exc:
-        return {"success": False, "error": str(exc)}
+        return {"success": False, "error": str(exc), "error_code": "internal", "retryable": False}
 
 
 def _readable_detail(detail) -> Optional[str]:
@@ -6049,3 +6062,5 @@ async def _upload_claim_document(args: dict, ctx: Ctx) -> dict:
 # and register themselves into _HANDLERS on import. Kept at the very end so the
 # names group_tools imports from this module already exist.
 import group_tools  # noqa: E402,F401
+import evidence_tools  # noqa: E402,F401
+import support_tools  # noqa: E402,F401

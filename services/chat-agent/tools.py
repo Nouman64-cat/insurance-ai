@@ -1899,6 +1899,142 @@ def toggle_incentive_scheme_active(**kwargs) -> str:
     return "{}"
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Evidence & medical review (handlers in evidence_tools.py)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class RequestMissingDocumentsArgs(CaseLookupArgs):
+    send_email: bool = Field(
+        default=True,
+        description="Email the customer their secure upload link. Set false to only return the link "
+        "(e.g. the user will share it themselves).",
+    )
+
+
+@tool(args_schema=RequestMissingDocumentsArgs)
+def request_missing_documents(**kwargs) -> str:
+    """Ask the customer for the documents their application still needs: returns what is
+    outstanding and the customer's secure upload link, renewing an expired link, and emails
+    it unless send_email=false. Works before an underwriting case exists. Reports honestly
+    whether the email was sent, failed, or the customer has no email address."""
+    return "{}"
+
+
+class LinkDocumentArgs(CaseLookupArgs):
+    document_type: str = Field(description="The required document this file satisfies — exactly as the "
+                               "checklist names it, e.g. Salary Slip, Bank Statement.")
+    artifact_id: Optional[str] = Field(default=None, description="The uploaded file's id, from list_artifacts.")
+    file_name: Optional[str] = Field(default=None, description="The uploaded file's name, when its id is unknown.")
+
+
+@tool(args_schema=LinkDocumentArgs)
+def link_document_to_requirement(**kwargs) -> str:
+    """Count an already-uploaded file towards a required document — use when a file was
+    uploaded under the wrong or a generic type ("that PDF is his salary slip"). Only files
+    on this applicant's own application can be linked; no new upload happens."""
+    return "{}"
+
+
+@tool(args_schema=CaseLookupArgs)
+def get_medical_report_status(**kwargs) -> str:
+    """Medical examination report readiness for an application: which required tests have
+    a processed report, which are still processing, rejected (need re-upload) or missing,
+    whether staff review can start, and the recorded outcome once reviewed."""
+    return "{}"
+
+
+class ReadMedicalReportsArgs(CaseLookupArgs):
+    test_code: Optional[str] = Field(default=None, description="Read one test only; omit for every required test.")
+    refresh: bool = Field(default=False, description="Re-read even if a cached reading exists.")
+
+
+@tool(args_schema=ReadMedicalReportsArgs)
+def read_medical_reports(**kwargs) -> str:
+    """Have the AI read each required test's value out of the customer's uploaded medical
+    reports, with the line it was read from and which tests were unreadable. This is a
+    pre-fill for staff review only — it never records a result or clears the medical gate."""
+    return "{}"
+
+
+class RecordMedicalReviewArgs(CaseLookupArgs):
+    results_json: str = Field(description='JSON object of test code -> reported value with units, e.g. '
+                              '{"FBS": "92 mg/dL", "HIV": "Non-reactive"}. Every required test needs a value.')
+    staff_reviewed: bool = Field(description="True only when the staff user has stated or explicitly confirmed "
+                                 "every value in this conversation. Never true for values taken unconfirmed "
+                                 "from read_medical_reports.")
+    artifact_id: Optional[str] = Field(default=None, description="The processed report the values come from.")
+
+
+@tool(args_schema=RecordMedicalReviewArgs)
+def record_medical_review(**kwargs) -> str:
+    """Save the staff-reviewed medical examination results. The platform rates them against
+    the underwriting manual (outcome, abnormal findings, suggested loading) and completes the
+    medical requirement. Prefer opening the review screen when the user wants to check
+    the reports side by side."""
+    return "{}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Recovery & availability (operations.py, support_tools.py)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class OperationStatusArgs(BaseModel):
+    operation_id: Optional[str] = Field(default=None, description="One operation's id; omit for the recent ones.")
+    limit: Optional[int] = Field(default=8, description="How many recent operations to list (max 25).")
+
+
+@tool(args_schema=OperationStatusArgs)
+def get_operation_status(**kwargs) -> str:
+    """What happened to the steps run in this conversation: which completed, which failed
+    and why, which can be retried, and any suspended journey. Use for "did that go through?",
+    "what failed?", "where did we stop?"."""
+    return "{}"
+
+
+class ResumeOperationArgs(BaseModel):
+    operation_id: Optional[str] = Field(default=None, description="The failed operation to retry; omit for the most recent failure.")
+    state_verified: bool = Field(default=False, description="Set true only after re-reading the record and "
+                                 "confirming a timed-out step was NOT applied.")
+
+
+@tool(args_schema=ResumeOperationArgs)
+def resume_operation(**kwargs) -> str:
+    """Continue where the conversation stopped: re-runs only the step that failed, with its
+    original inputs, and never repeats completed steps (uploads, payments, drafts, messages).
+    Use for "the upload failed, continue", "try that again", "pick up where we stopped"."""
+    return "{}"
+
+
+class ServiceHealthArgs(BaseModel):
+    service: Optional[Literal[
+        "api_gateway", "tenant_service", "risk_engine", "ocr_engine",
+        "customer_service", "request_management", "customer_management",
+    ]] = Field(default=None, description="Check one service; omit for all.")
+
+
+@tool(args_schema=ServiceHealthArgs)
+def get_service_health(**kwargs) -> str:
+    """Live availability and response time of the platform's services. Use for "is the
+    system down?", "why is Customer Service not opening?". Read-only: it never restarts anything."""
+    return "{}"
+
+
+class DiagnoseConnectionArgs(BaseModel):
+    symptom: str = Field(description="What the user saw, verbatim if possible, e.g. "
+                         "'server took too long to process, sign in failed'.")
+    app: Optional[Literal["mobile_agent_app", "web_portal", "customer_portal", "customer_service", "other"]] = None
+    client_api_url: Optional[str] = Field(default=None, description="The API address the failing app is "
+                                          "configured with (e.g. the mobile app's EXPO_PUBLIC_API_URL), if known.")
+
+
+@tool(args_schema=DiagnoseConnectionArgs)
+def diagnose_connection(**kwargs) -> str:
+    """Work out why an app cannot sign in or connect: separates a device that cannot reach
+    the server (wrong address / different network), a misconfigured API address, an
+    unavailable service, a backend timeout, and wrong credentials — then gives the fix."""
+    return "{}"
+
+
 ALL_TOOLS = [
     # navigation & discovery
     navigate_to_page,
@@ -2039,5 +2175,16 @@ ALL_TOOLS = [
     update_incentive_scheme,
     delete_incentive_scheme,
     toggle_incentive_scheme_active,
+    # evidence & medical review
+    request_missing_documents,
+    link_document_to_requirement,
+    get_medical_report_status,
+    read_medical_reports,
+    record_medical_review,
+    # recovery & availability
+    get_operation_status,
+    resume_operation,
+    get_service_health,
+    diagnose_connection,
 ]
 

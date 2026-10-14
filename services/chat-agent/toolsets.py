@@ -19,9 +19,13 @@ This is deliberately NOT a model-driven "load tools for domain X" step: that
 would cost an extra round-trip per domain switch, which is the thing we are
 trying to avoid. Keyword selection is free and happens before the call.
 
-Safety net: when nothing matches and there is no sticky domain, every pack is
-bound — identical to the old behaviour. A missed keyword degrades to "costs
-what it used to", never to "the agent cannot do the thing".
+Safety net: when nothing matches and there is no sticky domain, every pack in
+FALLBACK_DOMAINS is bound — identical to the old behaviour. A missed keyword
+degrades to "costs what it used to", never to "the agent cannot do the thing".
+
+Packs added after the registry reached the provider's 128-tool cap (see
+graph.MAX_BOUND_TOOLS) are keyword-only: binding them on the fallback too would
+push a keyword-less turn past the cap. Their keywords are deliberately broad.
 """
 
 from __future__ import annotations
@@ -186,8 +190,26 @@ DOMAIN_TOOLS: dict[str, set[str]] = {
         "delete_incentive_scheme",
         "toggle_incentive_scheme_active",
     },
-
+    # Evidence: what is missing, where it goes, and staff review of medical reports.
+    "documents": {
+        "request_missing_documents",
+        "link_document_to_requirement",
+        "get_medical_report_status",
+        "read_medical_reports",
+        "record_medical_review",
+    },
+    # Recovery and availability: resume a failed step, explain an outage.
+    "support": {
+        "get_operation_status",
+        "resume_operation",
+        "get_service_health",
+        "diagnose_connection",
+    },
 }
+
+# Bound when no keyword matches and nothing is sticky. Must fit the provider cap
+# together with CORE_TOOLS (pinned by test_registries).
+FALLBACK_DOMAINS: tuple[str, ...] = ("admin", "rules", "claims", "group", "commission")
 
 # Words that put a conversation into a domain. Generous on purpose — a false
 # positive costs a few hundred tokens, a false negative costs a capability.
@@ -250,6 +272,20 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "commission type", "commission rule", "commission rate", "rate card rule",
         "bonus plan", "incentive scheme", "persistency bonus", "production bonus",
     ),
+    "documents": (
+        "document", "documents", "upload", "uploaded", "missing", "evidence", "requirement",
+        "checklist", "resubmi", "re-upload", "reupload", "salary slip", "bank statement",
+        "medical report", "medical reports", "lab report", "lab result", "test result", "report",
+        "physician", "blood", "lipid", "ecg", "hba1c", "urine", "medical review", "findings",
+    ),
+    "support": (
+        "failed", "fail", "error", "retry", "resume", "interrupted", "where we stopped",
+        "where we left", "pick up", "stuck", "operation", "didn't go through", "did not go through",
+        "sign in", "signin", "sign-in", "log in", "login", "connect", "connection", "timeout",
+        "timed out", "took too long", "unreachable", "unavailable", "server", "health", "outage",
+        "down", "not loading", "not opening", "won't open", "won't load", "can't open", "cannot open",
+        "network", "customer service", "request management",
+    ),
 }
 
 
@@ -270,7 +306,7 @@ def select_domains(texts: Iterable[str], sticky: Iterable[str] = ()) -> set[str]
         if any(word in blob for word in words)
     }
     matched |= {d for d in sticky if d in DOMAIN_TOOLS}
-    return matched or set(DOMAIN_TOOLS)
+    return matched or set(FALLBACK_DOMAINS)
 
 
 def domain_of(tool_name: str) -> str | None:
