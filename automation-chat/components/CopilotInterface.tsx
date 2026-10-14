@@ -1,4 +1,5 @@
 "use client";
+import { resolveUploadCase, uploadTargetFromText, type UploadTarget } from "@/lib/agent/documentTarget";
 import { displayDate, displayDateTime } from '../lib/dateDisplay';
 import { isRevisionText, revision } from "../lib/agent/revision";
 import { confirmationAnswer } from "@/lib/voice/protocol";
@@ -1015,15 +1016,16 @@ function getRecommendedActions(
       ["lab report", "Lab Report"],
       ["tax return", "Tax Return"],
     ];
+    const target = uploadTargetFromText(lastMessage.text || "");
     const seen = new Set<string>();
     const actions: QuickAction[] = [];
     for (const [needle, documentType] of named) {
-      if (text.includes(needle) && !seen.has(documentType)) {
+      if (target && text.includes(needle) && !seen.has(documentType)) {
         seen.add(documentType);
         actions.push({
           label: `Upload ${documentType}`,
           actionType: "upload",
-          payload: JSON.stringify({ document_type: documentType }),
+          payload: JSON.stringify({ document_type: documentType, ...target }),
         });
       }
     }
@@ -2222,10 +2224,9 @@ export function CopilotInterface() {
   // pendingInterrupt.kind === "client_execute" instead.
   const pendingUploadRef = useRef<{
     document_type: string;
-    cnic?: string;
     claim_id?: string;
     claim_number?: string;
-  } | null>(null);
+  } & UploadTarget | null>(null);
 
   // ── Underwriting requirements, shown from the chat ────────────────────────
   // The 7 prerequisites the case page's checklist shows (documents + the six
@@ -2570,30 +2571,13 @@ export function CopilotInterface() {
       }
 
       const list = await api.get(`/tenants/${tenantId}/cases`);
-      const c = list.data.find((c: any) => {
-        if (
-          args.case_id &&
-          (c.caseld === args.case_id || c.id === args.case_id)
-        )
-          return true;
-        if (args.case_number && c.caseNumber === args.case_number) return true;
-        if (args.cnic && c.customer_cnic === args.cnic) return true;
-        if (!args.applicant_name) return false;
-        const n = args.applicant_name.toLowerCase();
-        const fullName = `${c.applicant_name || ""} ${c.customer_name || ""}`
-          .trim()
-          .toLowerCase();
-        return (
-          fullName.includes(n) ||
-          c.applicant_name?.toLowerCase().includes(n) ||
-          c.customer_name?.toLowerCase().includes(n)
-        );
-      });
-      if (!c) throw new Error("No case found for this applicant.");
+      const c = resolveUploadCase(list.data, args);
+      const resolvedCaseId = c.caseld ?? c.case_id ?? c.id;
+      if (!resolvedCaseId) throw new Error("The application has no valid identifier.");
       const form = new FormData();
       form.append("document_type", args.document_type);
       form.append("file", file);
-      await api.post(`/tenants/${tenantId}/cases/${c.caseld}/artifacts`, form, {
+      await api.post(`/tenants/${tenantId}/cases/${resolvedCaseId}/artifacts`, form, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
@@ -2606,7 +2590,7 @@ export function CopilotInterface() {
       // Rich result: when this resumes the graph, the SSE pipeline re-emits
       // last_action (toast + navigate + highlight) and quick_actions (the
       // recommendation chips) exactly as if a server-side tool had run.
-      const caseRoute = `cases?case_id=${c.caseld}`;
+      const caseRoute = `cases?case_id=${resolvedCaseId}`;
       const who = args.cnic || args.applicant_name || "";
       return {
         success: true,
@@ -2614,7 +2598,7 @@ export function CopilotInterface() {
         last_action: {
           tool_name: "upload_document",
           entity_type: "case",
-          entity_id: c.caseld,
+          entity_id: resolvedCaseId,
           route: caseRoute,
           label: `${args.document_type} uploaded`,
         },

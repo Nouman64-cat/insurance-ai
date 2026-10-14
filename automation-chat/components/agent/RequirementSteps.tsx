@@ -8,6 +8,7 @@ import { fmtCoverage } from "@/lib/mock-data";
 import type { ChecklistItem, RequirementsChecklist } from "@/lib/agent/types";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { DocumentUploadDialog } from "@/components/agent/DocumentUploadDialog";
+import MedicalReportReviewModal from "@/components/agent/MedicalReportReviewModal";
 import VerifyEAppModal from "@/components/entities/VerifyEAppModal";
 import { IPPModal } from "@/components/entities/IPPModal";
 import { getACR, requestACR } from "@/app/services/agentConfidentialReport";
@@ -16,7 +17,7 @@ import { runCaseCompliance, clearComplianceCheck } from "@/app/services/cases";
 import { getInsuranceHistory, runInsuranceHistory, clearInsuranceHistory, type InsuranceHistory } from "@/app/services/insuranceHistory";
 import {
   assessMedicalExam, getMedicalExam, inviteMedicalExam, recordMedicalResult, waiveMedicalExam,
-  type MedicalExamOrder,
+  usableReport, MEDICAL_CLEARED, type MedicalExamOrder,
 } from "@/app/services/medicalExam";
 
 // Each underwriting requirement, done right inside the requirements card: the step's button calls the API itself and
@@ -492,6 +493,7 @@ function HistoryStep({ checklist, item, changed, report }: StepProps) {
 function MedicalStep({ checklist, item, changed, report }: StepProps) {
   const { caseId } = checklist;
   const [order, setOrder] = useState<MedicalExamOrder | null>(null);
+  const [reviewing, setReviewing] = useState(false);
   const [link, setLink] = useState<string | null>(null);
   const [waiving, setWaiving] = useState(false);
   const [reason, setReason] = useState("");
@@ -527,16 +529,20 @@ function MedicalStep({ checklist, item, changed, report }: StepProps) {
     const invite = await inviteMedicalExam(caseId);
     setLink(`${PORTAL_ORIGIN}${invite.link_path}`);
     await load();
-  }, "Couldn't create the booking link.");
+  }, "Couldn't create the report upload link.");
 
-  const complete = () => more.run(async () => {
-    await recordMedicalResult(caseId, {
-      results: { standard_panel: "normal", fasting_blood_sugar: "normal", urinalysis: "normal" },
-      reported_by: "Panel Diagnostic Center",
+  const saveReview = (results: Record<string, string>) => more.run(async () => {
+    const reviewed = await recordMedicalResult(caseId, { results, reported_by: "Underwriter" });
+    setOrder(reviewed);
+    setReviewing(false);
+    report("medical", {
+      tone: reviewed.uninsurable ? "bad" : reviewed.abnormal_findings?.length ? "warn" : "ok",
+      title: reviewed.status === "Completed" ? "Medical reports reviewed" : "Medical review saved — outstanding tests remain",
+      lines: [reviewed.outcome ? `Outcome: ${reviewed.outcome}` : "Reviewed values recorded.",
+        ...(reviewed.abnormal_findings ?? []).map(f => f.finding)],
     });
-    report("medical", { tone: "ok", title: "Examination completed", lines: ["Results recorded as normal."] });
     await changed();
-  }, "Couldn't complete the examination.");
+  }, "Couldn't save the medical review.");
 
   const waive = () => more.run(async () => {
     await waiveMedicalExam(caseId, reason.trim());
@@ -553,6 +559,9 @@ function MedicalStep({ checklist, item, changed, report }: StepProps) {
     );
   }
 
+  const reports = (order.reports ?? []).filter(usableReport);
+  const coveredTests = new Set(reports.map(r => r.test_code)).size;
+  const medicalDone = MEDICAL_CLEARED.has(order.status);
   return (
     <div>
       {order.trigger_reasons?.length > 0 && <p className="mt-2 text-[12px] text-slate-600">{order.trigger_reasons.join(" · ")}</p>}
@@ -569,13 +578,14 @@ function MedicalStep({ checklist, item, changed, report }: StepProps) {
           <p className="border-t border-slate-100 bg-slate-50 px-2.5 py-1.5 text-right text-[11px] font-semibold text-slate-700">Estimated: PKR {Math.round(order.estimated_cost).toLocaleString()}</p>
         </div>
       )}
-      {link && <LinkBox url={link} label="Booking link for the customer" />}
+      {link && <LinkBox url={link} label="Report upload link for the customer" />}
       {order.appointment_at && <p className="mt-2 text-[12px] font-medium text-slate-700">Booked: {displayDateTime(order.appointment_at)}{order.clinic ? ` · ${order.clinic.name}` : ""}</p>}
-      <Waiting>{order.status === "Scheduled" ? "Waiting for the examination results…" : "Waiting for the customer to book their examination…"}</Waiting>
+      {!medicalDone && <Waiting>{order.reports_submitted ? "Reports submitted — ready for review." : reports.length ? `Reports uploaded for ${coveredTests} of ${order.required_tests.length} required tests.` : "Waiting for the customer to upload their medical reports…"}</Waiting>}
+      {medicalDone && <p role="status" className="mt-2 text-xs font-medium text-emerald-700">{order.status === "Completed" ? "Medical results reviewed and rated." : order.status === "Waived" ? "Medical examination waived." : "No medical examination required."}</p>}
       <div className="mt-3 flex flex-wrap gap-2">
-        {!link && <Btn kind="secondary" onClick={freshLink} busy={more.busy}>Get booking link</Btn>}
-        <Btn kind="secondary" onClick={complete} busy={more.busy}>Mark examination completed</Btn>
-        <Btn kind="secondary" onClick={() => setWaiving((w) => !w)}>Waive</Btn>
+        {!medicalDone && !link && <Btn kind="secondary" onClick={freshLink} busy={more.busy}>Get report upload link</Btn>}
+        {(reports.length > 0 || order.status === "Scheduled") && <Btn onClick={() => { more.setError(null); setReviewing(true); }} busy={more.busy}>Review Reports</Btn>}
+        {!medicalDone && <Btn kind="secondary" onClick={() => setWaiving((w) => !w)}>Waive</Btn>}
       </div>
       {waiving && (
         <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 p-2.5">
@@ -590,6 +600,7 @@ function MedicalStep({ checklist, item, changed, report }: StepProps) {
         </div>
       )}
       <ErrorLine text={error ?? more.error} />
+      {reviewing && portalModal(<MedicalReportReviewModal order={order} caseId={caseId} busy={more.busy} error={more.error} onClose={() => { if (!more.busy) setReviewing(false); }} onSubmit={saveReview} />)}
     </div>
   );
 }
