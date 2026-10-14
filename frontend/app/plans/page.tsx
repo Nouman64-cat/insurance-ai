@@ -541,7 +541,7 @@ function PlanDetailDrawer({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-lg max-h-[90vh] bg-white rounded-xl shadow-2xl overflow-y-auto"
+        className="w-full max-w-5xl max-h-[90vh] bg-white rounded-xl shadow-2xl overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className={`border-t-4 ${colors.accent} p-6 space-y-4`}>
@@ -573,8 +573,9 @@ function PlanDetailDrawer({
 
           <p className="text-sm text-slate-600 leading-relaxed">{plan.description}</p>
 
-          <PlanSurrenderDetails terms={plan.surrender_terms} />
-
+          {/* Two columns on wide screens so the long surrender terms don't push everything into a scroll. */}
+          <div className="grid items-start gap-x-8 gap-y-4 lg:grid-cols-2">
+          <div className="min-w-0 space-y-4">
           <div className="pt-2 border-t border-slate-100">
             <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
               {tx("Plan Details")}
@@ -648,6 +649,12 @@ function PlanDetailDrawer({
               </table>
             </div>
           )}
+
+          </div>
+          <div className="min-w-0">
+            <PlanSurrenderDetails terms={plan.surrender_terms} />
+          </div>
+          </div>
 
           {isAdmin && (
             <div className="pt-3 border-t border-slate-100 flex items-center gap-2">
