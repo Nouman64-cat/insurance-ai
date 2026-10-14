@@ -13,6 +13,7 @@ import {
 } from "../services/insurancePlans";
 import { Pagination, usePagination } from "@/components/Pagination";
 import { tx } from "@/lib/i18n/tx";
+import PlanSurrenderDetails, { surrenderStatus } from "@/components/PlanSurrenderDetails";
 
 const COLOR_CLASSES: Record<string, { badge: string; accent: string }> = {
   blue: { badge: "bg-blue-50 text-blue-700 border-blue-200", accent: "border-t-blue-500" },
@@ -453,6 +454,7 @@ function PlansTable({ plans, onView }: { plans: InsurancePlan[]; onView: (p: Ins
             <th className="px-4 py-2.5">{tx("Term")}</th>
             <th className="px-4 py-2.5">{tx("Medical Exam Thresholds (PKR)")}</th>
             <th className="px-4 py-2.5">{tx("Status")}</th>
+            <th className="px-4 py-2.5">{tx("Early Exit")}</th>
           </tr>
         </thead>
         <tbody>
@@ -508,6 +510,7 @@ function PlansTable({ plans, onView }: { plans: InsurancePlan[]; onView: (p: Ins
                     {plan.status}
                   </span>
                 </td>
+                <td className="px-4 py-2.5 text-xs text-slate-600">{surrenderStatus(plan.surrender_terms)}</td>
               </tr>
             );
           })}
@@ -569,6 +572,8 @@ function PlanDetailDrawer({
           </span>
 
           <p className="text-sm text-slate-600 leading-relaxed">{plan.description}</p>
+
+          <PlanSurrenderDetails terms={plan.surrender_terms} />
 
           <div className="pt-2 border-t border-slate-100">
             <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">

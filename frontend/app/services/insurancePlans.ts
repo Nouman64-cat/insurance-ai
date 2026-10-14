@@ -19,6 +19,44 @@ export interface MedicalExamTier {
   tier: string;
 }
 
+export interface SurrenderChargeBand {
+  from: number;
+  through: number | null;
+  charge_pct: number;
+}
+
+export interface SurrenderTerms {
+  status: "verified" | "conflicting_sources" | "not_disclosed" | "not_applicable";
+  researched_on: string;
+  has_surrender_value: boolean | null;
+  schedule_unit: string | null;
+  charge_schedule: SurrenderChargeBand[] | null;
+  processing_fee_pkr: number | null;
+  free_look_days: number | null;
+  minimum_full_surrender_months: number | null;
+  partial_withdrawal: {
+    minimum_inforce_months: number | null;
+    maximum_pct_of_net_cash_surrender_value: number;
+    maximum_per_year: number | null;
+    minimum_remaining_net_cash_surrender_value_pkr: number;
+    conditions: string[];
+  } | null;
+  loan: { maximum_pct_of_net_cash_surrender_value: number; eligibility_text: string | null } | null;
+  zero_charge_conditions: {
+    minimum_completed_months: number;
+    minimum_full_years_premiums_paid?: number;
+    minimum_full_years_contributions_paid?: number;
+    note?: string;
+  } | null;
+  notes: string[];
+  sources: { url: string; title: string; pages?: number[]; section?: string }[];
+  alternative_published_schedules?: {
+    source_url: string;
+    schedule_unit: string;
+    charge_schedule: SurrenderChargeBand[];
+  }[];
+}
+
 export interface InsurancePlan {
   id: string;
   tenant_id: string;
@@ -31,7 +69,7 @@ export interface InsurancePlan {
   status: PlanStatus;
   description: string;
   color: string;
-  surrender_terms?: Record<string, unknown> | null;
+  surrender_terms?: SurrenderTerms | null;
 
   entry_age_min: number;
   entry_age_max: number;
