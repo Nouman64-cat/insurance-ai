@@ -49,7 +49,7 @@ const ur: Record<keyof typeof en, string> = {
   "policyStatus.active": "فعال", "policyStatus.reinstated": "بحال شدہ", "policyStatus.grace_period": "رعایتی مدت", "policyStatus.lapsed": "ختم (لیپسڈ)",
   "policyStatus.cancelled": "منسوخ", "policyStatus.pending_issuance": "اجرا زیرِ التوا", "policyStatus.issued": "جاری شدہ", "policyStatus.expired": "میعاد ختم",
   "policyStatus.matured": "مکمل (میچور)", "policyStatus.surrendered": "سرینڈر شدہ", "policyStatus.unknown": "نامعلوم",
-  "frequency.Annual": "سال", "frequency.SemiAnnual": "چھ ماہ", "frequency.Quarterly": "سہ ماہی", "frequency.Monthly": "ماہ",
+  "frequency.Annual": "سال", "frequency.SemiAnnual": "چھ ماہ", "frequency.Quarterly": "سہ ماہی",
   "insuranceType.TERM_LIFE": "ٹرم لائف", "insuranceType.WHOLE_LIFE": "ہول لائف", "insuranceType.ENDOWMENT": "اینڈاؤمنٹ", "insuranceType.CHILD_EDUCATION_MARRIAGE": "بچوں کی تعلیم و شادی",
   "insuranceType.GROUP_LIFE": "گروپ لائف", "insuranceType.SAVINGS": "بچت", "insuranceType.SINGLE_PREMIUM": "یک وقتی پریمیم", "insuranceType.HEALTH_CASH": "ہیلتھ کیش",
   "insuranceType.FAMILY_FLOATER": "فیملی فلوٹر",

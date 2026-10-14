@@ -294,6 +294,9 @@ export default function CustomerFormModal({
   // the user fills it in.
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [extracting, setExtracting] = useState(false);
+  // True once the AI (document auto-fill or "suggest a plan") has filled the Sum Assured / Policy Term. The Plan
+  // Configuration inputs are then greyed out (read-only); picking, changing or clearing the plan unlocks them again.
+  const [planAiLocked, setPlanAiLocked] = useState(false);
   // 0-100 progress for the document upload; the first half is the real byte
   // upload, the second half creeps while the server reads the document.
   const [extractProgress, setExtractProgress] = useState(0);
@@ -688,6 +691,7 @@ export default function CustomerFormModal({
       setValue("policyTerm", v, opts);
       setEditPolicyTerm(String(v));
     });
+    if (found.has("policyCoverage") || found.has("policyTerm")) setPlanAiLocked(true);
     if (f.dependent_name) {
       setValue("policyDependentName", f.dependent_name, opts);
       setEditPolicyDependentName(f.dependent_name);
@@ -865,6 +869,7 @@ export default function CustomerFormModal({
         policyDependentDob: "",
       });
       setDetails(cloneDefaultDetails());
+      setPlanAiLocked(false);
       setCity("");
       setProvince("");
       setBranchId("");
@@ -1030,6 +1035,7 @@ export default function CustomerFormModal({
       setValue("policyCoverage", data.suggested_coverage);
       setValue("policyTerm", data.suggested_term);
       setSuggestedReasoning(data.reasoning);
+      setPlanAiLocked(true);
     } catch (err: any) {
       setError(
         err.response?.data?.detail ??
@@ -3123,6 +3129,7 @@ export default function CustomerFormModal({
                         type="button"
                         onClick={() => {
                           setEditAddingPolicy(false);
+                          setPlanAiLocked(false);
                           setEditSelectedPlanId("");
                           setValue("selectedPlanId", "");
                           setValue("policyCoverage", undefined);
@@ -3158,6 +3165,7 @@ export default function CustomerFormModal({
                               type="button"
                               onClick={() => {
                                 const nextId = isSelected ? "" : plan.id;
+                                setPlanAiLocked(false);
                                 setEditSelectedPlanId(nextId);
                                 setValue("selectedPlanId", nextId);
                                 if (!isSelected) {
@@ -3187,6 +3195,7 @@ export default function CustomerFormModal({
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
+                                      setPlanAiLocked(false);
                                       setEditSelectedPlanId("");
                                       setValue("selectedPlanId", "");
                                       setEditPolicyCoverage("");
@@ -3299,7 +3308,9 @@ export default function CustomerFormModal({
                                     setValue("policyCoverage", e.target.value);
                                   }}
                                   placeholder="e.g. 5000000"
-                                  className={`w-full bg-white border ${isCoverageOverLimit ? "border-red-500 bg-red-50/20 ring-1 ring-red-500 text-red-900" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
+                                  readOnly={planAiLocked}
+                                  aria-readonly={planAiLocked}
+                                  className={`w-full bg-white border ${isCoverageOverLimit ? "border-red-500 bg-red-50/20 ring-1 ring-red-500 text-red-900" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400${planAiLocked ? " !bg-slate-100 !text-slate-500 cursor-not-allowed" : ""}`}
                                 />
                                 {isCoverageOverLimit ? (
                                   <span className="block text-[11px] font-semibold text-red-600 mt-1">
@@ -3337,7 +3348,9 @@ export default function CustomerFormModal({
                                     setEditPolicyTerm(e.target.value);
                                     setValue("policyTerm", e.target.value);
                                   }}
-                                  className={`w-full bg-white border ${isTermOutOfRange ? "border-red-500 bg-red-50/20 ring-1 ring-red-500 text-red-900" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
+                                  readOnly={planAiLocked}
+                                  aria-readonly={planAiLocked}
+                                  className={`w-full bg-white border ${isTermOutOfRange ? "border-red-500 bg-red-50/20 ring-1 ring-red-500 text-red-900" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400${planAiLocked ? " !bg-slate-100 !text-slate-500 cursor-not-allowed" : ""}`}
                                 />
                                 {isTermOutOfRange ? (
                                   <span className="block text-[11px] font-semibold text-red-600 mt-1">
@@ -3451,6 +3464,7 @@ export default function CustomerFormModal({
                                   );
                                   setCustomerPolicies(res.data ?? []);
                                   setEditAddingPolicy(false);
+                                  setPlanAiLocked(false);
                                   setEditSelectedPlanId("");
                                   setEditPolicyCoverage("");
                                   setEditPolicyTerm("");
@@ -3587,6 +3601,7 @@ export default function CustomerFormModal({
                           key={plan.id}
                           type="button"
                           onClick={() => {
+                            setPlanAiLocked(false);
                             setValue(
                               "selectedPlanId",
                               isSelected ? "" : plan.id,
@@ -3722,7 +3737,9 @@ export default function CustomerFormModal({
                               min={0}
                               {...register("policyCoverage")}
                               placeholder="e.g. 5000000"
-                              className={`w-full bg-white border ${isCoverageOverLimit || errors.policyCoverage ? "border-red-500 bg-red-50/20 ring-1 ring-red-500 text-red-900" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
+                              readOnly={planAiLocked}
+                              aria-readonly={planAiLocked}
+                              className={`w-full bg-white border ${isCoverageOverLimit || errors.policyCoverage ? "border-red-500 bg-red-50/20 ring-1 ring-red-500 text-red-900" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400${planAiLocked ? " !bg-slate-100 !text-slate-500 cursor-not-allowed" : ""}`}
                             />
                             {isCoverageOverLimit ? (
                               <span className="block text-[11px] font-semibold text-red-600 mt-1">
@@ -3760,7 +3777,9 @@ export default function CustomerFormModal({
                               min={plan.term_min_years}
                               max={plan.term_max_years}
                               {...register("policyTerm")}
-                              className={`w-full bg-white border ${isTermOutOfRange || errors.policyTerm ? "border-red-500 bg-red-50/20 ring-1 ring-red-500 text-red-900" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
+                              readOnly={planAiLocked}
+                              aria-readonly={planAiLocked}
+                              className={`w-full bg-white border ${isTermOutOfRange || errors.policyTerm ? "border-red-500 bg-red-50/20 ring-1 ring-red-500 text-red-900" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400${planAiLocked ? " !bg-slate-100 !text-slate-500 cursor-not-allowed" : ""}`}
                             />
                             {isTermOutOfRange ? (
                               <span className="block text-[11px] font-semibold text-red-600 mt-1">

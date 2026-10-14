@@ -712,7 +712,7 @@ MIGRATIONS: list[tuple[str, str]] = [
     (
         "v27a-enum — billingfrequencyenum",
         "DO $$ BEGIN CREATE TYPE billingfrequencyenum AS ENUM "
-        "('Annual','SemiAnnual','Quarterly','Monthly'); "
+        "('Annual','SemiAnnual','Quarterly'); "
         "EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
     ),
     (
@@ -1456,6 +1456,13 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v64c — add policy_wording_uploaded_at to insurance_plans",
         "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS policy_wording_uploaded_at TIMESTAMP WITHOUT TIME ZONE",
     ),
+    # Underwriting hold: freezes a case where it stands (see routers/cases.py hold / release).
+    ("v62a — cases.on_hold", "ALTER TABLE cases ADD COLUMN IF NOT EXISTS on_hold BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("v62b — cases.hold_reason", "ALTER TABLE cases ADD COLUMN IF NOT EXISTS hold_reason VARCHAR(1000)"),
+    ("v62c — cases.held_at", "ALTER TABLE cases ADD COLUMN IF NOT EXISTS held_at TIMESTAMP WITHOUT TIME ZONE"),
+    ("v62d — cases.held_by", "ALTER TABLE cases ADD COLUMN IF NOT EXISTS held_by VARCHAR(255)"),
+    ("v62e — cases.held_from_status", "ALTER TABLE cases ADD COLUMN IF NOT EXISTS held_from_status VARCHAR(50)"),
+    ("v62f — cases.on_hold index", "CREATE INDEX IF NOT EXISTS ix_cases_on_hold ON cases (on_hold) WHERE on_hold"),
 ]
 
 

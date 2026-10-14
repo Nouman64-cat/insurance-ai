@@ -20,6 +20,10 @@ export interface CaseQueueItem {
   coverage_amount: number | null;
   latest_ai_decision: "Auto Approve" | "Approve with Loading" | "Human Review" | "Decline" | null;
   latest_composite_score: number | null;
+  /** Underwriting hold: the case is frozen where it stands until the hold is removed. */
+  on_hold?: boolean;
+  hold_reason?: string | null;
+  held_at?: string | null;
   family_group_id?: string;
   family_group_name?: string;
   organization_id?: string;

@@ -22,6 +22,7 @@ const getErrorMessage = (err: any, fallbackMessage: string): string => {
     if (Array.isArray(detail)) {
       return detail.map((d: any) => d.msg || JSON.stringify(d)).join(", ");
     }
+    if (typeof detail === "object" && typeof (detail as any).message === "string") return (detail as any).message;
     return JSON.stringify(detail);
   }
   return err.message ?? fallbackMessage;

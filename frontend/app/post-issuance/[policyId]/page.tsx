@@ -39,6 +39,8 @@ import {
   setAutopay,
   demoSeedPremiums,
   restructurePlan,
+  previewRestructure,
+  type RestructurePreview,
   getReminderHistory,
   downloadReceipt,
   downloadLapseWarning,
@@ -54,6 +56,7 @@ import {
   REMINDER_CHANNELS,
   REMINDER_TEMPLATES,
   BILLING_FREQUENCIES,
+  BILLING_FREQUENCY_LABELS,
   type ReminderLog,
   type FreeLookStatus,
   type OnboardingStatus,
@@ -616,6 +619,9 @@ function PremiumCollectionPanel({
   };
   const [freq, setFreq] = useState<string>(() => getActiveFreq());
   const currentFreq = getActiveFreq();
+  const [freqPreview, setFreqPreview] = useState<RestructurePreview | null>(null);
+  const [freqPreviewErr, setFreqPreviewErr] = useState(false);
+  const freqLabel = (f: string) => (BILLING_FREQUENCY_LABELS as Record<string, string>)[f] ?? f;
   const [reminders, setReminders] = useState<ReminderLog[] | null>(null);
   const [openSecs, setOpenSecs] = useState<Set<string>>(
     () => new Set(["first-premium", "recurring-plan", "controls", "ledger"]),
@@ -640,13 +646,21 @@ function PremiumCollectionPanel({
   }, [policyId]);
 
   useEffect(() => {
-    if (billing && billing.installments.length > 0) {
-      const actualFreq = billing.installments.find(
-        (s) => s.installment_no === 1,
-      )?.billing_frequency;
-      if (actualFreq) setFreq(actualFreq);
-    }
+    // After the ledger loads or is restructured, the dropdown follows the ACTIVE plan (the frequency of the upcoming
+    // installments), not installment #1, which keeps the frequency it was originally paid under.
+    if (billing && billing.installments.length > 0) setFreq(getActiveFreq());
   }, [billing]);
+
+  // Picking a frequency different from the active plan shows what it would produce (same calculation as Restructure; nothing is saved).
+  useEffect(() => {
+    if (!billing || freq === currentFreq) { setFreqPreview(null); setFreqPreviewErr(false); return; }
+    let alive = true;
+    setFreqPreviewErr(false);
+    previewRestructure(policyId, freq)
+      .then((p) => { if (alive) setFreqPreview(p); })
+      .catch(() => { if (alive) { setFreqPreview(null); setFreqPreviewErr(true); } });
+    return () => { alive = false; };
+  }, [policyId, freq, currentFreq, billing]);
 
   const sec = (k: string) => openSecs.has(k);
   const toggleSec = (k: string) =>
@@ -894,7 +908,7 @@ function PremiumCollectionPanel({
               />
               <StatCard
                 label={tx("Payment frequency")}
-                value={currentFreq}
+                value={tx(freqLabel(currentFreq))}
                 hint={tx("Billing cycle")}
               />
             </div>
@@ -1389,7 +1403,7 @@ function PremiumCollectionPanel({
                       >
                         {BILLING_FREQUENCIES.map((f) => (
                           <option key={f} value={f}>
-                            {f}
+                            {tx(BILLING_FREQUENCY_LABELS[f])}
                           </option>
                         ))}
                       </select>
@@ -1399,7 +1413,7 @@ function PremiumCollectionPanel({
                           run(
                             () => restructurePlan(policyId, freq),
                             (b) =>
-                              `Plan restructured to ${freq} — ${b.summary.outstanding_count} upcoming installment(s).`,
+                              `Plan restructured to ${freqLabel(freq)} — ${b.summary.outstanding_count} upcoming installment(s).`,
                           )
                         }
                         className="px-3 py-2 rounded-lg text-[11px] font-semibold bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40 whitespace-nowrap"
@@ -1439,7 +1453,7 @@ function PremiumCollectionPanel({
           </JourneyAccordion>
 
           <JourneyAccordion
-            title={tx("{0} Installment Plan", { 0: currentFreq })}
+            title={tx("{0} Installment Plan", { 0: tx(freqLabel(freq)) })}
             icon={
               <svg
                 viewBox="0 0 24 24"
@@ -1459,6 +1473,59 @@ function PremiumCollectionPanel({
             isOpen={sec("ledger")}
             onToggle={() => toggleSec("ledger")}
           >
+            {freq !== currentFreq && (
+              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-bold text-amber-900">
+                    {tx("Preview — {0} plan (not saved yet)", { 0: tx(freqLabel(freq)) })}
+                  </p>
+                  <button
+                    disabled={locked || !freqPreview}
+                    onClick={() => run(() => restructurePlan(policyId, freq), (b) => `Plan restructured to ${freqLabel(freq)} — ${b.summary.outstanding_count} upcoming installment(s).`)}
+                    className="px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40"
+                  >
+                    {tx("Apply this plan")}
+                  </button>
+                </div>
+                {freqPreviewErr && <p className="text-xs text-rose-700 mt-2">{tx("The preview could not be calculated.")}</p>}
+                {freqPreview && (
+                  <>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 text-xs">
+                      {[
+                        [tx("Annual premium"), fmtPKR(freqPreview.annual_premium)],
+                        [tx("Already collected"), fmtPKR(freqPreview.collected)],
+                        [tx("Still to collect"), fmtPKR(freqPreview.remaining)],
+                        [tx("{0} installments of", { 0: freqPreview.installments }), fmtPKR(freqPreview.per_installment)],
+                      ].map(([k, v]) => (
+                        <div key={k} className="rounded-lg bg-white border border-amber-100 px-3 py-2">
+                          <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">{k}</p>
+                          <p className="text-sm font-bold text-slate-800 mt-0.5">{v}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <table className="w-full mt-3 text-xs">
+                      <thead>
+                        <tr className="text-left text-[10px] uppercase tracking-wider text-slate-500">
+                          <th className="py-1.5">{tx("Inst number")}</th>
+                          <th className="py-1.5">{tx("Due date")}</th>
+                          <th className="py-1.5 text-right">{tx("Inst due premium (rupees)")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {freqPreview.rows.map((r) => (
+                          <tr key={r.installment_no} className="border-t border-amber-100">
+                            <td className="py-1.5">{r.installment_no}</td>
+                            <td className="py-1.5">{new Date(`${r.due_date}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</td>
+                            <td className="py-1.5 text-right font-semibold">{fmtPKR(r.amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                )}
+              </div>
+            )}
+
             {/* View Toggle */}
             <div className="flex justify-between items-center mb-4">
               <div className="flex items-center gap-2">

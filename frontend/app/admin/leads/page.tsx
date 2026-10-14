@@ -54,7 +54,15 @@ interface UnifiedLead {
   quotation?: { amount: number; plan: string; coverage: number; extra: number } | null;
   /** A plan chosen on the entry form that has no quotation yet (it becomes a proposal on Send Draft). */
   pendingPlan?: string | null;
+  /** Underwriting hold on this lead's case: the process is paused until the hold is removed. */
+  onHold?: boolean;
+  holdReason?: string | null;
+  holdCaseId?: string | null;
 }
+
+/** "Send Draft" only makes sense for a lead that has no proposal yet. Once it has been sent (a proposal exists, or it has moved on to
+ *  review, underwriting or a policy) the lead's own status says so, and the button is not offered. */
+const canSendDraft = (lead: UnifiedLead) => lead.status !== "DRAFT" && leadStage(lead).step < 2;
 
 const SOURCE_TYPE_LABELS: Record<string, string> = {
   AGENT: "Agent",
@@ -457,17 +465,25 @@ export default function LeadsHubPage() {
         // An open case beats a closed one; Approved beats the rest.
         const CASE_RANK: Record<string, number> = { Closed: 0, Rejected: 1, New: 2, InProgress: 3, "Pending Documents": 3, "Under Review": 4, Approved: 5 };
         const bestCase = new Map<string, string>();
+        const heldCase = new Map<string, { caseId: string; reason: string | null }>();
         const note = (key: string | undefined | null, status: string) => {
           if (!key) return;
           const have = bestCase.get(key);
           if ((CASE_RANK[status] ?? 2) > (have === undefined ? -1 : CASE_RANK[have] ?? 2)) bestCase.set(key, status);
         };
         for (const c of (await listCases(tenantId)) ?? []) {
+          if (c.on_hold) for (const k of [c.customer_id, c.family_group_id, c.organization_id]) if (k) heldCase.set(k, { caseId: c.caseld, reason: c.hold_reason ?? null });
           note(c.customer_id, c.caseStatus);
           note(c.family_group_id, c.caseStatus);
           note(c.organization_id, c.caseStatus);
         }
-        unified.forEach((l) => { l.caseStatus = bestCase.get(l.id) ?? null; });
+        unified.forEach((l) => {
+          l.caseStatus = bestCase.get(l.id) ?? null;
+          const h = heldCase.get(l.id);
+          l.onHold = !!h;
+          l.holdReason = h?.reason ?? null;
+          l.holdCaseId = h?.caseId ?? null;
+        });
       } catch { /* cases unavailable */ }
 
       // 2. Sort by newest first
@@ -544,6 +560,7 @@ export default function LeadsHubPage() {
       case "UNDER_REVIEW": return st.label === "Application under review";
       case "INFO_REQUESTED": return st.label === "Info requested";
       case "UNDERWRITING": return st.label === "In underwriting";
+      case "ON_HOLD": return !!l.onHold;
       case "APPROVED": return st.label === "Approved" || st.step === 5;
       case "REJECTED": return st.tone === "red";
       case "DEAD": return l.status === "NOT_INTERESTED";
@@ -628,6 +645,23 @@ export default function LeadsHubPage() {
       await fetchLeads();
     } catch (err: any) {
       setError(err.response?.data?.detail ?? err.message ?? tx("Failed to update status."));
+    } finally {
+      setActionBusyId(null);
+    }
+  };
+
+  // Take the lead's underwriting case off hold: it continues from the step where it was paused.
+  const handleRemoveHold = async (lead: UnifiedLead) => {
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId || !lead.holdCaseId) return;
+    setActionBusyId(lead.id);
+    setError("");
+    try {
+      await api.post(`/tenants/${tenantId}/cases/${lead.holdCaseId}/release`, {});
+      setNotice(tx("Hold removed for \"{0}\". Underwriting continues from where it stopped.", { 0: lead.name }));
+      await fetchLeads();
+    } catch (err: any) {
+      setError(err.message ?? tx("Could not remove the hold."));
     } finally {
       setActionBusyId(null);
     }
@@ -889,6 +923,7 @@ export default function LeadsHubPage() {
             { id: "UNDER_REVIEW", label: "Under review", dot: "bg-blue-500" },
             { id: "INFO_REQUESTED", label: "Info requested", dot: "bg-amber-400" },
             { id: "UNDERWRITING", label: "Underwriting", dot: "bg-blue-500" },
+            { id: "ON_HOLD", label: "On hold", dot: "bg-amber-400" },
             { id: "APPROVED", label: "Approved / policy", dot: "bg-emerald-500" },
             { id: "REJECTED", label: "Rejected", dot: "bg-rose-500" },
             { id: "DEAD", label: "Not interested", dot: "bg-slate-300" },
@@ -991,6 +1026,7 @@ export default function LeadsHubPage() {
                         onClick={() => handleCardClick(lead)}
                         onMoveInProgress={() => handleMoveInProgress(lead)}
                         onSendDraft={() => handleSendDraft(lead)}
+                        onRemoveHold={() => handleRemoveHold(lead)}
                         onMarkNotInterested={() => handleMarkNotInterested(lead)}
                         onReactivate={() => handleReactivate(lead)}
                         onDelete={isAgent ? undefined : () => handleDeleteLead(lead)}
@@ -1017,6 +1053,7 @@ export default function LeadsHubPage() {
                         onClick={() => handleCardClick(lead)}
                         onMoveInProgress={() => handleMoveInProgress(lead)}
                         onSendDraft={() => handleSendDraft(lead)}
+                        onRemoveHold={() => handleRemoveHold(lead)}
                         onMarkNotInterested={() => handleMarkNotInterested(lead)}
                         onReactivate={() => handleReactivate(lead)}
                         onDelete={isAgent ? undefined : () => handleDeleteLead(lead)}
@@ -1044,6 +1081,7 @@ export default function LeadsHubPage() {
                         onClick={() => handleCardClick(lead)}
                         onMoveInProgress={() => handleMoveInProgress(lead)}
                         onSendDraft={() => handleSendDraft(lead)}
+                        onRemoveHold={() => handleRemoveHold(lead)}
                         onMarkNotInterested={() => handleMarkNotInterested(lead)}
                         onReactivate={() => handleReactivate(lead)}
                         onDelete={isAgent ? undefined : () => handleDeleteLead(lead)}
@@ -1070,6 +1108,7 @@ export default function LeadsHubPage() {
                         onClick={() => handleCardClick(lead)}
                         onMoveInProgress={() => handleMoveInProgress(lead)}
                         onSendDraft={() => handleSendDraft(lead)}
+                        onRemoveHold={() => handleRemoveHold(lead)}
                         onMarkNotInterested={() => handleMarkNotInterested(lead)}
                         onReactivate={() => handleReactivate(lead)}
                         onDelete={isAgent ? undefined : () => handleDeleteLead(lead)}
@@ -1099,7 +1138,6 @@ export default function LeadsHubPage() {
                             <th className="px-6 py-4">{tx("Contact")}</th>
                             <th className="px-6 py-4">{tx("CNIC")}</th>
                             <th className="px-6 py-4">{tx("Date Added")}</th>
-                            <th className="px-6 py-4">{tx("Quotation")}</th>
                             <th className="px-6 py-4">{tx("Status")}</th>
                             <th className="px-4 py-4 w-10"></th>
                             <th className="px-6 py-4 text-right">{tx("Actions")}</th>
@@ -1137,26 +1175,6 @@ export default function LeadsHubPage() {
                                 <td className="px-6 py-4 text-slate-500 font-mono text-xs">{lead.primaryIdentifier || "-"}</td>
                                 <td className="px-6 py-4 text-slate-500 text-xs">{displayDate(lead.created_at)}</td>
                                 <td className="px-6 py-4">
-                                  {lead.quotation ? (
-                                    <div title={`${lead.quotation.plan} · ${tx("Coverage")} ${tx("PKR")} ${lead.quotation.coverage.toLocaleString()}`}>
-                                      <div className="font-semibold text-slate-900">
-                                        {tx("PKR")} {Math.round(lead.quotation.amount).toLocaleString()}{" "}
-                                        <span className="text-[11px] font-medium text-slate-400">/ {tx("yr")}</span>
-                                      </div>
-                                      <div className="max-w-[200px] truncate text-xs text-slate-500">
-                                        {lead.quotation.plan}{lead.quotation.extra > 0 ? ` · +${lead.quotation.extra} ${tx("more")}` : ""}
-                                      </div>
-                                    </div>
-                                  ) : lead.pendingPlan ? (
-                                    <div>
-                                      <div className="text-xs font-semibold text-slate-500">{tx("Not quoted yet")}</div>
-                                      <div className="max-w-[200px] truncate text-xs text-slate-400">{lead.pendingPlan}</div>
-                                    </div>
-                                  ) : (
-                                    <span className="text-slate-300">—</span>
-                                  )}
-                                </td>
-                                <td className="px-6 py-4">
                                   <LeadProgress lead={lead} />
                                 </td>
                                 <td className="px-4 py-4 text-center">
@@ -1189,7 +1207,16 @@ export default function LeadsHubPage() {
                                             {tx("In Progress")}
                                           </button>
                                         )}
-                                        {lead.status !== "DRAFT" && (
+                                        {lead.onHold && (
+                                          <button
+                                            disabled={busy}
+                                            onClick={() => handleRemoveHold(lead)}
+                                            className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                                          >
+                                            {tx("Remove Hold")}
+                                          </button>
+                                        )}
+                                        {canSendDraft(lead) && (
                                           <button
                                             disabled={busy}
                                             onClick={() => handleSendDraft(lead)}
@@ -1387,6 +1414,7 @@ function LeadCard({
   busy,
   onMoveInProgress,
   onSendDraft,
+  onRemoveHold,
   onMarkNotInterested,
   onReactivate,
   onDelete,
@@ -1396,6 +1424,7 @@ function LeadCard({
   busy: boolean;
   onMoveInProgress: () => void;
   onSendDraft: () => void;
+  onRemoveHold: () => void;
   onMarkNotInterested: () => void;
   onReactivate: () => void;
   onDelete?: () => void;
@@ -1469,7 +1498,12 @@ function LeadCard({
                 {tx("In Progress")}
               </button>
             )}
-            {lead.status !== "DRAFT" && (
+            {lead.onHold && (
+              <button disabled={busy} onClick={act(onRemoveHold)} className={`${btnBase} text-blue-700 bg-blue-50 hover:bg-blue-100`}>
+                {tx("Remove Hold")}
+              </button>
+            )}
+            {canSendDraft(lead) && (
               <button disabled={busy} onClick={act(onSendDraft)} className={`${btnBase} text-blue-700 bg-blue-50 hover:bg-blue-100`}>
                 {tx("Send Draft")}
               </button>

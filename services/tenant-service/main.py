@@ -39,6 +39,7 @@ import re
 from uuid import UUID
 
 from fastapi import FastAPI, Request
+from case_hold import refuse_writes_on_held_case
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -193,6 +194,10 @@ app = FastAPI(
 
 _WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 _TENANT_RESOURCE = re.compile(r"^/tenants/([0-9a-fA-F-]{36})/([A-Za-z][\w-]*)")
+
+
+# Underwriting hold: a held case refuses every write (case_hold.py).
+app.middleware("http")(refuse_writes_on_held_case)
 
 
 @app.middleware("http")

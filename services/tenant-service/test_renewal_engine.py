@@ -66,11 +66,10 @@ def test_quarterly_grid_does_not_duplicate_the_seeded_year():
     assert c["amount"] == 45_000.0 and c["installment_no"] == 5
 
 
-def test_monthly_next_is_next_month():
-    rows = [_row(add := eng.add_months(EFFECTIVE, i), amount=15_000.0, status="Paid", paid=15_000.0,
-                 freq="Monthly", no=i + 1) for i in range(12)]
+def test_half_yearly_next_is_six_months_on():
+    rows = [_row(eng.add_months(EFFECTIVE, 6 * i), amount=90_000.0, status="Paid", paid=90_000.0, freq="SemiAnnual", no=i + 1) for i in range(2)]
     c = eng.plan_premium_cycle(rows=rows, effective_date=EFFECTIVE, maturity_date=None, annual_premium=180_000.0, today=TODAY)
-    assert c["due_date"] == date(2027, 10, 12) and c["amount"] == 15_000.0
+    assert c["due_date"] == date(2027, 10, 12) and c["amount"] == 90_000.0
 
 
 def test_term_complete_when_next_due_reaches_maturity():

@@ -712,7 +712,7 @@ class RemindBody(BaseModel):
 
 
 class RestructureBody(BaseModel):
-    frequency: str                     # Annual | SemiAnnual | Quarterly | Monthly
+    frequency: str                     # Annual | SemiAnnual (half-yearly) | Quarterly
     actor: Optional[str] = None
 
 
@@ -1263,7 +1263,7 @@ async def demo_seed_premiums(
 
 # ── Receipts, reminder history, restructuring & lapse-warning letter ──────────
 
-_PER_YEAR = {"Annual": 1, "SemiAnnual": 2, "Quarterly": 4, "Monthly": 12}
+_PER_YEAR = {"Annual": 1, "SemiAnnual": 2, "Quarterly": 4}   # no monthly collection
 
 
 @router.get("/tenants/{tenant_id}/policies/{policy_id}/premiums/reminders")
@@ -1320,6 +1320,47 @@ async def download_receipt(
                         filename=f"{receipt.receipt_no}.pdf")
 
 
+def _restructure_plan(annual: float, paid: list, frequency: str, today: date) -> dict:
+    """The single calculation behind both the preview and the real restructure: what is still owed (annual premium less what was
+    collected) split evenly into the chosen cadence, the first instalment absorbing any rounding."""
+    n = _PER_YEAR[frequency]
+    collected = round(sum(s.amount_paid for s in paid), 2)
+    remaining = round(max(annual - collected, 0.0), 2)
+    per = round(remaining / n, 2)
+    step = 365 // n
+    start_no = max((s.installment_no for s in paid), default=0) + 1
+    rows = [{"installment_no": start_no + i, "due_date": today + timedelta(days=step * i),
+             "amount": round(remaining - per * (n - 1), 2) if i == 0 else per} for i in range(n)]
+    return {"frequency": frequency, "annual_premium": round(annual, 2), "collected": collected, "remaining": remaining,
+            "installments": n, "per_installment": per, "rows": rows}
+
+
+async def _restructure_inputs(session: AsyncSession, policy: Policy):
+    rows = (await session.exec(select(PremiumSchedule).where(PremiumSchedule.policy_id == policy.id))).all()
+    version = (await session.exec(
+        select(PolicyVersion).where(PolicyVersion.policy_id == policy.id)
+        .order_by(PolicyVersion.created_at.desc())  # type: ignore[arg-type]
+    )).first()
+    annual = version.total_premium if version else sum(s.amount_due for s in rows)
+    paid = [s for s in rows if s.status == PremiumScheduleStatusEnum.PAID]
+    return rows, annual, paid
+
+
+@router.get("/tenants/{tenant_id}/policies/{policy_id}/premiums/restructure-preview")
+async def restructure_preview(
+    tenant_id: UUID, policy_id: UUID, frequency: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """What restructuring to `frequency` would produce — computed by the same code as the real restructure, saves nothing."""
+    policy = await _get_policy(session, tenant_id, policy_id)
+    if frequency not in _PER_YEAR:
+        raise HTTPException(422, "Premium collection is available Annually, Half Year or Quarterly only.")
+    _, annual, paid = await _restructure_inputs(session, policy)
+    plan = _restructure_plan(annual, paid, frequency, date.today())
+    plan["rows"] = [{**r, "due_date": r["due_date"].isoformat()} for r in plan["rows"]]
+    return plan
+
+
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/premiums/restructure")
 async def restructure_plan(
     tenant_id: UUID, policy_id: UUID,
@@ -1332,36 +1373,22 @@ async def restructure_plan(
     policy = await _get_policy(session, tenant_id, policy_id)
     _assert_in_force(policy)
     if body.frequency not in _PER_YEAR:
-        raise HTTPException(400, f"Unknown frequency '{body.frequency}'")
+        raise HTTPException(422, "Premium collection is available Annually, Half Year or Quarterly only.")
 
-    rows = (await session.exec(select(PremiumSchedule).where(PremiumSchedule.policy_id == policy_id))).all()
-    version = (await session.exec(
-        select(PolicyVersion).where(PolicyVersion.policy_id == policy_id)
-        .order_by(PolicyVersion.created_at.desc())  # type: ignore[arg-type]
-    )).first()
-    annual = version.total_premium if version else sum(s.amount_due for s in rows)
-
-    paid = [s for s in rows if s.status == PremiumScheduleStatusEnum.PAID]
-    collected = round(sum(s.amount_paid for s in paid), 2)
-    remaining = round(max(annual - collected, 0.0), 2)
+    rows, annual, paid = await _restructure_inputs(session, policy)
+    plan = _restructure_plan(annual, paid, body.frequency, date.today())
+    remaining, n = plan["remaining"], plan["installments"]
 
     for s in rows:
         if s.status != PremiumScheduleStatusEnum.PAID:
             await session.delete(s)
 
-    n = _PER_YEAR[body.frequency]
-    per = round(remaining / n, 2) if n else remaining
-    step = 365 // n if n else 365
-    today = date.today()
-    start_no = (max((s.installment_no for s in paid), default=0)) + 1
-    for i in range(n):
-        amount = round(remaining - per * (n - 1), 2) if i == 0 else per
+    for r in plan["rows"]:
         session.add(PremiumSchedule(
             policy_id=policy_id, policy_version_id=policy.current_version_id,
             billing_frequency=BillingFrequencyEnum(body.frequency),
-            due_date=today + timedelta(days=step * i),
-            amount_due=amount, amount_paid=0.0,
-            status=PremiumScheduleStatusEnum.PENDING, installment_no=start_no + i,
+            due_date=r["due_date"], amount_due=r["amount"], amount_paid=0.0,
+            status=PremiumScheduleStatusEnum.PENDING, installment_no=r["installment_no"],
         ))
 
     event = record_event(session, policy, event_type="PaymentPlanRestructured",

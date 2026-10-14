@@ -1185,6 +1185,11 @@ class CaseRead(BaseModel):
     slaDeadline:      Optional[datetime] = None
     escalationLevel:  int
     parentCaseld:     Optional[UUID] = None
+    on_hold:          bool = False
+    hold_reason:      Optional[str] = None
+    held_at:          Optional[datetime] = None
+    held_by:          Optional[str] = None
+    held_from_status: Optional[str] = None
 
     # Enrichment — only populated by GET /cases (the Underwriting queue);
     # None on create/update/get-single responses, which return the bare Case row.
@@ -1210,6 +1215,14 @@ class CaseRead(BaseModel):
 
 class CaseStatusUpdate(BaseModel):
     status: CaseStatusEnum
+
+
+class CaseHoldBody(BaseModel):
+    reason: str = Field(min_length=3, max_length=1000)
+
+
+class CaseReleaseBody(BaseModel):
+    note: Optional[str] = Field(default=None, max_length=1000)
 
 class CaseAssignmentCreate(BaseModel):
     assignedToUserld: UUID

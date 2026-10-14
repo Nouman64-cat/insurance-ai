@@ -1708,6 +1708,14 @@ class Case(SQLModel, table=True):
     escalationLevel: int = Field(default=0)
     parentCaseld: Optional[UUID] = Field(default=None, foreign_key="cases.caseld", nullable=True)
 
+    # Underwriting HOLD. While on_hold the whole process is frozen exactly where it stands: caseStatus and every step already
+    # done are kept (so releasing resumes from the same point), and every write to the case is refused (see main.py).
+    on_hold: bool = Field(default=False, index=True)
+    hold_reason: Optional[str] = Field(default=None, max_length=1000, nullable=True)
+    held_at: Optional[datetime] = Field(default=None, nullable=True)
+    held_by: Optional[str] = Field(default=None, max_length=255, nullable=True)
+    held_from_status: Optional[str] = Field(default=None, max_length=50, nullable=True)
+
     # Relationships
     customer: Optional["Customer"] = Relationship(back_populates="cases")
     policy: Optional["Policy"] = Relationship(back_populates="cases")
@@ -2220,7 +2228,6 @@ class BillingFrequencyEnum(str, Enum):
     ANNUAL = "Annual"
     SEMI_ANNUAL = "SemiAnnual"
     QUARTERLY = "Quarterly"
-    MONTHLY = "Monthly"
 
 
 class PremiumScheduleStatusEnum(str, Enum):

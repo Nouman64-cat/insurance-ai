@@ -47,7 +47,7 @@ const en = {
   "policyStatus.active": "Active", "policyStatus.reinstated": "Reinstated", "policyStatus.grace_period": "Grace period", "policyStatus.lapsed": "Lapsed",
   "policyStatus.cancelled": "Cancelled", "policyStatus.pending_issuance": "Pending issuance", "policyStatus.issued": "Issued", "policyStatus.expired": "Expired",
   "policyStatus.matured": "Matured", "policyStatus.surrendered": "Surrendered", "policyStatus.unknown": "Unknown",
-  "frequency.Annual": "year", "frequency.SemiAnnual": "half-year", "frequency.Quarterly": "quarter", "frequency.Monthly": "month",
+  "frequency.Annual": "year", "frequency.SemiAnnual": "half-year", "frequency.Quarterly": "quarter",
   "insuranceType.TERM_LIFE": "Term life", "insuranceType.WHOLE_LIFE": "Whole life", "insuranceType.ENDOWMENT": "Endowment", "insuranceType.CHILD_EDUCATION_MARRIAGE": "Child education & marriage",
   "insuranceType.GROUP_LIFE": "Group life", "insuranceType.SAVINGS": "Savings", "insuranceType.SINGLE_PREMIUM": "Single premium", "insuranceType.HEALTH_CASH": "Health cash",
   "insuranceType.FAMILY_FLOATER": "Family floater",
