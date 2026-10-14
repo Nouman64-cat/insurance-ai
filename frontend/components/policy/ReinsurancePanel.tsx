@@ -10,6 +10,15 @@ import { tx } from "@/lib/i18n/tx";
 const fmtPKR = (n: number | null | undefined) =>
   n == null ? "-" : `PKR ${Math.round(n).toLocaleString()}`;
 
+// "PKR 45.6M" — the full figure is in the element's title.
+const fmtShort = (n: number | null | undefined) => {
+  if (n == null) return "-";
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `PKR ${+(n / 1_000_000).toFixed(abs >= 10_000_000 ? 1 : 2)}M`;
+  if (abs >= 1_000) return `PKR ${+(n / 1_000).toFixed(1)}K`;
+  return `PKR ${Math.round(n)}`;
+};
+
 interface ReinsurancePanelProps {
   policyId: string;
   onChanged?: () => void;
@@ -137,194 +146,183 @@ export function ReinsurancePanel({ policyId, onChanged }: ReinsurancePanelProps)
 
   const { cession, referral, panel, expected_terms } = data;
   const refStatus = referral?.status ?? (cession.referral_required ? "Required" : "NotRequired");
+  const total = cession.total_sum_assured || 1;
+  const slices = [
+    { key: "retained", label: tx("Retained"), amount: cession.retained_amount, note: tx("Limit {0}", { 0: fmtShort(cession.retention_limit) }), bar: "bg-slate-400", dot: "bg-slate-400" },
+    { key: "treaty", label: tx("Treaty"), amount: cession.treaty_ceded_amount, note: tx("Cap {0}", { 0: fmtShort(cession.treaty_capacity) }), bar: "bg-blue-500", dot: "bg-blue-500" },
+    { key: "fac", label: tx("Facultative"), amount: cession.facultative_ceded_amount, note: tx("{0}% of cover", { 0: cession.cession_pct }), bar: "bg-indigo-600", dot: "bg-indigo-600" },
+  ];
+  const statusTone =
+    refStatus === "Accepted" ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+      : ["Submitted", "Quoted", "Required"].includes(refStatus) ? "bg-amber-50 text-amber-700 ring-amber-200"
+        : "bg-slate-100 text-slate-600 ring-slate-200";
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-      {/* Header */}
-      <div className="px-6 py-4.5 bg-slate-50/70 border-b border-slate-100 flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700 font-black text-xs shrink-0">
-            {tx("RE")}
-          </div>
+    <div className="space-y-4">
+      {err && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">{err}</div>}
+      {success && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-700">{success}</div>}
+
+      {/* Where the cover sits: one bar for the whole sum assured */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <h3 className="font-bold text-slate-900 text-sm">
-                {tx("Facultative Reinsurance Referral")}
-              </h3>
-              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border shrink-0 ${
-                refStatus === "Accepted" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-                refStatus === "Submitted" || refStatus === "Quoted" ? "bg-amber-50 text-amber-700 border-amber-200" :
-                refStatus === "Required" ? "bg-amber-50 text-amber-700 border-amber-200" :
-                "bg-slate-100 text-slate-600 border-slate-200"
-              }`}>
-                {refStatus}
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              {tx("Cession positioning, risk placement with Munich Re / Swiss Re / Hannover Re & terms integration.")}
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{tx("Risk placement")}</p>
+            <p className="mt-0.5 text-lg font-bold text-slate-900" title={fmtPKR(cession.total_sum_assured)}>
+              {fmtShort(cession.total_sum_assured)} <span className="text-xs font-medium text-slate-400">{tx("sum assured")}</span>
             </p>
           </div>
+          <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ${statusTone}`}>
+            {refStatus === "NotRequired" ? tx("Not required") : tx(refStatus)}
+          </span>
         </div>
-      </div>
-
-      <div className="p-6 space-y-6">
-        {err && <div className="p-3.5 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs font-semibold">{err}</div>}
-        {success && <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-xs font-semibold">{success}</div>}
-
-        {/* Cession Math Breakdown — 4 balanced cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-slate-50/80 border border-slate-200/80 rounded-xl p-4 flex flex-col justify-between">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap truncate">{tx("Sum Assured")}</p>
-            <p className="font-extrabold text-slate-900 text-base mt-1.5">{fmtPKR(cession.total_sum_assured)}</p>
-            <p className="text-[11px] text-slate-400 font-mono mt-1">{tx("Total policy sum")}</p>
-          </div>
-          <div className="bg-slate-50/80 border border-slate-200/80 rounded-xl p-4 flex flex-col justify-between">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap truncate">{tx("Retained Capacity")}</p>
-            <p className="font-extrabold text-slate-800 text-base mt-1.5">{fmtPKR(cession.retained_amount)}</p>
-            <p className="text-[11px] text-slate-400 font-mono mt-1 truncate">{tx("Limit:")}{" "}{fmtPKR(cession.retention_limit)}</p>
-          </div>
-          <div className="bg-slate-50/80 border border-slate-200/80 rounded-xl p-4 flex flex-col justify-between">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap truncate">{tx("Treaty Cession")}</p>
-            <p className="font-extrabold text-slate-800 text-base mt-1.5">{fmtPKR(cession.treaty_ceded_amount)}</p>
-            <p className="text-[11px] text-slate-400 font-mono mt-1 truncate">{tx("Treaty cap:")}{" "}{fmtPKR(cession.treaty_capacity)}</p>
-          </div>
-          <div className={`border rounded-xl p-4 flex flex-col justify-between ${cession.facultative_ceded_amount > 0 ? "bg-indigo-50/50 border-indigo-200" : "bg-slate-50/80 border-slate-200/80"}`}>
-            <p className="text-xs font-bold text-indigo-700 uppercase tracking-wider whitespace-nowrap truncate">{tx("Facultative Cession")}</p>
-            <p className="font-extrabold text-indigo-900 text-base mt-1.5">{fmtPKR(cession.facultative_ceded_amount)}</p>
-            <p className="text-[11px] text-indigo-600 font-mono mt-1">{tx("Cession:")}{" "}{cession.cession_pct}%</p>
-          </div>
+        <div className="mt-3 flex h-3 w-full overflow-hidden rounded-full bg-slate-100" role="img"
+          aria-label={slices.map((sl) => `${sl.label} ${fmtPKR(sl.amount)}`).join(", ")}>
+          {slices.map((sl) => sl.amount > 0 && (
+            <div key={sl.key} className={`${sl.bar} h-full first:rounded-l-full last:rounded-r-full`} style={{ width: `${(sl.amount / total) * 100}%` }} />
+          ))}
         </div>
-
-        {/* AI Expected Terms Hint */}
-        {expected_terms && expected_terms.drivers && expected_terms.drivers.length > 0 && (
-          <div className="bg-blue-50/70 border border-blue-200/80 rounded-xl p-4 space-y-2 text-xs">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <span className="font-bold text-blue-900 flex items-center gap-1.5 text-xs">
-                <span aria-hidden>🤖</span>{" "}{tx("AI Reinsurance Guidance (")}{expected_terms.basis})
-              </span>
-              <span className="font-mono text-xs font-bold text-blue-700 bg-white px-2.5 py-1 rounded-lg border border-blue-200/80 shrink-0 self-start sm:self-auto">
-                {tx("Expected:")}{" "}{expected_terms.expected_decision} (+{expected_terms.expected_extra_mortality_pct}{tx("% EMR)")}
-              </span>
+        <dl className="mt-3 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))" }}>
+          {slices.map((sl) => (
+            <div key={sl.key} className={`rounded-xl px-3 py-2 ${sl.key === "fac" && sl.amount > 0 ? "bg-indigo-50 ring-1 ring-indigo-100" : "bg-slate-50"}`}>
+              <dt className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500">
+                <span className={`h-2 w-2 rounded-full ${sl.dot}`} />{sl.label}
+              </dt>
+              <dd className={`mt-0.5 text-sm font-bold ${sl.key === "fac" && sl.amount > 0 ? "text-indigo-900" : "text-slate-800"}`} title={fmtPKR(sl.amount)}>
+                {fmtShort(sl.amount)}
+              </dd>
+              <dd className="text-[10px] text-slate-400">{sl.note}</dd>
             </div>
-            <ul className="list-disc pl-4 text-blue-800 space-y-1 text-xs">
-              {expected_terms.drivers.map((d, i) => (
-                <li key={i}>{d}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+          ))}
+        </dl>
+      </section>
 
-        {/* Existing Referral Details */}
-        {referral ? (
-          <div className="border border-slate-200 rounded-xl p-4 space-y-4 bg-slate-50/40">
-            <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-200/60 pb-3">
-              <div>
-                <p className="text-xs font-bold text-slate-800">
-                  {tx("Reinsurer:")}{" "}<span className="text-blue-700 font-black">{referral.reinsurer?.name ?? tx("Reinsurer Panel")}</span>
-                </p>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  {tx("Submitted at:")}{" "}{referral.submitted_at ? new Date(referral.submitted_at).toLocaleString() : tx("Not submitted")}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {referral.status === "Submitted" && (
-                  <>
-                    <button
-                      onClick={() => setShowResponseModal(true)}
-                      disabled={busy}
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-all"
-                    >
-                      {tx("Record Reinsurer Terms")}
-                    </button>
-                    <button
-                      onClick={handleWithdraw}
-                      disabled={busy}
-                      className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 font-bold text-xs rounded-lg hover:bg-slate-100 transition-all"
-                    >
-                      {tx("Withdraw")}
-                    </button>
-                  </>
-                )}
-                {referral.status === "Quoted" && !referral.terms_applied && (
-                  <button
-                    onClick={handleApplyTerms}
-                    disabled={busy}
-                    className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all"
-                  >
-                    {tx("Apply Reinsurer Terms to Policy")}
+      {/* What the AI expects the reinsurer to come back with */}
+      {expected_terms && expected_terms.drivers && expected_terms.drivers.length > 0 && (
+        <section className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="flex items-center gap-1.5 text-sm font-bold text-violet-900">
+              <span aria-hidden>✨</span>{tx("AI reinsurance guidance")}
+            </p>
+            <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-violet-800 ring-1 ring-violet-200">
+              {tx("Expected:")} {expected_terms.expected_decision.replace(/([a-z])([A-Z])/g, "$1 $2")}
+              {expected_terms.expected_extra_mortality_pct ? ` · +${expected_terms.expected_extra_mortality_pct}% EMR` : ""}
+            </span>
+          </div>
+          <ul className="mt-3 space-y-1.5">
+            {expected_terms.drivers.map((d, i) => (
+              <li key={i} className="flex gap-2 text-xs text-slate-700">
+                <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-violet-400" />{d}
+              </li>
+            ))}
+          </ul>
+          {expected_terms.basis && (
+            <p className="mt-3 border-t border-violet-100 pt-2 text-[11px] leading-relaxed text-slate-500">{expected_terms.basis}</p>
+          )}
+        </section>
+      )}
+
+      {referral ? (
+        /* The slip that went out, and what came back */
+        <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{tx("Slip placed with")}</p>
+              <p className="text-sm font-bold text-slate-900">{referral.reinsurer?.name ?? tx("Reinsurer Panel")}</p>
+              <p className="text-[11px] text-slate-500">
+                {referral.submitted_at ? tx("Submitted {0}", { 0: new Date(referral.submitted_at).toLocaleString() }) : tx("Not submitted")}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {referral.status === "Submitted" && (
+                <>
+                  <button onClick={handleWithdraw} disabled={busy}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                    {tx("Withdraw")}
                   </button>
+                  <button onClick={() => setShowResponseModal(true)} disabled={busy}
+                    className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                    {tx("Record Reinsurer Terms")}
+                  </button>
+                </>
+              )}
+              {referral.status === "Quoted" && !referral.terms_applied && (
+                <button onClick={handleApplyTerms} disabled={busy}
+                  className="rounded-lg bg-emerald-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+                  {tx("Apply Reinsurer Terms to Policy")}
+                </button>
+              )}
+            </div>
+          </div>
+          {referral.reinsurer_decision && (
+            <div className="rounded-xl bg-slate-50 p-3 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-semibold text-slate-900">{referral.reinsurer_decision.replace(/([a-z])([A-Z])/g, "$1 $2")}</span>
+                {referral.reinsurer_reference && (
+                  <span className="rounded bg-white px-2 py-0.5 font-mono text-[10px] text-slate-500 ring-1 ring-slate-200">{referral.reinsurer_reference}</span>
                 )}
               </div>
+              <dl className="mt-2 grid gap-x-4 gap-y-1.5 text-[11px] text-slate-600 sm:grid-cols-2">
+                {referral.extra_mortality_pct != null && (
+                  <div><dt className="inline text-slate-400">{tx("EMR loading")}: </dt><dd className="inline font-medium">+{referral.extra_mortality_pct}%</dd></div>
+                )}
+                {referral.extra_premium_per_mille != null && (
+                  <div><dt className="inline text-slate-400">{tx("Extra premium")}: </dt><dd className="inline font-medium">{referral.extra_premium_per_mille} ‰</dd></div>
+                )}
+                {referral.imposed_exclusions && referral.imposed_exclusions.length > 0 && (
+                  <div className="sm:col-span-2"><dt className="inline text-slate-400">{tx("Exclusions")}: </dt><dd className="inline font-medium">{referral.imposed_exclusions.join(", ")}</dd></div>
+                )}
+                {referral.reinsurer_conditions && (
+                  <div className="sm:col-span-2"><dt className="inline text-slate-400">{tx("Conditions")}: </dt><dd className="inline font-medium">{referral.reinsurer_conditions}</dd></div>
+                )}
+              </dl>
             </div>
-
-            {/* Reinsurer Response Details */}
-            {referral.reinsurer_decision && (
-              <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-2 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-900">{tx("Decision:")}{" "}{referral.reinsurer_decision}</span>
-                  {referral.reinsurer_reference && (
-                    <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                      {tx("Ref:")}{" "}{referral.reinsurer_reference}
+          )}
+        </section>
+      ) : (
+        /* Choose a reinsurer and send the slip */
+        <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
+          <p className="text-sm font-bold text-slate-900">{tx("Send the facultative slip")}</p>
+          <fieldset>
+            <legend className="mb-1.5 text-[11px] font-semibold text-slate-500">{tx("Reinsurer")}</legend>
+            <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))" }}>
+              {panel.map((r) => {
+                const chosen = selectedReinsurer === r.id;
+                return (
+                  <label key={r.id}
+                    className={`relative flex cursor-pointer flex-col rounded-xl border px-3 py-2.5 transition-colors ${chosen ? "border-blue-500 bg-blue-50/60 ring-1 ring-blue-500" : "border-slate-200 hover:border-slate-300"}`}>
+                    <input type="radio" name={`reinsurer-${policyId}`} value={r.id} checked={chosen}
+                      onChange={() => setSelectedReinsurer(r.id)} className="sr-only" />
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="truncate text-xs font-bold text-slate-800">{r.name}</span>
+                      {chosen && <span className="text-xs text-blue-600" aria-hidden>●</span>}
                     </span>
-                  )}
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-600">
-                  {referral.extra_mortality_pct != null && (
-                    <p><span className="font-medium text-slate-400">{tx("EMR Loading:")}</span> +{referral.extra_mortality_pct}%</p>
-                  )}
-                  {referral.extra_premium_per_mille != null && (
-                    <p><span className="font-medium text-slate-400">{tx("Extra Premium:")}</span> {referral.extra_premium_per_mille} ‰</p>
-                  )}
-                  {referral.imposed_exclusions && referral.imposed_exclusions.length > 0 && (
-                    <p className="col-span-2"><span className="font-medium text-slate-400">{tx("Exclusions:")}</span> {referral.imposed_exclusions.join(", ")}</p>
-                  )}
-                  {referral.reinsurer_conditions && (
-                    <p className="col-span-2"><span className="font-medium text-slate-400">{tx("Conditions:")}</span> {referral.reinsurer_conditions}</p>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          /* Referral Submission Form */
-          <div className="border border-slate-200 rounded-xl p-4 space-y-4 bg-slate-50/50">
-            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{tx("Submit Slip to Reinsurer Panel")}</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-600 mb-1">{tx("Select Reinsurer")}</label>
-                <select
-                  value={selectedReinsurer}
-                  onChange={(e) => setSelectedReinsurer(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
-                >
-                  {panel.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name} ({r.code}{tx(") — Rating:")}{" "}{r.am_best_rating ?? "A+"} {r.is_lead ? tx("[LEAD TREATY]") : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-600 mb-1">{tx("Underwriter Remarks")}</label>
-                <input
-                  type="text"
-                  placeholder={tx("e.g. Fac placement required due to high sum assured exceeding retention")}
-                  value={referralNote}
-                  onChange={(e) => setReferralNote(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+                    <span className="mt-0.5 text-[10px] text-slate-500">
+                      {r.code} · {tx("Rating")} {r.am_best_rating ?? "—"}
+                    </span>
+                    {r.is_lead && (
+                      <span className="mt-1.5 self-start rounded-full bg-indigo-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-700">
+                        {tx("Lead treaty")}
+                      </span>
+                    )}
+                  </label>
+                );
+              })}
             </div>
-
-            <button
-              onClick={handleRefer}
-              disabled={busy || !selectedReinsurer}
-              className="w-full sm:w-auto px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all disabled:opacity-40"
-            >
-              {busy ? tx("Submitting Slip…") : tx("Submit Slip to Reinsurer")}
+          </fieldset>
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-semibold text-slate-500">{tx("Underwriter remarks")}</span>
+            <textarea rows={2} value={referralNote} onChange={(e) => setReferralNote(e.target.value)}
+              placeholder={tx("e.g. Fac placement required due to high sum assured exceeding retention")}
+              className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-800 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+          </label>
+          <div className="flex justify-end">
+            <button onClick={handleRefer} disabled={busy || !selectedReinsurer}
+              className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:opacity-40">
+              {busy ? tx("Submitting slip…") : tx("Submit slip to {0}", { 0: panel.find((r) => r.id === selectedReinsurer)?.name ?? tx("reinsurer") })}
             </button>
           </div>
-        )}
+        </section>
+      )}
 
         {/* Modal: Record Response */}
         {showResponseModal && (
@@ -429,7 +427,6 @@ export function ReinsurancePanel({ policyId, onChanged }: ReinsurancePanelProps)
             </div>
           </div>
         )}
-      </div>
     </div>
   );
 }

@@ -154,6 +154,8 @@ export interface PolicyEvent {
   from_status: string | null;
   to_status: string | null;
   actor: string;
+  /** Display name when `actor` is a user id; null for system actors. */
+  actor_name?: string | null;
   detail: Record<string, unknown> | null;
   created_at: string;
 }

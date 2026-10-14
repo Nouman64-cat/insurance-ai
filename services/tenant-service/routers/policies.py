@@ -1327,11 +1327,24 @@ async def list_policy_events(
     session: AsyncSession = Depends(get_session),
 ):
     await _get_policy(session, tenant_id, policy_id)
-    result = await session.exec(
+    events = (await session.exec(
         select(PolicyEvent)
         .where(PolicyEvent.policy_id == policy_id)
         .order_by(PolicyEvent.created_at.asc())  # type: ignore[arg-type]
-    )
+    )).all()
+    # Actors are stored as user ids (or "system", "scheduler", …); resolve the
+    # ids to names so the audit trail reads as people, not UUIDs.
+    from shared.models.core import User
+    actor_ids = set()
+    for e in events:
+        try:
+            actor_ids.add(UUID(str(e.actor)))
+        except (ValueError, TypeError):
+            pass
+    names = {
+        str(u.id): u.full_name or u.username or u.email
+        for u in (await session.exec(select(User).where(User.id.in_(actor_ids)))).all()
+    } if actor_ids else {}
     return [
         {
             "id": str(e.id),
@@ -1339,8 +1352,9 @@ async def list_policy_events(
             "from_status": e.from_status,
             "to_status": e.to_status,
             "actor": e.actor,
+            "actor_name": names.get(str(e.actor)),
             "detail": e.detail_json,
             "created_at": e.created_at.isoformat(),
         }
-        for e in result.all()
+        for e in events
     ]

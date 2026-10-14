@@ -20,6 +20,7 @@ import {
   type BillingLedger, type Installment, type EndorsementsOverview, type EndorsementQuote,
 } from "@/app/services/postIssuance";
 import { fmtCoverage } from "@/lib/mock-data";
+import { humanize, eventTitle, eventActor, friendlyTime } from "@/components/policy/eventText";
 import { tx } from "@/lib/i18n/tx";
 import ReinstatementPanel from "@/components/policy/ReinstatementPanel";
 import RenewalsPanel from "@/components/policy/RenewalsPanel";
@@ -1999,11 +2000,11 @@ function PolicyIssuancePanel({
             {events.map((e) => (
               <li key={e.id} className="ml-4">
                 <span className={`absolute -left-[7px] w-3.5 h-3.5 rounded-full ring-4 ring-white ${EVENT_TONE(e.event_type)}`} />
-                <p className="text-xs font-semibold text-slate-800">{e.event_type}</p>
+                <p className="text-xs font-semibold text-slate-800">{eventTitle(e)}</p>
                 <p className="text-[11px] text-slate-500">
-                  {e.from_status && e.to_status ? <>{e.from_status} → {e.to_status} · </> : null}{tx("by")}{" "}{e.actor}
+                  {e.from_status && e.to_status ? <>{humanize(e.from_status)} → {humanize(e.to_status)} · </> : null}{tx("by")}{" "}{eventActor(e)}
                 </p>
-                <p className="text-[10px] text-slate-400">{e.created_at.slice(0, 16).replace("T", " ")}</p>
+                <p className="text-[10px] text-slate-400" title={new Date(e.created_at).toLocaleString()}>{friendlyTime(e.created_at)}</p>
               </li>
             ))}
           </ol>
