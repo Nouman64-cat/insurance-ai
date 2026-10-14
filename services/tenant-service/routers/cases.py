@@ -82,10 +82,10 @@ def _acr_status(status, requested_at, waived_at=None) -> str:
 
 
 def generate_case_number() -> str:
-    # Auto-generate CaseNumber: e.g., CASE-YYYY-XXXXXX
+    # Generate the user-facing application reference: APP-YYYY-XXXXXX
     import uuid
     random_hex = uuid.uuid4().hex[:6].upper()
-    return f"CASE-{datetime.utcnow().year}-{random_hex}"
+    return f"APP-{datetime.utcnow().year}-{random_hex}"
 
 @router.post("", response_model=CaseRead, status_code=201)
 async def create_case(

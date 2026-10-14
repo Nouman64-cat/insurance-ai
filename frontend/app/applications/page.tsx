@@ -197,7 +197,7 @@ export default function ApplicationsPage() {
               {cases.length === 0
                 ? tx("Applications appear here once a case is sent to underwriting.")
                 : segmentCases.length === 0
-                ? tx("Try switching the segment filter to All Cases.")
+                ? tx("Try switching the segment filter to All Applications.")
                 : tx("Try a different customer name, CNIC, or case number.")}
             </p>
           </div>
@@ -263,7 +263,7 @@ export default function ApplicationsPage() {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                            <th className="px-5 py-3 text-left">{tx("Case")}</th>
+                            <th className="px-5 py-3 text-left">{tx("Application")}</th>
                             <th className="px-5 py-3 text-left">{tx("Product")}</th>
                             <th className="px-5 py-3 text-right">{tx("Sum Assured")}</th>
                             <th className="px-5 py-3 text-left">{tx("Status")}</th>

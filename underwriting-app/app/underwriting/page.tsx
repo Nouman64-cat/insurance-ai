@@ -1299,7 +1299,7 @@ function UnderwritingMainContent() {
                             onClick={() => router.push(`/case/${c.caseld}`)}
                             className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-xs hover:shadow transition-all flex items-center gap-1.5 active:scale-[0.98]"
                           >
-                            <span>{tx("View Case Detail")}</span>
+                            <span>{tx("View Application Detail")}</span>
                             <svg
                               className="w-3.5 h-3.5 text-slate-400"
                               viewBox="0 0 24 24"
@@ -2101,7 +2101,7 @@ function UnderwritingMainContent() {
                 </p>
                 <p className="text-xs text-slate-400 mt-1">
                   {tx(
-                    "Cases open automatically when a quotation is proceeded.",
+                    "Applications open automatically when a quotation is proceeded.",
                   )}
                 </p>
               </div>
@@ -2171,8 +2171,8 @@ function UnderwritingMainContent() {
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
                                 {folder.cases.length}{" "}
                                 {folder.cases.length === 1
-                                  ? tx("Case")
-                                  : tx("Cases")}
+                                  ? tx("Application")
+                                  : tx("Applications")}
                               </span>
                             </div>
                           </div>
@@ -2198,7 +2198,7 @@ function UnderwritingMainContent() {
                             <thead>
                               <tr className="border-b border-slate-100 bg-slate-50 font-semibold uppercase tracking-wider text-slate-400">
                                 <th className="px-4 py-2.5 text-left">
-                                  {tx("Case")}
+                                  {tx("Application")}
                                 </th>
                                 <th className="px-4 py-2.5 text-left">
                                   {tx("Product")}

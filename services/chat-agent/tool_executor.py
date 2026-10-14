@@ -791,7 +791,7 @@ async def _get_case_details(args: dict, ctx: Ctx) -> dict:
         "application_stage": stage,
         "navigate": _nav("cases", case_id),
         "quick_actions": [
-            {"label": "View Case", "actionType": "embed", "payload": f"case/{case_id}"},
+            {"label": "View Application", "actionType": "embed", "payload": f"case/{case_id}"},
         ],
     }
 
@@ -1247,7 +1247,7 @@ async def _add_customer(args: dict, ctx: Ctx) -> dict:
         "last_action": _action("add_customer", "customer", cnic or data.get("id", ""), route, f"Customer {name} added"),
         "quick_actions": [
             {"label": "View Lead", "actionType": "navigate", "payload": route},
-            {"label": "Create Case", "actionType": "submit", "payload": f"Create an underwriting case for CNIC {cnic}"},
+            {"label": "Create Application", "actionType": "submit", "payload": f"Create an underwriting case for CNIC {cnic}"},
         ],
     }
 
@@ -1626,7 +1626,7 @@ async def _create_case(args: dict, ctx: Ctx) -> dict:
         # (next step) then appears in the same view.
         "navigate": {"route": f"case/{case_id}", "entity_id": case_id, "highlight": False, "embed": True},
         "quick_actions": [
-            {"label": "View Case", "actionType": "embed", "payload": f"case/{case_id}"},
+            {"label": "View Application", "actionType": "embed", "payload": f"case/{case_id}"},
             {"label": "Create Proposal", "actionType": "submit",
              "payload": f"Create a proposal for CNIC {customer.get('cnic')}"},
         ],
@@ -1653,7 +1653,7 @@ async def _update_case_status(args: dict, ctx: Ctx) -> dict:
     # "embed", not "navigate" — this fires straight out of the underwriting
     # decision flow (Approve/Reject), so it should stay inline in the chat
     # like the rest of that flow rather than popping a new tab.
-    view_case = {"label": "View Case", "actionType": "embed", "payload": f"case/{case_id}"}
+    view_case = {"label": "View Application", "actionType": "embed", "payload": f"case/{case_id}"}
     follow_up = {
         "Under Review": [
             {"label": "Approve", "actionType": "submit", "payload": f"Approve case {case.get('caseNumber')}"},
@@ -1702,7 +1702,7 @@ async def _assign_case(args: dict, ctx: Ctx) -> dict:
         "message": f"**{case.get('caseNumber')}** assigned to **{user.get('full_name')}**.",
         "last_action": _action("assign_case", "case", case_id, route, f"Assigned to {user.get('full_name')}"),
         "quick_actions": [
-            {"label": "View Case", "actionType": "embed", "payload": f"case/{case_id}"},
+            {"label": "View Application", "actionType": "embed", "payload": f"case/{case_id}"},
             {"label": "Start Work", "actionType": "submit",
              "payload": f"Move case {case.get('caseNumber')} to InProgress"},
         ],
@@ -1724,7 +1724,7 @@ async def _add_case_comment(args: dict, ctx: Ctx) -> dict:
         "success": True,
         "message": f"Note added to **{case.get('caseNumber')}**.",
         "last_action": _action("add_case_comment", "case", case_id, route, "Comment added"),
-        "quick_actions": [{"label": "View Case", "actionType": "embed", "payload": f"case/{case_id}"}],
+        "quick_actions": [{"label": "View Application", "actionType": "embed", "payload": f"case/{case_id}"}],
     }
 
 
@@ -1736,7 +1736,7 @@ async def _delete_case(args: dict, ctx: Ctx) -> dict:
     return {
         "success": True,
         "message": f"Deleted case **{case.get('caseNumber')}** and its history.",
-        "quick_actions": [{"label": "View Cases", "actionType": "navigate", "payload": "cases"}],
+        "quick_actions": [{"label": "View Applications", "actionType": "navigate", "payload": "cases"}],
     }
 
 
@@ -3998,7 +3998,7 @@ async def _skip_completed_gates(tool: str, result: dict, ctx: Ctx, args: dict) -
     if not message or not result.get("success", True):
         return result
     try:
-        m = re.search(r"CASE-\d{4}-[A-Z0-9]+", message) or re.search(r"CASE-\d{4}-[A-Z0-9]+", str(args.get("case_number") or ""))
+        m = re.search(r"(?:APP|CASE)-\d{4}-[A-Z0-9]+", message) or re.search(r"(?:APP|CASE)-\d{4}-[A-Z0-9]+", str(args.get("case_number") or ""))
         case_no = m.group(0) if m else None
         if not case_no:
             return result

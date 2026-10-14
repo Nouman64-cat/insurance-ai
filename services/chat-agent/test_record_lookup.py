@@ -139,3 +139,13 @@ def test_every_record_type_has_a_source_and_a_page():
     for record_type in get_args(RecordType):
         assert record_type in tool_executor._RECORD_SOURCES, record_type
         assert page_for_record(record_type), record_type
+
+
+def test_application_reference_lookup_accepts_new_app_prefix():
+    data = {**DATA, ('/cases', None): [
+        {'id': 'k-app', 'caseNumber': 'APP-2026-A3F9C1', 'applicant_name': 'Bilal Ahmed'}
+    ]}
+    res = _run(_HANDLERS['show_record'](
+        {'record_type': 'case', 'identifier': 'APP-2026-A3F9C1'}, _ctx(FakeClient(data))))
+    assert res['success'], res
+    assert 'APP-2026-A3F9C1' in res['message']

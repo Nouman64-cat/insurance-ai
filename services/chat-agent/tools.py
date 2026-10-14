@@ -77,7 +77,7 @@ def show_record(record_type: str, identifier: str) -> str:
     """Find one specific record, navigate to the page that lists it, and visually
     highlight it so the user can see exactly which row it is. Use this whenever
     the user asks to SEE, VIEW, FIND, OPEN or LOCATE a particular record
-    ("show me Ahmed Khan", "where is case CASE-2026-A3F9C1", "check lead
+    ("show me Ahmed Khan", "where is application APP-2026-A3F9C1", "check lead
     IND-2610-003", "pull up that organization"). Prefer this over plain
     navigate_to_page when a specific record is named — it lands on the row,
     not just the list. If the identifier belongs to a different record type

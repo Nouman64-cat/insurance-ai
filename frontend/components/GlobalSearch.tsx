@@ -26,7 +26,7 @@ function SpinnerIcon() {
 
 // Order groups appear in the dropdown + their headings.
 const GROUPS: { type: SearchResultType; label: string }[] = [
-  { type: "case", label: "Cases" },
+  { type: "case", label: "Applications" },
   { type: "customer", label: "Customers" },
   { type: "policy", label: "Policies" },
   { type: "claim", label: "Claims" },

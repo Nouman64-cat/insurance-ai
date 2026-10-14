@@ -222,7 +222,7 @@ function Breadcrumb({ view, customer, caseItem, onGoCustomers, onGoCases }: {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-slate-400 flex-shrink-0">
             <polyline points="9 18 15 12 9 6" />
           </svg>
-          <span className="font-semibold text-slate-800 whitespace-nowrap">{tx("All Cases")}</span>
+          <span className="font-semibold text-slate-800 whitespace-nowrap">{tx("All Applications")}</span>
         </>
       )}
       {customer && view !== "all-cases" && (
@@ -349,9 +349,9 @@ function CreateCaseModal({ customer, onClose, onCreated }: { customer: Customer;
   };
 
   return (
-    <ModalShell title={tx("New Case")} subtitle={tx("Customer: {0}", { 0: customer.name })} onClose={onClose}>
+    <ModalShell title={tx("New Application")} subtitle={tx("Customer: {0}", { 0: customer.name })} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
-        <Field label={tx("Case Type")}>
+        <Field label={tx("Application Type")}>
           <select value={caseType} onChange={e => setCaseType(e.target.value)} className={SELECT}>
             {CASE_TYPE_OPTIONS.map(o => <option key={o}>{o}</option>)}
           </select>
@@ -370,7 +370,7 @@ function CreateCaseModal({ customer, onClose, onCreated }: { customer: Customer;
         <div className="flex justify-end gap-3 pt-2">
           <button type="button" onClick={onClose} className={BTN_GHOST}>{tx("Cancel")}</button>
           <button type="submit" disabled={submitting} className={BTN_PRIMARY}>
-            {submitting ? <SpinnerIcon /> : tx("Create Case")}
+            {submitting ? <SpinnerIcon /> : tx("Create Application")}
           </button>
         </div>
       </form>
@@ -408,7 +408,7 @@ function EditCaseModal({ caseItem, onClose, onSaved }: { caseItem: CaseItem; onC
   };
 
   return (
-    <ModalShell title={tx("Edit Case")} subtitle={caseItem.caseNumber} onClose={onClose}>
+    <ModalShell title={tx("Edit Application")} subtitle={caseItem.caseNumber} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
         <Field label={tx("Priority")}>
           <select value={priority} onChange={e => setPriority(e.target.value)} className={SELECT}>
@@ -534,7 +534,7 @@ function UploadModal({ caseItem, onClose, onUploaded }: { caseItem: CaseItem; on
   };
 
   return (
-    <ModalShell title={tx("Upload Document(s)")} subtitle={tx("Case: {0}", { 0: caseItem.caseNumber })} onClose={onClose}>
+    <ModalShell title={tx("Upload Document(s)")} subtitle={tx("Application: {0}", { 0: caseItem.caseNumber })} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
         <Field label={tx("Default Document Type (for new selections)")}>
           <select value={docType} onChange={e => setDocType(e.target.value)} className={SELECT}>
@@ -1182,7 +1182,7 @@ export default function CasesPage() {
           <div className="relative w-full">
             <input
               type="text"
-              placeholder={tx("Search Case #, Customer Name, CNIC, or Type...")}
+              placeholder={tx("Search Application #, Customer Name, CNIC, or Type...")}
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="w-full h-9 text-xs pl-9 pr-8 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20 text-slate-800 placeholder-slate-400 transition-all font-medium"
@@ -1224,7 +1224,7 @@ export default function CasesPage() {
                     : "text-slate-500 hover:text-slate-800"
                 }`}
               >
-                <span>{tx("All Cases")}</span>
+                <span>{tx("All Applications")}</span>
                 <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-blue-50 text-blue-700 border border-blue-200">
                   {cases.length}
                 </span>
@@ -1240,7 +1240,7 @@ export default function CasesPage() {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
                 <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
               </svg>
-              {tx("New Case")}
+              {tx("New Application")}
             </button>
           )}
           {view === "documents" && activeCase && (
@@ -1265,7 +1265,7 @@ export default function CasesPage() {
                   <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
                   <line x1="12" y1="22.08" x2="12" y2="12" />
                 </svg>
-                {tx("Summarize Case")}
+                {tx("Summarize Application")}
               </button>
               <button onClick={() => setShowUpload(true)} className={BTN_PRIMARY}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
@@ -1341,7 +1341,7 @@ export default function CasesPage() {
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
                         <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
                       </svg>
-                      {tx("New Case")}
+                      {tx("New Application")}
                     </button>
                   }
                 />
@@ -1637,7 +1637,7 @@ export default function CasesPage() {
 
       {deletingCase && (
         <ConfirmDeleteModal
-          title={tx("Delete Case")}
+          title={tx("Delete Application")}
           message={tx("Delete \"{0}\" and all its documents? This cannot be undone.", { 0: deletingCase.caseNumber })}
           onConfirm={handleDeleteCase}
           onCancel={() => setDeletingCase(null)}

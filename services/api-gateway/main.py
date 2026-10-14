@@ -570,10 +570,15 @@ async def public_book_medical_exam(raw_token: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/medical-exam/{raw_token}/book")
 
 
+@app.post("/public/medical-exam/{raw_token}/reports", tags=["Pre-Underwriting"])
+async def public_upload_medical_report(raw_token: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/medical-exam/{raw_token}/reports")
+
+
 @app.post(
     "/public/medical-exam/{raw_token}/complete",
     tags=["Pre-Underwriting"],
-    summary="[Public] Mark examination as completed",
+    summary="[Public] Submit uploaded medical reports for review",
 )
 async def public_complete_medical_exam(raw_token: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/medical-exam/{raw_token}/complete")

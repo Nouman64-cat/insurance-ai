@@ -36,9 +36,9 @@ import hashlib
 import secrets
 from datetime import date, datetime, time, timedelta
 from typing import Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status, UploadFile, File, Form
 from pydantic import BaseModel
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -53,6 +53,7 @@ from services.underwriting_limits import (
     assess_medical_requirement,
 )
 from shared.models.core import (
+    Artifact,
     Case,
     Customer,
     CustomerEApplication,
@@ -306,7 +307,11 @@ def _order_dict(order: Optional[MedicalExamOrder], clinic: Optional[PanelClinic]
 
 async def _order_with_clinic(session: AsyncSession, order: Optional[MedicalExamOrder]) -> dict:
     clinic = await session.get(PanelClinic, order.clinic_id) if (order and order.clinic_id) else None
-    return _order_dict(order, clinic)
+    result = _order_dict(order, clinic)
+    if order:
+        result["reports"] = [_report_view(a) for a in await _uploaded_reports(session, order)]
+        result["reports_submitted"] = bool((order.results_json or {}).get("customer_reports_submitted_at"))
+    return result
 
 
 # ── Adverse disclosures — the override that pulls a sub-NML case into medicals ─
@@ -622,6 +627,15 @@ async def record_medical_result(
     if order.status == MedicalExamStatusEnum.WAIVED:
         raise HTTPException(status_code=409, detail="This medical was waived — reinstate it before recording results.")
 
+    reports = await _uploaded_reports(session, order)
+    if reports:
+        required = {t.get("code") for t in (order.required_tests or [])}
+        processed = {a.document_type.split(": ", 1)[-1] for a in reports if a.status == "Accepted"}
+        if required - processed:
+            raise HTTPException(409, "Wait for readable reports for every required test before recording the medical review.")
+        if body.artifact_id and body.artifact_id not in {a.id for a in reports if a.status == "Accepted"}:
+            raise HTTPException(400, "Choose a processed report uploaded for this examination.")
+
     verdict = medical_findings.evaluate(body.results)
 
     now = datetime.utcnow()
@@ -629,7 +643,7 @@ async def record_medical_result(
     order.outcome = MedicalExamOutcomeEnum(verdict["outcome"])
     order.abnormal_findings = verdict["abnormal_findings"]
     order.suggested_loading_pct = verdict["suggested_loading_pct"]
-    order.result_artifact_id = body.artifact_id
+    order.result_artifact_id = body.artifact_id or (reports[-1].id if reports else None)
     order.reported_by = body.reported_by or user.email
     order.completed_at = now
     order.status = MedicalExamStatusEnum.COMPLETED
@@ -733,6 +747,66 @@ async def _resolve_by_token(session: AsyncSession, raw_token: str) -> MedicalExa
     return order
 
 
+async def _uploaded_reports(session: AsyncSession, order: MedicalExamOrder) -> list:
+    return list((await session.exec(select(Artifact).where(
+        Artifact.source_request_id == order.id,
+        Artifact.tenant_id == order.tenant_id,
+        Artifact.case_id == order.case_id,
+        Artifact.customer_id == order.customer_id,
+    ).order_by(Artifact.created_at))).all())
+
+
+def _report_view(artifact: Artifact) -> dict:
+    return {"id": str(artifact.id), "file_name": artifact.file_name,
+            "test_code": artifact.document_type.split(": ", 1)[-1],
+            "status": artifact.status, "created_at": artifact.created_at.isoformat()}
+
+
+@router.post("/public/medical-exam/{raw_token}/reports", status_code=202)
+async def public_upload_medical_report(
+    raw_token: str, request: Request, test_code: str = Form(...),
+    file: UploadFile = File(...), session: AsyncSession = Depends(get_session),
+):
+    from services.medical_report_uploads import MAX_REPORT_BYTES, validate_report, store_report
+    from shared.events.kafka_events import ArtifactOCRPayload, ArtifactOCRRequestedEvent
+    from routers.artifacts import OCR_TOPIC
+    order = await _resolve_by_token(session, raw_token)
+    if order.status in (MedicalExamStatusEnum.WAIVED, MedicalExamStatusEnum.NOT_REQUIRED, MedicalExamStatusEnum.COMPLETED):
+        raise HTTPException(409, "This examination is closed; contact your agent if another report is needed.")
+    if test_code not in {t.get("code") for t in (order.required_tests or [])}:
+        raise HTTPException(400, "Choose one of the tests required for your examination.")
+    if len(await _uploaded_reports(session, order)) >= 50:
+        raise HTTPException(409, "Report limit reached. Please contact your agent.")
+    data = await file.read(MAX_REPORT_BYTES + 1)
+    filename, mime = validate_report(file.filename, data)
+    artifact_id = uuid4()
+    key = f"{order.tenant_id}/cases/{order.case_id}/{artifact_id}/{filename}"
+    storage_url = await store_report(data, key, mime)
+    artifact = Artifact(id=artifact_id, tenant_id=order.tenant_id, customer_id=order.customer_id,
+                        case_id=order.case_id, source_request_id=order.id, uploaded_by=None,
+                        document_type=f"Medical Report: {test_code}", file_name=filename,
+                        file_size=len(data), file_type=mime, storage_url=storage_url, status="Uploaded")
+    session.add(artifact)
+    result_data = dict(order.results_json or {})
+    result_data.pop("customer_reports_submitted_at", None)
+    order.results_json = result_data
+    order.updated_at = datetime.utcnow()
+    session.add(order)
+    await session.commit()
+    event = ArtifactOCRRequestedEvent(tenant_id=order.tenant_id, payload=ArtifactOCRPayload(
+        artifact_id=artifact.id, tenant_id=order.tenant_id, case_id=order.case_id,
+        s3_key=key, file_name=filename, mime_type=mime))
+    try:
+        await request.app.state.kafka_producer.send_and_wait(OCR_TOPIC, value=event.model_dump_json(), key=str(artifact.id))
+    except Exception:
+        # Persist the file but don't imply it is being processed. The submit
+        # endpoint retries jobs that have not been accepted by the broker.
+        artifact.status = "OCR Pending"
+        session.add(artifact)
+        await session.commit()
+    return {"report": _report_view(artifact)}
+
+
 @router.get("/public/medical-exam/{raw_token}")
 async def public_get_medical_exam(raw_token: str, session: AsyncSession = Depends(get_session)):
     """What the customer sees: which tests, why, how to prepare, and where they
@@ -750,6 +824,8 @@ async def public_get_medical_exam(raw_token: str, session: AsyncSession = Depend
 
     return {
         "status": _v(order.status),
+        "reports": [_report_view(a) for a in await _uploaded_reports(session, order)],
+        "reports_submitted": bool((order.results_json or {}).get("customer_reports_submitted_at")),
         "customer_name": customer.name,
         "customer_city": customer.city,
         "product_name": policy.product_name if policy else None,
@@ -759,7 +835,7 @@ async def public_get_medical_exam(raw_token: str, session: AsyncSession = Depend
         "preparation_notes": _preparation_notes(tests),
         "cost_borne_by_insurer": True,
         "clinics": [_clinic_dict(c) for c in clinics if c.is_active],
-        "slots": _available_slots(fasting),
+        "slots": [],
         "appointment_at": order.appointment_at.isoformat() if order.appointment_at else None,
         "booked_clinic": _clinic_dict(booked_clinic) if booked_clinic else None,
         "home_sampling": order.home_sampling,
@@ -771,10 +847,10 @@ def _preparation_notes(tests: list) -> list[str]:
     notes: list[str] = []
     if any(t.get("fasting") for t in tests):
         notes.append(
-            "Fast for 10–12 hours before your appointment. Water is allowed; no tea, "
+            "Fast for 10–12 hours before sample collection. Water is allowed; no tea, "
             "coffee, juice or food."
         )
-        notes.append("Morning appointments only — fasting samples cannot be drawn in the afternoon.")
+        notes.append("Morning collection is required — fasting samples cannot be drawn in the afternoon.")
     codes = {t.get("code") for t in tests}
     if "TMT" in codes:
         notes.append("Wear comfortable clothes and walking shoes for the treadmill test.")
@@ -798,43 +874,8 @@ async def public_book_medical_exam(
     body: PublicBookRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    order = await _resolve_by_token(session, raw_token)
-    if order.status == MedicalExamStatusEnum.COMPLETED:
-        raise HTTPException(status_code=409, detail="Your medical examination has already been completed.")
-    if order.status == MedicalExamStatusEnum.WAIVED:
-        raise HTTPException(status_code=409, detail="This examination is no longer required.")
-
-    clinic = await session.get(PanelClinic, body.clinic_id)
-    if clinic is None or clinic.tenant_id != order.tenant_id or not clinic.is_active:
-        raise HTTPException(status_code=404, detail="That collection centre is not on our panel.")
-    if body.home_sampling and not clinic.home_sampling:
-        raise HTTPException(status_code=400, detail=f"{clinic.name} does not offer home sample collection.")
-    if body.appointment_at < datetime.utcnow():
-        raise HTTPException(status_code=400, detail="Please choose an appointment time in the future.")
-
-    fasting = any(t.get("fasting") for t in (order.required_tests or []))
-    if fasting and body.appointment_at.hour not in _FASTING_SLOT_HOURS:
-        raise HTTPException(
-            status_code=400,
-            detail="Your test panel requires fasting — please choose a morning appointment.",
-        )
-
-    now = datetime.utcnow()
-    order.clinic_id = clinic.id
-    order.appointment_at = body.appointment_at
-    order.home_sampling = body.home_sampling
-    order.status = MedicalExamStatusEnum.SCHEDULED
-    order.updated_at = now
-    session.add(order)
-    await session.commit()
-
-    return {
-        "status": _v(order.status),
-        "clinic": _clinic_dict(clinic),
-        "appointment_at": order.appointment_at.isoformat(),
-        "home_sampling": order.home_sampling,
-        "fasting_required": fasting,
-    }
+    await _resolve_by_token(session, raw_token)
+    raise HTTPException(status_code=410, detail="Appointment booking is not available on this portal. Contact an approved centre directly and upload your reports here.")
 
 
 @router.post("/public/medical-exam/{raw_token}/complete")
@@ -844,45 +885,39 @@ async def public_complete_medical_exam(
     session: AsyncSession = Depends(get_session),
 ):
     order = await _resolve_by_token(session, raw_token)
-    if order.status == MedicalExamStatusEnum.WAIVED:
-        raise HTTPException(status_code=409, detail="This examination is no longer required (waived).")
+    if order.status in (MedicalExamStatusEnum.WAIVED, MedicalExamStatusEnum.NOT_REQUIRED, MedicalExamStatusEnum.COMPLETED):
+        raise HTTPException(status_code=409, detail="This examination is closed. Please contact your agent.")
 
+    from routers.artifacts import OCR_TOPIC
+    from shared.events.kafka_events import ArtifactOCRPayload, ArtifactOCRRequestedEvent
+    reports = await _uploaded_reports(session, order)
+    required = {t.get("code") for t in (order.required_tests or [])}
+    provided = {a.document_type.split(": ", 1)[-1] for a in reports
+                if a.status not in ("Rejected", "Re-submission Requested")}
+    if not required or required - provided:
+        raise HTTPException(409, "Upload a report for every required test before submitting.")
+    for artifact in reports:
+        if artifact.status == "OCR Pending":
+            key = f"{order.tenant_id}/cases/{order.case_id}/{artifact.id}/{artifact.file_name}"
+            event = ArtifactOCRRequestedEvent(tenant_id=order.tenant_id, payload=ArtifactOCRPayload(
+                artifact_id=artifact.id, tenant_id=order.tenant_id, case_id=order.case_id,
+                s3_key=key, file_name=artifact.file_name, mime_type=artifact.file_type))
+            try:
+                await request.app.state.kafka_producer.send_and_wait(OCR_TOPIC, value=event.model_dump_json(), key=str(artifact.id))
+            except Exception as exc:
+                raise HTTPException(503, "Reports are saved, but processing is temporarily unavailable. Please retry submitting.") from exc
+            artifact.status = "Uploaded"
+            session.add(artifact)
     now = datetime.utcnow()
-    order.status = MedicalExamStatusEnum.COMPLETED
-    order.completed_at = now
-    order.outcome = MedicalExamOutcomeEnum.NORMAL
-    order.reported_by = "Panel Diagnostic Center"
-    order.results_json = {"standard_panel": "normal", "fasting_blood_sugar": "normal", "urinalysis": "normal"}
+    order.result_artifact_id = reports[-1].id
+    order.results_json = {**(order.results_json or {}), "customer_reports_submitted_at": now.isoformat()}
     order.updated_at = now
     session.add(order)
-
-    # If associated with a policy, satisfy the Stage A medical report requirement
-    if order.policy_id:
-        req_stmt = select(PolicyRequirement).where(
-            PolicyRequirement.policy_id == order.policy_id,
-            PolicyRequirement.requirement_type == RequirementTypeEnum.MEDICAL_REPORT,
-        )
-        req = (await session.exec(req_stmt)).first()
-        if req is not None and req.status != RequirementStatusEnum.WAIVED:
-            req.status = RequirementStatusEnum.VERIFIED
-            req.submitted_at = req.submitted_at or now
-            req.verified_at = now
-            req.note = "Panel medical completed and verified."
-            session.add(req)
-
     await session.commit()
-    await session.refresh(order)
-
-    await publish_case_event(
-        request, session,
-        event_type="MedicalExamCompleted",
-        tenant_id=order.tenant_id, case_id=order.case_id, customer_id=order.customer_id,
-        detail={"outcome": _v(order.outcome), "source": "clinic"},
-    )
-    return {
-        "status": _v(order.status),
-        "completed_at": order.completed_at.isoformat() if order.completed_at else None,
-        "outcome": _v(order.outcome) if order.outcome else None,
-    }
-
-
+    # Customer submission is evidence, not a clinical verdict. Only staff's
+    # record_medical_result can complete the gate and rate the findings.
+    await publish_case_event(request, session, event_type="MedicalReportsSubmitted",
+                             tenant_id=order.tenant_id, case_id=order.case_id, customer_id=order.customer_id,
+                             detail={"report_count": len(reports)})
+    return {"status": _v(order.status), "reports_submitted": True,
+            "message": "Your reports have been submitted for medical review."}

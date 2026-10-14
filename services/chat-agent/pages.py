@@ -38,7 +38,7 @@ PAGES: list[Page] = [
     # ── Main ────────────────────────────────────────────────────────────────
     Page("dashboard", "Dashboard", "Management intelligence overview — KPIs, risk index, fraud alerts.", path=""),
     Page("submissions", "Submissions", "Incoming submission queue."),
-    Page("cases", "Cases", "All cases across every workflow stage.", lists="case", highlight_param="case_id"),
+    Page("cases", "Applications", "All applications across every workflow stage.", lists="case", highlight_param="case_id"),
     Page("artifacts", "Artifacts", "Uploaded documents and their OCR/processing status.", lists="artifact"),
     # ── Underwriting ────────────────────────────────────────────────────────
     Page("underwriting", "Underwriting", "Underwriting case queue grouped by customer.", lists="case", highlight_param="case_id"),

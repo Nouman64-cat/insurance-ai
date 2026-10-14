@@ -106,7 +106,7 @@ function routeLabel(route: string): string {
   return (base || "record")
     .split(/[\/\-]/)
     .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .map((w) => w === "case" ? "Application" : w === "cases" ? "Applications" : w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ");
 }
 
@@ -1133,7 +1133,7 @@ function getRecommendedActions(
         actionType: "submit",
         payload: "Check pre-underwriting status",
       },
-      { label: "View Case", actionType: "navigate", payload: "underwriting" },
+      { label: "View Application", actionType: "navigate", payload: "underwriting" },
     ];
   }
   if (
@@ -1151,7 +1151,7 @@ function getRecommendedActions(
         actionType: "submit",
         payload: "Check pre-underwriting status",
       },
-      { label: "View Case", actionType: "navigate", payload: "underwriting" },
+      { label: "View Application", actionType: "navigate", payload: "underwriting" },
     ];
   }
   if (
@@ -1170,7 +1170,7 @@ function getRecommendedActions(
         actionType: "submit",
         payload: "Check pre-underwriting status",
       },
-      { label: "View Case", actionType: "navigate", payload: "underwriting" },
+      { label: "View Application", actionType: "navigate", payload: "underwriting" },
     ];
   }
   if (
@@ -1189,7 +1189,7 @@ function getRecommendedActions(
         actionType: "submit",
         payload: "Check pre-underwriting status",
       },
-      { label: "View Case", actionType: "navigate", payload: "underwriting" },
+      { label: "View Application", actionType: "navigate", payload: "underwriting" },
     ];
   }
   if (text.includes("gate 5") || text.includes("insurance history")) {
@@ -1204,7 +1204,7 @@ function getRecommendedActions(
         actionType: "submit",
         payload: "Check pre-underwriting status",
       },
-      { label: "View Case", actionType: "navigate", payload: "underwriting" },
+      { label: "View Application", actionType: "navigate", payload: "underwriting" },
     ];
   }
   if (
@@ -1224,7 +1224,7 @@ function getRecommendedActions(
         actionType: "submit",
         payload: "Check pre-underwriting status",
       },
-      { label: "View Case", actionType: "navigate", payload: "underwriting" },
+      { label: "View Application", actionType: "navigate", payload: "underwriting" },
     ];
   }
   if (
@@ -2157,7 +2157,7 @@ export function CopilotInterface() {
             );
             setCasePanel({
               url: `${UNDERWRITING_ORIGIN}/case/${next.case_id}?_portal=1`,
-              title: `Case · ${next.name}`,
+              title: `Application · ${next.name}`,
             });
             return;
           }
@@ -3028,7 +3028,7 @@ export function CopilotInterface() {
                   ),
                 );
                 const d = evt.result.ai_decision || "Unknown";
-                finalMessage += `\n✅ **${evt.cnic}**: Case ${evt.caseNumber} opened. Decision: **${d}**`;
+                finalMessage += `\n✅ **${evt.cnic}**: Application ${evt.caseNumber} opened. Decision: **${d}**`;
               }
             } catch (e) {
               console.warn("Failed to parse SSE event", p, e);
@@ -3041,7 +3041,7 @@ export function CopilotInterface() {
           message: finalMessage,
           quick_actions: [
             ...missingUploadActions,
-            { label: "View Cases", actionType: "navigate", payload: "cases" },
+            { label: "View Applications", actionType: "navigate", payload: "cases" },
           ],
         });
       } catch (err: any) {

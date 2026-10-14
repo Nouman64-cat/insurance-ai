@@ -133,6 +133,7 @@ async def collect_document_evidence(session: AsyncSession, tenant_id: UUID, case
             "document_type": a.document_type,
             "ocr_confidence_score": a.ocr_confidence_score,
             "extracted_metadata": a.extracted_metadata or {},
+            "ocr_text": (a.ocr_result or "")[:16000],
         }
         for a in artifacts
     ]

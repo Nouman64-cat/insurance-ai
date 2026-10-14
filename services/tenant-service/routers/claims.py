@@ -68,7 +68,7 @@ async def _generate_claim_number(session: AsyncSession, tenant_id: UUID) -> str:
             seq = 1
     while True:
         candidate = f"CLM-{year}-{seq:04d}"
-        case_num = f"CASE-{candidate}"
+        case_num = f"APP-{candidate}"
         existing_case = (await session.exec(
             select(Case).where(Case.tenant_id == tenant_id, Case.caseNumber == case_num)
         )).first()
@@ -302,7 +302,7 @@ async def open_claim(
         tenant_id=tenant_id,
         customer_id=policy.customer_id,
         policy_id=policy.id,
-        caseNumber=f"CASE-{claim_num}",
+        caseNumber=f"APP-{claim_num}",
         caseType=CaseTypeEnum.CLAIM,
         caseStatus=CaseStatusEnum.NEW,
         priorityLevel=CasePriorityEnum.HIGH if body.submitted_amount > 500000 else CasePriorityEnum.NORMAL,

@@ -2469,7 +2469,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
       await fetchDetail();
       if (newStatus === "Approved") {
         setSuccessMessage(
-          tx("Case successfully approved and forwarded to Issuance Queue."),
+          tx("Application successfully approved and forwarded to Issuance Queue."),
         );
         if (!isGroup) {
           setTimeout(() => router.push(appHref("/policy-issuance")), 1200);
@@ -2645,6 +2645,25 @@ export default function CasePage({ params }: { params: { id: string } }) {
       actionHref: `/underwriting?tab=pre-underwriting&case=${caseId}&gate=eapp&returnTo=${encodeURIComponent(`/case/${caseId}`)}`,
     },
     {
+      id: "medical",
+      title: "Medical Examination / NML Grid",
+      done: medicalDone,
+      statusLabel: medical?.status ?? "Not Assessed",
+      description: medicalDone
+        ? `Medical examination status: ${medical?.status}`
+        : "Non-medical limit grid or panel diagnostic check required.",
+      actionLabel: medBusy
+        ? "Assessing…"
+        : medical?.status === "Scheduled"
+          ? "Record Lab Results"
+          : "Assess Medical",
+      onAction:
+        medical?.status === "Scheduled"
+          ? () => setShowResultModal(true)
+          : handleAssessMedical,
+      busy: medBusy,
+    },
+    {
       id: "acr",
       title: "Agent's Confidential Report (ACR)",
       done: isACRCleared(acr),
@@ -2776,25 +2795,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
             }
           : handleRunHistory,
       busy: histBusy,
-    },
-    {
-      id: "medical",
-      title: "Medical Examination / NML Grid",
-      done: medicalDone,
-      statusLabel: medical?.status ?? "Not Assessed",
-      description: medicalDone
-        ? `Medical examination status: ${medical?.status}`
-        : "Non-medical limit grid or panel diagnostic check required.",
-      actionLabel: medBusy
-        ? "Assessing…"
-        : medical?.status === "Scheduled"
-          ? "Record Lab Results"
-          : "Assess Medical",
-      onAction:
-        medical?.status === "Scheduled"
-          ? () => setShowResultModal(true)
-          : handleAssessMedical,
-      busy: medBusy,
     },
   ];
 
@@ -2971,7 +2971,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
         <button
           onClick={() => {
             // Deliberately changes nothing: no status, no decision, no API call. The toast only confirms it.
-            setSuccessMessage("Case left on hold — nothing was changed.");
+            setSuccessMessage("Application left on hold — nothing was changed.");
             window.setTimeout(() => setSuccessMessage(null), 4000);
           }}
           disabled={overriding !== null || userRole === "Agent"}
@@ -3067,7 +3067,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
               {tx("← Dashboard")}
             </Link>
             <span className="text-slate-300">/</span>
-            <span className="text-xs text-slate-400">{tx("Cases")}</span>
+            <span className="text-xs text-slate-400">{tx("Applications")}</span>
             <span className="text-slate-300">/</span>
             <span className="text-xs text-slate-700 font-semibold">
               {c.caseNumber}
@@ -3645,8 +3645,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
                 <DataRow label={tx("Policy Status")} value={policy.status} />
               </Accordion>
 
-              <Accordion title={tx("Case")}>
-                <DataRow label={tx("Case Number")} value={c.caseNumber} />
+              <Accordion title={tx("Application")}>
+                <DataRow label={tx("Application Number")} value={c.caseNumber} />
                 <DataRow label={tx("Type")} value={c.caseType} />
                 <DataRow label={tx("Priority")} value={c.priorityLevel} />
                 <DataRow label={tx("Channel")} value={c.sourceChannel} />
@@ -4627,7 +4627,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                     {tx("AI Underwriting Assessment")}
                   </h2>
                   <p className="text-xs text-slate-500 font-medium mt-0.5">
-                    {tx("Applicant:")} {customer?.name} {tx("·  Case:")}{" "}
+                    {tx("Applicant:")} {customer?.name} {tx("·  Application:")}{" "}
                     {c.caseNumber}
                   </p>
                 </div>
