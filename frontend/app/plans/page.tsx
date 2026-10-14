@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   InsurancePlan,
   InsurancePlanCreate,
@@ -8,11 +8,14 @@ import {
   createInsurancePlan,
   deleteInsurancePlan,
   listInsurancePlans,
+  removePolicyWording,
+  uploadPolicyWording,
   seedDefaultPlans,
   updateInsurancePlan,
 } from "../services/insurancePlans";
 import { Pagination, usePagination } from "@/components/Pagination";
 import { tx } from "@/lib/i18n/tx";
+import PlanSurrenderDetails, { surrenderStatus } from "@/components/PlanSurrenderDetails";
 
 const COLOR_CLASSES: Record<string, { badge: string; accent: string }> = {
   blue: { badge: "bg-blue-50 text-blue-700 border-blue-200", accent: "border-t-blue-500" },
@@ -374,6 +377,21 @@ function PlanCatalog() {
           form={form}
           editingId={editingId}
           docInput={docInput}
+          wording={
+            editingId
+              ? {
+                  filename: plans.find((p) => p.id === editingId)?.policy_wording_filename ?? null,
+                  onUpload: async (file: File) => {
+                    const updated = await uploadPolicyWording(tenantId!, editingId, file);
+                    setPlans((all) => all.map((p) => (p.id === updated.id ? updated : p)));
+                  },
+                  onRemove: async () => {
+                    const updated = await removePolicyWording(tenantId!, editingId);
+                    setPlans((all) => all.map((p) => (p.id === updated.id ? updated : p)));
+                  },
+                }
+              : null
+          }
           saving={saving}
           formError={formError}
           onClose={() => setShowModal(false)}
@@ -453,6 +471,7 @@ function PlansTable({ plans, onView }: { plans: InsurancePlan[]; onView: (p: Ins
             <th className="px-4 py-2.5">{tx("Term")}</th>
             <th className="px-4 py-2.5">{tx("Medical Exam Thresholds (PKR)")}</th>
             <th className="px-4 py-2.5">{tx("Status")}</th>
+            <th className="px-4 py-2.5">{tx("Early Exit")}</th>
           </tr>
         </thead>
         <tbody>
@@ -508,6 +527,7 @@ function PlansTable({ plans, onView }: { plans: InsurancePlan[]; onView: (p: Ins
                     {plan.status}
                   </span>
                 </td>
+                <td className="px-4 py-2.5 text-xs text-slate-600">{surrenderStatus(plan.surrender_terms)}</td>
               </tr>
             );
           })}
@@ -538,7 +558,7 @@ function PlanDetailDrawer({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-lg max-h-[90vh] bg-white rounded-xl shadow-2xl overflow-y-auto"
+        className="w-full max-w-5xl max-h-[90vh] bg-white rounded-xl shadow-2xl overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className={`border-t-4 ${colors.accent} p-6 space-y-4`}>
@@ -570,6 +590,9 @@ function PlanDetailDrawer({
 
           <p className="text-sm text-slate-600 leading-relaxed">{plan.description}</p>
 
+          {/* Two columns on wide screens so the long surrender terms don't push everything into a scroll. */}
+          <div className="grid items-start gap-x-8 gap-y-4 lg:grid-cols-2">
+          <div className="min-w-0 space-y-4">
           <div className="pt-2 border-t border-slate-100">
             <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
               {tx("Plan Details")}
@@ -644,6 +667,12 @@ function PlanDetailDrawer({
             </div>
           )}
 
+          </div>
+          <div className="min-w-0">
+            <PlanSurrenderDetails terms={plan.surrender_terms} />
+          </div>
+          </div>
+
           {isAdmin && (
             <div className="pt-3 border-t border-slate-100 flex items-center gap-2">
               <button
@@ -677,12 +706,85 @@ function PlanDetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+// ── Policy wording (PDF) ──────────────────────────────────────────────────────
+
+function PolicyWordingField({
+  wording,
+}: {
+  wording: { filename: string | null; onUpload: (file: File) => Promise<void>; onRemove: () => Promise<void> };
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const input = useRef<HTMLInputElement | null>(null);
+
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true);
+    setErr("");
+    try {
+      await action();
+    } catch (e: any) {
+      setErr(e?.message ?? tx("Something went wrong. Please try again."));
+    } finally {
+      setBusy(false);
+      if (input.current) input.current.value = "";
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-200 p-4">
+      <label className="block text-xs font-semibold text-slate-600">{tx("Policy wording (PDF)")}</label>
+      <p className="mt-0.5 text-[11px] text-slate-500">
+        {tx("Added to every policy's application dossier for this plan.")}
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {wording.filename ? (
+          <span className="max-w-full truncate rounded-md border border-blue-100 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+            {wording.filename}
+          </span>
+        ) : (
+          <span className="text-xs text-slate-500">{tx("No wording uploaded yet")}</span>
+        )}
+        <input
+          ref={input}
+          type="file"
+          accept="application/pdf,.pdf"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void run(() => wording.onUpload(file));
+          }}
+        />
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => input.current?.click()}
+          className="rounded-lg border border-blue-600 px-3 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-40"
+        >
+          {busy ? tx("Uploading…") : wording.filename ? tx("Replace") : tx("Upload PDF")}
+        </button>
+        {wording.filename && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void run(wording.onRemove)}
+            className="px-2 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 disabled:opacity-40"
+          >
+            {tx("Remove")}
+          </button>
+        )}
+      </div>
+      {err && <p role="alert" className="mt-2 text-xs text-slate-800">{err}</p>}
+    </div>
+  );
+}
+
 // ── Form modal ────────────────────────────────────────────────────────────────
 
 function PlanFormModal({
   form,
   editingId,
   docInput,
+  wording,
   saving,
   formError,
   onClose,
@@ -696,6 +798,7 @@ function PlanFormModal({
   form: InsurancePlanCreate;
   editingId: string | null;
   docInput: string;
+  wording: { filename: string | null; onUpload: (file: File) => Promise<void>; onRemove: () => Promise<void> } | null;
   saving: boolean;
   formError: string;
   onClose: () => void;
@@ -891,6 +994,14 @@ function PlanFormModal({
             <label className={labelCls}>{tx("Required Documents (comma-separated)")}</label>
             <input className={inputCls} value={docInput} onChange={(e) => setDocInput(e.target.value)} placeholder={tx("CNIC, Medical Report, Salary Slip")} />
           </div>
+
+          {wording ? (
+            <PolicyWordingField wording={wording} />
+          ) : (
+            <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+              {tx("Save the plan first, then edit it to upload its policy wording.")}
+            </p>
+          )}
 
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
             <button type="button" onClick={onClose} className="text-sm font-semibold px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">

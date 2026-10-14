@@ -106,6 +106,36 @@ MUTATING_TOOLS = {
     "update_incentive_scheme",
     "delete_incentive_scheme",
     "toggle_incentive_scheme_active",
+    # Evidence — emails the customer, re-types an uploaded file, records the
+    # medical review. read_medical_reports writes only the AI reading cache, but
+    # it is kept off SAFE so Viewer and unknown roles never read medical values.
+    "request_missing_documents",
+    "link_document_to_requirement",
+    "read_medical_reports",
+    "record_medical_review",
+    # Re-runs a failed mutation; the target tool's own RBAC is checked again.
+    "resume_operation",
+    # Policy servicing — deliveries, portal access, reminders, contract changes,
+    # renewal / reinstatement / exit requests.
+    "retry_failed_delivery",
+    "provision_portal_access",
+    "send_portal_invitation",
+    "send_premium_reminder",
+    "submit_policy_endorsement",
+    "submit_policy_renewal",
+    "submit_reinstatement_request",
+    "submit_policy_exit_request",
+    # Request Management & Customer Service (those services re-check permissions)
+    "create_service_request",
+    "add_request_attachment",
+    "submit_service_request",
+    "create_support_ticket",
+    "add_ticket_comment",
+    "assign_support_ticket",
+    # Underwriting exceptions & member workflows
+    "request_additional_evidence",
+    "refer_underwriting_review",
+    "resume_member_workflow",
 }
 
 # Read-only + navigation. Never gated, never confirmed — asking "shall I open
@@ -169,6 +199,33 @@ SAFE_TOOLS = {
     "get_commission_summary",
     "list_commission_rules",
     "list_incentive_schemes",
+    # Evidence & recovery (read-only)
+    "get_medical_report_status",
+    "get_operation_status",
+    "get_service_health",
+    "diagnose_connection",
+    # Policy servicing (read-only / previews)
+    "get_policy_delivery_status",
+    "get_onboarding_status",
+    "get_premium_schedule",
+    "get_payment_receipt",
+    "preview_policy_endorsement",
+    "get_endorsement_status",
+    "get_renewal_readiness",
+    "preview_policy_renewal",
+    "get_reinstatement_requirements",
+    "get_reinstatement_status",
+    "preview_policy_exit",
+    "get_exit_status",
+    # Requests, tickets, records, queues (read-only)
+    "get_service_request",
+    "get_support_ticket",
+    "resolve_insurance_record",
+    "preview_application_transition",
+    "get_member_workflow_matrix",
+    "get_claim_blockers",
+    "get_work_queue",
+    "get_workflow_timeline",
 }
 
 # Destructive enough that the confirmation prompt names the record explicitly
@@ -277,6 +334,21 @@ REQUIRED_ARGS: dict[str, list[str]] = {
     # exactly the thing this flow is for. Only upload_claim_document, whose
     # document_type the browser genuinely cannot guess, is required here.
     "upload_claim_document": ["document_type"],
+    "link_document_to_requirement": ["document_type"],
+    "record_medical_review": ["results_json"],
+    "diagnose_connection": ["symptom"],
+    "preview_policy_endorsement": ["endorsement_type"],
+    "submit_policy_endorsement": ["endorsement_type"],
+    "submit_policy_exit_request": ["exit_type"],
+    "create_service_request": ["description"],
+    "add_request_attachment": ["request_reference"],
+    "submit_service_request": ["request_reference"],
+    "create_support_ticket": ["title", "description"],
+    "add_ticket_comment": ["ticket_reference", "comment"],
+    "assign_support_ticket": ["ticket_reference"],
+    "resolve_insurance_record": ["identifier"],
+    "request_additional_evidence": ["evidence"],
+    "refer_underwriting_review": ["reason"],
 }
 
 # Tools that emit progress steps worth showing in the UI's process graph, with
@@ -328,6 +400,52 @@ STEP_LABELS: dict[str, str] = {
     "run_compliance_screening": "Running compliance screening",
     "override_compliance_screening": "Applying compliance override",
     "run_insurance_history_check": "Running insurance history check",
+    "request_missing_documents": "Requesting missing documents",
+    "link_document_to_requirement": "Linking document to requirement",
+    "get_medical_report_status": "Checking medical reports",
+    "read_medical_reports": "Reading medical reports",
+    "record_medical_review": "Recording medical review",
+    "get_operation_status": "Checking operation status",
+    "resume_operation": "Resuming failed step",
+    "get_service_health": "Checking service health",
+    "diagnose_connection": "Diagnosing connection",
+    "get_policy_delivery_status": "Checking policy delivery",
+    "retry_failed_delivery": "Retrying failed delivery",
+    "get_onboarding_status": "Checking onboarding",
+    "provision_portal_access": "Setting up portal access",
+    "send_portal_invitation": "Sending portal invitation",
+    "get_premium_schedule": "Loading premium schedule",
+    "get_payment_receipt": "Fetching receipts",
+    "send_premium_reminder": "Sending premium reminder",
+    "preview_policy_endorsement": "Previewing policy change",
+    "submit_policy_endorsement": "Applying policy change",
+    "get_endorsement_status": "Loading endorsements",
+    "get_renewal_readiness": "Checking renewal readiness",
+    "preview_policy_renewal": "Previewing renewal",
+    "submit_policy_renewal": "Opening renewal",
+    "get_reinstatement_requirements": "Checking reinstatement requirements",
+    "submit_reinstatement_request": "Requesting reinstatement",
+    "get_reinstatement_status": "Checking reinstatement",
+    "preview_policy_exit": "Previewing exit options",
+    "submit_policy_exit_request": "Submitting exit request",
+    "get_exit_status": "Checking exit status",
+    "create_service_request": "Drafting service request",
+    "get_service_request": "Checking service request",
+    "add_request_attachment": "Attaching document",
+    "submit_service_request": "Submitting service request",
+    "create_support_ticket": "Opening support ticket",
+    "get_support_ticket": "Checking support ticket",
+    "add_ticket_comment": "Commenting on ticket",
+    "assign_support_ticket": "Assigning ticket",
+    "resolve_insurance_record": "Resolving record",
+    "preview_application_transition": "Checking allowed transition",
+    "request_additional_evidence": "Requesting additional evidence",
+    "refer_underwriting_review": "Referring for review",
+    "get_member_workflow_matrix": "Building member matrix",
+    "resume_member_workflow": "Resuming member workflow",
+    "get_claim_blockers": "Checking claim blockers",
+    "get_work_queue": "Loading work queue",
+    "get_workflow_timeline": "Loading timeline",
     "assess_medical_examination": "Assessing medical examination requirements",
     "run_pre_underwriting_clearance": "Clearing all pre-underwriting gates",
     # Policy lifecycle (steps 5–7)
@@ -465,6 +583,51 @@ AGENT_ALLOWED_TOOLS = {
     "search_records",
     "get_dashboard_stats",
     "get_workflow_recommendation",
+    # Evidence collection & recovery
+    "request_missing_documents",
+    "link_document_to_requirement",
+    "get_medical_report_status",
+    "get_operation_status",
+    "resume_operation",
+    "get_service_health",
+    "diagnose_connection",
+    # Records & member journeys (pre-underwriting scope, so the field app has them too)
+    "resolve_insurance_record",
+    "preview_application_transition",
+    "get_member_workflow_matrix",
+    "resume_member_workflow",
+    "get_workflow_timeline",
+    # Raising and following requests and tickets
+    "create_service_request",
+    "get_service_request",
+    "add_request_attachment",
+    "submit_service_request",
+    "create_support_ticket",
+    "get_support_ticket",
+    "add_ticket_comment",
+}
+
+# Servicing an issued policy is post-issuance work: Agent on the web portal only.
+# Contract changes, portal credentials and policy exits stay with staff.
+AGENT_WEB_ONLY_TOOLS = {
+    "get_policy_delivery_status",
+    "retry_failed_delivery",
+    "get_onboarding_status",
+    "send_portal_invitation",
+    "get_premium_schedule",
+    "get_payment_receipt",
+    "send_premium_reminder",
+    "preview_policy_endorsement",
+    "get_endorsement_status",
+    "get_renewal_readiness",
+    "preview_policy_renewal",
+    "submit_policy_renewal",
+    "get_reinstatement_requirements",
+    "submit_reinstatement_request",
+    "get_reinstatement_status",
+    "preview_policy_exit",
+    "get_exit_status",
+    "get_work_queue",
 }
 
 # The agent-app mobile client is Agent-only and covers onboarding through
@@ -511,6 +674,7 @@ MOBILE_PORTAL_ONLY_TOOLS = {
     "continue_claim_journey",
     "create_payout_run",
     "approve_payout_run",
+    *AGENT_WEB_ONLY_TOOLS,
 }
 
 
@@ -579,12 +743,41 @@ CLAIMS_ADJUSTER_ALLOWED_TOOLS = CLAIMS_READ_TOOLS | {
     "add_case_comment",
     "get_dashboard_stats",
     "get_workflow_recommendation",
+    "get_operation_status",
+    "resume_operation",
+    "get_service_health",
+    "diagnose_connection",
+    "get_claim_blockers",
+    "get_work_queue",
+    "get_workflow_timeline",
+    "resolve_insurance_record",
+    "create_service_request",
+    "get_service_request",
+    "add_request_attachment",
+    "submit_service_request",
+    "create_support_ticket",
+    "get_support_ticket",
+    "add_ticket_comment",
 }
 
 CLAIMS_MANAGER_ALLOWED_TOOLS = CLAIMS_ADJUSTER_ALLOWED_TOOLS | CLAIMS_MANAGER_ONLY_TOOLS | {
     "get_active_policy_status",
     "list_users",
     "assign_case",
+    # Claims managers are Customer Service staff too (customer-service STAFF roles).
+    "assign_support_ticket",
+}
+
+# Customer Service desk: reads everything a customer may ask about, works its tickets,
+# and handles the routine servicing that needs no underwriting authority.
+CUSTOMER_SERVICE_ALLOWED_TOOLS = SAFE_TOOLS | {
+    "create_support_ticket",
+    "add_ticket_comment",
+    "assign_support_ticket",
+    "retry_failed_delivery",
+    "send_portal_invitation",
+    "send_premium_reminder",
+    "resume_operation",
 }
 
 # What an Underwriter may do beyond SAFE_TOOLS. This is an ALLOW-list: it used
@@ -636,6 +829,29 @@ UNDERWRITER_ALLOWED_TOOLS = SAFE_TOOLS | {
     # adjudicate, disburse, or open an FNOL: that is the adjuster's desk.
     *CLAIMS_READ_TOOLS,
     "resolve_claim_underwriting",
+    # Evidence & medical review — reviewing medical reports is underwriting work.
+    "request_missing_documents",
+    "link_document_to_requirement",
+    "read_medical_reports",
+    "record_medical_review",
+    "resume_operation",
+    # Policy servicing — underwriting staff hold the contractual authority.
+    "retry_failed_delivery",
+    "provision_portal_access",
+    "send_portal_invitation",
+    "send_premium_reminder",
+    "submit_policy_endorsement",
+    "submit_policy_renewal",
+    "submit_reinstatement_request",
+    "submit_policy_exit_request",
+    "create_service_request",
+    "add_request_attachment",
+    "submit_service_request",
+    "create_support_ticket",
+    "add_ticket_comment",
+    "request_additional_evidence",
+    "refer_underwriting_review",
+    "resume_member_workflow",
 }
 
 
@@ -654,7 +870,7 @@ def is_role_allowed(tool_name: str, role: str, platform: str = "web") -> bool:
     if role == "Agent":
         if platform == "mobile":
             return tool_name in AGENT_MOBILE_ALLOWED_TOOLS
-        return tool_name in AGENT_ALLOWED_TOOLS
+        return tool_name in AGENT_ALLOWED_TOOLS or tool_name in AGENT_WEB_ONLY_TOOLS
     if role == "Underwriter":
         if tool_name in ADMIN_ONLY_TOOLS:
             return False
@@ -663,6 +879,8 @@ def is_role_allowed(tool_name: str, role: str, platform: str = "web") -> bool:
         return tool_name in CLAIMS_MANAGER_ALLOWED_TOOLS
     if role == "ClaimsAdjuster":
         return tool_name in CLAIMS_ADJUSTER_ALLOWED_TOOLS
+    if role == "CustomerService":
+        return tool_name in CUSTOMER_SERVICE_ALLOWED_TOOLS
     if role == "Viewer":
         return tool_name in SAFE_TOOLS
     # Unknown role — read-only at most.

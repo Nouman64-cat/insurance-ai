@@ -58,7 +58,8 @@ logger = logging.getLogger(__name__)
 from claims_journey import register_claims_journey
 from group_journey import register_group_journey
 from journey import register_journey
-from toolsets import CORE_TOOLS, select_domains, tool_names_for
+from operations import OPERATION_TOOLS, operation_status_result, plan_resume
+from toolsets import CORE_TOOLS, domains_used, fit_to_cap, matched_domains, select_domains, tool_names_for
 
 # OpenAI's hard limit on tools per request (Gemini has none, but the fallback must fit too).
 MAX_BOUND_TOOLS = 128
@@ -438,6 +439,62 @@ agreements. Prototype mutation/calculator tools return an unavailable result;
 never describe them as having changed a financial record.
 """
 
+DOMAIN_PROMPTS["documents"] = """
+
+## EVIDENCE & MEDICAL REVIEW
+
+- Bind every document action to ONE application. When a tool offers several matching applications as choices, let the user pick; never choose for them.
+- "What's missing / ask the customer for documents" → **request_missing_documents**. Report the email outcome exactly as returned (sent / failed / no email on file) and give the link; never say it was emailed when it was not.
+- A file uploaded under the wrong or a generic type → **link_document_to_requirement**.
+- "Are the medical reports in / ready?" → **get_medical_report_status**.
+- "Read the reports / what do they show?" → **read_medical_reports**. Its values are an AI pre-fill: say nothing has been recorded, show unreadable tests, and ask the user to confirm or correct each value.
+- **record_medical_review** only with values the user stated or explicitly confirmed in this conversation, staff_reviewed=true, and a value for every required test. Never record values taken unconfirmed from read_medical_reports. When the user wants to check reports side by side, use the Review Medical Reports button instead.
+"""
+
+DOMAIN_PROMPTS["servicing"] = """
+
+## SERVICING AN ISSUED POLICY
+
+Identify the policy by policy number, CNIC or policyholder name; if a tool offers several policies, let the user pick.
+- Delivery: **get_policy_delivery_status**; retry only failures with **retry_failed_delivery** — report "queued", never "sent", until the status shows delivered.
+- Onboarding: **get_onboarding_status**, **provision_portal_access** (never replaces an account in use unless a reset with a reason is asked for), **send_portal_invitation**.
+- Premiums: **get_premium_schedule**, **get_payment_receipt**, **send_premium_reminder**. Amounts and payment status come only from these records — never mark anything paid because the user says so.
+- Changes (nominee, address, contact, sum assured, riders): **preview_policy_endorsement** first, then **submit_policy_endorsement** only on explicit confirmation; **get_endorsement_status** for history.
+- Renewal: **get_renewal_readiness**, **preview_policy_renewal**, **submit_policy_renewal** (opening is not renewing).
+- Lapsed cover: **get_reinstatement_requirements**, **submit_reinstatement_request**, **get_reinstatement_status** — a request never means cover is restored.
+- Ending a policy: **preview_policy_exit** explains free-look and surrender with estimates; **submit_policy_exit_request** only with the customer's explicit instruction; **get_exit_status**. Keep estimate, request, settlement and refund/payout distinct.
+"""
+
+DOMAIN_PROMPTS["service_desk"] = """
+
+## SERVICE REQUESTS & SUPPORT TICKETS
+
+- A change someone must approve (e.g. correcting a customer's contact/address): **create_service_request** (a draft), then **submit_service_request**; **get_service_request** shows owner, reviewer questions, decision, and whether an approved change was actually applied. **add_request_attachment** attaches a document the platform already holds.
+- A complaint or enquiry: **create_support_ticket** linked to the customer/policy with a short conversation summary; **get_support_ticket**, **add_ticket_comment**, **assign_support_ticket** (claim or release only).
+- A ticket's or request's status is never the policy's or application's status — say which one you mean.
+"""
+
+DOMAIN_PROMPTS["workflow"] = """
+
+## EXCEPTIONS, MEMBERS, QUEUES
+
+- Ambiguous reference → **resolve_insurance_record** before acting. "Can it move to X?" → **preview_application_transition**.
+- A disputed or incomplete underwriting result is routed, never decided here: **request_additional_evidence** or **refer_underwriting_review**.
+- Family/corporate: **get_member_workflow_matrix** for per-member blockers; **resume_member_workflow** runs the next step for ONE member. Never apply one member's decision to others.
+- "Why is this claim waiting?" → **get_claim_blockers**.
+- "What is delayed / overdue / in my queue?" → **get_work_queue** (applications, claims, claim payouts, requests, tickets — keep them distinct). History → **get_workflow_timeline**.
+"""
+
+DOMAIN_PROMPTS["support"] = """
+
+## RECOVERY & AVAILABILITY
+
+- "Did that go through? / what failed? / where did we stop?" → **get_operation_status**.
+- "Try again / continue where we stopped / the upload failed, continue" → **resume_operation**. It re-runs only the failed step and keeps everything that completed. If it reports the outcome is unknown (a timeout), re-read the record first and only then call it again with state_verified=true.
+- "Is the system down? / why won't Customer Service open?" → **get_service_health**.
+- "Sign in failed / server took too long / can't connect" → **diagnose_connection** with the exact message the user saw (and the app's API address if they gave it). Relay its diagnosis and numbered steps. Never claim to restart a service.
+"""
+
 
 AGENT_ROLE_RESTRICTION_TEMPLATE = (
     "\n\nCRITICAL ROLE & AUTHORIZATION INSTRUCTION: The current active user's role is 'Agent'. "
@@ -624,9 +681,14 @@ async def generate_chat_title(
 
 
 def _recent_text(messages: list, limit: int = 6) -> list[str]:
-    """Plain text of the last few messages, for domain keyword matching."""
+    """Plain text of the last few messages, for domain keyword matching.
+
+    Tool results are skipped: their JSON mentions policies, claims, endorsements
+    and the rest, so matching on it bound nearly every pack on every turn."""
     out: list[str] = []
     for m in messages[-limit:]:
+        if isinstance(m, ToolMessage):
+            continue
         content = getattr(m, "content", "")
         if isinstance(content, str):
             out.append(content)
@@ -747,8 +809,17 @@ async def agent_node(state: ChatState, config: RunnableConfig | None = None) -> 
     platform = state.get("platform") or "web"
 
     # Bind only the tools this conversation is plausibly about — see toolsets.py.
+    # Priority when the cap forces a choice: what the user just asked about,
+    # then the packs whose tools this conversation is actually using.
     sticky = state.get("active_domains") or []
-    domains = frozenset(select_domains(_recent_text(state["messages"]), sticky))
+    latest = next((m for m in reversed(state["messages"]) if isinstance(m, HumanMessage)), None)
+    asked_now = matched_domains([str(latest.content)] if latest else [])
+    in_use = domains_used(tc.get("name", "") for m in state["messages"][-12:] for tc in (getattr(m, "tool_calls", None) or []))
+    domains = frozenset(fit_to_cap(select_domains(_recent_text(state["messages"]), sticky),
+                                   [*asked_now, *in_use, *sticky], MAX_BOUND_TOOLS))
+    # Carried to the next turn: only what was asked about or used — never the
+    # whole bound set, which only ever grew.
+    next_sticky = sorted(set(asked_now) | set(in_use))
 
     # Trim before sending. Without this the whole thread is re-sent every turn
     # and a long conversation's input cost climbs without any ceiling.
@@ -808,7 +879,8 @@ async def agent_node(state: ChatState, config: RunnableConfig | None = None) -> 
                     "tool_calls": response.tool_calls[:1],
                     "invalid_tool_calls": [],
                 })
-            return {"messages": [response], "active_domains": sorted(domains)}
+            used_now = domains_used(tc["name"] for tc in (getattr(response, "tool_calls", None) or []))
+            return {"messages": [response], "active_domains": sorted(set(next_sticky) | set(used_now))}
         except Exception as exc:  # noqa: BLE001 — SDK raises provider-specific types
             last_exc = exc
             text = str(exc)
@@ -1426,7 +1498,7 @@ async def _permission_gate(state: ChatState) -> Command:
     name, args, call_id = tool_call["name"], tool_call["args"], tool_call["id"]
     platform = state.get("platform") or "web"
     ctx = ExecCtx(tenant_id=state["tenant_id"], jwt_token=state["jwt_token"], role=state.get("user_role") or "Agent",
-                  current_org_id=state.get("group_current_org_id"))
+                  current_org_id=state.get("group_current_org_id"), platform=platform)
     # A group tool called with an explicit organization id is that corporate being chosen: remember it.
     remember: dict = {}
     if name in GROUP_TOOLS and args.get("organization_id"):
@@ -1435,6 +1507,14 @@ async def _permission_gate(state: ChatState) -> Command:
 
     def back_to_agent(update: dict) -> Command:
         return Command(goto="agent", update={**update, **remember})
+
+    # ── Operation status / resume: read from the thread itself ────────────────
+    if name in OPERATION_TOOLS and is_role_allowed(name, state["user_role"], platform):
+        if name == "get_operation_status":
+            result = operation_status_result(state, args)
+        else:
+            result = await _resume_operation(state, args, ctx, platform)
+        return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
 
     if not is_role_allowed(name, state["user_role"], platform):
         if platform == "mobile" and name in MOBILE_PORTAL_ONLY_TOOLS:
@@ -2516,6 +2596,15 @@ async def _permission_gate(state: ChatState) -> Command:
         return Command(goto="g_resume", update={"pending_call": pending, "group_error": None, **remember})
 
     if name in CLIENT_EXECUTED_TOOLS:
+        # Bind the upload to one canonical application before the browser runs
+        # it: an unknown or ambiguous target comes back as a choice instead of
+        # the browser guessing from a name.
+        if name == "upload_document" and not args.get("case_id") and any(
+                args.get(k) for k in ("case_number", "cnic", "applicant_name")):
+            target = await execute_tool("resolve_upload_target", args, ctx)
+            if not target.get("success"):
+                return back_to_agent({"messages": [_tool_result_message(name, call_id, target)]})
+            args = {**args, "case_id": target["case_id"], "case_number": target["case_number"]}
         # The browser holds the attached File object — chat-agent can't
         # execute this itself. Route to the dedicated client executor node
         # to avoid LangGraph multiple-interrupt bleeding.
@@ -2546,6 +2635,32 @@ async def _permission_gate(state: ChatState) -> Command:
     if result.get("family_members"):
         update["family_members"] = result["family_members"]
     return back_to_agent(update)
+
+
+async def _resume_operation(state: ChatState, args: dict, ctx: ExecCtx, platform: str) -> dict:
+    """Re-run the one failed step with its original inputs. The target tool's
+    RBAC is checked again — resuming never widens what the user may do."""
+    plan = plan_resume(state, args)
+    if "error" in plan:
+        return plan["error"]
+    tool, tool_args, op = plan["tool"], plan["args"], plan["operation"]
+    operation = {"id": op["operation_id"], "retry_of": op["operation_id"], "tool": tool}
+    if not is_role_allowed(tool, state["user_role"], platform):
+        return {"success": False, "error_code": "forbidden", "retryable": False, "operation": operation,
+                "error": f"You no longer have access to retry “{op['label']}”."}
+    if tool in CLIENT_EXECUTED_TOOLS:
+        # The browser no longer holds the file; ask for it again, bound to the same target.
+        payload = {k: tool_args.get(k) for k in ("document_type", "cnic", "case_number", "applicant_name") if tool_args.get(k)}
+        return {"success": True, "operation": {**operation, "status": "awaiting_file"},
+                "message": f"Choose the file again to retry **{op['label']}** — the earlier steps are kept.",
+                "quick_actions": [{"label": f"Upload {tool_args.get('document_type') or 'document'}",
+                                   "actionType": "upload", "payload": json.dumps(payload)}]}
+    tool_args, errors = validate_and_normalize(tool, tool_args)
+    if errors:
+        return {"success": False, "error": "; ".join(errors), "error_code": "validation", "operation": operation}
+    result = await execute_tool(tool, tool_args, ctx)
+    status = "failed" if result.get("success") is False else "completed"
+    return {**result, "operation": {**operation, "status": status}}
 
 
 async def permission_gate(state: ChatState) -> Command:

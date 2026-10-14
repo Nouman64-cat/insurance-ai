@@ -1569,6 +1569,15 @@ class InsurancePlan(SQLModel, table=True):
     medical_exam_tiers: List[dict] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     required_documents: List[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
 
+    # Source-backed catalog reference, separate from actuarial pricing and the
+    # exit engine's demonstration fund values. Null means not yet researched.
+    surrender_terms: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+
+    # The plan's policy wording (PDF), uploaded by an admin. It is added to every policy's application dossier.
+    policy_wording_path: Optional[str] = Field(default=None, max_length=500)
+    policy_wording_filename: Optional[str] = Field(default=None, max_length=255)
+    policy_wording_uploaded_at: Optional[datetime] = Field(default=None, nullable=True)
+
     is_active: bool = Field(default=True, nullable=False)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
@@ -2235,6 +2244,7 @@ class PolicyDocumentTypeEnum(str, Enum):
     CERTIFICATE = "CertificateOfInsurance"
     WORDING = "PolicyWording"            # T&Cs + endorsements
     RENEWAL_NOTICE = "RenewalNotice"
+    APPLICATION_DOSSIER = "ApplicationDossier"   # everything the customer provided, in one PDF
 
 
 class PolicyVersion(SQLModel, table=True):
@@ -3308,6 +3318,7 @@ class PanelClinic(SQLModel, table=True):
     city: Optional[str] = Field(default=None, max_length=100, index=True)
     address: Optional[str] = Field(default=None, max_length=500)
     phone: Optional[str] = Field(default=None, max_length=50)
+    email: Optional[str] = Field(default=None, max_length=255)  # where the lab's report-upload link is sent
 
     # Which of the standard test codes this site can perform (see
     # underwriting_limits.TEST_CATALOGUE). Empty/None means "all".
@@ -3361,6 +3372,18 @@ class MedicalExamOrder(SQLModel, table=True):
     invite_expires_at: Optional[datetime] = Field(default=None, nullable=True)
     invited_at: Optional[datetime] = Field(default=None, nullable=True)
     invited_by: Optional[UUID] = Field(default=None, foreign_key="users.id", nullable=True)
+
+    # Tokenized link for the lab/doctor the customer booked (clinic_id). Issued when the
+    # booking is made; the doctor uploads the medical reports through it. Rotated on any
+    # re-booking so a link only ever works for the clinic currently on the order.
+    lab_token_hash: Optional[str] = Field(default=None, index=True, max_length=64, nullable=True)
+    lab_token_expires_at: Optional[datetime] = Field(default=None, nullable=True)
+    lab_sent_at: Optional[datetime] = Field(default=None, nullable=True)
+    lab_sent_to: Optional[str] = Field(default=None, max_length=255, nullable=True)
+    # The examining doctor's e-signature, given when they submit the reports through the lab link.
+    lab_signed_by: Optional[str] = Field(default=None, max_length=255, nullable=True)
+    lab_signer_license: Optional[str] = Field(default=None, max_length=100, nullable=True)
+    lab_signed_at: Optional[datetime] = Field(default=None, nullable=True)
 
     # ── Results ──────────────────────────────────────────────────────────────
     # {test_code: {value, unit, reference_range, flag}} as reported by the lab.

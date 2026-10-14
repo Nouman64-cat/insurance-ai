@@ -372,7 +372,7 @@ async def _documents(session: AsyncSession, policy: Policy, viewer: Optional[Cus
                     "policy_number": policy.policy_number, "date": _iso(when), "available": bool(ok), **extra})
 
     titles = {"PolicySchedule": "Policy schedule", "CertificateOfInsurance": "Certificate of insurance",
-              "PolicyWording": "Policy wording", "PremiumNotice": "Premium notice", "RenewalNotice": "Renewal notice"}
+              "PolicyWording": "Policy wording", "PremiumNotice": "Initial premium receipt", "RenewalNotice": "Renewal notice"}
     for d in (await session.exec(select(PolicyDocument).where(PolicyDocument.policy_id == policy.id))).all():
         add("policy_document", str(d.id), titles.get(_v(d.document_type), d.document_name), d.generated_at,
             d.storage_url and os.path.exists(d.storage_url))

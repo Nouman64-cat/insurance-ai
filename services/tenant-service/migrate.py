@@ -1428,6 +1428,34 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v61d — stamp_duty_amount NOT NULL",
         "ALTER TABLE policy_versions ALTER COLUMN stamp_duty_amount SET NOT NULL",
     ),
+    (
+        "v62a — source-backed insurance plan surrender terms",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS surrender_terms JSON",
+    ),
+    (
+        "v63a — add invite_sent_to to medical_exam_orders",
+        "ALTER TABLE medical_exam_orders ADD COLUMN IF NOT EXISTS invite_sent_to VARCHAR(255)",
+    ),
+    (
+        "v63b — add invite_sent_at to medical_exam_orders",
+        "ALTER TABLE medical_exam_orders ADD COLUMN IF NOT EXISTS invite_sent_at TIMESTAMP WITHOUT TIME ZONE",
+    ),
+    (
+        "v63c-enum — add ApplicationDossier to policydocumenttypeenum",
+        "ALTER TYPE policydocumenttypeenum ADD VALUE IF NOT EXISTS 'APPLICATION_DOSSIER'",
+    ),
+    (
+        "v64a — add policy_wording_path to insurance_plans",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS policy_wording_path VARCHAR(500)",
+    ),
+    (
+        "v64b — add policy_wording_filename to insurance_plans",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS policy_wording_filename VARCHAR(255)",
+    ),
+    (
+        "v64c — add policy_wording_uploaded_at to insurance_plans",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS policy_wording_uploaded_at TIMESTAMP WITHOUT TIME ZONE",
+    ),
 ]
 
 
@@ -1548,6 +1576,27 @@ POST_DATA_MIGRATIONS: list[tuple[str, str]] = [
     (
         "acq-src-group-d — index organizations.acquisition_source_id",
         "CREATE INDEX IF NOT EXISTS ix_organizations_acquisition_source_id ON organizations (acquisition_source_id)",
+    ),
+    (
+        "med-lab-a — panel_clinics.email",
+        "ALTER TABLE panel_clinics ADD COLUMN IF NOT EXISTS email VARCHAR(255)",
+    ),
+    (
+        "med-lab-b — medical_exam_orders lab link columns",
+        "ALTER TABLE medical_exam_orders ADD COLUMN IF NOT EXISTS lab_token_hash VARCHAR(64), "
+        "ADD COLUMN IF NOT EXISTS lab_token_expires_at TIMESTAMP, "
+        "ADD COLUMN IF NOT EXISTS lab_sent_at TIMESTAMP, "
+        "ADD COLUMN IF NOT EXISTS lab_sent_to VARCHAR(255)",
+    ),
+    (
+        "med-lab-d — medical_exam_orders doctor e-signature columns",
+        "ALTER TABLE medical_exam_orders ADD COLUMN IF NOT EXISTS lab_signed_by VARCHAR(255), "
+        "ADD COLUMN IF NOT EXISTS lab_signer_license VARCHAR(100), "
+        "ADD COLUMN IF NOT EXISTS lab_signed_at TIMESTAMP",
+    ),
+    (
+        "med-lab-c — index medical_exam_orders.lab_token_hash",
+        "CREATE INDEX IF NOT EXISTS ix_medical_exam_orders_lab_token_hash ON medical_exam_orders (lab_token_hash)",
     ),
     (
         "acq-src-group-e — backfill family_groups source from an assigned source login",

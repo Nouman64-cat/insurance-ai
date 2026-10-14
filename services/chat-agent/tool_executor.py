@@ -38,6 +38,7 @@ from pages import build_route, page_for_record, page_for_route
 from langgraph.types import interrupt
 from langgraph.errors import GraphInterrupt
 from env_mode import is_demo, strip_demo_args
+from lifecycle import application_state, approval_blockers, transition_problem
 
 TENANT_SERVICE_URL = os.environ.get("TENANT_SERVICE_URL", "http://tenant-service:8001")
 API_GATEWAY_URL = os.environ.get("API_GATEWAY_URL", "http://api-gateway:8000")
@@ -53,6 +54,8 @@ class ExecCtx:
     # The corporate this conversation is working on (see ChatState.group_current_org_id) — decides between
     # same-named companies instead of asking.
     current_org_id: Optional[str] = None
+    # web | mobile — lets a tool that runs another step re-check that step's RBAC.
+    platform: str = "web"
 
     @property
     def headers(self) -> dict[str, str]:
@@ -426,17 +429,27 @@ async def _fetch_records(record_type: str, ctx: Ctx) -> list[dict]:
     return res.json()
 
 
-def _find_record(record_type: str, rows: list[dict], identifier: str) -> Optional[dict]:
+def _candidates(record_type: str, rows: list[dict], identifier: str) -> list[dict]:
+    """Every record the identifier could mean, best tier only: a lead ID, then
+    exact field hits, then substring hits. An exact hit beats a substring one,
+    so IND-2610-001 can't land on IND-2610-0012 or "Ali" on "Alina"."""
     if record_type == "lead":
         hit = _match_lead(rows, identifier)
         if hit:
-            return hit
+            return [hit]
     fields = _RECORD_SOURCES[record_type]["fields"]
-    # An exact hit on any identifying field beats a substring one, so
-    # IND-2610-001 can't land on IND-2610-0012 or "Ali" on "Alina".
     wanted = identifier.strip().lower()
-    exact = next((r for r in rows if any(str(r.get(f) or "").lower() == wanted for f in fields)), None)
-    return exact or next((r for r in rows if _matches(r, identifier, fields)), None)
+    exact = [r for r in rows if any(str(r.get(f) or "").lower() == wanted for f in fields)
+             or _full_name(r).strip().lower() == wanted]
+    return exact or [r for r in rows if _matches(r, identifier, fields)]
+
+
+def _entity(record_type: str, record: dict, tenant_id: str) -> dict:
+    """The canonical identity of a record, for tool results the UI can act on
+    without reconstructing ids from prose."""
+    raw = _case_id(record) if record_type == "case" else _raw_id(record)
+    return {"type": record_type, "id": raw, "tenant_id": tenant_id,
+            "reference": _record_id(record_type, record), "label": _describe(record_type, record)}
 
 
 def _record_id(record_type: str, record: dict) -> str:
@@ -484,14 +497,17 @@ def _describe(record_type: str, record: dict) -> str:
     return _full_name(record) or str(record.get("id"))
 
 
-async def _search_all(ctx: Ctx, query: str, targets: list[str]) -> list[dict]:
+async def _search_all(ctx: Ctx, query: str, targets: list[str], unavailable: Optional[list[str]] = None) -> list[dict]:
     """Search several record types at once. One unavailable collection
-    shouldn't sink the whole search, so failures just contribute nothing."""
+    shouldn't sink the whole search; the types that could not be read are
+    appended to `unavailable`, so "nothing found" is never claimed for them."""
+    unavailable = unavailable if unavailable is not None else []
     async def one(record_type: str) -> list[dict]:
         try:
             rows = await _fetch_records(record_type, ctx)
         except httpx.HTTPError:
-            return []
+            unavailable.append(record_type)
+            return None
         fields = _RECORD_SOURCES[record_type]["fields"]
         found = [r for r in rows if _matches(r, query, fields)]
         if record_type == "lead":
@@ -502,7 +518,7 @@ async def _search_all(ctx: Ctx, query: str, targets: list[str]) -> list[dict]:
                  "id": _record_id(record_type, r), "_raw": _raw_id(r)} for r in found]
 
     per_type = await asyncio.gather(*(one(t) for t in targets if t in _RECORD_SOURCES))
-    hits = [h for group in per_type for h in group]
+    hits = [h for group in per_type if group is not None for h in group]
 
     # An unconverted customer / family / organization is also a lead. Keep the
     # lead hit — it carries the ID the user sees on the board — and drop the twin.
@@ -522,7 +538,20 @@ async def _show_record(args: dict, ctx: Ctx) -> dict:
     if record_type not in _RECORD_SOURCES or not page:
         return {"success": False, "error": f"I can't look up '{record_type}' records yet."}
 
-    match = _find_record(record_type, await _fetch_records(record_type, ctx), identifier)
+    try:
+        rows = await _fetch_records(record_type, ctx)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in (401, 403):
+            return {"success": False, "error_code": "forbidden", "retryable": False,
+                    "error": f"You don't have access to {record_type} records, so I can't look this up."}
+        raise
+    found = _candidates(record_type, rows, identifier)
+    if len(found) > 1:
+        raise ChoiceNeeded(
+            f'{len(found)} {record_type} records match "{identifier}". Which one do you mean?',
+            [{"label": _describe(record_type, r)[:60], "actionType": "submit",
+              "payload": f"Show me the {record_type} {_record_id(record_type, r)}"} for r in found[:6]])
+    match = found[0] if found else None
     if not match:
         # Users often name the wrong type ("lead CASE-2026-…"). Before calling
         # it missing, see whether the identifier is some other kind of record.
@@ -553,6 +582,7 @@ async def _show_record(args: dict, ctx: Ctx) -> dict:
         "success": True,
         "message": f"Found **{label}** — opening {page.label} and highlighting it.",
         "record": match,
+        "entity": _entity(record_type, match, ctx.tenant_id),
         "navigate": _nav(page.route, entity_id),
         "last_action": _action("show_record", record_type, entity_id, build_route(page.route, entity_id), f"Showing {label}"),
     }
@@ -562,16 +592,24 @@ async def _show_record(args: dict, ctx: Ctx) -> dict:
 async def _search_records(args: dict, ctx: Ctx) -> dict:
     query = (args.get("query") or "").strip()
     only = args.get("record_type")
-    hits = await _search_all(ctx, query, [only] if only else list(_RECORD_SOURCES))
+    unavailable: list[str] = []
+    hits = await _search_all(ctx, query, [only] if only else list(_RECORD_SOURCES), unavailable)
+    gap = (f"\n\n⚠️ Couldn't search {', '.join(unavailable)} right now — those results may be missing."
+           if unavailable else "")
 
     if not hits:
-        return {"success": True, "message": f'Nothing matched "{query}".', "results": []}
+        if unavailable and (only or len(unavailable) == len(_RECORD_SOURCES)):
+            return {"success": False, "error_code": "service_unavailable", "retryable": True, "results": [],
+                    "error": f'Search is unavailable right now, so I can\'t tell whether "{query}" exists.'}
+        return {"success": True, "message": f'Nothing matched "{query}".{gap}', "results": [],
+                "unavailable_types": unavailable}
 
     lines = "\n".join(f"- **{h['type']}** — {h['label']}" for h in hits[:10])
     return {
         "success": True,
-        "message": f"Found {len(hits)} match(es) for \"{query}\":\n{lines}",
+        "message": f"Found {len(hits)} match(es) for \"{query}\":\n{lines}{gap}",
         "results": hits,
+        "unavailable_types": unavailable,
         "quick_actions": [
             {"label": f"Show {h['label'][:28]}", "actionType": "submit",
              "payload": f"Show me the {h['type']} {h['label']}"}
@@ -777,12 +815,19 @@ async def _get_case_details(args: dict, ctx: Ctx) -> dict:
     else:
         stage = "Pre-Underwriting"
 
+    state = application_state(case)
+    blockers = "".join(f"\n  - {b}" for b in state["blockers"])
     return {
         "success": True,
+        "entity": {"type": "application", "id": case_id, "tenant_id": ctx.tenant_id,
+                   "reference": case.get("caseNumber"), "label": _full_name(customer) or case.get("applicant_name"),
+                   "customer_id": case.get("customer_id"), "policy_id": case.get("policy_id")},
+        "state": state,
         "message": (
             f"**{case.get('caseNumber')}** — {_full_name(customer) or '—'}\n"
             f"- Application stage: **{stage}**\n"
-            f"- Status: {case.get('caseStatus')}\n"
+            + (f"- Blocked by:{blockers}\n" if blockers else "")
+            + f"- Status: {case.get('caseStatus')}\n"
             f"- Type: {case.get('caseType')} · Priority: {case.get('priorityLevel')}\n"
             f"- Product: {policy.get('product_name') or 'no proposal yet'}\n"
             f"- AI decision: {assessment.get('ai_decision') or 'not assessed yet'}"
@@ -791,6 +836,7 @@ async def _get_case_details(args: dict, ctx: Ctx) -> dict:
         "application_stage": stage,
         "navigate": _nav("cases", case_id),
         "quick_actions": [
+            *[{k: a[k] for k in ("label", "actionType", "payload")} for a in state["allowed_actions"][:3]],
             {"label": "View Application", "actionType": "embed", "payload": f"case/{case_id}"},
         ],
     }
@@ -819,12 +865,40 @@ async def _get_document_checklist(args: dict, ctx: Ctx) -> dict:
     res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/document-checklist"))
     res.raise_for_status()
     cl = res.json()
-    missing = cl.get("missing") or []
-    received = cl.get("received") or []
+    required = cl.get("required") or []
 
+    # The checklist counts any file of the type as received; the file's own OCR
+    # state decides whether it actually counts (a rejected read needs a re-upload).
+    files: dict[str, list[dict]] = {}
+    try:
+        art = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/artifacts"))
+        art.raise_for_status()
+        for a in art.json():
+            if not a.get("claim_id"):
+                files.setdefault(a.get("document_type"), []).append(a)
+    except httpx.HTTPError:
+        files = {}
+    rows = []
+    for doc in required:
+        statuses = [f.get("status") for f in files.get(doc, [])]
+        if not statuses:
+            state = "received" if doc in (cl.get("received") or []) else "missing"
+        elif "Accepted" in statuses:
+            state = "accepted"
+        elif any(st not in ("Rejected", "Re-submission Requested") for st in statuses):
+            state = "processing"
+        else:
+            state = "rejected"
+        rows.append({"code": doc, "state": state,
+                     "evidence_ids": [f["id"] for f in files.get(doc, []) if f.get("status") == "Accepted"]})
+    missing = [r["code"] for r in rows if r["state"] in ("missing", "rejected")]
+    received = [r["code"] for r in rows if r["state"] not in ("missing", "rejected")]
+    cl = {**cl, "missing": missing, "received": received, "requirements": rows}
+
+    icon = {"accepted": "✅", "received": "✅", "processing": "⏳", "rejected": "🔁", "missing": "❌"}
+    note = {"processing": " (still being read)", "rejected": " (unreadable — upload a clearer copy)", "missing": " (missing)"}
     body = f"Documents for **{case.get('caseNumber')}**:\n"
-    body += "".join(f"- ✅ {d}\n" for d in received)
-    body += "".join(f"- ❌ {d} (missing)\n" for d in missing)
+    body += "".join(f"- {icon[r['state']]} {r['code']}{note.get(r['state'], '')}\n" for r in rows)
     body += "\nAll required documents are in — the assessment can run." if not missing else \
             f"\n{len(missing)} document(s) still needed before the assessment can run."
 
@@ -997,8 +1071,13 @@ async def _get_risk_assessment(args: dict, ctx: Ctx) -> dict:
 
     reasons = "\n".join(f"  - {r}" for r in (a.get("reasons") or [])[:5])
     results_route = f"case/{case_id}"  # detail page with scores, not the documents view
+    # The evidence behind the scores, and what still stands between this result and a decision.
+    state = application_state(case)
+    evidence = [f"{k.replace('_reasons', '').title()}: {r}" for k in ("medical_reasons", "financial_reasons", "fraud_reasons")
+                for r in (a.get(k) or [])[:2]]
     return {
         "success": True,
+        "state": state,
         "message": (
             f"Assessment for **{case.get('caseNumber')}**\n"
             f"- Medical: {a.get('medical_score')}/100\n"
@@ -1007,6 +1086,8 @@ async def _get_risk_assessment(args: dict, ctx: Ctx) -> dict:
             f"- Composite: {a.get('composite_risk_score')}/100\n"
             f"- **Decision: {a.get('ai_decision')}**\n"
             + (f"\nReasons:\n{reasons}" if reasons else "")
+            + ("\n\nEvidence:\n" + "\n".join(f"  - {e}" for e in evidence) if evidence else "")
+            + ("\n\nBlocking a decision:\n" + "\n".join(f"  - {b}" for b in state["blockers"]) if state["blockers"] else "")
         ),
         "assessment": {
             "scores": a,
@@ -1018,7 +1099,8 @@ async def _get_risk_assessment(args: dict, ctx: Ctx) -> dict:
             "fraud_reasons": a.get("fraud_reasons", []),
         },
         "navigate": {"route": results_route, "entity_id": "", "highlight": False},
-        "quick_actions": [{"label": "View Full Results", "actionType": "navigate", "payload": results_route}],
+        "quick_actions": [{k: x[k] for k in ("label", "actionType", "payload")} for x in state["allowed_actions"][:3]]
+        + [{"label": "View Full Results", "actionType": "navigate", "payload": results_route}],
     }
 
 
@@ -1637,6 +1719,20 @@ async def _create_case(args: dict, ctx: Ctx) -> dict:
 async def _update_case_status(args: dict, ctx: Ctx) -> dict:
     case = await _resolve_case(args, ctx)
     case_id = _case_id(case)
+    current, target = case.get("caseStatus") or "New", args["new_status"]
+    if current == target:
+        return {"success": True, "skipped": True, "result": {"status": "skipped", "reason": "unchanged"},
+                "message": f"**{case.get('caseNumber')}** is already **{target}** — nothing changed."}
+    problem = transition_problem(current, target)
+    if problem:
+        return {"success": False, "error_code": "illegal_transition", "retryable": False, "error": problem}
+    if target == "Approved":
+        blockers = approval_blockers(case)
+        if blockers:
+            return {"success": False, "error_code": "blocked", "retryable": False,
+                    "error": f"**{case.get('caseNumber')}** can't be approved yet: {'; '.join(blockers)}.",
+                    "quick_actions": [{k: a[k] for k in ("label", "actionType", "payload")}
+                                      for a in application_state(case)["allowed_actions"][:2]]}
     res = await ctx.client.patch(ctx.tsvc(f"/cases/{case_id}/status"), json={"status": args["new_status"]})
     res.raise_for_status()
 
@@ -1740,6 +1836,10 @@ async def _delete_case(args: dict, ctx: Ctx) -> dict:
     }
 
 
+_OPEN_PROPOSAL_STATUSES = {"Draft", "Quoted", "Proposed", "UnderReview", "InformationRequested",
+                           "Approved", "AcceptedWithLoadings", "PendingPayment"}
+
+
 @handles("create_proposal")
 async def _create_proposal(args: dict, ctx: Ctx) -> dict:
     cust_res = await ctx.client.get(ctx.tsvc("/customers"))
@@ -1747,6 +1847,30 @@ async def _create_proposal(args: dict, ctx: Ctx) -> dict:
     customer = _find_customer(cust_res.json(), args.get("cnic"), args.get("applicant_name"))
     if not customer:
         raise LookupError(f"No customer found for \"{args.get('applicant_name') or args.get('cnic')}\".")
+
+    # Re-read the customer's proposals first: a second click or a retried
+    # request must not open a duplicate of a proposal that is still in flight.
+    product = args.get("product_name") or "Term Life Plus"
+    existing_res = await ctx.client.get(ctx.tsvc(f"/customers/{customer['id']}/policies"))
+    existing_res.raise_for_status()
+    open_same = [p for p in existing_res.json()
+                 if p.get("product_name") == product and p.get("status") in _OPEN_PROPOSAL_STATUSES]
+    if open_same and not args.get("additional_proposal"):
+        p = sorted(open_same, key=_created_key, reverse=True)[0]
+        return {
+            "success": True, "skipped": True,
+            "result": {"status": "skipped", "reason": "open_proposal_exists"},
+            "entity": {"type": "proposal", "id": p.get("id"), "tenant_id": ctx.tenant_id,
+                       "label": f"{_full_name(customer)} — {product}", "customer_id": customer["id"]},
+            "message": f"**{_full_name(customer)}** already has an open **{product}** proposal "
+                       f"({_readable_label(p.get('status'))}). Nothing new was created.",
+            "quick_actions": [
+                {"label": "Check Application Stage", "actionType": "submit",
+                 "payload": f"What stage is the application for CNIC {customer.get('cnic')}?"},
+                {"label": "Create Another Anyway", "actionType": "submit",
+                 "payload": f"Create an additional {product} proposal for CNIC {customer.get('cnic')} (additional_proposal true)"},
+            ],
+        }
 
     coverage = _as_float(args.get("coverage_amount")) or 5_000_000
     res = await ctx.client.post(ctx.tsvc(f"/customers/{customer['id']}/policies"), json={
@@ -3056,6 +3180,19 @@ async def _approve_case(args: dict, ctx: Ctx) -> dict:
             ],
         }
 
+    # Approval never bypasses the gates: incomplete pre-underwriting or a missing
+    # risk assessment blocks it (demo mode may continue anyway on request).
+    blockers = approval_blockers(case)
+    if blockers and not (is_demo() and args.get("bypass_prerequisites")):
+        state = application_state(case)
+        return {
+            "success": False, "error_code": "blocked", "retryable": False,
+            "error": f"**{case.get('caseNumber')}** can't be approved yet: {'; '.join(blockers)}.",
+            "state": state,
+            "quick_actions": [{k: a[k] for k in ("label", "actionType", "payload")} for a in state["allowed_actions"][:2]]
+            + _anyway_chip(f"Approve case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"),
+        }
+
     # Move to Approved
     res = await ctx.client.patch(ctx.tsvc(f"/cases/{case_id}/status"), json={"status": "Approved"})
     res.raise_for_status()
@@ -3364,6 +3501,18 @@ async def _confirm_policy_payment(args: dict, ctx: Ctx) -> dict:
     case = await _issuance_case(args, ctx)
     case_id = _case_id(case)
 
+    # The gateway already settled the first premium: activation is pending, not
+    # another payment. Never open a second charge from a chat request.
+    if case.get("ipp_status") == "Realized":
+        return {
+            "success": True, "skipped": True,
+            "result": {"status": "skipped", "reason": "already_paid"},
+            "message": f"The first premium for **{case.get('caseNumber')}** is already recorded as paid by the payment "
+                       "gateway — no second payment was taken. Check the policy status to see whether it is active.",
+            "quick_actions": [{"label": "Check Policy Status", "actionType": "submit",
+                               "payload": f"Show me the active policy status for case {case.get('caseNumber')}"}],
+        }
+
     policy = await _resolve_policy_for_case(ctx, case)
     if not policy:
         return {
@@ -3564,6 +3713,21 @@ _DEFAULT_ACTIONS = [
 
 @handles("get_workflow_recommendation")
 async def _get_workflow_recommendation(args: dict, ctx: Ctx) -> dict:
+    if args.get("case_number") or args.get("cnic") or args.get("applicant_name"):
+        try:
+            case = await _resolve_case(args, ctx)
+        except LookupError:
+            case = None
+        if case:
+            state = application_state(case)
+            nxt = state["next_action"]
+            msg = f"**{case.get('caseNumber')}** is at **{state['stage']}**."
+            msg += "".join(f"\n- {b}" for b in state["blockers"])
+            msg += f"\n\nNext: **{nxt['label']}**." if nxt else "\n\nNothing further is required."
+            return {"success": True, "workflow_stage": state["stage"], "state": state, "recommendation": msg,
+                    "message": msg, "source": "application_state",
+                    "quick_actions": [{k: a[k] for k in ("label", "actionType", "payload")}
+                                      for a in state["allowed_actions"][:4]]}
     context = (args.get("action_context") or "").lower()
     for keywords, stage, recommendation, actions in _STAGES:
         if any(k in context for k in keywords):
@@ -3989,30 +4153,43 @@ async def execute_tool(name: str, args: dict[str, Any], ctx: ExecCtx) -> dict[st
     except ChoiceNeeded as exc:
         # A "couldn't find it, but here's what does exist" path — offered as
         # chips instead of a dead-end string the user has to retype from.
-        return {"success": False, "error": str(exc), "quick_actions": exc.quick_actions}
+        return {"success": False, "error": str(exc), "error_code": "choice_needed", "retryable": False,
+                "needs_user_input": True, "quick_actions": exc.quick_actions}
     except LookupError as exc:
         # Expected "couldn't find it" paths — surfaced verbatim so the model can
         # relay a useful sentence instead of an HTTP trace.
-        return {"success": False, "error": str(exc)}
+        return {"success": False, "error": str(exc), "error_code": "not_found", "retryable": False,
+                "needs_user_input": True}
     except GraphInterrupt:
         # Allow LangGraph interrupts to bubble up and pause execution
         raise
     except httpx.HTTPStatusError as exc:
-        if exc.response.status_code in (401, 403):
+        code = exc.response.status_code
+        if code in (401, 403):
             return {
                 "success": False,
                 "error": "Currently, you have no access to do this, ask your manager.",
+                "error_code": "forbidden", "retryable": False,
             }
         detail = None
         try:
             detail = exc.response.json().get("detail")
         except Exception:
             pass
-        return {"success": False, "error": _readable_detail(detail) or str(exc)}
+        error_code = {404: "not_found", 409: "conflict", 410: "expired", 422: "validation"}.get(
+            code, "service_unavailable" if code >= 500 else "rejected")
+        return {"success": False, "error": _readable_detail(detail) or str(exc), "error_code": error_code,
+                "retryable": code >= 500, "needs_user_input": code in (400, 422)}
+    except httpx.TimeoutException:
+        # The request may have reached the service and still be running, so a
+        # mutation's outcome is unknown — re-read state before any retry.
+        return {"success": False, "error": "The platform took too long to respond.",
+                "error_code": "timeout", "retryable": True, "outcome_unknown": True}
     except httpx.RequestError:
-        return {"success": False, "error": "The platform service is unreachable right now."}
+        return {"success": False, "error": "The platform service is unreachable right now.",
+                "error_code": "unreachable", "retryable": True}
     except Exception as exc:
-        return {"success": False, "error": str(exc)}
+        return {"success": False, "error": str(exc), "error_code": "internal", "retryable": False}
 
 
 def _readable_detail(detail) -> Optional[str]:
@@ -6049,3 +6226,8 @@ async def _upload_claim_document(args: dict, ctx: Ctx) -> dict:
 # and register themselves into _HANDLERS on import. Kept at the very end so the
 # names group_tools imports from this module already exist.
 import group_tools  # noqa: E402,F401
+import evidence_tools  # noqa: E402,F401
+import support_tools  # noqa: E402,F401
+import servicing_tools  # noqa: E402,F401
+import service_desk_tools  # noqa: E402,F401
+import workflow_tools  # noqa: E402,F401

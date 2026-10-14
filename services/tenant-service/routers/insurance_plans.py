@@ -2,7 +2,10 @@ from datetime import datetime
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import os
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -118,6 +121,67 @@ async def update_insurance_plan(
             detail="Invalid range: max values must be >= min values.",
         )
 
+    session.add(plan)
+    await session.commit()
+    await session.refresh(plan)
+    return plan
+
+
+_WORDING_ROOT = os.getenv("POLICY_DOC_MEDIA_ROOT", "/app/media/policy_documents").rsplit("/", 1)[0] + "/plan_wording"
+_WORDING_MAX_BYTES = 25 * 1024 * 1024
+
+
+@router.post(
+    "/{tenant_id}/insurance-plans/{plan_id}/policy-wording",
+    response_model=InsurancePlanRead,
+    dependencies=[Depends(verify_admin)],
+)
+async def upload_policy_wording(
+    tenant_id: UUID, plan_id: UUID, file: UploadFile = File(...), session: AsyncSession = Depends(get_session),
+):
+    """Attach (or replace) the plan's policy wording. PDF only; it is added to every policy's application dossier."""
+    plan = await _get_plan(tenant_id, plan_id, session)
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="That file is empty.")
+    if len(data) > _WORDING_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="That file is too large (25 MB maximum).")
+    if data[:4] != b"%PDF":
+        raise HTTPException(status_code=400, detail="The policy wording must be a PDF file.")
+    os.makedirs(_WORDING_ROOT, exist_ok=True)
+    path = os.path.join(_WORDING_ROOT, f"{plan.id}.pdf")
+    with open(path, "wb") as f:
+        f.write(data)
+    plan.policy_wording_path = path
+    plan.policy_wording_filename = (file.filename or "policy-wording.pdf")[:255]
+    plan.policy_wording_uploaded_at = datetime.utcnow()
+    plan.updated_at = datetime.utcnow()
+    session.add(plan)
+    await session.commit()
+    await session.refresh(plan)
+    return plan
+
+
+@router.get("/{tenant_id}/insurance-plans/{plan_id}/policy-wording", dependencies=[Depends(verify_admin)])
+async def download_policy_wording(tenant_id: UUID, plan_id: UUID, session: AsyncSession = Depends(get_session)):
+    plan = await _get_plan(tenant_id, plan_id, session)
+    if not plan.policy_wording_path or not os.path.isfile(plan.policy_wording_path):
+        raise HTTPException(status_code=404, detail="No policy wording has been uploaded for this plan.")
+    return FileResponse(plan.policy_wording_path, media_type="application/pdf",
+                        filename=f"{plan.label} - Policy Wording.pdf")
+
+
+@router.delete(
+    "/{tenant_id}/insurance-plans/{plan_id}/policy-wording",
+    response_model=InsurancePlanRead,
+    dependencies=[Depends(verify_admin)],
+)
+async def remove_policy_wording(tenant_id: UUID, plan_id: UUID, session: AsyncSession = Depends(get_session)):
+    plan = await _get_plan(tenant_id, plan_id, session)
+    if plan.policy_wording_path and os.path.isfile(plan.policy_wording_path):
+        os.remove(plan.policy_wording_path)
+    plan.policy_wording_path = plan.policy_wording_filename = plan.policy_wording_uploaded_at = None
+    plan.updated_at = datetime.utcnow()
     session.add(plan)
     await session.commit()
     await session.refresh(plan)

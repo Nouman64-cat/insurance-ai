@@ -1390,6 +1390,10 @@ class InsurancePlanRead(BaseModel):
     medical_exam_tiers: List[MedicalExamTierSchema]
     required_documents: List[str]
 
+    surrender_terms: Optional[dict] = None
+    policy_wording_filename: Optional[str] = None
+    policy_wording_uploaded_at: Optional[datetime] = None
+
     is_active: bool
     created_at: datetime
     updated_at: datetime

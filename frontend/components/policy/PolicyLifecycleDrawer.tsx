@@ -200,6 +200,9 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose, primary
                 {(detail?.customer_name ?? fallbackName ?? "P").trim().charAt(0).toUpperCase()}
               </div>
               <div className="min-w-0">
+                {currentStage && (
+                  <p className="mb-0.5 text-xs font-bold uppercase tracking-wider text-blue-700">{tx(currentStage.label)}</p>
+                )}
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="truncate text-lg font-bold tracking-tight text-slate-900">
                     {detail?.customer_name ?? fallbackName ?? tx("Policy")}
@@ -227,12 +230,11 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose, primary
             </button>
           </div>
           {detail && (
-            <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
               {[
                 [tx("Sum Assured"), fmtCoverage(detail.coverage_amount)],
                 [tx("Term"), tx("{0} years", { 0: detail.term_years })],
                 [tx("Premiums paid"), `${paidCount} / ${detail.premium_schedules.length}`],
-                [tx("Current stage"), currentStage ? tx(currentStage.label) : "—"],
               ].map(([k, v]) => (
                 <div key={k} className="rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-slate-100">
                   <dt className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{k}</dt>
@@ -258,12 +260,6 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose, primary
                 <div className="space-y-4">
                   <Panel title={tx("Lifecycle Journey")}>
                     <LifecycleStepper status={status} />
-                    {currentStage && (
-                      <p className="mt-4 rounded-xl bg-blue-50/60 px-3 py-2.5 text-xs leading-relaxed text-slate-600">
-                        <span className="font-semibold text-blue-800">{tx(currentStage.label)}: </span>
-                        {currentStage.blurb}
-                      </p>
-                    )}
                   </Panel>
 
                 </div>

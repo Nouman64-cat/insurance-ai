@@ -15,10 +15,13 @@ max_income_multiple, base_premium_rate, smoker_factor) so a tenant admin's
 edits via the Insurance Plans UI take effect immediately.
 """
 
+import logging
+import os
 from datetime import date, datetime, timezone
 from typing import Optional, Literal
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -45,6 +48,26 @@ from shared.models.core import (
     User,
 )
 from shared.pricing.calculator import calculate_premium
+
+_log = logging.getLogger(__name__)
+TENANT_SERVICE_URL = os.environ.get("TENANT_SERVICE_URL", "http://tenant-service:8001")
+
+
+async def _early_knockout(tenant_id: UUID, occupation: Optional[str], dob: Optional[date]) -> list[str]:
+    """Reasons the early-knockout rule set declines this applicant (empty = carry on). Fails open: if the
+    rule service is unreachable the quote still proceeds and underwriting remains the backstop."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.post(
+                f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/rules/early-check",
+                json={"occupation": occupation, "dob": dob.isoformat() if dob else None},
+            )
+        res.raise_for_status()
+        data = res.json()
+    except Exception:
+        _log.warning("Early-knockout check unavailable — proceeding without it", exc_info=True)
+        return []
+    return data.get("reasons", []) if data.get("decision") == "DECLINE" else []
 from shared.services.policy_state_machine import IllegalStateTransition, apply_transition
 
 router = APIRouter(tags=["Quotation"])
@@ -433,6 +456,11 @@ async def get_quote(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="GROUP_LIFE plans are priced per-MasterPolicy, not via /quote.",
         )
+
+    # ── 1b. Early knockout — uninsurable occupation / age, before anything else ─
+    knockout = await _early_knockout(tenant_id, request.customer.occupation, request.customer.dob)
+    if knockout:
+        return QuoteResponse(eligible=False, eligibility_errors=knockout)
 
     # ── 2. Eligibility — against the plan's own DB-stored bands ───────────────
     customer_in = request.customer

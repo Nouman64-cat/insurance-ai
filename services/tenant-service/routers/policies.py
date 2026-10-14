@@ -18,7 +18,7 @@ from uuid import UUID
 from aiokafka import AIOKafkaProducer
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import text
+from sqlalchemy import or_, text
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -133,7 +133,8 @@ async def _next_policy_number(session: AsyncSession, tenant_id: UUID) -> str:
     lock is released automatically when the surrounding transaction ends.
     """
     year = datetime.utcnow().year
-    prefix = f"PL-{year}-"
+    prefix = f"POLICY-{year}-"
+    legacy_prefix = f"PL-{year}-"   # numbers issued before the rename keep their form; the sequence carries on past them
 
     # Serialise number allocation per tenant. tenant_id.int is 128 bits; fold it
     # into the signed 64-bit space pg_advisory_xact_lock expects.
@@ -144,7 +145,10 @@ async def _next_policy_number(session: AsyncSession, tenant_id: UUID) -> str:
         select(Policy.policy_number).where(
             Policy.tenant_id == tenant_id,
             Policy.policy_number.is_not(None),      # type: ignore[arg-type]
-            Policy.policy_number.startswith(prefix),  # type: ignore[attr-defined]
+            or_(
+                Policy.policy_number.startswith(prefix),         # type: ignore[attr-defined]
+                Policy.policy_number.startswith(legacy_prefix),  # type: ignore[attr-defined]
+            ),
         )
     )
     highest = 0

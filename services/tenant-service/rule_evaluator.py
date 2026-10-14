@@ -384,6 +384,7 @@ async def evaluate_rule_set(
 
     accumulator = ImpactAccumulator()
     matched_rule_codes: List[str] = []
+    matched_impacts: List[Dict[str, Any]] = []
     reasons: List[str] = []
 
     for rule in rules:
@@ -398,6 +399,10 @@ async def evaluate_rule_set(
         accumulator.accumulate(rule.impact_data or {})
         matched_rule_codes.append(rule.rule_code)
         impact_label = rule.impact_type.value if hasattr(rule.impact_type, "value") else str(rule.impact_type)
+        matched_impacts.append({
+            "rule_code": rule.rule_code, "name": rule.name, "impact_type": impact_label,
+            "reason": (rule.impact_data or {}).get("reason"),
+        })
         reasons.append(f"Rule '{rule.name}' matched ({impact_label} — {rule.action_outcome})")
 
         if (rule.impact_data or {}).get("is_terminal") is True:
@@ -409,6 +414,7 @@ async def evaluate_rule_set(
         "version_number": active_version.version_number,
         "status": "SUCCESS" if matched_rule_codes else "NO_MATCH",
         "matched_rule_codes": matched_rule_codes,
+        "matched_impacts": matched_impacts,
         "final_impacts": final_impacts,
         "reasons": reasons,
         "evaluated_at": datetime.utcnow().isoformat(),

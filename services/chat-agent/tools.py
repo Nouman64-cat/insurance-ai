@@ -517,6 +517,8 @@ class CreateProposalArgs(BaseModel):
     ] = None
     coverage_amount: Optional[float] = Field(default=None, description="LEAVE EMPTY unless user explicitly specified it. Defaults to 5,000,000 PKR.")
     term_years: Optional[int] = Field(default=None, description="LEAVE EMPTY unless user explicitly specified it. Defaults to 10 years.")
+    additional_proposal: bool = Field(default=False, description="True only when the user explicitly asked for "
+                                      "another proposal although one for this product is already open.")
 
 
 @tool(args_schema=CreateProposalArgs)
@@ -556,7 +558,12 @@ def run_risk_assessment(**kwargs) -> str:
 # Policy lifecycle — approve, issue, activate (steps 5–7)
 # ═══════════════════════════════════════════════════════════════════════════
 
-@tool(args_schema=CaseLookupArgs)
+class ApproveCaseArgs(CaseLookupArgs):
+    bypass_prerequisites: bool = Field(default=False, description="Demo mode only, and only after the user chose "
+                                       "'continue anyway'. Ignored outside demo mode.")
+
+
+@tool(args_schema=ApproveCaseArgs)
 def approve_case(**kwargs) -> str:
     """Approve a case after risk assessment. This moves the case to 'Approved'
     status and it appears in the Policy Issuance queue. Use when the user says
@@ -624,18 +631,19 @@ def get_active_policy_status(**kwargs) -> str:
 # Workflow guidance
 # ═══════════════════════════════════════════════════════════════════════════
 
-class GetRecommendationArgs(BaseModel):
-    action_context: str = Field(
+class GetRecommendationArgs(CaseLookupArgs):
+    action_context: Optional[str] = Field(
+        default=None,
         description="Where the user is in the journey, e.g. 'customer added', "
-        "'case created', 'assessment complete'."
+        "'case created', 'assessment complete'. Only used when no application is named.",
     )
 
 
 @tool(args_schema=GetRecommendationArgs)
 def get_workflow_recommendation(**kwargs) -> str:
-    """Work out the best next step given where the user currently is. Call this
-    after every completed action — it drives the recommendation buttons the UI
-    renders under the chat."""
+    """Work out the best next step. When an application is named (case_number, cnic or
+    applicant_name) the recommendation comes from its live state — stage, blockers and
+    the legal next actions — so always pass one when it is known."""
     return "{}"
 
 
@@ -1899,6 +1907,578 @@ def toggle_incentive_scheme_active(**kwargs) -> str:
     return "{}"
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Evidence & medical review (handlers in evidence_tools.py)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class RequestMissingDocumentsArgs(CaseLookupArgs):
+    send_email: bool = Field(
+        default=True,
+        description="Email the customer their secure upload link. Set false to only return the link "
+        "(e.g. the user will share it themselves).",
+    )
+
+
+@tool(args_schema=RequestMissingDocumentsArgs)
+def request_missing_documents(**kwargs) -> str:
+    """Ask the customer for the documents their application still needs: returns what is
+    outstanding and the customer's secure upload link, renewing an expired link, and emails
+    it unless send_email=false. Works before an underwriting case exists. Reports honestly
+    whether the email was sent, failed, or the customer has no email address."""
+    return "{}"
+
+
+class LinkDocumentArgs(CaseLookupArgs):
+    document_type: str = Field(description="The required document this file satisfies — exactly as the "
+                               "checklist names it, e.g. Salary Slip, Bank Statement.")
+    artifact_id: Optional[str] = Field(default=None, description="The uploaded file's id, from list_artifacts.")
+    file_name: Optional[str] = Field(default=None, description="The uploaded file's name, when its id is unknown.")
+
+
+@tool(args_schema=LinkDocumentArgs)
+def link_document_to_requirement(**kwargs) -> str:
+    """Count an already-uploaded file towards a required document — use when a file was
+    uploaded under the wrong or a generic type ("that PDF is his salary slip"). Only files
+    on this applicant's own application can be linked; no new upload happens."""
+    return "{}"
+
+
+@tool(args_schema=CaseLookupArgs)
+def get_medical_report_status(**kwargs) -> str:
+    """Medical examination report readiness for an application: which required tests have
+    a processed report, which are still processing, rejected (need re-upload) or missing,
+    whether staff review can start, and the recorded outcome once reviewed."""
+    return "{}"
+
+
+class ReadMedicalReportsArgs(CaseLookupArgs):
+    test_code: Optional[str] = Field(default=None, description="Read one test only; omit for every required test.")
+    refresh: bool = Field(default=False, description="Re-read even if a cached reading exists.")
+
+
+@tool(args_schema=ReadMedicalReportsArgs)
+def read_medical_reports(**kwargs) -> str:
+    """Have the AI read each required test's value out of the customer's uploaded medical
+    reports, with the line it was read from and which tests were unreadable. This is a
+    pre-fill for staff review only — it never records a result or clears the medical gate."""
+    return "{}"
+
+
+class RecordMedicalReviewArgs(CaseLookupArgs):
+    results_json: str = Field(description='JSON object of test code -> reported value with units, e.g. '
+                              '{"FBS": "92 mg/dL", "HIV": "Non-reactive"}. Every required test needs a value.')
+    staff_reviewed: bool = Field(description="True only when the staff user has stated or explicitly confirmed "
+                                 "every value in this conversation. Never true for values taken unconfirmed "
+                                 "from read_medical_reports.")
+    artifact_id: Optional[str] = Field(default=None, description="The processed report the values come from.")
+
+
+@tool(args_schema=RecordMedicalReviewArgs)
+def record_medical_review(**kwargs) -> str:
+    """Save the staff-reviewed medical examination results. The platform rates them against
+    the underwriting manual (outcome, abnormal findings, suggested loading) and completes the
+    medical requirement. Prefer opening the review screen when the user wants to check
+    the reports side by side."""
+    return "{}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Recovery & availability (operations.py, support_tools.py)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class OperationStatusArgs(BaseModel):
+    operation_id: Optional[str] = Field(default=None, description="One operation's id; omit for the recent ones.")
+    limit: Optional[int] = Field(default=8, description="How many recent operations to list (max 25).")
+
+
+@tool(args_schema=OperationStatusArgs)
+def get_operation_status(**kwargs) -> str:
+    """What happened to the steps run in this conversation: which completed, which failed
+    and why, which can be retried, and any suspended journey. Use for "did that go through?",
+    "what failed?", "where did we stop?"."""
+    return "{}"
+
+
+class ResumeOperationArgs(BaseModel):
+    operation_id: Optional[str] = Field(default=None, description="The failed operation to retry; omit for the most recent failure.")
+    state_verified: bool = Field(default=False, description="Set true only after re-reading the record and "
+                                 "confirming a timed-out step was NOT applied.")
+
+
+@tool(args_schema=ResumeOperationArgs)
+def resume_operation(**kwargs) -> str:
+    """Continue where the conversation stopped: re-runs only the step that failed, with its
+    original inputs, and never repeats completed steps (uploads, payments, drafts, messages).
+    Use for "the upload failed, continue", "try that again", "pick up where we stopped"."""
+    return "{}"
+
+
+class ServiceHealthArgs(BaseModel):
+    service: Optional[Literal[
+        "api_gateway", "tenant_service", "risk_engine", "ocr_engine",
+        "customer_service", "request_management", "customer_management",
+    ]] = Field(default=None, description="Check one service; omit for all.")
+
+
+@tool(args_schema=ServiceHealthArgs)
+def get_service_health(**kwargs) -> str:
+    """Live availability and response time of the platform's services. Use for "is the
+    system down?", "why is Customer Service not opening?". Read-only: it never restarts anything."""
+    return "{}"
+
+
+class DiagnoseConnectionArgs(BaseModel):
+    symptom: str = Field(description="What the user saw, verbatim if possible, e.g. "
+                         "'server took too long to process, sign in failed'.")
+    app: Optional[Literal["mobile_agent_app", "web_portal", "customer_portal", "customer_service", "other"]] = None
+    client_api_url: Optional[str] = Field(default=None, description="The API address the failing app is "
+                                          "configured with (e.g. the mobile app's EXPO_PUBLIC_API_URL), if known.")
+
+
+@tool(args_schema=DiagnoseConnectionArgs)
+def diagnose_connection(**kwargs) -> str:
+    """Work out why an app cannot sign in or connect: separates a device that cannot reach
+    the server (wrong address / different network), a misconfigured API address, an
+    unavailable service, a backend timeout, and wrong credentials — then gives the fix."""
+    return "{}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Individual policy servicing (handlers in servicing_tools.py)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class PolicyLookupArgs(BaseModel):
+    """Any one field identifies the issued policy."""
+    policy_number: Optional[str] = Field(default=None, description="e.g. POLICY-2026-0001")
+    cnic: Optional[str] = Field(default=None, description="The policyholder's CNIC.")
+    policyholder_name: Optional[str] = None
+    case_number: Optional[str] = Field(default=None, description="The application (APP-/CASE-) the policy came from.")
+
+
+@tool(args_schema=PolicyLookupArgs)
+def get_policy_delivery_status(**kwargs) -> str:
+    """Was the welcome kit generated and were the welcome / policy-issuance emails delivered?
+    Reads the automatic delivery jobs: delivered, queued, or failed with the reason."""
+    return "{}"
+
+
+@tool(args_schema=PolicyLookupArgs)
+def retry_failed_delivery(**kwargs) -> str:
+    """Queue a retry of the policy's FAILED automatic deliveries only (welcome kit / emails).
+    Completed deliveries are never re-sent. Refuses when the failure cause (e.g. no email
+    on record) is still there."""
+    return "{}"
+
+
+@tool(args_schema=PolicyLookupArgs)
+def get_onboarding_status(**kwargs) -> str:
+    """The policyholder's onboarding: policyholder ID, welcome kit, portal account,
+    welcome pack sent, and customer acknowledgement."""
+    return "{}"
+
+
+class ProvisionPortalArgs(PolicyLookupArgs):
+    reset_password: bool = Field(default=False, description="Only when the customer is locked out and asked for a reset.")
+    reason: Optional[str] = Field(default=None, description="Required with reset_password.")
+
+
+@tool(args_schema=ProvisionPortalArgs)
+def provision_portal_access(**kwargs) -> str:
+    """Give the policyholder customer-portal access (creates their account and a one-time
+    password). An account the customer already uses is never replaced unless a reset is
+    explicitly requested with a reason. Does not notify the customer."""
+    return "{}"
+
+
+class PortalInvitationArgs(PolicyLookupArgs):
+    channel: Optional[Literal["Email", "SMS", "Both", "Manual"]] = None
+    resend: bool = Field(default=False, description="Send again although it was already sent.")
+
+
+@tool(args_schema=PortalInvitationArgs)
+def send_portal_invitation(**kwargs) -> str:
+    """Send the policyholder their welcome pack with portal sign-in details. Reports
+    delivery truthfully; refuses when there is no account or no contact."""
+    return "{}"
+
+
+class PremiumScheduleArgs(PolicyLookupArgs):
+    only_outstanding: bool = Field(default=False, description="Only unpaid instalments.")
+
+
+@tool(args_schema=PremiumScheduleArgs)
+def get_premium_schedule(**kwargs) -> str:
+    """The policy's premium instalments from the billing ledger: what is due, overdue, in
+    grace or paid, with amounts and payment references."""
+    return "{}"
+
+
+class ReceiptArgs(PolicyLookupArgs):
+    receipt_no: Optional[str] = None
+    payment_reference: Optional[str] = None
+
+
+@tool(args_schema=ReceiptArgs)
+def get_payment_receipt(**kwargs) -> str:
+    """Premium receipts issued for gateway-settled payments on a policy."""
+    return "{}"
+
+
+class PremiumReminderArgs(PolicyLookupArgs):
+    installment_no: Optional[int] = Field(default=None, description="Defaults to the oldest unpaid instalment.")
+    channel: Optional[Literal["Email", "SMS", "WhatsApp", "Letter"]] = None
+
+
+@tool(args_schema=PremiumReminderArgs)
+def send_premium_reminder(**kwargs) -> str:
+    """Remind the policyholder about an unpaid premium instalment. Reports whether the
+    email was actually delivered."""
+    return "{}"
+
+
+class EndorsementArgs(PolicyLookupArgs):
+    endorsement_type: Literal["nominees", "address", "contact", "sum_assured", "rider_add", "rider_remove"]
+    beneficiaries_json: Optional[str] = Field(default=None, description='nominees: JSON list of {"name", "cnic", '
+                                              '"relationship", "share_pct"}; shares total 100.')
+    address: Optional[str] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    new_sum_assured: Optional[float] = None
+    rider_name: Optional[str] = None
+    rider_sum_assured: Optional[float] = None
+    rider_annual_premium: Optional[float] = None
+    rider_id: Optional[str] = None
+
+
+@tool(args_schema=EndorsementArgs)
+def preview_policy_endorsement(**kwargs) -> str:
+    """Preview a mid-term change to an in-force policy — current vs proposed values, the
+    premium impact and what is still missing. Changes nothing."""
+    return "{}"
+
+
+@tool(args_schema=EndorsementArgs)
+def submit_policy_endorsement(**kwargs) -> str:
+    """Apply a mid-term change to an in-force policy: it changes the contract immediately and
+    issues an endorsement letter. Underwriting staff only; preview it first. A customer's
+    request that still needs approval is a service request, not this."""
+    return "{}"
+
+
+class EndorsementStatusArgs(PolicyLookupArgs):
+    endorsement_no: Optional[str] = None
+
+
+@tool(args_schema=EndorsementStatusArgs)
+def get_endorsement_status(**kwargs) -> str:
+    """Endorsements applied to a policy (number, type, summary, effective date, premium change)."""
+    return "{}"
+
+
+@tool(args_schema=PolicyLookupArgs)
+def get_renewal_readiness(**kwargs) -> str:
+    """When the policy next renews, the amount, the eligibility checks and any open renewal
+    with its stages. Use for "what happens when this policy expires/renews?"."""
+    return "{}"
+
+
+@tool(args_schema=PolicyLookupArgs)
+def preview_policy_renewal(**kwargs) -> str:
+    """Preview the next renewal — type, amount, period and eligibility — without opening it."""
+    return "{}"
+
+
+@tool(args_schema=PolicyLookupArgs)
+def submit_policy_renewal(**kwargs) -> str:
+    """Open the renewal for an eligible individual policy. Opening is not renewing: the
+    premium must still be collected and reconciled. Group scheme renewals use the group tools."""
+    return "{}"
+
+
+@tool(args_schema=PolicyLookupArgs)
+def get_reinstatement_requirements(**kwargs) -> str:
+    """Can a lapsed policy be reinstated: the reinstatement window, eligibility checks,
+    arrears, required declarations/medical evidence and reviews."""
+    return "{}"
+
+
+class ReinstatementArgs(PolicyLookupArgs):
+    reason: Optional[str] = None
+    applicant_relationship: Optional[Literal["Policyholder", "Nominee", "Agent", "Representative"]] = None
+    request_channel: Optional[Literal["Branch", "Portal", "Agent", "Phone", "Email"]] = None
+    applicant_name: Optional[str] = None
+
+
+@tool(args_schema=ReinstatementArgs)
+def submit_reinstatement_request(**kwargs) -> str:
+    """Register a reinstatement request for a lapsed policy. A request does not restore
+    cover — declaration, evidence, decision and arrears payment follow."""
+    return "{}"
+
+
+@tool(args_schema=PolicyLookupArgs)
+def get_reinstatement_status(**kwargs) -> str:
+    """Where a reinstatement request stands and whether cover has actually been restored."""
+    return "{}"
+
+
+@tool(args_schema=PolicyLookupArgs)
+def preview_policy_exit(**kwargs) -> str:
+    """Explain the policy's exit options with estimates: free-look cancellation (window and
+    refund), surrender value, and its natural end. Requests nothing."""
+    return "{}"
+
+
+class PolicyExitArgs(PolicyLookupArgs):
+    exit_type: Literal["free_look_cancellation", "surrender"]
+    customer_confirmed: bool = Field(description="True only when the customer's explicit instruction to end the "
+                                     "policy has been stated in this conversation.")
+    reason: Optional[str] = None
+    relationship: Optional[str] = None
+    channel: Optional[str] = None
+
+
+@tool(args_schema=PolicyExitArgs)
+def submit_policy_exit_request(**kwargs) -> str:
+    """End a policy on the customer's instruction: a free-look cancellation (cancels now; the
+    refund is settled separately) or a surrender request (opens the exit case; verification,
+    settlement and payout follow). Staff only."""
+    return "{}"
+
+
+@tool(args_schema=PolicyLookupArgs)
+def get_exit_status(**kwargs) -> str:
+    """Where a cancellation or surrender stands: requested, settlement calculated, paid out."""
+    return "{}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Service requests & support tickets (service_desk_tools.py)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class CreateServiceRequestArgs(BaseModel):
+    request_type: Literal["general", "customer_profile_correction"] = "general"
+    title: Optional[str] = Field(default=None, description="Short subject line.")
+    description: str = Field(description="What is needed and why (at least 10 characters). For a correction, the reason.")
+    category: Optional[Literal["ACCESS", "DATA_FIX", "PROCESS_EXCEPTION", "DOCUMENT", "OTHER"]] = None
+    desired_outcome: Optional[str] = None
+    priority: Optional[Literal["LOW", "NORMAL", "HIGH", "URGENT"]] = None
+    customer_cnic: Optional[str] = Field(default=None, description="Correction: whose record.")
+    customer_name: Optional[str] = None
+    changes_json: Optional[str] = Field(default=None, description='Correction: JSON of field -> new value. Fields: '
+                                        'contact.mobile_number, contact.email, contact.emergency_contact_name, '
+                                        'address.street_address, address.postal_code, city, province, marital_status.')
+
+
+@tool(args_schema=CreateServiceRequestArgs)
+def create_service_request(**kwargs) -> str:
+    """Draft a service request in Request Management (a change or decision someone else must
+    approve), e.g. correcting a customer's contact or address. Creates a DRAFT — submit it next."""
+    return "{}"
+
+
+class ServiceRequestRefArgs(BaseModel):
+    request_reference: Optional[str] = Field(default=None, description="The request's reference number; omit to list your recent requests.")
+
+
+@tool(args_schema=ServiceRequestRefArgs)
+def get_service_request(**kwargs) -> str:
+    """Where a service request stands: review status, who owns it, what the reviewer asked
+    for, the decision, and whether an approved change has actually been applied."""
+    return "{}"
+
+
+class RequestAttachmentArgs(BaseModel):
+    request_reference: str
+    artifact_id: Optional[str] = Field(default=None, description="A document already on the platform (from list_artifacts).")
+
+
+@tool(args_schema=RequestAttachmentArgs)
+def add_request_attachment(**kwargs) -> str:
+    """Attach a document already held on the platform to a service request. New files from
+    the user's device are attached on the request's page."""
+    return "{}"
+
+
+class SubmitServiceRequestArgs(BaseModel):
+    request_reference: str
+    reviewer_id: Optional[str] = Field(default=None, description="A reviewer the routing allows the requester to name.")
+
+
+@tool(args_schema=SubmitServiceRequestArgs)
+def submit_service_request(**kwargs) -> str:
+    """Submit (or resubmit after an information request) a draft service request for review."""
+    return "{}"
+
+
+class CreateTicketArgs(BaseModel):
+    title: str = Field(description="3-200 characters.")
+    description: str = Field(description="What the customer reported, at least 10 characters.")
+    category: Optional[Literal["GENERAL", "POLICY_SERVICING", "BILLING", "CLAIM_ENQUIRY", "COMPLAINT", "DOCUMENTS"]] = None
+    priority: Optional[Literal["LOW", "NORMAL", "HIGH", "URGENT"]] = None
+    policy_number: Optional[str] = Field(default=None, description="Link the policy it is about.")
+    customer_cnic: Optional[str] = None
+    customer_name: Optional[str] = None
+    conversation_summary: Optional[str] = Field(default=None, description="A short summary of this conversation to keep on the ticket.")
+
+
+@tool(args_schema=CreateTicketArgs)
+def create_support_ticket(**kwargs) -> str:
+    """Open a Customer Service ticket — a complaint, enquiry or problem — linked to the
+    customer/policy it concerns. Its status is separate from the policy's."""
+    return "{}"
+
+
+class TicketRefArgs(BaseModel):
+    ticket_reference: Optional[str] = Field(default=None, description="T-XXXXXXXX or title; omit to list recent tickets.")
+    status: Optional[Literal["OPEN", "IN_PROGRESS", "WAITING_CUSTOMER", "RESOLVED", "CLOSED", "CANCELLED"]] = None
+
+
+@tool(args_schema=TicketRefArgs)
+def get_support_ticket(**kwargs) -> str:
+    """A support ticket's status, owner, due time, resolution and recent conversation."""
+    return "{}"
+
+
+class TicketCommentArgs(BaseModel):
+    ticket_reference: str
+    comment: str
+    internal: bool = Field(default=False, description="An internal staff note the customer never sees.")
+
+
+@tool(args_schema=TicketCommentArgs)
+def add_ticket_comment(**kwargs) -> str:
+    """Reply on a support ticket, or add an internal note (service staff)."""
+    return "{}"
+
+
+class AssignTicketArgs(BaseModel):
+    ticket_reference: str
+    release: bool = Field(default=False, description="Release it back to the queue instead of claiming it.")
+
+
+@tool(args_schema=AssignTicketArgs)
+def assign_support_ticket(**kwargs) -> str:
+    """Claim a support ticket for yourself, or release it to the queue (service staff only —
+    tickets can't be assigned to someone else)."""
+    return "{}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Exceptions, members & operations (workflow_tools.py)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class ResolveRecordArgs(BaseModel):
+    identifier: str = Field(description="Reference, CNIC, policy/claim number or name.")
+    record_type: Optional[RecordType] = None
+
+
+@tool(args_schema=ResolveRecordArgs)
+def resolve_insurance_record(**kwargs) -> str:
+    """Pin down exactly which record the user means and return its canonical ids — one match,
+    a choice between several, or a clear "none". Use before acting on an ambiguous reference."""
+    return "{}"
+
+
+class TransitionArgs(CaseLookupArgs):
+    target_status: Optional[Literal["New", "InProgress", "Pending Documents", "Under Review",
+                                    "Approved", "Rejected", "Closed"]] = None
+
+
+@tool(args_schema=TransitionArgs)
+def preview_application_transition(**kwargs) -> str:
+    """Whether an application may move to a status and what that would do, without changing
+    it; without a target, the moves currently allowed."""
+    return "{}"
+
+
+class EvidenceRequestArgs(CaseLookupArgs):
+    evidence: list[str] = Field(description="Each piece of evidence needed, e.g. ['ECG', 'Latest bank statement'].")
+    reason: Optional[str] = None
+
+
+@tool(args_schema=EvidenceRequestArgs)
+def request_additional_evidence(**kwargs) -> str:
+    """Send an application back for more underwriting evidence (moves it to Pending Documents
+    and records exactly what is needed). The decision stays open."""
+    return "{}"
+
+
+class ReferReviewArgs(CaseLookupArgs):
+    reason: str = Field(description="What is disputed or incomplete.")
+    reviewer_name: Optional[str] = Field(default=None, description="A specific underwriter to assign it to.")
+
+
+@tool(args_schema=ReferReviewArgs)
+def refer_underwriting_review(**kwargs) -> str:
+    """Refer a disputed or doubtful underwriting result (e.g. a loading the customer contests)
+    to an underwriter for review instead of deciding it here."""
+    return "{}"
+
+
+class MemberMatrixArgs(BaseModel):
+    group_name: Optional[str] = Field(default=None, description="Family or company name.")
+    case_number: Optional[str] = Field(default=None, description="Any member's application reference.")
+    cnic: Optional[str] = None
+
+
+@tool(args_schema=MemberMatrixArgs)
+def get_member_workflow_matrix(**kwargs) -> str:
+    """Per-member progress of a family or corporate application: each member's stage and what
+    blocks them, separating shared family steps from member-specific ones."""
+    return "{}"
+
+
+@tool(args_schema=CaseLookupArgs)
+def resume_member_workflow(**kwargs) -> str:
+    """Run the next pending pre-underwriting step for ONE member of a family/corporate
+    application. Decisions are offered, never taken, and other members are untouched."""
+    return "{}"
+
+
+class ClaimBlockerArgs(BaseModel):
+    claim_number: Optional[str] = None
+    claimant_name: Optional[str] = None
+
+
+@tool(args_schema=ClaimBlockerArgs)
+def get_claim_blockers(**kwargs) -> str:
+    """Why a claim is waiting: missing documents, referrals, approvals or the payout — and the
+    next legal step."""
+    return "{}"
+
+
+class WorkQueueArgs(BaseModel):
+    queue: Optional[Literal["all", "applications", "claims", "claim_payouts", "service_requests", "tickets"]] = "all"
+    mine: bool = Field(default=False, description="Only applications assigned to me.")
+    older_than_days: Optional[int] = None
+
+
+@tool(args_schema=WorkQueueArgs)
+def get_work_queue(**kwargs) -> str:
+    """Open work with owners, age and deadlines, oldest/overdue first — applications, claims,
+    approved claim payouts not yet disbursed, service requests and tickets."""
+    return "{}"
+
+
+class TimelineArgs(BaseModel):
+    case_number: Optional[str] = None
+    cnic: Optional[str] = None
+    policy_number: Optional[str] = None
+    claim_number: Optional[str] = None
+    request_reference: Optional[str] = None
+    limit: Optional[int] = 15
+
+
+@tool(args_schema=TimelineArgs)
+def get_workflow_timeline(**kwargs) -> str:
+    """A record's traceable history — who did what and when — for an application, policy,
+    claim or service request."""
+    return "{}"
+
+
 ALL_TOOLS = [
     # navigation & discovery
     navigate_to_page,
@@ -2039,5 +2619,56 @@ ALL_TOOLS = [
     update_incentive_scheme,
     delete_incentive_scheme,
     toggle_incentive_scheme_active,
+    # evidence & medical review
+    request_missing_documents,
+    link_document_to_requirement,
+    get_medical_report_status,
+    read_medical_reports,
+    record_medical_review,
+    # recovery & availability
+    get_operation_status,
+    resume_operation,
+    get_service_health,
+    diagnose_connection,
+    # individual policy servicing
+    get_policy_delivery_status,
+    retry_failed_delivery,
+    get_onboarding_status,
+    provision_portal_access,
+    send_portal_invitation,
+    get_premium_schedule,
+    get_payment_receipt,
+    send_premium_reminder,
+    preview_policy_endorsement,
+    submit_policy_endorsement,
+    get_endorsement_status,
+    get_renewal_readiness,
+    preview_policy_renewal,
+    submit_policy_renewal,
+    get_reinstatement_requirements,
+    submit_reinstatement_request,
+    get_reinstatement_status,
+    preview_policy_exit,
+    submit_policy_exit_request,
+    get_exit_status,
+    # service requests & tickets
+    create_service_request,
+    get_service_request,
+    add_request_attachment,
+    submit_service_request,
+    create_support_ticket,
+    get_support_ticket,
+    add_ticket_comment,
+    assign_support_ticket,
+    # exceptions, members & operations
+    resolve_insurance_record,
+    preview_application_transition,
+    request_additional_evidence,
+    refer_underwriting_review,
+    get_member_workflow_matrix,
+    resume_member_workflow,
+    get_claim_blockers,
+    get_work_queue,
+    get_workflow_timeline,
 ]
 

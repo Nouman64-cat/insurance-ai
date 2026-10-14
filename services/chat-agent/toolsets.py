@@ -19,9 +19,13 @@ This is deliberately NOT a model-driven "load tools for domain X" step: that
 would cost an extra round-trip per domain switch, which is the thing we are
 trying to avoid. Keyword selection is free and happens before the call.
 
-Safety net: when nothing matches and there is no sticky domain, every pack is
-bound — identical to the old behaviour. A missed keyword degrades to "costs
-what it used to", never to "the agent cannot do the thing".
+Safety net: when nothing matches and there is no sticky domain, every pack in
+FALLBACK_DOMAINS is bound — identical to the old behaviour. A missed keyword
+degrades to "costs what it used to", never to "the agent cannot do the thing".
+
+Packs added after the registry reached the provider's 128-tool cap (see
+graph.MAX_BOUND_TOOLS) are keyword-only: binding them on the fallback too would
+push a keyword-less turn past the cap. Their keywords are deliberately broad.
 """
 
 from __future__ import annotations
@@ -186,8 +190,73 @@ DOMAIN_TOOLS: dict[str, set[str]] = {
         "delete_incentive_scheme",
         "toggle_incentive_scheme_active",
     },
-
+    # Evidence: what is missing, where it goes, and staff review of medical reports.
+    "documents": {
+        "request_missing_documents",
+        "link_document_to_requirement",
+        "get_medical_report_status",
+        "read_medical_reports",
+        "record_medical_review",
+    },
+    # Recovery and availability: resume a failed step, explain an outage.
+    "support": {
+        "get_operation_status",
+        "resume_operation",
+        "get_service_health",
+        "diagnose_connection",
+    },
+    # An issued individual policy: delivery, onboarding, premiums, changes, renewal,
+    # reinstatement and exit.
+    "servicing": {
+        "get_policy_delivery_status",
+        "retry_failed_delivery",
+        "get_onboarding_status",
+        "provision_portal_access",
+        "send_portal_invitation",
+        "get_premium_schedule",
+        "get_payment_receipt",
+        "send_premium_reminder",
+        "preview_policy_endorsement",
+        "submit_policy_endorsement",
+        "get_endorsement_status",
+        "get_renewal_readiness",
+        "preview_policy_renewal",
+        "submit_policy_renewal",
+        "get_reinstatement_requirements",
+        "submit_reinstatement_request",
+        "get_reinstatement_status",
+        "preview_policy_exit",
+        "submit_policy_exit_request",
+        "get_exit_status",
+    },
+    # Request Management and Customer Service.
+    "service_desk": {
+        "create_service_request",
+        "get_service_request",
+        "add_request_attachment",
+        "submit_service_request",
+        "create_support_ticket",
+        "get_support_ticket",
+        "add_ticket_comment",
+        "assign_support_ticket",
+    },
+    # Exceptions, family/corporate members, queues and histories.
+    "workflow": {
+        "resolve_insurance_record",
+        "preview_application_transition",
+        "request_additional_evidence",
+        "refer_underwriting_review",
+        "get_member_workflow_matrix",
+        "resume_member_workflow",
+        "get_claim_blockers",
+        "get_work_queue",
+        "get_workflow_timeline",
+    },
 }
+
+# Bound when no keyword matches and nothing is sticky. Must fit the provider cap
+# together with CORE_TOOLS (pinned by test_registries).
+FALLBACK_DOMAINS: tuple[str, ...] = ("admin", "rules", "claims", "group", "commission")
 
 # Words that put a conversation into a domain. Generous on purpose — a false
 # positive costs a few hundred tokens, a false negative costs a capability.
@@ -249,6 +318,43 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "withholding", "wht", "tax deduction", "disburse",
         "commission type", "commission rule", "commission rate", "rate card rule",
         "bonus plan", "incentive scheme", "persistency bonus", "production bonus",
+        "pay the agent", "pays the agent", "paid to the agent", "agent earn", "agent's pay", "agent get",
+    ),
+    "documents": (
+        "document", "documents", "upload", "uploaded", "missing", "evidence", "requirement",
+        "checklist", "resubmi", "re-upload", "reupload", "salary slip", "bank statement",
+        "medical report", "medical reports", "lab report", "lab result", "test result", "report",
+        "physician", "blood", "lipid", "ecg", "hba1c", "urine", "medical review", "findings",
+    ),
+    "support": (
+        "failed", "fail", "error", "retry", "resume", "interrupted", "where we stopped",
+        "where we left", "pick up", "stuck", "operation", "didn't go through", "did not go through",
+        "sign in", "signin", "sign-in", "log in", "login", "connect", "connection", "timeout",
+        "timed out", "took too long", "unreachable", "unavailable", "server", "health", "outage",
+        "down", "not loading", "not opening", "won't open", "won't load", "can't open", "cannot open",
+        "network", "customer service", "request management",
+    ),
+    "servicing": (
+        "policy number", "pl-", "his policy", "her policy", "their policy", "the policy", "policyholder",
+        "policy holder", "email", "emails", "contact detail", "phone number", "mobile number", "in force", "in-force", "issued policy", "welcome kit", "welcome email", "welcome pack",
+        "delivered", "delivery", "emailed", "onboard", "policyholder id", "portal access", "portal account",
+        "customer portal", "invitation", "premium", "instalment", "installment", "overdue", "arrears", "grace",
+        "receipt", "paid", "reminder", "billing", "endorse", "endorsement", "nominee", "beneficiar", "change the address",
+        "change address", "change of address", "sum assured", "rider", "renew", "renewal", "expire", "expiry",
+        "reinstat", "lapse", "lapsed", "revive", "restore", "free-look", "free look", "cooling", "cancel the policy",
+        "cancel policy", "cancellation", "surrender", "maturity", "exit",
+    ),
+    "service_desk": (
+        "service request", "change request", "request management", "my request", "request status", "req-",
+        "correction", "correct the", "ticket", "complaint", "complain", "support", "enquiry", "inquiry",
+        "customer service", "escalat", "assign the ticket", "claim the ticket",
+    ),
+    "workflow": (
+        "which record", "which application", "which customer", "transition", "can it move", "move to",
+        "send to underwriting", "evidence", "loading", "dispute", "contest", "refer", "review it",
+        "member", "members", "family", "household", "employees", "blocked", "blocking", "waiting", "why is",
+        "stuck", "queue", "backlog", "aging", "ageing", "oldest", "delayed", "overdue", "sla", "deadline",
+        "timeline", "history", "audit trail", "who did", "payouts",
     ),
 }
 
@@ -270,7 +376,39 @@ def select_domains(texts: Iterable[str], sticky: Iterable[str] = ()) -> set[str]
         if any(word in blob for word in words)
     }
     matched |= {d for d in sticky if d in DOMAIN_TOOLS}
-    return matched or set(DOMAIN_TOOLS)
+    return matched or set(FALLBACK_DOMAINS)
+
+
+def matched_domains(texts: Iterable[str]) -> list[str]:
+    """Domains whose keywords appear in `texts`, without the fallback — in
+    DOMAIN_TOOLS order, for prioritising."""
+    blob = " ".join(t for t in texts if t).lower()
+    return [d for d, words in DOMAIN_KEYWORDS.items() if any(w in blob for w in words)]
+
+
+def domains_used(tool_names: Iterable[str]) -> list[str]:
+    """The packs the given tools belong to (core tools belong to none)."""
+    out: list[str] = []
+    for name in tool_names:
+        d = domain_of(name)
+        if d and d not in out:
+            out.append(d)
+    return out
+
+
+def fit_to_cap(domains: Iterable[str], priority: Iterable[str], cap: int) -> set[str]:
+    """Drop whole packs, least relevant first, until CORE plus the packs fits the
+    provider's tool cap. A pack is never half-bound: trimming tool by tool used
+    to cut whichever tools happened to sit last in the registry — e.g. every
+    servicing tool — and leave the model reaching for a lookalike."""
+    domains = set(domains)
+    ordered = [d for d in dict.fromkeys(priority) if d in domains]
+    ordered += [d for d in DOMAIN_TOOLS if d in domains and d not in ordered]
+    chosen: list[str] = []
+    for d in ordered:
+        if len(tool_names_for([*chosen, d])) <= cap:
+            chosen.append(d)
+    return set(chosen)
 
 
 def domain_of(tool_name: str) -> str | None:

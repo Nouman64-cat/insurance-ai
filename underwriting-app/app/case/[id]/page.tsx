@@ -61,8 +61,11 @@ import {
   getMedicalExam,
   assessMedicalExam,
   inviteMedicalExam,
+  issueLabLink,
+  type LabLink,
   waiveMedicalExam,
   recordMedicalResult,
+  confirmMedicalReports,
   aiReviewMedicalReports,
   MEDICAL_CLEARED,
   usableReport,
@@ -1808,6 +1811,23 @@ export default function CasePage({ params }: { params: { id: string } }) {
     null,
   );
   const [showUpload, setShowUpload] = useState(false);
+  // Underwriter chose to proceed although some mandatory documents are missing. Kept per case in this browser only.
+  const [docsWaived, setDocsWaived] = useState(false);
+  useEffect(() => {
+    try {
+      setDocsWaived(localStorage.getItem(`uw-docs-waived:${caseId}`) === "1");
+    } catch {}
+  }, [caseId]);
+  const toggleDocsWaived = useCallback(
+    (next: boolean) => {
+      setDocsWaived(next);
+      try {
+        if (next) localStorage.setItem(`uw-docs-waived:${caseId}`, "1");
+        else localStorage.removeItem(`uw-docs-waived:${caseId}`);
+      } catch {}
+    },
+    [caseId],
+  );
   const [showDocuments, setShowDocuments] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<ArtifactData | null>(null);
   // Set when the upload dialog was opened from a requirement row — the dialog
@@ -1836,6 +1856,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const [medErr, setMedErr] = useState<string | null>(null);
   const [showResultModal, setShowResultModal] = useState(false);
   const [showAssessModal, setShowAssessModal] = useState(false);
+  const [showLabLinkModal, setShowLabLinkModal] = useState(false);
+  const [labLink, setLabLink] = useState<LabLink | null>(null);
   const notifiedPreUnderwritingRef = useRef(false);
 
   const [docSummary, setDocSummary] = useState<string | null>(null);
@@ -2357,6 +2379,19 @@ export default function CasePage({ params }: { params: { id: string } }) {
     }
   };
 
+  const handleLabLink = async () => {
+    setMedBusy(true);
+    setMedErr(null);
+    try {
+      setLabLink(await issueLabLink(caseId));
+      await fetchMedical();
+    } catch (e: any) {
+      setMedErr(e?.response?.data?.detail ?? e?.message ?? "Could not create the lab link");
+    } finally {
+      setMedBusy(false);
+    }
+  };
+
   const handleWaiveMedical = async () => {
     const reason = window.prompt("Reason for waiving the medical requirement:");
     if (!reason) return;
@@ -2369,6 +2404,24 @@ export default function CasePage({ params }: { params: { id: string } }) {
       const msg = e?.message ?? "Failed to waive the medical requirement";
       setMedErr(msg);
       alert(msg);
+    } finally {
+      setMedBusy(false);
+    }
+  };
+
+  // The customer's reports are in: complete the step. Nothing is read or typed here; the reports are read during
+  // the underwriting run.
+  const handleConfirmReports = async () => {
+    setMedBusy(true);
+    setMedErr(null);
+    try {
+      setMedical(await confirmMedicalReports(caseId));
+      setShowResultModal(false);
+      setSuccessMessage(tx("Medical reports confirmed. They will be read during the underwriting run."));
+      window.setTimeout(() => setSuccessMessage(null), 6000);
+      await fetchDetail();
+    } catch (e: any) {
+      setMedErr(e?.response?.data?.detail ?? e?.message ?? "Failed to confirm the reports");
     } finally {
       setMedBusy(false);
     }
@@ -2515,7 +2568,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
   // `missingPreChecks` array, which only exists after those early returns.
   useEffect(() => {
     if (!detail) return;
-    const docsReady = (detail.document_checklist?.missing ?? []).length === 0;
+    const docsReady =
+      docsWaived || (detail.document_checklist?.missing ?? []).length === 0;
     const eAppReady =
       eApp?.status === "Submitted" || eApp?.status === "Verified";
     const acrReady = isACRCleared(acr);
@@ -2548,13 +2602,13 @@ export default function CasePage({ params }: { params: { id: string } }) {
     } else {
       notifiedPreUnderwritingRef.current = false;
     }
-  }, [detail, eApp, acr, checks, history, medical, notify]);
+  }, [detail, eApp, acr, checks, history, medical, notify, docsWaived]);
 
   // Auto-run underwriting if requested via URL. In group mode the parallel
   // runner below handles every plan, so the single-case path stays out of it.
   useEffect(() => {
     if (isGroup) return;
-    const missingDocs = detail?.document_checklist?.missing ?? [];
+    const missingDocs = docsWaived ? [] : (detail?.document_checklist?.missing ?? []);
     const checksMissing =
       eApp?.status !== "Submitted" ||
       !isACRCleared(acr);
@@ -2593,6 +2647,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
     eApp?.status,
     acr?.status,
     acr?.waived_at,
+    docsWaived,
   ]);
 
   const summarizeDocuments = async () => {
@@ -2621,7 +2676,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
     if (!detail?.customer || !detail?.policy || !tenantId) return;
 
     // Required documents must be uploaded before underwriting can proceed.
-    const missingDocs = detail.document_checklist?.missing ?? [];
+    const missingDocs = docsWaived ? [] : (detail.document_checklist?.missing ?? []);
     if (missingDocs.length > 0) {
       setStatus("idle");
       setStreamError(
@@ -3138,7 +3193,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
   // Underwriting requires every mandatory document to be uploaded AND
   // all initial checks to be completed — the Run / Re-run buttons stay
   // disabled until the checklist has nothing missing.
-  const missingRequiredDocs = docs?.missing ?? [];
+  const actualMissingDocs = docs?.missing ?? [];
+  const missingRequiredDocs = docsWaived ? [] : actualMissingDocs;
   const missingPreChecks: string[] = [];
   if (missingRequiredDocs.length > 0)
     missingPreChecks.push(`Docs: ${missingRequiredDocs.join(", ")}`);
@@ -3171,12 +3227,14 @@ export default function CasePage({ params }: { params: { id: string } }) {
       id: "docs",
       title: "Mandatory Documents Checklist",
       done: missingRequiredDocs.length === 0,
-      statusLabel:
-        missingRequiredDocs.length === 0
+      statusLabel: docsWaived && actualMissingDocs.length > 0
+        ? "Waived"
+        : missingRequiredDocs.length === 0
           ? "Completed"
           : `Missing (${missingRequiredDocs.length})`,
-      description:
-        missingRequiredDocs.length === 0
+      description: docsWaived && actualMissingDocs.length > 0
+        ? `Proceeding without: ${actualMissingDocs.join(", ")}. Documents can still be uploaded later.`
+        : missingRequiredDocs.length === 0
           ? "All required documents uploaded and processed by OCR."
           : `Missing required document(s): ${missingRequiredDocs.join(", ")}`,
       actionLabel:
@@ -3184,6 +3242,15 @@ export default function CasePage({ params }: { params: { id: string } }) {
           ? "Manage / Upload Docs"
           : "Upload Documents",
       onAction: () => setShowUpload(true),
+      // Bypass when a document can't be obtained (underwriter / admin only).
+      secondaryActionLabel:
+        canWaiveAcr && actualMissingDocs.length > 0
+          ? docsWaived
+            ? "Undo waiver"
+            : "Proceed without"
+          : undefined,
+      onSecondaryAction: () => toggleDocsWaived(!docsWaived),
+      secondaryBusy: false,
     },
     {
       id: "eapp",
@@ -3209,20 +3276,22 @@ export default function CasePage({ params }: { params: { id: string } }) {
       description: medicalDone
         ? `Medical examination status: ${medical?.status}`
         : medicalReportsSubmitted
-          ? `Customer submitted ${medicalReports.length} report${medicalReports.length === 1 ? "" : "s"} covering ${medicalReportsCoveredTests} of ${medical?.required_tests.length ?? 0} required tests — review them and record the results.`
+          ? `The lab submitted ${medicalReports.length} report${medicalReports.length === 1 ? "" : "s"} covering ${medicalReportsCoveredTests} of ${medical?.required_tests.length ?? 0} required tests — review them and record the results.`
           : medical?.status === "Invited" && medicalReports.length > 0
-            ? `Customer has uploaded reports for ${medicalReportsCoveredTests} of ${medical.required_tests.length} required tests and has not submitted yet.`
+            ? `The lab has uploaded reports for ${medicalReportsCoveredTests} of ${medical.required_tests.length} required tests and has not submitted yet.`
             : "Non-medical limit grid or panel diagnostic check required.",
       actionLabel: medBusy
         ? "Assessing…"
         : medicalReportsSubmitted
           ? "Review Reports"
           : medical?.status === "Scheduled"
-            ? "Record Lab Results"
+            ? "Lab Link & Results"
             : "Assess Medical",
-      onAction: medicalAwaitingReview
+      onAction: medicalReportsSubmitted
         ? () => setShowResultModal(true)
-        : handleAssessMedical,
+        : medical?.status === "Scheduled"
+          ? () => { setLabLink(null); setMedErr(null); setShowLabLinkModal(true); }
+          : handleAssessMedical,
       busy: medBusy,
     },
     {
@@ -4208,13 +4277,36 @@ export default function CasePage({ params }: { params: { id: string } }) {
           )}
 
           <ModalPortal>
-            {showResultModal && medical && (
+            {showResultModal && medical && (medical.reports ?? []).length > 0 && (
+              <MedicalReportsModal
+                order={medical}
+                busy={medBusy}
+                onClose={() => setShowResultModal(false)}
+                onConfirm={handleConfirmReports}
+              />
+            )}
+
+            {showResultModal && medical && (medical.reports ?? []).length === 0 && (
               <MedicalResultModal
                 order={medical}
                 caseId={caseId}
                 busy={medBusy}
                 onClose={() => setShowResultModal(false)}
                 onSubmit={handleRecordResults}
+              />
+            )}
+
+            {showLabLinkModal && medical && (
+              <MedicalLabLinkModal
+                order={medical}
+                customerName={customer?.name}
+                link={labLink ? portalUrl(labLink.link_path) : null}
+                labLink={labLink}
+                busy={medBusy}
+                error={medErr}
+                onGenerate={handleLabLink}
+                onEnterManually={() => { setShowLabLinkModal(false); setShowResultModal(true); }}
+                onClose={() => setShowLabLinkModal(false)}
               />
             )}
 
@@ -5418,6 +5510,97 @@ export default function CasePage({ params }: { params: { id: string } }) {
 // (app/underwriting/page.tsx) so the two entry points behave identically.
 // ─────────────────────────────────────────────────────────────────────────────
 
+function MedicalLabLinkModal({
+  order,
+  customerName,
+  link,
+  labLink,
+  busy,
+  error,
+  onGenerate,
+  onEnterManually,
+  onClose,
+}: Readonly<{
+  order: MedicalExamOrder;
+  customerName?: string;
+  link: string | null;
+  labLink: LabLink | null;
+  busy: boolean;
+  error: string | null;
+  onGenerate: () => void;
+  onEnterManually: () => void;
+  onClose: () => void;
+}>) {
+  const clinic = order.clinic;
+  const sentTo = labLink?.emailed_to ?? order.lab_link_sent_to;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
+          <h3 className="font-bold text-slate-900 text-sm">{tx("Lab report link")}</h3>
+          <p className="text-xs text-slate-500">{customerName ?? "—"}</p>
+        </div>
+        <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto text-xs">
+          <div className="border border-slate-200 rounded-xl p-3 space-y-1">
+            <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">{tx("Lab chosen by the customer")}</p>
+            <p className="font-bold text-slate-800 text-sm">{clinic?.name ?? "—"}</p>
+            {clinic?.address && <p className="text-slate-600">{clinic.address}</p>}
+            {clinic?.phone && <p className="text-slate-600">{clinic.phone}</p>}
+            <p className="text-slate-600">
+              {tx("Email:")} {order.lab_email ?? <span className="text-amber-700">{tx("not on file")}</span>}
+            </p>
+            <p className="text-slate-600">
+              {tx("Appointment:")} {order.appointment_at ? displayDate(order.appointment_at) + " " + order.appointment_at.slice(11, 16) : "—"}
+            </p>
+          </div>
+          <p className="text-slate-600">
+            {tx("Tests to upload:")} <span className="font-semibold text-slate-800">{(order.required_tests ?? []).length}</span>
+          </p>
+          {link ? (
+            <div>
+              <p className="text-[11px] text-slate-500 mb-1">{tx("Send this link to the lab's doctor — it replaces any earlier lab link:")}</p>
+              <div className="flex items-center gap-1.5">
+                <input readOnly value={link} onFocus={(e) => e.currentTarget.select()}
+                  className="text-[10px] border border-slate-200 rounded px-2 py-1.5 w-full font-mono text-slate-600 bg-white" />
+                <button onClick={() => navigator.clipboard.writeText(link)}
+                  className="text-[10px] font-bold text-blue-700 px-2.5 py-1.5 bg-blue-50 border border-blue-200/60 rounded shrink-0 hover:bg-blue-100">
+                  {tx("Copy")}
+                </button>
+              </div>
+              <p className="mt-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 text-[11px] font-medium text-slate-600">
+                {labLink?.email_status === "sent"
+                  ? tx("Link emailed to {0}", { 0: labLink.emailed_to ?? "" })
+                  : tx("No email on file for this lab — share the link manually")}
+              </p>
+            </div>
+          ) : (
+            <p className="text-slate-600">
+              {sentTo
+                ? tx("The lab link was emailed to {0}. Generate it again to resend or to get a copyable link.", { 0: sentTo })
+                : tx("Generate the link to send to the lab's doctor. They will see the applicant's details and upload the reports.")}
+            </p>
+          )}
+          {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-2.5 text-red-700">{error}</p>}
+        </div>
+        <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex flex-wrap justify-between items-center gap-2">
+          <button onClick={onEnterManually} className="text-xs font-semibold text-slate-600 hover:text-slate-800">
+            {tx("Enter results manually")}
+          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={onGenerate} disabled={busy}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold">
+              {busy ? tx("Working…") : link || sentTo ? tx("Resend / new link") : tx("Generate & send link")}
+            </button>
+            <button onClick={onClose} className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold">
+              {tx("Close")}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MedicalAssessModal({
   order,
   link,
@@ -5537,7 +5720,7 @@ function MedicalAssessModal({
                 <div>
                   <p className="text-[11px] text-slate-500 mb-1">
                     {tx(
-                      "The customer's link — they see the required tests and approved labs, then upload their reports:",
+                      "The customer's link — they choose a lab and time. The lab's doctor then uploads the reports:",
                     )}
                   </p>
                   <div className="flex items-center gap-1.5">
@@ -5615,6 +5798,89 @@ function AiSpinner({ className = "h-3 w-3" }: Readonly<{ className?: string }>) 
       <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
       <path d="M22 12a10 10 0 0 0-10-10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
     </svg>
+  );
+}
+
+function MedicalReportsModal({
+  order,
+  busy,
+  onClose,
+  onConfirm,
+}: Readonly<{ order: MedicalExamOrder; busy: boolean; onClose: () => void; onConfirm: () => void }>) {
+  const reports = (order.reports ?? []).filter((r) => r.status !== "Re-submission Requested");
+  const rows = order.required_tests.map((t) => ({ test: t, files: reports.filter((r) => r.test_code === t.code) }));
+  const received = rows.filter((r) => r.files.length > 0).length;
+  const complete = rows.length > 0 && received === rows.length;
+  const pct = rows.length ? Math.round((received / rows.length) * 100) : 0;
+
+  const open = async (artifactId: string) => {
+    const tab = window.open("", "_blank");
+    try {
+      const url = await getArtifactUrl(artifactId);
+      if (tab) tab.location.href = url;
+      else window.open(url, "_blank");
+    } catch {
+      tab?.close();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm" onClick={() => !busy && onClose()}>
+      <div role="dialog" aria-modal="true" className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-blue-600 px-6 py-4">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-white/80">{tx("Medical examination")}</p>
+          <h2 className="text-lg font-bold text-white">{tx("Customer's medical reports")}</h2>
+          <p className="mt-0.5 text-xs text-white/80">{tx("Check that every report has been uploaded. They are read during the underwriting run.")}</p>
+        </div>
+
+        <div className="border-b border-slate-100 px-6 py-3">
+          <div className="flex items-baseline justify-between text-sm">
+            <span className="font-semibold text-slate-800">{tx("{0} of {1} uploaded", { 0: received, 1: rows.length })}</span>
+            <span className="text-slate-500">{pct}%</span>
+          </div>
+          <div className="mt-2 h-2 rounded-full bg-slate-100" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+            <div className="h-2 rounded-full bg-blue-600 transition-all" style={{ width: `${pct}%` }} />
+          </div>
+        </div>
+
+        <ul className="flex-1 divide-y divide-slate-100 overflow-y-auto px-6">
+          {rows.map(({ test, files }) => (
+            <li key={test.code} className="flex items-start justify-between gap-3 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-900">{test.name}</p>
+                {files.length > 0 ? (
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {files.map((f) => (
+                      <button key={f.id} type="button" onClick={() => void open(f.id)} title={f.file_name}
+                        className="max-w-full truncate rounded-md border border-blue-100 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 hover:bg-blue-100">
+                        {f.file_name}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-0.5 text-xs text-slate-500">{tx("Not uploaded yet")}</p>
+                )}
+              </div>
+              <span className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${files.length > 0 ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 bg-white text-slate-600"}`}>
+                {files.length > 0 ? tx("Uploaded") : tx("Missing")}
+              </span>
+            </li>
+          ))}
+        </ul>
+
+        <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-6 py-4">
+          <button onClick={onClose} disabled={busy} className="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900 disabled:opacity-40">{tx("Cancel")}</button>
+          <button
+            onClick={onConfirm}
+            disabled={busy || !complete}
+            title={complete ? undefined : tx("Every report must be uploaded first")}
+            className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-40"
+          >
+            {busy ? tx("Confirming…") : tx("Confirm reports received")}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -5716,13 +5982,13 @@ function MedicalResultModal({
     if (state === "waiting")
       return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-slate-500">{tx("Queued for AI")}</span>;
     if (state === "reading")
-      return <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-violet-700"><AiSpinner className="h-2.5 w-2.5" />{tx("AI reading…")}</span>;
+      return <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-blue-700"><AiSpinner className="h-2.5 w-2.5" />{tx("AI reading…")}</span>;
     if (state === "failed")
-      return <button type="button" onClick={() => void readTest(code, true)} className="rounded-full bg-red-50 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-red-600 hover:bg-red-100">{tx("AI failed · Retry")}</button>;
+      return <button type="button" onClick={() => void readTest(code, true)} className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-slate-700 hover:bg-slate-200">{tx("AI failed · Retry")}</button>;
     if (state === "done" && edited.has(code))
       return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-slate-600">{tx("Edited by you")}</span>;
     if (state === "done" && read?.readable)
-      return <span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal ${read.abnormal ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-700"}`}>{read.abnormal ? "⚠ " + tx("AI · outside range") : "✨ " + tx("AI-filled")}</span>;
+      return <span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal ${read.abnormal ? "bg-blue-100 text-blue-800" : "bg-blue-600 text-white"}`}>{read.abnormal ? "⚠ " + tx("AI · outside range") : "✨ " + tx("AI-filled")}</span>;
     if (state === "done")
       return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-slate-500">{tx("Enter manually")}</span>;
     return null;
@@ -5737,14 +6003,14 @@ function MedicalResultModal({
         className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="bg-slate-800 px-5 py-3">
-          <p className="text-white/70 text-[11px] font-semibold uppercase tracking-wider">
+        <div className="bg-blue-600 px-5 py-3">
+          <p className="text-white/80 text-[11px] font-semibold uppercase tracking-wider">
             {readable.length > 0 ? "✨ " + tx("AI-assisted review") : tx("Panel Clinic Report")}
           </p>
           <h2 className="text-white text-lg font-bold">
             {tx("Record Medical Results")}
           </h2>
-          <p className="text-white/70 text-xs">
+          <p className="text-white/80 text-xs">
             {order.reports_submitted
               ? tx("Reports submitted by the customer")
               : (order.clinic?.name ?? tx("Panel clinic"))}
@@ -5761,26 +6027,26 @@ function MedicalResultModal({
           <div
             role="status"
             aria-live="polite"
-            className={`border-b px-5 py-3 ${aiRunning ? "border-violet-100 bg-violet-50" : "border-slate-100 bg-slate-50"}`}
+            className={`border-b px-5 py-3 ${aiRunning ? "border-blue-100 bg-blue-50" : "border-slate-100 bg-slate-50"}`}
           >
             {aiRunning || !aiStarted ? (
               <>
                 <div className="flex items-center justify-between gap-3 text-xs">
-                  <span className="flex items-center gap-2 font-semibold text-violet-800">
+                  <span className="flex items-center gap-2 font-semibold text-blue-800">
                     <AiSpinner className="h-3.5 w-3.5" />
                     {tx("AI is reading the customer's reports")}
                   </span>
-                  <span className="font-mono text-[11px] text-violet-700">
+                  <span className="font-mono text-[11px] text-blue-700">
                     {aiDone} / {readable.length}
                   </span>
                 </div>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-violet-100">
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-blue-100">
                   <div
-                    className="h-full rounded-full bg-violet-500 transition-all duration-500"
+                    className="h-full rounded-full bg-blue-500 transition-all duration-500"
                     style={{ width: `${Math.max(4, (aiDone / readable.length) * 100)}%` }}
                   />
                 </div>
-                <p className="mt-1.5 truncate text-[10px] text-violet-700/80">
+                <p className="mt-1.5 truncate text-[10px] text-blue-700/80">
                   {nowReading.length > 0
                     ? tx("Now reading: {0}", { 0: nowReading.join(", ") })
                     : tx("Starting…")}{" "}
@@ -5807,7 +6073,7 @@ function MedicalResultModal({
                 </span>
                 <button
                   onClick={() => void readAll(true)}
-                  className="text-[11px] font-semibold text-violet-700 hover:text-violet-900"
+                  className="text-[11px] font-semibold text-blue-700 hover:text-blue-900"
                 >
                   ↻ {tx("Re-read all")}
                 </button>
@@ -5852,7 +6118,7 @@ function MedicalResultModal({
                         >
                           📄 {r.file_name}
                           {r.status !== "Accepted" && (
-                            <span className="ml-1 text-amber-700">
+                            <span className="ml-1 text-blue-700">
                               ({tx("processing")})
                             </span>
                           )}
@@ -5878,16 +6144,16 @@ function MedicalResultModal({
                     }
                     className={`w-full text-sm border rounded-lg px-3 py-2 transition-all duration-500 ${
                       pending
-                        ? "border-violet-200 bg-violet-50/60 animate-pulse pr-9"
+                        ? "border-blue-200 bg-blue-50/60 animate-pulse pr-9"
                         : justFilled.has(t.code)
-                          ? "border-violet-400 bg-violet-50 ring-2 ring-violet-200"
+                          ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200"
                           : read?.readable && read.abnormal && !edited.has(t.code)
-                            ? "border-amber-300 bg-amber-50/50"
+                            ? "border-blue-300 bg-blue-50/50"
                             : "border-slate-200"
                     }`}
                   />
                   {state === "reading" && (
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-violet-500">
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-500">
                       <AiSpinner className="h-4 w-4" />
                     </span>
                   )}
@@ -5895,7 +6161,7 @@ function MedicalResultModal({
                 {state === "done" && read && (
                   <p
                     title={read.evidence ?? undefined}
-                    className={`mt-1 line-clamp-2 text-[10px] ${!read.readable ? "text-slate-400" : read.abnormal ? "text-amber-700" : "text-slate-500"}`}
+                    className={`mt-1 line-clamp-2 text-[10px] ${!read.readable ? "text-slate-400" : read.abnormal ? "text-blue-700" : "text-slate-500"}`}
                   >
                     {!read.readable
                       ? tx("AI could not find this result in the report — enter it manually.")
@@ -5906,8 +6172,13 @@ function MedicalResultModal({
             );
           })}
           {openError && (
-            <p role="alert" className="text-[11px] text-red-600">
+            <p role="alert" className="text-[11px] text-slate-700">
               {openError}
+            </p>
+          )}
+          {!aiRunning && filled === 0 && (
+            <p role="status" className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+              {tx("Save is available once at least one result is filled in. The AI could not read any value from the reports yet, so type the results in manually.")}
             </p>
           )}
           <p className="text-[11px] text-slate-400 pt-1">
@@ -5921,7 +6192,7 @@ function MedicalResultModal({
           <span className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium">
             {aiRunning ? (
               <>
-                <AiSpinner className="h-3 w-3 text-violet-500" />
+                <AiSpinner className="h-3 w-3 text-blue-500" />
                 {tx("AI reading {0} of {1}…", { 0: Math.min(aiDone + 1, readable.length), 1: readable.length })}
               </>
             ) : (
@@ -5940,8 +6211,8 @@ function MedicalResultModal({
             <button
               onClick={submit}
               disabled={busy || filled === 0 || aiRunning}
-              title={aiRunning ? tx("Wait for the AI to finish reading the reports") : undefined}
-              className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-slate-800 hover:bg-slate-900 text-white disabled:opacity-40"
+              title={aiRunning ? tx("Wait for the AI to finish reading the reports") : filled === 0 ? tx("Enter at least one result to save") : undefined}
+              className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40"
             >
               {busy ? tx("Saving…") : tx("Save & rate")}
             </button>

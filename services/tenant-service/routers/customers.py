@@ -1,6 +1,6 @@
 import logging
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from datetime import date
 from typing import Literal, Optional
 from uuid import UUID
@@ -86,6 +86,48 @@ async def _publish_customer_created(request: Request, tenant_id: UUID, customer:
     except Exception as err:
         logger.warning(f"Failed to publish customer created event: {err}")
         logger.exception("Failed to publish CustomerCreated event | customer_id=%s", customer.id)
+
+_KNOCKOUT_OVERRIDE_ROLES = {"Underwriter", "Admin", "SuperAdmin"}
+
+
+async def _enforce_early_knockout(
+    session: AsyncSession, tenant_id: UUID, customer: Customer,
+    override_reason: Optional[str] = None, token: Optional[str] = None,
+) -> None:
+    """Stop a lead from reaching a plan / proposal when the early-knockout rules decline them. An
+    underwriter or admin can move them anyway with a reason; the override is kept on the customer."""
+    from services.early_knockout import early_check
+    verdict = await early_check(
+        session, tenant_id, occupation=customer.occupation, dob=customer.dob, proposal_id=str(customer.id),
+    )
+    if verdict["decision"] != "DECLINE":
+        return
+    reason = (override_reason or "").strip()
+    if reason:
+        from routers.auth import _get_current_user, _role_name
+        if not token:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sign in to override an eligibility decline.")
+        user = await _get_current_user(token, session)
+        role = await _role_name(user, session)
+        if role not in _KNOCKOUT_OVERRIDE_ROLES:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only an underwriter or admin can move a lead past an eligibility decline.",
+            )
+        details = dict(customer.details or {})
+        details["knockout_override"] = {
+            "by": user.email, "role": role, "reason": reason[:500],
+            "declined_for": verdict["reasons"], "at": datetime.utcnow().isoformat(),
+        }
+        customer.details = details
+        session.add(customer)
+        logger.warning("Early-knockout override | customer=%s by=%s reasons=%s", customer.id, user.email, verdict["reasons"])
+        return
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail="Not eligible for cover: " + "; ".join(verdict["reasons"]),
+    )
+
 
 @router.post(
     "/{tenant_id}/customers",
@@ -458,7 +500,9 @@ async def create_customer_policy(
     tenant_id: UUID,
     customer_id: UUID,
     body: PolicyCreate,
+    override_knockout_reason: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
 ):
     customer = await session.get(Customer, customer_id)
     if not customer or customer.tenant_id != tenant_id:
@@ -466,6 +510,8 @@ async def create_customer_policy(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Customer not found"
         )
+
+    await _enforce_early_knockout(session, tenant_id, customer, override_knockout_reason, token)
 
     policy = Policy(
         tenant_id=tenant_id,
@@ -636,6 +682,55 @@ async def renew_policy_document_request(
     return {**(await docreq.summary(session, req)), "link_path": f"/documents/{docreq.make_token(req)}"}
 
 
+@router.post(
+    "/{tenant_id}/customers/{customer_id}/policies/{policy_id}/document-request/send",
+    dependencies=[Depends(verify_admin)],
+)
+async def send_policy_document_request(
+    tenant_id: UUID,
+    customer_id: UUID,
+    policy_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    """Email the customer their upload link, listing what is still outstanding. An expired link is renewed first.
+    Best-effort like every customer email: the link is returned either way, and email_status says honestly whether
+    it went ("sent"), failed ("failed") or had nowhere to go ("no_email")."""
+    import email_utils
+    from services.customer_links import PORTAL_PUBLIC_URL, customer_email
+    from services.email_templates import customer_action_link_email
+
+    policy = await _policy_in_scope(session, tenant_id, customer_id, policy_id, token)
+    req = await docreq.ensure_document_request(session, policy)
+    if req.expires_at < datetime.utcnow():
+        req = await docreq.renew_link(session, req)
+    summary = await docreq.summary(session, req)
+    link_path = f"/documents/{docreq.make_token(req)}"
+    url = f"{PORTAL_PUBLIC_URL}{link_path}"
+    outstanding = [i["document_type"] for i in summary["requirements"] if i["state"] != "received"]
+
+    customer = await session.get(Customer, customer_id)
+    to = customer_email(customer)
+    email_status = "no_email"
+    if to:
+        tenant = await session.get(Tenant, tenant_id)
+        case = await docreq.latest_case(session, req)
+        subject, text, html = customer_action_link_email(
+            kind="documents",
+            customer_name=customer.name if customer else "",
+            tenant_name=(tenant.name if tenant else None) or "Your insurer",
+            url=url,
+            expires_on=req.expires_at.strftime("%d %b %Y"),
+            case_number=case.caseNumber if case else None,
+            tests=outstanding,
+            tenant_phone=getattr(tenant, "contact_phone", None),
+            tenant_email=getattr(tenant, "contact_email", None),
+        )
+        email_status = "sent" if await email_utils.send_email(to, subject, text, html) else "failed"
+    return {**summary, "link_path": link_path, "url": url, "outstanding": outstanding,
+            "emailed_to": to, "email_status": email_status}
+
+
 async def _policy_in_scope(
     session: AsyncSession, tenant_id: UUID, customer_id: UUID, policy_id: UUID, token: Optional[str],
 ) -> Policy:
@@ -661,6 +756,7 @@ async def update_customer(
     customer_id: UUID,
     body: CustomerUpdate,
     request: Request,
+    override_knockout_reason: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_session),
     token: Optional[str] = Depends(optional_oauth2_scheme),
 ) -> Customer:
@@ -756,6 +852,8 @@ async def update_customer(
     # only an explicit profile_status in the request (a manual "Reactivate") can move it.
     # DRAFT is the same: it means "sent to Proposal" by an explicit click, so a later
     # edit must not silently pull the lead back out of the proposal list.
+    if body.profile_status == ProfileStatusEnum.DRAFT and not was_draft:
+        await _enforce_early_knockout(session, tenant_id, customer, override_knockout_reason, token)
     if body.profile_status is not None:
         customer.profile_status = body.profile_status
     elif customer.profile_status not in (ProfileStatusEnum.NOT_INTERESTED, ProfileStatusEnum.DRAFT):
