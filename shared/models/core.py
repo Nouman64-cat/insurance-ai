@@ -2239,6 +2239,7 @@ class PolicyDocumentTypeEnum(str, Enum):
     CERTIFICATE = "CertificateOfInsurance"
     WORDING = "PolicyWording"            # T&Cs + endorsements
     RENEWAL_NOTICE = "RenewalNotice"
+    APPLICATION_DOSSIER = "ApplicationDossier"   # everything the customer provided, in one PDF
 
 
 class PolicyVersion(SQLModel, table=True):

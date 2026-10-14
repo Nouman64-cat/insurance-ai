@@ -119,6 +119,11 @@ async def lifespan(app: FastAPI):
     await run_migrations()
     async with _session_factory() as session:
         await _seed_roles(session)
+        try:
+            from routers.rules import ensure_knockout_rule_set
+            await ensure_knockout_rule_set(session)
+        except Exception:
+            logging.getLogger(__name__).exception("Could not seed the early-knockout rule set")
 
     # Kafka producer — shared across all request handlers via app.state
     producer = AIOKafkaProducer(

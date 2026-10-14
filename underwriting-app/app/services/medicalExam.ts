@@ -157,6 +157,12 @@ export async function scheduleMedicalExam(
   return res.data;
 }
 
+/** The customer's reports are all uploaded: completes the medical step without entering values. */
+export async function confirmMedicalReports(caseId: string): Promise<MedicalExamOrder> {
+  const res = await api.post(`/tenants/${tenantId()}/cases/${caseId}/medical-exam/confirm-reports`);
+  return res.data;
+}
+
 export async function recordMedicalResult(
   caseId: string,
   body: { results: Record<string, any>; artifact_id?: string; reported_by?: string },

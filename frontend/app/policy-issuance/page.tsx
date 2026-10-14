@@ -460,6 +460,7 @@ interface PaymentModalProps {
   policy: PolicyListItem;
   onClose: () => void;
   onConfirmed: (result: PaymentConfirmResult, policyId: string) => void;
+  onStale?: () => void;
   userRole?: string | null;
 }
 
@@ -467,6 +468,7 @@ function PaymentModal({
   policy,
   onClose,
   onConfirmed,
+  onStale,
   userRole,
 }: PaymentModalProps) {
   const { notify } = useNotify();
@@ -497,10 +499,16 @@ function PaymentModal({
         const notice = docs.find((d) => d.document_type === "PremiumNotice");
         if (notice) setPremiumNoticeId(notice.id);
       } catch (e: any) {
-        if (alive)
+        if (alive) {
+          // The shared client turns the server's reason into the error message.
+          const reason: string = e?.message ?? "";
           setError(
-            e?.response?.data?.detail ?? tx("Failed to load payment details."),
+            /not awaiting payment/i.test(reason)
+              ? tx("This premium has already been paid and the policy is no longer awaiting payment. Close this window; the list will refresh.")
+              : reason || tx("Failed to load payment details."),
           );
+          if (/not awaiting payment/i.test(reason)) onStale?.();
+        }
       } finally {
         if (alive) setLoading(false);
       }
@@ -534,11 +542,11 @@ function PaymentModal({
     setDownloading(true);
     setError(null);
     try {
-      await downloadDocument(policy.id, premiumNoticeId);
+      await downloadDocument(policy.id, premiumNoticeId, `Initial Premium Receipt – ${policy.policy_number ?? ""}`.trim());
       notify(tx("Notice downloaded successfully."), true);
     } catch (e: any) {
-      setError(tx("Failed to download Premium Notice."));
-      notify(tx("Failed to download Premium Notice."), false);
+      setError(tx("Failed to download Initial Premium Receipt."));
+      notify(tx("Failed to download Initial Premium Receipt."), false);
     } finally {
       setDownloading(false);
     }
@@ -664,7 +672,7 @@ function PaymentModal({
               </svg>
               {downloading
                 ? tx("Downloading...")
-                : tx("Download Premium Notice (PDF)")}
+                : tx("Download Initial Premium Receipt (PDF)")}
             </button>
           )}
 
@@ -1306,6 +1314,7 @@ function PolicyIssuanceContent() {
           policy={paymentPolicy}
           onClose={() => setPaymentPolicy(null)}
           onConfirmed={handleConfirmed}
+          onStale={() => load()}
           userRole={userRole}
         />
       )}

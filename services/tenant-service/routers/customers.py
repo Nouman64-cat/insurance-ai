@@ -87,6 +87,48 @@ async def _publish_customer_created(request: Request, tenant_id: UUID, customer:
         logger.warning(f"Failed to publish customer created event: {err}")
         logger.exception("Failed to publish CustomerCreated event | customer_id=%s", customer.id)
 
+_KNOCKOUT_OVERRIDE_ROLES = {"Underwriter", "Admin", "SuperAdmin"}
+
+
+async def _enforce_early_knockout(
+    session: AsyncSession, tenant_id: UUID, customer: Customer,
+    override_reason: Optional[str] = None, token: Optional[str] = None,
+) -> None:
+    """Stop a lead from reaching a plan / proposal when the early-knockout rules decline them. An
+    underwriter or admin can move them anyway with a reason; the override is kept on the customer."""
+    from services.early_knockout import early_check
+    verdict = await early_check(
+        session, tenant_id, occupation=customer.occupation, dob=customer.dob, proposal_id=str(customer.id),
+    )
+    if verdict["decision"] != "DECLINE":
+        return
+    reason = (override_reason or "").strip()
+    if reason:
+        from routers.auth import _get_current_user, _role_name
+        if not token:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sign in to override an eligibility decline.")
+        user = await _get_current_user(token, session)
+        role = await _role_name(user, session)
+        if role not in _KNOCKOUT_OVERRIDE_ROLES:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only an underwriter or admin can move a lead past an eligibility decline.",
+            )
+        details = dict(customer.details or {})
+        details["knockout_override"] = {
+            "by": user.email, "role": role, "reason": reason[:500],
+            "declined_for": verdict["reasons"], "at": datetime.utcnow().isoformat(),
+        }
+        customer.details = details
+        session.add(customer)
+        logger.warning("Early-knockout override | customer=%s by=%s reasons=%s", customer.id, user.email, verdict["reasons"])
+        return
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail="Not eligible for cover: " + "; ".join(verdict["reasons"]),
+    )
+
+
 @router.post(
     "/{tenant_id}/customers",
     response_model=CustomerRead,
@@ -458,7 +500,9 @@ async def create_customer_policy(
     tenant_id: UUID,
     customer_id: UUID,
     body: PolicyCreate,
+    override_knockout_reason: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
 ):
     customer = await session.get(Customer, customer_id)
     if not customer or customer.tenant_id != tenant_id:
@@ -466,6 +510,8 @@ async def create_customer_policy(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Customer not found"
         )
+
+    await _enforce_early_knockout(session, tenant_id, customer, override_knockout_reason, token)
 
     policy = Policy(
         tenant_id=tenant_id,
@@ -710,6 +756,7 @@ async def update_customer(
     customer_id: UUID,
     body: CustomerUpdate,
     request: Request,
+    override_knockout_reason: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_session),
     token: Optional[str] = Depends(optional_oauth2_scheme),
 ) -> Customer:
@@ -805,6 +852,8 @@ async def update_customer(
     # only an explicit profile_status in the request (a manual "Reactivate") can move it.
     # DRAFT is the same: it means "sent to Proposal" by an explicit click, so a later
     # edit must not silently pull the lead back out of the proposal list.
+    if body.profile_status == ProfileStatusEnum.DRAFT and not was_draft:
+        await _enforce_early_knockout(session, tenant_id, customer, override_knockout_reason, token)
     if body.profile_status is not None:
         customer.profile_status = body.profile_status
     elif customer.profile_status not in (ProfileStatusEnum.NOT_INTERESTED, ProfileStatusEnum.DRAFT):

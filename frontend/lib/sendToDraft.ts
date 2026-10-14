@@ -17,11 +17,13 @@ export async function sendLeadToDraft(
   type: DraftEntityType,
   id: string,
   name: string,
-  opts: { clear?: string[] } = {},
+  opts: { clear?: string[]; overrideReason?: string } = {},
 ): Promise<void> {
   const tenantId = localStorage.getItem("tenant_id");
   if (!tenantId) throw new Error("No active tenant found.");
   const path = `/tenants/${tenantId}/${COLLECTION[type]}/${id}`;
+  // An underwriter/admin moving a lead past an early-knockout decline gives a reason, kept on the customer.
+  const params = opts.overrideReason ? { override_knockout_reason: opts.overrideReason } : undefined;
 
   if (type === "INDIVIDUAL") {
     const { data: customer } = await api.get(path);
@@ -30,10 +32,10 @@ export async function sendLeadToDraft(
     const detailsChanged = !!pending_plan || (opts.clear ?? []).some((k) => customer.details && k in customer.details);
     // A proposal already made for the lead is kept; a plan chosen on the Insurance Plan tab is created now.
     if (pending_plan && !customer.details?.plan_policy_id) {
-      await api.post(`${path}/policies`, pending_plan);
+      await api.post(`${path}/policies`, pending_plan, { params });
       registerPendingQuote(id, name);
     }
-    await api.put(path, detailsChanged ? { profile_status: "DRAFT", details: restDetails } : { profile_status: "DRAFT" });
+    await api.put(path, detailsChanged ? { profile_status: "DRAFT", details: restDetails } : { profile_status: "DRAFT" }, { params });
   } else {
     await api.patch(path, { profile_status: "DRAFT" });
   }

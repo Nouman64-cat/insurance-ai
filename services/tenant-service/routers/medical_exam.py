@@ -763,6 +763,50 @@ async def record_medical_result(
     return payload
 
 
+@router.post("/tenants/{tenant_id}/cases/{case_id}/medical-exam/confirm-reports")
+async def confirm_medical_reports(
+    tenant_id: UUID,
+    case_id: UUID,
+    request: Request,
+    token: str = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+):
+    """The customer's reports are all in: complete the medical step without entering any values. The reports stay on
+    the case and are read during the underwriting run. Every required test needs at least one report that has not
+    been sent back for re-upload."""
+    user = await _get_current_user(token, session)
+    await _get_case(session, tenant_id, case_id)
+    order = await _load_order(session, case_id)
+    if order is None or order.status in (MedicalExamStatusEnum.NOT_ASSESSED, MedicalExamStatusEnum.NOT_REQUIRED):
+        raise HTTPException(status_code=409, detail="No medical examination was ordered for this case.")
+    if order.status == MedicalExamStatusEnum.WAIVED:
+        raise HTTPException(status_code=409, detail="This medical was waived — reinstate it first.")
+
+    reports = await _uploaded_reports(session, order)
+    have = {a.document_type.split(": ", 1)[-1] for a in reports if a.status != "Re-submission Requested"}
+    missing = [t.get("name") or t.get("code") for t in (order.required_tests or []) if t.get("code") not in have]
+    if missing:
+        raise HTTPException(status_code=409, detail="Reports are still missing for: " + ", ".join(missing) + ".")
+
+    now = datetime.utcnow()
+    order.results_json = {**(order.results_json or {}), "reports_confirmed_at": now.isoformat()}
+    order.completed_at = now
+    order.reported_by = user.email
+    order.status = MedicalExamStatusEnum.COMPLETED
+    order.updated_at = now
+    session.add(order)
+    await session.commit()
+    await session.refresh(order)
+
+    await publish_case_event(
+        request, session,
+        event_type="MedicalExamCompleted",
+        tenant_id=order.tenant_id, case_id=order.case_id, customer_id=order.customer_id,
+        detail={"outcome": None, "source": "reports_received"},
+    )
+    return await _order_with_clinic(session, order)
+
+
 # ── Waive / reinstate ────────────────────────────────────────────────────────
 
 class WaiveRequest(BaseModel):

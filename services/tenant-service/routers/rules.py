@@ -5,7 +5,7 @@ hierarchy: hierarchy CRUD, rule set/version/rule management, live evaluation
 (by rule set code, or by category/subcategory/channel scope), and audit trails.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
@@ -17,6 +17,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from rule_evaluator import ContextDerivationService, evaluate_rule_set, evaluate_scope
 from services.underwriting_limits import (
+    age_from_dob,
     HLV_MULTIPLES,
     NON_MEDICAL_LIMITS,
     RETENTION_AGE_SCALING,
@@ -130,6 +131,7 @@ def _map_outcome_to_impact(action_outcome: str, outcome_payload: dict):
         "underwriter_authority_level": outcome_payload.get("underwriter_authority_level"),
         "exclusion_riders": outcome_payload.get("exclusion_riders") or [],
         "is_terminal": bool(outcome_payload.get("terminal")),
+        "reason": outcome_payload.get("reason"),
         "commission_pct": outcome_payload.get("commission_pct"),
         "withholding_tax_pct": outcome_payload.get("withholding_tax_pct"),
     }
@@ -924,60 +926,122 @@ async def seed_rules_if_empty(session: AsyncSession):
             profile = await _get_or_create_eligibility(session, subcategory.id, rs_data["channel_code"])
             eligibility_id = profile.id
 
-        rule_set = RuleSet(
-            scope_type=ScopeTypeEnum(rs_data["scope_type"]),
-            subcategory_id=subcategory.id,
-            eligibility_id=eligibility_id,
-            rule_code=rs_data["code"],
-            name=rs_data["name"],
-            description=rs_data["description"],
+        await _create_rule_set_from_seed(session, rs_data, subcategory.id, eligibility_id)
+
+
+async def _create_rule_set_from_seed(
+    session: AsyncSession, rs_data: Dict[str, Any], subcategory_id: UUID, eligibility_id: Optional[UUID],
+) -> None:
+    rule_set = RuleSet(
+        scope_type=ScopeTypeEnum(rs_data["scope_type"]),
+        subcategory_id=subcategory_id,
+        eligibility_id=eligibility_id,
+        rule_code=rs_data["code"],
+        name=rs_data["name"],
+        description=rs_data["description"],
+        is_active=True,
+    )
+    session.add(rule_set)
+    await session.commit()
+    await session.refresh(rule_set)
+
+    version = RuleVersion(
+        rule_set_id=rule_set.id,
+        version_number="1.0.0",
+        status=RuleVersionStatusEnum.ACTIVE,
+        authored_by="System Baseline",
+        approved_by="Compliance Office",
+        notes="Initial statutory and operational rule baseline.",
+    )
+    session.add(version)
+    await session.commit()
+    await session.refresh(version)
+
+    for old_rule in rs_data["rules"]:
+        converted = _convert_seed_rule(old_rule)
+        rule = ActualRule(
+            version_id=version.id,
+            rule_code=converted["rule_code"],
+            name=converted["name"],
+            priority=converted["priority"],
             is_active=True,
+            impact_type=ImpactTypeEnum(converted["impact_type"]),
+            impact_data=converted["impact_data"],
+            action_outcome=converted["action_outcome"],
         )
-        session.add(rule_set)
+        session.add(rule)
         await session.commit()
-        await session.refresh(rule_set)
+        await session.refresh(rule)
 
-        version = RuleVersion(
-            rule_set_id=rule_set.id,
-            version_number="1.0.0",
-            status=RuleVersionStatusEnum.ACTIVE,
-            authored_by="System Baseline",
-            approved_by="Compliance Office",
-            notes="Initial statutory and operational rule baseline.",
-        )
-        session.add(version)
+        for c in converted["criteria"]:
+            session.add(RuleCriteria(
+                rule_id=rule.id,
+                group_id=c["group_id"],
+                field_name=c["field_name"],
+                operator=c["operator"],
+                value_numeric=c.get("value_numeric"),
+                value_string=c.get("value_string"),
+                value_range_min=c.get("value_range_min"),
+                value_range_max=c.get("value_range_max"),
+                value_list=c.get("value_list"),
+            ))
         await session.commit()
-        await session.refresh(version)
 
-        for old_rule in rs_data["rules"]:
-            converted = _convert_seed_rule(old_rule)
-            rule = ActualRule(
-                version_id=version.id,
-                rule_code=converted["rule_code"],
-                name=converted["name"],
-                priority=converted["priority"],
-                is_active=True,
-                impact_type=ImpactTypeEnum(converted["impact_type"]),
-                impact_data=converted["impact_data"],
-                action_outcome=converted["action_outcome"],
-            )
-            session.add(rule)
-            await session.commit()
-            await session.refresh(rule)
 
-            for c in converted["criteria"]:
-                session.add(RuleCriteria(
-                    rule_id=rule.id,
-                    group_id=c["group_id"],
-                    field_name=c["field_name"],
-                    operator=c["operator"],
-                    value_numeric=c.get("value_numeric"),
-                    value_string=c.get("value_string"),
-                    value_range_min=c.get("value_range_min"),
-                    value_range_max=c.get("value_range_max"),
-                    value_list=c.get("value_list"),
-                ))
-            await session.commit()
+# Early knockout — runs the moment a lead is added or a plan is selected, before any E-Application,
+# medical or underwriting step. A Decline here ends the journey with a stated reason. Keyword lists
+# and the age band are starting values for the compliance/underwriting team to confirm and edit in the
+# rule-engine admin screen; matching is case-insensitive substring on the free-text occupation.
+_KNOCKOUT_RULE_SET: Dict[str, Any] = {
+    "code": "RS-ELG-002",
+    "name": "Early Knockout",
+    "description": "Hard stops applied at lead capture and plan selection: uninsurable occupations and entry age outside the insurable band.",
+    "category_code": "ELIGIBILITY", "sub_code": "EARLY_KNOCKOUT", "sub_name": "Early Knockout",
+    "scope_type": "GLOBAL", "channel_code": None,
+    "rules": [
+        {
+            "code": "KO-OCC-01", "name": "Armed forces / border / weapon-carrying occupation", "priority": 1, "operator": "ANY",
+            "conditions": [
+                {"field": "occupation", "operator": "contains", "value": kw} for kw in [
+                    "soldier", "army", "armed forces", "military", "air force", "airforce", "navy", "naval",
+                    "commando", "paramilitary", "frontier corps", "frontier constabulary", "border",
+                    "sepoy", "sipahi", "fauji", "jawan", "havaldar", "bomb disposal",
+                ]
+            ],
+            "action_outcome": "DECLINE",
+            "outcome_payload": {"terminal": True, "reason": "Armed-forces, border or weapon-carrying occupation — life cover cannot be offered."},
+        },
+        {
+            "code": "KO-AGE-01", "name": "Entry age outside insurable band", "priority": 2, "operator": "ANY",
+            "conditions": [
+                {"field": "age", "operator": "lt", "value": 18},
+                {"field": "age", "operator": "gt", "value": 65},
+            ],
+            "action_outcome": "DECLINE",
+            "outcome_payload": {"terminal": True, "reason": "Applicant's age is outside the insurable entry band (18–65)."},
+        },
+        {
+            "code": "KO-PASS", "name": "No knockout", "priority": 99, "operator": "ALL",
+            "conditions": [],
+            "action_outcome": "AUTO_APPROVE",
+            "outcome_payload": {"reason": "No early-knockout condition applies."},
+        },
+    ],
+}
+
+
+async def ensure_knockout_rule_set(session: AsyncSession) -> None:
+    """Idempotent: seed_rules_if_empty() only runs on a fresh install, so existing databases get the
+    early-knockout rule set added here (by rule code) at startup."""
+    # Baseline first: creating a Category below would otherwise make seed_rules_if_empty() skip it.
+    await seed_rules_if_empty(session)
+    existing = (await session.exec(select(RuleSet).where(RuleSet.rule_code == _KNOCKOUT_RULE_SET["code"]))).first()
+    if existing is not None:
+        return
+    category = await _get_or_create_category(session, _KNOCKOUT_RULE_SET["category_code"], "Eligibility & Policy Limits")
+    sub = await _get_or_create_subcategory(
+        session, category.id, _KNOCKOUT_RULE_SET["sub_code"], _KNOCKOUT_RULE_SET["sub_name"])
+    await _create_rule_set_from_seed(session, _KNOCKOUT_RULE_SET, sub.id, None)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1567,6 +1631,24 @@ async def evaluate_rule_endpoint(tenant_id: UUID, body: EvaluateRuleRequest, ses
         tenant_id=tenant_id,
         proposal_id=body.proposal_id or body.case_id,
         actor=body.actor or "Portal Admin",
+    )
+
+
+class EarlyCheckRequest(BaseModel):
+    occupation: Optional[str] = None
+    dob: Optional[date] = None
+    age: Optional[int] = None
+    customer_id: Optional[UUID] = None
+    proposal_id: Optional[str] = None
+
+
+@router.post("/early-check", summary="Early knockout — would this applicant be declined before any underwriting step?")
+async def early_check_endpoint(tenant_id: UUID, body: EarlyCheckRequest, session: AsyncSession = Depends(get_session)):
+    """Returns {"decision": "DECLINE" | "REFER" | "PROCEED", "reasons": [...], "rule_codes": [...]}.
+    Never raises on a missing rule set: with nothing to evaluate the answer is PROCEED."""
+    from services.early_knockout import early_check
+    return await early_check(
+        session, tenant_id, occupation=body.occupation, dob=body.dob, age=body.age, proposal_id=body.proposal_id,
     )
 
 

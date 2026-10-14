@@ -601,6 +601,15 @@ async def ai_review_medical_reports(tenant_id: UUID, case_id: UUID, request: Req
 
 
 @app.post(
+    "/tenants/{tenant_id}/cases/{case_id}/medical-exam/confirm-reports",
+    tags=["Pre-Underwriting"],
+    summary="Complete the medical step once the customer's reports are all uploaded",
+)
+async def confirm_medical_reports(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/medical-exam/confirm-reports")
+
+
+@app.post(
     "/tenants/{tenant_id}/cases/{case_id}/medical-exam/result",
     tags=["Pre-Underwriting"],
     summary="Record diagnostics results from a panel clinic",

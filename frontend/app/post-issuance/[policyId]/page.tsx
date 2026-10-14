@@ -2791,10 +2791,13 @@ function FreeLookPanel({
 
         {documents.length > 0 ? (
           <div className="grid sm:grid-cols-2 gap-3">
-            {documents.map((doc) => (
+            {/* The initial premium receipt comes first; the rest keep their order. */}
+            {[...documents]
+              .sort((x, y) => Number(y.document_type === "PremiumNotice") - Number(x.document_type === "PremiumNotice"))
+              .map((doc) => (
               <button
                 key={doc.id}
-                onClick={() => downloadDocument(policyId, doc.id)}
+                onClick={() => downloadDocument(policyId, doc.id, doc.document_name)}
                 className="group relative overflow-hidden flex items-start gap-3 p-4 rounded-xl border border-slate-200 bg-white hover:border-blue-300 hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 text-left"
               >
                 <div className="absolute top-0 left-0 w-1 h-full bg-blue-400 scale-y-0 group-hover:scale-y-100 transition-transform origin-top"></div>
@@ -3729,7 +3732,7 @@ function PolicyIssuancePanel({
     setDownloading(docId);
     setErr(null);
     try {
-      await downloadDocument(policyId, docId);
+      await downloadDocument(policyId, docId, docs.find((d) => d.id === docId)?.document_name);
       notify(tx("Document downloaded."), true);
     } catch (e: any) {
       const msg = e?.message ?? "Download failed";

@@ -123,6 +123,7 @@ export default function LeadsHubPage() {
   const knownLeadIds = useRef<Set<string> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [declineMessage, setDeclineMessage] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<FilterType>("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [selectedEntity, setSelectedEntity] = useState<{ id: string, type: EntityType } | null>(null);
@@ -665,7 +666,12 @@ export default function LeadsHubPage() {
         router.push("/proposal");
       }
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to send draft."));
+      const message: string = err.response?.data?.detail ?? err.message ?? tx("Failed to send draft.");
+      // An early-knockout decline opens the lead's details popup, which explains it and offers "Move anyway".
+      if (message.startsWith("Not eligible for cover")) {
+        setDeclineMessage(message);
+        setSelectedEntity({ id: lead.id, type: lead.type });
+      } else setError(message);
     } finally {
       setActionBusyId(null);
     }
@@ -1258,7 +1264,8 @@ export default function LeadsHubPage() {
       {selectedEntity && (
         <UnifiedDetailsModal
           isOpen={true}
-          onClose={() => setSelectedEntity(null)}
+          onClose={() => { setSelectedEntity(null); setDeclineMessage(null); }}
+          initialError={declineMessage ?? undefined}
           entityId={selectedEntity.id}
           entityType={selectedEntity.type}
           // Wrapped: the modal may pass its own arguments, which would land in

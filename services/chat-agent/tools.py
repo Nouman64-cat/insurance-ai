@@ -2049,7 +2049,7 @@ def diagnose_connection(**kwargs) -> str:
 
 class PolicyLookupArgs(BaseModel):
     """Any one field identifies the issued policy."""
-    policy_number: Optional[str] = Field(default=None, description="e.g. PL-2026-0001")
+    policy_number: Optional[str] = Field(default=None, description="e.g. POLICY-2026-0001")
     cnic: Optional[str] = Field(default=None, description="The policyholder's CNIC.")
     policyholder_name: Optional[str] = None
     case_number: Optional[str] = Field(default=None, description="The application (APP-/CASE-) the policy came from.")

@@ -18,13 +18,16 @@ interface UnifiedDetailsModalProps {
   entityId: string;
   entityType: EntityType;
   onSaved?: () => void;
+  /** Shown in place of the details when the modal is opened to explain a failed action (e.g. an eligibility decline). */
+  initialError?: string;
 }
 
-export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityType, onSaved }: UnifiedDetailsModalProps) {
+export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityType, onSaved, initialError }: UnifiedDetailsModalProps) {
   const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(initialError ?? "");
+  const [keepInitial, setKeepInitial] = useState(!!initialError);
   const [showEditModal, setShowEditModal] = useState(false);
 
   useEffect(() => {
@@ -34,13 +37,14 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
   }, [isOpen, entityId]);
 
 
-  const handleSendToDraft = async () => {
+  const handleSendToDraft = async (overrideReason?: string) => {
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId) return;
     setLoading(true);
     setError("");
     try {
-      await sendLeadToDraft(entityType, entityId, data?.name ?? "");
+      await sendLeadToDraft(entityType, entityId, data?.name ?? "", overrideReason ? { overrideReason } : {});
+      setKeepInitial(false);
       if (onSaved) onSaved();
       if (isEmbedded()) {
         fetchDetails();
@@ -57,7 +61,8 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
   const fetchDetails = async () => {
 
     setLoading(true);
-    setError("");
+    // Reset to the message the modal was opened with (effects run twice in dev, so don't consume it once).
+    setError(keepInitial ? (initialError ?? "") : "");
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId) {
       setError(tx("No active tenant found."));
@@ -148,7 +153,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
 
             {data?.profile_status !== "DRAFT" && (
               <button 
-                onClick={handleSendToDraft}
+                onClick={() => handleSendToDraft()}
                 className="text-xs font-semibold text-fuchsia-700 bg-fuchsia-50 border border-fuchsia-200 hover:bg-fuchsia-100 px-4 py-2 rounded-lg transition-colors shadow-sm"
               >
                 {tx("Send to Draft")}
@@ -178,8 +183,22 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
               <p className="text-sm font-medium text-slate-500">{tx("Retrieving profile data...")}</p>
             </div>
           ) : error ? (
-            <div className="p-6 bg-red-50 text-red-600 rounded-xl border border-red-200 font-medium">
+            <div className={`p-6 rounded-xl border font-medium ${error.startsWith("Not eligible for cover") ? "bg-amber-50 text-amber-800 border-amber-300" : "bg-red-50 text-red-600 border-red-200"}`}>
               {error}
+              {error.startsWith("Not eligible for cover") && (
+                <div className="mt-3">
+                  <button
+                    onClick={() => {
+                      const reason = window.prompt(tx("Reason for moving this lead despite the eligibility decline:"));
+                      if (reason && reason.trim()) void handleSendToDraft(reason.trim());
+                    }}
+                    className="text-xs font-semibold text-amber-800 bg-white border border-amber-300 hover:bg-amber-100 px-4 py-2 rounded-lg transition-colors"
+                  >
+                    {tx("Move anyway")}
+                  </button>
+                  <p className="mt-1 text-[11px] font-normal text-amber-700">{tx("Underwriters and admins only. Your name and reason are recorded.")}</p>
+                </div>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

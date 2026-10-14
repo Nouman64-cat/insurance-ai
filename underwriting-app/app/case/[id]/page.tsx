@@ -65,6 +65,7 @@ import {
   type LabLink,
   waiveMedicalExam,
   recordMedicalResult,
+  confirmMedicalReports,
   aiReviewMedicalReports,
   MEDICAL_CLEARED,
   usableReport,
@@ -2408,6 +2409,24 @@ export default function CasePage({ params }: { params: { id: string } }) {
     }
   };
 
+  // The customer's reports are in: complete the step. Nothing is read or typed here; the reports are read during
+  // the underwriting run.
+  const handleConfirmReports = async () => {
+    setMedBusy(true);
+    setMedErr(null);
+    try {
+      setMedical(await confirmMedicalReports(caseId));
+      setShowResultModal(false);
+      setSuccessMessage(tx("Medical reports confirmed. They will be read during the underwriting run."));
+      window.setTimeout(() => setSuccessMessage(null), 6000);
+      await fetchDetail();
+    } catch (e: any) {
+      setMedErr(e?.response?.data?.detail ?? e?.message ?? "Failed to confirm the reports");
+    } finally {
+      setMedBusy(false);
+    }
+  };
+
   const handleRecordResults = async (results: Record<string, string>) => {
     setMedBusy(true);
     setMedErr(null);
@@ -4258,7 +4277,16 @@ export default function CasePage({ params }: { params: { id: string } }) {
           )}
 
           <ModalPortal>
-            {showResultModal && medical && (
+            {showResultModal && medical && (medical.reports ?? []).length > 0 && (
+              <MedicalReportsModal
+                order={medical}
+                busy={medBusy}
+                onClose={() => setShowResultModal(false)}
+                onConfirm={handleConfirmReports}
+              />
+            )}
+
+            {showResultModal && medical && (medical.reports ?? []).length === 0 && (
               <MedicalResultModal
                 order={medical}
                 caseId={caseId}
@@ -5773,6 +5801,89 @@ function AiSpinner({ className = "h-3 w-3" }: Readonly<{ className?: string }>) 
   );
 }
 
+function MedicalReportsModal({
+  order,
+  busy,
+  onClose,
+  onConfirm,
+}: Readonly<{ order: MedicalExamOrder; busy: boolean; onClose: () => void; onConfirm: () => void }>) {
+  const reports = (order.reports ?? []).filter((r) => r.status !== "Re-submission Requested");
+  const rows = order.required_tests.map((t) => ({ test: t, files: reports.filter((r) => r.test_code === t.code) }));
+  const received = rows.filter((r) => r.files.length > 0).length;
+  const complete = rows.length > 0 && received === rows.length;
+  const pct = rows.length ? Math.round((received / rows.length) * 100) : 0;
+
+  const open = async (artifactId: string) => {
+    const tab = window.open("", "_blank");
+    try {
+      const url = await getArtifactUrl(artifactId);
+      if (tab) tab.location.href = url;
+      else window.open(url, "_blank");
+    } catch {
+      tab?.close();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm" onClick={() => !busy && onClose()}>
+      <div role="dialog" aria-modal="true" className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-blue-600 px-6 py-4">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-white/80">{tx("Medical examination")}</p>
+          <h2 className="text-lg font-bold text-white">{tx("Customer's medical reports")}</h2>
+          <p className="mt-0.5 text-xs text-white/80">{tx("Check that every report has been uploaded. They are read during the underwriting run.")}</p>
+        </div>
+
+        <div className="border-b border-slate-100 px-6 py-3">
+          <div className="flex items-baseline justify-between text-sm">
+            <span className="font-semibold text-slate-800">{tx("{0} of {1} uploaded", { 0: received, 1: rows.length })}</span>
+            <span className="text-slate-500">{pct}%</span>
+          </div>
+          <div className="mt-2 h-2 rounded-full bg-slate-100" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+            <div className="h-2 rounded-full bg-blue-600 transition-all" style={{ width: `${pct}%` }} />
+          </div>
+        </div>
+
+        <ul className="flex-1 divide-y divide-slate-100 overflow-y-auto px-6">
+          {rows.map(({ test, files }) => (
+            <li key={test.code} className="flex items-start justify-between gap-3 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-900">{test.name}</p>
+                {files.length > 0 ? (
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {files.map((f) => (
+                      <button key={f.id} type="button" onClick={() => void open(f.id)} title={f.file_name}
+                        className="max-w-full truncate rounded-md border border-blue-100 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 hover:bg-blue-100">
+                        {f.file_name}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-0.5 text-xs text-slate-500">{tx("Not uploaded yet")}</p>
+                )}
+              </div>
+              <span className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${files.length > 0 ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 bg-white text-slate-600"}`}>
+                {files.length > 0 ? tx("Uploaded") : tx("Missing")}
+              </span>
+            </li>
+          ))}
+        </ul>
+
+        <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-6 py-4">
+          <button onClick={onClose} disabled={busy} className="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900 disabled:opacity-40">{tx("Cancel")}</button>
+          <button
+            onClick={onConfirm}
+            disabled={busy || !complete}
+            title={complete ? undefined : tx("Every report must be uploaded first")}
+            className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-40"
+          >
+            {busy ? tx("Confirming…") : tx("Confirm reports received")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MedicalResultModal({
   order,
   caseId,
@@ -5871,13 +5982,13 @@ function MedicalResultModal({
     if (state === "waiting")
       return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-slate-500">{tx("Queued for AI")}</span>;
     if (state === "reading")
-      return <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-violet-700"><AiSpinner className="h-2.5 w-2.5" />{tx("AI reading…")}</span>;
+      return <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-blue-700"><AiSpinner className="h-2.5 w-2.5" />{tx("AI reading…")}</span>;
     if (state === "failed")
-      return <button type="button" onClick={() => void readTest(code, true)} className="rounded-full bg-red-50 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-red-600 hover:bg-red-100">{tx("AI failed · Retry")}</button>;
+      return <button type="button" onClick={() => void readTest(code, true)} className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-slate-700 hover:bg-slate-200">{tx("AI failed · Retry")}</button>;
     if (state === "done" && edited.has(code))
       return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-slate-600">{tx("Edited by you")}</span>;
     if (state === "done" && read?.readable)
-      return <span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal ${read.abnormal ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-700"}`}>{read.abnormal ? "⚠ " + tx("AI · outside range") : "✨ " + tx("AI-filled")}</span>;
+      return <span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal ${read.abnormal ? "bg-blue-100 text-blue-800" : "bg-blue-600 text-white"}`}>{read.abnormal ? "⚠ " + tx("AI · outside range") : "✨ " + tx("AI-filled")}</span>;
     if (state === "done")
       return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-slate-500">{tx("Enter manually")}</span>;
     return null;
@@ -5892,14 +6003,14 @@ function MedicalResultModal({
         className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="bg-slate-800 px-5 py-3">
-          <p className="text-white/70 text-[11px] font-semibold uppercase tracking-wider">
+        <div className="bg-blue-600 px-5 py-3">
+          <p className="text-white/80 text-[11px] font-semibold uppercase tracking-wider">
             {readable.length > 0 ? "✨ " + tx("AI-assisted review") : tx("Panel Clinic Report")}
           </p>
           <h2 className="text-white text-lg font-bold">
             {tx("Record Medical Results")}
           </h2>
-          <p className="text-white/70 text-xs">
+          <p className="text-white/80 text-xs">
             {order.reports_submitted
               ? tx("Reports submitted by the customer")
               : (order.clinic?.name ?? tx("Panel clinic"))}
@@ -5916,26 +6027,26 @@ function MedicalResultModal({
           <div
             role="status"
             aria-live="polite"
-            className={`border-b px-5 py-3 ${aiRunning ? "border-violet-100 bg-violet-50" : "border-slate-100 bg-slate-50"}`}
+            className={`border-b px-5 py-3 ${aiRunning ? "border-blue-100 bg-blue-50" : "border-slate-100 bg-slate-50"}`}
           >
             {aiRunning || !aiStarted ? (
               <>
                 <div className="flex items-center justify-between gap-3 text-xs">
-                  <span className="flex items-center gap-2 font-semibold text-violet-800">
+                  <span className="flex items-center gap-2 font-semibold text-blue-800">
                     <AiSpinner className="h-3.5 w-3.5" />
                     {tx("AI is reading the customer's reports")}
                   </span>
-                  <span className="font-mono text-[11px] text-violet-700">
+                  <span className="font-mono text-[11px] text-blue-700">
                     {aiDone} / {readable.length}
                   </span>
                 </div>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-violet-100">
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-blue-100">
                   <div
-                    className="h-full rounded-full bg-violet-500 transition-all duration-500"
+                    className="h-full rounded-full bg-blue-500 transition-all duration-500"
                     style={{ width: `${Math.max(4, (aiDone / readable.length) * 100)}%` }}
                   />
                 </div>
-                <p className="mt-1.5 truncate text-[10px] text-violet-700/80">
+                <p className="mt-1.5 truncate text-[10px] text-blue-700/80">
                   {nowReading.length > 0
                     ? tx("Now reading: {0}", { 0: nowReading.join(", ") })
                     : tx("Starting…")}{" "}
@@ -5962,7 +6073,7 @@ function MedicalResultModal({
                 </span>
                 <button
                   onClick={() => void readAll(true)}
-                  className="text-[11px] font-semibold text-violet-700 hover:text-violet-900"
+                  className="text-[11px] font-semibold text-blue-700 hover:text-blue-900"
                 >
                   ↻ {tx("Re-read all")}
                 </button>
@@ -6007,7 +6118,7 @@ function MedicalResultModal({
                         >
                           📄 {r.file_name}
                           {r.status !== "Accepted" && (
-                            <span className="ml-1 text-amber-700">
+                            <span className="ml-1 text-blue-700">
                               ({tx("processing")})
                             </span>
                           )}
@@ -6033,16 +6144,16 @@ function MedicalResultModal({
                     }
                     className={`w-full text-sm border rounded-lg px-3 py-2 transition-all duration-500 ${
                       pending
-                        ? "border-violet-200 bg-violet-50/60 animate-pulse pr-9"
+                        ? "border-blue-200 bg-blue-50/60 animate-pulse pr-9"
                         : justFilled.has(t.code)
-                          ? "border-violet-400 bg-violet-50 ring-2 ring-violet-200"
+                          ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200"
                           : read?.readable && read.abnormal && !edited.has(t.code)
-                            ? "border-amber-300 bg-amber-50/50"
+                            ? "border-blue-300 bg-blue-50/50"
                             : "border-slate-200"
                     }`}
                   />
                   {state === "reading" && (
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-violet-500">
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-500">
                       <AiSpinner className="h-4 w-4" />
                     </span>
                   )}
@@ -6050,7 +6161,7 @@ function MedicalResultModal({
                 {state === "done" && read && (
                   <p
                     title={read.evidence ?? undefined}
-                    className={`mt-1 line-clamp-2 text-[10px] ${!read.readable ? "text-slate-400" : read.abnormal ? "text-amber-700" : "text-slate-500"}`}
+                    className={`mt-1 line-clamp-2 text-[10px] ${!read.readable ? "text-slate-400" : read.abnormal ? "text-blue-700" : "text-slate-500"}`}
                   >
                     {!read.readable
                       ? tx("AI could not find this result in the report — enter it manually.")
@@ -6061,8 +6172,13 @@ function MedicalResultModal({
             );
           })}
           {openError && (
-            <p role="alert" className="text-[11px] text-red-600">
+            <p role="alert" className="text-[11px] text-slate-700">
               {openError}
+            </p>
+          )}
+          {!aiRunning && filled === 0 && (
+            <p role="status" className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+              {tx("Save is available once at least one result is filled in. The AI could not read any value from the reports yet, so type the results in manually.")}
             </p>
           )}
           <p className="text-[11px] text-slate-400 pt-1">
@@ -6076,7 +6192,7 @@ function MedicalResultModal({
           <span className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium">
             {aiRunning ? (
               <>
-                <AiSpinner className="h-3 w-3 text-violet-500" />
+                <AiSpinner className="h-3 w-3 text-blue-500" />
                 {tx("AI reading {0} of {1}…", { 0: Math.min(aiDone + 1, readable.length), 1: readable.length })}
               </>
             ) : (
@@ -6095,8 +6211,8 @@ function MedicalResultModal({
             <button
               onClick={submit}
               disabled={busy || filled === 0 || aiRunning}
-              title={aiRunning ? tx("Wait for the AI to finish reading the reports") : undefined}
-              className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-slate-800 hover:bg-slate-900 text-white disabled:opacity-40"
+              title={aiRunning ? tx("Wait for the AI to finish reading the reports") : filled === 0 ? tx("Enter at least one result to save") : undefined}
+              className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40"
             >
               {busy ? tx("Saving…") : tx("Save & rate")}
             </button>

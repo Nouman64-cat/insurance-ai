@@ -1432,6 +1432,18 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v62a — source-backed insurance plan surrender terms",
         "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS surrender_terms JSON",
     ),
+    (
+        "v63a — add invite_sent_to to medical_exam_orders",
+        "ALTER TABLE medical_exam_orders ADD COLUMN IF NOT EXISTS invite_sent_to VARCHAR(255)",
+    ),
+    (
+        "v63b — add invite_sent_at to medical_exam_orders",
+        "ALTER TABLE medical_exam_orders ADD COLUMN IF NOT EXISTS invite_sent_at TIMESTAMP WITHOUT TIME ZONE",
+    ),
+    (
+        "v63c-enum — add ApplicationDossier to policydocumenttypeenum",
+        "ALTER TYPE policydocumenttypeenum ADD VALUE IF NOT EXISTS 'APPLICATION_DOSSIER'",
+    ),
 ]
 
 
