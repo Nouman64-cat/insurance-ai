@@ -55,7 +55,12 @@ const SCHEDULE_TONE: Record<string, string> = {
 
 // Icon + colour from what the event means, so the trail reads at a glance.
 function eventTone(evt: PolicyEvent): { dot: string; icon: ReactNode } {
-  const t = `${evt.event_type} ${evt.to_status ?? ""}`.toLowerCase();
+  // The event's own meaning decides first ("Policy issued" is a success even
+  // though its new status is "Pending payment"); the status only breaks ties.
+  const type = (evt.event_type || "").toLowerCase();
+  const t = /(issued|approv|activ|renew|reinstat|revived|accepted|declin|reject|lapse|cancel|fail|terminat|not ?taken)/.test(type)
+    ? type
+    : `${type} ${evt.to_status ?? ""}`.toLowerCase();
   const check = (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="h-3.5 w-3.5">
       <polyline points="20 6 9 17 4 12" />
@@ -259,18 +264,6 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose, primary
                     )}
                   </Panel>
 
-                  {POST_ISSUANCE_STATUSES.has(normStatus(status)) && (
-                    <Link
-                      href={`/post-issuance/${policyId}`}
-                      className="group flex items-center justify-between gap-3 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-3.5 transition-shadow hover:shadow-sm"
-                    >
-                      <div>
-                        <p className="text-sm font-semibold text-blue-800">{tx("Manage this policy")}</p>
-                        <p className="mt-0.5 text-[11px] text-blue-700/80">{tx("Free-look, servicing, renewals & claims.")}</p>
-                      </div>
-                      <span className="text-blue-600 transition-transform group-hover:translate-x-0.5" aria-hidden>→</span>
-                    </Link>
-                  )}
                 </div>
 
                 {/* Right: the contract itself */}
@@ -432,6 +425,16 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose, primary
             >
               {tx("Close")}
             </button>
+            {!primaryAction && POST_ISSUANCE_STATUSES.has(normStatus(status)) && (
+              <Link
+                href={`/post-issuance/${policyId}`}
+                title={tx("Free-look, servicing, renewals & claims.")}
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:from-blue-700 hover:to-indigo-700 active:scale-[0.98]"
+              >
+                {tx("Manage Policy")}
+                <span aria-hidden>→</span>
+              </Link>
+            )}
             {primaryAction && (
               <button
                 onClick={primaryAction.onClick}
