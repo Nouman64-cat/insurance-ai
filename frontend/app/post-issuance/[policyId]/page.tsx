@@ -2520,8 +2520,8 @@ export default function PostIssuancePage() {
                   <span
                     className={`flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-bold flex-shrink-0 ${
                       step.live
-                        ? "bg-blue-600 text-white"
-                        : "bg-slate-200 text-slate-500"
+                        ? "bg-slate-200 text-slate-700"
+                        : "bg-slate-100 text-slate-400"
                     }`}
                   >
                     {step.n}

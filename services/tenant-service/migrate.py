@@ -1444,6 +1444,18 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v63c-enum — add ApplicationDossier to policydocumenttypeenum",
         "ALTER TYPE policydocumenttypeenum ADD VALUE IF NOT EXISTS 'APPLICATION_DOSSIER'",
     ),
+    (
+        "v64a — add policy_wording_path to insurance_plans",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS policy_wording_path VARCHAR(500)",
+    ),
+    (
+        "v64b — add policy_wording_filename to insurance_plans",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS policy_wording_filename VARCHAR(255)",
+    ),
+    (
+        "v64c — add policy_wording_uploaded_at to insurance_plans",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS policy_wording_uploaded_at TIMESTAMP WITHOUT TIME ZONE",
+    ),
 ]
 
 

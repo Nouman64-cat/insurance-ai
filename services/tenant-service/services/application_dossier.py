@@ -516,6 +516,8 @@ async def build(session: AsyncSession, policy: Policy) -> Optional[str]:
     story = (_info_story(ss, customer, policy, tenant_name, eapp, med) + _proposal_story(ss, ctx)
              + _details_story(ss, customer))
     story.append(Paragraph("Attached Scans", ss["H"]))
+    if plan is not None and plan.policy_wording_path and os.path.isfile(plan.policy_wording_path):
+        index.append((plan.policy_wording_filename or "policy wording", f"Policy wording: {plan.label}", ""))
     if index:
         for n, (name, kind, note) in enumerate(index, 1):
             story.append(Paragraph(f"{n}. <b>{_E(kind)}</b> - {_E(name)} {_E(note)}", ss["Body"]))
@@ -525,7 +527,21 @@ async def build(session: AsyncSession, policy: Policy) -> Optional[str]:
     dg._build(back, _rules_story(ss, ctx, plan, tenant_name))
 
     writer = PdfWriter()
-    for path_or_blob in [front, *medical_pdfs, *personal_pdfs, back]:
+    wording = []
+    if plan is not None and plan.policy_wording_path and os.path.isfile(plan.policy_wording_path):
+        try:
+            wr = PdfReader(plan.policy_wording_path)
+            for page in wr.pages:
+                _stamp(page, f"Policy wording: {plan.label}")
+            buf = io.BytesIO()
+            ww = PdfWriter()
+            for page in wr.pages:
+                ww.add_page(page)
+            ww.write(buf)
+            wording.append(buf.getvalue())
+        except Exception:
+            log.warning("dossier: could not include the policy wording for %s", plan.label, exc_info=True)
+    for path_or_blob in [front, *medical_pdfs, *personal_pdfs, *wording, back]:
         reader = PdfReader(path_or_blob if isinstance(path_or_blob, str) else io.BytesIO(path_or_blob))
         for page in reader.pages:
             writer.add_page(page)

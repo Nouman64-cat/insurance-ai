@@ -93,6 +93,10 @@ export interface InsurancePlan {
   smoker_factor: number;
   rate_version: string;
 
+  /** The plan's uploaded policy wording (PDF), added to each policy's application dossier. */
+  policy_wording_filename?: string | null;
+  policy_wording_uploaded_at?: string | null;
+
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -130,6 +134,18 @@ export async function updateInsurancePlan(
   body: InsurancePlanUpdate,
 ): Promise<InsurancePlan> {
   const resp = await api.patch<InsurancePlan>(`${base(tenantId)}/${planId}`, body);
+  return resp.data;
+}
+
+export async function uploadPolicyWording(tenantId: string, planId: string, file: File): Promise<InsurancePlan> {
+  const form = new FormData();
+  form.append("file", file);
+  const resp = await api.post<InsurancePlan>(`${base(tenantId)}/${planId}/policy-wording`, form);
+  return resp.data;
+}
+
+export async function removePolicyWording(tenantId: string, planId: string): Promise<InsurancePlan> {
+  const resp = await api.delete<InsurancePlan>(`${base(tenantId)}/${planId}/policy-wording`);
   return resp.data;
 }
 
