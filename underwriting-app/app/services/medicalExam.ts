@@ -99,6 +99,9 @@ export interface MedicalExamInvite {
   link_path: string;
   expires_at: string;
   status: MedicalExamStatus;
+  /** The link is also emailed to the customer. */
+  emailed_to?: string | null;
+  email_status?: "sent" | "failed" | "no_email";
 }
 
 /** Statuses that satisfy the pre-underwriting gate — nothing is outstanding. */

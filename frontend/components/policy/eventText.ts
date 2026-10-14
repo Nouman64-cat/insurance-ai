@@ -1,3 +1,4 @@
+import { displayDate } from '../../lib/dateDisplay';
 // Plain-language rendering of policy lifecycle events: they are stored with
 // machine names (proposal_status_change, PolicyIssued), joined-up statuses
 // (UnderReview) and user ids.
@@ -85,5 +86,5 @@ export function friendlyTime(iso: string): string {
   const diff = Math.round((day(new Date()) - day(d)) / 86_400_000);
   if (diff === 0) return tx("Today at {0}", { 0: time });
   if (diff === 1) return tx("Yesterday at {0}", { 0: time });
-  return tx("{0} at {1}", { 0: d.toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" }), 1: time });
+  return tx("{0} at {1}", { 0: displayDate(d, { day: "numeric", month: "short", year: "numeric" }), 1: time });
 }

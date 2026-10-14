@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../../lib/dateDisplay';
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/app/services/api";
@@ -430,7 +431,7 @@ export default function TenantManagementPage() {
                       )}
                     </td>
                     <td className="px-5 py-3.5 text-xs text-slate-400">
-                      {new Date(tenant.created_at).toLocaleDateString(undefined, {
+                      {displayDate(tenant.created_at, {
                         year: "numeric",
                         month: "short",
                         day: "numeric",

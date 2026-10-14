@@ -2091,6 +2091,16 @@ async def _get_pre_underwriting_status(args: dict, ctx: Ctx) -> dict:
     }
 
 
+def _link_delivery_line(invite_data: dict, who: str) -> str:
+    """How the customer got their link — tenant-service emails it on invite."""
+    to, status = invite_data.get("emailed_to"), invite_data.get("email_status")
+    if status == "sent" and to:
+        return f"📧 The link has been emailed to **{to}**. You can also share it directly:"
+    if status == "failed":
+        return f"⚠️ The email to **{to}** could not be sent — please share this secure link with {who}:"
+    return f"⚠️ There is no email on record for {who} — please share this secure link with them:"
+
+
 @handles("verify_e_application")
 async def _verify_e_application(args: dict, ctx: Ctx) -> dict:
     case = await _resolve_case(args, ctx)
@@ -2146,6 +2156,29 @@ async def _verify_e_application(args: dict, ctx: Ctx) -> dict:
             ],
         }
 
+    # Verify asked for before the customer has submitted: report it without
+    # re-issuing the invite — a new invite replaces the customer's link and
+    # emails them again.
+    if action == "verify" and current_status != "Submitted":
+        return {
+            "success": False,
+            "message": (
+                f"⏳ **Gate 1 Pending Customer Submission** for case **{case.get('caseNumber')}**\n\n"
+                f"The customer **{cust_name}** has not yet completed and submitted their medical questionnaire & declaration "
+                f"(status: `{current_status}`). Their link was emailed to them when it was issued.\n\n"
+                f"Once submitted by the customer, click **Verify E-Application** below to approve it."
+            ),
+            "status": current_status,
+            "quick_actions": [
+                {"label": "Verify E-Application", "actionType": "submit",
+                 "payload": f"Verify e-application for case {case.get('caseNumber')} action verify"},
+                {"label": "Resend Link", "actionType": "submit",
+                 "payload": f"Generate e-application link for case {case.get('caseNumber')}"},
+                {"label": "Check Gate Status", "actionType": "submit",
+                 "payload": f"Check pre-underwriting status for case {case.get('caseNumber')}"},
+            ],
+        }
+
     # Step 2: Create or fetch invite token
     invite_res = await ctx.client.post(ctx.tsvc(f"/cases/{case_id}/e-application/invite"))
     invite_res.raise_for_status()
@@ -2153,27 +2186,6 @@ async def _verify_e_application(args: dict, ctx: Ctx) -> dict:
     token = invite_data.get("token")
     link_path = invite_data.get("link_path")
     full_link = f"http://localhost:3000{link_path}" if link_path else ""
-
-    # If action was verify but status is not submitted yet
-    if action == "verify" and current_status != "Submitted":
-        return {
-            "success": False,
-            "message": (
-                f"⏳ **Gate 1 Pending Customer Submission** for case **{case.get('caseNumber')}**\n\n"
-                f"The customer **{cust_name}** has not yet completed and submitted their medical questionnaire & declaration.\n\n"
-                f"🔗 **[Open Customer Form Link]({full_link})**\n`{full_link}`\n\n"
-                f"Once submitted by the customer, click **Verify E-Application** below to approve it."
-            ),
-            "status": current_status,
-            "full_link": full_link,
-            "quick_actions": [
-                {"label": "Open Form (Customer View)", "actionType": "navigate", "payload": f"e-application/{token}"},
-                {"label": "Verify E-Application", "actionType": "submit",
-                 "payload": f"Verify e-application for case {case.get('caseNumber')} action verify"},
-                {"label": "Check Gate Status", "actionType": "submit",
-                 "payload": f"Check pre-underwriting status for case {case.get('caseNumber')}"},
-            ],
-        }
 
     # If action is auto_submit (used in bulk/demo journey runs)
     if action == "auto_submit" and is_demo():
@@ -2232,7 +2244,8 @@ async def _verify_e_application(args: dict, ctx: Ctx) -> dict:
         "success": True,
         "message": (
             f"📋 **Gate 1: Customer E-Application Link Generated** for case **{case.get('caseNumber')}**\n\n"
-            f"The customer must fill and sign their medical questionnaire and declarations directly. Please share this secure link with **{cust_name}**:\n\n"
+            f"The customer must fill and sign their medical questionnaire and declarations directly. "
+            f"{_link_delivery_line(invite_data, f'**{cust_name}**')}\n\n"
             f"🔗 **[Open Customer E-Application Form]({full_link})**\n"
             f"`{full_link}`\n\n"
             f"*(This is a public, tokenized link — the applicant does not need to log in)*.\n\n"
@@ -2869,7 +2882,8 @@ async def _assess_medical_examination(args: dict, ctx: Ctx) -> dict:
         "message": (
             f"📋 **Gate 5: Medical Examination Link Generated** for case **{case.get('caseNumber')}**\n\n"
             f"- **Mandated Tests**: {test_names}\n\n"
-            f"The customer must pick a panel clinic and appointment slot themselves. Please share this secure link with them:\n\n"
+            f"The customer sees the required tests and approved labs, then uploads their reports. "
+            f"{_link_delivery_line(invite_data, 'the customer')}\n\n"
             f"🔗 **[Open Medical Exam Booking Form]({full_link})**\n"
             f"`{full_link}`\n\n"
             f"*(This is a public, tokenized link — the applicant does not need to log in)*.\n\n"

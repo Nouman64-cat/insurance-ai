@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../lib/dateDisplay';
 import { useEffect, useRef, type FormEvent, type ReactNode } from "react";
 import type { CreateClaimRequest } from "@/app/services/claims";
 import type { PolicyDetail, PolicyListItem } from "@/app/services/policies";
@@ -24,7 +25,7 @@ const inputClass =
 
 const fmtPKR = (n: number) => `PKR ${(n || 0).toLocaleString()}`;
 const fmtDate = (s?: string) =>
-  s ? new Date(s).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+  s ? displayDate(s, { day: "2-digit", month: "short", year: "numeric" }) : "—";
 const titleCase = (s: string) => s.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 
 function Field({

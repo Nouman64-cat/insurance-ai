@@ -1408,6 +1408,26 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v60 — add submitted_at to document_requests",
         "ALTER TABLE document_requests ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMP WITHOUT TIME ZONE",
     ),
+    # ── Stamp duty and sales tax are charged separately. Until now tax_amount
+    #    held only the 1% stamp duty, so existing versions move it across and
+    #    carry no sales tax. The column is added without a default so the
+    #    backfill can tell pre-split rows (NULL) from new ones — idempotent.
+    (
+        "v61a — add stamp_duty_amount to policy_versions",
+        "ALTER TABLE policy_versions ADD COLUMN IF NOT EXISTS stamp_duty_amount DOUBLE PRECISION",
+    ),
+    (
+        "v61b — backfill: pre-split tax_amount was stamp duty",
+        "UPDATE policy_versions SET stamp_duty_amount = tax_amount, tax_amount = 0 WHERE stamp_duty_amount IS NULL",
+    ),
+    (
+        "v61c — default stamp_duty_amount to 0",
+        "ALTER TABLE policy_versions ALTER COLUMN stamp_duty_amount SET DEFAULT 0",
+    ),
+    (
+        "v61d — stamp_duty_amount NOT NULL",
+        "ALTER TABLE policy_versions ALTER COLUMN stamp_duty_amount SET NOT NULL",
+    ),
 ]
 
 

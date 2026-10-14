@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../../lib/dateDisplay';
 // Customer report submission, scoped by an expiring examination link.
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
@@ -87,7 +88,7 @@ export default function MedicalExamPage({ params }: { params: { token: string } 
             <summary className="cursor-pointer text-xs font-bold text-slate-800">Preparing for your tests</summary>
             <ul className="mt-2 space-y-2 text-[11px] leading-relaxed text-slate-600">{view.preparation_notes.map((note, index) => <li key={index}>{note}</li>)}</ul>
           </details>
-          {view.expires_at && <p className="px-1 text-[10px] text-slate-400">This report link is valid until {new Date(view.expires_at).toLocaleDateString()}.</p>}
+          {view.expires_at && <p className="px-1 text-[10px] text-slate-400">This report link is valid until {displayDate(view.expires_at)}.</p>}
         </aside>
       </div>
     </main>

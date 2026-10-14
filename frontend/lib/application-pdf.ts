@@ -1,3 +1,4 @@
+import { displayDate } from './dateDisplay';
 // Comprehensive "Insurance Application" dossier PDF — the final artifact
 // produced after underwriting. Pulls together the applicant's personal, plan,
 // occupational, medical, financial, nominee and document details plus the AI
@@ -45,12 +46,12 @@ function fmtDate(iso?: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (isNaN(d.getTime())) return String(iso);
-  return d.toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" });
+  return displayDate(d, { day: "2-digit", month: "short", year: "numeric" });
 }
 
 function fmtDateTime(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })
+  return displayDate(d, { day: "2-digit", month: "short", year: "numeric" })
     + " · " + d.toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit" });
 }
 

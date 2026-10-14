@@ -1,4 +1,5 @@
 "use client";
+import { displayDateTime } from '../../../lib/dateDisplay';
 import React, { useState, useEffect, useCallback } from "react";
 import { PayeeTaxProfile, listTaxProfiles } from "../../services/commissions";
 import DemoDataBanner from "@/components/DemoDataBanner";
@@ -97,7 +98,7 @@ export default function TaxRegimesPage() {
                     </td>
                     <td className="px-5 py-3 text-xs text-slate-500">
                       {p.lastAtlSyncTimestamp
-                        ? new Date(p.lastAtlSyncTimestamp).toLocaleString()
+                        ? displayDateTime(p.lastAtlSyncTimestamp)
                         : <span className="text-slate-400">{tx("Never synced")}</span>}
                     </td>
                   </tr>

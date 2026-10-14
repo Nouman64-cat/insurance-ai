@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate, displayDateTime } from '../../../lib/dateDisplay';
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useRouter } from "next/navigation";
@@ -445,7 +446,7 @@ function PremiumCollectionPanel({
             <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">{tx("Policy Billing Overview")}</p>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <StatCard label={tx("Total collected")} value={fmtPKR(dash.total_collected)} accent />
-              <StatCard label={tx("Next premium due")} value={sum.next_due_date ?? "—"} hint={sum.next_due_amount != null ? fmtPKR(sum.next_due_amount) : undefined} />
+              <StatCard label={tx("Next premium due")} value={displayDate(sum.next_due_date)} hint={sum.next_due_amount != null ? fmtPKR(sum.next_due_amount) : undefined} />
               <StatCard label={tx("Overdue amount")} value={fmtPKR(dash.overdue_amount)} hint={tx("{0} arrear(s)", { 0: sum.arrears_count })} accent={dash.overdue_amount > 0} />
               <StatCard label={tx("Payment frequency")} value={currentFreq} hint={tx("Billing cycle")} />
             </div>
@@ -468,9 +469,9 @@ function PremiumCollectionPanel({
               <span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-semibold border ${(STATE_CHIP[firstPremium.state] ?? STATE_CHIP.upcoming).cls}`}>{firstPremium.state === "paid" ? tx("Collected") : (STATE_CHIP[firstPremium.state] ?? STATE_CHIP.upcoming).label}</span>
             </div>
             <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mt-4">
-              <div><p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">{tx("Due")}</p><p className="text-sm font-semibold text-slate-800 mt-0.5">{firstPremium.due_date}</p></div>
+              <div><p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">{tx("Due")}</p><p className="text-sm font-semibold text-slate-800 mt-0.5">{displayDate(firstPremium.due_date)} </p></div>
               <div><p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">{tx("Amount")}</p><p className="text-sm font-semibold text-slate-800 mt-0.5">{fmtPKR(firstPremium.amount_due)}</p></div>
-              <div><p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">{tx("Collected on")}</p><p className="text-sm font-semibold text-slate-800 mt-0.5">{firstPremium.paid_at ? firstPremium.paid_at.slice(0, 10) : "—"}</p></div>
+              <div><p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">{tx("Collected on")}</p><p className="text-sm font-semibold text-slate-800 mt-0.5">{displayDate(firstPremium.paid_at)}</p></div>
               <div><p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">{tx("Status")}</p>
                 {firstPremium.paid_at ? (
                   <span className={`text-sm font-semibold mt-0.5 ${firstPremium.paid_at.slice(0, 10) > firstPremium.due_date ? "text-amber-600" : "text-blue-600"}`}>
@@ -524,7 +525,7 @@ function PremiumCollectionPanel({
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 rounded-xl p-4 border border-slate-100">
                     <Field label={tx("Name")} value={preview.insured.name} />
                     <Field label={tx("CNIC")} value={preview.insured.cnic ?? "—"} />
-                    <Field label={tx("Date of birth")} value={preview.insured.dob ?? "—"} />
+                    <Field label={tx("Date of birth")} value={displayDate(preview.insured.dob ?? "—")} />
                     <Field label={tx("Smoker")} value={preview.insured.is_smoker ? "Yes" : "No"} />
                   </div>
                 </div>
@@ -536,8 +537,8 @@ function PremiumCollectionPanel({
                     <Field label={tx("Product")} value={preview.contract.product_name} />
                     <Field label={tx("Sum assured")} value={fmtCoverage(preview.contract.coverage_amount)} />
                     <Field label={tx("Insurance Terms")} value={`${preview.contract.term_years} years`} />
-                    <Field label={tx("Commencement")} value={preview.contract.effective_date} />
-                    <Field label={tx("Maturity date")} value={<span className="text-blue-700">{preview.contract.maturity_date}</span>} />
+                    <Field label={tx("Start date")} value={displayDate(preview.contract.effective_date)} />
+                    <Field label={tx("Maturity date")} value={<span className="text-blue-700">{displayDate(preview.contract.maturity_date)}</span>} />
                     <Field label={tx("Billing")} value={preview.contract.billing_frequency} />
                   </div>
                 </div>
@@ -730,7 +731,7 @@ function PremiumCollectionPanel({
                         return (
                           <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
                             <td className="px-4 py-2.5 text-slate-600 font-mono text-xs">
-                              {s.due_date}
+                              {displayDate(s.due_date)} 
                             </td>
                             <td className="px-4 py-2.5 text-slate-600 font-medium">
                               {String(s.installment_no).padStart(2, '0')}
@@ -747,7 +748,7 @@ function PremiumCollectionPanel({
                               )}
                             </td>
                             <td className="px-4 py-2.5 text-xs text-slate-500">
-                              {s.state === "paid" ? tx("Paid on {0}", { 0: s.paid_at?.slice(0, 10) ?? "—" }) :
+                              {s.state === "paid" ? tx("Paid on {0}", { 0: displayDate(s.paid_at) }) :
                                 s.state === "partially_paid" ? tx("Post Dated Amount: {0} paid", { 0: fmtPKR((s.amount_due + (s.surcharge || 0)) - s.outstanding) }) :
                                   s.state === "waived" ? tx("Installment waived") :
                                     !collectable ? "—" :
@@ -809,7 +810,7 @@ function PremiumCollectionPanel({
                       <div className="space-y-3 flex-1">
                         <div className="flex justify-between border-b border-slate-50 pb-3">
                           <p className="text-xs text-slate-500 font-medium">{tx("Due date")}</p>
-                          <p className="text-xs font-semibold text-slate-700 font-mono">{s.due_date}</p>
+                          <p className="text-xs font-semibold text-slate-700 font-mono">{displayDate(s.due_date)} </p>
                         </div>
                         <div className="flex justify-between border-b border-slate-50 pb-3">
                           <p className="text-xs text-slate-500 font-medium">{tx("Premium Due")}</p>
@@ -828,7 +829,7 @@ function PremiumCollectionPanel({
                         </div>
                         <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                           <p className="text-[11px] font-medium text-slate-600">
-                            {s.state === "paid" ? tx("Paid on {0}", { 0: s.paid_at?.slice(0, 10) ?? "—" }) :
+                            {s.state === "paid" ? tx("Paid on {0}", { 0: displayDate(s.paid_at) }) :
                               s.state === "partially_paid" ? tx("Post Dated Amount: {0} paid", { 0: fmtPKR((s.amount_due + (s.surcharge || 0)) - s.outstanding) }) :
                                 s.state === "waived" ? tx("Installment waived") :
                                   !collectable ? "—" :
@@ -883,7 +884,7 @@ function PremiumCollectionPanel({
                     <p className="text-xs font-semibold text-slate-700 truncate">{r.kind} · {r.channel} · <span className="font-normal text-slate-400">{r.template}</span></p>
                     {r.message && <p className="text-[10px] text-slate-400 truncate">{r.message}</p>}
                   </div>
-                  <span className="text-[10px] text-slate-400 flex-shrink-0">{r.created_at.slice(0, 16).replace("T", " ")}</span>
+                  <span className="text-[10px] text-slate-400 flex-shrink-0">{displayDateTime(r.created_at)}</span>
                 </div>
               ))}
             </div>
@@ -976,7 +977,7 @@ function PremiumCollectionPanel({
               {selectedInstallment.state === "paid" && selectedInstallment.paid_at && (
                 <div className="mt-4 bg-blue-50/50 border border-blue-100 rounded-lg p-3">
                   <p className="text-xs text-blue-600 font-semibold mb-1">{tx("Payment Info")}</p>
-                  <p className="text-sm font-medium text-blue-800">{tx("Paid on:")}{" "}{selectedInstallment.paid_at.slice(0, 10)}</p>
+                  <p className="text-sm font-medium text-blue-800">{tx("Paid on:")}{" "}{displayDate(selectedInstallment.paid_at)}</p>
                 </div>
               )}
             </div>
@@ -1159,8 +1160,8 @@ export default function PostIssuancePage() {
       {detail && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard label={tx("Sum Assured")} value={fmtCoverage(detail.coverage_amount)} />
-          <StatCard label={tx("Effective")} value={detail.effective_date ?? "—"} />
-          <StatCard label={tx("Expiry")} value={detail.expiry_date ?? "—"} />
+          <StatCard label={tx("Effective")} value={displayDate(detail.effective_date ?? "—")} />
+          <StatCard label={tx("Expiry")} value={displayDate(detail.expiry_date ?? "—")} />
           <StatCard label={tx("Nominee")} value={detail.nominee_name ?? "—"} />
         </div>
       )}
@@ -1331,8 +1332,8 @@ function FreeLookPanel({
     <div className="space-y-5">
       {/* Stat card row — fills the panel width */}
       <div className="grid sm:grid-cols-3 gap-4">
-        <StatCard label={tx("Documents delivered")} value={freeLook.delivery_date ?? "—"} />
-        <StatCard label={tx("Free-look ends")} value={freeLook.free_look_end_date ?? "—"} />
+        <StatCard label={tx("Documents delivered")} value={displayDate(freeLook.delivery_date ?? "—")} />
+        <StatCard label={tx("Free-look ends")} value={displayDate(freeLook.free_look_end_date ?? "—")} />
         <StatCard
           label={tx("Full refund value")}
           value={fmtPKR(freeLook.refund_amount)}
@@ -1417,7 +1418,7 @@ function FreeLookStateCard({
         <div className="grid sm:grid-cols-3 gap-4 mt-4">
           <div><p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">{tx("Refunded")}</p><p className="text-sm font-semibold text-slate-700 mt-0.5">{fmtPKR(freeLook.cancellation?.refund_amount ?? 0)}</p></div>
           <div><p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">{tx("Reference")}</p><p className="text-sm font-mono text-slate-700 mt-0.5">{freeLook.cancellation?.refund_reference ?? "—"}</p></div>
-          <div><p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">{tx("Date")}</p><p className="text-sm font-semibold text-slate-700 mt-0.5">{freeLook.cancellation?.at?.slice(0, 10) ?? "—"}</p></div>
+          <div><p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">{tx("Date")}</p><p className="text-sm font-semibold text-slate-700 mt-0.5">{displayDate(freeLook.cancellation?.at)}</p></div>
         </div>
       </div>
     );
@@ -1456,7 +1457,7 @@ function FreeLookStateCard({
   if (freeLook.status === "Active") {
     return (
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
-        {tx("Free-look window closed")}{freeLook.free_look_end_date ? " " + tx("on {0}", { 0: freeLook.free_look_end_date }) : ""}{tx(". Cancellation now follows standard surrender rules (step 9).")}
+        {tx("Free-look window closed")}{freeLook.free_look_end_date ? " " + tx("on {0}", { 0: displayDate(freeLook.free_look_end_date) }) : ""}{tx(". Cancellation now follows standard surrender rules (step 9).")}
       </div>
     );
   }
@@ -1892,7 +1893,7 @@ function PolicyIssuancePanel({
           <p className="text-sm font-bold text-blue-800">{tx("Policy issued & bound")}</p>
           <p className="text-xs text-blue-700/80">
             {detail.policy_number?.replace('POL-', 'PL-') ?? "—"}
-            {detail.issued_at ? " " + tx("· issued {0}", { 0: detail.issued_at.slice(0, 10) }) : ""}
+            {detail.issued_at ? " " + tx("· issued {0}", { 0: displayDate(detail.issued_at) }) : ""}
             {detail.issued_by ? " " + tx("· by {0}", { 0: detail.issued_by }) : ""}
           </p>
         </div>
@@ -1907,9 +1908,9 @@ function PolicyIssuancePanel({
           <StatCard label={tx("Sum assured")} value={fmtCoverage(detail.coverage_amount)} />
           <StatCard label={tx("Insurance Term")} value={`${detail.term_years} years`} />
           <StatCard label={tx("Status")} value={detail.status} accent />
-          <StatCard label={tx("Commencement")} value={detail.effective_date ?? "—"} />
-          <StatCard label={tx("Maturity")} value={detail.maturity_date ?? detail.expiry_date ?? "—"} />
-          <StatCard label={tx("Expiry / renewal")} value={detail.expiry_date ?? "—"} />
+          <StatCard label={tx("Start date")} value={displayDate(detail.effective_date ?? "—")} />
+          <StatCard label={tx("Maturity")} value={displayDate(detail.maturity_date ?? detail.expiry_date)} />
+          <StatCard label={tx("Expiry / renewal")} value={displayDate(detail.expiry_date ?? "—")} />
           <StatCard label={tx("Nominee")} value={detail.nominee_name ?? "—"} />
         </div>
       </IssueDropdown>
@@ -1925,13 +1926,13 @@ function PolicyIssuancePanel({
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
               <StatCard label={tx("Annual premium")} value={fmtPKR(annualPremium)} accent />
               <StatCard label={tx("Collected to date")} value={fmtPKR(billing.dashboard.total_collected)} />
-              <StatCard label={tx("Next due")} value={billing.summary.next_due_date ?? "—"} hint={billing.summary.next_due_amount != null ? fmtPKR(billing.summary.next_due_amount) : undefined} />
+              <StatCard label={tx("Next due")} value={displayDate(billing.summary.next_due_date)} hint={billing.summary.next_due_amount != null ? fmtPKR(billing.summary.next_due_amount) : undefined} />
             </div>
             {first && (
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 flex items-center justify-between">
                 <div>
                   <p className="text-xs font-semibold text-slate-700">{tx("First premium")}</p>
-                  <p className="text-[11px] text-slate-500">{fmtPKR(first.amount_due)}{" "}{tx("· due")}{" "}{first.due_date}{first.payment_reference ? " " + tx("· ref {0}", { 0: first.payment_reference }) : ""}</p>
+                  <p className="text-[11px] text-slate-500">{fmtPKR(first.amount_due)}{" "}{tx("· due")}{" "}{displayDate(first.due_date)} {first.payment_reference ? " " + tx("· ref {0}", { 0: first.payment_reference }) : ""}</p>
                 </div>
                 <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${first.state === "paid" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
                   {first.state === "paid" ? tx("Collected") : tx("Pending")}
@@ -1952,7 +1953,7 @@ function PolicyIssuancePanel({
           </p>
           {lastEmail && (
             <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] text-blue-700">
-              {tx("✓ Last sent to")}{" "}<b>{String((lastEmail.detail as any)?.to ?? "customer")}</b> · {lastEmail.created_at.slice(0, 16).replace("T", " ")}
+              {tx("✓ Last sent to")}{" "}<b>{String((lastEmail.detail as any)?.to ?? "customer")}</b> · {displayDateTime(lastEmail.created_at)}
             </div>
           )}
           {emailMsg && <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] text-blue-700">✓ {emailMsg}</div>}
@@ -2004,7 +2005,7 @@ function PolicyIssuancePanel({
                 <p className="text-[11px] text-slate-500">
                   {e.from_status && e.to_status ? <>{humanize(e.from_status)} → {humanize(e.to_status)} · </> : null}{tx("by")}{" "}{eventActor(e)}
                 </p>
-                <p className="text-[10px] text-slate-400" title={new Date(e.created_at).toLocaleString()}>{friendlyTime(e.created_at)}</p>
+                <p className="text-[10px] text-slate-400" title={displayDateTime(e.created_at)}>{friendlyTime(e.created_at)}</p>
               </li>
             ))}
           </ol>
@@ -2232,7 +2233,7 @@ function ServicingPanel({ policyId, onChanged }: Readonly<{ policyId: string; on
                     <span className="text-blue-700">{e.endorsement_no}</span> · {e.type}
                     {Math.abs(e.premium_delta) > 0.005 && <span className={e.premium_delta > 0 ? "text-amber-600" : "text-blue-600"}> · {e.premium_delta > 0 ? "+" : ""}{fmtPKR(e.premium_delta)}{tx("/yr")}</span>}
                   </p>
-                  <p className="text-[10px] text-slate-400 truncate">{e.summary} · {e.effective_date}</p>
+                  <p className="text-[10px] text-slate-400 truncate">{e.summary} · {displayDate(e.effective_date)}</p>
                 </div>
                 <div className="flex gap-1.5 flex-shrink-0">
                   <a href={endorsementDocUrl(policyId, e.id)} target="_blank" rel="noreferrer" className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-white border border-blue-200 text-blue-700 hover:bg-blue-50">{tx("Letter")}</a>
@@ -2361,7 +2362,7 @@ function JourneyModal({
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-6 gap-x-4">
                 <InfoItem label={tx("Full Name")} value={detail.customer_name} />
                 <InfoItem label={tx("CNIC")} value={detail.customer?.cnic} font="mono" />
-                <InfoItem label={tx("Date of Birth")} value={detail.customer?.dob} />
+                <InfoItem label={tx("Date of Birth")} value={displayDate(detail.customer?.dob)} />
                 <InfoItem label={tx("Gender")} value={detail.customer?.gender} />
                 <InfoItem label={tx("Marital Status")} value={detail.customer?.marital_status} />
                 <InfoItem label={tx("Phone")} value={detail.customer?.phone} />
@@ -2445,7 +2446,7 @@ function JourneyModal({
                   {detail.dependent_name && (
                     <>
                       <InfoItem label={tx("Dependent Name")} value={detail.dependent_name} />
-                      <InfoItem label={tx("Dependent DOB")} value={detail.dependent_dob} />
+                      <InfoItem label={tx("Dependent DOB")} value={displayDate(detail.dependent_dob)} />
                     </>
                   )}
                 </div>

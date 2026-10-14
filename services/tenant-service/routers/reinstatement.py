@@ -759,11 +759,12 @@ async def _new_reinstatement_version(
     terms = case.terms_json or {}
     extra = float(terms.get("additional_annual_premium") or 0.0) if case.terms_response == "Accepted" else 0.0
 
-    base = dict(base_premium=0.0, loading_amount=0.0, policy_fee=0.0, tax_amount=0.0, total_premium=0.0)
+    base = dict(base_premium=0.0, loading_amount=0.0, policy_fee=0.0, stamp_duty_amount=0.0, tax_amount=0.0, total_premium=0.0)
     loadings, exclusions = None, None
     if current is not None:
         base = dict(base_premium=current.base_premium, loading_amount=current.loading_amount,
-                    policy_fee=current.policy_fee, tax_amount=current.tax_amount, total_premium=current.total_premium)
+                    policy_fee=current.policy_fee, stamp_duty_amount=current.stamp_duty_amount,
+                    tax_amount=current.tax_amount, total_premium=current.total_premium)
         loadings, exclusions = _as_dict(current.loadings_json) or None, _as_dict(current.exclusions_json) or None
         if current.effective_to is None:
             current.effective_to = today

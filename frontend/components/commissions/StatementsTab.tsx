@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../lib/dateDisplay';
 import React, { useState } from "react";
 import { PAYEE_TYPE_LABELS, PayeeStatement, PayeeType, StatutoryDeduction } from "../../app/services/commissions";
 import {
@@ -428,7 +429,7 @@ export default function StatementsTab({
                       <tr key={e.id} className="hover:bg-slate-50/70">
                         <td className="p-3">
                           <p className="font-mono font-bold text-[10px] text-blue-900">{e.id}</p>
-                          <p className="text-[10px] text-slate-400">{e.accruedAt}</p>
+                          <p className="text-[10px] text-slate-400">{displayDate(e.accruedAt)}</p>
                         </td>
                         <td className="p-3">
                           <p className="font-semibold text-slate-800">{e.customerName}</p>

@@ -245,7 +245,8 @@ def generate_premium_notice(ctx: dict) -> dict:
         ("Base Premium", _pkr(pb.get("base_premium"))),
         ("Underwriting Loading", _pkr(pb.get("loading_amount"))),
         ("Policy Fee", _pkr(pb.get("policy_fee"))),
-        ("Tax (FED / WHT)", _pkr(pb.get("tax_amount"))),
+        ("Stamp Duty", _pkr(pb.get("stamp_duty_amount"))),
+        ("Sales Tax", _pkr(pb.get("tax_amount"))),
     ]))
     story.append(Spacer(1, 2))
     story.append(Paragraph(
@@ -327,7 +328,7 @@ def generate_policy_documents(ctx: dict) -> list[dict]:
         ("Plan Type", ctx.get("insurance_type", "—")),
         ("Sum Assured", _pkr(ctx.get("coverage_amount"))),
         ("Policy Term", f"{ctx.get('term_years', '—')} years"),
-        ("Commencement", str(ctx.get("effective_date") or "—")),
+        ("Start Date", str(ctx.get("effective_date") or "—")),
         ("Expiry", str(ctx.get("expiry_date") or "—")),
     ]))
     story.append(Paragraph("Premium", ss["H"]))
@@ -335,7 +336,8 @@ def generate_policy_documents(ctx: dict) -> list[dict]:
         ("Base Premium", _pkr(pb.get("base_premium"))),
         ("Underwriting Loading", _pkr(pb.get("loading_amount"))),
         ("Policy Fee", _pkr(pb.get("policy_fee"))),
-        ("Tax", _pkr(pb.get("tax_amount"))),
+        ("Stamp Duty", _pkr(pb.get("stamp_duty_amount"))),
+        ("Sales Tax", _pkr(pb.get("tax_amount"))),
         ("Total Annual Premium", _pkr(pb.get("total_premium"))),
     ]))
     if beneficiaries:

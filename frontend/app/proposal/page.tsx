@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate, displayDateTime } from '../../lib/dateDisplay';
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import api from "../services/api";
@@ -51,7 +52,7 @@ function formatPKR(n: number): string {
 }
 
 function formatDate(s: string): string {
-  return new Date(s).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+  return displayDate(s, { year: "numeric", month: "long", day: "numeric" });
 }
 
 function formatLeadDisplayId(customerId: string, createdAt: string, segment: "individual" | "family" | "organization"): string {
@@ -1739,7 +1740,7 @@ function ProposalsTable({
                 </div>
               </td>
               <td className="px-5 py-3.5 text-slate-500 text-xs whitespace-nowrap">
-                {new Date(row.created_at).toLocaleDateString()}
+                {displayDate(row.created_at)}
               </td>
             </tr>
           ))}
@@ -2417,7 +2418,7 @@ function QuoteDetailModal({
                 <p className="text-xs text-slate-400">{detail.customer_cnic}</p>
               </div>
               <p className="text-[11px] text-slate-400 text-end mt-1.5">
-                {tx("Rate version {version} · Generated {date}", { version: detail.rate_version, date: new Date(detail.created_at).toLocaleString() })}
+                {tx("Rate version {version} · Generated {date}", { version: detail.rate_version, date: displayDateTime(detail.created_at) })}
               </p>
             </div>
 

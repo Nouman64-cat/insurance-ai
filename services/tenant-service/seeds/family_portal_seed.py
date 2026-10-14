@@ -88,7 +88,7 @@ async def _issue(session: AsyncSession, tenant_id: UUID, *, holder: Customer, fp
 
     base = round(annual_premium / 1.01 - 500.0, 2)
     v = PolicyVersion(policy_id=p.id, version_number="1.0", effective_from=effective, base_premium=base, loading_amount=0.0, policy_fee=500.0,
-                      tax_amount=round(annual_premium - base - 500.0, 2), total_premium=annual_premium, event_type="Issuance", created_by="seed")
+                      stamp_duty_amount=round(annual_premium - base - 500.0, 2), tax_amount=0.0, total_premium=annual_premium, event_type="Issuance", created_by="seed")
     session.add(v)
     await session.flush()
     p.current_version_id = v.id

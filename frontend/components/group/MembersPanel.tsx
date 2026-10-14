@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../lib/dateDisplay';
 import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "@/app/services/api";
 import { Pagination, usePagination } from "@/components/Pagination";
@@ -174,7 +175,7 @@ function MemberDrawer({ tenantId, orgId, mp, member, onClose, onChanged }: Panel
           {deps.length === 0 && <p className="text-xs text-slate-400">{tx("None.")}</p>}
           {deps.map((d) => (
             <div key={d.id} className="flex items-center justify-between text-sm border border-slate-100 rounded-lg px-3 py-2">
-              <span><strong>{d.name}</strong> · {d.relationship}{d.dob ? ` · b. ${d.dob}` : ""} · {pkr(d.covered_amount)}</span>
+              <span><strong>{d.name}</strong> · {d.relationship}{d.dob ? ` · b. ${displayDate(d.dob)}` : ""} · {pkr(d.covered_amount)}</span>
               {depEditable && <button onClick={() => removeDependent(d)} className="text-xs font-semibold text-red-600">{tx("Remove")}</button>}
             </div>
           ))}

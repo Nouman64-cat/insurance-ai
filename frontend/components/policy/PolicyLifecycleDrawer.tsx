@@ -1,5 +1,7 @@
 "use client";
 
+import { displayDate } from '../../lib/dateDisplay';
+import { displayDateTime } from '../../lib/dateDisplay';
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
@@ -98,7 +100,7 @@ function eventTone(evt: PolicyEvent): { dot: string; icon: ReactNode } {
 
 function fmtDateTime(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleString("en-PK", { dateStyle: "medium", timeStyle: "short" });
+  return displayDateTime(d, { dateStyle: "medium", timeStyle: "short" });
 }
 
 const STATUS_TONE: Record<string, string> = {
@@ -292,7 +294,7 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose, primary
                         {detail.premium_schedules.map((s) => (
                           <li key={s.id} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
                             <div>
-                              <p className="text-xs font-semibold text-slate-700">{tx("Due")} {s.due_date}</p>
+                              <p className="text-xs font-semibold text-slate-700">{tx("Due")} {displayDate(s.due_date)}</p>
                               <p className="text-[10px] text-slate-400">
                                 {tx("Paid")} {fmtPKR(s.amount_paid)} {tx("of")} {fmtPKR(s.amount_due)}
                               </p>

@@ -43,6 +43,9 @@ export interface EApplicationInvite {
   link_path: string;
   expires_at: string;
   status: EApplicationStatus;
+  /** The link is also emailed to the customer. */
+  emailed_to?: string | null;
+  email_status?: "sent" | "failed" | "no_email";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

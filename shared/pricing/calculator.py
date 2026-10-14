@@ -44,6 +44,9 @@ from pydantic import BaseModel, Field
 
 POLICY_FEE: float = float(os.environ.get("POLICY_FEE_PKR", "500"))
 STAMP_DUTY_RATE: float = float(os.environ.get("STAMP_DUTY_RATE", "0.01"))  # 1% federal
+# Provincial sales tax on the insurance service, charged on the same premium
+# subtotal as stamp duty (risk premium + policy fee) — stamp duty is not taxed.
+SALES_TAX_RATE: float = float(os.environ.get("SALES_TAX_RATE", "0.16"))     # 16%
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Age factor — banded multiplier approximating increasing mortality risk with
@@ -110,7 +113,8 @@ class PremiumBreakdown(BaseModel):
     # same split. Defaulted so older constructions of this model stay valid.
     risk_premium: float = Field(default=0.0, ge=0)
     policy_fee: float = Field(default=0.0, ge=0)
-    tax_amount: float = Field(default=0.0, ge=0)
+    stamp_duty_amount: float = Field(default=0.0, ge=0)
+    tax_amount: float = Field(default=0.0, ge=0)        # sales tax only — stamp duty is separate
     underwriting_loading: float = Field(default=0.0, ge=0)
 
 
@@ -134,7 +138,9 @@ def calculate_premium(
                        + base x (bmi_factor - 1)
                        + base x (loading_pct / 100)      # underwriting / medical
         risk_premium   = base_premium + loading
-        total_premium  = risk_premium + POLICY_FEE + stamp duty
+        subtotal       = risk_premium + POLICY_FEE
+        total_premium  = subtotal + stamp duty (subtotal x STAMP_DUTY_RATE)
+                                  + sales tax  (subtotal x SALES_TAX_RATE)
 
     `total_premium` is the annual premium payable each year of the policy
     term — matching "Rs. X per year for N years" framing, not a lump sum
@@ -180,12 +186,14 @@ def calculate_premium(
 
     policy_fee = POLICY_FEE if apply_charges else 0.0
     subtotal = risk_premium + policy_fee
-    tax_amount = subtotal * STAMP_DUTY_RATE if apply_charges else 0.0
-    total_premium = subtotal + tax_amount
+    stamp_duty_amount = subtotal * STAMP_DUTY_RATE if apply_charges else 0.0
+    tax_amount = subtotal * SALES_TAX_RATE if apply_charges else 0.0
+    total_premium = subtotal + stamp_duty_amount + tax_amount
 
     reasons.append(
         f"Annual premium {total_premium:,.0f} = base {base_premium:,.0f} "
-        f"+ loading {loading_applied:,.0f} + fee {policy_fee:,.0f} + duty {tax_amount:,.0f}"
+        f"+ loading {loading_applied:,.0f} + fee {policy_fee:,.0f} "
+        f"+ stamp duty {stamp_duty_amount:,.0f} + tax {tax_amount:,.0f}"
     )
 
     return PremiumBreakdown(
@@ -198,6 +206,7 @@ def calculate_premium(
         reasons=reasons,
         risk_premium=round(risk_premium, 2),
         policy_fee=round(policy_fee, 2),
+        stamp_duty_amount=round(stamp_duty_amount, 2),
         tax_amount=round(tax_amount, 2),
         underwriting_loading=round(underwriting_loading, 2),
     )

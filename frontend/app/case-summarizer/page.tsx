@@ -1,5 +1,7 @@
 "use client";
 
+import { displayDate } from '../../lib/dateDisplay';
+import { displayDateTime } from '../../lib/dateDisplay';
 import { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import api from "@/app/services/api";
@@ -305,7 +307,7 @@ export default function CaseSummarizerPage() {
     doc.setTextColor(71, 85, 105);
     doc.text("Underwriting Platform · Case Risk Assessment Report", mg, 20);
     doc.setTextColor(148, 163, 184);
-    doc.text(`Generated: ${new Date().toLocaleString()}`, pageW - mg, 20, { align: "right" });
+    doc.text(`Generated: ${displayDateTime(new Date())}`, pageW - mg, 20, { align: "right" });
 
     if (logoImg) {
       doc.addImage(logoImg, "PNG", pageW - mg - 36.2, 4.5, 36.2, 13);
@@ -332,7 +334,7 @@ export default function CaseSummarizerPage() {
     doc.setTextColor(71, 85, 105);
     const apFields = [
       `CNIC: ${evalForm.cnic || "—"}`,
-      `DOB: ${evalForm.dob || "—"}`,
+      `DOB: ${displayDate(evalForm.dob)}`,
       `Gender: ${evalForm.gender}`,
       `Occupation: ${evalForm.occupation || "—"}`,
       `Annual Income: PKR ${Number(evalForm.declaredIncome || 0).toLocaleString()}`,

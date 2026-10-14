@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate, displayDateTime } from '../../lib/dateDisplay';
 import { useState, useRef, useCallback, useEffect } from "react";
 import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -296,7 +297,7 @@ export default function LiveEvaluationPage() {
     doc.setFont("helvetica", "normal"); doc.setFontSize(7.5);
     doc.text("Underwriting Platform · Live Evaluation Report", mg, 20);
     doc.setTextColor(148, 163, 184);
-    doc.text(`Generated: ${new Date().toLocaleString()}`, pageW - mg, 20, { align: "right" });
+    doc.text(`Generated: ${displayDateTime(new Date())}`, pageW - mg, 20, { align: "right" });
     y = 38;
 
     // Customer & Policy
@@ -305,7 +306,7 @@ export default function LiveEvaluationPage() {
     doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(15, 23, 42);
     doc.text(form.name || "—", mg, y); y += 6;
     doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(71, 85, 105);
-    doc.text([`CNIC: ${form.cnic || "—"}`, `DOB: ${form.dob || "—"}`, `Gender: ${form.gender}`, `Occupation: ${form.occupation || "—"}`, `Annual Income: PKR ${Number(form.declaredIncome || 0).toLocaleString()}`].join("    "), mg, y, { maxWidth: cw });
+    doc.text([`CNIC: ${form.cnic || "—"}`, `DOB: ${displayDate(form.dob)}`, `Gender: ${form.gender}`, `Occupation: ${form.occupation || "—"}`, `Annual Income: PKR ${Number(form.declaredIncome || 0).toLocaleString()}`].join("    "), mg, y, { maxWidth: cw });
     y += 7;
     doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(100, 116, 139);
     doc.text("POLICY", mg, y); y += 4;

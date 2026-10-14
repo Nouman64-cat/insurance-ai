@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDateTime } from '../../lib/dateDisplay';
 import { Fragment, useEffect, useState } from "react";
 import { useNotify } from "@/components/NotificationContext";
 import { RuleEvaluationLog, listEvaluationLogs } from "@/app/services/ruleEngine";
@@ -57,7 +58,7 @@ export default function LogsTab({ tenantId }: { tenantId: string }) {
                     onClick={() => setExpanded(expanded === log.id ? null : log.id)}
                     className="hover:bg-slate-50/80 cursor-pointer transition"
                   >
-                    <td className="px-4 py-3 text-slate-500">{new Date(log.evaluated_at).toLocaleString()}</td>
+                    <td className="px-4 py-3 text-slate-500">{displayDateTime(log.evaluated_at)}</td>
                     <td className="px-4 py-3 font-mono text-slate-700">{log.rule_set_code}</td>
                     <td className="px-4 py-3 text-slate-600">{log.customer_cnic || "—"}</td>
                     <td className="px-4 py-3 text-right font-semibold text-slate-800">

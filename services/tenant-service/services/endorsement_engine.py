@@ -71,15 +71,17 @@ async def create_endorsement(
     if breakdown is not None:
         prem = dict(base_premium=breakdown.base_premium, loading_amount=breakdown.loading_amount,
                     policy_fee=breakdown.policy_fee, tax_amount=breakdown.tax_amount,
+                    stamp_duty_amount=getattr(breakdown, "stamp_duty_amount", 0.0),
                     total_premium=breakdown.total_premium)
         loadings_json = {"rating_basis": getattr(breakdown, "rating_basis", "")}
     elif current is not None:
         prem = dict(base_premium=current.base_premium, loading_amount=current.loading_amount,
                     policy_fee=current.policy_fee, tax_amount=current.tax_amount,
+                    stamp_duty_amount=current.stamp_duty_amount,
                     total_premium=current.total_premium)
         loadings_json = current.loadings_json
     else:
-        prem = dict(base_premium=0.0, loading_amount=0.0, policy_fee=0.0, tax_amount=0.0, total_premium=0.0)
+        prem = dict(base_premium=0.0, loading_amount=0.0, policy_fee=0.0, stamp_duty_amount=0.0, tax_amount=0.0, total_premium=0.0)
         loadings_json = None
 
     version = PolicyVersion(

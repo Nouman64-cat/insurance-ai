@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../lib/dateDisplay';
 import React, { useState } from "react";
 import { PillarCard } from "./shared";
 import type { PolicyListItem } from "@/app/services/policies";
@@ -51,7 +52,7 @@ export function TimeTrendChartCard({ policies, claims, ledger, title }: TimeTren
       for (let i = 13; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
         const key = d.toISOString().slice(0, 10);
-        const label = d.toLocaleDateString("en", { month: "short", day: "numeric" });
+        const label = displayDate(d, { month: "short", day: "numeric" });
         pointsMap[key] = { label, key, premium: 0, claims: 0, commissions: 0, netMargin: 0, policyCount: 0, claimCount: 0 };
       }
     } else if (granularity === "weekly") {

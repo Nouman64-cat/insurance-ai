@@ -1,3 +1,4 @@
+import { displayDate } from '../../lib/dateDisplay';
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, StyleSheet, FlatList, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -178,8 +179,8 @@ export default function PolicyStageBody({
                 ) : (
                   <View style={styles.details}>
                     <Detail label="Product" value={item.product_name} />
-                    <Detail label="Effective" value={item.effective_date ?? '—'} />
-                    <Detail label="Expires" value={item.expiry_date ?? '—'} />
+                    <Detail label="Effective" value={displayDate(item.effective_date)} />
+                    <Detail label="Expires" value={displayDate(item.expiry_date)} />
                   </View>
                 )}
 

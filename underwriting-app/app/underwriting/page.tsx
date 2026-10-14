@@ -49,6 +49,7 @@ import { affectsUnderwriting, useCoalescedRefresh } from "@/lib/liveRefresh";
 import FiltersPanel from "@/components/FiltersPanel";
 import { Pagination, usePagination } from "@/components/Pagination";
 import { tx } from "@/lib/i18n/tx";
+import { LinkEmailNote, linkDeliveryText, type LinkDelivery } from "@/components/LinkEmailNote";
 import { appHref, portalUrl } from "@/lib/appLinks";
 import dynamic from "next/dynamic";
 
@@ -388,6 +389,7 @@ function UnderwritingMainContent() {
     customerName?: string;
     data: any;
     link: string | null;
+    delivery?: LinkDelivery | null;
   } | null>(null);
   const [acrModal, setAcrModal] = useState<{
     caseId: string;
@@ -632,7 +634,7 @@ function UnderwritingMainContent() {
         [c.caseld]: portalUrl(invite.link_path),
       }));
       await loadData();
-      notify(tx("E-Application link generated successfully"), true);
+      notify(linkDeliveryText(invite), invite.email_status !== "failed");
     } catch (e: any) {
       setLinkErr(e?.message ?? "Failed to generate link");
       notify(e?.message ?? tx("Failed to generate link"), false);
@@ -709,6 +711,7 @@ function UnderwritingMainContent() {
           customerName: c.customer_name ?? undefined,
           data: order,
           link: portalUrl(invite.link_path),
+          delivery: invite,
         });
       }
       await loadData();
@@ -2640,7 +2643,7 @@ function UnderwritingMainContent() {
                     <div>
                       <p className="text-[11px] text-slate-500 mb-1">
                         {tx(
-                          "Send this link to the customer — they pick a panel clinic and an appointment slot:",
+                          "The customer's link — they see the required tests and approved labs, then upload their reports:",
                         )}
                       </p>
                       <div className="flex items-center gap-1.5">
@@ -2659,6 +2662,7 @@ function UnderwritingMainContent() {
                           {tx("Copy")}
                         </button>
                       </div>
+                      <LinkEmailNote delivery={medModal.delivery} />
                     </div>
                   )}
                 </>

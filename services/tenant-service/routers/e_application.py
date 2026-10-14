@@ -87,6 +87,10 @@ class InviteResponse(BaseModel):
     link_path: str  # relative path, e.g. "/e-application/<token>" — frontend prefixes its own origin
     expires_at: datetime
     status: EApplicationStatusEnum
+    # The link is also emailed to the customer: who it went to, and
+    # "sent" | "failed" | "no_email" (no address on record).
+    emailed_to: Optional[str] = None
+    email_status: str = "no_email"
 
 
 @router.post(
@@ -130,11 +134,18 @@ async def invite_e_application(
     session.add(e_app)
     await session.commit()
 
+    from services.customer_links import email_customer_link
+    link_path = f"/e-application/{raw_token}"
+    delivery = await email_customer_link(
+        session, kind="e_application", tenant_id=tenant_id, case=case,
+        link_path=link_path, expires_at=expires_at,
+    )
     return InviteResponse(
         token=raw_token,
-        link_path=f"/e-application/{raw_token}",
+        link_path=link_path,
         expires_at=expires_at,
         status=e_app.status,
+        **delivery,
     )
 
 

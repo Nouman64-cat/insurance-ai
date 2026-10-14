@@ -64,6 +64,7 @@ const ur: Messages = {
     "Applications": "درخواستیں",
     "Acquisition Sources": "حصول کے ذرائع",
     "Plan Selection": "پلان کا انتخاب",
+    "Insurance Plans": "انشورنس پلانز",
     "Underwriting": "انڈر رائٹنگ",
     "Pre-Underwriting": "پری انڈر رائٹنگ",
     "Risk Engine & OCR OPS": "رسک انجن اور OCR آپریشنز",

@@ -1,3 +1,4 @@
+import { displayDate } from './dateDisplay';
 import type { AIDecision } from "@/lib/mock-data";
 
 export interface PDFReportData {
@@ -31,7 +32,7 @@ function getScoreColorRGB(score: number): [number, number, number] {
 
 function fmt(iso: string) {
   const d = new Date(iso);
-  return d.toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })
+  return displayDate(d, { day: "2-digit", month: "short", year: "numeric" })
     + " · " + d.toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit" });
 }
 

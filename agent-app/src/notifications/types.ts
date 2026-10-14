@@ -1,3 +1,4 @@
+import { displayDate } from '../lib/dateDisplay';
 import { Ionicons } from '@expo/vector-icons';
 import { ToneName } from '../theme/palette';
 
@@ -82,5 +83,5 @@ export const formatRelativeTime = (timestamp: number, now = Date.now()): string 
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d ago`;
 
-  return new Date(timestamp).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  return displayDate(timestamp, { day: 'numeric', month: 'short' });
 };

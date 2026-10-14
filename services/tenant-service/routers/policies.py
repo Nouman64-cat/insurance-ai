@@ -862,6 +862,7 @@ async def issue_policy(
             base_premium=breakdown.base_premium,
             loading_amount=breakdown.loading_amount,
             policy_fee=breakdown.policy_fee,
+            stamp_duty_amount=breakdown.stamp_duty_amount,
             tax_amount=breakdown.tax_amount,
             total_premium=breakdown.total_premium,
             loadings_json={

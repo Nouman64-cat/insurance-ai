@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   InsurancePlan,
   InsurancePlanCreate,
@@ -13,8 +13,6 @@ import {
 } from "../services/insurancePlans";
 import { Pagination, usePagination } from "@/components/Pagination";
 import { tx } from "@/lib/i18n/tx";
-import PlanSelectionBoard from "@/components/plans/PlanSelectionBoard";
-import { useSearchParams } from "next/navigation";
 
 const COLOR_CLASSES: Record<string, { badge: string; accent: string }> = {
   blue: { badge: "bg-blue-50 text-blue-700 border-blue-200", accent: "border-t-blue-500" },
@@ -946,41 +944,8 @@ function NumField({
   );
 }
 
-// Plan Selection is the working stage between a lead and a proposal; the catalog is where plans themselves are managed.
-function PlansTabs() {
-  const params = useSearchParams();
-  const [tab, setTab] = useState<"selection" | "catalog">(params.get("tab") === "catalog" ? "catalog" : "selection");
-  const tabs: { id: "selection" | "catalog"; label: string }[] = [
-    { id: "selection", label: tx("Plan Selection") },
-    { id: "catalog", label: tx("Plan Catalog") },
-  ];
-  return (
-    <div>
-      <div className="px-6 pt-6">
-        <div className="flex gap-1 border-b border-slate-200">
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
-                tab === t.id ? "border-blue-600 text-blue-600" : "border-transparent text-slate-400 hover:text-slate-600"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      {tab === "selection" ? <div className="p-6"><PlanSelectionBoard /></div> : <PlanCatalog />}
-    </div>
-  );
-}
-
+// Insurance Plans — the tenant's plan catalog and its maintenance. Plans are
+// chosen for a customer on the Insurance Plan tab of the add-customer forms.
 export default function PlansPage() {
-  return (
-    <Suspense fallback={null}>
-      <PlansTabs />
-    </Suspense>
-  );
+  return <PlanCatalog />;
 }

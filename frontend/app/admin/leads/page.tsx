@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../../lib/dateDisplay';
 import { useState, useEffect, useRef } from "react";
 import { listBranches, Branch } from "@/app/services/branches";
 import { listAcquisitionSources, AcquisitionSource } from "@/app/services/acquisitionSources";
@@ -53,8 +54,6 @@ interface UnifiedLead {
   quotation?: { amount: number; plan: string; coverage: number; extra: number } | null;
   /** A plan chosen on the entry form that has no quotation yet (it becomes a proposal on Send Draft). */
   pendingPlan?: string | null;
-  /** Sent to the Plan Selection module and waiting there for a plan / Send Draft. Individuals only. */
-  inPlanSelection?: boolean;
 }
 
 const SOURCE_TYPE_LABELS: Record<string, string> = {
@@ -200,7 +199,7 @@ export default function LeadsHubPage() {
   // Inline "Add" flows — replaces navigation to separate customer/family/organization pages.
   const [chooserType, setChooserType] = useState<EntryEntityType | null>(null);
   const [activeAdd, setActiveAdd] = useState<{ type: EntryEntityType; mode: "quick" | "full" } | null>(null);
-  const [editEntityData, setEditEntityData] = useState<{ type: EntityType; data: any } | null>(null);
+  const [editEntityData, setEditEntityData] = useState<{ type: EntityType; data: any; tab?: string } | null>(null);
   const [notice, setNotice] = useState("");
 
   const handleAddSaved = (message: string, entity?: { id: string; isNew: boolean }) => {
@@ -351,7 +350,6 @@ export default function LeadsHubPage() {
             sourceName: c.acquisition_source?.name ?? null,
             sourceType: c.acquisition_source?.source_type ?? null,
             pendingPlan: c.details?.pending_plan?.product_name ?? null,
-            inPlanSelection: !!c.details?.in_plan_selection,
           });
         }
       });
@@ -639,11 +637,27 @@ export default function LeadsHubPage() {
 
   // "Send Draft" is what moves a lead into Proposals, and takes you there.
   const handleSendDraft = async (lead: UnifiedLead) => {
-    if (lead.type === "INDIVIDUAL") return handleSelectPlan(lead);
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId) return;
     setActionBusyId(lead.id);
     setError("");
     try {
-      await sendLeadToDraft(lead.type, lead.id, lead.name);
+      if (lead.type === "INDIVIDUAL") {
+        // An individual's proposal is built from the plan chosen on the Insurance Plan tab. Without one,
+        // open the lead on that tab instead of sending an empty draft.
+        const { data: customer } = await api.get(`/tenants/${tenantId}/customers/${lead.id}`);
+        if (!customer.details?.pending_plan && !customer.details?.plan_policy_id) {
+          // Unknown (e.g. an agent can't list policies) is not "no plan" — let the draft through.
+          const policies = await api.get(`/tenants/${tenantId}/customers/${lead.id}/policies`).then((r) => r.data, () => null);
+          if (Array.isArray(policies) && policies.length === 0) {
+            setNotice(tx("Choose an insurance plan for \"{0}\" before sending the draft.", { 0: lead.name }));
+            setEditEntityData({ type: "INDIVIDUAL", data: customer, tab: "insurance_plan" });
+            return;
+          }
+        }
+      }
+      // in_plan_selection belonged to the retired Plan Selection board.
+      await sendLeadToDraft(lead.type, lead.id, lead.name, { clear: ["in_plan_selection"] });
       if (isEmbedded()) {
         setNotice(tx("\"{0}\" sent to Proposals as a draft.", { 0: lead.name }));
         await fetchLeads();
@@ -652,33 +666,6 @@ export default function LeadsHubPage() {
       }
     } catch (err: any) {
       setError(err.response?.data?.detail ?? err.message ?? tx("Failed to send draft."));
-    } finally {
-      setActionBusyId(null);
-    }
-  };
-
-  // Individuals pick their plan in the Plan Selection module; "Select Plan" sends the lead there. Send Draft
-  // happens from that module once a plan is chosen. Families and organisations have no plan stage yet.
-  const handleSelectPlan = async (lead: UnifiedLead) => {
-    const tenantId = localStorage.getItem("tenant_id");
-    if (!tenantId) return;
-    setActionBusyId(lead.id);
-    setError("");
-    try {
-      const { data: customer } = await api.get(`/tenants/${tenantId}/customers/${lead.id}`);
-      if (!customer.details?.in_plan_selection) {
-        // A plan left over from the old entry form is dropped: a lead starts Plan Selection with no plan.
-        const { pending_plan, plan_policy_id, ...rest } = customer.details || {};
-        await api.put(`/tenants/${tenantId}/customers/${lead.id}`, { details: { ...rest, in_plan_selection: true } });
-      }
-      if (isEmbedded()) {
-        setNotice(tx("\"{0}\" sent to Plan Selection.", { 0: lead.name }));
-        await fetchLeads();
-      } else {
-        router.push("/plans?tab=selection");
-      }
-    } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to send to Plan Selection."));
     } finally {
       setActionBusyId(null);
     }
@@ -1142,7 +1129,7 @@ export default function LeadsHubPage() {
                                 </td>
                                 <td className="px-6 py-4 text-slate-600 text-xs">{lead.contact_info}</td>
                                 <td className="px-6 py-4 text-slate-500 font-mono text-xs">{lead.primaryIdentifier || "-"}</td>
-                                <td className="px-6 py-4 text-slate-500 text-xs">{new Date(lead.created_at).toLocaleDateString()}</td>
+                                <td className="px-6 py-4 text-slate-500 text-xs">{displayDate(lead.created_at)}</td>
                                 <td className="px-6 py-4">
                                   {lead.quotation ? (
                                     <div title={`${lead.quotation.plan} · ${tx("Coverage")} ${tx("PKR")} ${lead.quotation.coverage.toLocaleString()}`}>
@@ -1202,7 +1189,7 @@ export default function LeadsHubPage() {
                                             onClick={() => handleSendDraft(lead)}
                                             className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
                                           >
-                                            {lead.type === "INDIVIDUAL" ? (lead.inPlanSelection ? tx("In Plan Selection") : tx("Select Plan")) : tx("Send Draft")}
+                                            {tx("Send Draft")}
                                           </button>
                                         )}
                                         <button
@@ -1327,6 +1314,7 @@ export default function LeadsHubPage() {
           open={true}
           mode="edit"
           customer={editEntityData.data}
+          initialTab={editEntityData.tab}
           onClose={() => setEditEntityData(null)}
           onSaved={(msg, ent) => {
             handleAddSaved(msg, ent);
@@ -1457,7 +1445,7 @@ function LeadCard({
       )}
 
       <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between items-center text-[10px] text-slate-400">
-        <span>{tx("Added")}{" "}{new Date(lead.created_at).toLocaleDateString()}</span>
+        <span>{tx("Added")}{" "}{displayDate(lead.created_at)}</span>
         <span className="text-blue-600 font-semibold group-hover:underline">{tx("View Details →")}</span>
       </div>
 
@@ -1476,7 +1464,7 @@ function LeadCard({
             )}
             {lead.status !== "DRAFT" && (
               <button disabled={busy} onClick={act(onSendDraft)} className={`${btnBase} text-blue-700 bg-blue-50 hover:bg-blue-100`}>
-                {lead.type === "INDIVIDUAL" ? (lead.inPlanSelection ? tx("In Plan Selection") : tx("Select Plan")) : tx("Send Draft")}
+                {tx("Send Draft")}
               </button>
             )}
             <button disabled={busy} onClick={act(onMarkNotInterested)} className={`${btnBase} text-rose-600 bg-rose-50 hover:bg-rose-100`}>

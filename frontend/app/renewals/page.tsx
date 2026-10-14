@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../lib/dateDisplay';
 import { useEffect, useMemo, useState } from "react";
 import {
   getPolicyStats,
@@ -76,14 +77,14 @@ function RenewalCard({
           </div>
           <div className="bg-slate-50 rounded-lg px-3 py-2">
             <p className="text-slate-400 text-[10px] font-medium">{tx("Expiry")}</p>
-            <p className="font-bold text-slate-800 mt-0.5">{renewal.expiry_date}</p>
+            <p className="font-bold text-slate-800 mt-0.5">{displayDate(renewal.expiry_date)}</p>
           </div>
           <div className="bg-slate-50 rounded-lg px-3 py-2 col-span-2">
             <p className="text-slate-400 text-[10px] font-medium">{tx("Days to Expiry")}</p>
             <p className={`font-bold mt-0.5 ${renewal.days_to_expiry <= 15 ? "text-red-600" : renewal.days_to_expiry <= 30 ? "text-orange-600" : "text-slate-800"}`}>
               {renewal.days_to_expiry <= 0 ? tx("Expired") : tx("{0} days", { 0: renewal.days_to_expiry })}
               {renewal.status === "GracePeriod" && renewal.grace_period_end_date && (
-                <span className="text-red-500 text-[10px] font-normal ml-1">{tx("· Grace ends")}{" "}{renewal.grace_period_end_date}</span>
+                <span className="text-red-500 text-[10px] font-normal ml-1">{tx("· Grace ends")}{" "}{displayDate(renewal.grace_period_end_date)}</span>
               )}
             </p>
           </div>

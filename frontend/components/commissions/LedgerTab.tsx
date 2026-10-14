@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../lib/dateDisplay';
 import React, { useState } from "react";
 import {
   CHANNEL_LABELS,
@@ -673,7 +674,7 @@ function EntryRow({
 
         {/* Col 8.5: DATE */}
         <td className="p-3 text-center text-[10px] font-mono text-slate-500 whitespace-nowrap">
-          {entry.accruedAt.split("T")[0]}
+          {displayDate(entry.accruedAt)}
         </td>
 
         {/* Col 9: STATUS */}
@@ -808,7 +809,7 @@ function FinancialLedgerRow({
 
         {/* Col 10.5: DATE */}
         <td className="p-3 text-center text-[10px] font-mono text-slate-500 whitespace-nowrap">
-          {entry.accruedAt.split("T")[0]}
+          {displayDate(entry.accruedAt)}
         </td>
 
         {/* Col 11: DUE STATUS */}
@@ -955,7 +956,7 @@ function PayeeSummaryRow({
 
         {/* Col 11.5: DATE */}
         <td className="p-3 text-center text-[10px] font-mono text-slate-500 whitespace-nowrap">
-          {entry.accruedAt.split("T")[0]}
+          {displayDate(entry.accruedAt)}
         </td>
 
         {/* Col 12: REGULATORY REF */}

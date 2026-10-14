@@ -62,6 +62,7 @@ const en = {
     "Applications": "Applications",
     "Acquisition Sources": "Acquisition Sources",
     "Plan Selection": "Plan Selection",
+    "Insurance Plans": "Insurance Plans",
     "Underwriting": "Underwriting",
     "Pre-Underwriting": "Pre-Underwriting",
     "Risk Engine & OCR OPS": "Risk Engine & OCR OPS",

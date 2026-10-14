@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDateTime } from '../../lib/dateDisplay';
 import React, { useState } from "react";
 import {
   CHANNEL_LABELS,
@@ -205,17 +206,17 @@ export default function PayoutRunsTab({
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-500 mt-1">
-                        {tx("Prepared by")}{" "}<span className="font-bold">{run.createdBy}</span>{" "}{tx("on")}{" "}{run.createdAt}
+                        {tx("Prepared by")}{" "}<span className="font-bold">{run.createdBy}</span>{" "}{tx("on")}{" "}{displayDateTime(run.createdAt)}
                         {run.approvedBy && (
                           <>
                             {" " + tx("· approved by") + " "}
-                            <span className="font-bold">{run.approvedBy}</span>{" "}{tx("on")}{" "}{run.approvedAt}
+                            <span className="font-bold">{run.approvedBy}</span>{" "}{tx("on")}{" "}{displayDateTime(run.approvedAt)}
                           </>
                         )}
                         {run.paidAt && (
                           <>
                             {" " + tx("· paid") + " "}
-                            {run.paidAt}{" "}{tx("via")}{" "}{run.paymentMethod} ({run.paymentReference})
+                            {displayDateTime(run.paidAt)}{" "}{tx("via")}{" "}{run.paymentMethod} ({run.paymentReference})
                           </>
                         )}
                         {run.rejectedReason && <>{" "}{tx("· rejected:")}{" "}{run.rejectedReason}</>}

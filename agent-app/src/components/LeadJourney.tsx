@@ -1,3 +1,4 @@
+import { displayDate } from '../lib/dateDisplay';
 import React from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -210,7 +211,7 @@ function StageRow({ stage, isLast }: { stage: JourneyStage; isLast: boolean }) {
             ) : null}
             {stage.at ? (
               <Text variant="micro" color="subtle">
-                {new Date(stage.at).toLocaleDateString(undefined, {
+                {displayDate(stage.at, {
                   day: 'numeric',
                   month: 'short',
                   year: 'numeric',

@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../lib/dateDisplay';
 import { RuleSetSummary } from "@/app/services/ruleEngine";
 import { tx } from "@/lib/i18n/tx";
 
@@ -16,7 +17,7 @@ interface Props {
 }
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return displayDate(iso, { month: "short", day: "numeric" });
 }
 
 export default function RuleSetList({

@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../lib/dateDisplay';
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import LazyMarkdown from "@/components/LazyMarkdown";
@@ -46,7 +47,7 @@ interface AssessmentDetail extends AssessmentSummary {
 
 function fmt(iso: string) {
   const d = new Date(iso);
-  return d.toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })
+  return displayDate(d, { day: "2-digit", month: "short", year: "numeric" })
     + " · " + d.toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit" });
 }
 

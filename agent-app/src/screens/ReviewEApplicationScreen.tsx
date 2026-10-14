@@ -1,3 +1,4 @@
+import { displayDateTime } from '../lib/dateDisplay';
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -309,7 +310,7 @@ export default function ReviewEApplicationScreen() {
         <Field label="Typed legal signature" value={declaration.signature_name || 'N/A'} />
         <Field
           label="Submitted"
-          value={eApp.submitted_at ? new Date(eApp.submitted_at).toLocaleString() : 'Recently'}
+          value={eApp.submitted_at ? displayDateTime(eApp.submitted_at) : 'Recently'}
         />
       </Accordion>
 

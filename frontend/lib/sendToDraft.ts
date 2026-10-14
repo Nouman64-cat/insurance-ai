@@ -28,7 +28,7 @@ export async function sendLeadToDraft(
     const { pending_plan, ...restDetails } = customer.details || {};
     for (const key of opts.clear ?? []) delete restDetails[key];
     const detailsChanged = !!pending_plan || (opts.clear ?? []).some((k) => customer.details && k in customer.details);
-    // A proposal made at Plan Selection already exists; one chosen on the old entry form is created now.
+    // A proposal already made for the lead is kept; a plan chosen on the Insurance Plan tab is created now.
     if (pending_plan && !customer.details?.plan_policy_id) {
       await api.post(`${path}/policies`, pending_plan);
       registerPendingQuote(id, name);

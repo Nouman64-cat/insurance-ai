@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../../../lib/dateDisplay';
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import api from "@/app/services/api";
@@ -753,7 +754,7 @@ export default function FamilyDetailPage() {
                             : tx("{0}% discount", { 0: fp.discount_percentage ?? 0 })}
                         </td>
                         <td className="px-5 py-3 text-slate-600">{fp.term_years}{" "}{tx("years")}</td>
-                        <td className="px-5 py-3 text-slate-600">{fp.effective_date}</td>
+                        <td className="px-5 py-3 text-slate-600">{displayDate(fp.effective_date)}</td>
                         <td className="px-5 py-3">
                           <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border ${FAMILY_POLICY_STATUS_STYLE[fp.status] ?? "bg-slate-100 text-slate-700 border-slate-200"}`}>
                             {fp.status}
@@ -825,7 +826,7 @@ export default function FamilyDetailPage() {
                 >
                   {familyPolicies.map((fp) => (
                     <option key={fp.id} value={fp.id}>
-                      {fp.plan_type === "Floater" ? tx("Health Floater") : tx("Life Bundle")} · {fp.effective_date} ({fp.status})
+                      {fp.plan_type === "Floater" ? tx("Health Floater") : tx("Life Bundle")} · {displayDate(fp.effective_date)} ({fp.status})
                     </option>
                   ))}
                 </select>

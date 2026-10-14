@@ -1,3 +1,4 @@
+import { displayDateTime } from '../lib/dateDisplay';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, StyleSheet, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -257,7 +258,7 @@ export default function LeadDetailScreen() {
         <ListRow
           title="Created"
           value={formatRelativeTime(new Date(lead.created_at).getTime())}
-          subtitle={new Date(lead.created_at).toLocaleString()}
+          subtitle={displayDateTime(lead.created_at)}
           icon="time-outline"
           tone="neutral"
         />

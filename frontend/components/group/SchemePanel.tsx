@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../lib/dateDisplay';
 import { useCallback, useEffect, useState } from "react";
 import api from "@/app/services/api";
 import { Chip, GroupQuote, PanelProps, downloadPdf, errMsg, mpBase, pkr, premiumWord } from "./groupShared";
@@ -64,7 +65,7 @@ export default function SchemePanel({ tenantId, orgId, mp, reload }: PanelProps)
   const rows: [string, React.ReactNode][] = [
     ["Product", `${mp.plan_label ?? "Group Life"}${mp.business_type ? ` · ${mp.business_type}` : ""}`],
     ["Master policy no.", mp.policy_number ?? "Assigned at issuance"],
-    ["Cover period", mp.expiry_date ? `${mp.effective_date} to ${mp.expiry_date}` : `From ${mp.effective_date} · ${mp.term_years}-year term`],
+    ["Cover period", mp.expiry_date ? `${displayDate(mp.effective_date)} to ${displayDate(mp.expiry_date)}` : `From ${displayDate(mp.effective_date)} · ${mp.term_years}-year term`],
     ["Default cover", `${mp.sum_assured_multiple}× basic monthly salary`],
     ["Free Cover Limit", mp.free_cover_limit != null ? pkr(mp.free_cover_limit) : "Set when the census is confirmed"],
     ["Status", <Chip key="s" status={mp.status}>{mp.status}</Chip>],

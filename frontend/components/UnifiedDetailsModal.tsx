@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate, displayDateTime } from '../lib/dateDisplay';
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/app/services/api";
@@ -207,7 +208,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                         </div>
                         <div>
                           <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("Date of Birth")}</p>
-                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.date_of_birth ? new Date(data.date_of_birth).toLocaleDateString() : tx("Not provided")}</p>
+                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.date_of_birth ? displayDate(data.date_of_birth) : tx("Not provided")}</p>
                         </div>
                       </>
                     )}
@@ -251,7 +252,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                     )}
                     
                     <div className="pt-4 border-t border-slate-100">
-                      <p className="text-[10px] text-slate-400 font-medium">{tx("Created:")}{" "}{new Date(data.created_at).toLocaleString()}</p>
+                      <p className="text-[10px] text-slate-400 font-medium">{tx("Created:")}{" "}{displayDateTime(data.created_at)}</p>
                     </div>
                   </div>
                 </div>

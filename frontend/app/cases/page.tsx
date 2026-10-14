@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate, displayDateTime } from '../../lib/dateDisplay';
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import { workflowStore } from "../case-summarizer/workflowStore";
@@ -710,7 +711,7 @@ function ArtifactDetailModal({ artifact: initial, tenantId, onClose, onUpdate }:
                 </div>
                 <div>
                   <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold mb-0.5">{tx("Uploaded")}</p>
-                  <p className="font-medium text-slate-700">{new Date(artifact.created_at).toLocaleString()}</p>
+                  <p className="font-medium text-slate-700">{displayDateTime(artifact.created_at)}</p>
                 </div>
                 <div>
                   <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold mb-0.5">{tx("Tamper Flag")}</p>
@@ -1406,7 +1407,7 @@ export default function CasesPage() {
                     <li key={a.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
                       <div className="min-w-0">
                         <p className="truncate font-semibold text-slate-800">{a.document_type}</p>
-                        <p className="truncate text-xs text-slate-500">{a.file_name} · {new Date(a.created_at).toLocaleDateString()}</p>
+                        <p className="truncate text-xs text-slate-500">{a.file_name} · {displayDate(a.created_at)}</p>
                       </div>
                       <button
                         onClick={() => setViewingArtifact(a)}

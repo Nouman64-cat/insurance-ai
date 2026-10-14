@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../lib/dateDisplay';
 import { useState, useRef, useEffect } from "react";
 import { tx } from "@/lib/i18n/tx";
 
@@ -61,7 +62,7 @@ export function DateRangeDropdown({ value, onChange, className = "" }: DateRange
 
   const formatDate = (d: string) => {
     if (!d) return "";
-    return new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    return displayDate(d, { month: "short", day: "numeric", year: "numeric" });
   };
 
   const displayLabel = value 

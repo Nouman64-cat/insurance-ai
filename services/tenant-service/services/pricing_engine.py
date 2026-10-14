@@ -66,16 +66,18 @@ class PremiumBreakdown:
     base_premium: float
     loading_amount: float
     policy_fee: float
-    tax_amount: float
+    tax_amount: float           # sales tax
     total_premium: float
     rating_basis: str           # human-readable explanation for audit log
     loading_pct: float = 0.0
+    stamp_duty_amount: float = 0.0
 
     def to_dict(self) -> dict:
         return {
             "base_premium": round(self.base_premium, 2),
             "loading_amount": round(self.loading_amount, 2),
             "policy_fee": round(self.policy_fee, 2),
+            "stamp_duty_amount": round(self.stamp_duty_amount, 2),
             "tax_amount": round(self.tax_amount, 2),
             "total_premium": round(self.total_premium, 2),
             "rating_basis": self.rating_basis,
@@ -130,6 +132,7 @@ class _BaseCalculator:
             base_premium=shared.base_premium,
             loading_amount=shared.loading_applied,
             policy_fee=shared.policy_fee,
+            stamp_duty_amount=shared.stamp_duty_amount,
             tax_amount=shared.tax_amount,
             total_premium=shared.total_premium,
             rating_basis=self._rating_basis(),
@@ -151,12 +154,12 @@ class _LifeCalculator(_BaseCalculator):
       base    = (rate / 1000) × coverage × age_factor
       loading = base × (smoker_factor - 1) + base × (bmi_factor - 1)
               + base × (loading_pct / 100)
-      total   = base + loading + policy_fee + stamp_duty
+      total   = base + loading + policy_fee + stamp_duty + sales tax
     """
 
     def _rating_basis(self) -> str:
         return ("Life: annual (rate/1000 × coverage × age_factor) "
-                "+ smoker/BMI/underwriting loadings + fee + duty")
+                "+ smoker/BMI/underwriting loadings + fee + stamp duty + sales tax")
 
 
 # ── Health / Hospital Cash calculator ─────────────────────────────────────────
@@ -170,7 +173,7 @@ class _HealthCalculator(_LifeCalculator):
 
     def _rating_basis(self) -> str:
         return ("Health: annual (utilisation_rate/1000 × coverage × age_factor) "
-                "+ smoker/BMI/underwriting loadings + fee + duty")
+                "+ smoker/BMI/underwriting loadings + fee + stamp duty + sales tax")
 
 
 # ── Group Life calculator (negotiated, age-banded) ────────────────────────────

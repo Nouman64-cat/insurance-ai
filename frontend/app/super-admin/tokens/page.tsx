@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../../lib/dateDisplay';
 import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import api from "@/app/services/api";
@@ -286,7 +287,7 @@ function TokenManagementContent() {
         }
 
         data.push({
-          date: date.toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric" }),
+          date: displayDate(date, { timeZone: "UTC", month: "short", day: "numeric" }),
           services,
           total_input: Object.values(services).reduce((t, v) => t + v.input, 0),
           total_output: Object.values(services).reduce((t, v) => t + v.output, 0),

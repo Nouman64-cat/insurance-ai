@@ -57,7 +57,8 @@ async def build_document_context(session: AsyncSession, policy: Policy) -> dict:
 
     if version:
         pb = {"base_premium": version.base_premium, "loading_amount": version.loading_amount,
-              "policy_fee": version.policy_fee, "tax_amount": version.tax_amount,
+              "policy_fee": version.policy_fee, "stamp_duty_amount": version.stamp_duty_amount,
+              "tax_amount": version.tax_amount,
               "total_premium": version.total_premium}
         exclusions = list(version.exclusions_json.get("items", [])) if version.exclusions_json else []
         # Build a human-readable underwriting-terms line

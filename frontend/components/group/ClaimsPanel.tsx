@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../lib/dateDisplay';
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "@/app/services/api";
@@ -201,7 +202,7 @@ export default function ClaimsPanel({ tenantId, orgId, mp }: PanelProps) {
                     </div>
                     <div className="bg-white border border-slate-100 rounded-lg p-3 space-y-1 text-xs text-slate-600">
                       <p><span className="text-slate-400">{tx("Certificate")}</span> {c.certificate_number ?? "—"}</p>
-                      <p><span className="text-slate-400">{tx("Incident")}</span> {c.incident_date ?? "—"}</p>
+                      <p><span className="text-slate-400">{tx("Incident")}</span> {displayDate(c.incident_date)}</p>
                       <p><span className="text-slate-400">{tx("Approved")}</span> {c.approved_amount ? pkr(c.approved_amount) : "—"} · <span className="text-slate-400">{tx("Paid")}</span> {c.settlement_amount ? pkr(c.settlement_amount) : "—"}</p>
                       <Link href={`/claims/${c.id}`} className="inline-block pt-1 font-semibold text-blue-600 hover:text-blue-800">{tx("Open in Claims — adjudicate and attach documents →")}</Link>
                     </div>

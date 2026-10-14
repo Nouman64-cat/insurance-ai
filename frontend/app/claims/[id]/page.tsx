@@ -1,4 +1,5 @@
 "use client";
+import { displayDate } from "@/lib/dateDisplay";
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
@@ -468,7 +469,7 @@ export default function ClaimDetailPage() {
             )}
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            {tx("Claimant:")}{" "}<span className="font-medium text-slate-800">{claim.claimant_name}</span>{" "}{tx("· Adjuster:")}{" "}<span className="font-medium text-slate-800">{claim.assigned_adjuster_name ?? tx("Unassigned")}</span>{" "}{tx("· Reported")}{" "}{claim.reported_date}
+            {tx("Claimant:")}{" "}<span className="font-medium text-slate-800">{claim.claimant_name}</span>{" "}{tx("· Adjuster:")}{" "}<span className="font-medium text-slate-800">{claim.assigned_adjuster_name ?? tx("Unassigned")}</span>{" "}{tx("· Reported")}{" "}{displayDate(claim.reported_date)}
           </p>
         </div>
 
@@ -835,7 +836,7 @@ export default function ClaimDetailPage() {
                         <span className="font-bold text-slate-900">{tx("PKR")}{" "}{p.amount.toLocaleString()}</span>
                         <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700">{p.status}</span>
                       </div>
-                      <p className="mt-0.5 text-xs text-slate-500">{p.method} · {p.initiated_at.split("T")[0]}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{p.method} · {displayDate(p.initiated_at)}</p>
                       {p.reference_number && <p className="font-mono text-xs text-slate-500">{tx("Ref:")}{" "}{p.reference_number}</p>}
                     </li>
                   ))}
@@ -941,7 +942,7 @@ export default function ClaimDetailPage() {
                             </span>
                           </div>
                           <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-1 font-medium">
-                            <span>{tx("Uploaded")}{" "}{art.created_at?.split("T")[0]}</span>
+                            <span>{tx("Uploaded")}{" "}{displayDate(art.created_at)}</span>
                             {art.file_size && (
                               <>
                                 <span>·</span>
@@ -1051,7 +1052,7 @@ export default function ClaimDetailPage() {
                     </span>
                   </div>
                   <p className="text-[10px] text-slate-500">
-                    {tx("OCR text extraction detected medical onset (")}{claim.ocr_onset_date ?? "2022-04-12"}{tx(") prior to policy issuance.")}
+                    {tx("OCR text extraction detected medical onset (")}{displayDate(claim.ocr_onset_date ?? "2022-04-12")}{tx(") prior to policy issuance.")}
                   </p>
                 </div>
               );
@@ -1150,9 +1151,9 @@ export default function ClaimDetailPage() {
                   <div>
                     <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{tx("Medical Onset vs Policy Start")}</div>
                     <div className="text-xs font-semibold text-slate-900 mt-0.5 flex items-center gap-1.5">
-                      <span className="text-blue-900 font-medium">{tx("Onset:")}{" "}{claim.ocr_onset_date ?? "2022-04-12"}</span>
+                      <span className="text-blue-900 font-medium">{tx("Onset:")}{" "}{displayDate(claim.ocr_onset_date ?? "2022-04-12")}</span>
                       <span className="text-slate-300">•</span>
-                      <span className="text-slate-600 font-normal">{tx("Policy:")}{" "}{claim.policy_start_date ?? "2025-01-15"}</span>
+                      <span className="text-slate-600 font-normal">{tx("Policy:")}{" "}{displayDate(claim.policy_start_date ?? "2025-01-15")}</span>
                     </div>
                   </div>
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100/80 text-blue-900 border border-blue-200/90">

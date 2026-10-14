@@ -1669,6 +1669,7 @@ async def endorse_riders(
         base_premium = current.base_premium if current else 0.0
         loading_amount = current.loading_amount if current else 0.0
         policy_fee = current.policy_fee if current else 0.0
+        stamp_duty_amount = current.stamp_duty_amount if current else 0.0
         tax_amount = current.tax_amount if current else 0.0
         total_premium = round(base_prem + delta, 2)
         rating_basis = (current.loadings_json or {}).get("rating_basis", "") if current and current.loadings_json else ""

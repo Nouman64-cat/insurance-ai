@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../lib/dateDisplay';
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "@/app/services/api";
 import { Chip, GroupRenewal, PanelProps, downloadPdf, errMsg, mpBase, pkr, premiumWord, signedPkr } from "./groupShared";
@@ -92,7 +93,7 @@ export default function RenewalsPanel({ tenantId, orgId, mp, reload }: PanelProp
       )}
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <p className="text-xs text-slate-500">{tx("Cover period")}{" "}{mp.effective_date}{" "}{tx("to")}{" "}{mp.expiry_date}{tx(". The renewal opens ahead of expiry and prices the next year from this group's own claims.")}</p>
+        <p className="text-xs text-slate-500">{tx("Cover period")}{" "}{displayDate(mp.effective_date)}{" "}{tx("to")}{" "}{displayDate(mp.expiry_date)}{tx(". The renewal opens ahead of expiry and prices the next year from this group's own claims.")}</p>
         {live && !inProgress && <button onClick={start} disabled={!!busy} className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-lg">{busy === "Start the renewal" ? tx("Starting…") : tx("Start the renewal")}</button>}
       </div>
 

@@ -1,4 +1,5 @@
 "use client";
+import { displayDate } from '../../../lib/dateDisplay';
 import React, { useState, useEffect, useCallback } from "react";
 import { SettlementRecord, listSettlementRecords } from "../../services/commissions";
 import DemoDataBanner from "@/components/DemoDataBanner";
@@ -84,7 +85,7 @@ export default function SettlementPage() {
                     </td>
                     <td className="px-5 py-3 text-xs font-mono text-slate-600">{r.bankReferenceNumber}</td>
                     <td className="px-5 py-3 text-xs text-slate-600">
-                      {new Date(r.clearingDate).toLocaleDateString()}
+                      {displayDate(r.clearingDate)}
                     </td>
                     <td className="px-5 py-3">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${r.status === 'CLEARED' ? 'bg-emerald-100 text-emerald-800' :

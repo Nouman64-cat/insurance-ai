@@ -2260,7 +2260,8 @@ class PolicyVersion(SQLModel, table=True):
     base_premium: float = Field(ge=0)
     loading_amount: float = Field(default=0.0, ge=0)
     policy_fee: float = Field(default=500.0, ge=0)
-    tax_amount: float = Field(default=0.0, ge=0)
+    stamp_duty_amount: float = Field(default=0.0, ge=0)
+    tax_amount: float = Field(default=0.0, ge=0)        # sales tax; stamp duty is stamp_duty_amount
     total_premium: float = Field(ge=0)
 
     # Applied underwriting terms — persisted as JSON for auditability

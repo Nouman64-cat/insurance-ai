@@ -1,4 +1,5 @@
 "use client";
+import { displayDate } from "@/lib/dateDisplay";
 
 import React, { useEffect, useState } from "react";
 import {
@@ -316,7 +317,7 @@ export default function RateCardTab({
                           </td>
                           <td className="py-3 px-4">
                             <p className="text-[10px] font-mono text-slate-500 whitespace-nowrap">
-                              {rule.effectiveFrom} → {rule.effectiveTo ?? tx("open")}
+                              {displayDate(rule.effectiveFrom)} → {rule.effectiveTo ? displayDate(rule.effectiveTo) : tx("open")}
                             </p>
                           </td>
                           <td className="py-3 px-4 text-center">

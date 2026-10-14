@@ -529,3 +529,73 @@ def exit_closure_email(
         note="Please keep this message with your records. No further premiums will be billed.",
         tenant_phone=tenant_phone, tenant_email=tenant_email)
     return subject, text, html
+
+
+def customer_action_link_email(
+    *, kind: str, customer_name: str, tenant_name: str, url: str, expires_on: str,
+    case_number: Optional[str] = None, tests: Optional[list[str]] = None,
+    tenant_phone=None, tenant_email=None,
+) -> tuple[str, str, str]:
+    """The secure link a customer needs for their application: the
+    e-application questionnaire (kind="e_application") or uploading their
+    medical examination reports (kind="medical_exam")."""
+    first = (customer_name or "").split(" ")[0] or "there"
+    if kind == "medical_exam":
+        subject = f"Your medical examination — {tenant_name}"
+        heading = "Your medical examination"
+        intro = ("As part of your insurance application, a few medical tests are needed. Please visit any "
+                 "approved lab listed on the page below, then upload your reports using the same link. "
+                 "The tests are arranged and paid for by us.")
+        button = "View tests & upload reports"
+    else:
+        subject = f"Complete your insurance application — {tenant_name}"
+        heading = "Complete your application"
+        intro = ("To continue with your insurance application, please answer a short health and lifestyle "
+                 "questionnaire. It takes about 10 minutes and your answers are kept confidential.")
+        button = "Start my application"
+    rows = [("Application", case_number)] if case_number else []
+    rows.append(("Link valid until", expires_on))
+    note = ("This link is personal to you — please don't forward it. If you didn't apply for insurance with us, "
+            "you can ignore this email.")
+
+    detail_rows = "".join(
+        f'<tr><td style="padding:10px 0;border-bottom:1px solid {_LINE};color:{_MUTE};font-size:13px;">{_html.escape(str(k))}</td>'
+        f'<td style="padding:10px 0;border-bottom:1px solid {_LINE};color:{_INK};font-size:13px;font-weight:600;text-align:right;">{_html.escape(str(v))}</td></tr>'
+        for k, v in rows
+    )
+    test_list = "".join(
+        f'<li style="color:{_INK};font-size:13px;line-height:20px;">{_html.escape(t)}</li>' for t in (tests or [])
+    )
+    contact_bits = "  ·  ".join(b for b in [f"UAN: {tenant_phone}" if tenant_phone else "", f"Email: {tenant_email}" if tenant_email else ""] if b)
+    safe_url = _html.escape(url, quote=True)
+    html = f"""\
+<!doctype html><html><body style="margin:0;padding:0;background:{_BG};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{_BG};padding:24px 0;"><tr><td align="center">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">
+    <tr><td style="background:{_BRAND};padding:22px 28px;">
+      <div style="color:#ffffff;font-size:13px;letter-spacing:1px;text-transform:uppercase;opacity:.85;">{_html.escape(tenant_name)}</div>
+      <div style="color:#ffffff;font-size:22px;font-weight:700;margin-top:4px;">{_html.escape(heading)}</div>
+    </td></tr>
+    <tr><td style="padding:28px;">
+      <p style="color:{_INK};font-size:15px;margin:0 0 12px;">Dear {_html.escape(first)},</p>
+      <p style="color:{_INK};font-size:14px;line-height:22px;margin:0 0 20px;">{_html.escape(intro)}</p>
+      {f'<p style="color:{_MUTE};font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin:0 0 6px;">Tests required</p><ul style="margin:0 0 20px;padding-left:18px;">{test_list}</ul>' if test_list else ''}
+      <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 22px;"><tr><td style="border-radius:10px;background:{_BRAND};">
+        <a href="{safe_url}" style="display:inline-block;padding:13px 26px;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;border-radius:10px;">{_html.escape(button)}</a>
+      </td></tr></table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 16px;">{detail_rows}</table>
+      <p style="color:{_MUTE};font-size:12px;line-height:18px;margin:0 0 10px;">If the button doesn't work, copy this link into your browser:<br><a href="{safe_url}" style="color:{_BRAND_DARK};word-break:break-all;">{_html.escape(url)}</a></p>
+      <p style="color:{_MUTE};font-size:12px;line-height:18px;margin:0;">{_html.escape(note)}</p>
+    </td></tr>
+    <tr><td style="background:#f8fafc;padding:18px 28px;border-top:1px solid {_LINE};">
+      <div style="color:{_INK};font-size:13px;font-weight:600;">{_html.escape(tenant_name)}</div>
+      {f'<div style="color:{_MUTE};font-size:12px;margin-top:4px;">{contact_bits}</div>' if contact_bits else ''}
+      <div style="color:{_MUTE};font-size:11px;margin-top:8px;">This is a system-generated message. Please do not reply to this email.</div>
+    </td></tr>
+  </table>
+</td></tr></table></body></html>"""
+    text_lines = [f"Dear {first},", "", intro, ""]
+    if tests:
+        text_lines += ["Tests required:", *[f"  - {t}" for t in tests], ""]
+    text_lines += [f"{button}: {url}", "", *[f"{k}: {v}" for k, v in rows], "", note, "", tenant_name]
+    return subject, "\n".join(text_lines), html

@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDateTime } from '../../lib/dateDisplay';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { PORTAL_ORIGIN } from "@/lib/portal";
@@ -204,7 +205,7 @@ function EAppStep({ checklist, item, changed, report }: StepProps) {
     return (
       <div>
         <p className="mt-2 text-[12px] text-slate-600">
-          {customerName ?? "The customer"} submitted the questionnaire{eApp.submitted_at ? ` on ${new Date(eApp.submitted_at).toLocaleString()}` : ""}. Review the answers, then approve or send it back.
+          {customerName ?? "The customer"} submitted the questionnaire{eApp.submitted_at ? ` on ${displayDateTime(eApp.submitted_at)}` : ""}. Review the answers, then approve or send it back.
         </p>
         <div className="mt-3"><Btn onClick={() => setVerifying(true)}>Review &amp; verify</Btn></div>
         {verifying && portalModal(
@@ -569,7 +570,7 @@ function MedicalStep({ checklist, item, changed, report }: StepProps) {
         </div>
       )}
       {link && <LinkBox url={link} label="Booking link for the customer" />}
-      {order.appointment_at && <p className="mt-2 text-[12px] font-medium text-slate-700">Booked: {new Date(order.appointment_at).toLocaleString()}{order.clinic ? ` · ${order.clinic.name}` : ""}</p>}
+      {order.appointment_at && <p className="mt-2 text-[12px] font-medium text-slate-700">Booked: {displayDateTime(order.appointment_at)}{order.clinic ? ` · ${order.clinic.name}` : ""}</p>}
       <Waiting>{order.status === "Scheduled" ? "Waiting for the examination results…" : "Waiting for the customer to book their examination…"}</Waiting>
       <div className="mt-3 flex flex-wrap gap-2">
         {!link && <Btn kind="secondary" onClick={freshLink} busy={more.busy}>Get booking link</Btn>}

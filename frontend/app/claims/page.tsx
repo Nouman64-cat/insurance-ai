@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../lib/dateDisplay';
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { listClaims, createClaim, Claim, CreateClaimRequest } from "@/app/services/claims";
@@ -503,7 +504,7 @@ export default function ClaimsPage() {
                 )}
                 {(dateRange.from || dateRange.to) && (
                   <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-medium flex items-center gap-1.5 border border-indigo-200/80 text-[11px] shadow-2xs">
-                    {tx("Incident Date:")}{" "}{dateRange.from || tx("Start")}{" "}{tx("to")}{" "}{dateRange.to || tx("Today")}
+                    {tx("Incident Date:")}{" "}{dateRange.from ? displayDate(dateRange.from) : tx("Start")}{" "}{tx("to")}{" "}{dateRange.to ? displayDate(dateRange.to) : tx("Today")}
                     <button onClick={() => { setDatePreset("all"); setDateRange(resolvePreset("all")); }} className="text-indigo-400 hover:text-indigo-700 font-bold">{tx("×")}</button>
                   </span>
                 )}
@@ -589,7 +590,7 @@ export default function ClaimsPage() {
                     </td>
                     <td className="px-5 py-3 text-xs font-mono text-slate-500">{c.policy_number ?? "—"}</td>
                     <td className="px-5 py-3 text-xs text-slate-600">{c.claim_type}</td>
-                    <td className="px-5 py-3 text-xs text-slate-600 font-mono">{c.incident_date ?? "—"}</td>
+                    <td className="px-5 py-3 text-xs text-slate-600 font-mono">{displayDate(c.incident_date ?? "—")}</td>
                     <td className="px-5 py-3 text-right font-medium text-slate-900">
                       {tx("PKR")}{" "}{c.submitted_amount.toLocaleString()}
                     </td>

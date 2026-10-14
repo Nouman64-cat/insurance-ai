@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../../../lib/dateDisplay';
 import { useState, useEffect } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import api from "@/app/services/api";
@@ -690,7 +691,7 @@ export default function OrganizationDetailPage() {
                 {masterPolicies.length > 1 && (
                   <select value={mp.id} onChange={(e) => setSelectedMpId(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white">
                     {masterPolicies.map((m) => (
-                      <option key={m.id} value={m.id}>{m.plan_label ?? tx("Group Life")} · {m.effective_date} ({m.status})</option>
+                      <option key={m.id} value={m.id}>{m.plan_label ?? tx("Group Life")} · {displayDate(m.effective_date)} ({m.status})</option>
                     ))}
                   </select>
                 )}
@@ -742,7 +743,7 @@ export default function OrganizationDetailPage() {
                         <td className="px-5 py-3 text-slate-600">{mp.plan_label ?? tx("Group Life")}{mp.policy_number ? <span className="block text-[11px] font-mono text-slate-400">{mp.policy_number}</span> : null}</td>
                         <td className="px-5 py-3 font-semibold text-slate-800">{mp.sum_assured_multiple}{tx("× monthly basic salary")}</td>
                         <td className="px-5 py-3 text-slate-600">{mp.term_years}{" "}{tx("years")}</td>
-                        <td className="px-5 py-3 text-slate-600">{mp.effective_date}</td>
+                        <td className="px-5 py-3 text-slate-600">{displayDate(mp.effective_date)}</td>
                         <td className="px-5 py-3 text-slate-600">
                           {mp.free_cover_limit != null ? formatPKR(mp.free_cover_limit) : tx("— (set on first census confirm)")}
                         </td>
@@ -782,7 +783,7 @@ export default function OrganizationDetailPage() {
                 >
                   {masterPolicies.map((mp) => (
                     <option key={mp.id} value={mp.id}>
-                      {mp.sum_assured_multiple}× · {mp.effective_date} ({mp.status})
+                      {mp.sum_assured_multiple}× · {displayDate(mp.effective_date)} ({mp.status})
                     </option>
                   ))}
                 </select>

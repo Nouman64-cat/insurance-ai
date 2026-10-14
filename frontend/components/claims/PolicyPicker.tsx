@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../lib/dateDisplay';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { PolicyListItem } from "@/app/services/policies";
 import { tx } from "@/lib/i18n/tx";
@@ -60,7 +61,7 @@ export type PolicyFilters = ReturnType<typeof usePolicyFilters>;
 const humanize = (s: string) => s.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/_/g, " ");
 const titleCase = (s: string) => humanize(s).toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 const fmtDate = (s: string | null) =>
-  s ? new Date(s).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+  s ? displayDate(s, { day: "2-digit", month: "short", year: "numeric" }) : "—";
 const initials = (name: string) =>
   (name || "?").split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
 

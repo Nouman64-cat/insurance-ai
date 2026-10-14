@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../../lib/dateDisplay';
 import {
   useCallback,
   useEffect,
@@ -70,6 +71,7 @@ import {
 } from "@/app/services/medicalExam";
 import { getArtifactUrl } from "@/app/services/artifacts";
 import { tx } from "@/lib/i18n/tx";
+import { LinkEmailNote, linkDeliveryText, type LinkDelivery } from "@/components/LinkEmailNote";
 import { appHref, portalUrl } from "@/lib/appLinks";
 import dynamic from "next/dynamic";
 
@@ -1830,6 +1832,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const [medical, setMedical] = useState<MedicalExamOrder | null>(null);
   const [medBusy, setMedBusy] = useState(false);
   const [medLink, setMedLink] = useState<string | null>(null);
+  const [medDelivery, setMedDelivery] = useState<LinkDelivery | null>(null);
   const [medErr, setMedErr] = useState<string | null>(null);
   const [showResultModal, setShowResultModal] = useState(false);
   const [showAssessModal, setShowAssessModal] = useState(false);
@@ -2063,6 +2066,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
     try {
       const invite = await inviteEApplication(caseId);
       setEAppLink(portalUrl(invite.link_path));
+      notify(linkDeliveryText(invite), invite.email_status !== "failed");
       await fetchEApplication();
     } catch (e: any) {
       setEAppErr(e?.message ?? "Failed to generate link");
@@ -2319,8 +2323,10 @@ export default function CasePage({ params }: { params: { id: string } }) {
       if (order.status !== "NotRequired") {
         const invite = await inviteMedicalExam(caseId);
         setMedLink(portalUrl(invite.link_path));
+        setMedDelivery(invite);
       } else {
         setMedLink(null);
+        setMedDelivery(null);
       }
       setShowAssessModal(true);
       await fetchDetail();
@@ -2339,6 +2345,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
     try {
       const invite = await inviteMedicalExam(caseId);
       setMedLink(portalUrl(invite.link_path));
+      setMedDelivery(invite);
       await fetchMedical();
       await fetchDetail();
     } catch (e: any) {
@@ -3234,7 +3241,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
         acr?.status === "Submitted"
           ? `Moral hazard & financial standing report filed by field agent.${detail?.family_head_case ? ` Filed once for the whole family (recorded on the head's case ${detail.family_head_case.case_number}) — one proposer, one report.` : ""}`
           : acr?.waived_at
-            ? `Waived by ${acr.waived_by ?? "an underwriter"} on ${new Date(acr.waived_at).toLocaleDateString()}${acr.waiver_reason ? ` — “${acr.waiver_reason}”` : ""}. The agent can still file the report.`
+            ? `Waived by ${acr.waived_by ?? "an underwriter"} on ${displayDate(acr.waived_at)}${acr.waiver_reason ? ` — “${acr.waiver_reason}”` : ""}. The agent can still file the report.`
             : detail?.family_head_case
               ? `The agent's report on the proposer is filed once for the whole family — it is recorded on the head's case ${detail.family_head_case.case_number}.`
               : "Waiting for the agent to submit the confidential report from the agent app.",
@@ -3618,7 +3625,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
           </div>
           <p className="text-sm text-slate-500 mt-1">
             {c.caseNumber} {tx("·  Opened")}{" "}
-            {new Date(c.createdAt).toLocaleDateString()} {tx("via")}{" "}
+            {displayDate(c.createdAt)} {tx("via")}{" "}
             {c.sourceChannel}
             {policy && (
               <>
@@ -4215,6 +4222,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
               <MedicalAssessModal
                 order={medical}
                 link={medLink}
+                delivery={medDelivery}
                 customerName={customer?.name}
                 busy={medBusy}
                 onClose={() => setShowAssessModal(false)}
@@ -5363,7 +5371,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
             <div className="flex items-center justify-between px-6 py-4 bg-slate-50 border-t border-slate-200/80">
               <span className="text-xs text-slate-500 font-medium">
                 {tx("Generated")}{" "}
-                {new Date().toLocaleDateString("en-US", {
+                {displayDate(new Date(), {
                   month: "short",
                   day: "numeric",
                   year: "numeric",
@@ -5413,6 +5421,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
 function MedicalAssessModal({
   order,
   link,
+  delivery,
   customerName,
   busy,
   onClose,
@@ -5420,6 +5429,7 @@ function MedicalAssessModal({
 }: Readonly<{
   order: MedicalExamOrder;
   link: string | null;
+  delivery?: LinkDelivery | null;
   customerName?: string;
   busy: boolean;
   onClose: () => void;
@@ -5527,7 +5537,7 @@ function MedicalAssessModal({
                 <div>
                   <p className="text-[11px] text-slate-500 mb-1">
                     {tx(
-                      "Send this link to the customer — they pick a panel clinic and an appointment slot:",
+                      "The customer's link — they see the required tests and approved labs, then upload their reports:",
                     )}
                   </p>
                   <div className="flex items-center gap-1.5">
@@ -5544,6 +5554,7 @@ function MedicalAssessModal({
                       {tx("Copy")}
                     </button>
                   </div>
+                  <LinkEmailNote delivery={delivery} />
                 </div>
               )}
             </>
@@ -5740,7 +5751,7 @@ function MedicalResultModal({
             {order.completed_at
               ? " " +
                 tx("· reported {0}", {
-                  0: new Date(order.completed_at).toLocaleDateString(),
+                  0: displayDate(order.completed_at),
                 })
               : ""}
           </p>

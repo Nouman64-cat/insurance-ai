@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../../lib/dateDisplay';
 export const dynamic = "force-dynamic";
 
 import { useState, useEffect } from "react";
@@ -380,7 +381,7 @@ export default function UserManagementPage() {
                       </span>
                     </td>
                     <td className="px-5 py-3.5 text-xs text-slate-400">
-                      {new Date(user.created_at).toLocaleDateString(undefined, {
+                      {displayDate(user.created_at, {
                         year: "numeric",
                         month: "short",
                         day: "numeric",

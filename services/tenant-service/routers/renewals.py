@@ -409,7 +409,8 @@ async def _create_case(
                                 frequency=freq, period_start=period_start, period_end=period_end,
                                 rating_basis=getattr(breakdown, "rating_basis", ""))
         quote["breakdown"] = {"base_premium": breakdown.base_premium, "loading_amount": breakdown.loading_amount,
-                              "policy_fee": breakdown.policy_fee, "tax_amount": breakdown.tax_amount,
+                              "policy_fee": breakdown.policy_fee, "stamp_duty_amount": breakdown.stamp_duty_amount,
+                              "tax_amount": breakdown.tax_amount,
                               "total_premium": breakdown.total_premium}
         quoted = quote["instalment"]
         label = f"Contract renewal · year {renewal_year}"
@@ -823,6 +824,7 @@ async def _bind_contract_renewal(session: AsyncSession, policy: Policy, case: Po
         base_premium=bd.get("base_premium", current.base_premium if current else 0.0),
         loading_amount=round(bd.get("loading_amount", current.loading_amount if current else 0.0) + additional, 2),
         policy_fee=bd.get("policy_fee", current.policy_fee if current else 0.0),
+        stamp_duty_amount=bd.get("stamp_duty_amount", current.stamp_duty_amount if current else 0.0),
         tax_amount=bd.get("tax_amount", current.tax_amount if current else 0.0),
         total_premium=q.get("new_annual", current.total_premium if current else 0.0),
         loadings_json=loadings, exclusions_json=current.exclusions_json if current else None,

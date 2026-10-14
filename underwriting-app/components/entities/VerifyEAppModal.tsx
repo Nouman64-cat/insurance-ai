@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDateTime } from '../../lib/dateDisplay';
 import { useState } from "react";
 import { EApplication, verifyEApplication } from "@/app/services/eApplication";
 import { tx } from "@/lib/i18n/tx";
@@ -270,7 +271,7 @@ export default function VerifyEAppModal({
                     <p className="text-sm font-bold text-blue-900 font-mono">{declaration.signature_name || "N/A"}</p>
                   </div>
                   <div className="text-right text-[11px] text-slate-400">
-                    {tx("Submitted:")}{" "}{eApp.submitted_at ? new Date(eApp.submitted_at).toLocaleString() : tx("Recently")}
+                    {tx("Submitted:")}{" "}{eApp.submitted_at ? displayDateTime(eApp.submitted_at) : tx("Recently")}
                   </div>
                 </div>
               </div>

@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../lib/dateDisplay';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import api from "@/app/services/api";
 import { Pagination, usePagination } from "@/components/Pagination";
@@ -222,7 +223,7 @@ export default function EndorsementsPanel({ tenantId, orgId, mp, reload }: Panel
               <button onClick={() => setOpen(open === e.id ? null : e.id)} className="w-full px-5 py-3 flex items-center gap-4 text-left hover:bg-slate-50">
                 <span className="font-mono text-xs text-slate-500 w-44 truncate">{e.number}</span>
                 <span className="text-sm font-semibold text-slate-800 w-28">{tx(KIND_LABEL[e.endorsement_type])}</span>
-                <span className="text-xs text-slate-500 w-24">{e.effective_date}</span>
+                <span className="text-xs text-slate-500 w-24">{displayDate(e.effective_date)}</span>
                 <Chip status={e.status === "Applied" ? "Active" : e.status === "PendingUnderwriting" ? "Pending" : e.status}>{e.status === "PendingUnderwriting" ? tx("Awaiting underwriting") : e.status}</Chip>
                 <span className="ml-auto text-sm tabular-nums font-semibold text-slate-800">{signedPkr(e.premium_delta)}</span>
                 <Chip status={e.settlement_status === "Settled" ? "Active" : e.settlement_status === "Due" ? "Pending" : "Guaranteed"}>{e.settlement_status === "NotDue" ? tx("No money") : e.settlement_status}</Chip>

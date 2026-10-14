@@ -1,13 +1,20 @@
 "use client";
 
+import { displayDate } from '../../lib/dateDisplay';
 import { useState, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import api, { OCR_BASE_URL } from "@/app/services/api";
-import { listInsurancePlans, InsurancePlan } from "@/app/services/insurancePlans";
+import {
+  listInsurancePlans,
+  InsurancePlan,
+} from "@/app/services/insurancePlans";
 import { listBranches, Branch } from "@/app/services/branches";
 import { listAgents, Agent } from "@/app/services/agents";
-import SourcePicker, { pickDemoAgent, useAcquisitionSources } from "./SourcePicker";
+import SourcePicker, {
+  pickDemoAgent,
+  useAcquisitionSources,
+} from "./SourcePicker";
 import { PAKISTAN_PROVINCES } from "@/lib/pakistanProvinces";
 import { registerPendingQuote } from "@/lib/pendingQuotes";
 import DemoFillButton from "@/components/DemoFillButton";
@@ -39,11 +46,19 @@ interface Props {
   onSaved: (
     message: string,
     // Set only when a new customer was created (not on edit).
-    created?: { id: string; isNew: true; name: string; cnic: string | null; hasProposal: boolean }
+    created?: {
+      id: string;
+      isNew: true;
+      name: string;
+      cnic: string | null;
+      hasProposal: boolean;
+    },
   ) => void;
   /** Create mode: acquisition source to record on the new customer (set when the
    *  form is opened from the Copilot after the user picked one there). */
   defaultAcquisitionSourceId?: string | null;
+  /** Tab to open on, e.g. "insurance_plan" when a lead still needs a plan. */
+  initialTab?: string;
 }
 
 // Form fields that can be auto-filled from an uploaded document, with the tab
@@ -51,16 +66,49 @@ interface Props {
 // Form fields that can be auto-filled from an uploaded document, with the tab
 // each lives on (used to mark tabs that still have missing fields).
 type ExtractKey =
-  | "firstName" | "lastName" | "cnic" | "dob" | "gender" | "maritalStatus"
-  | "mobile" | "email" | "emergency" | "street" | "city" | "province" | "postal"
-  | "cnicIssueDate" | "cnicExpiryDate" | "validationStatus"
-  | "employmentType" | "occupation" | "employerName" | "industry" | "yearsOfExperience"
-  | "occupationHazardLevel" | "declaredIncome" | "monthlyIncome" | "incomeStabilityScore"
-  | "heightCm" | "weightKg" | "exerciseFrequency"
-  | "smokingStatus" | "alcoholConsumptionFrequency"
-  | "creditScore" | "delinquencyCount" | "riskGrade" | "numberOfDependents" | "dependentType"
-  | "beneficiaryFirstName" | "beneficiaryLastName" | "beneficiaryCnic" | "beneficiaryRelationship" | "beneficiaryShare"
-  | "selectedPlan" | "policyCoverage" | "policyTerm";
+  | "firstName"
+  | "lastName"
+  | "cnic"
+  | "dob"
+  | "gender"
+  | "maritalStatus"
+  | "mobile"
+  | "email"
+  | "emergency"
+  | "street"
+  | "city"
+  | "province"
+  | "postal"
+  | "cnicIssueDate"
+  | "cnicExpiryDate"
+  | "validationStatus"
+  | "employmentType"
+  | "occupation"
+  | "employerName"
+  | "industry"
+  | "yearsOfExperience"
+  | "occupationHazardLevel"
+  | "declaredIncome"
+  | "monthlyIncome"
+  | "incomeStabilityScore"
+  | "heightCm"
+  | "weightKg"
+  | "exerciseFrequency"
+  | "smokingStatus"
+  | "alcoholConsumptionFrequency"
+  | "creditScore"
+  | "delinquencyCount"
+  | "riskGrade"
+  | "numberOfDependents"
+  | "dependentType"
+  | "beneficiaryFirstName"
+  | "beneficiaryLastName"
+  | "beneficiaryCnic"
+  | "beneficiaryRelationship"
+  | "beneficiaryShare"
+  | "selectedPlan"
+  | "policyCoverage"
+  | "policyTerm";
 
 const EXTRACT_FIELDS: { key: ExtractKey; label: string; tab: string }[] = [
   // Tab 1: Identity & Contact
@@ -89,10 +137,18 @@ const EXTRACT_FIELDS: { key: ExtractKey; label: string; tab: string }[] = [
   { key: "employerName", label: "Employer Name", tab: "employment" },
   { key: "industry", label: "Industry Sector", tab: "employment" },
   { key: "yearsOfExperience", label: "Years of Experience", tab: "employment" },
-  { key: "occupationHazardLevel", label: "Occupation Hazard Level", tab: "employment" },
+  {
+    key: "occupationHazardLevel",
+    label: "Occupation Hazard Level",
+    tab: "employment",
+  },
   { key: "declaredIncome", label: "Declared Annual Income", tab: "employment" },
   { key: "monthlyIncome", label: "Monthly Income", tab: "employment" },
-  { key: "incomeStabilityScore", label: "Income Stability Score", tab: "employment" },
+  {
+    key: "incomeStabilityScore",
+    label: "Income Stability Score",
+    tab: "employment",
+  },
 
   // Tab 4: Medical & Lifestyle
   { key: "heightCm", label: "Height (cm)", tab: "medical" },
@@ -101,43 +157,75 @@ const EXTRACT_FIELDS: { key: ExtractKey; label: string; tab: string }[] = [
 
   // Tab 5: Habit Check
   { key: "smokingStatus", label: "Smoking Status", tab: "habit_check" },
-  { key: "alcoholConsumptionFrequency", label: "Alcohol Consumption", tab: "habit_check" },
+  {
+    key: "alcoholConsumptionFrequency",
+    label: "Alcohol Consumption",
+    tab: "habit_check",
+  },
 
   // Tab 6: Financial Profile
   { key: "creditScore", label: "Credit Score", tab: "financial" },
   { key: "delinquencyCount", label: "Delinquencies Count", tab: "financial" },
   { key: "riskGrade", label: "Risk Grade", tab: "financial" },
-  { key: "numberOfDependents", label: "Number of Dependents", tab: "financial" },
+  {
+    key: "numberOfDependents",
+    label: "Number of Dependents",
+    tab: "financial",
+  },
   { key: "dependentType", label: "Primary Dependent Type", tab: "financial" },
 
   // Tab 7: Nominee Details
-  { key: "beneficiaryFirstName", label: "Nominee First Name", tab: "beneficiary" },
-  { key: "beneficiaryLastName", label: "Nominee Last Name", tab: "beneficiary" },
+  {
+    key: "beneficiaryFirstName",
+    label: "Nominee First Name",
+    tab: "beneficiary",
+  },
+  {
+    key: "beneficiaryLastName",
+    label: "Nominee Last Name",
+    tab: "beneficiary",
+  },
   { key: "beneficiaryCnic", label: "Nominee CNIC", tab: "beneficiary" },
-  { key: "beneficiaryRelationship", label: "Nominee Relationship", tab: "beneficiary" },
+  {
+    key: "beneficiaryRelationship",
+    label: "Nominee Relationship",
+    tab: "beneficiary",
+  },
   { key: "beneficiaryShare", label: "Nominee Share %", tab: "beneficiary" },
 
   // Tab 8: Insurance Plans
   { key: "selectedPlan", label: "Insurance Plan", tab: "insurance_plan" },
-  { key: "policyCoverage", label: "Coverage Amount", tab: "insurance_plan" },
+  { key: "policyCoverage", label: "Sum Assured", tab: "insurance_plan" },
   { key: "policyTerm", label: "Policy Term", tab: "insurance_plan" },
 ];
 
-export default function CustomerFormModal({ open, mode, customer, onClose, onSaved, defaultAcquisitionSourceId }: Props) {
+export default function CustomerFormModal({
+  open,
+  mode,
+  customer,
+  onClose,
+  onSaved,
+  defaultAcquisitionSourceId,
+  initialTab,
+}: Props) {
   const isCreate = mode === "create";
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [formLoading, setFormLoading] = useState(false);
-  const [formTab, setFormTab] = useState("demographics");
+  const [formTab, setFormTab] = useState(initialTab ?? "demographics");
   // Embedded in the Copilot's chat panel, registering a new customer: the plan
   // is part of entering the details, and the chat goes on to walk that proposal
   // through its workflow (Draft → Submitted → Under Review → Underwriting), so
   // a customer can't be registered there without one.
-  const inChatPanel = mode === "create" && typeof window !== "undefined" && window.parent !== window;
-  // A new lead is added without a plan: the plan is attached later, in the Plan Selection module. Only the
-  // Copilot chat still picks one here, because it creates the proposal straight away.
-  const formTabs = mode === "create" && !inChatPanel ? customerTabs.filter((t) => t.id !== "insurance_plan") : customerTabs;
+  const inChatPanel =
+    mode === "create" &&
+    typeof window !== "undefined" &&
+    window.parent !== window;
+  // The plan, sum assured and term are chosen on the Insurance Plan tab. A new
+  // lead keeps them in details.pending_plan until Send Draft turns them into the
+  // proposal; the Copilot chat creates the proposal straight away.
+  const formTabs = customerTabs;
 
   const {
     register,
@@ -161,8 +249,18 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
 
   const [details, setDetails] = useState<CustomerDetails>(defaultDetails);
   const [newDestination, setNewDestination] = useState("");
-  const [newCondition, setNewCondition] = useState({ condition_name: "", severity: "Mild", diagnosis_date: "", is_chronic: false });
-  const [newFamilyHistory, setNewFamilyHistory] = useState({ relation: "Father", age: "", is_alive: true, condition_name: "" });
+  const [newCondition, setNewCondition] = useState({
+    condition_name: "",
+    severity: "Mild",
+    diagnosis_date: "",
+    is_chronic: false,
+  });
+  const [newFamilyHistory, setNewFamilyHistory] = useState({
+    relation: "Father",
+    age: "",
+    is_alive: true,
+    condition_name: "",
+  });
 
   const [availablePlans, setAvailablePlans] = useState<InsurancePlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
@@ -199,73 +297,121 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
   // 0-100 progress for the document upload; the first half is the real byte
   // upload, the second half creeps while the server reads the document.
   const [extractProgress, setExtractProgress] = useState(0);
-  const [extractNotice, setExtractNotice] = useState<{ tone: "ok" | "warn" | "error"; text: string } | null>(null);
+  const [extractNotice, setExtractNotice] = useState<{
+    tone: "ok" | "warn" | "error";
+    text: string;
+  } | null>(null);
   const [flagged, setFlagged] = useState<Set<string>>(new Set());
 
-  const isEmptyValue = (v: unknown) => v === undefined || v === null || String(v).trim() === "";
+  const isEmptyValue = (v: unknown) =>
+    v === undefined || v === null || String(v).trim() === "";
   const currentValueOf = (key: ExtractKey): unknown => {
     switch (key) {
       // Tab 1: Identity & Contact
-      case "firstName": return formValues.firstName;
-      case "lastName": return formValues.lastName;
-      case "cnic": return formValues.cnic;
-      case "dob": return formValues.dob;
-      case "gender": return formValues.gender;
-      case "maritalStatus": return formValues.maritalStatus;
-      case "mobile": return details.contact.mobile_number;
-      case "email": return details.contact.email;
-      case "emergency": return details.contact.emergency_contact_name;
-      case "street": return details.address.street_address;
-      case "city": return city;
-      case "province": return province;
-      case "postal": return details.address.postal_code;
+      case "firstName":
+        return formValues.firstName;
+      case "lastName":
+        return formValues.lastName;
+      case "cnic":
+        return formValues.cnic;
+      case "dob":
+        return formValues.dob;
+      case "gender":
+        return formValues.gender;
+      case "maritalStatus":
+        return formValues.maritalStatus;
+      case "mobile":
+        return details.contact.mobile_number;
+      case "email":
+        return details.contact.email;
+      case "emergency":
+        return details.contact.emergency_contact_name;
+      case "street":
+        return details.address.street_address;
+      case "city":
+        return city;
+      case "province":
+        return province;
+      case "postal":
+        return details.address.postal_code;
 
       // Tab 2: CNIC & Docs
-      case "cnicIssueDate": return details.cnic_metadata.issue_date;
-      case "cnicExpiryDate": return details.cnic_metadata.expiry_date;
-      case "validationStatus": return details.cnic_metadata.validation_status;
+      case "cnicIssueDate":
+        return details.cnic_metadata.issue_date;
+      case "cnicExpiryDate":
+        return details.cnic_metadata.expiry_date;
+      case "validationStatus":
+        return details.cnic_metadata.validation_status;
 
       // Tab 3: Occupation & Income
-      case "employmentType": return details.occupation_details.employment_type;
-      case "occupation": return formValues.occupation;
-      case "employerName": return details.occupation_details.employer_name;
-      case "industry": return details.occupation_details.industry;
-      case "yearsOfExperience": return details.occupation_details.years_of_experience;
-      case "occupationHazardLevel": return details.occupation_details.occupation_hazard_level;
-      case "declaredIncome": return formValues.declaredIncome;
-      case "monthlyIncome": return details.income_record.monthly_income;
-      case "incomeStabilityScore": return details.income_record.income_stability_score;
+      case "employmentType":
+        return details.occupation_details.employment_type;
+      case "occupation":
+        return formValues.occupation;
+      case "employerName":
+        return details.occupation_details.employer_name;
+      case "industry":
+        return details.occupation_details.industry;
+      case "yearsOfExperience":
+        return details.occupation_details.years_of_experience;
+      case "occupationHazardLevel":
+        return details.occupation_details.occupation_hazard_level;
+      case "declaredIncome":
+        return formValues.declaredIncome;
+      case "monthlyIncome":
+        return details.income_record.monthly_income;
+      case "incomeStabilityScore":
+        return details.income_record.income_stability_score;
 
       // Tab 4: Medical & Lifestyle
-      case "heightCm": return details.lifestyle.height_cm || "";
-      case "weightKg": return details.lifestyle.weight_kg || "";
-      case "exerciseFrequency": return details.lifestyle.exercise_frequency;
+      case "heightCm":
+        return details.lifestyle.height_cm || "";
+      case "weightKg":
+        return details.lifestyle.weight_kg || "";
+      case "exerciseFrequency":
+        return details.lifestyle.exercise_frequency;
 
       // Tab 5: Habit Check
-      case "smokingStatus": return details.habit_check.smoking_status;
-      case "alcoholConsumptionFrequency": return details.habit_check.alcohol_consumption_frequency;
+      case "smokingStatus":
+        return details.habit_check.smoking_status;
+      case "alcoholConsumptionFrequency":
+        return details.habit_check.alcohol_consumption_frequency;
 
       // Tab 6: Financial Profile
-      case "creditScore": return details.financial_records.credit_bureau.credit_score || "";
-      case "delinquencyCount": return details.financial_records.credit_bureau.delinquency_count;
-      case "riskGrade": return details.financial_records.credit_bureau.risk_grade;
-      case "numberOfDependents": return details.financial_records.dependents.number_of_dependents;
-      case "dependentType": return details.financial_records.dependents.dependent_type;
+      case "creditScore":
+        return details.financial_records.credit_bureau.credit_score || "";
+      case "delinquencyCount":
+        return details.financial_records.credit_bureau.delinquency_count;
+      case "riskGrade":
+        return details.financial_records.credit_bureau.risk_grade;
+      case "numberOfDependents":
+        return details.financial_records.dependents.number_of_dependents;
+      case "dependentType":
+        return details.financial_records.dependents.dependent_type;
 
       // Tab 7: Nominee Details
-      case "beneficiaryFirstName": return details.beneficiary.first_name;
-      case "beneficiaryLastName": return details.beneficiary.last_name;
-      case "beneficiaryCnic": return details.beneficiary.cnic_number;
-      case "beneficiaryRelationship": return details.beneficiary.relationship;
-      case "beneficiaryShare": return details.beneficiary.share_percentage || "";
+      case "beneficiaryFirstName":
+        return details.beneficiary.first_name;
+      case "beneficiaryLastName":
+        return details.beneficiary.last_name;
+      case "beneficiaryCnic":
+        return details.beneficiary.cnic_number;
+      case "beneficiaryRelationship":
+        return details.beneficiary.relationship;
+      case "beneficiaryShare":
+        return details.beneficiary.share_percentage || "";
 
       // Tab 8: Insurance Plans
-      case "selectedPlan": return isCreate ? formValues.selectedPlanId : editSelectedPlanId;
-      case "policyCoverage": return isCreate ? formValues.policyCoverage : editPolicyCoverage;
-      case "policyTerm": return isCreate ? formValues.policyTerm : editPolicyTerm;
+      case "selectedPlan":
+        return isCreate ? formValues.selectedPlanId : editSelectedPlanId;
+      case "policyCoverage":
+        return isCreate ? formValues.policyCoverage : editPolicyCoverage;
+      case "policyTerm":
+        return isCreate ? formValues.policyTerm : editPolicyTerm;
     }
   };
-  const isMissing = (key: ExtractKey) => flagged.has(key) && isEmptyValue(currentValueOf(key));
+  const isMissing = (key: ExtractKey) =>
+    flagged.has(key) && isEmptyValue(currentValueOf(key));
   // Applied to a field's wrapper div so the input/select/label inside pick it up.
   const hl = (key: ExtractKey) =>
     isMissing(key)
@@ -291,38 +437,75 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
     take("cnic", f.cnic, (v) => setValue("cnic", formatCNIC(v), opts));
     take("dob", f.date_of_birth, (v) => setValue("dob", v, opts));
     take("gender", f.gender, (v) => setValue("gender", v, opts));
-    take("maritalStatus", f.marital_status, (v) => setValue("maritalStatus", v, opts));
-    take("mobile", f.mobile_number, (v) => updateField("contact", "mobile_number", v));
+    take("maritalStatus", f.marital_status, (v) =>
+      setValue("maritalStatus", v, opts),
+    );
+    take("mobile", f.mobile_number, (v) =>
+      updateField("contact", "mobile_number", v),
+    );
     take("email", f.email, (v) => updateField("contact", "email", v));
-    take("emergency", f.emergency_contact_name, (v) => updateField("contact", "emergency_contact_name", v));
-    take("street", f.street_address, (v) => updateField("address", "street_address", v));
-    take("postal", f.postal_code, (v) => updateField("address", "postal_code", v));
+    take("emergency", f.emergency_contact_name, (v) =>
+      updateField("contact", "emergency_contact_name", v),
+    );
+    take("street", f.street_address, (v) =>
+      updateField("address", "street_address", v),
+    );
+    take("postal", f.postal_code, (v) =>
+      updateField("address", "postal_code", v),
+    );
     take("city", f.city, (v) => setCity(v));
     take("province", f.province, (v) => setProvince(v));
 
     // Tab 2: CNIC & Docs
-    take("cnicIssueDate", f.cnic_issue_date, (v) => updateField("cnic_metadata", "issue_date", v));
-    take("cnicExpiryDate", f.cnic_expiry_date, (v) => updateField("cnic_metadata", "expiry_date", v));
-    take("validationStatus", f.cnic_validation_status, (v) => updateField("cnic_metadata", "validation_status", v));
+    take("cnicIssueDate", f.cnic_issue_date, (v) =>
+      updateField("cnic_metadata", "issue_date", v),
+    );
+    take("cnicExpiryDate", f.cnic_expiry_date, (v) =>
+      updateField("cnic_metadata", "expiry_date", v),
+    );
+    take("validationStatus", f.cnic_validation_status, (v) =>
+      updateField("cnic_metadata", "validation_status", v),
+    );
 
     // Tab 3: Occupation & Income
-    take("employmentType", f.employment_type, (v) => updateField("occupation_details", "employment_type", v));
+    take("employmentType", f.employment_type, (v) =>
+      updateField("occupation_details", "employment_type", v),
+    );
     take("occupation", f.occupation, (v) => setValue("occupation", v, opts));
-    take("employerName", f.employer_name, (v) => updateField("occupation_details", "employer_name", v));
-    take("industry", f.industry, (v) => updateField("occupation_details", "industry", v));
-    take("yearsOfExperience", f.years_of_experience, (v) => updateField("occupation_details", "years_of_experience", v));
-    take("occupationHazardLevel", f.occupation_hazard_level, (v) => updateField("occupation_details", "occupation_hazard_level", v));
+    take("employerName", f.employer_name, (v) =>
+      updateField("occupation_details", "employer_name", v),
+    );
+    take("industry", f.industry, (v) =>
+      updateField("occupation_details", "industry", v),
+    );
+    take("yearsOfExperience", f.years_of_experience, (v) =>
+      updateField("occupation_details", "years_of_experience", v),
+    );
+    take("occupationHazardLevel", f.occupation_hazard_level, (v) =>
+      updateField("occupation_details", "occupation_hazard_level", v),
+    );
     take("declaredIncome", f.declared_annual_income, (v) => {
       setValue("declaredIncome", v, opts);
       updateField("income_record", "declared_income", v);
       updateField("income_record", "annual_income", v);
     });
-    take("monthlyIncome", f.monthly_income, (v) => updateField("income_record", "monthly_income", v));
-    take("incomeStabilityScore", f.income_stability_score, (v) => updateField("income_record", "income_stability_score", v));
+    take("monthlyIncome", f.monthly_income, (v) =>
+      updateField("income_record", "monthly_income", v),
+    );
+    take("incomeStabilityScore", f.income_stability_score, (v) =>
+      updateField("income_record", "income_stability_score", v),
+    );
 
     // Tab 4: Medical & Lifestyle
-    if (f.has_pre_existing_conditions !== null && f.has_pre_existing_conditions !== undefined) {
-      updateField("medical_history", "has_pre_existing_conditions", Boolean(f.has_pre_existing_conditions));
+    if (
+      f.has_pre_existing_conditions !== null &&
+      f.has_pre_existing_conditions !== undefined
+    ) {
+      updateField(
+        "medical_history",
+        "has_pre_existing_conditions",
+        Boolean(f.has_pre_existing_conditions),
+      );
     }
     if (f.is_smoker !== null && f.is_smoker !== undefined) {
       updateField("medical_history", "is_smoker", Boolean(f.is_smoker));
@@ -330,36 +513,91 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
     if (f.is_diabetic !== null && f.is_diabetic !== undefined) {
       updateField("medical_history", "is_diabetic", Boolean(f.is_diabetic));
     }
-    if (Array.isArray(f.medical_conditions) && f.medical_conditions.length > 0) {
-      setDetails(prev => ({ ...prev, conditions: f.medical_conditions }));
+    if (
+      Array.isArray(f.medical_conditions) &&
+      f.medical_conditions.length > 0
+    ) {
+      setDetails((prev) => ({ ...prev, conditions: f.medical_conditions }));
     }
-    take("heightCm", f.height_cm, (v) => updateField("lifestyle", "height_cm", v));
-    take("weightKg", f.weight_kg, (v) => updateField("lifestyle", "weight_kg", v));
-    take("exerciseFrequency", f.exercise_frequency, (v) => updateField("lifestyle", "exercise_frequency", v));
+    take("heightCm", f.height_cm, (v) =>
+      updateField("lifestyle", "height_cm", v),
+    );
+    take("weightKg", f.weight_kg, (v) =>
+      updateField("lifestyle", "weight_kg", v),
+    );
+    take("exerciseFrequency", f.exercise_frequency, (v) =>
+      updateField("lifestyle", "exercise_frequency", v),
+    );
 
     // Tab 5: Habit Check
-    take("smokingStatus", f.smoking_status, (v) => updateField("habit_check", "smoking_status", v));
-    take("alcoholConsumptionFrequency", f.alcohol_consumption_frequency, (v) => updateField("habit_check", "alcohol_consumption_frequency", v));
-    if (f.recreational_drug_use_history !== null && f.recreational_drug_use_history !== undefined) {
-      updateField("habit_check", "recreational_drug_use_history", Boolean(f.recreational_drug_use_history));
+    take("smokingStatus", f.smoking_status, (v) =>
+      updateField("habit_check", "smoking_status", v),
+    );
+    take("alcoholConsumptionFrequency", f.alcohol_consumption_frequency, (v) =>
+      updateField("habit_check", "alcohol_consumption_frequency", v),
+    );
+    if (
+      f.recreational_drug_use_history !== null &&
+      f.recreational_drug_use_history !== undefined
+    ) {
+      updateField(
+        "habit_check",
+        "recreational_drug_use_history",
+        Boolean(f.recreational_drug_use_history),
+      );
     }
-    if (f.participates_in_extreme_sports !== null && f.participates_in_extreme_sports !== undefined) {
-      updateField("habit_check", "participates_in_extreme_sports", Boolean(f.participates_in_extreme_sports));
+    if (
+      f.participates_in_extreme_sports !== null &&
+      f.participates_in_extreme_sports !== undefined
+    ) {
+      updateField(
+        "habit_check",
+        "participates_in_extreme_sports",
+        Boolean(f.participates_in_extreme_sports),
+      );
     }
-    if (Array.isArray(f.extreme_sports_details) && f.extreme_sports_details.length > 0) {
-      updateField("habit_check", "extreme_sports_details", f.extreme_sports_details);
+    if (
+      Array.isArray(f.extreme_sports_details) &&
+      f.extreme_sports_details.length > 0
+    ) {
+      updateField(
+        "habit_check",
+        "extreme_sports_details",
+        f.extreme_sports_details,
+      );
     }
     if (f.private_aviation !== null && f.private_aviation !== undefined) {
-      updateField("habit_check", "private_aviation", Boolean(f.private_aviation));
+      updateField(
+        "habit_check",
+        "private_aviation",
+        Boolean(f.private_aviation),
+      );
     }
-    if (f.frequent_high_risk_travel !== null && f.frequent_high_risk_travel !== undefined) {
-      updateField("habit_check", "frequent_high_risk_travel", Boolean(f.frequent_high_risk_travel));
+    if (
+      f.frequent_high_risk_travel !== null &&
+      f.frequent_high_risk_travel !== undefined
+    ) {
+      updateField(
+        "habit_check",
+        "frequent_high_risk_travel",
+        Boolean(f.frequent_high_risk_travel),
+      );
     }
-    if (Array.isArray(f.travel_destinations) && f.travel_destinations.length > 0) {
+    if (
+      Array.isArray(f.travel_destinations) &&
+      f.travel_destinations.length > 0
+    ) {
       updateField("habit_check", "travel_destinations", f.travel_destinations);
     }
-    if (f.moving_violations_past_3_years !== null && f.moving_violations_past_3_years !== undefined) {
-      updateField("habit_check", "moving_violations_past_3_years", f.moving_violations_past_3_years);
+    if (
+      f.moving_violations_past_3_years !== null &&
+      f.moving_violations_past_3_years !== undefined
+    ) {
+      updateField(
+        "habit_check",
+        "moving_violations_past_3_years",
+        f.moving_violations_past_3_years,
+      );
     }
     if (f.dui_dwi_history !== null && f.dui_dwi_history !== undefined) {
       updateField("habit_check", "dui_dwi_history", Boolean(f.dui_dwi_history));
@@ -369,18 +607,48 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
     }
 
     // Tab 6: Financial Profile
-    take("creditScore", f.credit_score, (v) => updateSubField("financial_records", "credit_bureau", "credit_score", v));
-    take("delinquencyCount", f.delinquency_count, (v) => updateSubField("financial_records", "credit_bureau", "delinquency_count", v));
-    take("riskGrade", f.risk_grade, (v) => updateSubField("financial_records", "credit_bureau", "risk_grade", v));
-    take("numberOfDependents", f.number_of_dependents, (v) => updateSubField("financial_records", "dependents", "number_of_dependents", v));
-    take("dependentType", f.dependent_type, (v) => updateSubField("financial_records", "dependents", "dependent_type", v));
+    take("creditScore", f.credit_score, (v) =>
+      updateSubField("financial_records", "credit_bureau", "credit_score", v),
+    );
+    take("delinquencyCount", f.delinquency_count, (v) =>
+      updateSubField(
+        "financial_records",
+        "credit_bureau",
+        "delinquency_count",
+        v,
+      ),
+    );
+    take("riskGrade", f.risk_grade, (v) =>
+      updateSubField("financial_records", "credit_bureau", "risk_grade", v),
+    );
+    take("numberOfDependents", f.number_of_dependents, (v) =>
+      updateSubField(
+        "financial_records",
+        "dependents",
+        "number_of_dependents",
+        v,
+      ),
+    );
+    take("dependentType", f.dependent_type, (v) =>
+      updateSubField("financial_records", "dependents", "dependent_type", v),
+    );
 
     // Tab 7: Nominee Details
-    take("beneficiaryFirstName", f.beneficiary_first_name, (v) => updateField("beneficiary", "first_name", v));
-    take("beneficiaryLastName", f.beneficiary_last_name, (v) => updateField("beneficiary", "last_name", v));
-    take("beneficiaryCnic", f.beneficiary_cnic, (v) => updateField("beneficiary", "cnic_number", formatCNIC(v)));
-    take("beneficiaryRelationship", f.beneficiary_relationship, (v) => updateField("beneficiary", "relationship", v));
-    take("beneficiaryShare", f.beneficiary_share, (v) => updateField("beneficiary", "share_percentage", v));
+    take("beneficiaryFirstName", f.beneficiary_first_name, (v) =>
+      updateField("beneficiary", "first_name", v),
+    );
+    take("beneficiaryLastName", f.beneficiary_last_name, (v) =>
+      updateField("beneficiary", "last_name", v),
+    );
+    take("beneficiaryCnic", f.beneficiary_cnic, (v) =>
+      updateField("beneficiary", "cnic_number", formatCNIC(v)),
+    );
+    take("beneficiaryRelationship", f.beneficiary_relationship, (v) =>
+      updateField("beneficiary", "relationship", v),
+    );
+    take("beneficiaryShare", f.beneficiary_share, (v) =>
+      updateField("beneficiary", "share_percentage", v),
+    );
 
     // Tab 8: Insurance Plans
     let plans = availablePlans;
@@ -389,7 +657,9 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
       if (tenantId) {
         try {
           const fetched = await listInsurancePlans(tenantId);
-          plans = (fetched ?? []).filter((p: any) => p.is_active || p.status === "Active");
+          plans = (fetched ?? []).filter(
+            (p: any) => p.is_active || p.status === "Active",
+          );
           setAvailablePlans(plans);
         } catch (_) {}
       }
@@ -397,11 +667,12 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
     if (f.insurance_plan_name && plans.length > 0) {
       const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
       const target = norm(f.insurance_plan_name);
-      const match = plans.find((p) =>
-        norm(p.label).includes(target) ||
-        target.includes(norm(p.label)) ||
-        norm(p.code) === target ||
-        norm(p.insurance_type) === target
+      const match = plans.find(
+        (p) =>
+          norm(p.label).includes(target) ||
+          target.includes(norm(p.label)) ||
+          norm(p.code) === target ||
+          norm(p.insurance_type) === target,
       );
       if (match) {
         setValue("selectedPlanId", match.id, opts);
@@ -430,8 +701,10 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
     // the document didn't state them and they're still the untouched default,
     // clear them so they read as "missing" rather than silently asserting a value.
     if (isCreate) {
-      if (!found.has("gender") && formValues.gender === "Male") setValue("gender", "", opts);
-      if (!found.has("maritalStatus") && formValues.maritalStatus === "Single") setValue("maritalStatus", "", opts);
+      if (!found.has("gender") && formValues.gender === "Male")
+        setValue("gender", "", opts);
+      if (!found.has("maritalStatus") && formValues.maritalStatus === "Single")
+        setValue("maritalStatus", "", opts);
     }
 
     const notFound = EXTRACT_FIELDS.filter((x) => !found.has(x.key));
@@ -439,13 +712,19 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
     setFormTab("demographics");
     setExtractNotice(
       found.size === 0
-        ? { tone: "warn", text: "No customer details could be read from this document. Please fill the form manually." }
-        : notFound.length === 0
-        ? { tone: "ok", text: `Filled ${found.size} fields across all tabs from ${from}. Please review them before saving.` }
-        : {
+        ? {
             tone: "warn",
-            text: `Filled ${found.size} fields from ${from}. ${notFound.length} not found in the document are highlighted — please fill them in: ${notFound.map((x) => x.label).join(", ")}.`,
+            text: "No customer details could be read from this document. Please fill the form manually.",
           }
+        : notFound.length === 0
+          ? {
+              tone: "ok",
+              text: `Filled ${found.size} fields across all tabs from ${from}. Please review them before saving.`,
+            }
+          : {
+              tone: "warn",
+              text: `Filled ${found.size} fields from ${from}. ${notFound.length} not found in the document are highlighted — please fill them in: ${notFound.map((x) => x.label).join(", ")}.`,
+            },
     );
   };
 
@@ -457,7 +736,9 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
       const tenantId = localStorage.getItem("tenant_id");
       if (tenantId) {
         try {
-          plans = ((await listInsurancePlans(tenantId)) ?? []).filter((p: any) => p.is_active || p.status === "Active");
+          plans = ((await listInsurancePlans(tenantId)) ?? []).filter(
+            (p: any) => p.is_active || p.status === "Active",
+          );
         } catch (_) {}
       }
     }
@@ -471,11 +752,17 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
   const handleDocumentUpload = async (file: File) => {
     const ext = file.name.toLowerCase().split(".").pop() || "";
     if (!["pdf", "png", "jpg", "jpeg"].includes(ext)) {
-      setExtractNotice({ tone: "error", text: "Unsupported file. Please upload a PDF, PNG or JPG." });
+      setExtractNotice({
+        tone: "error",
+        text: "Unsupported file. Please upload a PDF, PNG or JPG.",
+      });
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
-      setExtractNotice({ tone: "error", text: "That file is larger than 10 MB." });
+      setExtractNotice({
+        tone: "error",
+        text: "That file is larger than 10 MB.",
+      });
       return;
     }
     setExtracting(true);
@@ -485,30 +772,53 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
     try {
       const body = new FormData();
       body.append("file", file);
-      const { ok, status, data } = await new Promise<{ ok: boolean; status: number; data: any }>((resolve, reject) => {
+      const { ok, status, data } = await new Promise<{
+        ok: boolean;
+        status: number;
+        data: any;
+      }>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", `${OCR_BASE_URL}/extract-customer`);
         xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) setExtractProgress(Math.round((e.loaded / e.total) * 50));
+          if (e.lengthComputable)
+            setExtractProgress(Math.round((e.loaded / e.total) * 50));
         };
         xhr.upload.onload = () => {
           setExtractProgress((p) => Math.max(p, 50));
-          creep = setInterval(() => setExtractProgress((p) => (p < 95 ? p + 1 : p)), 400);
+          creep = setInterval(
+            () => setExtractProgress((p) => (p < 95 ? p + 1 : p)),
+            400,
+          );
         };
         xhr.onload = () => {
           let parsed: any = {};
-          try { parsed = JSON.parse(xhr.responseText); } catch { /* non-JSON error body */ }
-          resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data: parsed });
+          try {
+            parsed = JSON.parse(xhr.responseText);
+          } catch {
+            /* non-JSON error body */
+          }
+          resolve({
+            ok: xhr.status >= 200 && xhr.status < 300,
+            status: xhr.status,
+            data: parsed,
+          });
         };
-        xhr.onerror = () => reject(new Error(tx("Could not reach the document reader.")));
+        xhr.onerror = () =>
+          reject(new Error(tx("Could not reach the document reader.")));
         xhr.send(body);
       });
       setExtractProgress(100);
-      if (!ok) throw new Error(data.detail || tx("Extraction failed ({0}).", { 0: status }));
+      if (!ok)
+        throw new Error(
+          data.detail || tx("Extraction failed ({0}).", { 0: status }),
+        );
 
       await applyExtracted(data, file.name);
     } catch (err: any) {
-      setExtractNotice({ tone: "error", text: err?.message || "Could not extract details from this document." });
+      setExtractNotice({
+        tone: "error",
+        text: err?.message || "Could not extract details from this document.",
+      });
     } finally {
       if (creep) clearInterval(creep);
       setExtracting(false);
@@ -521,7 +831,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
     if (!open) return;
     setError("");
     setSuccess("");
-    setFormTab("demographics");
+    setFormTab(initialTab ?? "demographics");
     setSuggestedReasoning("");
     setExtractNotice(null);
     setFlagged(new Set());
@@ -529,8 +839,12 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
     const tenantId = localStorage.getItem("tenant_id");
 
     if (tenantId) {
-      listBranches(tenantId).then(setBranchOptions).catch(() => setBranchOptions([]));
-      listAgents(tenantId).then(setAgentOptions).catch(() => setAgentOptions([]));
+      listBranches(tenantId)
+        .then(setBranchOptions)
+        .catch(() => setBranchOptions([]));
+      listAgents(tenantId)
+        .then(setAgentOptions)
+        .catch(() => setAgentOptions([]));
     }
 
     if (isCreate) {
@@ -596,7 +910,9 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
       // Fall back to the legacy details.address location for records saved before
       // city/province were promoted to top-level columns.
       setCity(customer.city ?? customer.details?.address?.city ?? "");
-      setProvince(customer.province ?? customer.details?.address?.province ?? "");
+      setProvince(
+        customer.province ?? customer.details?.address?.province ?? "",
+      );
       setBranchId(customer.branch_id || "");
       setAssignedAgentId(customer.assigned_agent_id || "");
       setAcquisitionSourceId(customer.acquisition_source_id || "");
@@ -616,14 +932,18 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
         ])
           .then(([polRes, plansRes]) => {
             setCustomerPolicies(polRes.data ?? []);
-            setAvailablePlans((plansRes ?? []).filter((p: InsurancePlan) => p.status === "Active"));
+            setAvailablePlans(
+              (plansRes ?? []).filter(
+                (p: InsurancePlan) => p.status === "Active",
+              ),
+            );
           })
           .catch(() => setCustomerPolicies([]))
           .finally(() => setViewPoliciesLoading(false));
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, customer]);
+  }, [open, mode, customer, initialTab]);
 
   const calculateBMI = (height: number, weight: number) => {
     if (!height || !weight) return 0;
@@ -631,19 +951,37 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
     return parseFloat((weight / (hMeter * hMeter)).toFixed(1));
   };
 
-  const updateField = (section: keyof CustomerDetails, key: string, value: any) => {
+  const updateField = (
+    section: keyof CustomerDetails,
+    key: string,
+    value: any,
+  ) => {
     setDetails((prev) => {
       const updatedSection = { ...(prev[section] as any), [key]: value };
-      if (section === "lifestyle" && (key === "height_cm" || key === "weight_kg")) {
-        const h = key === "height_cm" ? parseFloat(value) : (prev.lifestyle as any).height_cm;
-        const w = key === "weight_kg" ? parseFloat(value) : (prev.lifestyle as any).weight_kg;
+      if (
+        section === "lifestyle" &&
+        (key === "height_cm" || key === "weight_kg")
+      ) {
+        const h =
+          key === "height_cm"
+            ? parseFloat(value)
+            : (prev.lifestyle as any).height_cm;
+        const w =
+          key === "weight_kg"
+            ? parseFloat(value)
+            : (prev.lifestyle as any).weight_kg;
         (updatedSection as any).bmi = calculateBMI(h, w);
       }
       return { ...prev, [section]: updatedSection };
     });
   };
 
-  const updateSubField = (section: keyof CustomerDetails, sub: string, key: string, value: any) => {
+  const updateSubField = (
+    section: keyof CustomerDetails,
+    sub: string,
+    key: string,
+    value: any,
+  ) => {
     setDetails((prev: any) => ({
       ...prev,
       [section]: {
@@ -658,8 +996,16 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
 
   const addCondition = () => {
     if (!newCondition.condition_name) return;
-    setDetails((prev) => ({ ...prev, conditions: [...prev.conditions, newCondition] }));
-    setNewCondition({ condition_name: "", severity: "Mild", diagnosis_date: "", is_chronic: false });
+    setDetails((prev) => ({
+      ...prev,
+      conditions: [...prev.conditions, newCondition],
+    }));
+    setNewCondition({
+      condition_name: "",
+      severity: "Mild",
+      diagnosis_date: "",
+      is_chronic: false,
+    });
   };
 
   const handleSuggestPlan = async () => {
@@ -671,16 +1017,25 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
       const customerData = {
         ...formValues,
         ...details,
-        age: formValues.dob ? new Date().getFullYear() - new Date(formValues.dob).getFullYear() : 30,
+        age: formValues.dob
+          ? new Date().getFullYear() - new Date(formValues.dob).getFullYear()
+          : 30,
       };
-      const res = await api.post(`/suggest-plan`, { customer: customerData, plans: availablePlans });
+      const res = await api.post(`/suggest-plan`, {
+        customer: customerData,
+        plans: availablePlans,
+      });
       const data = res.data;
       setValue("selectedPlanId", data.suggested_plan_id);
       setValue("policyCoverage", data.suggested_coverage);
       setValue("policyTerm", data.suggested_term);
       setSuggestedReasoning(data.reasoning);
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to suggest plan."));
+      setError(
+        err.response?.data?.detail ??
+          err.message ??
+          tx("Failed to suggest plan."),
+      );
     } finally {
       setIsSuggestingPlan(false);
     }
@@ -706,15 +1061,24 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
         },
       };
 
-      if (inChatPanel && !(data.selectedPlanId && data.policyCoverage && data.policyTerm)) {
+      if (
+        inChatPanel &&
+        !(data.selectedPlanId && data.policyCoverage && data.policyTerm)
+      ) {
         setFormTab("insurance_plan");
-        setError(tx("Please choose an insurance plan, coverage amount and term — the proposal is created from them."));
+        setError(
+          tx(
+            "Please choose an insurance plan, coverage amount and term — the proposal is created from them.",
+          ),
+        );
         setFormLoading(false);
         return;
       }
 
       if (data.selectedPlanId) {
-        const selectedPlan = availablePlans.find((p) => p.id === data.selectedPlanId);
+        const selectedPlan = availablePlans.find(
+          (p) => p.id === data.selectedPlanId,
+        );
         if (selectedPlan) {
           const planErr = getPlanValidationError(
             selectedPlan,
@@ -723,7 +1087,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
             data.declaredIncome as any,
             data.dob,
             data.policyDependentName,
-            data.policyDependentDob
+            data.policyDependentDob,
           );
           if (planErr) {
             setError(planErr);
@@ -735,7 +1099,9 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
 
       let policyPayload: any = null;
       if (data.selectedPlanId && data.policyCoverage && data.policyTerm) {
-        const selectedPlan = availablePlans.find((p) => p.id === data.selectedPlanId);
+        const selectedPlan = availablePlans.find(
+          (p) => p.id === data.selectedPlanId,
+        );
         if (selectedPlan) {
           policyPayload = {
             product_name: selectedPlan.label,
@@ -753,45 +1119,66 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
       // waits on the customer until "Send Draft" turns it into a proposal.
       const holdPlan = !!policyPayload && !inChatPanel;
 
-      const customerResp = await api.post<Customer>(`/tenants/${tenantId}/customers`, {
-        cnic: data.cnic,
-        first_name: data.firstName,
-        last_name: data.lastName,
-        date_of_birth: data.dob,
-        // Blank when a document didn't state it — the API enum rejects "".
-        gender: data.gender && String(data.gender).trim() !== "" ? data.gender : null,
-        marital_status: data.maritalStatus,
-        nationality: data.nationality,
-        occupation: data.occupation,
-        declared_income: data.declaredIncome,
-        is_smoker: !!payloadDetails.medical_history.is_smoker,
-        height_cm: parseFloat(payloadDetails.lifestyle.height_cm as any) || 170.0,
-        weight_kg: parseFloat(payloadDetails.lifestyle.weight_kg as any) || 70.0,
-        city: city.trim() || null,
-        province: province || null,
-        branch_id: branchId || null,
-        assigned_agent_id: assignedAgentId || null,
-        acquisition_source_id: acquisitionSourceId || null,
-        details: holdPlan ? { ...payloadDetails, pending_plan: policyPayload } : payloadDetails,
-      });
+      const customerResp = await api.post<Customer>(
+        `/tenants/${tenantId}/customers`,
+        {
+          cnic: data.cnic,
+          first_name: data.firstName,
+          last_name: data.lastName,
+          date_of_birth: data.dob,
+          // Blank when a document didn't state it — the API enum rejects "".
+          gender:
+            data.gender && String(data.gender).trim() !== ""
+              ? data.gender
+              : null,
+          marital_status: data.maritalStatus,
+          nationality: data.nationality,
+          occupation: data.occupation,
+          declared_income: data.declaredIncome,
+          is_smoker: !!payloadDetails.medical_history.is_smoker,
+          height_cm:
+            parseFloat(payloadDetails.lifestyle.height_cm as any) || 170.0,
+          weight_kg:
+            parseFloat(payloadDetails.lifestyle.weight_kg as any) || 70.0,
+          city: city.trim() || null,
+          province: province || null,
+          branch_id: branchId || null,
+          assigned_agent_id: assignedAgentId || null,
+          acquisition_source_id: acquisitionSourceId || null,
+          details: holdPlan
+            ? { ...payloadDetails, pending_plan: policyPayload }
+            : payloadDetails,
+        },
+      );
 
       let proposalCreated = false;
       if (policyPayload && !holdPlan) {
-        await api.post(`/tenants/${tenantId}/customers/${customerResp.data.id}/policies`, policyPayload);
+        await api.post(
+          `/tenants/${tenantId}/customers/${customerResp.data.id}/policies`,
+          policyPayload,
+        );
         proposalCreated = true;
       }
 
-      if (proposalCreated) registerPendingQuote(customerResp.data.id, customerResp.data.name);
-      onSaved("Customer registered successfully with full diagnostic profile!", {
-        id: customerResp.data.id,
-        isNew: true,
-        name: `${data.firstName} ${data.lastName}`.trim(),
-        cnic: data.cnic || null,
-        hasProposal: proposalCreated,
-      });
+      if (proposalCreated)
+        registerPendingQuote(customerResp.data.id, customerResp.data.name);
+      onSaved(
+        "Customer registered successfully with full diagnostic profile!",
+        {
+          id: customerResp.data.id,
+          isNew: true,
+          name: `${data.firstName} ${data.lastName}`.trim(),
+          cnic: data.cnic || null,
+          hasProposal: proposalCreated,
+        },
+      );
       onClose();
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to register customer."));
+      setError(
+        err.response?.data?.detail ??
+          err.message ??
+          tx("Failed to register customer."),
+      );
     } finally {
       setFormLoading(false);
     }
@@ -817,11 +1204,20 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
         },
       };
 
-      const dobVal = data.dob && String(data.dob).trim() !== "" ? data.dob : null;
-      const cnicVal = data.cnic && String(data.cnic).trim() !== "" ? data.cnic : null;
-      const genderVal = data.gender && String(data.gender).trim() !== "" ? data.gender : null;
-      const occupationVal = data.occupation && String(data.occupation).trim() !== "" ? data.occupation : null;
-      const incomeVal = data.declaredIncome && String(data.declaredIncome).trim() !== "" ? parseFloat(String(data.declaredIncome)) : null;
+      const dobVal =
+        data.dob && String(data.dob).trim() !== "" ? data.dob : null;
+      const cnicVal =
+        data.cnic && String(data.cnic).trim() !== "" ? data.cnic : null;
+      const genderVal =
+        data.gender && String(data.gender).trim() !== "" ? data.gender : null;
+      const occupationVal =
+        data.occupation && String(data.occupation).trim() !== ""
+          ? data.occupation
+          : null;
+      const incomeVal =
+        data.declaredIncome && String(data.declaredIncome).trim() !== ""
+          ? parseFloat(String(data.declaredIncome))
+          : null;
 
       const planId = editSelectedPlanId || data.selectedPlanId;
       const coverage = editPolicyCoverage || data.policyCoverage;
@@ -839,7 +1235,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
             incomeVal ?? customer.declared_income,
             dobVal ?? customer.dob,
             depName,
-            depDob
+            depDob,
           );
           if (planErr) {
             setError(planErr);
@@ -858,8 +1254,10 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
         occupation: occupationVal,
         declared_income: incomeVal,
         is_smoker: !!payloadDetails.medical_history.is_smoker,
-        height_cm: parseFloat(payloadDetails.lifestyle.height_cm as any) || 170.0,
-        weight_kg: parseFloat(payloadDetails.lifestyle.weight_kg as any) || 70.0,
+        height_cm:
+          parseFloat(payloadDetails.lifestyle.height_cm as any) || 170.0,
+        weight_kg:
+          parseFloat(payloadDetails.lifestyle.weight_kg as any) || 70.0,
         city: city.trim() || null,
         province: province || null,
         branch_id: branchId || null,
@@ -882,32 +1280,45 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
             policyPayload.dependent_name = depName || null;
             policyPayload.dependent_dob = depDob || null;
           }
-          await api.post(`/tenants/${tenantId}/customers/${customer.id}/policies`, policyPayload);
+          await api.post(
+            `/tenants/${tenantId}/customers/${customer.id}/policies`,
+            policyPayload,
+          );
         }
       }
 
       onSaved("Customer profile updated successfully!");
       onClose();
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? tx("Failed to update customer."));
+      setError(
+        err.response?.data?.detail ??
+          err.message ??
+          tx("Failed to update customer."),
+      );
     } finally {
       setFormLoading(false);
     }
   };
 
-  const onSubmit = (data: any) => (isCreate ? handleCreateCustomer(data) : handleEditCustomer(data));
+  const onSubmit = (data: any) =>
+    isCreate ? handleCreateCustomer(data) : handleEditCustomer(data);
 
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
       <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden">
-
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <div>
-            <h3 className="text-base font-bold text-slate-900">{isCreate ? tx("Add New Customer") : tx("Edit Customer")}</h3>
-            <p className="text-xs text-slate-500 mt-0.5">{tx("Please populate the structured underwriting variables below.")}</p>
+            <h3 className="text-base font-bold text-slate-900">
+              {isCreate ? tx("Add New Customer") : tx("Edit Customer")}
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {tx(
+                "Please populate the structured underwriting variables below.",
+              )}
+            </p>
           </div>
           <div className="flex items-center gap-3">
             {isCreate && <DemoFillButton onFill={handleDemoFill} />}
@@ -925,18 +1336,39 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={extracting || formLoading}
-              title={tx("Upload a PDF, PNG or JPG (max 10 MB) to fill the form automatically")}
+              title={tx(
+                "Upload a PDF, PNG or JPG (max 10 MB) to fill the form automatically",
+              )}
               className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-blue-200 bg-white text-blue-700 hover:bg-blue-50 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 transition-colors"
             >
               {extracting ? (
                 <>
                   <span className="relative w-7 h-7 shrink-0">
-                    <svg className="w-7 h-7 -rotate-90" viewBox="0 0 28 28" aria-hidden="true">
-                      <circle cx="14" cy="14" r="12" fill="none" stroke="#dbeafe" strokeWidth="3" />
+                    <svg
+                      className="w-7 h-7 -rotate-90"
+                      viewBox="0 0 28 28"
+                      aria-hidden="true"
+                    >
                       <circle
-                        cx="14" cy="14" r="12" fill="none" stroke="#1d4ed8" strokeWidth="3" strokeLinecap="round"
+                        cx="14"
+                        cy="14"
+                        r="12"
+                        fill="none"
+                        stroke="#dbeafe"
+                        strokeWidth="3"
+                      />
+                      <circle
+                        cx="14"
+                        cy="14"
+                        r="12"
+                        fill="none"
+                        stroke="#1d4ed8"
+                        strokeWidth="3"
+                        strokeLinecap="round"
                         strokeDasharray={2 * Math.PI * 12}
-                        strokeDashoffset={2 * Math.PI * 12 * (1 - extractProgress / 100)}
+                        strokeDashoffset={
+                          2 * Math.PI * 12 * (1 - extractProgress / 100)
+                        }
                         style={{ transition: "stroke-dashoffset 0.3s ease" }}
                       />
                     </svg>
@@ -944,16 +1376,35 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       {extractProgress}%
                     </span>
                   </span>
-                  {extractProgress < 50 ? tx("Uploading…") : tx("Reading document…")}
+                  {extractProgress < 50
+                    ? tx("Uploading…")
+                    : tx("Reading document…")}
                 </>
               ) : (
                 <>
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>
+                  <svg
+                    className="w-3.5 h-3.5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"
+                    />
+                  </svg>
                   {tx("Upload document")}
                 </>
               )}
             </button>
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
+            <button
+              onClick={onClose}
+              className="text-slate-400 hover:text-slate-600"
+            >
+              ✕
+            </button>
           </div>
         </div>
 
@@ -964,14 +1415,18 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               key={tab.id}
               type="button"
               onClick={() => setFormTab(tab.id)}
-              className={`px-4 py-3 text-xs font-semibold border-b-2 transition-all ${formTab === tab.id
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-slate-400 hover:text-slate-600"
-                }`}
+              className={`px-4 py-3 text-xs font-semibold border-b-2 transition-all ${
+                formTab === tab.id
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-slate-400 hover:text-slate-600"
+              }`}
             >
               {tx(tab.label)}
               {missingInTab(tab.id) && (
-                <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-amber-500" title={tx("Fields to fill in on this tab")} />
+                <span
+                  className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-amber-500"
+                  title={tx("Fields to fill in on this tab")}
+                />
               )}
               {tab.id === "insurance_plan" && selectedPlanId && (
                 <span className="ml-1.5 inline-flex items-center justify-center w-1.5 h-1.5 rounded-full bg-blue-500" />
@@ -981,8 +1436,11 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
         </div>
 
         {/* Scrollable Form Body */}
-        <form id="customer-main-form" onSubmit={hookFormSubmit(onSubmit)} className="flex-1 overflow-y-auto p-6 space-y-6">
-
+        <form
+          id="customer-main-form"
+          onSubmit={hookFormSubmit(onSubmit)}
+          className="flex-1 overflow-y-auto p-6 space-y-6"
+        >
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 text-xs text-red-600 font-medium flex justify-between items-center shadow-sm">
               <span>{error}</span>
@@ -1016,12 +1474,19 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                 extractNotice.tone === "ok"
                   ? "bg-emerald-50 border-emerald-200 text-emerald-700"
                   : extractNotice.tone === "warn"
-                  ? "bg-amber-50 border-amber-200 text-amber-800"
-                  : "bg-red-50 border-red-200 text-red-600"
+                    ? "bg-amber-50 border-amber-200 text-amber-800"
+                    : "bg-red-50 border-red-200 text-red-600"
               }`}
             >
               <span>{tx(extractNotice.text)}</span>
-              <button type="button" onClick={() => setExtractNotice(null)} className="opacity-60 hover:opacity-100 leading-none" title={tx("Close")}>✕</button>
+              <button
+                type="button"
+                onClick={() => setExtractNotice(null)}
+                className="opacity-60 hover:opacity-100 leading-none"
+                title={tx("Close")}
+              >
+                ✕
+              </button>
             </div>
           )}
 
@@ -1029,68 +1494,102 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
           {formTab === "demographics" && (
             <div className="space-y-6">
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Core Identity Parameters")}</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
+                  {tx("Core Identity Parameters")}
+                </h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className={`${hl("firstName")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("First Name *")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("First Name *")}
+                    </label>
                     <input
                       type="text"
                       {...register("firstName")}
-                      className={`w-full bg-slate-50 border ${errors.firstName ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
+                      className={`w-full bg-slate-50 border ${errors.firstName ? "border-red-400" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                     />
-                    {errors.firstName && <span className="text-[10px] text-red-500">{errors.firstName.message}</span>}
+                    {errors.firstName && (
+                      <span className="text-[10px] text-red-500">
+                        {errors.firstName.message}
+                      </span>
+                    )}
                   </div>
                   <div className={`${hl("lastName")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Last Name *")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Last Name *")}
+                    </label>
                     <input
                       type="text"
                       {...register("lastName")}
-                      className={`w-full bg-slate-50 border ${errors.lastName ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
+                      className={`w-full bg-slate-50 border ${errors.lastName ? "border-red-400" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                     />
-                    {errors.lastName && <span className="text-[10px] text-red-500">{errors.lastName.message}</span>}
+                    {errors.lastName && (
+                      <span className="text-[10px] text-red-500">
+                        {errors.lastName.message}
+                      </span>
+                    )}
                   </div>
                   <div className={`${hl("cnic")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("CNIC (Optional for Lead)")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("CNIC (Optional for Lead)")}
+                    </label>
                     <input
                       type="text"
                       {...register("cnic", {
                         onChange: (e) => {
                           e.target.value = formatCNIC(e.target.value);
-                        }
+                        },
                       })}
                       placeholder={tx("35201-XXXXXXX-X")}
                       maxLength={15}
-                      className={`w-full bg-slate-50 border ${errors.cnic ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
+                      className={`w-full bg-slate-50 border ${errors.cnic ? "border-red-400" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                     />
-                    {errors.cnic && <span className="text-[10px] text-red-500">{errors.cnic.message}</span>}
+                    {errors.cnic && (
+                      <span className="text-[10px] text-red-500">
+                        {errors.cnic.message}
+                      </span>
+                    )}
                   </div>
                   <div className={`${hl("dob")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Date of Birth *")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Date of Birth *")}
+                    </label>
                     <input
                       type="date"
                       {...register("dob")}
-                      className={`w-full bg-slate-50 border ${errors.dob ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
+                      className={`w-full bg-slate-50 border ${errors.dob ? "border-red-400" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                     />
-                    {errors.dob && <span className="text-[10px] text-red-500">{errors.dob.message}</span>}
+                    {errors.dob && (
+                      <span className="text-[10px] text-red-500">
+                        {errors.dob.message}
+                      </span>
+                    )}
                   </div>
                   <div className={`${hl("gender")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Gender *")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Gender *")}
+                    </label>
                     <select
                       {...register("gender")}
-                      className={`w-full bg-slate-50 border ${errors.gender ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
+                      className={`w-full bg-slate-50 border ${errors.gender ? "border-red-400" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                     >
                       <option value="">{tx("Select gender")}</option>
                       <option value="Male">{tx("Male")}</option>
                       <option value="Female">{tx("Female")}</option>
                       <option value="Other">{tx("Other")}</option>
                     </select>
-                    {errors.gender && <span className="text-[10px] text-red-500">{errors.gender.message}</span>}
+                    {errors.gender && (
+                      <span className="text-[10px] text-red-500">
+                        {errors.gender.message}
+                      </span>
+                    )}
                   </div>
                   <div className={`${hl("maritalStatus")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Marital Status")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Marital Status")}
+                    </label>
                     <select
                       {...register("maritalStatus")}
-                      className={`w-full bg-slate-50 border ${errors.maritalStatus ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
+                      className={`w-full bg-slate-50 border ${errors.maritalStatus ? "border-red-400" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                     >
                       <option value="">{tx("Select status")}</option>
                       <option value="Single">{tx("Single")}</option>
@@ -1098,7 +1597,11 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       <option value="Divorced">{tx("Divorced")}</option>
                       <option value="Widowed">{tx("Widowed")}</option>
                     </select>
-                    {errors.maritalStatus && <span className="text-[10px] text-red-500">{errors.maritalStatus.message}</span>}
+                    {errors.maritalStatus && (
+                      <span className="text-[10px] text-red-500">
+                        {errors.maritalStatus.message}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1106,32 +1609,50 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <hr className="border-slate-100" />
 
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Contact Details")}</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
+                  {tx("Contact Details")}
+                </h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className={`${hl("mobile")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Mobile Number")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Mobile Number")}
+                    </label>
                     <input
                       type="text"
                       value={details.contact.mobile_number}
-                      onChange={(e) => updateField("contact", "mobile_number", e.target.value)}
+                      onChange={(e) =>
+                        updateField("contact", "mobile_number", e.target.value)
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
                   <div className={`${hl("email")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Email Address")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Email Address")}
+                    </label>
                     <input
                       type="email"
                       value={details.contact.email}
-                      onChange={(e) => updateField("contact", "email", e.target.value)}
+                      onChange={(e) =>
+                        updateField("contact", "email", e.target.value)
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
                   <div className={`${hl("emergency")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Emergency Contact Name")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Emergency Contact Name")}
+                    </label>
                     <input
                       type="text"
                       value={details.contact.emergency_contact_name}
-                      onChange={(e) => updateField("contact", "emergency_contact_name", e.target.value)}
+                      onChange={(e) =>
+                        updateField(
+                          "contact",
+                          "emergency_contact_name",
+                          e.target.value,
+                        )
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
@@ -1141,19 +1662,27 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <hr className="border-slate-100" />
 
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Address Information")}</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
+                  {tx("Address Information")}
+                </h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className={`${hl("street")} md:col-span-3`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Street Address")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Street Address")}
+                    </label>
                     <input
                       type="text"
                       value={details.address.street_address}
-                      onChange={(e) => updateField("address", "street_address", e.target.value)}
+                      onChange={(e) =>
+                        updateField("address", "street_address", e.target.value)
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
                   <div className={`${hl("city")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("City")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("City")}
+                    </label>
                     <input
                       type="text"
                       value={city}
@@ -1163,7 +1692,9 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                   </div>
                   <div className={`${hl("province")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Province")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Province")}
+                    </label>
                     <select
                       value={province}
                       onChange={(e) => setProvince(e.target.value)}
@@ -1171,16 +1702,22 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     >
                       <option value="">{tx("Select province")}</option>
                       {PAKISTAN_PROVINCES.map((p) => (
-                        <option key={p} value={p}>{p}</option>
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
                       ))}
                     </select>
                   </div>
                   <div className={`${hl("postal")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Postal Code")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Postal Code")}
+                    </label>
                     <input
                       type="text"
                       value={details.address.postal_code}
-                      onChange={(e) => updateField("address", "postal_code", e.target.value)}
+                      onChange={(e) =>
+                        updateField("address", "postal_code", e.target.value)
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
@@ -1190,7 +1727,9 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <hr className="border-slate-100" />
 
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Assignment")}</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
+                  {tx("Assignment")}
+                </h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <SourcePicker
                     sources={sources}
@@ -1198,7 +1737,12 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     onChange={(src) => {
                       setAcquisitionSourceId(src?.id ?? "");
                       // An Agent source is a login of its own: picking one hands the lead to that agent's mobile app.
-                      setAssignedAgentId(src?.user_id && agentOptions.some((a) => a.id === src.user_id) ? src.user_id : "");
+                      setAssignedAgentId(
+                        src?.user_id &&
+                          agentOptions.some((a) => a.id === src.user_id)
+                          ? src.user_id
+                          : "",
+                      );
                     }}
                     fieldClass="space-y-1"
                     labelClass="text-xs font-semibold text-slate-600"
@@ -1213,31 +1757,57 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
           {formTab === "cnic" && (
             <div className="space-y-6">
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("CNIC Metadata (Module 2)")}</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
+                  {tx("CNIC Metadata (Module 2)")}
+                </h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className={`${hl("cnicIssueDate")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("CNIC Issue Date")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("CNIC Issue Date")}
+                    </label>
                     <input
                       type="date"
                       value={details.cnic_metadata.issue_date}
-                      onChange={(e) => updateField("cnic_metadata", "issue_date", e.target.value)}
+                      onChange={(e) =>
+                        updateField(
+                          "cnic_metadata",
+                          "issue_date",
+                          e.target.value,
+                        )
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
                   <div className={`${hl("cnicExpiryDate")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("CNIC Expiry Date")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("CNIC Expiry Date")}
+                    </label>
                     <input
                       type="date"
                       value={details.cnic_metadata.expiry_date}
-                      onChange={(e) => updateField("cnic_metadata", "expiry_date", e.target.value)}
+                      onChange={(e) =>
+                        updateField(
+                          "cnic_metadata",
+                          "expiry_date",
+                          e.target.value,
+                        )
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
                   <div className={`${hl("validationStatus")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Validation Status")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Validation Status")}
+                    </label>
                     <select
                       value={details.cnic_metadata.validation_status}
-                      onChange={(e) => updateField("cnic_metadata", "validation_status", e.target.value)}
+                      onChange={(e) =>
+                        updateField(
+                          "cnic_metadata",
+                          "validation_status",
+                          e.target.value,
+                        )
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     >
                       <option value="Valid">{tx("Valid")}</option>
@@ -1252,33 +1822,57 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <hr className="border-slate-100" />
 
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Document Uploads")}</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
+                  {tx("Document Uploads")}
+                </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-600">{tx("CNIC Front Image")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("CNIC Front Image")}
+                    </label>
                     <input
                       type="file"
                       accept="image/*"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
-                        if (file) updateField("cnic_metadata", "front_image_url", URL.createObjectURL(file));
+                        if (file)
+                          updateField(
+                            "cnic_metadata",
+                            "front_image_url",
+                            URL.createObjectURL(file),
+                          );
                       }}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition-all cursor-pointer"
                     />
-                    {details.cnic_metadata.front_image_url && <p className="text-[10px] text-blue-600 mt-1 font-semibold">{tx("Image selected for upload")}</p>}
+                    {details.cnic_metadata.front_image_url && (
+                      <p className="text-[10px] text-blue-600 mt-1 font-semibold">
+                        {tx("Image selected for upload")}
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-600">{tx("CNIC Back Image")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("CNIC Back Image")}
+                    </label>
                     <input
                       type="file"
                       accept="image/*"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
-                        if (file) updateField("cnic_metadata", "back_image_url", URL.createObjectURL(file));
+                        if (file)
+                          updateField(
+                            "cnic_metadata",
+                            "back_image_url",
+                            URL.createObjectURL(file),
+                          );
                       }}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition-all cursor-pointer"
                     />
-                    {details.cnic_metadata.back_image_url && <p className="text-[10px] text-blue-600 mt-1 font-semibold">{tx("Image selected for upload")}</p>}
+                    {details.cnic_metadata.back_image_url && (
+                      <p className="text-[10px] text-blue-600 mt-1 font-semibold">
+                        {tx("Image selected for upload")}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1289,17 +1883,29 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
           {formTab === "employment" && (
             <div className="space-y-6">
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Employment Details")}</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
+                  {tx("Employment Details")}
+                </h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className={`${hl("employmentType")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Employment Type")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Employment Type")}
+                    </label>
                     <select
                       value={details.occupation_details.employment_type}
-                      onChange={(e) => updateField("occupation_details", "employment_type", e.target.value)}
+                      onChange={(e) =>
+                        updateField(
+                          "occupation_details",
+                          "employment_type",
+                          e.target.value,
+                        )
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     >
                       <option value="Salaried">{tx("Salaried")}</option>
-                      <option value="Self-Employed">{tx("Self-Employed")}</option>
+                      <option value="Self-Employed">
+                        {tx("Self-Employed")}
+                      </option>
                       <option value="Business">{tx("Business")}</option>
                       <option value="Unemployed">{tx("Unemployed")}</option>
                       <option value="Retired">{tx("Retired")}</option>
@@ -1307,47 +1913,85 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     </select>
                   </div>
                   <div className={`${hl("occupation")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Occupation *")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Occupation *")}
+                    </label>
                     <input
                       type="text"
                       {...register("occupation")}
-                      className={`w-full bg-slate-50 border ${errors.occupation ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
+                      className={`w-full bg-slate-50 border ${errors.occupation ? "border-red-400" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                     />
-                    {errors.occupation && <span className="text-[10px] text-red-500">{errors.occupation.message}</span>}
+                    {errors.occupation && (
+                      <span className="text-[10px] text-red-500">
+                        {errors.occupation.message}
+                      </span>
+                    )}
                   </div>
                   <div className={`${hl("employerName")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Employer Name")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Employer Name")}
+                    </label>
                     <input
                       type="text"
                       value={details.occupation_details.employer_name}
-                      onChange={(e) => updateField("occupation_details", "employer_name", e.target.value)}
+                      onChange={(e) =>
+                        updateField(
+                          "occupation_details",
+                          "employer_name",
+                          e.target.value,
+                        )
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
                   <div className={`${hl("industry")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Industry Sector")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Industry Sector")}
+                    </label>
                     <input
                       type="text"
                       value={details.occupation_details.industry}
-                      onChange={(e) => updateField("occupation_details", "industry", e.target.value)}
+                      onChange={(e) =>
+                        updateField(
+                          "occupation_details",
+                          "industry",
+                          e.target.value,
+                        )
+                      }
                       placeholder={tx("e.g. IT, Healthcare")}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
                   <div className={`${hl("yearsOfExperience")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Years of Experience")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Years of Experience")}
+                    </label>
                     <input
                       type="number"
                       value={details.occupation_details.years_of_experience}
-                      onChange={(e) => updateField("occupation_details", "years_of_experience", parseInt(e.target.value) || 0)}
+                      onChange={(e) =>
+                        updateField(
+                          "occupation_details",
+                          "years_of_experience",
+                          parseInt(e.target.value) || 0,
+                        )
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
                   <div className={`${hl("occupationHazardLevel")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Occupation Hazard Level")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Occupation Hazard Level")}
+                    </label>
                     <select
                       value={details.occupation_details.occupation_hazard_level}
-                      onChange={(e) => updateField("occupation_details", "occupation_hazard_level", e.target.value)}
+                      onChange={(e) =>
+                        updateField(
+                          "occupation_details",
+                          "occupation_hazard_level",
+                          e.target.value,
+                        )
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     >
                       <option value="Low">{tx("Low")}</option>
@@ -1362,34 +2006,58 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <hr className="border-slate-100" />
 
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Income & Financial Parameters")}</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
+                  {tx("Income & Financial Parameters")}
+                </h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className={`${hl("declaredIncome")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Declared Annual Income (PKR) *")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Declared Annual Income (PKR) *")}
+                    </label>
                     <input
                       type="number"
                       {...register("declaredIncome")}
-                      className={`w-full bg-slate-50 border ${errors.declaredIncome ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
+                      className={`w-full bg-slate-50 border ${errors.declaredIncome ? "border-red-400" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                     />
-                    {errors.declaredIncome && <span className="text-[10px] text-red-500">{errors.declaredIncome.message}</span>}
+                    {errors.declaredIncome && (
+                      <span className="text-[10px] text-red-500">
+                        {errors.declaredIncome.message}
+                      </span>
+                    )}
                   </div>
                   <div className={`${hl("monthlyIncome")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Monthly Income Equivalent")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Monthly Income Equivalent")}
+                    </label>
                     <input
                       type="number"
                       value={details.income_record.monthly_income}
-                      onChange={(e) => updateField("income_record", "monthly_income", parseFloat(e.target.value) || 0)}
+                      onChange={(e) =>
+                        updateField(
+                          "income_record",
+                          "monthly_income",
+                          parseFloat(e.target.value) || 0,
+                        )
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
                   <div className={`${hl("incomeStabilityScore")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Income Stability Score (1-100)")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Income Stability Score (1-100)")}
+                    </label>
                     <input
                       type="number"
                       min="1"
                       max="100"
                       value={details.income_record.income_stability_score}
-                      onChange={(e) => updateField("income_record", "income_stability_score", parseInt(e.target.value) || 100)}
+                      onChange={(e) =>
+                        updateField(
+                          "income_record",
+                          "income_stability_score",
+                          parseInt(e.target.value) || 100,
+                        )
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
@@ -1402,13 +2070,23 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
           {formTab === "medical" && (
             <div className="space-y-6">
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Medical History Indicators")}</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
+                  {tx("Medical History Indicators")}
+                </h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={details.medical_history.has_pre_existing_conditions}
-                      onChange={(e) => updateField("medical_history", "has_pre_existing_conditions", e.target.checked)}
+                      checked={
+                        details.medical_history.has_pre_existing_conditions
+                      }
+                      onChange={(e) =>
+                        updateField(
+                          "medical_history",
+                          "has_pre_existing_conditions",
+                          e.target.checked,
+                        )
+                      }
                       className="rounded text-blue-600"
                     />
                     {tx("Pre-Existing Conditions")}
@@ -1417,7 +2095,13 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     <input
                       type="checkbox"
                       checked={details.medical_history.is_smoker}
-                      onChange={(e) => updateField("medical_history", "is_smoker", e.target.checked)}
+                      onChange={(e) =>
+                        updateField(
+                          "medical_history",
+                          "is_smoker",
+                          e.target.checked,
+                        )
+                      }
                       className="rounded text-blue-600"
                     />
                     {tx("Active Smoker")}
@@ -1426,7 +2110,13 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     <input
                       type="checkbox"
                       checked={details.medical_history.is_diabetic}
-                      onChange={(e) => updateField("medical_history", "is_diabetic", e.target.checked)}
+                      onChange={(e) =>
+                        updateField(
+                          "medical_history",
+                          "is_diabetic",
+                          e.target.checked,
+                        )
+                      }
                       className="rounded text-blue-600"
                     />
                     {tx("Diabetic Profile")}
@@ -1437,19 +2127,31 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <hr className="border-slate-100" />
 
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">{tx("Medical Conditions List")}</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">
+                  {tx("Medical Conditions List")}
+                </h4>
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4 space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <input
                       type="text"
                       placeholder={tx("Condition Name (e.g. Asthma)")}
                       value={newCondition.condition_name}
-                      onChange={(e) => setNewCondition({ ...newCondition, condition_name: e.target.value })}
+                      onChange={(e) =>
+                        setNewCondition({
+                          ...newCondition,
+                          condition_name: e.target.value,
+                        })
+                      }
                       className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs"
                     />
                     <select
                       value={newCondition.severity}
-                      onChange={(e) => setNewCondition({ ...newCondition, severity: e.target.value })}
+                      onChange={(e) =>
+                        setNewCondition({
+                          ...newCondition,
+                          severity: e.target.value,
+                        })
+                      }
                       className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs"
                     >
                       <option value="Mild">{tx("Mild")}</option>
@@ -1467,11 +2169,24 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                   {details.conditions.length > 0 && (
                     <div className="pt-2 divide-y divide-slate-200/60 max-h-40 overflow-y-auto">
                       {details.conditions.map((c, i) => (
-                        <div key={i} className="py-2 text-xs flex justify-between items-center text-slate-700">
-                          <span><strong>{c.condition_name}</strong>{" "}{tx("- Severity:")}{" "}{c.severity}</span>
+                        <div
+                          key={i}
+                          className="py-2 text-xs flex justify-between items-center text-slate-700"
+                        >
+                          <span>
+                            <strong>{c.condition_name}</strong>{" "}
+                            {tx("- Severity:")} {c.severity}
+                          </span>
                           <button
                             type="button"
-                            onClick={() => setDetails(prev => ({ ...prev, conditions: prev.conditions.filter((_, idx) => idx !== i) }))}
+                            onClick={() =>
+                              setDetails((prev) => ({
+                                ...prev,
+                                conditions: prev.conditions.filter(
+                                  (_, idx) => idx !== i,
+                                ),
+                              }))
+                            }
                             className="text-red-500 font-bold hover:underline"
                           >
                             {tx("Remove")}
@@ -1486,28 +2201,40 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <hr className="border-slate-100" />
 
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Lifestyle & BMI metrics")}</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
+                  {tx("Lifestyle & BMI metrics")}
+                </h4>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div className={`${hl("heightCm")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Height (cm)")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Height (cm)")}
+                    </label>
                     <input
                       type="number"
                       value={details.lifestyle.height_cm}
-                      onChange={(e) => updateField("lifestyle", "height_cm", e.target.value)}
+                      onChange={(e) =>
+                        updateField("lifestyle", "height_cm", e.target.value)
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
                   <div className={`${hl("weightKg")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Weight (kg)")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Weight (kg)")}
+                    </label>
                     <input
                       type="number"
                       value={details.lifestyle.weight_kg}
-                      onChange={(e) => updateField("lifestyle", "weight_kg", e.target.value)}
+                      onChange={(e) =>
+                        updateField("lifestyle", "weight_kg", e.target.value)
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-600">{tx("Calculated BMI")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Calculated BMI")}
+                    </label>
                     <input
                       type="number"
                       readOnly
@@ -1516,10 +2243,18 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                   </div>
                   <div className={`${hl("exerciseFrequency")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Exercise Frequency")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Exercise Frequency")}
+                    </label>
                     <select
                       value={details.lifestyle.exercise_frequency}
-                      onChange={(e) => updateField("lifestyle", "exercise_frequency", e.target.value)}
+                      onChange={(e) =>
+                        updateField(
+                          "lifestyle",
+                          "exercise_frequency",
+                          e.target.value,
+                        )
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     >
                       <option value="Sedentary">{tx("Sedentary")}</option>
@@ -1540,36 +2275,70 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-sm space-y-4">
                 <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
                   <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center text-red-500">
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                      />
                     </svg>
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-slate-800">{tx("Substance Consumption")}</h4>
-                    <p className="text-[11px] text-slate-400">{tx("Critical fields for mortality pricing & risk assessment.")}</p>
+                    <h4 className="text-sm font-bold text-slate-800">
+                      {tx("Substance Consumption")}
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      {tx(
+                        "Critical fields for mortality pricing & risk assessment.",
+                      )}
+                    </p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className={`${hl("smokingStatus")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Smoking Status")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Smoking Status")}
+                    </label>
                     <select
                       value={details.habit_check.smoking_status}
-                      onChange={(e) => updateField("habit_check", "smoking_status", e.target.value)}
+                      onChange={(e) =>
+                        updateField(
+                          "habit_check",
+                          "smoking_status",
+                          e.target.value,
+                        )
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
                     >
                       <option value="Non-smoker">{tx("Non-smoker")}</option>
                       <option value="Occasional">{tx("Occasional")}</option>
                       <option value="Heavy Smoker">{tx("Heavy Smoker")}</option>
                       <option value="Vaper">{tx("Vaper")}</option>
-                      <option value="Chewing Tobacco">{tx("Chewing Tobacco")}</option>
+                      <option value="Chewing Tobacco">
+                        {tx("Chewing Tobacco")}
+                      </option>
                     </select>
                   </div>
                   <div className={`${hl("alcoholConsumptionFrequency")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Alcohol Consumption Frequency")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Alcohol Consumption Frequency")}
+                    </label>
                     <select
                       value={details.habit_check.alcohol_consumption_frequency}
-                      onChange={(e) => updateField("habit_check", "alcohol_consumption_frequency", e.target.value)}
+                      onChange={(e) =>
+                        updateField(
+                          "habit_check",
+                          "alcohol_consumption_frequency",
+                          e.target.value,
+                        )
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
                     >
                       <option value="None">{tx("None")}</option>
@@ -1584,13 +2353,27 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                   <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={details.habit_check.recreational_drug_use_history}
-                      onChange={(e) => updateField("habit_check", "recreational_drug_use_history", e.target.checked)}
+                      checked={
+                        details.habit_check.recreational_drug_use_history
+                      }
+                      onChange={(e) =>
+                        updateField(
+                          "habit_check",
+                          "recreational_drug_use_history",
+                          e.target.checked,
+                        )
+                      }
                       className="rounded text-blue-600 focus:ring-blue-500"
                     />
                     <div>
-                      <span>{tx("Recreational Drug Use History (Past 3-5 Years)")}</span>
-                      <span className="block text-[10px] text-slate-400 font-normal">{tx("Check if the customer has used illegal or non-prescribed substances.")}</span>
+                      <span>
+                        {tx("Recreational Drug Use History (Past 3-5 Years)")}
+                      </span>
+                      <span className="block text-[10px] text-slate-400 font-normal">
+                        {tx(
+                          "Check if the customer has used illegal or non-prescribed substances.",
+                        )}
+                      </span>
                     </div>
                   </label>
                 </div>
@@ -1599,13 +2382,27 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-sm space-y-4">
                 <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
                   <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center text-orange-500">
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M13 10V3L4 14h7v7l9-11h-7z"
+                      />
                     </svg>
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-slate-800">{tx("High-Risk Hobbies (Avocations)")}</h4>
-                    <p className="text-[11px] text-slate-400">{tx("Identifies activities with high fatality rates.")}</p>
+                    <h4 className="text-sm font-bold text-slate-800">
+                      {tx("High-Risk Hobbies (Avocations)")}
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      {tx("Identifies activities with high fatality rates.")}
+                    </p>
                   </div>
                 </div>
 
@@ -1613,23 +2410,29 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                   <label className="flex items-start gap-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={details.habit_check.participates_in_extreme_sports}
+                      checked={
+                        details.habit_check.participates_in_extreme_sports
+                      }
                       onChange={(e) => {
                         const val = e.target.checked;
-                        setDetails(prev => ({
+                        setDetails((prev) => ({
                           ...prev,
                           habit_check: {
                             ...prev.habit_check,
                             participates_in_extreme_sports: val,
-                            extreme_sports_details: val ? prev.habit_check.extreme_sports_details : []
-                          }
+                            extreme_sports_details: val
+                              ? prev.habit_check.extreme_sports_details
+                              : [],
+                          },
                         }));
                       }}
                       className="rounded text-blue-600 focus:ring-blue-500 mt-0.5"
                     />
                     <div>
                       <span>{tx("Participates in Extreme Sports")}</span>
-                      <span className="block text-[10px] text-slate-400 font-normal">{tx("Trigger flag for adventure/high-risk sports.")}</span>
+                      <span className="block text-[10px] text-slate-400 font-normal">
+                        {tx("Trigger flag for adventure/high-risk sports.")}
+                      </span>
                     </div>
                   </label>
 
@@ -1637,32 +2440,66 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     <input
                       type="checkbox"
                       checked={details.habit_check.private_aviation}
-                      onChange={(e) => updateField("habit_check", "private_aviation", e.target.checked)}
+                      onChange={(e) =>
+                        updateField(
+                          "habit_check",
+                          "private_aviation",
+                          e.target.checked,
+                        )
+                      }
                       className="rounded text-blue-600 focus:ring-blue-500 mt-0.5"
                     />
                     <div>
                       <span>{tx("Private Aviation")}</span>
-                      <span className="block text-[10px] text-slate-400 font-normal">{tx("Flies private aircraft or experimental planes (commercial passengers exempt).")}</span>
+                      <span className="block text-[10px] text-slate-400 font-normal">
+                        {tx(
+                          "Flies private aircraft or experimental planes (commercial passengers exempt).",
+                        )}
+                      </span>
                     </div>
                   </label>
                 </div>
 
                 {details.habit_check.participates_in_extreme_sports && (
                   <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-2">
-                    <span className="text-xs font-bold text-slate-700 block">{tx("Select Extreme Sports:")}</span>
+                    <span className="text-xs font-bold text-slate-700 block">
+                      {tx("Select Extreme Sports:")}
+                    </span>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                      {["Skydiving", "Scuba Diving (past 100ft)", "Bungee Jumping", "Rock/Ice Climbing", "Motorsports/Racing"].map((sport) => {
-                        const isChecked = details.habit_check.extreme_sports_details.includes(sport);
+                      {[
+                        "Skydiving",
+                        "Scuba Diving (past 100ft)",
+                        "Bungee Jumping",
+                        "Rock/Ice Climbing",
+                        "Motorsports/Racing",
+                      ].map((sport) => {
+                        const isChecked =
+                          details.habit_check.extreme_sports_details.includes(
+                            sport,
+                          );
                         return (
-                          <label key={sport} className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                          <label
+                            key={sport}
+                            className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer"
+                          >
                             <input
                               type="checkbox"
                               checked={isChecked}
                               onChange={() => {
                                 const nextList = isChecked
-                                  ? details.habit_check.extreme_sports_details.filter(s => s !== sport)
-                                  : [...details.habit_check.extreme_sports_details, sport];
-                                updateField("habit_check", "extreme_sports_details", nextList);
+                                  ? details.habit_check.extreme_sports_details.filter(
+                                      (s) => s !== sport,
+                                    )
+                                  : [
+                                      ...details.habit_check
+                                        .extreme_sports_details,
+                                      sport,
+                                    ];
+                                updateField(
+                                  "habit_check",
+                                  "extreme_sports_details",
+                                  nextList,
+                                );
                               }}
                               className="rounded text-blue-600 focus:ring-blue-500"
                             />
@@ -1678,13 +2515,29 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-sm space-y-4">
                 <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
                   <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-500">
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 002 2h2m-4-3.5a2.5 2.5 0 014 2.828v1.172c0 .417-.18.823-.495 1.109l-2.091 1.909A2.5 2.5 0 0113.5 16h-.146A2 2 0 0111.854 15.1l-.854-.854A2 2 0 0110 12.854V11H8.5a1.5 1.5 0 00-1.5 1.5v3h-.5" />
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 002 2h2m-4-3.5a2.5 2.5 0 014 2.828v1.172c0 .417-.18.823-.495 1.109l-2.091 1.909A2.5 2.5 0 0113.5 16h-.146A2 2 0 0111.854 15.1l-.854-.854A2 2 0 0110 12.854V11H8.5a1.5 1.5 0 00-1.5 1.5v3h-.5"
+                      />
                     </svg>
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-slate-800">{tx("Travel & Location Risks")}</h4>
-                    <p className="text-[11px] text-slate-400">{tx("Underwriting travel to politically unstable or disease outbreak zones.")}</p>
+                    <h4 className="text-sm font-bold text-slate-800">
+                      {tx("Travel & Location Risks")}
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      {tx(
+                        "Underwriting travel to politically unstable or disease outbreak zones.",
+                      )}
+                    </p>
                   </div>
                 </div>
 
@@ -1693,18 +2546,30 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     <input
                       type="checkbox"
                       checked={details.habit_check.frequent_high_risk_travel}
-                      onChange={(e) => updateField("habit_check", "frequent_high_risk_travel", e.target.checked)}
+                      onChange={(e) =>
+                        updateField(
+                          "habit_check",
+                          "frequent_high_risk_travel",
+                          e.target.checked,
+                        )
+                      }
                       className="rounded text-blue-600 focus:ring-blue-500 mt-0.5"
                     />
                     <div>
                       <span>{tx("Frequent High-Risk Travel")}</span>
-                      <span className="block text-[10px] text-slate-400 font-normal">{tx("Travel planned or taken to politically unstable regions, active war zones, or severe outbreak areas.")}</span>
+                      <span className="block text-[10px] text-slate-400 font-normal">
+                        {tx(
+                          "Travel planned or taken to politically unstable regions, active war zones, or severe outbreak areas.",
+                        )}
+                      </span>
                     </div>
                   </label>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-semibold text-slate-600 block">{tx("Travel Destinations (Past/Next 12 Months)")}</label>
+                  <label className="text-xs font-semibold text-slate-600 block">
+                    {tx("Travel Destinations (Past/Next 12 Months)")}
+                  </label>
                   <div className="flex gap-2">
                     <input
                       type="text"
@@ -1716,8 +2581,19 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                           e.preventDefault();
                           if (newDestination.trim()) {
                             const dest = newDestination.trim();
-                            if (!details.habit_check.travel_destinations.includes(dest)) {
-                              updateField("habit_check", "travel_destinations", [...details.habit_check.travel_destinations, dest]);
+                            if (
+                              !details.habit_check.travel_destinations.includes(
+                                dest,
+                              )
+                            ) {
+                              updateField(
+                                "habit_check",
+                                "travel_destinations",
+                                [
+                                  ...details.habit_check.travel_destinations,
+                                  dest,
+                                ],
+                              );
                             }
                             setNewDestination("");
                           }
@@ -1730,8 +2606,15 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       onClick={() => {
                         if (newDestination.trim()) {
                           const dest = newDestination.trim();
-                          if (!details.habit_check.travel_destinations.includes(dest)) {
-                            updateField("habit_check", "travel_destinations", [...details.habit_check.travel_destinations, dest]);
+                          if (
+                            !details.habit_check.travel_destinations.includes(
+                              dest,
+                            )
+                          ) {
+                            updateField("habit_check", "travel_destinations", [
+                              ...details.habit_check.travel_destinations,
+                              dest,
+                            ]);
                           }
                           setNewDestination("");
                         }
@@ -1744,20 +2627,31 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
 
                   {details.habit_check.travel_destinations.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 pt-2">
-                      {details.habit_check.travel_destinations.map((dest, i) => (
-                        <span key={i} className="inline-flex items-center gap-1 bg-blue-50 border border-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full">
-                          {dest}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              updateField("habit_check", "travel_destinations", details.habit_check.travel_destinations.filter((_, idx) => idx !== i));
-                            }}
-                            className="text-blue-500 hover:text-blue-800 font-bold"
+                      {details.habit_check.travel_destinations.map(
+                        (dest, i) => (
+                          <span
+                            key={i}
+                            className="inline-flex items-center gap-1 bg-blue-50 border border-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full"
                           >
-                            {tx("×")}
-                          </button>
-                        </span>
-                      ))}
+                            {dest}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                updateField(
+                                  "habit_check",
+                                  "travel_destinations",
+                                  details.habit_check.travel_destinations.filter(
+                                    (_, idx) => idx !== i,
+                                  ),
+                                );
+                              }}
+                              className="text-blue-500 hover:text-blue-800 font-bold"
+                            >
+                              {tx("×")}
+                            </button>
+                          </span>
+                        ),
+                      )}
                     </div>
                   )}
                 </div>
@@ -1766,24 +2660,46 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-sm space-y-4">
                 <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
                   <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-500">
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                      />
                     </svg>
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-slate-800">{tx("Behavioral & Legal History")}</h4>
-                    <p className="text-[11px] text-slate-400">{tx("Assessing general recklessness & legal risks.")}</p>
+                    <h4 className="text-sm font-bold text-slate-800">
+                      {tx("Behavioral & Legal History")}
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      {tx("Assessing general recklessness & legal risks.")}
+                    </p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-600">{tx("Moving Violations (Past 3 Years)")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Moving Violations (Past 3 Years)")}
+                    </label>
                     <input
                       type="number"
                       min="0"
                       value={details.habit_check.moving_violations_past_3_years}
-                      onChange={(e) => updateField("habit_check", "moving_violations_past_3_years", parseInt(e.target.value) || 0)}
+                      onChange={(e) =>
+                        updateField(
+                          "habit_check",
+                          "moving_violations_past_3_years",
+                          parseInt(e.target.value) || 0,
+                        )
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
                     />
                   </div>
@@ -1792,7 +2708,13 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       <input
                         type="checkbox"
                         checked={details.habit_check.dui_dwi_history}
-                        onChange={(e) => updateField("habit_check", "dui_dwi_history", e.target.checked)}
+                        onChange={(e) =>
+                          updateField(
+                            "habit_check",
+                            "dui_dwi_history",
+                            e.target.checked,
+                          )
+                        }
                         className="rounded text-blue-600 focus:ring-blue-500"
                       />
                       {tx("DUI / DWI History")}
@@ -1805,12 +2727,22 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     <input
                       type="checkbox"
                       checked={details.habit_check.criminal_record}
-                      onChange={(e) => updateField("habit_check", "criminal_record", e.target.checked)}
+                      onChange={(e) =>
+                        updateField(
+                          "habit_check",
+                          "criminal_record",
+                          e.target.checked,
+                        )
+                      }
                       className="rounded text-blue-600 focus:ring-blue-500 mt-0.5"
                     />
                     <div>
                       <span>{tx("Criminal Record")}</span>
-                      <span className="block text-[10px] text-slate-400 font-normal">{tx("Check if the customer has felony convictions or pending criminal charges.")}</span>
+                      <span className="block text-[10px] text-slate-400 font-normal">
+                        {tx(
+                          "Check if the customer has felony convictions or pending criminal charges.",
+                        )}
+                      </span>
                     </div>
                   </label>
                 </div>
@@ -1822,31 +2754,65 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
           {formTab === "financial" && (
             <div className="space-y-6">
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Credit Bureau & Bank details")}</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
+                  {tx("Credit Bureau & Bank details")}
+                </h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className={`${hl("creditScore")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Credit Score")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Credit Score")}
+                    </label>
                     <input
                       type="number"
-                      value={details.financial_records.credit_bureau.credit_score}
-                      onChange={(e) => updateSubField("financial_records", "credit_bureau", "credit_score", parseInt(e.target.value) || 0)}
+                      value={
+                        details.financial_records.credit_bureau.credit_score
+                      }
+                      onChange={(e) =>
+                        updateSubField(
+                          "financial_records",
+                          "credit_bureau",
+                          "credit_score",
+                          parseInt(e.target.value) || 0,
+                        )
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
                   <div className={`${hl("delinquencyCount")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Delinquencies count")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Delinquencies count")}
+                    </label>
                     <input
                       type="number"
-                      value={details.financial_records.credit_bureau.delinquency_count}
-                      onChange={(e) => updateSubField("financial_records", "credit_bureau", "delinquency_count", parseInt(e.target.value) || 0)}
+                      value={
+                        details.financial_records.credit_bureau
+                          .delinquency_count
+                      }
+                      onChange={(e) =>
+                        updateSubField(
+                          "financial_records",
+                          "credit_bureau",
+                          "delinquency_count",
+                          parseInt(e.target.value) || 0,
+                        )
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
                   <div className={`${hl("riskGrade")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Credit Bureau Risk Grade")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Credit Bureau Risk Grade")}
+                    </label>
                     <select
                       value={details.financial_records.credit_bureau.risk_grade}
-                      onChange={(e) => updateSubField("financial_records", "credit_bureau", "risk_grade", e.target.value)}
+                      onChange={(e) =>
+                        updateSubField(
+                          "financial_records",
+                          "credit_bureau",
+                          "risk_grade",
+                          e.target.value,
+                        )
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     >
                       <option value="A">{tx("Grade A")}</option>
@@ -1863,22 +2829,47 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <hr className="border-slate-100" />
 
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Dependents Info")}</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
+                  {tx("Dependents Info")}
+                </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className={`${hl("numberOfDependents")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Number of Dependents")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Number of Dependents")}
+                    </label>
                     <input
                       type="number"
-                      value={details.financial_records.dependents.number_of_dependents}
-                      onChange={(e) => updateSubField("financial_records", "dependents", "number_of_dependents", parseInt(e.target.value) || 0)}
+                      value={
+                        details.financial_records.dependents
+                          .number_of_dependents
+                      }
+                      onChange={(e) =>
+                        updateSubField(
+                          "financial_records",
+                          "dependents",
+                          "number_of_dependents",
+                          parseInt(e.target.value) || 0,
+                        )
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
                   <div className={`${hl("dependentType")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Primary Dependent Type")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Primary Dependent Type")}
+                    </label>
                     <select
-                      value={details.financial_records.dependents.dependent_type}
-                      onChange={(e) => updateSubField("financial_records", "dependents", "dependent_type", e.target.value)}
+                      value={
+                        details.financial_records.dependents.dependent_type
+                      }
+                      onChange={(e) =>
+                        updateSubField(
+                          "financial_records",
+                          "dependents",
+                          "dependent_type",
+                          e.target.value,
+                        )
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     >
                       <option value="Spouse">{tx("Spouse")}</option>
@@ -1897,42 +2888,68 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
           {formTab === "beneficiary" && (
             <div className="space-y-6">
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">{tx("Primary Beneficiary (Section 7)")}</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
+                  {tx("Primary Beneficiary (Section 7)")}
+                </h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className={`${hl("beneficiaryFirstName")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("First Name")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("First Name")}
+                    </label>
                     <input
                       type="text"
                       value={details.beneficiary.first_name}
-                      onChange={(e) => updateField("beneficiary", "first_name", e.target.value)}
+                      onChange={(e) =>
+                        updateField("beneficiary", "first_name", e.target.value)
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
                   <div className={`${hl("beneficiaryLastName")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Last Name")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Last Name")}
+                    </label>
                     <input
                       type="text"
                       value={details.beneficiary.last_name}
-                      onChange={(e) => updateField("beneficiary", "last_name", e.target.value)}
+                      onChange={(e) =>
+                        updateField("beneficiary", "last_name", e.target.value)
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
                   <div className={`${hl("beneficiaryCnic")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("CNIC Number")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("CNIC Number")}
+                    </label>
                     <input
                       type="text"
                       value={details.beneficiary.cnic_number}
-                      onChange={(e) => updateField("beneficiary", "cnic_number", formatCNIC(e.target.value))}
+                      onChange={(e) =>
+                        updateField(
+                          "beneficiary",
+                          "cnic_number",
+                          formatCNIC(e.target.value),
+                        )
+                      }
                       placeholder={tx("35201-XXXXXXX-X")}
                       maxLength={15}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
                   <div className={`${hl("beneficiaryRelationship")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Relationship")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Relationship")}
+                    </label>
                     <select
                       value={details.beneficiary.relationship}
-                      onChange={(e) => updateField("beneficiary", "relationship", e.target.value)}
+                      onChange={(e) =>
+                        updateField(
+                          "beneficiary",
+                          "relationship",
+                          e.target.value,
+                        )
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     >
                       <option value="Spouse">{tx("Spouse")}</option>
@@ -1944,11 +2961,19 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     </select>
                   </div>
                   <div className={`${hl("beneficiaryShare")}`}>
-                    <label className="text-xs font-semibold text-slate-600">{tx("Share Percentage (%)")}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {tx("Share Percentage (%)")}
+                    </label>
                     <input
                       type="number"
                       value={details.beneficiary.share_percentage}
-                      onChange={(e) => updateField("beneficiary", "share_percentage", parseInt(e.target.value) || 0)}
+                      onChange={(e) =>
+                        updateField(
+                          "beneficiary",
+                          "share_percentage",
+                          parseInt(e.target.value) || 0,
+                        )
+                      }
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
@@ -1961,36 +2986,64 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
           {formTab === "insurance_plan" && !isCreate && (
             <div className="space-y-6">
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">{tx("Insurance Plans")}</h4>
-                <p className="text-xs text-slate-400 mb-5">{tx("Existing policies for this customer. You can assign an additional plan below.")}</p>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">
+                  {tx("Insurance Plans")}
+                </h4>
+                <p className="text-xs text-slate-400 mb-5">
+                  {tx(
+                    "Existing policies for this customer. You can assign an additional plan below.",
+                  )}
+                </p>
 
                 {viewPoliciesLoading ? (
                   <div className="flex items-center gap-2 py-6 justify-center">
                     <div className="animate-spin h-5 w-5 rounded-full border-2 border-slate-100 border-t-blue-500" />
-                    <span className="text-xs text-slate-400">{tx("Loading policies...")}</span>
+                    <span className="text-xs text-slate-400">
+                      {tx("Loading policies...")}
+                    </span>
                   </div>
                 ) : customerPolicies.length === 0 ? (
-                  <div className="text-center py-8 text-sm text-slate-400 italic">{tx("No policies assigned yet.")}</div>
+                  <div className="text-center py-8 text-sm text-slate-400 italic">
+                    {tx("No policies assigned yet.")}
+                  </div>
                 ) : (
                   <div className="space-y-3 mb-6">
                     {customerPolicies.map((pol) => {
-                      const colorClass = PLAN_TYPE_COLORS[pol.insurance_type] ?? "border-slate-200 bg-slate-50";
-                      const textClass = PLAN_TYPE_TEXT[pol.insurance_type] ?? "text-slate-700";
+                      const colorClass =
+                        PLAN_TYPE_COLORS[pol.insurance_type] ??
+                        "border-slate-200 bg-slate-50";
+                      const textClass =
+                        PLAN_TYPE_TEXT[pol.insurance_type] ?? "text-slate-700";
                       return (
-                        <div key={pol.id} className={`border-l-4 rounded-xl p-4 ${colorClass} relative`}>
+                        <div
+                          key={pol.id}
+                          className={`border-l-4 rounded-xl p-4 ${colorClass} relative`}
+                        >
                           <button
                             type="button"
                             onClick={async () => {
-                              const tenantId = localStorage.getItem("tenant_id");
+                              const tenantId =
+                                localStorage.getItem("tenant_id");
                               if (!tenantId || !customer) return;
-                              if (confirm("Are you sure you want to remove this policy?")) {
+                              if (
+                                confirm(
+                                  "Are you sure you want to remove this policy?",
+                                )
+                              ) {
                                 try {
-                                  await api.delete(`/tenants/${tenantId}/customers/${customer.id}/policies/${pol.id}`);
-                                  const res = await api.get(`/tenants/${tenantId}/customers/${customer.id}/policies`);
+                                  await api.delete(
+                                    `/tenants/${tenantId}/customers/${customer.id}/policies/${pol.id}`,
+                                  );
+                                  const res = await api.get(
+                                    `/tenants/${tenantId}/customers/${customer.id}/policies`,
+                                  );
                                   setCustomerPolicies(res.data ?? []);
                                   setSuccess("Policy removed successfully.");
                                 } catch (err: any) {
-                                  setError(err.response?.data?.detail ?? "Failed to remove policy.");
+                                  setError(
+                                    err.response?.data?.detail ??
+                                      "Failed to remove policy.",
+                                  );
                                 }
                               }
                             }}
@@ -2001,26 +3054,48 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                           </button>
                           <div className="flex items-start justify-between gap-3">
                             <div>
-                              <p className={`text-sm font-bold ${textClass}`}>{pol.product_name}</p>
+                              <p className={`text-sm font-bold ${textClass}`}>
+                                {pol.product_name}
+                              </p>
                               <p className="text-[10px] text-slate-400 mt-0.5 font-semibold uppercase tracking-wider">
-                                {tx(INSURANCE_TYPE_LABELS[pol.insurance_type] ?? pol.insurance_type)}
+                                {tx(
+                                  INSURANCE_TYPE_LABELS[pol.insurance_type] ??
+                                    pol.insurance_type,
+                                )}
                               </p>
                             </div>
-                            <span className={`shrink-0 text-xs font-bold px-2.5 py-1 rounded-full ${textClass} bg-white/70`}>{pol.term_years}{" "}{tx("yr")}</span>
+                            <span
+                              className={`shrink-0 text-xs font-bold px-2.5 py-1 rounded-full ${textClass} bg-white/70`}
+                            >
+                              {pol.term_years} {tx("yr")}
+                            </span>
                           </div>
                           <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                             <div>
-                              <span className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">{tx("Coverage")}</span>
-                              <span className="font-bold text-slate-800">{tx("PKR")}{" "}{pol.coverage_amount.toLocaleString()}</span>
+                              <span className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">
+                                {tx("Sum Assured")}
+                              </span>
+                              <span className="font-bold text-slate-800">
+                                {tx("PKR")}{" "}
+                                {pol.coverage_amount.toLocaleString()}
+                              </span>
                             </div>
                             <div>
-                              <span className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">{tx("Assigned")}</span>
-                              <span className="text-slate-600">{new Date(pol.created_at).toLocaleDateString()}</span>
+                              <span className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">
+                                {tx("Assigned")}
+                              </span>
+                              <span className="text-slate-600">
+                                {displayDate(pol.created_at)}
+                              </span>
                             </div>
                             {pol.dependent_name && (
                               <div className="col-span-2">
-                                <span className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">{tx("Dependent")}</span>
-                                <span className="text-slate-600">{pol.dependent_name} · {pol.dependent_dob}</span>
+                                <span className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">
+                                  {tx("Dependent")}
+                                </span>
+                                <span className="text-slate-600">
+                                  {pol.dependent_name} · {displayDate(pol.dependent_dob)}
+                                </span>
                               </div>
                             )}
                           </div>
@@ -2041,7 +3116,9 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                 ) : (
                   <div className="border border-slate-200 rounded-xl p-5 space-y-5 bg-slate-50">
                     <div className="flex items-center justify-between">
-                      <h5 className="text-xs font-bold text-slate-800 uppercase tracking-wider">{tx("Assign New Plan")}</h5>
+                      <h5 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                        {tx("Assign New Plan")}
+                      </h5>
                       <button
                         type="button"
                         onClick={() => {
@@ -2061,14 +3138,20 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
 
                     {availablePlans.length === 0 ? (
                       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700 font-medium">
-                        {tx("No active plans found. Create plans from the Insurance Plans page first.")}
+                        {tx(
+                          "No active plans found. Create plans from the Insurance Plans page first.",
+                        )}
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {availablePlans.map((plan) => {
                           const isSelected = editSelectedPlanId === plan.id;
-                          const colorClass = PLAN_TYPE_COLORS[plan.insurance_type] ?? "border-slate-200 bg-white";
-                          const textClass = PLAN_TYPE_TEXT[plan.insurance_type] ?? "text-slate-700";
+                          const colorClass =
+                            PLAN_TYPE_COLORS[plan.insurance_type] ??
+                            "border-slate-200 bg-white";
+                          const textClass =
+                            PLAN_TYPE_TEXT[plan.insurance_type] ??
+                            "text-slate-700";
                           return (
                             <button
                               key={plan.id}
@@ -2079,19 +3162,27 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                                 setValue("selectedPlanId", nextId);
                                 if (!isSelected) {
                                   setEditPolicyCoverage("");
-                                  setEditPolicyTerm(String(plan.term_min_years));
+                                  setEditPolicyTerm(
+                                    String(plan.term_min_years),
+                                  );
                                   setValue("policyCoverage", "");
-                                  setValue("policyTerm", String(plan.term_min_years));
+                                  setValue(
+                                    "policyTerm",
+                                    String(plan.term_min_years),
+                                  );
                                 }
                               }}
-                              className={`relative w-full text-left p-4 rounded-xl border-2 transition-all ${isSelected
-                                ? `${colorClass} shadow-md ring-2 ring-offset-1 ${textClass.replace("text-", "ring-")}`
-                                : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
-                                }`}
+                              className={`relative w-full text-left p-4 rounded-xl border-2 transition-all ${
+                                isSelected
+                                  ? `${colorClass} shadow-md ring-2 ring-offset-1 ${textClass.replace("text-", "ring-")}`
+                                  : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
+                              }`}
                             >
                               {isSelected && (
                                 <>
-                                  <span className="absolute top-2 right-2 flex items-center justify-center w-4 h-4 rounded-full bg-blue-500 text-white text-[9px] font-bold">✓</span>
+                                  <span className="absolute top-2 right-2 flex items-center justify-center w-4 h-4 rounded-full bg-blue-500 text-white text-[9px] font-bold">
+                                    ✓
+                                  </span>
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -2110,14 +3201,27 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                                   </button>
                                 </>
                               )}
-                              <p className={`text-sm font-bold ${isSelected ? textClass : "text-slate-800"}`}>{plan.label}</p>
+                              <p
+                                className={`text-sm font-bold ${isSelected ? textClass : "text-slate-800"}`}
+                              >
+                                {plan.label}
+                              </p>
                               <p className="text-[10px] text-slate-400 mt-0.5 font-semibold uppercase tracking-wider">
-                                {tx(INSURANCE_TYPE_LABELS[plan.insurance_type] ?? plan.insurance_type)}
+                                {tx(
+                                  INSURANCE_TYPE_LABELS[plan.insurance_type] ??
+                                    plan.insurance_type,
+                                )}
                               </p>
                               <div className="flex gap-3 mt-2 text-[10px] font-semibold text-slate-500">
-                                <span>{tx("Age")}{" "}{plan.entry_age_min}–{plan.entry_age_max}</span>
+                                <span>
+                                  {tx("Age")} {plan.entry_age_min}–
+                                  {plan.entry_age_max}
+                                </span>
                                 <span>·</span>
-                                <span>{tx("Term")}{" "}{plan.term_min_years}–{plan.term_max_years}{" "}{tx("yrs")}</span>
+                                <span>
+                                  {tx("Term")} {plan.term_min_years}–
+                                  {plan.term_max_years} {tx("yrs")}
+                                </span>
                               </div>
                             </button>
                           );
@@ -2125,174 +3229,257 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       </div>
                     )}
 
-                    {editSelectedPlanId && (() => {
-                      const plan = availablePlans.find((p) => p.id === editSelectedPlanId);
-                      if (!plan) return null;
+                    {editSelectedPlanId &&
+                      (() => {
+                        const plan = availablePlans.find(
+                          (p) => p.id === editSelectedPlanId,
+                        );
+                        if (!plan) return null;
 
-                      const currentIncome = parseFloat(String(watch("declaredIncome") || customer?.declared_income || 0));
-                      const maxIncomeCoverage = currentIncome > 0 && plan.max_income_multiple ? currentIncome * plan.max_income_multiple : null;
+                        const currentIncome = parseFloat(
+                          String(
+                            watch("declaredIncome") ||
+                              customer?.declared_income ||
+                              0,
+                          ),
+                        );
+                        const maxIncomeCoverage =
+                          currentIncome > 0 && plan.max_income_multiple
+                            ? currentIncome * plan.max_income_multiple
+                            : null;
 
-                      const coverageNum = parseFloat(String(editPolicyCoverage || 0));
-                      const termNum = parseInt(String(editPolicyTerm || 0));
+                        const coverageNum = parseFloat(
+                          String(editPolicyCoverage || 0),
+                        );
+                        const termNum = parseInt(String(editPolicyTerm || 0));
 
-                      const isTermOutOfRange = editPolicyTerm !== "" && (termNum < plan.term_min_years || termNum > plan.term_max_years);
-                      const isCoverageOverLimit = editPolicyCoverage !== "" && maxIncomeCoverage !== null && coverageNum > maxIncomeCoverage;
+                        const isTermOutOfRange =
+                          editPolicyTerm !== "" &&
+                          (termNum < plan.term_min_years ||
+                            termNum > plan.term_max_years);
+                        const isCoverageOverLimit =
+                          editPolicyCoverage !== "" &&
+                          maxIncomeCoverage !== null &&
+                          coverageNum > maxIncomeCoverage;
 
-                      const customerDob = watch("dob") || customer?.dob;
-                      let ageNotice: string | null = null;
-                      if (customerDob) {
-                        const bYear = new Date(customerDob).getFullYear();
-                        if (!isNaN(bYear)) {
-                          const age = new Date().getFullYear() - bYear;
-                          if (age < plan.entry_age_min || age > plan.entry_age_max) {
-                            ageNotice = `Customer age (${age} yrs) is outside allowed entry age range (${plan.entry_age_min}–${plan.entry_age_max} yrs) for ${plan.label}.`;
+                        const customerDob = watch("dob") || customer?.dob;
+                        let ageNotice: string | null = null;
+                        if (customerDob) {
+                          const bYear = new Date(customerDob).getFullYear();
+                          if (!isNaN(bYear)) {
+                            const age = new Date().getFullYear() - bYear;
+                            if (
+                              age < plan.entry_age_min ||
+                              age > plan.entry_age_max
+                            ) {
+                              ageNotice = `Customer age (${age} yrs) is outside allowed entry age range (${plan.entry_age_min}–${plan.entry_age_max} yrs) for ${plan.label}.`;
+                            }
                           }
                         }
-                      }
 
-                      return (
-                        <div className="space-y-4 pt-2">
-                          {ageNotice && (
-                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 font-medium flex items-center gap-2">
-                              <span>⚠️ {ageNotice}</span>
-                            </div>
-                          )}
+                        return (
+                          <div className="space-y-4 pt-2">
+                            {ageNotice && (
+                              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 font-medium flex items-center gap-2">
+                                <span>⚠️ {ageNotice}</span>
+                              </div>
+                            )}
 
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className={`${hl("policyCoverage")}`}>
-                              <label className="text-xs font-semibold text-slate-600">{tx("Coverage Amount (PKR) *")}</label>
-                              <input
-                                type="number" min={0}
-                                value={editPolicyCoverage}
-                                onChange={(e) => {
-                                  setEditPolicyCoverage(e.target.value);
-                                  setValue("policyCoverage", e.target.value);
-                                }}
-                                placeholder="e.g. 5000000"
-                                className={`w-full bg-white border ${isCoverageOverLimit ? 'border-red-500 bg-red-50/20 ring-1 ring-red-500 text-red-900' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
-                              />
-                              {isCoverageOverLimit ? (
-                                <span className="block text-[11px] font-semibold text-red-600 mt-1">
-                                  {tx("❌ Exceeds max limit of PKR")}{" "}{maxIncomeCoverage!.toLocaleString()} ({plan.max_income_multiple}{tx("× declared income)")}
-                                </span>
-                              ) : (
-                                <p className="text-[10px] text-slate-400">
-                                  {maxIncomeCoverage ? tx("Max allowed: PKR {0} ({1}× declared income)", { 0: maxIncomeCoverage.toLocaleString(), 1: plan.max_income_multiple }) : tx("Max {0}× declared income", { 0: plan.max_income_multiple })}
-                                </p>
-                              )}
-                            </div>
-                            <div className={`${hl("policyTerm")}`}>
-                              <label className="text-xs font-semibold text-slate-600">{tx("Policy Term (Years) *")}</label>
-                              <input
-                                type="number"
-                                min={plan.term_min_years} max={plan.term_max_years}
-                                value={editPolicyTerm}
-                                onChange={(e) => {
-                                  setEditPolicyTerm(e.target.value);
-                                  setValue("policyTerm", e.target.value);
-                                }}
-                                className={`w-full bg-white border ${isTermOutOfRange ? 'border-red-500 bg-red-50/20 ring-1 ring-red-500 text-red-900' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
-                              />
-                              {isTermOutOfRange ? (
-                                <span className="block text-[11px] font-semibold text-red-600 mt-1">
-                                  {tx("❌ Invalid term: Must be between")}{" "}{plan.term_min_years}–{plan.term_max_years}{" "}{tx("yrs")}
-                                </span>
-                              ) : (
-                                <p className="text-[10px] text-slate-400">{tx("Allowed range:")}{" "}{plan.term_min_years}–{plan.term_max_years}{" "}{tx("yrs")}</p>
-                              )}
-                            </div>
-                          </div>
-                          {plan.insurance_type === "CHILD_EDUCATION_MARRIAGE" && (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div className="space-y-1">
-                                <label className="text-xs font-semibold text-slate-600">{tx("Dependent Name *")}</label>
+                              <div className={`${hl("policyCoverage")}`}>
+                                <label className="text-xs font-semibold text-slate-600">
+                                  {tx("Sum Assured (PKR) *")}
+                                </label>
                                 <input
-                                  type="text"
-                                  value={editPolicyDependentName}
+                                  type="number"
+                                  min={0}
+                                  value={editPolicyCoverage}
                                   onChange={(e) => {
-                                    setEditPolicyDependentName(e.target.value);
-                                    setValue("policyDependentName", e.target.value);
+                                    setEditPolicyCoverage(e.target.value);
+                                    setValue("policyCoverage", e.target.value);
                                   }}
-                                  placeholder={tx("Child's full name")}
-                                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
+                                  placeholder="e.g. 5000000"
+                                  className={`w-full bg-white border ${isCoverageOverLimit ? "border-red-500 bg-red-50/20 ring-1 ring-red-500 text-red-900" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                                 />
+                                {isCoverageOverLimit ? (
+                                  <span className="block text-[11px] font-semibold text-red-600 mt-1">
+                                    {tx("❌ Exceeds max limit of PKR")}{" "}
+                                    {maxIncomeCoverage!.toLocaleString()} (
+                                    {plan.max_income_multiple}
+                                    {tx("× declared income)")}
+                                  </span>
+                                ) : (
+                                  <p className="text-[10px] text-slate-400">
+                                    {maxIncomeCoverage
+                                      ? tx(
+                                          "Max allowed: PKR {0} ({1}× declared income)",
+                                          {
+                                            0: maxIncomeCoverage.toLocaleString(),
+                                            1: plan.max_income_multiple,
+                                          },
+                                        )
+                                      : tx("Max {0}× declared income", {
+                                          0: plan.max_income_multiple,
+                                        })}
+                                  </p>
+                                )}
                               </div>
-                              <div className="space-y-1">
-                                <label className="text-xs font-semibold text-slate-600">{tx("Dependent Date of Birth")}</label>
+                              <div className={`${hl("policyTerm")}`}>
+                                <label className="text-xs font-semibold text-slate-600">
+                                  {tx("Policy Term (Years) *")}
+                                </label>
                                 <input
-                                  type="date"
-                                  value={editPolicyDependentDob}
+                                  type="number"
+                                  min={plan.term_min_years}
+                                  max={plan.term_max_years}
+                                  value={editPolicyTerm}
                                   onChange={(e) => {
-                                    setEditPolicyDependentDob(e.target.value);
-                                    setValue("policyDependentDob", e.target.value);
+                                    setEditPolicyTerm(e.target.value);
+                                    setValue("policyTerm", e.target.value);
                                   }}
-                                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
+                                  className={`w-full bg-white border ${isTermOutOfRange ? "border-red-500 bg-red-50/20 ring-1 ring-red-500 text-red-900" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                                 />
+                                {isTermOutOfRange ? (
+                                  <span className="block text-[11px] font-semibold text-red-600 mt-1">
+                                    {tx("❌ Invalid term: Must be between")}{" "}
+                                    {plan.term_min_years}–{plan.term_max_years}{" "}
+                                    {tx("yrs")}
+                                  </span>
+                                ) : (
+                                  <p className="text-[10px] text-slate-400">
+                                    {tx("Allowed range:")} {plan.term_min_years}
+                                    –{plan.term_max_years} {tx("yrs")}
+                                  </p>
+                                )}
                               </div>
                             </div>
-                          )}
-                          <button
-                            type="button"
-                            disabled={editPolicyLoading || !editPolicyCoverage || !editPolicyTerm || isTermOutOfRange || isCoverageOverLimit}
-                            onClick={async () => {
-                              const tenantId = localStorage.getItem("tenant_id");
-                              if (!tenantId || !customer) return;
-
-                              const valErr = getPlanValidationError(
-                                plan,
-                                editPolicyCoverage,
-                                editPolicyTerm,
-                                currentIncome,
-                                customerDob,
-                                editPolicyDependentName,
-                                editPolicyDependentDob
-                              );
-                              if (valErr) {
-                                setError(valErr);
-                                return;
+                            {plan.insurance_type ===
+                              "CHILD_EDUCATION_MARRIAGE" && (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-1">
+                                  <label className="text-xs font-semibold text-slate-600">
+                                    {tx("Dependent Name *")}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editPolicyDependentName}
+                                    onChange={(e) => {
+                                      setEditPolicyDependentName(
+                                        e.target.value,
+                                      );
+                                      setValue(
+                                        "policyDependentName",
+                                        e.target.value,
+                                      );
+                                    }}
+                                    placeholder={tx("Child's full name")}
+                                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-xs font-semibold text-slate-600">
+                                    {tx("Dependent Date of Birth")}
+                                  </label>
+                                  <input
+                                    type="date"
+                                    value={editPolicyDependentDob}
+                                    onChange={(e) => {
+                                      setEditPolicyDependentDob(e.target.value);
+                                      setValue(
+                                        "policyDependentDob",
+                                        e.target.value,
+                                      );
+                                    }}
+                                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              disabled={
+                                editPolicyLoading ||
+                                !editPolicyCoverage ||
+                                !editPolicyTerm ||
+                                isTermOutOfRange ||
+                                isCoverageOverLimit
                               }
+                              onClick={async () => {
+                                const tenantId =
+                                  localStorage.getItem("tenant_id");
+                                if (!tenantId || !customer) return;
 
-                              setEditPolicyLoading(true);
-                              try {
-                                const payload: any = {
-                                  plan_id: editSelectedPlanId,
-                                  product_name: plan.label,
-                                  insurance_type: plan.insurance_type,
-                                  coverage_amount: parseFloat(editPolicyCoverage),
-                                  term_years: parseInt(editPolicyTerm),
-                                };
-                                if (plan.insurance_type === "CHILD_EDUCATION_MARRIAGE") {
-                                  payload.dependent_name = editPolicyDependentName || null;
-                                  payload.dependent_dob = editPolicyDependentDob || null;
+                                const valErr = getPlanValidationError(
+                                  plan,
+                                  editPolicyCoverage,
+                                  editPolicyTerm,
+                                  currentIncome,
+                                  customerDob,
+                                  editPolicyDependentName,
+                                  editPolicyDependentDob,
+                                );
+                                if (valErr) {
+                                  setError(valErr);
+                                  return;
                                 }
-                                await api.post(`/tenants/${tenantId}/customers/${customer.id}/policies`, payload);
-                                const res = await api.get(`/tenants/${tenantId}/customers/${customer.id}/policies`);
-                                setCustomerPolicies(res.data ?? []);
-                                setEditAddingPolicy(false);
-                                setEditSelectedPlanId("");
-                                setEditPolicyCoverage("");
-                                setEditPolicyTerm("");
-                                setEditPolicyDependentName("");
-                                setEditPolicyDependentDob("");
-                                setValue("selectedPlanId", "");
-                                setValue("policyCoverage", undefined);
-                                setValue("policyTerm", undefined);
-                                setValue("policyDependentName", "");
-                                setValue("policyDependentDob", "");
-                                setSuccess("Policy assigned successfully!");
-                              } catch (err: any) {
-                                setError(err.response?.data?.detail ?? "Failed to assign policy.");
-                              } finally {
-                                setEditPolicyLoading(false);
-                              }
-                            }}
-                            className="w-full py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed rounded-lg transition-colors"
-                          >
-                            {editPolicyLoading ? tx("Assigning...") : tx("Confirm & Assign Policy")}
-                          </button>
-                        </div>
-                      );
-                    })()}
+
+                                setEditPolicyLoading(true);
+                                try {
+                                  const payload: any = {
+                                    plan_id: editSelectedPlanId,
+                                    product_name: plan.label,
+                                    insurance_type: plan.insurance_type,
+                                    coverage_amount:
+                                      parseFloat(editPolicyCoverage),
+                                    term_years: parseInt(editPolicyTerm),
+                                  };
+                                  if (
+                                    plan.insurance_type ===
+                                    "CHILD_EDUCATION_MARRIAGE"
+                                  ) {
+                                    payload.dependent_name =
+                                      editPolicyDependentName || null;
+                                    payload.dependent_dob =
+                                      editPolicyDependentDob || null;
+                                  }
+                                  await api.post(
+                                    `/tenants/${tenantId}/customers/${customer.id}/policies`,
+                                    payload,
+                                  );
+                                  const res = await api.get(
+                                    `/tenants/${tenantId}/customers/${customer.id}/policies`,
+                                  );
+                                  setCustomerPolicies(res.data ?? []);
+                                  setEditAddingPolicy(false);
+                                  setEditSelectedPlanId("");
+                                  setEditPolicyCoverage("");
+                                  setEditPolicyTerm("");
+                                  setEditPolicyDependentName("");
+                                  setEditPolicyDependentDob("");
+                                  setValue("selectedPlanId", "");
+                                  setValue("policyCoverage", undefined);
+                                  setValue("policyTerm", undefined);
+                                  setValue("policyDependentName", "");
+                                  setValue("policyDependentDob", "");
+                                  setSuccess("Policy assigned successfully!");
+                                } catch (err: any) {
+                                  setError(
+                                    err.response?.data?.detail ??
+                                      "Failed to assign policy.",
+                                  );
+                                } finally {
+                                  setEditPolicyLoading(false);
+                                }
+                              }}
+                              className="w-full py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed rounded-lg transition-colors"
+                            >
+                              {editPolicyLoading
+                                ? tx("Assigning...")
+                                : tx("Confirm & Assign Policy")}
+                            </button>
+                          </div>
+                        );
+                      })()}
                   </div>
                 )}
               </div>
@@ -2303,10 +3490,16 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
           {formTab === "insurance_plan" && isCreate && (
             <div className="space-y-6">
               <div>
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">{tx("Select Insurance Plan")}</h4>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">
+                  {tx("Select Insurance Plan")}
+                </h4>
 
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-                  <p className="text-xs text-slate-400">{tx("Choose a plan from your tenant catalog. Coverage and term are required.")}</p>
+                  <p className="text-xs text-slate-400">
+                    {tx(
+                      "Choose a plan from your tenant catalog. Coverage and term are required.",
+                    )}
+                  </p>
                   <button
                     type="button"
                     onClick={handleSuggestPlan}
@@ -2320,8 +3513,18 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       </>
                     ) : (
                       <>
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M13 10V3L4 14h7v7l9-11h-7z"
+                          />
                         </svg>
                         {tx("Suggest Plan with AI")}
                       </>
@@ -2332,12 +3535,26 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                 {suggestedReasoning && (
                   <div className="mb-6 p-4 rounded-xl bg-blue-50 border border-blue-200 shadow-sm animate-in fade-in slide-in-from-top-2">
                     <div className="flex gap-3">
-                      <svg className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      <svg
+                        className="w-5 h-5 text-blue-600 shrink-0 mt-0.5"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M13 10V3L4 14h7v7l9-11h-7z"
+                        />
                       </svg>
                       <div>
-                        <h5 className="text-xs font-bold text-blue-900 mb-1">{tx("AI Recommendation")}</h5>
-                        <p className="text-xs text-blue-800 leading-relaxed">{suggestedReasoning}</p>
+                        <h5 className="text-xs font-bold text-blue-900 mb-1">
+                          {tx("AI Recommendation")}
+                        </h5>
+                        <p className="text-xs text-blue-800 leading-relaxed">
+                          {suggestedReasoning}
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -2346,37 +3563,50 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                 {plansLoading ? (
                   <div className="flex items-center gap-2 py-6 justify-center">
                     <div className="animate-spin h-5 w-5 rounded-full border-2 border-slate-100 border-t-blue-500" />
-                    <span className="text-xs text-slate-400">{tx("Loading plans...")}</span>
+                    <span className="text-xs text-slate-400">
+                      {tx("Loading plans...")}
+                    </span>
                   </div>
                 ) : availablePlans.length === 0 ? (
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700 font-medium">
-                    {tx("No active insurance plans found for this tenant. Please create plans first from the Insurance Plans page.")}
+                    {tx(
+                      "No active insurance plans found for this tenant. Please create plans first from the Insurance Plans page.",
+                    )}
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
                     {availablePlans.map((plan) => {
                       const isSelected = selectedPlanId === plan.id;
-                      const colorClass = PLAN_TYPE_COLORS[plan.insurance_type] ?? "border-slate-200 bg-slate-50";
-                      const textClass = PLAN_TYPE_TEXT[plan.insurance_type] ?? "text-slate-700";
+                      const colorClass =
+                        PLAN_TYPE_COLORS[plan.insurance_type] ??
+                        "border-slate-200 bg-slate-50";
+                      const textClass =
+                        PLAN_TYPE_TEXT[plan.insurance_type] ?? "text-slate-700";
                       return (
                         <button
                           key={plan.id}
                           type="button"
                           onClick={() => {
-                            setValue("selectedPlanId", isSelected ? "" : plan.id);
+                            setValue(
+                              "selectedPlanId",
+                              isSelected ? "" : plan.id,
+                            );
                             if (!isSelected) {
                               setValue("policyCoverage", undefined);
                               setValue("policyTerm", plan.term_min_years);
                             }
                           }}
-                          className={`relative w-full text-left p-4 rounded-xl border-2 transition-all ${isSelected
-                            ? `${colorClass} shadow-md ring-2 ring-offset-1 ${textClass.replace("text-", "ring-")}`
-                            : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
-                            }`}
+                          className={`relative w-full text-left p-4 rounded-xl border-2 transition-all ${
+                            isSelected
+                              ? `${colorClass} shadow-md ring-2 ring-offset-1 ${textClass.replace("text-", "ring-")}`
+                              : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
+                          }`}
                         >
                           {isSelected && (
                             <>
-                              <span className="absolute top-3 right-3 flex items-center justify-center w-5 h-5 rounded-full bg-blue-500 text-white text-[10px] font-bold">✓</span>
+                              <span className="absolute top-3 right-3 flex items-center justify-center w-5 h-5 rounded-full bg-blue-500 text-white text-[10px] font-bold">
+                                ✓
+                              </span>
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -2392,15 +3622,30 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                               </button>
                             </>
                           )}
-                          <p className={`text-sm font-bold ${isSelected ? textClass : "text-slate-800"}`}>{plan.label}</p>
-                          <p className="text-[10px] text-slate-400 mt-0.5 font-semibold uppercase tracking-wider">
-                            {tx(INSURANCE_TYPE_LABELS[plan.insurance_type] ?? plan.insurance_type)}
+                          <p
+                            className={`text-sm font-bold ${isSelected ? textClass : "text-slate-800"}`}
+                          >
+                            {plan.label}
                           </p>
-                          <p className="text-xs text-slate-500 mt-2 line-clamp-2">{plan.description}</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5 font-semibold uppercase tracking-wider">
+                            {tx(
+                              INSURANCE_TYPE_LABELS[plan.insurance_type] ??
+                                plan.insurance_type,
+                            )}
+                          </p>
+                          <p className="text-xs text-slate-500 mt-2 line-clamp-2">
+                            {plan.description}
+                          </p>
                           <div className="flex gap-3 mt-3 text-[10px] font-semibold text-slate-500">
-                            <span>{tx("Age")}{" "}{plan.entry_age_min}–{plan.entry_age_max}</span>
+                            <span>
+                              {tx("Age")} {plan.entry_age_min}–
+                              {plan.entry_age_max}
+                            </span>
                             <span>·</span>
-                            <span>{tx("Term")}{" "}{plan.term_min_years}–{plan.term_max_years}{" "}{tx("yrs")}</span>
+                            <span>
+                              {tx("Term")} {plan.term_min_years}–
+                              {plan.term_max_years} {tx("yrs")}
+                            </span>
                           </div>
                         </button>
                       );
@@ -2408,131 +3653,189 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                   </div>
                 )}
 
-                {selectedPlanId && (() => {
-                  const plan = availablePlans.find((p) => p.id === selectedPlanId);
-                  if (!plan) return null;
+                {selectedPlanId &&
+                  (() => {
+                    const plan = availablePlans.find(
+                      (p) => p.id === selectedPlanId,
+                    );
+                    if (!plan) return null;
 
-                  const currentIncome = parseFloat(String(watch("declaredIncome") || 0));
-                  const maxIncomeCoverage = currentIncome > 0 && plan.max_income_multiple ? currentIncome * plan.max_income_multiple : null;
+                    const currentIncome = parseFloat(
+                      String(watch("declaredIncome") || 0),
+                    );
+                    const maxIncomeCoverage =
+                      currentIncome > 0 && plan.max_income_multiple
+                        ? currentIncome * plan.max_income_multiple
+                        : null;
 
-                  const coverageVal = watch("policyCoverage");
-                  const termVal = watch("policyTerm");
+                    const coverageVal = watch("policyCoverage");
+                    const termVal = watch("policyTerm");
 
-                  const coverageNum = parseFloat(String(coverageVal || 0));
-                  const termNum = parseInt(String(termVal || 0));
+                    const coverageNum = parseFloat(String(coverageVal || 0));
+                    const termNum = parseInt(String(termVal || 0));
 
-                  const isTermOutOfRange = termVal !== undefined && termVal !== "" && (termNum < plan.term_min_years || termNum > plan.term_max_years);
-                  const isCoverageOverLimit = coverageVal !== undefined && coverageVal !== "" && maxIncomeCoverage !== null && coverageNum > maxIncomeCoverage;
+                    const isTermOutOfRange =
+                      termVal !== undefined &&
+                      termVal !== "" &&
+                      (termNum < plan.term_min_years ||
+                        termNum > plan.term_max_years);
+                    const isCoverageOverLimit =
+                      coverageVal !== undefined &&
+                      coverageVal !== "" &&
+                      maxIncomeCoverage !== null &&
+                      coverageNum > maxIncomeCoverage;
 
-                  const customerDob = watch("dob");
-                  let ageNotice: string | null = null;
-                  if (customerDob) {
-                    const bYear = new Date(customerDob).getFullYear();
-                    if (!isNaN(bYear)) {
-                      const age = new Date().getFullYear() - bYear;
-                      if (age < plan.entry_age_min || age > plan.entry_age_max) {
-                        ageNotice = `Customer age (${age} yrs) is outside allowed entry age range (${plan.entry_age_min}–${plan.entry_age_max} yrs) for ${plan.label}.`;
+                    const customerDob = watch("dob");
+                    let ageNotice: string | null = null;
+                    if (customerDob) {
+                      const bYear = new Date(customerDob).getFullYear();
+                      if (!isNaN(bYear)) {
+                        const age = new Date().getFullYear() - bYear;
+                        if (
+                          age < plan.entry_age_min ||
+                          age > plan.entry_age_max
+                        ) {
+                          ageNotice = `Customer age (${age} yrs) is outside allowed entry age range (${plan.entry_age_min}–${plan.entry_age_max} yrs) for ${plan.label}.`;
+                        }
                       }
                     }
-                  }
 
-                  return (
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
-                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">{tx("Plan Configuration")}</h4>
+                    return (
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
+                        <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                          {tx("Plan Configuration")}
+                        </h4>
 
-                      {ageNotice && (
-                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 font-medium flex items-center gap-2">
-                          <span>⚠️ {ageNotice}</span>
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className={`${hl("policyCoverage")}`}>
-                          <label className="text-xs font-semibold text-slate-600">
-                            {tx("Coverage Amount (PKR) *")}
-                          </label>
-                          <input
-                            type="number"
-                            min={0}
-                            {...register("policyCoverage")}
-                            placeholder="e.g. 5000000"
-                            className={`w-full bg-white border ${isCoverageOverLimit || errors.policyCoverage ? 'border-red-500 bg-red-50/20 ring-1 ring-red-500 text-red-900' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
-                          />
-                          {isCoverageOverLimit ? (
-                            <span className="block text-[11px] font-semibold text-red-600 mt-1">
-                              {tx("❌ Exceeds max limit of PKR")}{" "}{maxIncomeCoverage!.toLocaleString()} ({plan.max_income_multiple}{tx("× declared income)")}
-                            </span>
-                          ) : errors.policyCoverage ? (
-                            <span className="text-[10px] text-red-500">{errors.policyCoverage.message}</span>
-                          ) : (
-                            <p className="text-[10px] text-slate-400">
-                              {maxIncomeCoverage ? tx("Max limit: PKR {0} ({1}× declared income)", { 0: maxIncomeCoverage.toLocaleString(), 1: plan.max_income_multiple }) : tx("Max {0}× declared income", { 0: plan.max_income_multiple })}
-                            </p>
-                          )}
-                        </div>
-                        <div className={`${hl("policyTerm")}`}>
-                          <label className="text-xs font-semibold text-slate-600">
-                            {tx("Policy Term (Years) *")}
-                          </label>
-                          <input
-                            type="number"
-                            min={plan.term_min_years}
-                            max={plan.term_max_years}
-                            {...register("policyTerm")}
-                            className={`w-full bg-white border ${isTermOutOfRange || errors.policyTerm ? 'border-red-500 bg-red-50/20 ring-1 ring-red-500 text-red-900' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
-                          />
-                          {isTermOutOfRange ? (
-                            <span className="block text-[11px] font-semibold text-red-600 mt-1">
-                              {tx("❌ Invalid term: Must be between")}{" "}{plan.term_min_years}–{plan.term_max_years}{" "}{tx("yrs")}
-                            </span>
-                          ) : errors.policyTerm ? (
-                            <span className="text-[10px] text-red-500">{errors.policyTerm.message}</span>
-                          ) : (
-                            <p className="text-[10px] text-slate-400">
-                              {tx("Allowed range:")}{" "}{plan.term_min_years}–{plan.term_max_years}{" "}{tx("years")}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      {plan.insurance_type === "CHILD_EDUCATION_MARRIAGE" && (
-                        <>
-                          <hr className="border-slate-200" />
-                          <h5 className="text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("Dependent / Child Details")}</h5>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-1">
-                              <label className="text-xs font-semibold text-slate-600">{tx("Dependent Name *")}</label>
-                              <input
-                                type="text"
-                                {...register("policyDependentName")}
-                                placeholder={tx("Child's full name")}
-                                className={`w-full bg-white border ${errors.policyDependentName ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
-                              />
-                              {errors.policyDependentName && <span className="text-[10px] text-red-500">{errors.policyDependentName.message}</span>}
-                            </div>
-                            <div className="space-y-1">
-                              <label className="text-xs font-semibold text-slate-600">{tx("Dependent Date of Birth")}</label>
-                              <input
-                                type="date"
-                                {...register("policyDependentDob")}
-                                className={`w-full bg-white border ${errors.policyDependentDob ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
-                              />
-                              {errors.policyDependentDob && <span className="text-[10px] text-red-500">{errors.policyDependentDob.message}</span>}
-                            </div>
+                        {ageNotice && (
+                          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 font-medium flex items-center gap-2">
+                            <span>⚠️ {ageNotice}</span>
                           </div>
-                        </>
-                      )}
-                    </div>
-                  );
-                })()}
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className={`${hl("policyCoverage")}`}>
+                            <label className="text-xs font-semibold text-slate-600">
+                              {tx("Sum Assured (PKR) *")}
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              {...register("policyCoverage")}
+                              placeholder="e.g. 5000000"
+                              className={`w-full bg-white border ${isCoverageOverLimit || errors.policyCoverage ? "border-red-500 bg-red-50/20 ring-1 ring-red-500 text-red-900" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
+                            />
+                            {isCoverageOverLimit ? (
+                              <span className="block text-[11px] font-semibold text-red-600 mt-1">
+                                {tx("❌ Exceeds max limit of PKR")}{" "}
+                                {maxIncomeCoverage!.toLocaleString()} (
+                                {plan.max_income_multiple}
+                                {tx("× declared income)")}
+                              </span>
+                            ) : errors.policyCoverage ? (
+                              <span className="text-[10px] text-red-500">
+                                {errors.policyCoverage.message}
+                              </span>
+                            ) : (
+                              <p className="text-[10px] text-slate-400">
+                                {maxIncomeCoverage
+                                  ? tx(
+                                      "Max limit: PKR {0} ({1}× declared income)",
+                                      {
+                                        0: maxIncomeCoverage.toLocaleString(),
+                                        1: plan.max_income_multiple,
+                                      },
+                                    )
+                                  : tx("Max {0}× declared income", {
+                                      0: plan.max_income_multiple,
+                                    })}
+                              </p>
+                            )}
+                          </div>
+                          <div className={`${hl("policyTerm")}`}>
+                            <label className="text-xs font-semibold text-slate-600">
+                              {tx("Policy Term (Years) *")}
+                            </label>
+                            <input
+                              type="number"
+                              min={plan.term_min_years}
+                              max={plan.term_max_years}
+                              {...register("policyTerm")}
+                              className={`w-full bg-white border ${isTermOutOfRange || errors.policyTerm ? "border-red-500 bg-red-50/20 ring-1 ring-red-500 text-red-900" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
+                            />
+                            {isTermOutOfRange ? (
+                              <span className="block text-[11px] font-semibold text-red-600 mt-1">
+                                {tx("❌ Invalid term: Must be between")}{" "}
+                                {plan.term_min_years}–{plan.term_max_years}{" "}
+                                {tx("yrs")}
+                              </span>
+                            ) : errors.policyTerm ? (
+                              <span className="text-[10px] text-red-500">
+                                {errors.policyTerm.message}
+                              </span>
+                            ) : (
+                              <p className="text-[10px] text-slate-400">
+                                {tx("Allowed range:")} {plan.term_min_years}–
+                                {plan.term_max_years} {tx("years")}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {plan.insurance_type === "CHILD_EDUCATION_MARRIAGE" && (
+                          <>
+                            <hr className="border-slate-200" />
+                            <h5 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                              {tx("Dependent / Child Details")}
+                            </h5>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="space-y-1">
+                                <label className="text-xs font-semibold text-slate-600">
+                                  {tx("Dependent Name *")}
+                                </label>
+                                <input
+                                  type="text"
+                                  {...register("policyDependentName")}
+                                  placeholder={tx("Child's full name")}
+                                  className={`w-full bg-white border ${errors.policyDependentName ? "border-red-400" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
+                                />
+                                {errors.policyDependentName && (
+                                  <span className="text-[10px] text-red-500">
+                                    {errors.policyDependentName.message}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-xs font-semibold text-slate-600">
+                                  {tx("Dependent Date of Birth")}
+                                </label>
+                                <input
+                                  type="date"
+                                  {...register("policyDependentDob")}
+                                  className={`w-full bg-white border ${errors.policyDependentDob ? "border-red-400" : "border-slate-200"} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
+                                />
+                                {errors.policyDependentDob && (
+                                  <span className="text-[10px] text-red-500">
+                                    {errors.policyDependentDob.message}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                 {!selectedPlanId && availablePlans.length > 0 && (
-                  <p className="text-xs text-slate-400 text-center mt-2 italic">{tx("No plan selected — you can skip this step and assign a plan later.")}</p>
+                  <p className="text-xs text-slate-400 text-center mt-2 italic">
+                    {tx(
+                      "No plan selected — you can skip this step and assign a plan later.",
+                    )}
+                  </p>
                 )}
               </div>
             </div>
           )}
-
         </form>
 
         {/* Footer */}
@@ -2548,7 +3851,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
           </div>
           <div className="flex gap-3">
             {(() => {
-              const currentIdx = formTabs.findIndex(t => t.id === formTab);
+              const currentIdx = formTabs.findIndex((t) => t.id === formTab);
               return (
                 <>
                   {currentIdx > 0 && (
@@ -2575,7 +3878,11 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                         disabled={formLoading}
                         className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 rounded-lg shadow-sm cursor-pointer"
                       >
-                        {formLoading ? tx("Saving...") : isCreate ? tx("Register Customer") : tx("Update Profile")}
+                        {formLoading
+                          ? tx("Saving...")
+                          : isCreate
+                            ? tx("Register Customer")
+                            : tx("Update Profile")}
                       </button>
                     </div>
                   ) : (
@@ -2585,7 +3892,11 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       disabled={formLoading}
                       className="px-6 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 rounded-lg shadow-sm cursor-pointer"
                     >
-                      {formLoading ? tx("Saving Profile...") : isCreate ? tx("Register Customer") : tx("Update Profile")}
+                      {formLoading
+                        ? tx("Saving Profile...")
+                        : isCreate
+                          ? tx("Register Customer")
+                          : tx("Update Profile")}
                     </button>
                   )}
                 </>
@@ -2593,7 +3904,6 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
             })()}
           </div>
         </div>
-
       </div>
     </div>
   );

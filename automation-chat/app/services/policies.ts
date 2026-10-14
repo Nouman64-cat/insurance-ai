@@ -39,6 +39,9 @@ export interface PremiumBreakdown {
   base_premium: number;
   loading_amount: number;
   policy_fee: number;
+  /** Stamp duty; absent on quotes priced before stamp duty and tax were split. */
+  stamp_duty_amount?: number;
+  /** Sales tax. */
   tax_amount: number;
   total_premium: number;
 }

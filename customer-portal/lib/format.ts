@@ -1,8 +1,8 @@
+import { displayDate, displayDateTime } from './dateDisplay';
 import type { Locale } from "./i18n/config";
 
-// Digits stay Latin in both languages (as on the rest of the platform); month names and grouping follow the language.
+// Dates use the platform display format; monetary digits stay Latin.
 const NUM = "en-PK";
-const dateLocale = (l: Locale) => (l === "ur" ? "ur-PK-u-nu-latn" : "en-GB");
 
 export function money(value: number | null | undefined, _locale?: Locale): string {
   if (value == null || Number.isNaN(value)) return "—";
@@ -22,11 +22,11 @@ export function compactMoney(value: number | null | undefined): string {
   return money(value);
 }
 
-export function date(value: string | null | undefined, locale: Locale = "en"): string {
+export function date(value: string | null | undefined, _locale: Locale = "en"): string {
   if (!value) return "—";
   const d = new Date(value.length === 10 ? `${value}T00:00:00` : value);
   if (Number.isNaN(d.getTime())) return "—";
-  return new Intl.DateTimeFormat(dateLocale(locale), { day: "numeric", month: "short", year: "numeric" }).format(d);
+  return displayDate(d);
 }
 
 export function dateTime(value: string | null | undefined, locale: Locale = "en"): string {
@@ -34,7 +34,7 @@ export function dateTime(value: string | null | undefined, locale: Locale = "en"
   const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(value) ? value : `${value}Z`;   // the API sends UTC without a zone suffix
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  return new Intl.DateTimeFormat(dateLocale(locale), { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(d);
+  return displayDateTime(d);
 }
 
 export function daysUntil(value: string | null | undefined): number | null {

@@ -479,6 +479,10 @@ class MedicalInviteResponse(BaseModel):
     link_path: str
     expires_at: datetime
     status: MedicalExamStatusEnum
+    # The link is also emailed to the customer: who it went to, and
+    # "sent" | "failed" | "no_email" (no address on record).
+    emailed_to: Optional[str] = None
+    email_status: str = "no_email"
 
 
 @router.post(
@@ -493,7 +497,7 @@ async def invite_medical_exam(
 ):
     """Issue the customer a tokenized link to pick their panel clinic and slot."""
     user = await _get_current_user(token, session)
-    await _get_case(session, tenant_id, case_id)
+    case = await _get_case(session, tenant_id, case_id)
 
     order = await _load_order(session, case_id)
     if order is None or order.status == MedicalExamStatusEnum.NOT_ASSESSED:
@@ -523,11 +527,19 @@ async def invite_medical_exam(
     session.add(order)
     await session.commit()
 
+    from services.customer_links import email_customer_link
+    link_path = f"/medical-exam/{raw_token}"
+    delivery = await email_customer_link(
+        session, kind="medical_exam", tenant_id=tenant_id, case=case,
+        link_path=link_path, expires_at=expires_at,
+        tests=[t.get("name") for t in (order.required_tests or []) if t.get("name")],
+    )
     return MedicalInviteResponse(
         token=raw_token,
-        link_path=f"/medical-exam/{raw_token}",
+        link_path=link_path,
         expires_at=expires_at,
         status=order.status,
+        **delivery,
     )
 
 

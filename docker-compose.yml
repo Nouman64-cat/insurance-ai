@@ -164,6 +164,8 @@ services:
       CUSTOMER_MANAGEMENT_URL: http://customer-management:8009
       CUSTOMER_PORTAL_URL: ${CUSTOMER_PORTAL_URL:-http://localhost:3009/login}
       PORTAL_PROVISIONING_MODE: ${PORTAL_PROVISIONING_MODE:-dual}
+      # Public origin of the pages customers open from emailed links (/e-application, /medical-exam).
+      PORTAL_PUBLIC_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000}
     depends_on:
       kafka:
         condition: service_healthy

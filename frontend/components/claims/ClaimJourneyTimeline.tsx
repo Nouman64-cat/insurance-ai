@@ -1,4 +1,5 @@
 "use client";
+import { displayDate } from "@/lib/dateDisplay";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ClaimStatusHistoryItem } from "@/app/services/claims";
@@ -8,7 +9,7 @@ const STEP_PX = 320;
 
 const splitStamp = (iso: string) => {
   const [date = "", time = ""] = iso.replace("T", " ").slice(0, 16).split(" ");
-  return { date, time };
+  return { date: displayDate(date), time };
 };
 
 /**

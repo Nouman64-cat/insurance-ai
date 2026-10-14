@@ -1,3 +1,4 @@
+import { displayDate } from './dateDisplay';
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared presentation helpers + the AIDecision union.
 //
@@ -34,7 +35,7 @@ export function fmtIncome(n: number): string {
 }
 
 export function fmtDob(dob: string): string {
-  return new Date(dob).toLocaleDateString("en-GB", {
+  return displayDate(dob, {
     day: "numeric",
     month: "long",
     year: "numeric",

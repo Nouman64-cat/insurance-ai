@@ -1,4 +1,5 @@
 "use client";
+import { displayDate } from "../../lib/dateDisplay";
 
 import { useEffect, useState } from "react";
 import { issuePolicy, initiatePayment, confirmPayment, listPolicyDocuments, downloadDocument, PolicyListItem, IssuanceResult, PaymentMethod, PaymentConfirmResult, fmtPKR } from "@/app/services/policies";
@@ -220,8 +221,8 @@ export function SuccessModal({ result, policyName, onClose }: SuccessModalProps)
           {[
             { label: "Policy Number", value: result.policy_number },
             { label: "Status", value: result.status },
-            { label: "Effective Date", value: result.effective_date },
-            { label: "Expiry Date", value: result.expiry_date },
+            { label: "Effective Date", value: displayDate(result.effective_date) },
+            { label: "Expiry Date", value: displayDate(result.expiry_date) },
             { label: isPending ? "Amount Due" : "Total Annual Premium", value: fmtPKR(result.amount_due ?? result.premium_breakdown?.total_premium ?? result.payment?.amount ?? 0) },
             ...(isPending && result.payment ? [{ label: "Payment Reference", value: result.payment.reference }] : []),
             { label: "Documents Generated", value: `${result.documents_generated} documents (stubbed)` },

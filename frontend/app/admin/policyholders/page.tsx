@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../../lib/dateDisplay';
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -492,7 +493,7 @@ export default function PolicyholdersPage() {
                         <td className="px-6 py-4 text-slate-600">{p.contact_info}</td>
                         <td className="px-6 py-4 text-slate-500 font-mono text-xs">{p.primaryIdentifier || "-"}</td>
                         <td className="px-6 py-4 text-blue-700 font-mono font-semibold text-xs">{p.policy_number || "-"}</td>
-                        <td className="px-6 py-4 text-slate-500">{new Date(p.created_at).toLocaleDateString()}</td>
+                        <td className="px-6 py-4 text-slate-500">{displayDate(p.created_at)}</td>
                         <td className="px-6 py-4 text-right space-x-3">
                           <button 
                             onClick={(e) => { e.stopPropagation(); handleRowClick(p); }} 

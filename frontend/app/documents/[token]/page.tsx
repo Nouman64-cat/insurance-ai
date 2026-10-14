@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../../lib/dateDisplay';
 // Public document submission — no login. Reached through the link staff share from a proposal (the proposal's
 // "Documents" section). The customer sees the documents their plan requires and uploads each one.
 // Like the e-application page, this deliberately does NOT use app/services/api.ts: that shared instance redirects to
@@ -211,7 +212,7 @@ export default function DocumentsPage({ params }: { params: { token: string } })
                       {doc.files.map((f, i) => (
                         <li key={`${f.file_name}-${i}`} className="flex items-center justify-between gap-3 text-xs text-slate-600">
                           <span className="truncate">{f.file_name}</span>
-                          <span className="shrink-0 text-slate-400">{new Date(f.uploaded_at).toLocaleDateString()}</span>
+                          <span className="shrink-0 text-slate-400">{displayDate(f.uploaded_at)}</span>
                         </li>
                       ))}
                     </ul>

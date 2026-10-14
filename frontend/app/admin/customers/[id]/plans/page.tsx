@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate, displayDateTime } from '../../../../../lib/dateDisplay';
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import api from "@/app/services/api";
@@ -295,7 +296,7 @@ export default function CustomerPlansPage() {
                         </div>
                         <div>
                           <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">{tx("Dependent Date of Birth")}</span>
-                          <span className="text-sm font-medium text-slate-800">{policy.dependent_dob || "—"}</span>
+                          <span className="text-sm font-medium text-slate-800">{displayDate(policy.dependent_dob)}</span>
                         </div>
                       </>
                     )}
@@ -303,7 +304,7 @@ export default function CustomerPlansPage() {
                     <div className="col-span-2">
                       <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">{tx("Evaluated On")}</span>
                       <span className="text-sm font-medium text-slate-600">
-                        {new Date(policy.created_at).toLocaleString(undefined, {
+                        {displayDateTime(policy.created_at, {
                           year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
                         })}
                       </span>

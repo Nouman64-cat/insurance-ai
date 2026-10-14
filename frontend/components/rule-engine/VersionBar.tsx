@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../lib/dateDisplay';
 import { useState } from "react";
 import { RuleVersionDetail } from "@/app/services/ruleEngine";
 import { tx } from "@/lib/i18n/tx";
@@ -14,7 +15,7 @@ interface Props {
 }
 
 function formatEffectiveDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return displayDate(iso, { month: "short", day: "numeric", year: "numeric" });
 }
 
 function statusClasses(status: string): string {

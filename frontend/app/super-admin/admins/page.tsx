@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../../lib/dateDisplay';
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -536,7 +537,7 @@ function AdminManagementContent() {
                           </span>
                         </td>
                         <td className="px-5 py-3 text-xs text-slate-500 whitespace-nowrap">
-                          {new Date(admin.created_at).toLocaleDateString(undefined, {
+                          {displayDate(admin.created_at, {
                             year: "numeric",
                             month: "short",
                             day: "numeric",

@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../lib/dateDisplay';
 import React from "react";
 import {
   BASIS_LABELS,
@@ -488,7 +489,7 @@ export function StageTimeline({
                 <p className="text-[10px] text-slate-500 font-medium leading-tight">{s.reason}</p>
                 {s.releasedAt && (
                   <p className="text-[9px] text-emerald-600 font-bold mt-1 bg-emerald-100/60 px-1.5 py-0.5 rounded inline-block">
-                    {tx("✓ Paid")}{" "}{s.releasedAt}
+                    {tx("✓ Paid")}{" "}{displayDate(s.releasedAt)}
                   </p>
                 )}
               </div>

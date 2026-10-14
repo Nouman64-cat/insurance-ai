@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../lib/dateDisplay';
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { tx } from "@/lib/i18n/tx";
 
@@ -83,7 +84,7 @@ export function Priority({ value }: { value: PriorityCode }) {
 
 export function formatDate(value: string | null | undefined, withTime = false): string {
   if (!value) return "—";
-  return new Date(value).toLocaleString(undefined, withTime
+  return displayDate(value, withTime
     ? { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
     : { year: "numeric", month: "short", day: "numeric" });
 }

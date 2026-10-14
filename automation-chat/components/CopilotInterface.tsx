@@ -1,4 +1,5 @@
 "use client";
+import { displayDate, displayDateTime } from '../lib/dateDisplay';
 import { isRevisionText, revision } from "../lib/agent/revision";
 import { confirmationAnswer } from "@/lib/voice/protocol";
 
@@ -1743,7 +1744,7 @@ export function CopilotInterface() {
       `- **Annual premium:** ${pkr(d.total_premium)} (${pkr(d.base_premium)} + risk loading ${pkr(d.loading_applied)})`;
     const ref = `Ref ${d.quote_id.slice(0, 8).toUpperCase()}`;
     const missing = missingCustomerFields(d);
-    const created = new Date(d.created_at).toLocaleDateString(undefined, {
+    const created = displayDate(d.created_at, {
       year: "numeric",
       month: "long",
       day: "numeric",
@@ -4571,7 +4572,7 @@ export function CopilotInterface() {
       const lines = [
         `# ${title}`,
         "",
-        `_Created ${new Date(session.date).toLocaleString()} · Exported ${exportedAt.toLocaleString()}_`,
+        `_Created ${displayDateTime(session.date)} · Exported ${displayDateTime(exportedAt)}_`,
         "",
       ];
       for (const m of msgs) {
@@ -5118,7 +5119,7 @@ export function CopilotInterface() {
                 setSuccessModalResult(null);
 
                 const total = res.premium_breakdown?.total_premium || 0;
-                const msg = `Policy **${res.policy_number}** drafted for **${caseNum}** ✅\n\n- Status: **Pending Payment**\n- Effective: ${res.effective_date}\n- Expiry: ${res.expiry_date}\n- Total Premium: PKR ${total.toLocaleString()}\n- Payment Reference: ${res.payment?.reference || "—"}\n\nConfirm payment to activate coverage and bind the contract.`;
+                const msg = `Policy **${res.policy_number}** drafted for **${caseNum}** ✅\n\n- Status: **Pending Payment**\n- Effective: ${displayDate(res.effective_date)}\n- Expiry: ${displayDate(res.expiry_date)}\n- Total Premium: PKR ${total.toLocaleString()}\n- Payment Reference: ${res.payment?.reference || "—"}\n\nConfirm payment to activate coverage and bind the contract.`;
 
                 resolveInterrupt({
                   success: true,
@@ -5158,7 +5159,7 @@ export function CopilotInterface() {
                 const caseNum = successModalResult.caseNumber;
                 setSuccessModalResult(null);
 
-                const msg = `🎉 Policy **${res.policy_number}** is now **Active**!\n\n- Coverage bound effective: ${res.effective_date}\n- Expiry: ${res.expiry_date}\n- Free-look period ends: ${res.free_look_end_date}\n- Payment: ${res.payment?.reference || "—"}\n\nThe case has been closed and the customer promoted to Policyholder.\nThis policy is now visible in the **Post-Issuance** section.`;
+                const msg = `🎉 Policy **${res.policy_number}** is now **Active**!\n\n- Coverage bound effective: ${displayDate(res.effective_date)}\n- Expiry: ${displayDate(res.expiry_date)}\n- Free-look period ends: ${displayDate(res.free_look_end_date)}\n- Payment: ${res.payment?.reference || "—"}\n\nThe case has been closed and the customer promoted to Policyholder.\nThis policy is now visible in the **Post-Issuance** section.`;
 
                 resolveInterrupt({
                   success: true,

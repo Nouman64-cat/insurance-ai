@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDate } from '../../lib/dateDisplay';
 import React, { useState } from "react";
 import {
   INCENTIVE_SCHEMES,
@@ -233,7 +234,7 @@ export default function IncentivesTab({
                     <td className="p-3 font-mono font-bold text-blue-700">
                       {s.rewardAmount !== null ? fmtPKR(s.rewardAmount) : tx("{0}% of 1st-Year Earnings", { 0: s.rewardPct })}
                     </td>
-                    <td className="p-3 text-[10px] text-slate-500">{s.measuredAt}</td>
+                    <td className="p-3 text-[10px] text-slate-500">{displayDate(s.measuredAt)}</td>
                     <td className="p-3 text-center">
                       <button
                         onClick={() => handleToggleActive(s)}

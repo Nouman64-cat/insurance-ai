@@ -1,5 +1,6 @@
 "use client";
 
+import { displayDateTime } from '../../lib/dateDisplay';
 import { useCallback, useEffect, useState } from "react";
 import {
   getReinsurance, referToReinsurer, recordReinsurerResponse, applyReinsurerTerms, withdrawReferral,
@@ -229,7 +230,7 @@ export function ReinsurancePanel({ policyId, onChanged }: ReinsurancePanelProps)
               <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{tx("Slip placed with")}</p>
               <p className="text-sm font-bold text-slate-900">{referral.reinsurer?.name ?? tx("Reinsurer Panel")}</p>
               <p className="text-[11px] text-slate-500">
-                {referral.submitted_at ? tx("Submitted {0}", { 0: new Date(referral.submitted_at).toLocaleString() }) : tx("Not submitted")}
+                {referral.submitted_at ? tx("Submitted {0}", { 0: displayDateTime(referral.submitted_at) }) : tx("Not submitted")}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">

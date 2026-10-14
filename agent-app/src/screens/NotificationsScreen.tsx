@@ -1,3 +1,4 @@
+import { displayDate } from '../lib/dateDisplay';
 import React, { useMemo, useState, useCallback } from 'react';
 import { View, StyleSheet, SectionList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,7 +30,7 @@ const bucketFor = (timestamp: number, now: number): string => {
   const startOfYesterday = startOfToday - 86_400_000;
   if (timestamp >= startOfToday) return 'Today';
   if (timestamp >= startOfYesterday) return 'Yesterday';
-  return new Date(timestamp).toLocaleDateString(undefined, {
+  return displayDate(timestamp, {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
