@@ -97,8 +97,8 @@ actions with tools. Never pretend to act — always call the tool.
 ## AUTONOMOUS UNDERWRITING JOURNEY (preferred for end-to-end requests)
 
 **start_underwriting_journey** runs the ENTIRE 8-stage pipeline autonomously: \
-Intake → Case → Proposal → Pre-Underwriting Clearance (6 Gates) → Document Audit → AI Risk Assessment → Decision → Closure. \
-It automatically verifies the 6 pre-underwriting gates (E-Application, Agent Confidential Report, Compliance/PEP, Initial Premium Payment, Insurance History Check, Medical Examination), auto-approves/declines on the risk bands, and suspends only for missing documents or human review. Use it whenever the user wants an application processed end-to-end \
+Intake → Case → Proposal → Pre-Underwriting Clearance (5 Gates) → Document Audit → AI Risk Assessment → Decision → Closure. \
+It automatically verifies the 5 pre-underwriting gates (E-Application, Agent Confidential Report, Compliance/PEP, Insurance History Check, Medical Examination), auto-approves/declines on the risk bands, and suspends only for missing documents or human review. Use it whenever the user wants an application processed end-to-end \
 ("underwrite Fatima", "process this application", "run the whole flow", "with demo data"). \
 Call it IMMEDIATELY with just the name or CNIC — it resolves existing customers itself \
 and applies product defaults; never pre-ask for DOB/income/product before calling. \
@@ -119,16 +119,15 @@ When the user changes direction, revise the pending plan rather than restarting 
 1. **add_customer / add_organization / add_family_group** → Register the applicant. **CRITICAL:** If the user asks to "add a customer" but does not specify the type, call **resolve_customer_type** — do NOT ask which type it is yourself in plain text, the tool presents Individual / Corporate (Organization) / Family group as clickable buttons and its result tells you which of `add_customer` / `add_organization` / `add_family_group` to call next.
 2. create_case → open the underwriting case
 3. create_proposal → NEVER ask the user to type product details manually. If you don't know the product_name, just call the tool with the applicant's name/CNIC and the system will automatically fetch the catalog and present the user with plan buttons to click.
-4. **Pre-Underwriting Gates (Strictly Sequential 6 Gates):**
-   - The portal enforces 6 distinct, sequential pre-underwriting clearance gates before risk assessment can be run. In interactive workflows, you MUST guide the user step-by-step through each gate in order and NEVER suggest or run bulk clearance in one command:
+4. **Pre-Underwriting Gates (Strictly Sequential 5 Gates):**
+   - The portal enforces 5 distinct, sequential pre-underwriting clearance gates before risk assessment can be run. In interactive workflows, you MUST guide the user step-by-step through each gate in order and NEVER suggest or run bulk clearance in one command:
      - **Gate 1: Customer E-Application** → `verify_e_application`. **CRITICAL:** The E-Application is filled by the customer themselves. Calling this tool generates the public tokenized link (e.g. `http://localhost:3000/e-application/<token>`). You MUST provide this link in chat so the user can share it with the customer. Once submitted by the customer, call `verify_e_application` with `action="verify"` to approve it.
      - **Gate 2: Agent Confidential Report (ACR)** → `submit_agent_confidential_report` (Agent KYC & risk recommendation). *Prerequisite: Gate 1 Verified.* For staff this sends an ACR request to the customer's acquisition source (agent/broker/bank desk), who files it in the agent app; the chat resumes on its own when it's submitted — just relay the request message.
      - **Gate 3: PEP / Sanctions Screening** → `run_compliance_screening` (AML/PEP screening). *Prerequisite: Gate 2 Submitted.*
-     - **Gate 4: Initial Premium Payment (IPP)** → `process_initial_premium_payment` (Section 30 statutory payment). *Prerequisite: Gate 3 Cleared.*
-     - **Gate 5: SECP Insurance History** → `run_insurance_history_check` (Cross-insurer multi-policy & HLV check). *Prerequisite: Gate 4 Realized.*
-     - **Gate 6: Medical Examination (NML)** → `assess_medical_examination` (Non-medical limit grid & clinic check). *Prerequisite: Gate 5 Clear.*
-   - `get_pre_underwriting_status` → View the 6-gate progress table at any time.
-   - *Note: Risk assessment (`run_risk_assessment`) strictly requires all 6 pre-underwriting gates to be satisfied first.*
+     - **Gate 4: SECP Insurance History** → `run_insurance_history_check` (Cross-insurer multi-policy & HLV check). *Prerequisite: Gate 3 Cleared.*
+     - **Gate 5: Medical Examination (NML)** → `assess_medical_examination` (Non-medical limit grid & clinic check). *Prerequisite: Gate 4 Clear.*
+   - `get_pre_underwriting_status` → View the 5-gate progress table at any time.
+   - *Note: Risk assessment (`run_risk_assessment`) strictly requires all 5 pre-underwriting gates to be satisfied first.*
    - **CRITICAL:** NEVER tell the user "the next required step is Gate N" (or name a specific gate)
      as plain narration with no tool call that turn — quick-action buttons can only ever be attached
      to a tool's result, never to bare text. Whenever you're about to state which gate comes next,
@@ -450,7 +449,7 @@ AGENT_ROLE_RESTRICTION_TEMPLATE = (
 AGENT_MOBILE_ROLE_RESTRICTION_TEMPLATE = (
     "\n\nCRITICAL ROLE & AUTHORIZATION INSTRUCTION: The current active user is an Agent on the "
     "mobile field app. Your authorized scope covers onboarding a case end-to-end through pre-underwriting: "
-    "lead/customer intake, proposals, and all 6 pre-underwriting gates (E-Application, Agent's Confidential "
+    "lead/customer intake, proposals, and all 5 pre-underwriting gates (E-Application, Agent's Confidential "
     "Report, Compliance/PEP screening, Initial Premium Payment, Insurance History, and Medical Examination "
     "booking).\n"
     "- You MUST NOT run AI Risk Assessment, or anything after it — case approval/rejection, pre-issuance "
@@ -1439,7 +1438,7 @@ async def _permission_gate(state: ChatState) -> Command:
     if not is_role_allowed(name, state["user_role"], platform):
         if platform == "mobile" and name in MOBILE_PORTAL_ONLY_TOOLS:
             msg = (
-                "This app covers onboarding through Gate 6 (Medical Examination). "
+                "This app covers onboarding through Gate 5 (Medical Examination). "
                 "Once the medical exam is booked, AI Risk Assessment and everything after it "
                 "— review, approval, and policy issuance — happens on the web portal. "
                 "Please continue there for this step."
@@ -1463,7 +1462,7 @@ async def _permission_gate(state: ChatState) -> Command:
         consumed_lead_agent = True
         # "Add demo data" in the guided intake creates the demo customer with a Draft
         # proposal and hands over to the proposal steps. The model sometimes sets
-        # full_journey, which instead auto-runs case, proposal and all six gates and
+        # full_journey, which instead auto-runs case, proposal and all five gates and
         # lands on risk assessment — a different, shorter route that depended on its
         # mood. Inside the intake it is never wanted, so it is never allowed.
         if name == "quick_start_workflow":

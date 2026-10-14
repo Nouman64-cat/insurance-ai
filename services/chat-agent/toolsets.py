@@ -63,7 +63,7 @@ CORE_TOOLS: set[str] = {
     "quick_start_workflow",
     "start_underwriting_journey",
     "continue_underwriting_journey",
-    # The 6 pre-underwriting gates, risk assessment and the policy lifecycle.
+    # The 5 pre-underwriting gates, risk assessment and the policy lifecycle.
     #
     # These are core rather than scoped packs for a correctness reason, not a
     # cost one: the base system prompt walks through the journey step by step
@@ -77,7 +77,6 @@ CORE_TOOLS: set[str] = {
     "submit_agent_confidential_report",
     "run_compliance_screening",
     "override_compliance_screening",
-    "process_initial_premium_payment",
     "run_insurance_history_check",
     "assess_medical_examination",
     "run_pre_underwriting_clearance",

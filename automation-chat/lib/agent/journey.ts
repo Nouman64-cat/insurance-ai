@@ -59,14 +59,13 @@ const UPCOMING_AFTER: JourneyNode[] = [
   { id: "active", label: "Payment · cover active", state: "todo" },
 ];
 
-// The 7 requirements, shown inactive until an underwriting case exists, so the
+// The 6 requirements, shown inactive until an underwriting case exists, so the
 // whole map is visible from the very first step.
 const UPCOMING_GATES: JourneyNode[] = [
   { id: "documents", label: "Mandatory documents", state: "todo" },
   { id: "e_application", label: "Customer e-application", state: "todo" },
   { id: "acr", label: "Agent confidential report", state: "todo" },
   { id: "compliance", label: "PEP & sanctions screening", state: "todo" },
-  { id: "ipp", label: "Initial premium payment", state: "todo" },
   { id: "insurance_history", label: "Insurance history", state: "todo" },
   { id: "medical_exam", label: "Medical exam / NML grid", state: "todo" },
 ];
@@ -175,9 +174,6 @@ export function journeyFromCase(d: CaseDetail): Journey {
       { waitingWhen: ["Requested"] }),
     gate("compliance", "PEP & sanctions screening", pu.compliance, ["Passed"], ["Failed", "Flagged"],
       submit("Run compliance screening", `Run compliance screening for case ${cn}`)),
-    gate("ipp", "Initial premium payment", pu.ipp, ["Realized"], ["Failed"],
-      submit("Process initial premium", `Process initial premium payment for case ${cn}`),
-      { waitingWhen: ["Initiated"] }),
     gate("insurance_history", "Insurance history", pu.insurance_history, ["Clear"], ["Flagged", "Failed"],
       submit("Run history check", `Run insurance history check for case ${cn}`)),
     gate("medical_exam", "Medical exam / NML grid", pu.medical_exam, ["NotRequired", "Completed", "Waived"], ["Expired"],

@@ -35,7 +35,6 @@ type GateField =
   | 'e_application_status'
   | 'acr_status'
   | 'compliance_status'
-  | 'ipp_status'
   | 'insurance_history_status'
   | 'medical_exam_status';
 
@@ -43,9 +42,8 @@ const GATES: Array<{ field: GateField; label: string; actionLabel: string; icon:
   { field: 'e_application_status', label: 'Gate 1 · E-Application', actionLabel: 'Send E-Application Link', icon: 'link-outline' },
   { field: 'acr_status', label: 'Gate 2 · ACR', actionLabel: 'File Confidential Report', icon: 'document-text-outline' },
   { field: 'compliance_status', label: 'Gate 3 · Compliance', actionLabel: 'Run Compliance Screening', icon: 'shield-checkmark-outline' },
-  { field: 'ipp_status', label: 'Gate 4 · Premium', actionLabel: 'Collect Initial Premium', icon: 'cash-outline' },
-  { field: 'insurance_history_status', label: 'Gate 5 · History', actionLabel: 'Run Insurance History Check', icon: 'time-outline' },
-  { field: 'medical_exam_status', label: 'Gate 6 · Medical', actionLabel: 'Assess & Invite Medical Exam', icon: 'medkit-outline' },
+  { field: 'insurance_history_status', label: 'Gate 4 · History', actionLabel: 'Run Insurance History Check', icon: 'time-outline' },
+  { field: 'medical_exam_status', label: 'Gate 5 · Medical', actionLabel: 'Assess & Invite Medical Exam', icon: 'medkit-outline' },
 ];
 
 /** The only 3 of the 6 gates an Agent can act on from the app — Compliance,

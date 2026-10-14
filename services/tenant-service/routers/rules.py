@@ -570,9 +570,9 @@ _DEFAULT_RULE_SETS = [
     },
     {
         "code": "RS-UW-001",
-        "name": "Six Pre-Underwriting Gates",
+        "name": "Pre-Underwriting Gates",
         "description": (
-            "The canonical 'done' definition for each of the six pre-underwriting clearance "
+            "The canonical 'done' definition for each of the five pre-underwriting clearance "
             "gates a case must clear before Stage-A pre-issuance can begin."
         ),
         "category_code": "UNDERWRITING_GATES", "sub_code": "PRE_UW_GATES", "sub_name": "Pre-Underwriting Gates",
@@ -595,12 +595,6 @@ _DEFAULT_RULE_SETS = [
                 "conditions": [{"field": "compliance_status", "operator": "in", "value": ["Passed"]}],
                 "action_outcome": "GATE_CLEARED",
                 "outcome_payload": {"gate": 3, "reason": "Compliance screening Passed."},
-            },
-            {
-                "code": "GATE-4", "name": "IPP Realized", "priority": 4, "operator": "ALL",
-                "conditions": [{"field": "ipp_status", "operator": "in", "value": ["Realized"]}],
-                "action_outcome": "GATE_CLEARED",
-                "outcome_payload": {"gate": 4, "reason": "Initial Premium Payment Realized."},
             },
             {
                 "code": "GATE-5", "name": "Insurance History Clear", "priority": 5, "operator": "ALL",

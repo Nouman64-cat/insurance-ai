@@ -652,11 +652,12 @@ async def get_case_detail(
     )
     medical_cleared = med_status_val in ("NotRequired", "Completed", "Waived")
 
+    # The initial premium is collected at issuance (Pending Payment), so it is
+    # reported below for reference but is not a pre-underwriting gate.
     is_pre_underwriting_ready = (
         e_app_status_val == "Verified" and
         acr_status_val in ("Submitted", "Waived") and
         comp_status_val == "Passed" and
-        ipp_status_val == "Realized" and
         hist_status_val == "Clear" and
         medical_cleared
     )

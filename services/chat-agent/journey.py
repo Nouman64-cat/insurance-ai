@@ -39,7 +39,7 @@ STAGES: dict[str, tuple[str, str]] = {
     "j_intake":             ("lead_intake",                 "Stage 1 · Lead Intake"),
     "j_case":               ("case_creation",               "Stage 2 · Case Creation"),
     "j_proposal":           ("proposal_structuring",        "Stage 3 · Proposal Structuring"),
-    "j_pre_underwriting":   ("pre_underwriting_clearance",  "Stage 4 · Pre-Underwriting Clearance (6 Gates)"),
+    "j_pre_underwriting":   ("pre_underwriting_clearance",  "Stage 4 · Pre-Underwriting Clearance (5 Gates)"),
     "j_audit":              ("document_audit",              "Stage 5 · Document Audit"),
     "j_risk":               ("risk_assessment",             "Stage 6 · AI Risk Assessment"),
     "j_decide":             ("underwriting_decision",       "Stage 7 · Underwriting Decision"),
@@ -221,7 +221,7 @@ async def j_proposal(state: ChatState) -> dict:
 
 
 async def j_pre_underwriting(state: ChatState) -> dict:
-    """Stage 4 — 6-gate Pre-Underwriting clearance (E-App, ACR, Compliance, IPP, History, Medical)."""
+    """Stage 4 — 5-gate Pre-Underwriting clearance (E-App, ACR, Compliance, History, Medical)."""
     ctx = _ctx(state)
     case_no = state.get("journey_case_number")
     cnic = state.get("journey_cnic")
@@ -234,7 +234,7 @@ async def j_pre_underwriting(state: ChatState) -> dict:
     return {
         "journey_stage": "document_audit",
         "journey_pre_underwriting": res.get("pre_underwriting_status") or {},
-        "journey_audit": _log(state, f"Pre-Underwriting clearance passed — all 6 gates verified for {case_no or cnic}"),
+        "journey_audit": _log(state, f"Pre-Underwriting clearance passed — all 5 gates verified for {case_no or cnic}"),
         **_mark("j_pre_underwriting", next_node="j_audit"),
     }
 
@@ -490,7 +490,7 @@ async def j_finish(state: ChatState) -> dict:
             # run_pre_underwriting_clearance is all-or-nothing (no mid-gate
             # pause), so a flagged/blocked gate surfaces here as a plain
             # error. Same "embed" case view as the Pending Documents branch
-            # below — this IS one of the 6 pre-underwriting gate stages, so
+            # below — this IS one of the 5 pre-underwriting gate stages, so
             # the user should be able to clear the remaining gates from the
             # in-chat case panel instead of retyping which gate to run next.
             result["quick_actions"] = [
@@ -566,9 +566,9 @@ async def j_finish(state: ChatState) -> dict:
         if outcome == "Pending Documents" or (error and state.get("journey_stage") == "pre_underwriting_clearance"):
             # Auto-open the in-chat case view the instant the journey pauses
             # here — this is the one stage the embed exists for (tracking the
-            # 6 pre-underwriting gates), so it shouldn't need an extra click.
+            # 5 pre-underwriting gates), so it shouldn't need an extra click.
             # Covers both a missing-documents pause AND a blocked/flagged
-            # gate (e.g. Compliance came back Flagged, locking IPP/History/
+            # gate (e.g. Compliance came back Flagged, locking History/
             # Medical behind it) — either way the fix happens in this same
             # case view, so open it automatically rather than making the
             # user click "Open Case" first.

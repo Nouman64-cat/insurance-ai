@@ -30,7 +30,6 @@ const GATE_DONE: Record<string, string[]> = {
   e_application_status: ['Verified'],
   acr_status: ['Submitted'],
   compliance_status: ['Passed', 'Cleared'],
-  ipp_status: ['Realized'],
   insurance_history_status: ['Clear', 'Cleared'],
   medical_exam_status: ['Completed', 'Waived', 'NotRequired'],
 };

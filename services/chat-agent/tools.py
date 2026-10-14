@@ -731,18 +731,18 @@ def quick_start_workflow(**kwargs) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Pre-Underwriting clearance (the 6 gates before risk assessment)
+# Pre-Underwriting clearance (the 5 gates before risk assessment)
 # ═══════════════════════════════════════════════════════════════════════════
 
 @tool(args_schema=CaseLookupArgs)
 def get_pre_underwriting_status(**kwargs) -> str:
-    """Fetch the status of the 6 pre-underwriting clearance gates for a case:
+    """Fetch the status of the 5 pre-underwriting clearance gates for a case:
     1. E-Application (customer medical/lifestyle form)
     2. Agent's Confidential Report (ACR - moral hazard & KYC)
     3. Compliance Screening (PEP, Sanctions, AML, SECP)
-    4. Initial Premium Payment (IPP - Section 30 "no premium, no risk")
-    5. SECP Insurance History (HLV & cumulative exposure)
-    6. Medical Examination (Non-Medical Limit NML grid & panel clinics)
+    4. SECP Insurance History (HLV & cumulative exposure)
+    5. Medical Examination (Non-Medical Limit NML grid & panel clinics)
+    The initial premium is not a gate — it is collected at policy issuance.
     Use when the user asks "check pre-underwriting status", "are gates cleared?",
     "what's pending before risk assessment?"."""
     return "{}"
@@ -804,32 +804,9 @@ def override_compliance_screening(**kwargs) -> str:
     return "{}"
 
 
-class ProcessIPPArgs(BaseModel):
-    case_number: Optional[str] = None
-    applicant_name: Optional[str] = None
-    cnic: Optional[str] = None
-    payment_method: Optional[str] = Field(default="JazzCash", description="Payment method: JazzCash, Easypaisa, Card, BankTransfer.")
-    payment_reference: Optional[str] = Field(
-        default=None,
-        description="The transaction reference the payer was issued, once they say the payment is done "
-        "(e.g. 'Confirm payment, reference JC-1A2B3C4D'). Leave unset on the first request.",
-    )
-    bypass_prerequisites: Optional[bool] = Field(
-        default=False,
-        description="Set true ONLY when the user has just confirmed they want to continue anyway "
-        "(clicked 'Yes, continue anyway') past a warning that an earlier step isn't done. Never set it on a first request.",
-    )
-
-
-@tool(args_schema=ProcessIPPArgs)
-def process_initial_premium_payment(**kwargs) -> str:
-    """Gate 4: Initiate and realize the Section 30 Initial Premium Payment (IPP) priced off the pre-underwriting quote. payment_method already defaults to JazzCash — call this immediately when asked, do NOT ask the user to choose a method first unless they want to change it."""
-    return "{}"
-
-
 @tool(args_schema=GateRunArgs)
 def run_insurance_history_check(**kwargs) -> str:
-    """Gate 5: Run the SECP shared industry insurance history screen, checking cumulative sum assured against HLV and policy churning."""
+    """Gate 4: Run the SECP shared industry insurance history screen, checking cumulative sum assured against HLV and policy churning."""
     return "{}"
 
 
@@ -846,13 +823,13 @@ class AssessMedicalExamArgs(BaseModel):
 
 @tool(args_schema=AssessMedicalExamArgs)
 def assess_medical_examination(**kwargs) -> str:
-    """Gate 6: Assess the applicant against the Non-Medical Limit (NML) grid. If diagnostics are mandated, generates the customer's tokenized panel-clinic booking link (same as Gate 1's E-Application link) — the gate clears once the customer books and completes the exam, not immediately."""
+    """Gate 5: Assess the applicant against the Non-Medical Limit (NML) grid. If diagnostics are mandated, generates the customer's tokenized panel-clinic booking link (same as Gate 1's E-Application link) — the gate clears once the customer books and completes the exam, not immediately."""
     return "{}"
 
 
 @tool(args_schema=CaseLookupArgs)
 def run_pre_underwriting_clearance(**kwargs) -> str:
-    """Run all 6 pre-underwriting clearance gates in sequence (E-Application, ACR, Compliance, IPP, Insurance History, Medical Exam) so the case is 100% ready for AI Risk Assessment. Use when the user says "clear all gates", "run pre-underwriting", "complete pre-underwriting checks"."""
+    """Run all 5 pre-underwriting clearance gates in sequence (E-Application, ACR, Compliance, Insurance History, Medical Exam) so the case is 100% ready for AI Risk Assessment. Use when the user says "clear all gates", "run pre-underwriting", "complete pre-underwriting checks"."""
     return "{}"
 
 
@@ -1960,13 +1937,12 @@ ALL_TOOLS = [
     create_proposal,
     upload_document,
     run_risk_assessment,
-    # pre-underwriting (the 6 gates)
+    # pre-underwriting (the 5 gates)
     get_pre_underwriting_status,
     verify_e_application,
     submit_agent_confidential_report,
     run_compliance_screening,
     override_compliance_screening,
-    process_initial_premium_payment,
     run_insurance_history_check,
     assess_medical_examination,
     run_pre_underwriting_clearance,

@@ -140,9 +140,10 @@ _HEAD = {"case_number": "CASE-2026-HEAD11"}
 
 def test_requirements_already_covered_by_the_head_are_skipped_after_a_gate():
     out = _skip("verify_e_application", _SPOUSE, _HEAD)
-    assert "3 (Agent's Confidential Report), 4 (PEP & Sanctions Screening), 5 (Initial Premium Payment)" in out["message"]
+    assert "3 (Agent's Confidential Report), 4 (PEP & Sanctions Screening)" in out["message"]
+    assert "Initial Premium" not in out["message"]                       # collected at issuance, not an underwriting step
     assert "recorded once for the whole family, on the head's case CASE-2026-HEAD11" in out["message"]
-    assert "requirement 6 of 7" in out["message"] and "Gate 2: Agent Confidential Report" not in out["message"]
+    assert "requirement 5 of 6" in out["message"] and "Gate 2: Agent Confidential Report" not in out["message"]
     assert [a["label"] for a in out["quick_actions"]] == ["Run History Check", "Check Gate Status"]
 
 
@@ -185,7 +186,6 @@ def test_a_requirement_the_head_already_covers_is_reported_not_run_again():
         shared = tool_executor.Ctx(client=Client(), tenant_id="t", exec_ctx=exec_ctx)
         out = {}
         for name, handler in (("acr", tool_executor._submit_agent_confidential_report),
-                              ("ipp", tool_executor._process_initial_premium_payment),
                               ("pep", tool_executor._run_compliance_screening)):
             out[name] = await handler({"case_number": "CASE-2026-ABC123"}, shared)
         return out
@@ -210,7 +210,7 @@ def test_the_head_going_last_sees_what_the_spouse_already_recorded():
     ctx = tool_executor.Ctx(client=Client(), tenant_id="t", exec_ctx=exec_ctx)
     result = {"success": True, "message": "✅ done for case **CASE-2026-ABC123**.", "quick_actions": []}
     out = asyncio.run(tool_executor._skip_completed_gates("verify_e_application", result, ctx, {}))
-    assert "already recorded for the family" in out["message"] and "requirement 6 of 7" in out["message"]
+    assert "already recorded for the family" in out["message"] and "requirement 5 of 6" in out["message"]
 
 
 def _risk_chip_result(members, ready_by_case):

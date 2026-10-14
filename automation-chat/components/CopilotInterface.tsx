@@ -1161,26 +1161,7 @@ function getRecommendedActions(
   ) {
     return [
       {
-        label: "4. Initial Premium (Gate 4)",
-        actionType: "submit",
-        payload: "Process initial premium payment for this case",
-      },
-      {
-        label: "Check Status",
-        actionType: "submit",
-        payload: "Check pre-underwriting status",
-      },
-      { label: "View Application", actionType: "navigate", payload: "underwriting" },
-    ];
-  }
-  if (
-    text.includes("gate 4") ||
-    text.includes("initial premium") ||
-    text.includes("ipp")
-  ) {
-    return [
-      {
-        label: "5. Insurance History (Gate 5)",
+        label: "4. Insurance History (Gate 4)",
         actionType: "submit",
         payload: "Run insurance history check for this case",
       },
@@ -1192,10 +1173,13 @@ function getRecommendedActions(
       { label: "View Application", actionType: "navigate", payload: "underwriting" },
     ];
   }
-  if (text.includes("gate 5") || text.includes("insurance history")) {
+  if (
+    text.includes("gate 4") ||
+    text.includes("insurance history")
+  ) {
     return [
       {
-        label: "6. Medical Exam (Gate 6)",
+        label: "5. Medical Exam (Gate 5)",
         actionType: "submit",
         payload: "Assess medical examination for this case",
       },
@@ -1208,7 +1192,8 @@ function getRecommendedActions(
     ];
   }
   if (
-    text.includes("gate 6") ||
+    text.includes("gate 5") ||
+    text.includes("medical exam") ||
     text.includes("gates cleared") ||
     text.includes("pre-underwriting") ||
     text.includes("gate")
@@ -1930,7 +1915,7 @@ export function CopilotInterface() {
                 ? ` ${rest.map((c) => `**${c.name}** (${role(c)}, case ${c.case_number})`).join(", ")} ${rest.length === 1 ? "follows" : "follow"} once ${first.name}'s requirements are complete — the risk assessment runs after both.`
                 : "") +
               `\n\n` +
-              `Underwriting has 7 requirements (documents, e-application, agent report, PEP & sanctions screening, initial premium, insurance history and medical examination). How would you like to work through them?\n\n` +
+              `Underwriting has 6 requirements (documents, e-application, agent report, PEP & sanctions screening, insurance history and medical examination). How would you like to work through them?\n\n` +
               `- **Guide me step by step** — I'll take you through them one at a time, explaining each.\n` +
               `- **Open the case workspace** — see all 7 together and complete them yourself on the case page.`,
             [
@@ -1965,7 +1950,7 @@ export function CopilotInterface() {
           // what the user gets rather than how it is built.
           addAssistantMessage(
             `**${p.name}**'s proposal has been **sent to underwriting** — case **${caseNo}** is open.\n\n` +
-              `Underwriting has 7 requirements (documents, e-application, agent report, PEP & sanctions screening, initial premium, insurance history and medical examination). How would you like to work through them?\n\n` +
+              `Underwriting has 6 requirements (documents, e-application, agent report, PEP & sanctions screening, insurance history and medical examination). How would you like to work through them?\n\n` +
               `- **Guide me step by step** — I'll take you through them one at a time, explaining each.\n` +
               `- **Open the case workspace** — see all 7 together and complete them yourself on the case page.`,
             [
@@ -2282,8 +2267,7 @@ export function CopilotInterface() {
         const eApp = pre.e_application ?? "NotStarted",
           acr = pre.acr ?? "NotStarted",
           comp = pre.compliance ?? "NotRun";
-        const ipp = pre.ipp ?? "NotStarted",
-          hist = pre.insurance_history ?? "NotStarted",
+        const hist = pre.insurance_history ?? "NotStarted",
           med = pre.medical_exam ?? "NotAssessed";
 
         const reqs: {
@@ -2328,15 +2312,6 @@ export function CopilotInterface() {
             ok: ["Passed", "Cleared"].includes(comp),
             detail:
               "PEP and AML screening of the applicant against watchlists.",
-          },
-          {
-            id: "ipp",
-            name: "Initial Premium Payment (IPP)",
-            status: ipp,
-            ok: ipp === "Realized",
-            detail: d.family_head_case
-              ? `Paid once for the whole family policy (recorded on the head's case ${d.family_head_case.case_number}).`
-              : "Collect the initial premium payment so cover can start.",
           },
           {
             id: "history",

@@ -55,7 +55,6 @@ import dynamic from "next/dynamic";
 // Dialogs are loaded when first opened, not with the page.
 const ACRModal = dynamic(() => import("@/components/entities/ACRModal").then((m) => m.ACRModal), { ssr: false });
 const WaiveAcrModal = dynamic(() => import("@/components/entities/WaiveAcrModal").then((m) => m.WaiveAcrModal), { ssr: false });
-const IPPModal = dynamic(() => import("@/components/entities/IPPModal").then((m) => m.IPPModal), { ssr: false });
 const CustomizeEAppModal = dynamic(() => import("@/components/entities/CustomizeEAppModal"), { ssr: false });
 const VerifyEAppModal = dynamic(() => import("@/components/entities/VerifyEAppModal"), { ssr: false });
 
@@ -395,10 +394,6 @@ function UnderwritingMainContent() {
     initial: AgentConfidentialReport | null;
   } | null>(null);
   const [acrLoadingFor, setAcrLoadingFor] = useState<string | null>(null);
-  const [ippModal, setIppModal] = useState<{
-    caseId: string;
-    customerName?: string;
-  } | null>(null);
   const [customizeModal, setCustomizeModal] = useState<{
     caseId: string;
     customerName?: string;
@@ -560,7 +555,7 @@ function UnderwritingMainContent() {
     };
   }, [waitingOnApplicant, requestRefresh]);
 
-  // Pre-Underwriting helpers — six clearance gates must be settled before the
+  // Pre-Underwriting helpers — five clearance gates must be settled before the
   // risk engine may produce a decision on the case.
   const medicalCleared = (c: CaseQueueItem) =>
     MEDICAL_CLEARED.has((c.medical_exam_status ?? "NotAssessed") as any);
@@ -574,7 +569,6 @@ function UnderwritingMainContent() {
       c.e_application_status === "Submitted") &&
     acrCleared(c) &&
     c.compliance_status === "Passed" &&
-    c.ipp_status === "Realized" &&
     c.insurance_history_status === "Clear" &&
     medicalCleared(c);
 
@@ -612,7 +606,6 @@ function UnderwritingMainContent() {
     const missingComp = active.filter(
       (c) => c.compliance_status !== "Passed",
     ).length;
-    const missingIpp = active.filter((c) => c.ipp_status !== "Realized").length;
     const missingHistory = active.filter(
       (c) => c.insurance_history_status !== "Clear",
     ).length;
@@ -623,7 +616,6 @@ function UnderwritingMainContent() {
       missingEApp,
       missingAcr,
       missingComp,
-      missingIpp,
       missingHistory,
       missingMedical,
       ready,
@@ -1069,7 +1061,7 @@ function UnderwritingMainContent() {
               <MetricCard
                 title={tx("Fully Cleared")}
                 value={preKpis.ready}
-                subtitle={tx("all 6 gates settled — ready for risk engine")}
+                subtitle={tx("all 5 gates settled — ready for risk engine")}
                 accent="emerald"
                 icon={
                   <svg
@@ -1176,7 +1168,6 @@ function UnderwritingMainContent() {
                 const g1Done = c.e_application_status === "Verified";
                 const g2Done = acrCleared(c);
                 const g3Done = c.compliance_status === "Passed";
-                const g4Done = c.ipp_status === "Realized";
                 const g5Done = c.insurance_history_status === "Clear";
                 const g6Done = medicalCleared(c);
 
@@ -1184,7 +1175,6 @@ function UnderwritingMainContent() {
                   g1Done,
                   g2Done,
                   g3Done,
-                  g4Done,
                   g5Done,
                   g6Done,
                 ].filter(Boolean).length;
@@ -1258,12 +1248,12 @@ function UnderwritingMainContent() {
                             <span
                               className={`text-xs font-black font-mono ${cleared ? "text-emerald-700" : "text-slate-800"}`}
                             >
-                              {stepCount}/6
+                              {stepCount}/5
                             </span>
                           </div>
                           {/* Segmented Progress Bar */}
                           <div className="flex gap-1 w-full max-w-[120px]">
-                            {[1, 2, 3, 4, 5, 6].map((step) => (
+                            {[1, 2, 3, 4, 5].map((step) => (
                               <div
                                 key={step}
                                 className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
@@ -1323,9 +1313,9 @@ function UnderwritingMainContent() {
                       const g2Done = acrCleared(c);
                       const g3Unlocked = g2Done;
                       const g3Done = c.compliance_status === "Passed";
-                      const g4Unlocked = g3Done;
-                      const g4Done = c.ipp_status === "Realized";
-                      const g5Unlocked = g4Done;
+                      // The initial premium is collected at issuance, not here,
+                      // so insurance history follows compliance directly.
+                      const g5Unlocked = g3Done;
                       const g5Done = c.insurance_history_status === "Clear";
                       const g6Unlocked = g5Done;
                       const g6Done = medicalCleared(c);
@@ -1646,53 +1636,10 @@ function UnderwritingMainContent() {
                         },
                         {
                           num: 4,
-                          title: "Initial Premium Payment (IPP)",
-                          law: "Section 30 Insurance Act 1938",
-                          desc: !g4Unlocked
-                            ? "Requires completion of Gate 3: PEP Screening before proceeding."
-                            : "Section 30 statutory advance payment requirement & premium realization verification.",
-                          isDone: g4Done,
-                          isLocked: !g4Unlocked,
-                          isNextActive: g4Unlocked && !g4Done,
-                          badge: !g4Unlocked ? null : (
-                            <StatusPill
-                              done={g4Done}
-                              pending={c.ipp_status ?? "Not Started"}
-                              label={tx("Cleared")}
-                            />
-                          ),
-                          action: !g4Unlocked ? (
-                            <span className="text-xs text-slate-400 font-medium italic">
-                              {tx("Prerequisite: Complete Gate 3 first")}
-                            </span>
-                          ) : g4Done ? (
-                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                              <span>{tx("✓ Premium Realized")}</span>
-                            </span>
-                          ) : (
-                            <button
-                              onClick={() =>
-                                setIppModal({
-                                  caseId: c.caseld,
-                                  customerName: c.customer_name ?? undefined,
-                                })
-                              }
-                              className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5"
-                            >
-                              <span>
-                                {c.ipp_status === "Initiated"
-                                  ? tx("Complete Payment →")
-                                  : tx("Collect Payment →")}
-                              </span>
-                            </button>
-                          ),
-                        },
-                        {
-                          num: 5,
                           title: "Industry Insurance History",
                           law: "CII Shared Database Standard",
                           desc: !g5Unlocked
-                            ? "Requires completion of Gate 4: IPP Clearance before proceeding."
+                            ? "Requires completion of Gate 3: PEP Screening before proceeding."
                             : "Prior and other-insurer cover verification, cumulative exposure, over-insurance, and replacement.",
                           isDone: g5Done,
                           isLocked: !g5Unlocked,
@@ -1708,7 +1655,7 @@ function UnderwritingMainContent() {
                           ),
                           action: !g5Unlocked ? (
                             <span className="text-xs text-slate-400 font-medium italic">
-                              {tx("Prerequisite: Complete Gate 4 first")}
+                              {tx("Prerequisite: Complete Gate 3 first")}
                             </span>
                           ) : g5Done ? (
                             <div className="flex items-center gap-2">
@@ -1746,11 +1693,11 @@ function UnderwritingMainContent() {
                           ),
                         },
                         {
-                          num: 6,
+                          num: 5,
                           title: "Medical Examination & NML",
                           law: "Non-Medical Limit Matrix",
                           desc: !g6Unlocked
-                            ? "Requires completion of Gate 5: Insurance History Check before proceeding."
+                            ? "Requires completion of Gate 4: Insurance History Check before proceeding."
                             : "Non-medical limit grid verification and panel-clinic diagnostics appointment.",
                           isDone: g6Done,
                           isLocked: !g6Unlocked,
@@ -1768,7 +1715,7 @@ function UnderwritingMainContent() {
                           ),
                           action: !g6Unlocked ? (
                             <span className="text-xs text-slate-400 font-medium italic">
-                              {tx("Prerequisite: Complete Gate 5 first")}
+                              {tx("Prerequisite: Complete Gate 4 first")}
                             </span>
                           ) : g6Done ? (
                             <div className="flex items-center gap-2">
@@ -1833,7 +1780,7 @@ function UnderwritingMainContent() {
                               <strong className="text-slate-900 font-mono">
                                 {stepCount}
                               </strong>{" "}
-                              {tx("of 6 verification milestones")}
+                              {tx("of 5 verification milestones")}
                             </span>
                           </div>
 
@@ -2335,18 +2282,6 @@ function UnderwritingMainContent() {
         />
       )}
 
-      {/* IPP Modal */}
-      {ippModal && (
-        <IPPModal
-          caseId={ippModal.caseId}
-          customerName={ippModal.customerName}
-          onClose={() => setIppModal(null)}
-          onConfirmed={() => {
-            setIppModal(null);
-            loadData();
-          }}
-        />
-      )}
 
       {/* Compliance Results Popup Modal */}
       {compModal && (

@@ -1,6 +1,6 @@
 """A flagged insurance-history screen (e.g. HLV over-exposure on a family member entered through
 the form with a low income): demo mode accepts it so the gates carry on to the medical step;
-outside demo it stays a hold and says so instead of a green tick and "next: Gate 6".
+outside demo it stays a hold and says so instead of a green tick and "next: Gate 5".
 
 Run with:  python -m pytest services/chat-agent/test_history_flagged.py -q
 """
@@ -28,7 +28,7 @@ class _Client:
 
     async def get(self, url, **kw):
         if "/cases/case-1/detail" in url:
-            return _Resp({"pre_underwriting_status": {"ipp": "Realized"}})
+            return _Resp({"pre_underwriting_status": {"compliance": "Passed"}})
         return _Resp([{"caseld": "case-1", "caseNumber": "CASE-1", "customer_cnic": "1"}])
 
     async def post(self, url, **kw):
@@ -67,12 +67,12 @@ def _run(mode):
 def test_demo_accepts_a_flagged_screen_and_moves_on_to_medical():
     client, result = _run("demo")
     assert client.cleared and result["status"] == "Clear"
-    assert "accepted automatically" in result["message"] and "Gate 6" in result["message"]
-    assert [a["label"] for a in result["quick_actions"]][0] == "6. Medical Exam (Gate 6)"
+    assert "accepted automatically" in result["message"] and "Gate 5" in result["message"]
+    assert [a["label"] for a in result["quick_actions"]][0] == "5. Medical Exam (Gate 5)"
 
 
 def test_outside_demo_a_flagged_screen_is_a_hold_not_a_green_tick():
     client, result = _run("prod")
     assert not client.cleared and result["status"] == "Flagged"
     assert result["message"].startswith("⚠️") and "on hold" in result["message"]
-    assert "6. Medical Exam (Gate 6)" not in [a["label"] for a in result["quick_actions"]]
+    assert "5. Medical Exam (Gate 5)" not in [a["label"] for a in result["quick_actions"]]

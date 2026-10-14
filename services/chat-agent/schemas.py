@@ -11,7 +11,7 @@ class ChatStreamRequest(BaseModel):
     role: str = "Agent"
     attachments: Optional[list[dict[str, Any]]] = None
     # "web" (portal) or "mobile" (agent-app) — the mobile client is Agent-only
-    # and scoped to onboarding through Gate 6, see permission.py.
+    # and scoped to onboarding through Gate 5, see permission.py.
     platform: str = "web"
     # UI language picked in the app ("en" or "ur"): the agent answers in it, see graph._build_prompt.
     locale: str = "en"

@@ -26,12 +26,11 @@ MUTATING_TOOLS = {
     "upload_document",
     "run_risk_assessment",
     "quick_start_workflow",
-    # Pre-underwriting (the 6 gates)
+    # Pre-underwriting (the 5 gates)
     "verify_e_application",
     "submit_agent_confidential_report",
     "run_compliance_screening",
     "override_compliance_screening",
-    "process_initial_premium_payment",
     "run_insurance_history_check",
     "assess_medical_examination",
     "run_pre_underwriting_clearance",
@@ -322,13 +321,12 @@ STEP_LABELS: dict[str, str] = {
     "start_underwriting_journey": "Launching autonomous underwriting journey",
     "continue_underwriting_journey": "Resuming underwriting journey",
     "bulk_underwriting_journey": "Running bulk underwriting journey",
-    # Pre-underwriting (the 6 gates)
+    # Pre-underwriting (the 5 gates)
     "get_pre_underwriting_status": "Checking pre-underwriting gates",
     "verify_e_application": "Processing E-Application",
     "submit_agent_confidential_report": "Submitting Agent Confidential Report",
     "run_compliance_screening": "Running compliance screening",
     "override_compliance_screening": "Applying compliance override",
-    "process_initial_premium_payment": "Processing initial premium payment",
     "run_insurance_history_check": "Running insurance history check",
     "assess_medical_examination": "Assessing medical examination requirements",
     "run_pre_underwriting_clearance": "Clearing all pre-underwriting gates",
@@ -470,7 +468,7 @@ AGENT_ALLOWED_TOOLS = {
 }
 
 # The agent-app mobile client is Agent-only and covers onboarding through
-# Gate 6 (Medical Examination booking) — everything from AI Risk Assessment
+# Gate 5 (Medical Examination booking) — everything from AI Risk Assessment
 # onward (risk engine, OCR/document-audit decisioning, approval, pre-issuance,
 # policy issuance, payment) stays web-portal-only. Deliberately excludes
 # run_pre_underwriting_clearance / the autonomous-journey tools: those
@@ -480,7 +478,6 @@ AGENT_ALLOWED_TOOLS = {
 AGENT_MOBILE_ALLOWED_TOOLS = AGENT_ALLOWED_TOOLS | {
     "run_compliance_screening",
     "override_compliance_screening",
-    "process_initial_premium_payment",
     "run_insurance_history_check",
     "assess_medical_examination",
 }
@@ -617,7 +614,6 @@ UNDERWRITER_ALLOWED_TOOLS = SAFE_TOOLS | {
     "submit_agent_confidential_report",
     "run_compliance_screening",
     "override_compliance_screening",
-    "process_initial_premium_payment",
     "run_insurance_history_check",
     "assess_medical_examination",
     "run_pre_underwriting_clearance",
@@ -691,7 +687,6 @@ WORKFLOW_STEP_TOOLS = {
     "submit_agent_confidential_report",
     "run_compliance_screening",
     "override_compliance_screening",
-    "process_initial_premium_payment",
     "run_insurance_history_check",
     "assess_medical_examination",
     "run_pre_underwriting_clearance",

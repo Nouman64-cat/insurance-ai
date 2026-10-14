@@ -42,7 +42,6 @@ import {
   type AgentConfidentialReport,
 } from "@/app/services/agentConfidentialReport";
 import ModalPortal from "@/components/ModalPortal";
-import { getIPP, type IPP } from "@/app/services/initialPremiumPayment";
 import {
   getCompliance,
   runCompliance,
@@ -79,7 +78,6 @@ const ChangePlanModal = dynamic(() => import("@/components/entities/ChangePlanMo
 const ACRModal = dynamic(() => import("@/components/entities/ACRModal").then((m) => m.ACRModal), { ssr: false });
 const WaiveAcrModal = dynamic(() => import("@/components/entities/WaiveAcrModal").then((m) => m.WaiveAcrModal), { ssr: false });
 const UndoWaiverModal = dynamic(() => import("@/components/entities/WaiveAcrModal").then((m) => m.UndoWaiverModal), { ssr: false });
-const IPPModal = dynamic(() => import("@/components/entities/IPPModal").then((m) => m.IPPModal), { ssr: false });
 
 // When this page is embedded in the Copilot chat's in-conversation iframe
 // (see CopilotInterface.tsx's case panel), tell the parent window whenever
@@ -1816,7 +1814,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const [showReportModal, setShowReportModal] = useState(false);
   const [downloadingApp, setDownloadingApp] = useState(false);
 
-  // Pre-Underwriting — Customer E-Application + Agent's Confidential Report + Initial Premium Payment
+  // Pre-Underwriting — Customer E-Application + Agent's Confidential Report
   const [eApp, setEApp] = useState<EApplication | null>(null);
   const [eAppLink, setEAppLink] = useState<string | null>(null);
   const [eAppBusy, setEAppBusy] = useState(false);
@@ -1824,8 +1822,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const [acr, setAcr] = useState<AgentConfidentialReport | null>(null);
   const [showACRModal, setShowACRModal] = useState(false);
   const [showChangePlan, setShowChangePlan] = useState(false);
-  const [ipp, setIpp] = useState<IPP | null>(null);
-  const [showIPPModal, setShowIPPModal] = useState(false);
   const [checks, setChecks] = useState<ComplianceCheck[]>([]);
   const [compBusy, setCompBusy] = useState(false);
   // Pre-Underwriting gates 5 & 6 — insurance history, panel medical examination
@@ -2056,15 +2052,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
     if (!tenantId) return;
     try {
       setAcr(await getACR(caseId));
-    } catch {
-      /* non-fatal */
-    }
-  }, [tenantId, caseId]);
-
-  const fetchIpp = useCallback(async () => {
-    if (!tenantId) return;
-    try {
-      setIpp(await getIPP(caseId));
     } catch {
       /* non-fatal */
     }
@@ -2401,7 +2388,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
     fetchArtifacts();
     fetchEApplication();
     fetchAcr();
-    fetchIpp();
     fetchHistory();
     fetchMedical();
     fetchRequirements();
@@ -2411,7 +2397,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
     fetchArtifacts,
     fetchEApplication,
     fetchAcr,
-    fetchIpp,
     fetchHistory,
     fetchMedical,
     fetchRequirements,
@@ -2437,7 +2422,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
         fetchArtifacts(),
         fetchEApplication(),
         fetchAcr(),
-        fetchIpp(),
         fetchHistory(),
         fetchMedical(),
         fetchCompliance(),
@@ -2449,7 +2433,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
     fetchArtifacts,
     fetchEApplication,
     fetchAcr,
-    fetchIpp,
     fetchHistory,
     fetchMedical,
     fetchCompliance,
@@ -2529,7 +2512,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
     const eAppReady =
       eApp?.status === "Submitted" || eApp?.status === "Verified";
     const acrReady = isACRCleared(acr);
-    const ippReady = ipp?.status === "Realized";
     const pepReady =
       checks.length > 0 && checks.every((ck) => ck.status === "Passed");
     const historyReady = history?.status === "Clear";
@@ -2541,7 +2523,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
       docsReady &&
       eAppReady &&
       acrReady &&
-      ippReady &&
       pepReady &&
       historyReady &&
       medicalReady;
@@ -2560,7 +2541,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
     } else {
       notifiedPreUnderwritingRef.current = false;
     }
-  }, [detail, eApp, acr, ipp, checks, history, medical, notify]);
+  }, [detail, eApp, acr, checks, history, medical, notify]);
 
   // Auto-run underwriting if requested via URL. In group mode the parallel
   // runner below handles every plan, so the single-case path stays out of it.
@@ -2569,8 +2550,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
     const missingDocs = detail?.document_checklist?.missing ?? [];
     const checksMissing =
       eApp?.status !== "Submitted" ||
-      !isACRCleared(acr) ||
-      ipp?.status !== "Realized";
+      !isACRCleared(acr);
     // A family member is never assessed on their own as soon as their gates clear: the head and the insured spouse are
     // underwritten first, and the assessments run together afterwards (from the chat).
     const inFamily = (detail?.family_members?.length ?? 0) > 1;
@@ -2606,7 +2586,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
     eApp?.status,
     acr?.status,
     acr?.waived_at,
-    ipp?.status,
   ]);
 
   const summarizeDocuments = async () => {
@@ -3160,8 +3139,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
     missingPreChecks.push("E-Application");
   if (!isACRCleared(acr))
     missingPreChecks.push("Agent's Confidential Report");
-  if (ipp?.status !== "Realized")
-    missingPreChecks.push("Initial Premium Payment");
 
   const medicalDone =
     medical?.status === "Completed" ||
@@ -3322,21 +3299,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
             : handleClearAllCompliance
           : handleRunCompliance,
       busy: compBusy,
-    },
-    {
-      id: "ipp",
-      title: "Initial Premium Payment (IPP)",
-      done: ipp?.status === "Realized",
-      statusLabel: ipp?.status ?? "Not Started",
-      description:
-        ipp?.status === "Realized"
-          ? `Section 30 initial premium payment realized.${detail?.family_head_case ? ` Paid once for the whole family policy (recorded on the head's case ${detail.family_head_case.case_number}).` : ""}`
-          : detail?.family_head_case
-            ? `The family policy's premium is paid once for the whole family — it is recorded on the head's case ${detail.family_head_case.case_number}.`
-            : "Initial premium payment collection or realization pending.",
-      actionLabel:
-        ipp?.status === "Realized" ? "View Payment" : "Collect Premium",
-      onAction: () => setShowIPPModal(true),
     },
     {
       id: "history",
@@ -3526,8 +3488,10 @@ export default function CasePage({ params }: { params: { id: string } }) {
       <div className="flex flex-wrap items-center justify-end gap-2">
         {prereqsIncomplete && (
           <p className="mr-auto text-xs text-slate-500">
-            {tx("Proceed unlocks when all 7 steps above are done (")}
-            {7 - missingPreChecks.length} {tx("of 7 so far).")}
+            {tx("Proceed unlocks when all {0} steps above are done ({1} of {0} so far).", {
+              0: prereqSteps.length,
+              1: prereqSteps.filter((s) => s.done).length,
+            })}
           </p>
         )}
         <button
@@ -3574,7 +3538,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
             userRole === "Agent"
               ? tx("Currently, you have no access to do this, ask your manager")
               : prereqsIncomplete
-                ? tx("Complete all 7 steps first. Still missing: {0}", {
+                ? tx("Complete all {1} steps first. Still missing: {0}", {
+                    1: prereqSteps.length,
                     0: missingPreChecks.join("; "),
                   })
                 : !hasAny
@@ -4299,7 +4264,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   fetchArtifacts();
                   fetchHistory();
                   fetchMedical();
-                  fetchIpp();
                 }}
               />
             )}
@@ -4316,17 +4280,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
               />
             )}
 
-            {showIPPModal && (
-              <IPPModal
-                caseId={caseId}
-                customerName={customer?.name}
-                onClose={() => setShowIPPModal(false)}
-                onConfirmed={() => {
-                  setShowIPPModal(false);
-                  fetchIpp();
-                }}
-              />
-            )}
           </ModalPortal>
 
           {/* Document checklist + upload */}

@@ -185,7 +185,7 @@ def test_journey_tools_are_never_scoped_away():
     named_in_journey_prompt = {
         "add_customer", "create_case", "create_proposal",
         "verify_e_application", "submit_agent_confidential_report",
-        "run_compliance_screening", "process_initial_premium_payment",
+        "run_compliance_screening",
         "run_insurance_history_check", "assess_medical_examination",
         "get_pre_underwriting_status", "get_document_checklist", "upload_document",
         "run_risk_assessment", "approve_case", "get_pre_issuance_status",

@@ -1776,7 +1776,7 @@ async def _create_proposal(args: dict, ctx: Ctx) -> dict:
             f"Proposal created for **{_full_name(customer)}** — "
             f"{args.get('product_name') or 'Term Life Plus'}, PKR {coverage:,.0f} over "
             f"{int(args.get('term_years') or 10)} years.\n\n"
-            f"The case is now in **Pre-Underwriting**. To proceed, complete the 6 clearance gates sequentially starting with **Gate 1: Customer E-Application**."
+            f"The case is now in **Pre-Underwriting**. To proceed, complete the 5 clearance gates sequentially starting with **Gate 1: Customer E-Application**."
         ),
         "last_action": _action("create_proposal", "customer", customer.get("cnic", ""), route, "Proposal created"),
         **({"navigate": {"route": case_view, "entity_id": "", "highlight": False, "embed": True}} if case_view else {}),
@@ -1912,24 +1912,19 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
             if not next_action:
                 next_action = {"label": "3. Compliance Screen (Gate 3)", "actionType": "submit",
                                "payload": f"Run compliance screening for case {case.get('caseNumber')}"}
-        if pre_status.get("ipp") != "Realized":
-            pending_gates.append(f"Gate 4: Initial Premium Payment ({pre_status.get('ipp', 'NotStarted')})")
-            if not next_action:
-                next_action = {"label": "4. Initial Premium (Gate 4)", "actionType": "submit",
-                               "payload": f"Process initial premium payment for case {case.get('caseNumber')}"}
         if pre_status.get("insurance_history") not in ("Clear", "Cleared"):
-            pending_gates.append(f"Gate 5: Insurance History Check ({pre_status.get('insurance_history', 'NotStarted')})")
+            pending_gates.append(f"Gate 4: Insurance History Check ({pre_status.get('insurance_history', 'NotStarted')})")
             if not next_action:
                 if pre_status.get("insurance_history") in ("Flagged", "Failed") and not is_demo():
                     # Re-running a flagged screen just flags it again — it needs an underwriter's review.
                     next_action = {"label": "Review in the case workspace", "actionType": "embed", "payload": f"case/{case_id}"}
                 else:
-                    next_action = {"label": "5. Insurance History (Gate 5)", "actionType": "submit",
+                    next_action = {"label": "4. Insurance History (Gate 4)", "actionType": "submit",
                                    "payload": f"Run insurance history check for case {case.get('caseNumber')}"}
         if pre_status.get("medical_exam") not in ("Completed", "Waived", "NotRequired"):
-            pending_gates.append(f"Gate 6: Medical Examination ({pre_status.get('medical_exam', 'NotAssessed')})")
+            pending_gates.append(f"Gate 5: Medical Examination ({pre_status.get('medical_exam', 'NotAssessed')})")
             if not next_action:
-                next_action = {"label": "6. Medical Exam (Gate 6)", "actionType": "submit",
+                next_action = {"label": "5. Medical Exam (Gate 5)", "actionType": "submit",
                                "payload": f"Assess medical examination for case {case.get('caseNumber')}"}
 
         qa = []
@@ -1943,7 +1938,7 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
             "success": False,
             "message": (
                 f"⚠️ **Pre-Underwriting Clearance Incomplete** for case **{case.get('caseNumber')}**.\n\n"
-                f"The AI Risk Engine requires all 6 pre-underwriting clearance gates to be satisfied sequentially before evaluating risk:\n"
+                f"The AI Risk Engine requires all 5 pre-underwriting clearance gates to be satisfied sequentially before evaluating risk:\n"
                 + "\n".join(f"- {g}" for g in pending_gates)
                 + f"\n\n👉 Next required step: **{next_action['label'] if next_action else 'Complete pending gates'}**."
             ),
@@ -1976,7 +1971,7 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Pre-Underwriting clearance — The 6 Gates
+# Pre-Underwriting clearance — The 5 Gates
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _gate_icon(status: str) -> str:
@@ -2001,13 +1996,13 @@ async def _get_pre_underwriting_status(args: dict, ctx: Ctx) -> dict:
     e_app = pre.get("e_application", "NotStarted")
     acr = pre.get("acr", "NotStarted")
     comp = pre.get("compliance", "NotRun")
-    ipp = pre.get("ipp", "NotStarted")
     hist = pre.get("insurance_history", "NotStarted")
     med = pre.get("medical_exam", "NotAssessed")
     is_ready = bool(pre.get("is_ready"))
 
-    # Requirement 1 is the document checklist; 2-7 are the six clearance gates
-    # (the same seven the case page's prerequisites checklist shows).
+    # Requirement 1 is the document checklist; 2-6 are the five clearance gates
+    # (the same six the case page's prerequisites checklist shows). The initial
+    # premium is collected at issuance, not here.
     missing_docs: list[str] = []
     try:
         doc_res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/document-checklist"))
@@ -2029,8 +2024,6 @@ async def _get_pre_underwriting_status(args: dict, ctx: Ctx) -> dict:
          "The agent's own confidential assessment of the applicant, to be filed."),
         ("PEP & Sanctions Screening", comp, comp in ("Passed", "Cleared"),
          "PEP and AML screening of the applicant against watchlists."),
-        ("Initial Premium Payment (IPP)", ipp, ipp == "Realized",
-         "Collect the initial premium payment so cover can start."),
         ("Insurance History Clearance", hist, hist in ("Clear", "Cleared"),
          "Prior policy coverage and over-insurance history check."),
         ("Medical Examination / NML Grid", med, med in ("Completed", "Waived", "NotRequired"),
@@ -2050,7 +2043,7 @@ async def _get_pre_underwriting_status(args: dict, ctx: Ctx) -> dict:
 
     workspace = {"label": "Open the case workspace", "actionType": "embed", "payload": f"case/{case_id}"}
     if is_ready:
-        summary += "**All 7 requirements are complete.** The case is ready for AI underwriting."
+        summary += "**All 5 requirements are complete.** The case is ready for AI underwriting."
         qa = [
             {"label": "Run AI Underwriting", "actionType": "submit",
              "payload": f"Run risk assessment for case {case_no}"},
@@ -2078,19 +2071,15 @@ async def _get_pre_underwriting_status(args: dict, ctx: Ctx) -> dict:
             n, nxt = 4, "Run the PEP and sanctions screening."
             qa.append({"label": "Run PEP Check", "actionType": "submit",
                        "payload": f"Run compliance screening for case {case_no}"})
-        elif ipp != "Realized":
-            n, nxt = 5, "Collect the initial premium payment."
-            qa.append({"label": "Collect Premium", "actionType": "submit",
-                       "payload": f"Process initial premium payment for case {case_no}"})
         elif hist not in ("Clear", "Cleared"):
-            n, nxt = 6, "Run the insurance history check."
+            n, nxt = 5, "Run the insurance history check."
             qa.append({"label": "Run History Check", "actionType": "submit",
                        "payload": f"Run insurance history check for case {case_no}"})
         else:
-            n, nxt = 7, "Assess the medical examination requirement."
+            n, nxt = 6, "Assess the medical examination requirement."
             qa.append({"label": "Assess Medical", "actionType": "submit",
                        "payload": f"Assess medical examination for case {case_no}"})
-        summary += f"👉 **Next — requirement {n} of 7:** {nxt}"
+        summary += f"👉 **Next — requirement {n} of 6:** {nxt}"
         qa.append(workspace)
 
     return {
@@ -2522,14 +2511,14 @@ async def _run_compliance_screening(args: dict, ctx: Ctx) -> dict:
             f"✅ **Gate 3: Compliance Screening ({status})** for case **{case.get('caseNumber')}**.\n\n"
             f"{checks_summary}\n\n"
             f"Sanctions, PEP, AML, and SECP compliance checks completed.\n\n"
-            f"👉 Next Gate: **Gate 4: Initial Premium Payment (IPP)**."
+            f"👉 Next Gate: **Gate 4: Industry Insurance History Check**."
         ),
         "status": status,
         "checks": checks,
         "last_action": _action("run_compliance_screening", "case", case_id, route, f"Compliance {status}"),
         "quick_actions": [
-            {"label": "4. Initial Premium (Gate 4)", "actionType": "submit",
-             "payload": f"Process initial premium payment for case {case.get('caseNumber')}"},
+            {"label": "4. Insurance History (Gate 4)", "actionType": "submit",
+             "payload": f"Run insurance history check for case {case.get('caseNumber')}"},
             {"label": "Check Gate Status", "actionType": "submit",
              "payload": f"Check pre-underwriting status for case {case.get('caseNumber')}"},
         ],
@@ -2554,8 +2543,8 @@ async def _override_compliance_screening(args: dict, ctx: Ctx) -> dict:
             "message": f"Gate 3 (Compliance) is already **Passed** for case **{case.get('caseNumber')}** — nothing to override.",
             "status": "Passed",
             "quick_actions": [
-                {"label": "4. Initial Premium (Gate 4)", "actionType": "submit",
-                 "payload": f"Process initial premium payment for case {case.get('caseNumber')}"},
+                {"label": "4. Insurance History (Gate 4)", "actionType": "submit",
+                 "payload": f"Run insurance history check for case {case.get('caseNumber')}"},
             ],
         }
 
@@ -2578,137 +2567,12 @@ async def _override_compliance_screening(args: dict, ctx: Ctx) -> dict:
         "message": (
             f"✅ **Gate 3: Compliance override applied** for case **{case.get('caseNumber')}**.\n\n"
             f"{len(flagged)} flagged check(s) cleared after manual review.\n\n"
-            f"👉 Next Gate: **Gate 4: Initial Premium Payment (IPP)**."
+            f"👉 Next Gate: **Gate 4: Industry Insurance History Check**."
         ),
         "status": "Passed",
         "last_action": _action("override_compliance_screening", "case", case_id, route, "Compliance override applied"),
         "quick_actions": [
-            {"label": "4. Initial Premium (Gate 4)", "actionType": "submit",
-             "payload": f"Process initial premium payment for case {case.get('caseNumber')}"},
-            {"label": "Check Gate Status", "actionType": "submit",
-             "payload": f"Check pre-underwriting status for case {case.get('caseNumber')}"},
-        ],
-    }
-
-
-@handles("process_initial_premium_payment")
-async def _process_initial_premium_payment(args: dict, ctx: Ctx) -> dict:
-    case = await _resolve_case(args, ctx)
-    case_id = _case_id(case)
-    method = args.get("payment_method") or "JazzCash"
-
-    # Prerequisite check: Gate 3 must be Passed or Cleared
-    detail_res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/detail"))
-    detail_res.raise_for_status()
-    detail = detail_res.json()
-    pre = detail.get("pre_underwriting_status") or {}
-    comp_status = pre.get("compliance", "NotRun")
-
-    done = _already_complete(case, detail, "ipp", "Initial Premium Payment")
-    if done:
-        return done
-
-    if comp_status not in ("Passed", "Cleared") and not args.get("bypass_prerequisites"):
-        return {
-            "success": False,
-            "message": (
-                f"⚠️ **Gate 4 (Initial Premium Payment) is not ready yet for Case {case.get('caseNumber')}**\n\n"
-                f"**Required first:** Gate 3 (PEP / Sanctions Screening) must be cleared before collecting Section 30 Initial Premium Payment.\n"
-                f"Current Compliance Status: `{comp_status}`.\n\n"
-                f"{_anyway_hint()}"
-            ),
-            "status": "Locked",
-            "quick_actions": [
-                *_anyway_chip(f"Process initial premium payment for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"),
-                {"label": "3. Compliance Screen (Gate 3)", "actionType": "submit",
-                 "payload": f"Run compliance screening for case {case.get('caseNumber')}"},
-                {"label": "Check Gate Status", "actionType": "submit",
-                 "payload": f"Check pre-underwriting status for case {case.get('caseNumber')}"},
-            ],
-        }
-
-    # Step 1: Check existing IPP status or initiate
-    try:
-        init_res = await ctx.client.post(ctx.tsvc(f"/cases/{case_id}/ipp/initiate"), json={"method": method})
-        if init_res.status_code == 409:
-            pass
-        else:
-            init_res.raise_for_status()
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code != 409:
-            raise
-
-    # Step 2: Confirm and realize payment. Demo mode settles the mock gateway on
-    # the spot; otherwise the premium is only realized once the payer comes back
-    # with the transaction reference they were issued.
-    if is_demo():
-        confirm_body = {"method": method, "realize": True}
-    else:
-        paid_ref = (args.get("payment_reference") or "").strip()
-        ipp_res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/ipp"))
-        ipp_res.raise_for_status()
-        ipp_now = ipp_res.json()
-        if (ipp_now.get("status") or "") == "Realized":
-            paid_ref = ipp_now.get("reference") or paid_ref
-            confirm_body = None
-        elif not paid_ref:
-            amt = ipp_now.get("amount") or 0.0
-            issued_ref = ipp_now.get("reference") or "—"
-            return {
-                "success": False,
-                "message": (
-                    f"💳 **Gate 4: Initial Premium Payment is awaiting payment** for case **{case.get('caseNumber')}**.\n\n"
-                    f"- **Amount due**: PKR {amt:,.2f}\n"
-                    f"- **Payment method**: {method}\n"
-                    f"- **Payment reference**: `{issued_ref}`\n\n"
-                    f"Pay this amount using the reference above. Once the payment has gone through, reply with the "
-                    f"transaction reference (for example “Confirm payment, reference {issued_ref}”) — the case moves on only after that."
-                ),
-                "status": "AwaitingPayment",
-                "amount": amt,
-                "reference": issued_ref,
-                "quick_actions": [
-                    {"label": "I've paid — confirm payment", "actionType": "submit",
-                     "payload": f"Confirm the initial premium payment for case {case.get('caseNumber')} with payment reference {issued_ref}"},
-                    {"label": "Check Gate Status", "actionType": "submit",
-                     "payload": f"Check pre-underwriting status for case {case.get('caseNumber')}"},
-                ],
-            }
-        else:
-            confirm_body = {"method": method, "reference": paid_ref}
-    if confirm_body is None:
-        data = ipp_now
-    else:
-        conf_res = await ctx.client.post(ctx.tsvc(f"/cases/{case_id}/ipp/confirm"), json=confirm_body)
-        if conf_res.status_code in (400, 402, 409):
-            return {
-                "success": False,
-                "message": f"⚠️ **Payment could not be confirmed**: {conf_res.json().get('detail', 'rejected')}",
-                "status": "AwaitingPayment",
-            }
-        conf_res.raise_for_status()
-        data = conf_res.json()
-
-    amount = data.get("amount") or 0.0
-    ref = data.get("reference") or "IPP-CONFIRMED"
-    route = f"case/{case_id}"
-
-    return {
-        "success": True,
-        "message": (
-            f"✅ **Gate 4: Initial Premium Payment (IPP) Realized** for case **{case.get('caseNumber')}**.\n\n"
-            f"- **Amount Paid**: PKR {amount:,.2f}\n"
-            f"- **Payment Method**: {method}\n"
-            f"- **Transaction Ref**: `{ref}`\n"
-            f"- **Statutory Compliance**: Insurance Ordinance 2000 Section 30 satisfied (\"no premium, no risk\").\n\n"
-            f"👉 Next Gate: **Gate 5: Industry Insurance History Check**."
-        ),
-        "status": data.get("status"),
-        "amount": amount,
-        "reference": ref,
-        "last_action": _action("process_initial_premium_payment", "case", case_id, route, "Initial premium realized"),
-        "quick_actions": [
-            {"label": "5. Insurance History (Gate 5)", "actionType": "submit",
+            {"label": "4. Insurance History (Gate 4)", "actionType": "submit",
              "payload": f"Run insurance history check for case {case.get('caseNumber')}"},
             {"label": "Check Gate Status", "actionType": "submit",
              "payload": f"Check pre-underwriting status for case {case.get('caseNumber')}"},
@@ -2721,27 +2585,28 @@ async def _run_insurance_history_check(args: dict, ctx: Ctx) -> dict:
     case = await _resolve_case(args, ctx)
     case_id = _case_id(case)
 
-    # Prerequisite check: Gate 4 must be Realized
+    # Prerequisite check: Gate 3 (compliance) must be Passed. The initial
+    # premium is collected at issuance, so it is not a prerequisite here.
     detail_res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/detail"))
     detail_res.raise_for_status()
     detail = detail_res.json()
     pre = detail.get("pre_underwriting_status") or {}
-    ipp_status = pre.get("ipp", "NotStarted")
+    comp_status = pre.get("compliance", "NotRun")
 
-    if ipp_status != "Realized" and not args.get("bypass_prerequisites"):
+    if comp_status not in ("Passed", "Cleared") and not args.get("bypass_prerequisites"):
         return {
             "success": False,
             "message": (
-                f"⚠️ **Gate 5 (SECP Insurance History) is not ready yet for Case {case.get('caseNumber')}**\n\n"
-                f"**Required first:** Gate 4 (Initial Premium Payment) must be realized under Section 30 before conducting cross-industry insurance history screening.\n"
-                f"Current IPP Status: `{ipp_status}`.\n\n"
+                f"⚠️ **Gate 4 (SECP Insurance History) is not ready yet for Case {case.get('caseNumber')}**\n\n"
+                f"**Required first:** Gate 3 (PEP & Sanctions Screening) must be passed before conducting cross-industry insurance history screening.\n"
+                f"Current Compliance Status: `{comp_status}`.\n\n"
                 f"{_anyway_hint()}"
             ),
             "status": "Locked",
             "quick_actions": [
                 *_anyway_chip(f"Run insurance history check for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"),
-                {"label": "4. Initial Premium (Gate 4)", "actionType": "submit",
-                 "payload": f"Process initial premium payment for case {case.get('caseNumber')}"},
+                {"label": "3. Compliance Screen (Gate 3)", "actionType": "submit",
+                 "payload": f"Run compliance screening for case {case.get('caseNumber')}"},
                 {"label": "Check Gate Status", "actionType": "submit",
                  "payload": f"Check pre-underwriting status for case {case.get('caseNumber')}"},
             ],
@@ -2761,7 +2626,7 @@ async def _run_insurance_history_check(args: dict, ctx: Ctx) -> dict:
     route = f"case/{case_id}"
 
     # A flagged screen (typically HLV over-exposure: the cover is large for the declared income)
-    # blocks Gate 6 until someone accepts it. Demo mode accepts it automatically, the same way
+    # blocks Gate 5 until someone accepts it. Demo mode accepts it automatically, the same way
     # flagged compliance checks are cleared there; otherwise it stays a real hold for an underwriter.
     demo_cleared = False
     if status == "Flagged" and is_demo():
@@ -2777,20 +2642,20 @@ async def _run_insurance_history_check(args: dict, ctx: Ctx) -> dict:
 
     held = status in ("Flagged", "Failed")
     if held:
-        headline = f"⚠️ **Gate 5: SECP Insurance History Screen ({status})** for case **{case.get('caseNumber')}**."
+        headline = f"⚠️ **Gate 4: SECP Insurance History Screen ({status})** for case **{case.get('caseNumber')}**."
         tail = ("👉 **This gate is on hold.** An underwriter must review the findings and accept or reject them before the "
-                "medical examination (Gate 6) can start — the case workspace has the review button.")
+                "medical examination (Gate 5) can start — the case workspace has the review button.")
         actions = [
             {"label": "Open the case workspace", "actionType": "embed", "payload": f"case/{case_id}"},
             {"label": "Check Gate Status", "actionType": "submit",
              "payload": f"Check pre-underwriting status for case {case.get('caseNumber')}"},
         ]
     else:
-        headline = f"✅ **Gate 5: SECP Insurance History Screen ({status})** for case **{case.get('caseNumber')}**."
+        headline = f"✅ **Gate 4: SECP Insurance History Screen ({status})** for case **{case.get('caseNumber')}**."
         tail = (("The screen was flagged and has been accepted automatically (demo mode).\n\n" if demo_cleared else "")
-                + "👉 Next Gate: **Gate 6: Medical Examination & NML Assessment**.")
+                + "👉 Next Gate: **Gate 5: Medical Examination & NML Assessment**.")
         actions = [
-            {"label": "6. Medical Exam (Gate 6)", "actionType": "submit",
+            {"label": "5. Medical Exam (Gate 5)", "actionType": "submit",
              "payload": f"Assess medical examination for case {case.get('caseNumber')}"},
             {"label": "Check Gate Status", "actionType": "submit",
              "payload": f"Check pre-underwriting status for case {case.get('caseNumber')}"},
@@ -2818,7 +2683,7 @@ async def _assess_medical_examination(args: dict, ctx: Ctx) -> dict:
     case_id = _case_id(case)
     auto_complete = bool(args.get("auto_complete", False)) and is_demo()
 
-    # Prerequisite check: Gate 5 must be Clear or Cleared
+    # Prerequisite check: Gate 4 must be Clear or Cleared
     detail_res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/detail"))
     detail_res.raise_for_status()
     detail = detail_res.json()
@@ -2829,15 +2694,15 @@ async def _assess_medical_examination(args: dict, ctx: Ctx) -> dict:
         return {
             "success": False,
             "message": (
-                f"⚠️ **Gate 6 (Medical Examination) is not ready yet for Case {case.get('caseNumber')}**\n\n"
-                f"**Required first:** Gate 5 (Insurance History Check) must be completed before assessing Non-Medical Limits (NML) and diagnostic exams.\n"
+                f"⚠️ **Gate 5 (Medical Examination) is not ready yet for Case {case.get('caseNumber')}**\n\n"
+                f"**Required first:** Gate 4 (Insurance History Check) must be completed before assessing Non-Medical Limits (NML) and diagnostic exams.\n"
                 f"Current History Status: `{hist_status}`.\n\n"
                 f"{_anyway_hint()}"
             ),
             "status": "Locked",
             "quick_actions": [
                 *_anyway_chip(f"Assess medical examination for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"),
-                {"label": "5. Insurance History (Gate 5)", "actionType": "submit",
+                {"label": "4. Insurance History (Gate 4)", "actionType": "submit",
                  "payload": f"Run insurance history check for case {case.get('caseNumber')}"},
                 {"label": "Check Gate Status", "actionType": "submit",
                  "payload": f"Check pre-underwriting status for case {case.get('caseNumber')}"},
@@ -2859,10 +2724,10 @@ async def _assess_medical_examination(args: dict, ctx: Ctx) -> dict:
         return {
             "success": True,
             "message": (
-                f"✅ **Gate 6: Medical Examination Cleared (Not Required)** for case **{case.get('caseNumber')}**.\n\n"
+                f"✅ **Gate 5: Medical Examination Cleared (Not Required)** for case **{case.get('caseNumber')}**.\n\n"
                 f"- Applicant is within Non-Medical Limit ({nml_str}).\n"
                 f"- No adverse medical disclosures flagged.\n\n"
-                f"🎉 **All 6 Pre-Underwriting Clearance Gates Completed!**\n"
+                f"🎉 **All 5 Pre-Underwriting Clearance Gates Completed!**\n"
                 f"The case is now 100% ready for AI Risk Assessment."
             ),
             "status": "NotRequired",
@@ -2880,8 +2745,8 @@ async def _assess_medical_examination(args: dict, ctx: Ctx) -> dict:
         return {
             "success": True,
             "message": (
-                f"✅ **Gate 6: Medical Examination ({st})** for case **{case.get('caseNumber')}**.\n\n"
-                f"🎉 **All 6 Pre-Underwriting Clearance Gates Completed!**\n"
+                f"✅ **Gate 5: Medical Examination ({st})** for case **{case.get('caseNumber')}**.\n\n"
+                f"🎉 **All 5 Pre-Underwriting Clearance Gates Completed!**\n"
                 f"The case is now 100% ready for AI Risk Assessment."
             ),
             "status": st,
@@ -2939,11 +2804,11 @@ async def _assess_medical_examination(args: dict, ctx: Ctx) -> dict:
         return {
             "success": True,
             "message": (
-                f"✅ **Gate 6: Medical Examination Completed** for case **{case.get('caseNumber')}**.\n\n"
+                f"✅ **Gate 5: Medical Examination Completed** for case **{case.get('caseNumber')}**.\n\n"
                 f"- **Mandated Tests**: {test_names}\n"
                 f"- **Panel Diagnostic Verdict**: `{order.get('outcome', 'Standard')}` (All normal readings)\n"
                 f"- **Status**: Completed.\n\n"
-                f"🎉 **All 6 Pre-Underwriting Clearance Gates Completed!**\n"
+                f"🎉 **All 5 Pre-Underwriting Clearance Gates Completed!**\n"
                 f"The case is now 100% ready for AI Risk Assessment."
             ),
             "status": "Completed",
@@ -2962,7 +2827,7 @@ async def _assess_medical_examination(args: dict, ctx: Ctx) -> dict:
         return {
             "success": True,
             "message": (
-                f"📋 **Gate 6: Medical Examination — Awaiting Customer** for case **{case.get('caseNumber')}**.\n\n"
+                f"📋 **Gate 5: Medical Examination — Awaiting Customer** for case **{case.get('caseNumber')}**.\n\n"
                 f"- **Mandated Tests**: {test_names}\n\n"
                 f"A booking link has already been sent. The gate clears automatically once the customer books "
                 f"a panel clinic slot and completes the exam."
@@ -2978,7 +2843,7 @@ async def _assess_medical_examination(args: dict, ctx: Ctx) -> dict:
         return {
             "success": True,
             "message": (
-                f"🗓️ **Gate 6: Medical Examination — Scheduled** for case **{case.get('caseNumber')}**.\n\n"
+                f"🗓️ **Gate 5: Medical Examination — Scheduled** for case **{case.get('caseNumber')}**.\n\n"
                 f"- **Mandated Tests**: {test_names}\n\n"
                 f"The customer has booked their panel clinic appointment. The gate clears once the exam is "
                 f"completed and results are recorded."
@@ -3002,7 +2867,7 @@ async def _assess_medical_examination(args: dict, ctx: Ctx) -> dict:
     return {
         "success": True,
         "message": (
-            f"📋 **Gate 6: Medical Examination Link Generated** for case **{case.get('caseNumber')}**\n\n"
+            f"📋 **Gate 5: Medical Examination Link Generated** for case **{case.get('caseNumber')}**\n\n"
             f"- **Mandated Tests**: {test_names}\n\n"
             f"The customer must pick a panel clinic and appointment slot themselves. Please share this secure link with them:\n\n"
             f"🔗 **[Open Medical Exam Booking Form]({full_link})**\n"
@@ -3028,19 +2893,18 @@ async def _run_pre_underwriting_clearance(args: dict, ctx: Ctx) -> dict:
     case_id = _case_id(case)
     case_no = case.get("caseNumber")
 
-    # Demo only: fabricate and clear all 6 gates in one go. Otherwise this is a
+    # Demo only: fabricate and clear all 5 gates in one go. Otherwise this is a
     # status report — every gate has to be completed for real, one at a time.
     if is_demo():
         await _verify_e_application({"case_number": case_no, "action": "auto_submit"}, ctx)
         await _submit_agent_confidential_report({"case_number": case_no, "auto_fill": True}, ctx)
         await _run_compliance_screening({"case_number": case_no}, ctx)
-        await _process_initial_premium_payment({"case_number": case_no}, ctx)
         await _run_insurance_history_check({"case_number": case_no}, ctx)
         await _assess_medical_examination({"case_number": case_no, "auto_complete": True}, ctx)
 
     # Verify final status — each gate call above returns its own success/
     # failure but was fired without checking it (some gates have hard
-    # prerequisites on the one before, e.g. IPP requires Compliance actually
+    # prerequisites on the one before, e.g. History requires Compliance actually
     # Passed, not just attempted) — so the only trustworthy signal of what
     # really happened is re-reading the case fresh, not assuming the calls
     # above all succeeded just because none of them raised.
@@ -3053,7 +2917,6 @@ async def _run_pre_underwriting_clearance(args: dict, ctx: Ctx) -> dict:
     e_app = pre.get("e_application", "NotStarted")
     acr = pre.get("acr", "NotStarted")
     comp = pre.get("compliance", "NotRun")
-    ipp = pre.get("ipp", "NotStarted")
     hist = pre.get("insurance_history", "NotStarted")
     med = pre.get("medical_exam", "NotAssessed")
 
@@ -3064,18 +2927,17 @@ async def _run_pre_underwriting_clearance(args: dict, ctx: Ctx) -> dict:
         f"| Gate 1 | **E-Application** | {_gate_icon(e_app)} `{e_app}` |\n"
         f"| Gate 2 | **Agent Confidential Report (ACR)** | {_gate_icon(acr)} `{acr}` |\n"
         f"| Gate 3 | **Compliance / PEP Screening** | {_gate_icon(comp)} `{comp}` |\n"
-        f"| Gate 4 | **Initial Premium Payment (IPP)** | {_gate_icon(ipp)} `{ipp}` |\n"
-        f"| Gate 5 | **SECP Insurance History Check** | {_gate_icon(hist)} `{hist}` |\n"
-        f"| Gate 6 | **Medical Examination (NML)** | {_gate_icon(med)} `{med}` |\n"
+        f"| Gate 4 | **SECP Insurance History Check** | {_gate_icon(hist)} `{hist}` |\n"
+        f"| Gate 5 | **Medical Examination (NML)** | {_gate_icon(med)} `{med}` |\n"
     )
 
     if is_ready:
         return {
             "success": True,
-            "message": f"🎉 **All 6 Pre-Underwriting Clearance Gates Completed** for case **{case_no}**!\n\n{table}\n**The case is now 100% ready for AI Risk Assessment.**",
+            "message": f"🎉 **All 5 Pre-Underwriting Clearance Gates Completed** for case **{case_no}**!\n\n{table}\n**The case is now 100% ready for AI Risk Assessment.**",
             "pre_underwriting_status": pre,
             "is_ready": True,
-            "last_action": _action("run_pre_underwriting_clearance", "case", case_id, route, "All 6 gates cleared"),
+            "last_action": _action("run_pre_underwriting_clearance", "case", case_id, route, "All 5 gates cleared"),
             "quick_actions": [
                 {"label": "Run AI Risk Assessment", "actionType": "submit",
                  "payload": f"Run risk assessment for case {case_no}"},
@@ -3084,7 +2946,7 @@ async def _run_pre_underwriting_clearance(args: dict, ctx: Ctx) -> dict:
         }
 
     # Genuinely not ready — one of the sequential gates blocked a later one
-    # (most commonly Gate 3 flagged rather than passed, which locks 4–6).
+    # (most commonly Gate 3 flagged rather than passed, which locks 4–5).
     # Report the real state and the real next step instead of the blanket
     # "completed" claim this used to make regardless of what happened.
     qa = []
@@ -3101,14 +2963,11 @@ async def _run_pre_underwriting_clearance(args: dict, ctx: Ctx) -> dict:
         else:
             qa.append({"label": "3. Compliance Screen", "actionType": "submit",
                        "payload": f"Run compliance screening for case {case_no}"})
-    elif ipp != "Realized":
-        qa.append({"label": "4. Process IPP Payment", "actionType": "submit",
-                   "payload": f"Process initial premium payment for case {case_no}"})
     elif hist not in ("Clear", "Cleared"):
-        qa.append({"label": "5. Check Insurance History", "actionType": "submit",
+        qa.append({"label": "4. Check Insurance History", "actionType": "submit",
                    "payload": f"Run insurance history check for case {case_no}"})
     elif med not in ("Completed", "Waived", "NotRequired"):
-        qa.append({"label": "6. Assess Medical Exam", "actionType": "submit",
+        qa.append({"label": "5. Assess Medical Exam", "actionType": "submit",
                    "payload": f"Assess medical examination for case {case_no}"})
     qa.append({"label": "Check Gate Status", "actionType": "submit",
                "payload": f"Check pre-underwriting status for case {case_no}"})
@@ -3623,7 +3482,7 @@ _STAGES: list[tuple[tuple[str, ...], str, str, list[dict]]] = [
     (
         ("proposal created", "policy created", "proposal ready", "policy ready"),
         "proposal",
-        "Proposal created. Next: start the 6-gate Pre-Underwriting verification (Gate 1: E-Application).",
+        "Proposal created. Next: start the 5-gate Pre-Underwriting verification (Gate 1: E-Application).",
         [
             {"label": "1. Generate E-App Link (Gate 1)", "actionType": "submit", "payload": "Generate e-application link for this case"},
             {"label": "Check Pre-Underwriting Status", "actionType": "submit", "payload": "Check pre-underwriting status"},
@@ -3939,10 +3798,10 @@ async def _quick_start_workflow(args: dict, ctx: Ctx) -> dict:
     policy_res.raise_for_status()
     steps.append(f"Created proposal — PKR {coverage:,} over 15 years")
 
-    # Clear 6 Pre-Underwriting Gates
+    # Clear 5 Pre-Underwriting Gates
     try:
         await _run_pre_underwriting_clearance({"case_number": case_no}, ctx)
-        steps.append("Cleared all 6 Pre-Underwriting Gates (E-App, ACR, Compliance, IPP, History, Medical)")
+        steps.append("Cleared all 5 Pre-Underwriting Gates (E-App, ACR, Compliance, History, Medical)")
     except Exception as e:
         steps.append(f"Pre-underwriting auto-clearance note: {str(e)[:50]}")
 
@@ -3978,17 +3837,16 @@ async def _quick_start_workflow(args: dict, ctx: Ctx) -> dict:
 # over are said out loud.
 
 _GATE_ORDER = [
-    # (status key, number in the 7-step checklist, name, satisfied statuses, chip label, chip prompt)
+    # (status key, number in the 6-step checklist, name, satisfied statuses, chip label, chip prompt)
     ("e_application", 2, "Customer E-Application", ("Verified",), "Generate E-App Link", "Generate e-application link for case {no}"),
     ("acr", 3, "Agent's Confidential Report", ("Submitted",), "File ACR", "Submit agent confidential report for case {no}"),
     ("compliance", 4, "PEP & Sanctions Screening", ("Passed", "Cleared"), "Run PEP Check", "Run compliance screening for case {no}"),
-    ("ipp", 5, "Initial Premium Payment", ("Realized",), "Collect Premium", "Process initial premium payment for case {no}"),
-    ("insurance_history", 6, "Insurance History Clearance", ("Clear", "Cleared"), "Run History Check", "Run insurance history check for case {no}"),
-    ("medical_exam", 7, "Medical Examination", ("Completed", "Waived", "NotRequired"), "Assess Medical", "Assess medical examination for case {no}"),
+    ("insurance_history", 5, "Insurance History Clearance", ("Clear", "Cleared"), "Run History Check", "Run insurance history check for case {no}"),
+    ("medical_exam", 6, "Medical Examination", ("Completed", "Waived", "NotRequired"), "Assess Medical", "Assess medical examination for case {no}"),
 ]
 _GATE_OF_TOOL = {
     "verify_e_application": "e_application", "submit_agent_confidential_report": "acr", "run_compliance_screening": "compliance",
-    "process_initial_premium_payment": "ipp", "run_insurance_history_check": "insurance_history", "assess_medical_examination": "medical_exam",
+    "run_insurance_history_check": "insurance_history", "assess_medical_examination": "medical_exam",
 }
 
 
@@ -4020,13 +3878,13 @@ async def _skip_completed_gates(tool: str, result: dict, ctx: Ctx, args: dict) -
         if not skipped and not result.get("already_done"):
             return result                                    # nothing was passed over — the tool's own pointer is right
         head = detail.get("family_head_case")
-        shared = {"acr", "compliance", "ipp"}
+        shared = {"acr", "compliance"}
         why = (f" — recorded once for the whole family, on the head's case {head['case_number']}" if head
                else " — already recorded for the family" if len(detail.get("family_members") or []) > 1 and any(g[0] in shared for g in skipped) else "")
         passed = ", ".join(f"{g[1]} ({g[2]})" for g in skipped)
         note = (f"✅ Already complete, nothing to do for {'requirement' if len(skipped) == 1 else 'requirements'} {passed}{why}." if skipped else "")
         if nxt:
-            tail = f"👉 **Next — requirement {nxt[1]} of 7:** {nxt[2]}."
+            tail = f"👉 **Next — requirement {nxt[1]} of 6:** {nxt[2]}."
             actions = [{"label": nxt[4], "actionType": "submit", "payload": nxt[5].format(no=case_no)}]
         else:
             tail = "👉 **All pre-underwriting requirements are complete.** The case is ready for AI underwriting."
