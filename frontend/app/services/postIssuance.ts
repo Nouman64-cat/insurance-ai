@@ -72,6 +72,12 @@ export interface OnboardingStatus {
     acknowledged: { done: boolean; at: string | null; method: string | null };
   };
   warnings: string[];
+  automatic_delivery?: Record<string, {
+    status: "Pending" | "Retry" | "Completed" | "Skipped";
+    attempts: number;
+    error: string | null;
+    completed_at: string | null;
+  }>;
 }
 
 export interface PortalCredentials {

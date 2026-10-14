@@ -430,6 +430,10 @@ async def _bind_cover(
     # Generate the binding documents (Schedule, Certificate, Wording)
     await generate_and_store_documents(session, policy, policy.current_version_id)
 
+    # Persist work atomically with binding. Email runs outside this transaction.
+    from services.policy_delivery import enqueue_delivery
+    await enqueue_delivery(session, policy)
+
     return event
 
 

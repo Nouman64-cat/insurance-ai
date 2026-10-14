@@ -152,6 +152,8 @@ async def lifespan(app: FastAPI):
 
     # Group scheme renewals — daily job, opt-in (GROUP_RENEWAL_SCHEDULER=true).
     group_renewal_task = start_group_renewal_scheduler(stop_event, _session_factory)
+    from services.policy_delivery import start_delivery_worker
+    delivery_task = start_delivery_worker(stop_event, _session_factory)
 
     # ── STAGE B — POST-ISSUANCE LIFECYCLE (renewal scheduler) ──────────────────
     # Daily state machine (ACTIVE → GracePeriod → Lapsed + renewals). Runs AFTER
@@ -165,6 +167,7 @@ async def lifespan(app: FastAPI):
     # Graceful shutdown
     stop_event.set()
     await worker_task
+    await delivery_task
     if group_renewal_task is not None:
         await group_renewal_task
     # await renewal_task  # STAGE B — disabled (see above)

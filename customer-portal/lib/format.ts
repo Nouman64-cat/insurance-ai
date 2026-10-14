@@ -29,7 +29,7 @@ export function date(value: string | null | undefined, _locale: Locale = "en"): 
   return displayDate(d);
 }
 
-export function dateTime(value: string | null | undefined, locale: Locale = "en"): string {
+export function dateTime(value: string | null | undefined, _locale: Locale = "en"): string {
   if (!value) return "—";
   const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(value) ? value : `${value}Z`;   // the API sends UTC without a zone suffix
   const d = new Date(iso);

@@ -2670,6 +2670,23 @@ class CustomerPortalAccount(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
 
+class PolicyDeliveryJob(SQLModel, table=True):
+    """Durable post-binding work, separate from the immutable policy audit log."""
+    __tablename__ = "policy_delivery_jobs"
+    __table_args__ = (UniqueConstraint("policy_id", "kind", name="uq_policy_delivery_kind"),)
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+    kind: str = Field(max_length=40)
+    status: str = Field(default="Pending", max_length=30, index=True)
+    attempts: int = Field(default=0)
+    next_attempt_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    last_error: Optional[str] = Field(default=None, max_length=500)
+    completed_at: Optional[datetime] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class PolicyOnboarding(SQLModel, table=True):
     """Per-policy Stage B onboarding record: welcome kit + delivery + acknowledgment.
 

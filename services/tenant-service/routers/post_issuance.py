@@ -267,7 +267,13 @@ async def onboarding_status(
     session: AsyncSession = Depends(get_session),
 ):
     policy = await _get_policy(session, tenant_id, policy_id)
-    return await compute_onboarding(session, policy)
+    # Older in-force policies also acquire the automatic workflow on first view.
+    from services.policy_delivery import enqueue_delivery, delivery_status
+    await enqueue_delivery(session, policy)
+    await session.commit()
+    result = await compute_onboarding(session, policy)
+    result["automatic_delivery"] = await delivery_status(session, policy.id)
+    return result
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/onboarding/reset")
@@ -279,6 +285,7 @@ async def reset_onboarding(
     """DEV/TEST utility: Reset all onboarding steps for a policy.
     Clears policyholder_id, deletes the portal account, and drops the onboarding tracker."""
     policy = await _get_policy(session, tenant_id, policy_id)
+    await session.exec(select(Policy).where(Policy.id == policy.id).with_for_update())
     customer = await session.get(Customer, policy.customer_id)
     
     if customer:
@@ -309,6 +316,13 @@ async def reset_onboarding(
     )).first()
     if onboarding:
         await session.delete(onboarding)
+
+    from shared.models.core import PolicyDeliveryJob
+    jobs = (await session.exec(select(PolicyDeliveryJob).where(PolicyDeliveryJob.policy_id == policy.id))).all()
+    for job in jobs:
+        job.status, job.attempts, job.last_error, job.completed_at = "Pending", 0, None, None
+        job.next_attempt_at = datetime.utcnow()
+        session.add(job)
 
     event = record_event(
         session, policy, event_type="OnboardingReset", actor="system", detail={"reason": "manual_reset"}
@@ -355,6 +369,7 @@ async def generate_welcome_kit(
 ):
     """Generate (or regenerate) the welcome-kit PDF for this policy."""
     policy = await _get_policy(session, tenant_id, policy_id)
+    await session.exec(select(Policy).where(Policy.id == policy.id).with_for_update())
     _assert_onboardable(policy)
     customer = await session.get(Customer, policy.customer_id)
     portal = None
@@ -508,6 +523,9 @@ async def set_onboarding_contact(
         details["contact_phone"] = body.phone
     customer.details = details
     session.add(customer)
+    if body.email:
+        from services.policy_delivery import retry_delivery_after_contact
+        await retry_delivery_after_contact(session, policy)
     await session.commit()
     return await compute_onboarding(session, policy)
 
@@ -522,6 +540,7 @@ async def send_welcome(
     """Deliver the welcome pack + portal invite. Requires a contact channel and a
     generated welcome kit. Email is best-effort (mocked when no SMTP)."""
     policy = await _get_policy(session, tenant_id, policy_id)
+    await session.exec(select(Policy).where(Policy.id == policy.id).with_for_update())
     _assert_onboardable(policy)
     customer = await session.get(Customer, policy.customer_id)
     if customer is None:
@@ -569,7 +588,7 @@ async def send_welcome(
         </div>
         """
 
-        await email_utils.send_email(
+        delivered = await email_utils.send_email(
             to_email=email,
             subject=f"Welcome to your policy {policy.policy_number or ''}".strip(),
             text_body=f"Dear {customer.name},\n\nYour policy {policy.policy_number or ''} is now active. Your policyholder ID is "
@@ -578,6 +597,8 @@ async def send_welcome(
             html_body=html_body,
             attachments=[row.welcome_kit_path]
         )
+        if not delivered:
+            raise HTTPException(502, "Welcome email was not delivered. Automatic delivery will retry.")
 
     row.welcome_sent_at = datetime.utcnow()
     row.welcome_channel = channel
@@ -1351,6 +1372,7 @@ async def send_issuance_email(
     """Send the customer a professionally-formatted policy-issuance confirmation
     email (HTML + text). Requires the policy to be issued and an email on record."""
     policy = await _get_policy(session, tenant_id, policy_id)
+    await session.exec(select(Policy).where(Policy.id == policy.id).with_for_update())
     if not policy.policy_number:
         raise HTTPException(400, "Policy has not been issued yet")
 
@@ -1388,7 +1410,7 @@ async def send_issuance_email(
 
     ok = await email_utils.send_email(email, subject, text, html)
     event = record_event(
-        session, policy, event_type="IssuanceEmailSent", actor="ops",
+        session, policy, event_type="IssuanceEmailSent" if ok else "IssuanceEmailFailed", actor="ops",
         detail={"to": email, "subject": subject, "delivered": ok},
     )
     await session.commit()
