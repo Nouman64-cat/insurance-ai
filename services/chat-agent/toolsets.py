@@ -318,6 +318,7 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "withholding", "wht", "tax deduction", "disburse",
         "commission type", "commission rule", "commission rate", "rate card rule",
         "bonus plan", "incentive scheme", "persistency bonus", "production bonus",
+        "pay the agent", "pays the agent", "paid to the agent", "agent earn", "agent's pay", "agent get",
     ),
     "documents": (
         "document", "documents", "upload", "uploaded", "missing", "evidence", "requirement",
@@ -334,7 +335,8 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "network", "customer service", "request management",
     ),
     "servicing": (
-        "policy number", "pl-", "in force", "in-force", "issued policy", "welcome kit", "welcome email", "welcome pack",
+        "policy number", "pl-", "his policy", "her policy", "their policy", "the policy", "policyholder",
+        "policy holder", "email", "emails", "contact detail", "phone number", "mobile number", "in force", "in-force", "issued policy", "welcome kit", "welcome email", "welcome pack",
         "delivered", "delivery", "emailed", "onboard", "policyholder id", "portal access", "portal account",
         "customer portal", "invitation", "premium", "instalment", "installment", "overdue", "arrears", "grace",
         "receipt", "paid", "reminder", "billing", "endorse", "endorsement", "nominee", "beneficiar", "change the address",
@@ -375,6 +377,38 @@ def select_domains(texts: Iterable[str], sticky: Iterable[str] = ()) -> set[str]
     }
     matched |= {d for d in sticky if d in DOMAIN_TOOLS}
     return matched or set(FALLBACK_DOMAINS)
+
+
+def matched_domains(texts: Iterable[str]) -> list[str]:
+    """Domains whose keywords appear in `texts`, without the fallback — in
+    DOMAIN_TOOLS order, for prioritising."""
+    blob = " ".join(t for t in texts if t).lower()
+    return [d for d, words in DOMAIN_KEYWORDS.items() if any(w in blob for w in words)]
+
+
+def domains_used(tool_names: Iterable[str]) -> list[str]:
+    """The packs the given tools belong to (core tools belong to none)."""
+    out: list[str] = []
+    for name in tool_names:
+        d = domain_of(name)
+        if d and d not in out:
+            out.append(d)
+    return out
+
+
+def fit_to_cap(domains: Iterable[str], priority: Iterable[str], cap: int) -> set[str]:
+    """Drop whole packs, least relevant first, until CORE plus the packs fits the
+    provider's tool cap. A pack is never half-bound: trimming tool by tool used
+    to cut whichever tools happened to sit last in the registry — e.g. every
+    servicing tool — and leave the model reaching for a lookalike."""
+    domains = set(domains)
+    ordered = [d for d in dict.fromkeys(priority) if d in domains]
+    ordered += [d for d in DOMAIN_TOOLS if d in domains and d not in ordered]
+    chosen: list[str] = []
+    for d in ordered:
+        if len(tool_names_for([*chosen, d])) <= cap:
+            chosen.append(d)
+    return set(chosen)
 
 
 def domain_of(tool_name: str) -> str | None:

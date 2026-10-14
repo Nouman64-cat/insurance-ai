@@ -1428,6 +1428,10 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v61d — stamp_duty_amount NOT NULL",
         "ALTER TABLE policy_versions ALTER COLUMN stamp_duty_amount SET NOT NULL",
     ),
+    (
+        "v62a — source-backed insurance plan surrender terms",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS surrender_terms JSON",
+    ),
 ]
 
 

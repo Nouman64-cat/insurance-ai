@@ -329,9 +329,11 @@ CLAIM_IBAN_PATTERN = r"^PK\d{2}[A-Z]{4}[A-Z0-9]{16}$"
 # Claims Management; this module only closes the policy afterwards (DeathClaimClosure).
 #
 # Adamjee states that maturity benefits depend on the policy terms and, for unit-linked plans,
-# are the cash value less indebtedness and recoverable amounts. The unit prices, surrender
-# charge schedule and tax treatment are NOT public, so every figure here is a configurable
-# PLACEHOLDER: the "fund" is premiums, net of an allocation charge, accumulated at an assumed
+# are the cash value less indebtedness and recoverable amounts. Published surrender terms
+# now live on InsurancePlan.surrender_terms as sourced catalog references; this engine
+# does not yet apply them. Without real unit holdings/prices and contract-version matching,
+# every figure below remains a configurable PLACEHOLDER: the "fund" is premiums,
+# net of an allocation charge, accumulated at an assumed
 # rate — replace `fund_value()` with the real unit-price feed when it exists.
 EXIT_PROFILE_BY_TYPE: dict[str, str] = {
     "SAVINGS": "Savings", "ENDOWMENT": "Savings", "WHOLE_LIFE": "Savings",

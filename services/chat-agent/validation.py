@@ -58,6 +58,15 @@ def validate_email(value):
     return str(value), f"'{value}' isn't a valid email address (e.g. name@example.com)."
 
 
+_PHONE = re.compile(r"^\+?[0-9][0-9 \-]{6,18}[0-9]$")
+
+
+def validate_phone(value):
+    if _PHONE.match(str(value).strip()):
+        return str(value).strip(), None
+    return str(value), f"'{value}' isn't a valid phone number (e.g. +92 300 1234567)."
+
+
 # Per-tool field -> normalizer. Only fields present (and non-empty) are checked;
 # optional fields left blank are skipped.
 _FIELD_VALIDATORS = {
@@ -76,6 +85,11 @@ _FIELD_VALIDATORS = {
     "add_case_comment": {"cnic": normalize_cnic},
     "delete_case": {"cnic": normalize_cnic},
     "upload_document": {"cnic": normalize_cnic},
+    # A contact written to a live policy drives every automatic email: never a placeholder.
+    "preview_policy_endorsement": {"email": validate_email, "phone": validate_phone, "cnic": normalize_cnic},
+    "submit_policy_endorsement": {"email": validate_email, "phone": validate_phone, "cnic": normalize_cnic},
+    "create_support_ticket": {"customer_cnic": normalize_cnic},
+    "create_service_request": {"customer_cnic": normalize_cnic},
 }
 
 

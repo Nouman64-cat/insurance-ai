@@ -511,6 +511,18 @@ async def provision_portal(
     return {"reset": reset, "already_active": False, **creds.public_dict()}
 
 
+def _checked_contact(email: Optional[str], phone: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+    """Validate an email / phone with the platform's shared contact rules before it is written to a
+    customer — an invalid address on a live policy breaks every automatic delivery."""
+    from shared.requests.customer_corrections import FIELDS, CorrectionValueError
+    try:
+        email = FIELDS["contact.email"].validate(email) if email else None
+        phone = FIELDS["contact.mobile_number"].validate(phone) if phone else None
+    except CorrectionValueError as exc:
+        raise HTTPException(422, str(exc))
+    return email, phone
+
+
 class ContactBody(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
@@ -527,6 +539,7 @@ async def set_onboarding_contact(
     Merges into Customer.details (the same place the rest of the app reads it)."""
     policy = await _get_policy(session, tenant_id, policy_id)
     _assert_onboardable(policy)
+    body.email, body.phone = _checked_contact(body.email, body.phone)
     if not (body.email or body.phone):
         raise HTTPException(400, "Provide an email or a phone number")
     customer = await session.get(Customer, policy.customer_id)
@@ -1810,6 +1823,7 @@ async def endorse_contact(
     """Mid-term contact (email / phone) update — non-financial endorsement."""
     policy = await _get_policy(session, tenant_id, policy_id)
     _assert_endorsable(policy)
+    body.email, body.phone = _checked_contact(body.email, body.phone)
     if not (body.email or body.phone):
         raise HTTPException(400, "Provide an email or a phone number")
     customer = await session.get(Customer, policy.customer_id)

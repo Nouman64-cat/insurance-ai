@@ -265,3 +265,29 @@ def test_medical_values_are_staff_only():
         for role in ("Agent", "Viewer", "ClaimsAdjuster", "SomeRoleNobodyDefined"):
             assert not is_role_allowed(tool_name, role), f"{role} may run {tool_name}"
         assert not is_role_allowed(tool_name, "Agent", "mobile")
+
+
+def test_cap_trims_whole_packs_and_keeps_what_was_just_asked():
+    """Regression: with every pack sticky (173 tools), tool-by-tool trimming cut
+    the servicing pack — the newest in the registry — and the model used the
+    group endorsement tools on an individual policy instead."""
+    from graph import MAX_BOUND_TOOLS
+    every = list(toolsets.DOMAIN_TOOLS)
+    asked = toolsets.matched_domains(["That email is wrong. Correct it on his policy, get the failed emails "
+                                      "going again. What's blocking the open claim?"])
+    assert "servicing" in asked
+    kept = toolsets.fit_to_cap(every, [*asked], MAX_BOUND_TOOLS)
+    assert "servicing" in kept and "claims" in kept
+    assert len(toolsets.tool_names_for(kept)) <= MAX_BOUND_TOOLS
+    # No pack is ever half-bound.
+    bound = toolsets.tool_names_for(kept)
+    for d, names in toolsets.DOMAIN_TOOLS.items():
+        assert names <= bound or not (names & bound), f"{d} partially bound"
+
+
+def test_tool_results_do_not_drive_domain_selection():
+    from langchain_core.messages import HumanMessage, ToolMessage
+    import graph
+    msgs = [HumanMessage(content="hello"),
+            ToolMessage(content='{"claim": "x", "group policy": "y", "commission": 1}', tool_call_id="1", name="t")]
+    assert toolsets.matched_domains(graph._recent_text(msgs)) == []

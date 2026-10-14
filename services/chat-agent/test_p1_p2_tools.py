@@ -352,3 +352,13 @@ def test_work_queue_separates_age_from_lateness():
     overdue = {i["reference"]: i["overdue"] for i in res["items"]}
     assert overdue == {"CASE-2026-F1": False, "CASE-2026-F3": True} and res["overdue_count"] == 1
     assert res["items"][0]["reference"] == "CASE-2026-F3"      # overdue first, however young
+
+
+def test_placeholder_email_never_reaches_a_live_policy():
+    """A literal '<your-test-email>' was once applied to a policy as its contact."""
+    from validation import validate_and_normalize
+    for tool in ("preview_policy_endorsement", "submit_policy_endorsement"):
+        _, errors = validate_and_normalize(tool, {"endorsement_type": "contact", "email": "your-test-email"})
+        assert errors and "valid email" in errors[0]
+        _, errors = validate_and_normalize(tool, {"endorsement_type": "contact", "email": "hamza@example.com"})
+        assert not errors

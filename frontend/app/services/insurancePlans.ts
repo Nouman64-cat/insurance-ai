@@ -31,6 +31,7 @@ export interface InsurancePlan {
   status: PlanStatus;
   description: string;
   color: string;
+  surrender_terms?: Record<string, unknown> | null;
 
   entry_age_min: number;
   entry_age_max: number;

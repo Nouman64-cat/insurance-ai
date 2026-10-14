@@ -59,7 +59,7 @@ from claims_journey import register_claims_journey
 from group_journey import register_group_journey
 from journey import register_journey
 from operations import OPERATION_TOOLS, operation_status_result, plan_resume
-from toolsets import CORE_TOOLS, select_domains, tool_names_for
+from toolsets import CORE_TOOLS, domains_used, fit_to_cap, matched_domains, select_domains, tool_names_for
 
 # OpenAI's hard limit on tools per request (Gemini has none, but the fallback must fit too).
 MAX_BOUND_TOOLS = 128
@@ -681,9 +681,14 @@ async def generate_chat_title(
 
 
 def _recent_text(messages: list, limit: int = 6) -> list[str]:
-    """Plain text of the last few messages, for domain keyword matching."""
+    """Plain text of the last few messages, for domain keyword matching.
+
+    Tool results are skipped: their JSON mentions policies, claims, endorsements
+    and the rest, so matching on it bound nearly every pack on every turn."""
     out: list[str] = []
     for m in messages[-limit:]:
+        if isinstance(m, ToolMessage):
+            continue
         content = getattr(m, "content", "")
         if isinstance(content, str):
             out.append(content)
@@ -804,8 +809,17 @@ async def agent_node(state: ChatState, config: RunnableConfig | None = None) -> 
     platform = state.get("platform") or "web"
 
     # Bind only the tools this conversation is plausibly about — see toolsets.py.
+    # Priority when the cap forces a choice: what the user just asked about,
+    # then the packs whose tools this conversation is actually using.
     sticky = state.get("active_domains") or []
-    domains = frozenset(select_domains(_recent_text(state["messages"]), sticky))
+    latest = next((m for m in reversed(state["messages"]) if isinstance(m, HumanMessage)), None)
+    asked_now = matched_domains([str(latest.content)] if latest else [])
+    in_use = domains_used(tc.get("name", "") for m in state["messages"][-12:] for tc in (getattr(m, "tool_calls", None) or []))
+    domains = frozenset(fit_to_cap(select_domains(_recent_text(state["messages"]), sticky),
+                                   [*asked_now, *in_use, *sticky], MAX_BOUND_TOOLS))
+    # Carried to the next turn: only what was asked about or used — never the
+    # whole bound set, which only ever grew.
+    next_sticky = sorted(set(asked_now) | set(in_use))
 
     # Trim before sending. Without this the whole thread is re-sent every turn
     # and a long conversation's input cost climbs without any ceiling.
@@ -865,7 +879,8 @@ async def agent_node(state: ChatState, config: RunnableConfig | None = None) -> 
                     "tool_calls": response.tool_calls[:1],
                     "invalid_tool_calls": [],
                 })
-            return {"messages": [response], "active_domains": sorted(domains)}
+            used_now = domains_used(tc["name"] for tc in (getattr(response, "tool_calls", None) or []))
+            return {"messages": [response], "active_domains": sorted(set(next_sticky) | set(used_now))}
         except Exception as exc:  # noqa: BLE001 — SDK raises provider-specific types
             last_exc = exc
             text = str(exc)

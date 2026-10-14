@@ -1569,6 +1569,10 @@ class InsurancePlan(SQLModel, table=True):
     medical_exam_tiers: List[dict] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     required_documents: List[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
 
+    # Source-backed catalog reference, separate from actuarial pricing and the
+    # exit engine's demonstration fund values. Null means not yet researched.
+    surrender_terms: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+
     is_active: bool = Field(default=True, nullable=False)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)

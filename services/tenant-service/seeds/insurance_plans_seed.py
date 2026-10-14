@@ -36,6 +36,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from shared.models.core import InsurancePlan, Tenant
+from seeds.insurance_plan_surrender_seed import surrender_terms_for
 
 # ── Repeated literals (kept as constants to avoid duplication) ─────────────────
 
@@ -138,6 +139,7 @@ def _plan(
         "code": code, "label": label, "insurance_type": insurance_type,
         "category": "Individual", "product_category": product_category,
         "partner_bank": partner_bank, "color": band["color"], "description": description,
+        "surrender_terms": surrender_terms_for(code),
         **{k: v for k, v in band.items() if k != "color"},
     }
     return spec
