@@ -6,8 +6,11 @@ from sqlalchemy import text
 def literal(s): return "'" + s.replace("'", "''") + "'"
 async def main():
     url = os.environ['CS_PROVISION_DATABASE_URL']
-    engine = create_async_engine(url, isolation_level='AUTOCOMMIT')
-    async with engine.connect() as c:
+    engine = create_async_engine(url)
+    async with engine.begin() as c:
+        # Shared with Customer Management and Request Management provisioning.
+        # The transaction lock serializes changes to the public-schema ACL.
+        await c.execute(text("SELECT pg_advisory_xact_lock(731144001)"))
         for role,key in [('customer_service_owner','CS_DB_OWNER_PASSWORD'),('customer_service_app','CS_DB_APP_PASSWORD')]:
             pw=os.environ[key]
             if not pw: raise RuntimeError('Database role passwords are required')

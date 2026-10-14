@@ -37,9 +37,12 @@ def _literal(value: str) -> str:
 async def provision(admin_url: str, schema: str, owner: str, owner_password: str, app: str, app_password: str) -> None:
     schema, owner, app = _ident(schema), _ident(owner), _ident(app)
     database = make_url(admin_url).database
-    engine = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
+    engine = create_async_engine(admin_url)
     try:
-        async with engine.connect() as conn:
+        async with engine.begin() as conn:
+            # All service provisioners share this transaction lock: public-schema ACL
+            # changes touch the same PostgreSQL catalog row, even for different roles.
+            await conn.execute(text("SELECT pg_advisory_xact_lock(731144001)"))
             for role, password in ((owner, owner_password), (app, app_password)):
                 exists = (await conn.execute(text("SELECT 1 FROM pg_roles WHERE rolname = :r"), {"r": role})).first()
                 verb = "ALTER" if exists else "CREATE"
