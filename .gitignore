@@ -139,3 +139,5 @@ services/tenant-service/media/
 
 
 test images/
+output
+tmp
