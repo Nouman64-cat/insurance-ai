@@ -491,3 +491,15 @@ async def _record_medical_review(args: dict, ctx: Ctx) -> dict:
         "quick_actions": [{"label": "Check Gate Status", "actionType": "submit",
                            "payload": f"Check pre-underwriting status for case {case_no}"}],
     }
+
+
+# ── upload_document's target, resolved before the browser runs it ───────────
+
+@handles("resolve_upload_target")
+async def _resolve_upload_target(args: dict, ctx: Ctx) -> dict:
+    """Internal (not a model-facing tool): permission_gate calls this before
+    handing upload_document to the browser, so the file is bound to one
+    canonical case id — or the user is asked which application they mean."""
+    case = (await resolve_application(args, ctx))["case"]
+    return {"success": True, "case_id": _case_id(case), "case_number": case.get("caseNumber"),
+            "cnic": case.get("customer_cnic")}

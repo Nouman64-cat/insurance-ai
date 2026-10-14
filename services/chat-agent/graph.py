@@ -451,6 +451,40 @@ DOMAIN_PROMPTS["documents"] = """
 - **record_medical_review** only with values the user stated or explicitly confirmed in this conversation, staff_reviewed=true, and a value for every required test. Never record values taken unconfirmed from read_medical_reports. When the user wants to check reports side by side, use the Review Medical Reports button instead.
 """
 
+DOMAIN_PROMPTS["servicing"] = """
+
+## SERVICING AN ISSUED POLICY
+
+Identify the policy by policy number, CNIC or policyholder name; if a tool offers several policies, let the user pick.
+- Delivery: **get_policy_delivery_status**; retry only failures with **retry_failed_delivery** — report "queued", never "sent", until the status shows delivered.
+- Onboarding: **get_onboarding_status**, **provision_portal_access** (never replaces an account in use unless a reset with a reason is asked for), **send_portal_invitation**.
+- Premiums: **get_premium_schedule**, **get_payment_receipt**, **send_premium_reminder**. Amounts and payment status come only from these records — never mark anything paid because the user says so.
+- Changes (nominee, address, contact, sum assured, riders): **preview_policy_endorsement** first, then **submit_policy_endorsement** only on explicit confirmation; **get_endorsement_status** for history.
+- Renewal: **get_renewal_readiness**, **preview_policy_renewal**, **submit_policy_renewal** (opening is not renewing).
+- Lapsed cover: **get_reinstatement_requirements**, **submit_reinstatement_request**, **get_reinstatement_status** — a request never means cover is restored.
+- Ending a policy: **preview_policy_exit** explains free-look and surrender with estimates; **submit_policy_exit_request** only with the customer's explicit instruction; **get_exit_status**. Keep estimate, request, settlement and refund/payout distinct.
+"""
+
+DOMAIN_PROMPTS["service_desk"] = """
+
+## SERVICE REQUESTS & SUPPORT TICKETS
+
+- A change someone must approve (e.g. correcting a customer's contact/address): **create_service_request** (a draft), then **submit_service_request**; **get_service_request** shows owner, reviewer questions, decision, and whether an approved change was actually applied. **add_request_attachment** attaches a document the platform already holds.
+- A complaint or enquiry: **create_support_ticket** linked to the customer/policy with a short conversation summary; **get_support_ticket**, **add_ticket_comment**, **assign_support_ticket** (claim or release only).
+- A ticket's or request's status is never the policy's or application's status — say which one you mean.
+"""
+
+DOMAIN_PROMPTS["workflow"] = """
+
+## EXCEPTIONS, MEMBERS, QUEUES
+
+- Ambiguous reference → **resolve_insurance_record** before acting. "Can it move to X?" → **preview_application_transition**.
+- A disputed or incomplete underwriting result is routed, never decided here: **request_additional_evidence** or **refer_underwriting_review**.
+- Family/corporate: **get_member_workflow_matrix** for per-member blockers; **resume_member_workflow** runs the next step for ONE member. Never apply one member's decision to others.
+- "Why is this claim waiting?" → **get_claim_blockers**.
+- "What is delayed / overdue / in my queue?" → **get_work_queue** (applications, claims, claim payouts, requests, tickets — keep them distinct). History → **get_workflow_timeline**.
+"""
+
 DOMAIN_PROMPTS["support"] = """
 
 ## RECOVERY & AVAILABILITY
@@ -1449,7 +1483,7 @@ async def _permission_gate(state: ChatState) -> Command:
     name, args, call_id = tool_call["name"], tool_call["args"], tool_call["id"]
     platform = state.get("platform") or "web"
     ctx = ExecCtx(tenant_id=state["tenant_id"], jwt_token=state["jwt_token"], role=state.get("user_role") or "Agent",
-                  current_org_id=state.get("group_current_org_id"))
+                  current_org_id=state.get("group_current_org_id"), platform=platform)
     # A group tool called with an explicit organization id is that corporate being chosen: remember it.
     remember: dict = {}
     if name in GROUP_TOOLS and args.get("organization_id"):
@@ -2547,6 +2581,15 @@ async def _permission_gate(state: ChatState) -> Command:
         return Command(goto="g_resume", update={"pending_call": pending, "group_error": None, **remember})
 
     if name in CLIENT_EXECUTED_TOOLS:
+        # Bind the upload to one canonical application before the browser runs
+        # it: an unknown or ambiguous target comes back as a choice instead of
+        # the browser guessing from a name.
+        if name == "upload_document" and not args.get("case_id") and any(
+                args.get(k) for k in ("case_number", "cnic", "applicant_name")):
+            target = await execute_tool("resolve_upload_target", args, ctx)
+            if not target.get("success"):
+                return back_to_agent({"messages": [_tool_result_message(name, call_id, target)]})
+            args = {**args, "case_id": target["case_id"], "case_number": target["case_number"]}
         # The browser holds the attached File object — chat-agent can't
         # execute this itself. Route to the dedicated client executor node
         # to avoid LangGraph multiple-interrupt bleeding.

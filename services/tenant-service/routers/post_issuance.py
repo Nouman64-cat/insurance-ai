@@ -276,6 +276,24 @@ async def onboarding_status(
     return result
 
 
+@router.post("/tenants/{tenant_id}/policies/{policy_id}/onboarding/delivery/retry")
+async def retry_failed_delivery(
+    tenant_id: UUID, policy_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    """Bring failed automatic deliveries forward to run now. Only jobs waiting to retry are touched — completed work
+    (a generated kit, an email already delivered) is never repeated. The worker sends them; this only queues them."""
+    from services.policy_delivery import delivery_status, retry_delivery_after_contact
+    policy = await _get_policy(session, tenant_id, policy_id)
+    _assert_onboardable(policy)
+    await session.exec(select(Policy).where(Policy.id == policy.id).with_for_update())
+    before = await delivery_status(session, policy.id)
+    await retry_delivery_after_contact(session, policy)
+    await session.commit()
+    return {"requeued": sorted(k for k, v in before.items() if v["status"] == "Retry"),
+            "automatic_delivery": await delivery_status(session, policy.id)}
+
+
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/onboarding/reset")
 async def reset_onboarding(
     tenant_id: UUID, policy_id: UUID,
@@ -1013,8 +1031,20 @@ async def remind_installment(
         due=schedule.due_date.isoformat(),
         policy=policy.policy_number or "—",
     )
+    # True / False for email; None for channels with no delivery provider (logged as dispatched).
+    delivered = None
     if channel == "Email" and email:
-        await email_utils.send_email(email, f"Premium reminder — policy {policy.policy_number or ''}".strip(), message)
+        delivered = await email_utils.send_email(email, f"Premium reminder — policy {policy.policy_number or ''}".strip(), message)
+    if delivered is False:
+        # A failed send is not a reminder the customer received: don't count it as sent.
+        event = record_event(
+            session, policy, event_type="PremiumReminderFailed", actor=body.sent_by or "system",
+            detail={"schedule_id": str(schedule_id), "channel": channel, "to": to_address, "delivered": False},
+        )
+        await session.commit()
+        await _publish_policy_event(request, policy, event)
+        billing = await compute_billing(session, policy)
+        return {**billing, "reminder": {"channel": channel, "to": to_address, "delivered": False}}
 
     schedule.reminder_count = (schedule.reminder_count or 0) + 1
     schedule.last_reminder_at = datetime.utcnow()
@@ -1026,11 +1056,13 @@ async def remind_installment(
     ))
     event = record_event(
         session, policy, event_type="PremiumReminderSent", actor=body.sent_by or "system",
-        detail={"schedule_id": str(schedule_id), "channel": channel, "template": template, "kind": kind},
+        detail={"schedule_id": str(schedule_id), "channel": channel, "template": template, "kind": kind,
+                "delivered": delivered},
     )
     await session.commit()
     await _publish_policy_event(request, policy, event)
-    return await compute_billing(session, policy)
+    billing = await compute_billing(session, policy)
+    return {**billing, "reminder": {"channel": channel, "to": to_address, "delivered": delivered}}
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/premiums/{schedule_id}/waive")

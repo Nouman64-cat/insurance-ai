@@ -205,6 +205,53 @@ DOMAIN_TOOLS: dict[str, set[str]] = {
         "get_service_health",
         "diagnose_connection",
     },
+    # An issued individual policy: delivery, onboarding, premiums, changes, renewal,
+    # reinstatement and exit.
+    "servicing": {
+        "get_policy_delivery_status",
+        "retry_failed_delivery",
+        "get_onboarding_status",
+        "provision_portal_access",
+        "send_portal_invitation",
+        "get_premium_schedule",
+        "get_payment_receipt",
+        "send_premium_reminder",
+        "preview_policy_endorsement",
+        "submit_policy_endorsement",
+        "get_endorsement_status",
+        "get_renewal_readiness",
+        "preview_policy_renewal",
+        "submit_policy_renewal",
+        "get_reinstatement_requirements",
+        "submit_reinstatement_request",
+        "get_reinstatement_status",
+        "preview_policy_exit",
+        "submit_policy_exit_request",
+        "get_exit_status",
+    },
+    # Request Management and Customer Service.
+    "service_desk": {
+        "create_service_request",
+        "get_service_request",
+        "add_request_attachment",
+        "submit_service_request",
+        "create_support_ticket",
+        "get_support_ticket",
+        "add_ticket_comment",
+        "assign_support_ticket",
+    },
+    # Exceptions, family/corporate members, queues and histories.
+    "workflow": {
+        "resolve_insurance_record",
+        "preview_application_transition",
+        "request_additional_evidence",
+        "refer_underwriting_review",
+        "get_member_workflow_matrix",
+        "resume_member_workflow",
+        "get_claim_blockers",
+        "get_work_queue",
+        "get_workflow_timeline",
+    },
 }
 
 # Bound when no keyword matches and nothing is sticky. Must fit the provider cap
@@ -285,6 +332,27 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "timed out", "took too long", "unreachable", "unavailable", "server", "health", "outage",
         "down", "not loading", "not opening", "won't open", "won't load", "can't open", "cannot open",
         "network", "customer service", "request management",
+    ),
+    "servicing": (
+        "policy number", "pl-", "in force", "in-force", "issued policy", "welcome kit", "welcome email", "welcome pack",
+        "delivered", "delivery", "emailed", "onboard", "policyholder id", "portal access", "portal account",
+        "customer portal", "invitation", "premium", "instalment", "installment", "overdue", "arrears", "grace",
+        "receipt", "paid", "reminder", "billing", "endorse", "endorsement", "nominee", "beneficiar", "change the address",
+        "change address", "change of address", "sum assured", "rider", "renew", "renewal", "expire", "expiry",
+        "reinstat", "lapse", "lapsed", "revive", "restore", "free-look", "free look", "cooling", "cancel the policy",
+        "cancel policy", "cancellation", "surrender", "maturity", "exit",
+    ),
+    "service_desk": (
+        "service request", "change request", "request management", "my request", "request status", "req-",
+        "correction", "correct the", "ticket", "complaint", "complain", "support", "enquiry", "inquiry",
+        "customer service", "escalat", "assign the ticket", "claim the ticket",
+    ),
+    "workflow": (
+        "which record", "which application", "which customer", "transition", "can it move", "move to",
+        "send to underwriting", "evidence", "loading", "dispute", "contest", "refer", "review it",
+        "member", "members", "family", "household", "employees", "blocked", "blocking", "waiting", "why is",
+        "stuck", "queue", "backlog", "aging", "ageing", "oldest", "delayed", "overdue", "sla", "deadline",
+        "timeline", "history", "audit trail", "who did", "payouts",
     ),
 }
 
