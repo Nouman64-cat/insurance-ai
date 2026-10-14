@@ -98,6 +98,17 @@ async def build_document_context(session: AsyncSession, policy: Policy) -> dict:
         if agent:
             agent_name = agent.full_name
 
+    # ── The initial premium actually collected before underwriting, if any (the receipt shows it) ────────────
+    from shared.models.core import InitialPremiumPayment
+    ipp = (await session.exec(
+        select(InitialPremiumPayment).where(InitialPremiumPayment.policy_id == policy.id)
+        .order_by(InitialPremiumPayment.created_at.desc())  # type: ignore[arg-type]
+    )).first()
+    ipp_paid = None
+    if ipp is not None and getattr(ipp.status, "value", ipp.status) == "Realized":
+        ipp_paid = {"amount": ipp.amount, "method": ipp.method, "reference": ipp.reference,
+                    "paid_on": ipp.realized_at.strftime("%Y-%m-%d") if ipp.realized_at else None}
+
     # ── Computed notice fields ─────────────────────────────────────────────────
     issue_date = date.today()
     due_date = schedule_due_date or (issue_date + timedelta(days=NOTICE_VALIDITY_DAYS))
@@ -150,6 +161,7 @@ async def build_document_context(session: AsyncSession, policy: Policy) -> dict:
         # Notice meta
         "issue_date": issue_date.isoformat(),
         "challan_ref": challan_ref,
+        "ipp_paid": ipp_paid,
 
         # Underwriting
         "loadings_text": loadings_text,
@@ -169,7 +181,8 @@ async def generate_and_store_documents(session: AsyncSession, policy: Policy,
     generated = document_generator.generate_policy_documents(ctx)
 
     for old in (await session.exec(select(PolicyDocument).where(PolicyDocument.policy_id == policy.id))).all():
-        if (old.document_type.value if hasattr(old.document_type, "value") else str(old.document_type)) != PolicyDocumentTypeEnum.PREMIUM_NOTICE.value:
+        if (old.document_type.value if hasattr(old.document_type, "value") else str(old.document_type)) not in (
+                PolicyDocumentTypeEnum.PREMIUM_NOTICE.value, PolicyDocumentTypeEnum.APPLICATION_DOSSIER.value):
             await session.delete(old)
 
     rows: list[PolicyDocument] = []
@@ -185,6 +198,12 @@ async def generate_and_store_documents(session: AsyncSession, policy: Policy,
         )
         session.add(doc)
         rows.append(doc)
+
+    # The dossier of everything the customer provided (e-application, medical, scans) goes with the other documents.
+    from services import application_dossier
+    dossier = await application_dossier.generate_and_store(session, policy, policy_version_id)
+    if dossier is not None:
+        rows.append(dossier)
     return rows
 
 

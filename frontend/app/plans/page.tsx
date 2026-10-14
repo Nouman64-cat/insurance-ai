@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   InsurancePlan,
   InsurancePlanCreate,
@@ -8,6 +8,8 @@ import {
   createInsurancePlan,
   deleteInsurancePlan,
   listInsurancePlans,
+  removePolicyWording,
+  uploadPolicyWording,
   seedDefaultPlans,
   updateInsurancePlan,
 } from "../services/insurancePlans";
@@ -375,6 +377,21 @@ function PlanCatalog() {
           form={form}
           editingId={editingId}
           docInput={docInput}
+          wording={
+            editingId
+              ? {
+                  filename: plans.find((p) => p.id === editingId)?.policy_wording_filename ?? null,
+                  onUpload: async (file: File) => {
+                    const updated = await uploadPolicyWording(tenantId!, editingId, file);
+                    setPlans((all) => all.map((p) => (p.id === updated.id ? updated : p)));
+                  },
+                  onRemove: async () => {
+                    const updated = await removePolicyWording(tenantId!, editingId);
+                    setPlans((all) => all.map((p) => (p.id === updated.id ? updated : p)));
+                  },
+                }
+              : null
+          }
           saving={saving}
           formError={formError}
           onClose={() => setShowModal(false)}
@@ -689,12 +706,85 @@ function PlanDetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+// ── Policy wording (PDF) ──────────────────────────────────────────────────────
+
+function PolicyWordingField({
+  wording,
+}: {
+  wording: { filename: string | null; onUpload: (file: File) => Promise<void>; onRemove: () => Promise<void> };
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const input = useRef<HTMLInputElement | null>(null);
+
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true);
+    setErr("");
+    try {
+      await action();
+    } catch (e: any) {
+      setErr(e?.message ?? tx("Something went wrong. Please try again."));
+    } finally {
+      setBusy(false);
+      if (input.current) input.current.value = "";
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-200 p-4">
+      <label className="block text-xs font-semibold text-slate-600">{tx("Policy wording (PDF)")}</label>
+      <p className="mt-0.5 text-[11px] text-slate-500">
+        {tx("Added to every policy's application dossier for this plan.")}
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {wording.filename ? (
+          <span className="max-w-full truncate rounded-md border border-blue-100 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+            {wording.filename}
+          </span>
+        ) : (
+          <span className="text-xs text-slate-500">{tx("No wording uploaded yet")}</span>
+        )}
+        <input
+          ref={input}
+          type="file"
+          accept="application/pdf,.pdf"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void run(() => wording.onUpload(file));
+          }}
+        />
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => input.current?.click()}
+          className="rounded-lg border border-blue-600 px-3 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-40"
+        >
+          {busy ? tx("Uploading…") : wording.filename ? tx("Replace") : tx("Upload PDF")}
+        </button>
+        {wording.filename && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void run(wording.onRemove)}
+            className="px-2 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 disabled:opacity-40"
+          >
+            {tx("Remove")}
+          </button>
+        )}
+      </div>
+      {err && <p role="alert" className="mt-2 text-xs text-slate-800">{err}</p>}
+    </div>
+  );
+}
+
 // ── Form modal ────────────────────────────────────────────────────────────────
 
 function PlanFormModal({
   form,
   editingId,
   docInput,
+  wording,
   saving,
   formError,
   onClose,
@@ -708,6 +798,7 @@ function PlanFormModal({
   form: InsurancePlanCreate;
   editingId: string | null;
   docInput: string;
+  wording: { filename: string | null; onUpload: (file: File) => Promise<void>; onRemove: () => Promise<void> } | null;
   saving: boolean;
   formError: string;
   onClose: () => void;
@@ -903,6 +994,14 @@ function PlanFormModal({
             <label className={labelCls}>{tx("Required Documents (comma-separated)")}</label>
             <input className={inputCls} value={docInput} onChange={(e) => setDocInput(e.target.value)} placeholder={tx("CNIC, Medical Report, Salary Slip")} />
           </div>
+
+          {wording ? (
+            <PolicyWordingField wording={wording} />
+          ) : (
+            <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+              {tx("Save the plan first, then edit it to upload its policy wording.")}
+            </p>
+          )}
 
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
             <button type="button" onClick={onClose} className="text-sm font-semibold px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">

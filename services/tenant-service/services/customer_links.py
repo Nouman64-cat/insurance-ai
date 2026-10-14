@@ -46,3 +46,34 @@ async def email_customer_link(
     )
     ok = await email_utils.send_email(to, subject, text, html)
     return {"emailed_to": to, "email_status": "sent" if ok else "failed"}
+
+
+async def email_lab_link(
+    session, *, tenant_id, case: Case, clinic, link_path: str, expires_at: datetime,
+    appointment_at: Optional[datetime], tests: Optional[list[str]] = None,
+) -> dict:
+    """Send the booked lab/doctor their report-upload link. Status is "sent", "failed" or
+    "no_email" (the clinic has no address on file — staff then pass the link on themselves)."""
+    to = ((clinic.email if clinic else None) or "").strip() or None
+    if not to:
+        return {"emailed_to": None, "email_status": "no_email"}
+    customer = await session.get(Customer, case.customer_id)
+    tenant = await session.get(Tenant, tenant_id)
+    extra = [("Applicant", customer.name if customer else "—")]
+    if appointment_at:
+        extra.append(("Appointment", appointment_at.strftime("%d %b %Y, %H:%M")))
+    subject, text, html = customer_action_link_email(
+        kind="medical_lab",
+        customer_name=customer.name if customer else "the applicant",
+        tenant_name=(tenant.name if tenant else None) or "Your insurer",
+        url=f"{PORTAL_PUBLIC_URL}{link_path}",
+        expires_on=expires_at.strftime("%d %b %Y"),
+        case_number=case.caseNumber,
+        tests=tests,
+        tenant_phone=getattr(tenant, "contact_phone", None),
+        tenant_email=getattr(tenant, "contact_email", None),
+        recipient_name=clinic.name,
+        extra_rows=extra,
+    )
+    ok = await email_utils.send_email(to, subject, text, html)
+    return {"emailed_to": to, "email_status": "sent" if ok else "failed"}

@@ -7,7 +7,7 @@ export const API_URL = (process.env.CM_API_URL || "http://api-gateway:8000/custo
 
 export const AT = "cp_at";        // short-lived access token
 export const RT = "cp_rt";        // refresh token — only ever sent to /api/portal/auth/*
-export const SCOPE = "cp_scope";  // "full" | "pwd_change": lets the middleware route without decoding a token
+export const SCOPE = "cp_scope";  // "full" | "pwd_change" | "walk_in": lets the middleware route without decoding a token
 const SESSION_SECONDS = 12 * 60 * 60;
 
 export interface Tokens {
@@ -27,6 +27,14 @@ export function setSession(res: NextResponse, t: Tokens): void {
   res.cookies.set(AT, t.access_token, { ...base, path: "/", maxAge });
   res.cookies.set(RT, t.refresh_token, { ...base, path: "/api/portal/auth", maxAge });
   res.cookies.set(SCOPE, t.scope, { ...base, path: "/", maxAge });
+}
+
+/** A walk-in session is an access token only: no refresh token, a short life, and a scope that confines the browser to /walk-in. */
+export function setWalkInSession(res: NextResponse, accessToken: string): void {
+  const maxAge = 2 * 60 * 60;
+  res.cookies.set(AT, accessToken, { ...base, path: "/", maxAge });
+  res.cookies.set(SCOPE, "walk_in", { ...base, path: "/", maxAge });
+  res.cookies.set(RT, "", { ...base, path: "/api/portal/auth", maxAge: 0 });   // never mix a customer refresh token with a walk-in session
 }
 
 export function clearSession(res: NextResponse): void {

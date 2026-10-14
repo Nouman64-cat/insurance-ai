@@ -224,6 +224,10 @@ export default function EApplicationPage({
     occupation_hazard_level: "Low",
     frequent_foreign_travel: false,
     foreign_travel_details: "",
+    road_travel_frequent: false,
+    road_trips_per_month: "",
+    road_trip_hours: "",
+    road_travel_details: "",
     moving_violations_past_3_years: "0",
     dui_dwi_history: false,
     criminal_record: false,
@@ -235,6 +239,7 @@ export default function EApplicationPage({
     was_declined_or_deferred: false,
     declined_details: "",
   });
+  const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
   const [declaration, setDeclaration] = useState({
     confirms_accurate: false,
     authorizes_records_access: false,
@@ -524,7 +529,13 @@ export default function EApplicationPage({
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
-          {step === 0 && <StepConfirmDetails applicant={applicant} />}
+          {step === 0 && (
+            <StepConfirmDetails
+              applicant={applicant}
+              accepted={disclaimerAccepted}
+              setAccepted={setDisclaimerAccepted}
+            />
+          )}
           {step === 1 && (
             <StepMedical medical={medical} setMedical={setMedical} />
           )}
@@ -577,7 +588,8 @@ export default function EApplicationPage({
           {step < STEPS.length - 1 ? (
             <button
               onClick={goNext}
-              className="px-5 py-2 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white"
+              disabled={step === 0 && !disclaimerAccepted}
+              className="px-5 py-2 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40"
             >
               {tx("Next →")}
             </button>
@@ -651,7 +663,11 @@ function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
 
 function StepConfirmDetails({
   applicant,
+  accepted,
+  setAccepted,
 }: {
+  accepted: boolean;
+  setAccepted: (v: boolean) => void;
   applicant: {
     name: string;
     cnic: string | null;
@@ -698,6 +714,22 @@ function StepConfirmDetails({
               : "—"}
           </p>
         </div>
+      </div>
+      <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={accepted}
+            onChange={(e) => setAccepted(e.target.checked)}
+          />
+          <span className="text-xs text-amber-900 leading-relaxed">
+            <span className="font-bold">{tx("Disclaimer")}: </span>
+            {tx(
+            "I confirm the information I provide is correct. If it is not, I am responsible for any penalty under company policy.",
+            )}
+          </span>
+        </label>
       </div>
     </div>
   );
@@ -1343,6 +1375,46 @@ function StepLifestyle({
             value={lifestyle.foreign_travel_details}
             onChange={(e) => set({ foreign_travel_details: e.target.value })}
           />
+        )}
+      </div>
+      <div>
+        <label className="flex items-center gap-1.5 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={lifestyle.road_travel_frequent}
+            onChange={(e) => set({ road_travel_frequent: e.target.checked })}
+          />
+          {tx("I travel long distances by road regularly")}
+        </label>
+        {lifestyle.road_travel_frequent && (
+          <div className="mt-2 space-y-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>{tx("Road trips per month")}</Label>
+                <TextInput
+                  type="number"
+                  min={0}
+                  value={lifestyle.road_trips_per_month}
+                  onChange={(e) => set({ road_trips_per_month: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>{tx("Typical trip length (hours)")}</Label>
+                <TextInput
+                  type="number"
+                  min={0}
+                  value={lifestyle.road_trip_hours}
+                  onChange={(e) => set({ road_trip_hours: e.target.value })}
+                />
+              </div>
+            </div>
+            <TextArea
+              rows={2}
+              placeholder={tx("Routes and vehicle (e.g. motorway, own car, motorcycle, bus)")}
+              value={lifestyle.road_travel_details}
+              onChange={(e) => set({ road_travel_details: e.target.value })}
+            />
+          </div>
         )}
       </div>
       <div>

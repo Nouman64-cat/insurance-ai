@@ -30,6 +30,9 @@ interface LeadLike {
   proposalStatus?: string | null;
   /** The most advanced underwriting case the lead has. */
   caseStatus?: string | null;
+  /** Underwriting is on hold: the process is paused where it stands (the stage bar keeps its position). */
+  onHold?: boolean;
+  holdReason?: string | null;
 }
 
 const CASE_NOTE: Record<string, string> = {
@@ -40,6 +43,15 @@ const CASE_NOTE: Record<string, string> = {
 };
 
 export function leadStage(lead: LeadLike): LeadStageInfo {
+  const base = baseLeadStage(lead);
+  if (lead.onHold && lead.status !== "NOT_INTERESTED") {
+    const why = (lead.holdReason ?? "").trim();
+    return { ...base, label: "On hold", note: why ? (why.length > 40 ? `${why.slice(0, 40)}…` : why) : "Underwriting paused", tone: "amber" };
+  }
+  return base;
+}
+
+function baseLeadStage(lead: LeadLike): LeadStageInfo {
   // A draft is a proposal; once submitted it is an application.
   const proposal = { href: "/proposal", linkLabel: "Open Proposal" };
   const application = { href: "/proposal", linkLabel: "Open Application" };

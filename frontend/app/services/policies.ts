@@ -318,7 +318,9 @@ export async function listPolicyDocuments(policyId: string): Promise<PolicyDocum
   return res.data;
 }
 
-export async function downloadDocument(policyId: string, docId: string): Promise<void> {
+/** Downloads a policy document. `name` (the document's own name, e.g. "Initial Premium Receipt – POLICY-2026-0005")
+ * becomes the file name; the browser cannot read the server's Content-Disposition across origins, so it is passed in. */
+export async function downloadDocument(policyId: string, docId: string, name?: string): Promise<void> {
   const tid = tenantId();
   const res = await api.get(`/tenants/${tid}/policies/${policyId}/documents/${docId}/download`, {
     headers: { "X-Tenant-Id": tid },
@@ -332,10 +334,12 @@ export async function downloadDocument(policyId: string, docId: string): Promise
   
   // Extract filename from content-disposition header if present
   let filename = "document.pdf";
-  const disposition = res.headers["content-disposition"];
-  if (disposition && disposition.includes("filename=")) {
-    filename = disposition.split("filename=")[1].replace(/['"]/g, "");
-  }
+  const disposition = String(res.headers["content-disposition"] ?? "");
+  const encoded = /filename\*=(?:UTF-8|utf-8)''([^;]+)/.exec(disposition);
+  const plain = /filename="?([^";]+)"?/.exec(disposition);
+  if (name) filename = `${name.replace(/[\\/:*?"<>|]/g, "-")}.pdf`;
+  else if (encoded) filename = decodeURIComponent(encoded[1]);
+  else if (plain) filename = plain[1];
   
   a.download = filename;
   document.body.appendChild(a);

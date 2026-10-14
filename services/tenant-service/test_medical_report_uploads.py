@@ -39,10 +39,10 @@ class ReportSubmissionTests(IsolatedAsyncioTestCase):
         order=self.order(); session=SimpleNamespace(add=Mock(), commit=AsyncMock())
         producer=SimpleNamespace(send_and_wait=AsyncMock())
         request=SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(kafka_producer=producer)))
-        with patch.object(medical_exam,'_resolve_by_token',AsyncMock(return_value=order)), \
+        with patch.object(medical_exam,'_resolve_by_lab_token',AsyncMock(return_value=(order,None))), \
              patch.object(medical_exam,'_uploaded_reports',AsyncMock(return_value=[])), \
              patch('services.medical_report_uploads.store_report',AsyncMock(return_value='https://s3/report.pdf')):
-            result=await medical_exam.public_upload_medical_report('token',request,'FBS',UploadFile(filename='report.pdf',file=BytesIO(b'%PDF-1.4')),session)
+            result=await medical_exam.lab_upload_medical_report('token',request,'FBS',UploadFile(filename='report.pdf',file=BytesIO(b'%PDF-1.4')),session)
         artifact=session.add.call_args_list[0].args[0]
         self.assertEqual(artifact.customer_id,order.customer_id)
         self.assertEqual(artifact.case_id,order.case_id)
@@ -50,38 +50,52 @@ class ReportSubmissionTests(IsolatedAsyncioTestCase):
         self.assertEqual(artifact.document_type,'Medical Report: FBS')
         self.assertEqual(result['report']['test_code'],'FBS')
         producer.send_and_wait.assert_awaited_once()
-    async def test_customer_submission_never_fabricates_normal_results(self):
+    async def test_lab_submission_never_fabricates_normal_results(self):
         order=self.order(); report=SimpleNamespace(id=uuid4(),document_type='Medical Report: FBS',status='Accepted')
         session=SimpleNamespace(add=Mock(),commit=AsyncMock())
-        with patch.object(medical_exam,'_resolve_by_token',AsyncMock(return_value=order)), \
+        with patch.object(medical_exam,'_resolve_by_lab_token',AsyncMock(return_value=(order,None))), \
              patch.object(medical_exam,'_uploaded_reports',AsyncMock(return_value=[report])), \
              patch.object(medical_exam,'publish_case_event',AsyncMock()):
-            result=await medical_exam.public_complete_medical_exam('token',SimpleNamespace(),session)
+            result=await medical_exam.lab_complete_medical_exam('token',medical_exam.LabSubmitRequest(signature_name='Dr. Ayesha Khan'),SimpleNamespace(),session)
         self.assertTrue(result['reports_submitted'])
+        self.assertEqual(order.lab_signed_by,'Dr. Ayesha Khan')
         self.assertEqual(order.status,MedicalExamStatusEnum.SCHEDULED)
         self.assertNotIn('standard_panel',order.results_json)
     async def test_missing_test_blocks_submission(self):
-        with patch.object(medical_exam,'_resolve_by_token',AsyncMock(return_value=self.order())), \
+        with patch.object(medical_exam,'_resolve_by_lab_token',AsyncMock(return_value=(self.order(),None))), \
              patch.object(medical_exam,'_uploaded_reports',AsyncMock(return_value=[])):
             with self.assertRaises(HTTPException) as raised:
-                await medical_exam.public_complete_medical_exam('token',SimpleNamespace(),SimpleNamespace())
+                await medical_exam.lab_complete_medical_exam('token',medical_exam.LabSubmitRequest(signature_name='Dr. Ayesha Khan'),SimpleNamespace(),SimpleNamespace())
         self.assertEqual(raised.exception.status_code,409)
     async def test_invalid_token_never_reaches_storage(self):
-        with patch.object(medical_exam,'_resolve_by_token',AsyncMock(side_effect=HTTPException(410,'Expired'))), \
+        with patch.object(medical_exam,'_resolve_by_lab_token',AsyncMock(side_effect=HTTPException(410,'Expired'))), \
              patch('services.medical_report_uploads.store_report',AsyncMock()) as store:
             with self.assertRaises(HTTPException):
-                await medical_exam.public_upload_medical_report('expired',SimpleNamespace(),'FBS',UploadFile(filename='a.pdf',file=BytesIO(b'%PDF-1.4')),SimpleNamespace())
+                await medical_exam.lab_upload_medical_report('expired',SimpleNamespace(),'FBS',UploadFile(filename='a.pdf',file=BytesIO(b'%PDF-1.4')),SimpleNamespace())
             store.assert_not_awaited()
 
-class BookingDisabledTests(IsolatedAsyncioTestCase):
-    async def test_public_booking_cannot_change_an_order(self):
+class BookingTests(IsolatedAsyncioTestCase):
+    async def test_booking_is_rejected_once_scheduled(self):
         from datetime import datetime
-        session = SimpleNamespace(commit=AsyncMock())
+        order = SimpleNamespace(status=MedicalExamStatusEnum.SCHEDULED)
         body = medical_exam.PublicBookRequest(clinic_id=uuid4(), appointment_at=datetime.utcnow())
-        with patch.object(medical_exam, '_resolve_by_token', AsyncMock(return_value=SimpleNamespace())):
+        session = SimpleNamespace(commit=AsyncMock())
+        with patch.object(medical_exam, '_resolve_by_token', AsyncMock(return_value=order)):
             with self.assertRaises(HTTPException) as raised:
                 await medical_exam.public_book_medical_exam('valid-token', body, session)
-        self.assertEqual(raised.exception.status_code, 410)
+        self.assertEqual(raised.exception.status_code, 409)
+        session.commit.assert_not_awaited()
+
+    async def test_clinic_of_another_tenant_cannot_be_booked(self):
+        from datetime import datetime
+        order = SimpleNamespace(status=MedicalExamStatusEnum.INVITED, tenant_id=uuid4(), required_tests=[])
+        clinic = SimpleNamespace(tenant_id=uuid4(), is_active=True)
+        session = SimpleNamespace(commit=AsyncMock(), get=AsyncMock(return_value=clinic))
+        body = medical_exam.PublicBookRequest(clinic_id=uuid4(), appointment_at=datetime.utcnow())
+        with patch.object(medical_exam, '_resolve_by_token', AsyncMock(return_value=order)):
+            with self.assertRaises(HTTPException) as raised:
+                await medical_exam.public_book_medical_exam('valid-token', body, session)
+        self.assertEqual(raised.exception.status_code, 404)
         session.commit.assert_not_awaited()
 
 class ReportClassificationTests(IsolatedAsyncioTestCase):

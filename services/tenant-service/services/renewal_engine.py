@@ -51,8 +51,8 @@ PREMIUM = "PremiumRenewal"
 CONTRACT = "ContractRenewal"
 TYPE_LABELS = {PREMIUM: "Premium Renewal", CONTRACT: "Contract Renewal"}
 
-_MONTHS_PER_PERIOD = {"Annual": 12, "SemiAnnual": 6, "Quarterly": 3, "Monthly": 1}
-_PERIODS_PER_YEAR = {"Annual": 1, "SemiAnnual": 2, "Quarterly": 4, "Monthly": 12}
+_MONTHS_PER_PERIOD = {"Annual": 12, "SemiAnnual": 6, "Quarterly": 3}
+_PERIODS_PER_YEAR = {"Annual": 1, "SemiAnnual": 2, "Quarterly": 4}
 
 _OPEN_CLAIM_STATUSES = frozenset({
     ClaimStatusEnum.NEW, ClaimStatusEnum.TRIAGED, ClaimStatusEnum.UNDER_INVESTIGATION,

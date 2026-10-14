@@ -230,7 +230,8 @@ export interface ReceiptRow {
 
 export const REMINDER_CHANNELS = ["Email", "SMS", "WhatsApp", "Letter"] as const;
 export const REMINDER_TEMPLATES = ["Friendly", "Standard", "FinalNotice"] as const;
-export const BILLING_FREQUENCIES = ["Annual", "SemiAnnual", "Quarterly", "Monthly"] as const;
+export const BILLING_FREQUENCIES = ["Annual", "SemiAnnual", "Quarterly"] as const;
+export const BILLING_FREQUENCY_LABELS: Record<(typeof BILLING_FREQUENCIES)[number], string> = { Annual: "Annually", SemiAnnual: "Half Year", Quarterly: "Quarterly" };
 
 export async function getBilling(policyId: string): Promise<BillingLedger> {
   const tid = tenantId();
@@ -268,6 +269,18 @@ export async function remindInstallment(
 export async function restructurePlan(policyId: string, frequency: string): Promise<BillingLedger> {
   const tid = tenantId();
   const res = await api.post(`/tenants/${tid}/policies/${policyId}/premiums/restructure`, { frequency });
+  return res.data;
+}
+
+export interface RestructurePreview {
+  frequency: string; annual_premium: number; collected: number; remaining: number; installments: number; per_installment: number;
+  rows: { installment_no: number; due_date: string; amount: number }[];
+}
+
+/** What a frequency would produce (same calculation as the real restructure); nothing is saved. */
+export async function previewRestructure(policyId: string, frequency: string): Promise<RestructurePreview> {
+  const tid = tenantId();
+  const res = await api.get(`/tenants/${tid}/policies/${policyId}/premiums/restructure-preview`, { params: { frequency } });
   return res.data;
 }
 

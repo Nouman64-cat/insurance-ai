@@ -712,7 +712,7 @@ MIGRATIONS: list[tuple[str, str]] = [
     (
         "v27a-enum — billingfrequencyenum",
         "DO $$ BEGIN CREATE TYPE billingfrequencyenum AS ENUM "
-        "('Annual','SemiAnnual','Quarterly','Monthly'); "
+        "('Annual','SemiAnnual','Quarterly'); "
         "EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
     ),
     (
@@ -1432,6 +1432,61 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v62a — source-backed insurance plan surrender terms",
         "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS surrender_terms JSON",
     ),
+    (
+        "v63a — add invite_sent_to to medical_exam_orders",
+        "ALTER TABLE medical_exam_orders ADD COLUMN IF NOT EXISTS invite_sent_to VARCHAR(255)",
+    ),
+    (
+        "v63b — add invite_sent_at to medical_exam_orders",
+        "ALTER TABLE medical_exam_orders ADD COLUMN IF NOT EXISTS invite_sent_at TIMESTAMP WITHOUT TIME ZONE",
+    ),
+    (
+        "v63c-enum — add ApplicationDossier to policydocumenttypeenum",
+        "ALTER TYPE policydocumenttypeenum ADD VALUE IF NOT EXISTS 'APPLICATION_DOSSIER'",
+    ),
+    (
+        "v64a — add policy_wording_path to insurance_plans",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS policy_wording_path VARCHAR(500)",
+    ),
+    (
+        "v64b — add policy_wording_filename to insurance_plans",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS policy_wording_filename VARCHAR(255)",
+    ),
+    (
+        "v64c — add policy_wording_uploaded_at to insurance_plans",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS policy_wording_uploaded_at TIMESTAMP WITHOUT TIME ZONE",
+    ),
+    # Underwriting hold: freezes a case where it stands (see routers/cases.py hold / release).
+    ("v62a — cases.on_hold", "ALTER TABLE cases ADD COLUMN IF NOT EXISTS on_hold BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("v62b — cases.hold_reason", "ALTER TABLE cases ADD COLUMN IF NOT EXISTS hold_reason VARCHAR(1000)"),
+    ("v62c — cases.held_at", "ALTER TABLE cases ADD COLUMN IF NOT EXISTS held_at TIMESTAMP WITHOUT TIME ZONE"),
+    ("v62d — cases.held_by", "ALTER TABLE cases ADD COLUMN IF NOT EXISTS held_by VARCHAR(255)"),
+    ("v62e — cases.held_from_status", "ALTER TABLE cases ADD COLUMN IF NOT EXISTS held_from_status VARCHAR(50)"),
+    ("v62f — cases.on_hold index", "CREATE INDEX IF NOT EXISTS ix_cases_on_hold ON cases (on_hold) WHERE on_hold"),
+    ("v62g — initial_premium_payments.case_id nullable (paid on the proposal, before a case exists)",
+     "ALTER TABLE initial_premium_payments ALTER COLUMN case_id DROP NOT NULL"),
+    ("v62h — one initial premium payment per policy",
+     "DO $$ BEGIN CREATE UNIQUE INDEX IF NOT EXISTS uq_ipp_policy ON initial_premium_payments (policy_id); "
+     "EXCEPTION WHEN OTHERS THEN NULL; END $$"),
+    ("v62i — initial_premium_payments.request_version", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS request_version INTEGER NOT NULL DEFAULT 0"),
+    ("v62j — initial_premium_payments.request_expires_at", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS request_expires_at TIMESTAMP WITHOUT TIME ZONE"),
+    ("v62k — initial_premium_payments.requested_at", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS requested_at TIMESTAMP WITHOUT TIME ZONE"),
+    ("v62l — initial_premium_payments.requested_by", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS requested_by VARCHAR(255)"),
+    ("v62m — initial_premium_payments.proof_status", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS proof_status VARCHAR(20) NOT NULL DEFAULT 'None'"),
+    ("v62n — initial_premium_payments.proof_artifact_id", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS proof_artifact_id UUID"),
+    ("v62o — initial_premium_payments.proof_uploaded_at", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS proof_uploaded_at TIMESTAMP WITHOUT TIME ZONE"),
+    ("v62p — initial_premium_payments.proof_note", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS proof_note VARCHAR(500)"),
+    ("v62q — initial_premium_payments.proof_review_note", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS proof_review_note VARCHAR(500)"),
+    ("v62r — initial_premium_payments.proof_reviewed_at", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS proof_reviewed_at TIMESTAMP WITHOUT TIME ZONE"),
+    ("v62s — initial_premium_payments.proof_reviewed_by", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS proof_reviewed_by VARCHAR(255)"),
+    ("v62t — walk_in_leads.customer_id nullable (family requests have a family group instead)", "ALTER TABLE walk_in_leads ALTER COLUMN customer_id DROP NOT NULL"),
+    ("v62u — walk_in_leads.applicant_type", "ALTER TABLE walk_in_leads ADD COLUMN IF NOT EXISTS applicant_type VARCHAR(10) NOT NULL DEFAULT 'Self'"),
+    ("v62v — walk_in_leads.family_group_id", "ALTER TABLE walk_in_leads ADD COLUMN IF NOT EXISTS family_group_id UUID REFERENCES family_groups(id)"),
+    ("v62w — walk_in_leads.household_json", "ALTER TABLE walk_in_leads ADD COLUMN IF NOT EXISTS household_json JSON"),
+    ("v63a — initial_premium_payments.proof_method", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS proof_method VARCHAR(50)"),
+    ("v63b — initial_premium_payments.proof_reference", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS proof_reference VARCHAR(100)"),
+    ("v63c — initial_premium_payments.reminder_count", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS reminder_count INTEGER NOT NULL DEFAULT 0"),
+    ("v63d — initial_premium_payments.last_reminded_at", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS last_reminded_at TIMESTAMP WITHOUT TIME ZONE"),
 ]
 
 
@@ -1552,6 +1607,27 @@ POST_DATA_MIGRATIONS: list[tuple[str, str]] = [
     (
         "acq-src-group-d — index organizations.acquisition_source_id",
         "CREATE INDEX IF NOT EXISTS ix_organizations_acquisition_source_id ON organizations (acquisition_source_id)",
+    ),
+    (
+        "med-lab-a — panel_clinics.email",
+        "ALTER TABLE panel_clinics ADD COLUMN IF NOT EXISTS email VARCHAR(255)",
+    ),
+    (
+        "med-lab-b — medical_exam_orders lab link columns",
+        "ALTER TABLE medical_exam_orders ADD COLUMN IF NOT EXISTS lab_token_hash VARCHAR(64), "
+        "ADD COLUMN IF NOT EXISTS lab_token_expires_at TIMESTAMP, "
+        "ADD COLUMN IF NOT EXISTS lab_sent_at TIMESTAMP, "
+        "ADD COLUMN IF NOT EXISTS lab_sent_to VARCHAR(255)",
+    ),
+    (
+        "med-lab-d — medical_exam_orders doctor e-signature columns",
+        "ALTER TABLE medical_exam_orders ADD COLUMN IF NOT EXISTS lab_signed_by VARCHAR(255), "
+        "ADD COLUMN IF NOT EXISTS lab_signer_license VARCHAR(100), "
+        "ADD COLUMN IF NOT EXISTS lab_signed_at TIMESTAMP",
+    ),
+    (
+        "med-lab-c — index medical_exam_orders.lab_token_hash",
+        "CREATE INDEX IF NOT EXISTS ix_medical_exam_orders_lab_token_hash ON medical_exam_orders (lab_token_hash)",
     ),
     (
         "acq-src-group-e — backfill family_groups source from an assigned source login",

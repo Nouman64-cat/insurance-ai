@@ -123,7 +123,7 @@ def _build(path: str, story: list) -> None:
 
 def generate_premium_notice(ctx: dict) -> dict:
     """
-    Render a fully-enriched Premium Notice (pre-payment bill).
+    Render the Initial Premium Receipt: what was paid for the policy, and how.
 
     Sections:
       A. Insurer letterhead + document meta (challan ref, issue date, pay-by)
@@ -189,12 +189,14 @@ def generate_premium_notice(ctx: dict) -> dict:
     story.append(Spacer(1, 6))
     story.append(HRFlowable(width="100%", thickness=1.6, color=_BRAND, spaceAfter=4))
 
-    story.append(Paragraph("FIRST PREMIUM NOTICE", ParagraphStyle(
+    paid = ctx.get("ipp_paid") or {}
+    receipt_no = paid.get("reference") or challan_ref
+    story.append(Paragraph("INITIAL PREMIUM RECEIPT", ParagraphStyle(
         "NoticeTitle", parent=ss["DocTitle"], textColor=_BRAND, fontSize=18, spaceAfter=2)))
     story.append(_kv_table([
-        ("Challan / Notice No.", challan_ref),
+        ("Receipt No.", receipt_no),
         ("Issue Date", str(issue_date)),
-        ("Pay By (Due Date)", f"<b>{due_date}</b>"),
+        ("Payment Date", paid.get("paid_on") or str(issue_date)),
         ("Policy Reference", policy_number),
     ]))
     story.append(Spacer(1, 8))
@@ -240,7 +242,7 @@ def generate_premium_notice(ctx: dict) -> dict:
     story.append(Spacer(1, 4))
 
     # ── E. Amount Due ─────────────────────────────────────────────────────────
-    story.append(Paragraph("Amount Due", ss["H"]))
+    story.append(Paragraph("Amount Paid", ss["H"]))
     story.append(_kv_table([
         ("Base Premium", _pkr(pb.get("base_premium"))),
         ("Underwriting Loading", _pkr(pb.get("loading_amount"))),
@@ -250,26 +252,22 @@ def generate_premium_notice(ctx: dict) -> dict:
     ]))
     story.append(Spacer(1, 2))
     story.append(Paragraph(
-        f"<b>Total First Premium Due:  {_pkr(pb.get('total_premium'))}</b>",
+        f"<b>Total Initial Premium Received:  {_pkr(paid.get('amount') if paid.get('amount') is not None else pb.get('total_premium'))}</b>",
         ParagraphStyle("Total", parent=ss["Body"], fontSize=11, textColor=_BRAND)))
     story.append(Paragraph(
-        f"Billing Period: {ctx.get('effective_date') or '—'} to {ctx.get('expiry_date') or '—'}"
-        f"  ·  Due Date: <b>{due_date}</b>",
+        f"Cover Period: {ctx.get('effective_date') or '—'} to {ctx.get('expiry_date') or '—'}",
         ss["Fine"]))
     story.append(Spacer(1, 8))
 
-    # ── F. How to Pay ─────────────────────────────────────────────────────────
-    story.append(Paragraph("How to Pay", ss["H"]))
-    story.append(Paragraph(
-        f"Please quote Challan No. <b>{challan_ref}</b> with every payment to ensure correct allocation.",
-        ss["Body"]))
-    story.append(Spacer(1, 4))
-    for ch in PAYMENT_CHANNELS:
-        story.append(Paragraph(f"<b>{ch['label']}</b>", ss["Body"]))
-        story.append(Paragraph(ch["detail"], ss["Body"]))
-        if ch.get("note"):
-            story.append(Paragraph(ch["note"], ss["Fine"]))
-        story.append(Spacer(1, 4))
+    # ── F. Payment Received ───────────────────────────────────────────────────
+    story.append(Paragraph("Payment Received", ss["H"]))
+    story.append(_kv_table([
+        ("Payment Method", paid.get("method") or "—"),
+        ("Payment Reference", paid.get("reference") or receipt_no),
+        ("Received On", paid.get("paid_on") or str(issue_date)),
+    ]))
+    story.append(Paragraph("Thank you. Please keep this receipt with your policy documents.", ss["Fine"]))
+    story.append(Spacer(1, 8))
 
     # ── G. Legal Notices ──────────────────────────────────────────────────────
     story.append(HRFlowable(width="100%", thickness=0.4,
@@ -294,7 +292,7 @@ def generate_premium_notice(ctx: dict) -> dict:
 
     return {
         "document_type": PolicyDocumentTypeEnum.PREMIUM_NOTICE.value,
-        "document_name": f"Premium Notice \u2013 {policy_number}",
+        "document_name": f"Initial Premium Receipt \u2013 {policy_number}",
         "file_path": notice_path,
     }
 

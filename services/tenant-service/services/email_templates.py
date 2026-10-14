@@ -535,6 +535,7 @@ def customer_action_link_email(
     *, kind: str, customer_name: str, tenant_name: str, url: str, expires_on: str,
     case_number: Optional[str] = None, tests: Optional[list[str]] = None,
     tenant_phone=None, tenant_email=None,
+    recipient_name: Optional[str] = None, extra_rows: Optional[list] = None,
 ) -> tuple[str, str, str]:
     """The secure link a customer needs for their application: the
     e-application questionnaire (kind="e_application") or uploading their
@@ -542,7 +543,15 @@ def customer_action_link_email(
     application still needs (kind="documents", with `tests` listing them)."""
     list_title = "Documents still needed" if kind == "documents" else "Tests required"
     first = (customer_name or "").split(" ")[0] or "there"
-    if kind == "medical_exam":
+    if kind == "medical_lab":
+        first = recipient_name or "Doctor"
+        subject = f"Medical reports requested for {customer_name} — {tenant_name}"
+        heading = "Medical examination — report upload"
+        intro = (f"{customer_name} has booked a medical examination with you for an insurance application. "
+                 "Please open the secure link below to see the applicant's details and the tests required, "
+                 "then upload the reports once the examination is done.")
+        button = "View applicant & upload reports"
+    elif kind == "medical_exam":
         subject = f"Your medical examination — {tenant_name}"
         heading = "Your medical examination"
         intro = ("As part of your insurance application, a few medical tests are needed. Please visit any "
@@ -562,6 +571,7 @@ def customer_action_link_email(
                  "questionnaire. It takes about 10 minutes and your answers are kept confidential.")
         button = "Start my application"
     rows = [("Application", case_number)] if case_number else []
+    rows.extend(extra_rows or [])
     rows.append(("Link valid until", expires_on))
     note = ("This link is personal to you — please don't forward it. If you didn't apply for insurance with us, "
             "you can ignore this email.")

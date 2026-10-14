@@ -54,6 +54,8 @@ from shared.models.core import (
 )
 
 from dependencies import Settings
+
+CASE_ON_HOLD = {"code": "CASE_ON_HOLD", "message": "This case is on hold. Remove the hold to continue the underwriting process."}
 # The RiskAssessment write + policy/case advancement, shared with the Kafka
 # result worker so the sync and async evaluation paths cannot drift.
 from risk_persistence import advance_case_workflow, persist_assessment
@@ -168,6 +170,8 @@ async def evaluate(
         case = await session.get(Case, request.case_id)
         if case is not None and case.tenant_id != tenant_id:
             case = None
+        if case is not None and case.on_hold:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=CASE_ON_HOLD)
 
     policy: Policy | None = None
     if case is not None and case.policy_id is not None:
@@ -311,6 +315,11 @@ async def evaluate_stream(
             customer_payload["details"] = existing_customer.details
 
     policy_payload = request.policy.model_dump(mode="json")
+
+    if request.case_id is not None:       # a held case is frozen: no AI run until the hold is removed
+        held_case = await session.get(Case, request.case_id)
+        if held_case is not None and held_case.tenant_id == tenant_id and held_case.on_hold:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=CASE_ON_HOLD)
 
     def stage(name: str, state: str, detail: str | None = None) -> str:
         return f"data: {json.dumps({'type': 'stage', 'stage': name, 'status': state, 'detail': detail})}\n\n"

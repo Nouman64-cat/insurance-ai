@@ -73,3 +73,20 @@ docker compose exec customer-management python -m app.backfill --dry-run        
 
 Configuration (all in `.env`, see `app/config.py`): `CM_DB_OWNER_PASSWORD`, `CM_DB_APP_PASSWORD`, `CM_JWT_SECRET`,
 `CM_TO_TENANT_KEY`, `TENANT_TO_CM_KEY`, optional `CM_PAYMENTS_ENABLED`, throttling and session lengths.
+
+## Walk-in customers
+
+A visitor with no policy can open the portal at `/walk-in/start`, verify an email with a one-time code, browse the active plans (no
+pricing), submit ONE interest request and follow it. They get a RESTRICTED token (audience `customer-portal-walkin`, scope `walk_in`)
+that every policy / claim / payment / document / family endpoint refuses, and the portal middleware confines them to `/walk-in/*`.
+
+| | |
+|---|---|
+| Endpoints | `GET /v1/walk-in/plans` (public) · `POST /v1/walk-in/otp/request` · `POST /v1/walk-in/otp/verify` · `GET /v1/walk-in/me` · `PATCH /v1/walk-in/profile` · `POST/GET /v1/walk-in/application` (Idempotency-Key) · `POST /v1/walk-in/logout` |
+| Tables | `walk_in_identities`, `walk_in_otps` (keyed hash only), `walk_in_sessions` (migration `0005_walk_in.sql`) |
+| Config | `CM_WALKIN_TENANT_CODE` (required: the tenant walk-ins belong to), `CM_WALKIN_OTP_*`, `CM_WALKIN_SESSION_MINUTES`; `CM_WALKIN_DEV_OTP` = fixed code used ONLY when email cannot be delivered and `CM_ENV` is not `production` |
+| Where the lead lives | tenant-service (`routers/customer_portal_walkin.py`): a real `Customer` (LEAD, source "Digital Walk-In") plus a `WalkInLead` routing record. Routing, acknowledgement and escalation: `services/lead_routing.py` |
+| Hand-off | When the policy is issued, the existing provisioning creates the normal account. The walk-in identity is untouched and keeps working; the status page then points to sign-in. |
+
+Tests: `docker compose exec -T customer-management python -m unittest tests.test_walk_in` and, for the tenant side,
+`docker compose exec -T tenant-service python test_walk_in.py`.

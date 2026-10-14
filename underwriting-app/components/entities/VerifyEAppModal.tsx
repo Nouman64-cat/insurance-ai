@@ -220,6 +220,17 @@ export default function VerifyEAppModal({
                   <p className="font-semibold text-slate-800">{lifestyle.frequent_foreign_travel ? tx("Yes ({0})", { 0: lifestyle.foreign_travel_details || "" }) : tx("No")}</p>
                 </div>
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                  <span className="text-slate-500">{tx("Regular Road Travel:")}</span>
+                  <p className="font-semibold text-slate-800">
+                    {lifestyle.road_travel_frequent
+                      ? tx("Yes — {0} trips/month, ~{1} h each", { 0: lifestyle.road_trips_per_month || "—", 1: lifestyle.road_trip_hours || "—" })
+                      : tx("No")}
+                  </p>
+                  {lifestyle.road_travel_frequent && lifestyle.road_travel_details && (
+                    <p className="text-xs text-slate-500 mt-0.5">{lifestyle.road_travel_details}</p>
+                  )}
+                </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
                   <span className="text-slate-500">{tx("Traffic Violations (3 yrs):")}</span>
                   <p className="font-semibold text-slate-800">{lifestyle.moving_violations_past_3_years || "0"}</p>
                 </div>

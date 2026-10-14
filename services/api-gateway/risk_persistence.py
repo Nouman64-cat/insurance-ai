@@ -200,8 +200,11 @@ async def persist_assessment(
     )
     db.add(assessment)
 
-    await apply_ai_policy_status(db, policy, final_risk["ai_decision"], actor=actor)
-    if case is not None:
-        await apply_ai_case_status(db, tenant_id, case, final_risk["ai_decision"])
+    # A case put on hold while the engine was still working keeps the result, but nothing about the case or its policy moves:
+    # the AI never advances a held case (release, then re-run if needed).
+    if case is None or not case.on_hold:
+        await apply_ai_policy_status(db, policy, final_risk["ai_decision"], actor=actor)
+        if case is not None:
+            await apply_ai_case_status(db, tenant_id, case, final_risk["ai_decision"])
 
     return assessment

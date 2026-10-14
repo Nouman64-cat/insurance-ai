@@ -51,12 +51,14 @@ export default function MedicalReportUploads({ token, tests, reports, submitted,
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [queue, setQueue] = useState<QueuedFile[]>([]);
+  const [signName, setSignName] = useState("");
+  const [license, setLicense] = useState("");
   const [dragging, setDragging] = useState(false);
   const bulkBusy = queue.some((item) => item.state === "queued" || item.state === "reading");
   const testName = (code: string) => tests.find((test) => test.code === code)?.name ?? code;
   const patchItem = (id: string, update: Partial<QueuedFile>) => setQueue((items) => items.map((item) => item.id === id ? { ...item, ...update } : item));
   const refresh = async () => {
-    const { data } = await api.get(`/public/medical-exam/${token}`);
+    const { data } = await api.get(`/public/medical-lab/${token}`);
     onChange({ reports: data.reports ?? [], reports_submitted: !!data.reports_submitted });
   };
   const upload = async (code: string, files: File[]) => {
@@ -67,7 +69,7 @@ export default function MedicalReportUploads({ token, tests, reports, submitted,
       for (const file of files) {
         if (file.size > 20 * 1024 * 1024) throw new Error("Each report must be 20 MB or smaller.");
         const form = new FormData(); form.append("test_code", code); form.append("file", file);
-        await api.post(`/public/medical-exam/${token}/reports`, form, {
+        await api.post(`/public/medical-lab/${token}/reports`, form, {
           onUploadProgress: (event) => {
             const portion = event.total ? event.loaded / event.total : 0;
             setUploadProgress(Math.round(((saved + portion) / files.length) * 100));
@@ -97,7 +99,7 @@ export default function MedicalReportUploads({ token, tests, reports, submitted,
         patchItem(item.id, { state: "reading" });
         try {
           const form = new FormData(); form.append("file", item.file);
-          const { data } = await api.post(`/public/medical-exam/${token}/reports/auto`, form);
+          const { data } = await api.post(`/public/medical-lab/${token}/reports/auto`, form);
           patchItem(item.id, data.test_codes.length ? { state: "matched", codes: data.test_codes } : { state: "unmatched" });
         } catch (e: any) {
           patchItem(item.id, { state: "failed", error: e.response?.data?.detail ?? "Upload failed" });
@@ -112,7 +114,7 @@ export default function MedicalReportUploads({ token, tests, reports, submitted,
     patchItem(item.id, { state: "reading", error: undefined });
     try {
       const form = new FormData(); form.append("test_code", item.choice); form.append("file", item.file);
-      await api.post(`/public/medical-exam/${token}/reports`, form);
+      await api.post(`/public/medical-lab/${token}/reports`, form);
       patchItem(item.id, { state: "matched", codes: [item.choice] });
       await refresh();
     } catch (e: any) {
@@ -122,19 +124,20 @@ export default function MedicalReportUploads({ token, tests, reports, submitted,
   const submit = async () => {
     setSubmitting(true); setError(null); setNotice(null);
     try {
-      await api.post(`/public/medical-exam/${token}/complete`);
+      await api.post(`/public/medical-lab/${token}/complete`, { signature_name: signName.trim(), license_no: license.trim() || null });
       onChange({ reports, reports_submitted: true });
-      setNotice("Your reports were submitted successfully for medical review.");
-      try { await refresh(); } catch { setError("Your reports were submitted, but the latest status could not be refreshed. Please reload the page."); }
+      setNotice("Reports submitted successfully for medical review.");
+      try { await refresh(); } catch { setError("Reports were submitted, but the latest status could not be refreshed. Please reload the page."); }
     } catch (e: any) { setError(e.response?.data?.detail ?? "Unable to submit reports. Please retry."); }
     finally { setSubmitting(false); }
   };
   const completed = tests.filter((test) => reports.some((r) => r.test_code === test.code && usable(r))).length;
   const ready = tests.length > 0 && completed === tests.length;
+  const signed = signName.trim().length >= 3;
   return <section ref={containerRef} aria-label="Medical report uploads" className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
-        <h2 className="text-base font-bold text-slate-900">Your required medical reports</h2>
+        <h2 className="text-base font-bold text-slate-900">Required medical reports</h2>
         <p className="mt-1 text-xs text-slate-500">PDF, JPEG, PNG, TIFF or BMP · 20 MB per file.</p>
       </div>
       <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${ready ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700"}`}>{completed} / {tests.length} tests uploaded</span>
@@ -145,7 +148,7 @@ export default function MedicalReportUploads({ token, tests, reports, submitted,
     {!submitted && <label onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)}
       onDrop={(event) => { event.preventDefault(); setDragging(false); if (!uploading && !submitting) void uploadBulk(Array.from(event.dataTransfer.files)); }}
       className={`mt-4 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-5 text-center transition-colors focus-within:ring-2 focus-within:ring-blue-400 ${dragging ? "border-blue-400 bg-blue-50" : "border-blue-200 bg-blue-50/40 hover:bg-blue-50"} ${uploading || submitting ? "pointer-events-none opacity-50" : ""}`}>
-      <span className="text-sm font-bold text-blue-700">{bulkBusy ? "Reading your reports…" : "Upload all your reports at once"}</span>
+      <span className="text-sm font-bold text-blue-700">{bulkBusy ? "Reading reports…" : "Upload all reports at once"}</span>
       <span className="mt-1 text-[11px] text-slate-500">Drop files here or click to choose. We'll recognise which test each report is for — combined lab reports are attached to every test they cover.</span>
       <input type="file" multiple accept={ACCEPT} disabled={!!uploading || submitting} aria-label="Upload all medical reports" className="sr-only"
         onChange={(event) => { const selected = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ""; void uploadBulk(selected); }} />
@@ -209,9 +212,21 @@ export default function MedicalReportUploads({ token, tests, reports, submitted,
     </nav>}
     {error && <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">{error}</p>}
     {notice && <p role="status" aria-live="polite" className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-700">{notice}</p>}
+    {!submitted && <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+      <p className="text-xs font-bold text-slate-800">Examining doctor's e-signature</p>
+      <p className="mt-0.5 text-[11px] text-slate-500">By signing, I confirm these reports are genuine and belong to the applicant named above.</p>
+      <div className="mt-2 grid gap-3 sm:grid-cols-2">
+        <label className="text-[11px] font-semibold text-slate-600">Doctor's full name (typed as signature)
+          <input value={signName} onChange={(e) => setSignName(e.target.value)} placeholder="Dr. Full Name" className="mt-1 w-full rounded-lg border border-slate-200 bg-white p-2 text-xs font-normal" />
+        </label>
+        <label className="text-[11px] font-semibold text-slate-600">PMDC / licence no. (optional)
+          <input value={license} onChange={(e) => setLicense(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 bg-white p-2 text-xs font-normal" />
+        </label>
+      </div>
+    </div>}
     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
-      <p role="status" aria-live="polite" className={`max-w-xl text-xs ${submitted ? "font-semibold text-emerald-700" : "text-slate-500"}`}>{submitted ? "Reports submitted. Your insurer will review them with your health disclosures and habits." : ready ? "All required tests have reports. You can submit them for review." : `${tests.length - completed} tests still need a report before submission.`}</p>
-      {!submitted && <button onClick={submit} disabled={submitting || !!uploading || bulkBusy || !ready} className="rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed">{submitting ? "Submitting…" : "Submit reports for review"}</button>}
+      <p role="status" aria-live="polite" className={`max-w-xl text-xs ${submitted ? "font-semibold text-emerald-700" : "text-slate-500"}`}>{submitted ? "Reports submitted. The insurer will review them." : ready ? (signed ? "All required tests have reports. You can submit them for review." : "Sign above to submit the reports.") : `${tests.length - completed} tests still need a report before submission.`}</p>
+      {!submitted && <button onClick={submit} disabled={submitting || !!uploading || bulkBusy || !ready || !signed} className="rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed">{submitting ? "Submitting…" : "Submit reports for review"}</button>}
     </div>
   </section>;
 }

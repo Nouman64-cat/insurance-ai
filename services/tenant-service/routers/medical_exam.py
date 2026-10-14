@@ -205,6 +205,7 @@ class PanelClinicCreate(BaseModel):
     city: Optional[str] = None
     address: Optional[str] = None
     phone: Optional[str] = None
+    email: Optional[str] = None  # lab/doctor address that receives the report-upload link
     supported_tests: Optional[list] = None
     home_sampling: bool = False
     turnaround_hours: int = 48
@@ -282,12 +283,18 @@ def _order_dict(order: Optional[MedicalExamOrder], clinic: Optional[PanelClinic]
         "estimated_cost": order.estimated_cost,
         "fasting_required": any(t.get("fasting") for t in (order.required_tests or [])),
         "clinic": _clinic_dict(clinic) if clinic else None,
+        "lab_email": clinic.email if clinic else None,  # staff-only: never in the public customer view
         "clinic_id": str(order.clinic_id) if order.clinic_id else None,
         "appointment_at": order.appointment_at.isoformat() if order.appointment_at else None,
         "home_sampling": order.home_sampling,
         "appointment_note": order.appointment_note,
         "invited_at": order.invited_at.isoformat() if order.invited_at else None,
         "invite_expires_at": order.invite_expires_at.isoformat() if order.invite_expires_at else None,
+        "lab_link_sent_at": order.lab_sent_at.isoformat() if order.lab_sent_at else None,
+        "lab_link_sent_to": order.lab_sent_to,
+        "lab_signed_by": order.lab_signed_by,
+        "lab_signer_license": order.lab_signer_license,
+        "lab_signed_at": order.lab_signed_at.isoformat() if order.lab_signed_at else None,
         "results": order.results_json,
         "outcome": _v(order.outcome),
         "abnormal_findings": order.abnormal_findings or [],
@@ -596,6 +603,12 @@ async def schedule_medical_exam(
         raise HTTPException(status_code=400, detail="Appointment time must be in the future.")
 
     now = datetime.utcnow()
+    if order.clinic_id != clinic.id:
+        # A lab link only ever works for the clinic currently on the order.
+        order.lab_token_hash = None
+        order.lab_token_expires_at = None
+        order.lab_sent_at = None
+        order.lab_sent_to = None
     order.clinic_id = clinic.id
     order.appointment_at = body.appointment_at
     order.home_sampling = body.home_sampling
@@ -750,6 +763,50 @@ async def record_medical_result(
     return payload
 
 
+@router.post("/tenants/{tenant_id}/cases/{case_id}/medical-exam/confirm-reports")
+async def confirm_medical_reports(
+    tenant_id: UUID,
+    case_id: UUID,
+    request: Request,
+    token: str = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+):
+    """The customer's reports are all in: complete the medical step without entering any values. The reports stay on
+    the case and are read during the underwriting run. Every required test needs at least one report that has not
+    been sent back for re-upload."""
+    user = await _get_current_user(token, session)
+    await _get_case(session, tenant_id, case_id)
+    order = await _load_order(session, case_id)
+    if order is None or order.status in (MedicalExamStatusEnum.NOT_ASSESSED, MedicalExamStatusEnum.NOT_REQUIRED):
+        raise HTTPException(status_code=409, detail="No medical examination was ordered for this case.")
+    if order.status == MedicalExamStatusEnum.WAIVED:
+        raise HTTPException(status_code=409, detail="This medical was waived — reinstate it first.")
+
+    reports = await _uploaded_reports(session, order)
+    have = {a.document_type.split(": ", 1)[-1] for a in reports if a.status != "Re-submission Requested"}
+    missing = [t.get("name") or t.get("code") for t in (order.required_tests or []) if t.get("code") not in have]
+    if missing:
+        raise HTTPException(status_code=409, detail="Reports are still missing for: " + ", ".join(missing) + ".")
+
+    now = datetime.utcnow()
+    order.results_json = {**(order.results_json or {}), "reports_confirmed_at": now.isoformat()}
+    order.completed_at = now
+    order.reported_by = user.email
+    order.status = MedicalExamStatusEnum.COMPLETED
+    order.updated_at = now
+    session.add(order)
+    await session.commit()
+    await session.refresh(order)
+
+    await publish_case_event(
+        request, session,
+        event_type="MedicalExamCompleted",
+        tenant_id=order.tenant_id, case_id=order.case_id, customer_id=order.customer_id,
+        detail={"outcome": None, "source": "reports_received"},
+    )
+    return await _order_with_clinic(session, order)
+
+
 # ── Waive / reinstate ────────────────────────────────────────────────────────
 
 class WaiveRequest(BaseModel):
@@ -874,42 +931,6 @@ async def _save_reports(request: Request, session: AsyncSession, order: MedicalE
     return [artifact for artifact, _ in stored]
 
 
-@router.post("/public/medical-exam/{raw_token}/reports", status_code=202)
-async def public_upload_medical_report(
-    raw_token: str, request: Request, test_code: str = Form(...),
-    file: UploadFile = File(...), session: AsyncSession = Depends(get_session),
-):
-    from services.medical_report_uploads import MAX_REPORT_BYTES, validate_report
-    order = await _resolve_by_token(session, raw_token)
-    _ensure_reports_open(order)
-    if test_code not in {t.get("code") for t in (order.required_tests or [])}:
-        raise HTTPException(400, "Choose one of the tests required for your examination.")
-    data = await file.read(MAX_REPORT_BYTES + 1)
-    filename, mime = validate_report(file.filename, data)
-    artifacts = await _save_reports(request, session, order, [test_code], data, filename, mime)
-    return {"report": _report_view(artifacts[0])}
-
-
-@router.post("/public/medical-exam/{raw_token}/reports/auto", status_code=202)
-async def public_auto_upload_medical_report(
-    raw_token: str, request: Request, file: UploadFile = File(...),
-    session: AsyncSession = Depends(get_session),
-):
-    """Bulk-upload path: read the report, work out which required tests it
-    covers and attach it to each. Nothing is stored when no test can be
-    identified — the customer is asked to choose one instead."""
-    from services.medical_report_uploads import MAX_REPORT_BYTES, validate_report
-    from services.medical_report_classifier import classify_report
-    order = await _resolve_by_token(session, raw_token)
-    _ensure_reports_open(order)
-    data = await file.read(MAX_REPORT_BYTES + 1)
-    filename, mime = validate_report(file.filename, data)
-    test_codes, method = await classify_report(session, data, mime, filename, order.required_tests or [])
-    artifacts = await _save_reports(request, session, order, test_codes, data, filename, mime) if test_codes else []
-    return {"file_name": filename, "test_codes": test_codes, "matched_by": method,
-            "reports": [_report_view(a) for a in artifacts]}
-
-
 @router.get("/public/medical-exam/{raw_token}")
 async def public_get_medical_exam(raw_token: str, session: AsyncSession = Depends(get_session)):
     """What the customer sees: which tests, why, how to prepare, and where they
@@ -927,8 +948,6 @@ async def public_get_medical_exam(raw_token: str, session: AsyncSession = Depend
 
     return {
         "status": _v(order.status),
-        "reports": [_report_view(a) for a in await _uploaded_reports(session, order)],
-        "reports_submitted": bool((order.results_json or {}).get("customer_reports_submitted_at")),
         "customer_name": customer.name,
         "customer_city": customer.city,
         "product_name": policy.product_name if policy else None,
@@ -938,7 +957,7 @@ async def public_get_medical_exam(raw_token: str, session: AsyncSession = Depend
         "preparation_notes": _preparation_notes(tests),
         "cost_borne_by_insurer": True,
         "clinics": [_clinic_dict(c) for c in clinics if c.is_active],
-        "slots": [],
+        "slots": _available_slots(fasting),
         "appointment_at": order.appointment_at.isoformat() if order.appointment_at else None,
         "booked_clinic": _clinic_dict(booked_clinic) if booked_clinic else None,
         "home_sampling": order.home_sampling,
@@ -971,25 +990,196 @@ class PublicBookRequest(BaseModel):
     home_sampling: bool = False
 
 
+LAB_LINK_VALID_DAYS = 14  # after the appointment
+
+
+async def _issue_lab_link(session: AsyncSession, order: MedicalExamOrder, case: Case, clinic: PanelClinic) -> dict:
+    """Mint a fresh report-upload link for the clinic on this order and email it to the lab.
+    Any earlier lab link stops working (only the newest hash is stored)."""
+    from services.customer_links import email_lab_link
+    raw_token = secrets.token_urlsafe(32)
+    now = datetime.utcnow()
+    expires_at = max(now, order.appointment_at or now) + timedelta(days=LAB_LINK_VALID_DAYS)
+    order.lab_token_hash = _hash_token(raw_token)
+    order.lab_token_expires_at = expires_at
+    order.updated_at = now
+    link_path = f"/medical-lab/{raw_token}"
+    delivery = await email_lab_link(
+        session, tenant_id=order.tenant_id, case=case, clinic=clinic, link_path=link_path,
+        expires_at=expires_at, appointment_at=order.appointment_at,
+        tests=[t.get("name") for t in (order.required_tests or []) if t.get("name")],
+    )
+    if delivery["email_status"] == "sent":
+        order.lab_sent_at = now
+        order.lab_sent_to = delivery["emailed_to"]
+    session.add(order)
+    await session.commit()
+    return {"token": raw_token, "link_path": link_path, "expires_at": expires_at, **delivery}
+
+
 @router.post("/public/medical-exam/{raw_token}/book")
 async def public_book_medical_exam(
     raw_token: str,
     body: PublicBookRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    await _resolve_by_token(session, raw_token)
-    raise HTTPException(status_code=410, detail="Appointment booking is not available on this portal. Contact an approved centre directly and upload your reports here.")
+    """The customer picks a panel lab and a time. Booking issues the lab's own report-upload
+    link and emails it to that lab — the customer never uploads reports."""
+    order = await _resolve_by_token(session, raw_token)
+    if order.status == MedicalExamStatusEnum.SCHEDULED:
+        raise HTTPException(409, "Your appointment is already booked. Contact your agent to change it.")
+    if order.status != MedicalExamStatusEnum.INVITED:
+        raise HTTPException(409, "This examination can no longer be booked. Please contact your agent.")
+
+    clinic = await session.get(PanelClinic, body.clinic_id)
+    if clinic is None or clinic.tenant_id != order.tenant_id or not clinic.is_active:
+        raise HTTPException(404, "Lab not found.")
+    required = {t.get("code") for t in (order.required_tests or [])}
+    if clinic.supported_tests and required - set(clinic.supported_tests):
+        raise HTTPException(400, f"{clinic.name} cannot perform every required test. Please choose another lab.")
+    if body.home_sampling and not clinic.home_sampling:
+        raise HTTPException(400, f"{clinic.name} does not offer home sampling.")
+    fasting = any(t.get("fasting") for t in (order.required_tests or []))
+    if body.appointment_at.replace(tzinfo=None).isoformat() not in set(_available_slots(fasting)):
+        raise HTTPException(400, "Please choose one of the available times.")
+    case = await session.get(Case, order.case_id)
+    if case is None or case.customer_id != order.customer_id or case.tenant_id != order.tenant_id:
+        raise HTTPException(404, "Application not found.")
+
+    now = datetime.utcnow()
+    order.clinic_id = clinic.id
+    order.appointment_at = body.appointment_at.replace(tzinfo=None)
+    order.home_sampling = body.home_sampling
+    order.status = MedicalExamStatusEnum.SCHEDULED
+    order.updated_at = now
+    session.add(order)
+    await session.commit()
+
+    lab = await _issue_lab_link(session, order, case, clinic)
+    return {
+        "status": _v(order.status),
+        "appointment_at": order.appointment_at.isoformat(),
+        "booked_clinic": _clinic_dict(clinic),
+        "lab_notified": lab["email_status"] == "sent",
+    }
 
 
-@router.post("/public/medical-exam/{raw_token}/complete")
-async def public_complete_medical_exam(
+@router.post("/tenants/{tenant_id}/cases/{case_id}/medical-exam/lab-link")
+async def issue_lab_link(
+    tenant_id: UUID,
+    case_id: UUID,
+    token: str = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+):
+    """(Re)send the booked lab its report-upload link — for a lab with no email on file,
+    a lost email, or a rebooking made by staff. Replaces any earlier lab link."""
+    await _get_current_user(token, session)
+    case = await _get_case(session, tenant_id, case_id)
+    order = await _load_order(session, case_id)
+    if order is None or order.status != MedicalExamStatusEnum.SCHEDULED or not order.clinic_id:
+        raise HTTPException(409, "Book a lab and time for this examination first.")
+    clinic = await session.get(PanelClinic, order.clinic_id)
+    if clinic is None or clinic.tenant_id != tenant_id:
+        raise HTTPException(404, "Booked lab not found.")
+    lab = await _issue_lab_link(session, order, case, clinic)
+    return {"link_path": lab["link_path"], "expires_at": lab["expires_at"], "emailed_to": lab["emailed_to"],
+            "email_status": lab["email_status"], "lab_name": clinic.name}
+
+
+# ── Public, lab-scoped (the doctor has no login) ─────────────────────────────
+
+async def _resolve_by_lab_token(session: AsyncSession, raw_token: str) -> tuple[MedicalExamOrder, PanelClinic]:
+    stmt = select(MedicalExamOrder).where(MedicalExamOrder.lab_token_hash == _hash_token(raw_token))
+    order = (await session.exec(stmt)).first()
+    if order is None or not order.clinic_id:
+        raise HTTPException(404, "Invalid or unknown link")
+    if order.lab_token_expires_at and order.lab_token_expires_at < datetime.utcnow():
+        raise HTTPException(410, "This link has expired. Please ask the insurer to resend it.")
+    clinic = await session.get(PanelClinic, order.clinic_id)
+    if clinic is None or clinic.tenant_id != order.tenant_id:
+        raise HTTPException(404, "Invalid or unknown link")
+    return order, clinic
+
+
+@router.get("/public/medical-lab/{raw_token}")
+async def public_get_lab_exam(raw_token: str, session: AsyncSession = Depends(get_session)):
+    """What the doctor sees: the applicant, the booked slot, the tests, and what is uploaded."""
+    order, clinic = await _resolve_by_lab_token(session, raw_token)
+    customer = await session.get(Customer, order.customer_id)
+    case = await session.get(Case, order.case_id)
+    if customer is None or case is None or case.customer_id != customer.id:
+        raise HTTPException(404, "Applicant not found")
+    return {
+        "status": _v(order.status),
+        "lab_name": clinic.name,
+        "case_number": case.caseNumber,
+        "applicant": {
+            "name": customer.name, "cnic": customer.cnic, "age": age_from_dob(customer.dob),
+            "gender": _v(customer.gender),
+        },
+        "appointment_at": order.appointment_at.isoformat() if order.appointment_at else None,
+        "home_sampling": order.home_sampling,
+        "tests": order.required_tests or [],
+        "fasting_required": any(t.get("fasting") for t in (order.required_tests or [])),
+        "reports": [_report_view(a) for a in await _uploaded_reports(session, order)],
+        "reports_submitted": bool((order.results_json or {}).get("customer_reports_submitted_at")),
+        "signed_by": order.lab_signed_by,
+        "expires_at": order.lab_token_expires_at.isoformat() if order.lab_token_expires_at else None,
+    }
+
+
+@router.post("/public/medical-lab/{raw_token}/reports", status_code=202)
+async def lab_upload_medical_report(
+    raw_token: str, request: Request, test_code: str = Form(...),
+    file: UploadFile = File(...), session: AsyncSession = Depends(get_session),
+):
+    from services.medical_report_uploads import MAX_REPORT_BYTES, validate_report
+    order, _ = await _resolve_by_lab_token(session, raw_token)
+    _ensure_reports_open(order)
+    if test_code not in {t.get("code") for t in (order.required_tests or [])}:
+        raise HTTPException(400, "Choose one of the tests required for this examination.")
+    data = await file.read(MAX_REPORT_BYTES + 1)
+    filename, mime = validate_report(file.filename, data)
+    artifacts = await _save_reports(request, session, order, [test_code], data, filename, mime)
+    return {"report": _report_view(artifacts[0])}
+
+
+@router.post("/public/medical-lab/{raw_token}/reports/auto", status_code=202)
+async def lab_auto_upload_medical_report(
+    raw_token: str, request: Request, file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session),
+):
+    """Read the report, work out which required tests it covers and attach it to each.
+    Nothing is stored when no test can be identified."""
+    from services.medical_report_uploads import MAX_REPORT_BYTES, validate_report
+    from services.medical_report_classifier import classify_report
+    order, _ = await _resolve_by_lab_token(session, raw_token)
+    _ensure_reports_open(order)
+    data = await file.read(MAX_REPORT_BYTES + 1)
+    filename, mime = validate_report(file.filename, data)
+    test_codes, method = await classify_report(session, data, mime, filename, order.required_tests or [])
+    artifacts = await _save_reports(request, session, order, test_codes, data, filename, mime) if test_codes else []
+    return {"file_name": filename, "test_codes": test_codes, "matched_by": method,
+            "reports": [_report_view(a) for a in artifacts]}
+
+
+class LabSubmitRequest(BaseModel):
+    signature_name: str
+    license_no: Optional[str] = None
+
+
+@router.post("/public/medical-lab/{raw_token}/complete")
+async def lab_complete_medical_exam(
     raw_token: str,
+    body: LabSubmitRequest,
     request: Request,
     session: AsyncSession = Depends(get_session),
 ):
-    order = await _resolve_by_token(session, raw_token)
-    if order.status in (MedicalExamStatusEnum.WAIVED, MedicalExamStatusEnum.NOT_REQUIRED, MedicalExamStatusEnum.COMPLETED):
-        raise HTTPException(status_code=409, detail="This examination is closed. Please contact your agent.")
+    order, _ = await _resolve_by_lab_token(session, raw_token)
+    _ensure_reports_open(order)
+    signer = body.signature_name.strip()
+    if len(signer) < 3:
+        raise HTTPException(400, "Type the examining doctor's full name as an e-signature.")
 
     from routers.artifacts import OCR_TOPIC
     from shared.events.kafka_events import ArtifactOCRPayload, ArtifactOCRRequestedEvent
@@ -1013,14 +1203,18 @@ async def public_complete_medical_exam(
             session.add(artifact)
     now = datetime.utcnow()
     order.result_artifact_id = reports[-1].id
+    order.lab_signed_by = signer[:255]
+    order.lab_signer_license = (body.license_no or "").strip()[:100] or None
+    order.lab_signed_at = now
+    # Key name kept: the staff view reads it as "reports submitted for review".
     order.results_json = {**(order.results_json or {}), "customer_reports_submitted_at": now.isoformat()}
     order.updated_at = now
     session.add(order)
     await session.commit()
-    # Customer submission is evidence, not a clinical verdict. Only staff's
+    # The lab's submission is evidence, not a clinical verdict. Only staff's
     # record_medical_result can complete the gate and rate the findings.
     await publish_case_event(request, session, event_type="MedicalReportsSubmitted",
                              tenant_id=order.tenant_id, case_id=order.case_id, customer_id=order.customer_id,
-                             detail={"report_count": len(reports)})
+                             detail={"report_count": len(reports), "source": "lab"})
     return {"status": _v(order.status), "reports_submitted": True,
-            "message": "Your reports have been submitted for medical review."}
+            "message": "Reports submitted for medical review. Thank you."}
