@@ -3312,6 +3312,7 @@ class PanelClinic(SQLModel, table=True):
     city: Optional[str] = Field(default=None, max_length=100, index=True)
     address: Optional[str] = Field(default=None, max_length=500)
     phone: Optional[str] = Field(default=None, max_length=50)
+    email: Optional[str] = Field(default=None, max_length=255)  # where the lab's report-upload link is sent
 
     # Which of the standard test codes this site can perform (see
     # underwriting_limits.TEST_CATALOGUE). Empty/None means "all".
@@ -3365,6 +3366,18 @@ class MedicalExamOrder(SQLModel, table=True):
     invite_expires_at: Optional[datetime] = Field(default=None, nullable=True)
     invited_at: Optional[datetime] = Field(default=None, nullable=True)
     invited_by: Optional[UUID] = Field(default=None, foreign_key="users.id", nullable=True)
+
+    # Tokenized link for the lab/doctor the customer booked (clinic_id). Issued when the
+    # booking is made; the doctor uploads the medical reports through it. Rotated on any
+    # re-booking so a link only ever works for the clinic currently on the order.
+    lab_token_hash: Optional[str] = Field(default=None, index=True, max_length=64, nullable=True)
+    lab_token_expires_at: Optional[datetime] = Field(default=None, nullable=True)
+    lab_sent_at: Optional[datetime] = Field(default=None, nullable=True)
+    lab_sent_to: Optional[str] = Field(default=None, max_length=255, nullable=True)
+    # The examining doctor's e-signature, given when they submit the reports through the lab link.
+    lab_signed_by: Optional[str] = Field(default=None, max_length=255, nullable=True)
+    lab_signer_license: Optional[str] = Field(default=None, max_length=100, nullable=True)
+    lab_signed_at: Optional[datetime] = Field(default=None, nullable=True)
 
     # ── Results ──────────────────────────────────────────────────────────────
     # {test_code: {value, unit, reference_range, flag}} as reported by the lab.

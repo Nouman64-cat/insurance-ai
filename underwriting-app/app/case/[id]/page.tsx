@@ -61,6 +61,8 @@ import {
   getMedicalExam,
   assessMedicalExam,
   inviteMedicalExam,
+  issueLabLink,
+  type LabLink,
   waiveMedicalExam,
   recordMedicalResult,
   aiReviewMedicalReports,
@@ -1808,6 +1810,23 @@ export default function CasePage({ params }: { params: { id: string } }) {
     null,
   );
   const [showUpload, setShowUpload] = useState(false);
+  // Underwriter chose to proceed although some mandatory documents are missing. Kept per case in this browser only.
+  const [docsWaived, setDocsWaived] = useState(false);
+  useEffect(() => {
+    try {
+      setDocsWaived(localStorage.getItem(`uw-docs-waived:${caseId}`) === "1");
+    } catch {}
+  }, [caseId]);
+  const toggleDocsWaived = useCallback(
+    (next: boolean) => {
+      setDocsWaived(next);
+      try {
+        if (next) localStorage.setItem(`uw-docs-waived:${caseId}`, "1");
+        else localStorage.removeItem(`uw-docs-waived:${caseId}`);
+      } catch {}
+    },
+    [caseId],
+  );
   const [showDocuments, setShowDocuments] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<ArtifactData | null>(null);
   // Set when the upload dialog was opened from a requirement row — the dialog
@@ -1836,6 +1855,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const [medErr, setMedErr] = useState<string | null>(null);
   const [showResultModal, setShowResultModal] = useState(false);
   const [showAssessModal, setShowAssessModal] = useState(false);
+  const [showLabLinkModal, setShowLabLinkModal] = useState(false);
+  const [labLink, setLabLink] = useState<LabLink | null>(null);
   const notifiedPreUnderwritingRef = useRef(false);
 
   const [docSummary, setDocSummary] = useState<string | null>(null);
@@ -2357,6 +2378,19 @@ export default function CasePage({ params }: { params: { id: string } }) {
     }
   };
 
+  const handleLabLink = async () => {
+    setMedBusy(true);
+    setMedErr(null);
+    try {
+      setLabLink(await issueLabLink(caseId));
+      await fetchMedical();
+    } catch (e: any) {
+      setMedErr(e?.response?.data?.detail ?? e?.message ?? "Could not create the lab link");
+    } finally {
+      setMedBusy(false);
+    }
+  };
+
   const handleWaiveMedical = async () => {
     const reason = window.prompt("Reason for waiving the medical requirement:");
     if (!reason) return;
@@ -2515,7 +2549,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
   // `missingPreChecks` array, which only exists after those early returns.
   useEffect(() => {
     if (!detail) return;
-    const docsReady = (detail.document_checklist?.missing ?? []).length === 0;
+    const docsReady =
+      docsWaived || (detail.document_checklist?.missing ?? []).length === 0;
     const eAppReady =
       eApp?.status === "Submitted" || eApp?.status === "Verified";
     const acrReady = isACRCleared(acr);
@@ -2548,13 +2583,13 @@ export default function CasePage({ params }: { params: { id: string } }) {
     } else {
       notifiedPreUnderwritingRef.current = false;
     }
-  }, [detail, eApp, acr, checks, history, medical, notify]);
+  }, [detail, eApp, acr, checks, history, medical, notify, docsWaived]);
 
   // Auto-run underwriting if requested via URL. In group mode the parallel
   // runner below handles every plan, so the single-case path stays out of it.
   useEffect(() => {
     if (isGroup) return;
-    const missingDocs = detail?.document_checklist?.missing ?? [];
+    const missingDocs = docsWaived ? [] : (detail?.document_checklist?.missing ?? []);
     const checksMissing =
       eApp?.status !== "Submitted" ||
       !isACRCleared(acr);
@@ -2593,6 +2628,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
     eApp?.status,
     acr?.status,
     acr?.waived_at,
+    docsWaived,
   ]);
 
   const summarizeDocuments = async () => {
@@ -2621,7 +2657,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
     if (!detail?.customer || !detail?.policy || !tenantId) return;
 
     // Required documents must be uploaded before underwriting can proceed.
-    const missingDocs = detail.document_checklist?.missing ?? [];
+    const missingDocs = docsWaived ? [] : (detail.document_checklist?.missing ?? []);
     if (missingDocs.length > 0) {
       setStatus("idle");
       setStreamError(
@@ -3138,7 +3174,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
   // Underwriting requires every mandatory document to be uploaded AND
   // all initial checks to be completed — the Run / Re-run buttons stay
   // disabled until the checklist has nothing missing.
-  const missingRequiredDocs = docs?.missing ?? [];
+  const actualMissingDocs = docs?.missing ?? [];
+  const missingRequiredDocs = docsWaived ? [] : actualMissingDocs;
   const missingPreChecks: string[] = [];
   if (missingRequiredDocs.length > 0)
     missingPreChecks.push(`Docs: ${missingRequiredDocs.join(", ")}`);
@@ -3171,12 +3208,14 @@ export default function CasePage({ params }: { params: { id: string } }) {
       id: "docs",
       title: "Mandatory Documents Checklist",
       done: missingRequiredDocs.length === 0,
-      statusLabel:
-        missingRequiredDocs.length === 0
+      statusLabel: docsWaived && actualMissingDocs.length > 0
+        ? "Waived"
+        : missingRequiredDocs.length === 0
           ? "Completed"
           : `Missing (${missingRequiredDocs.length})`,
-      description:
-        missingRequiredDocs.length === 0
+      description: docsWaived && actualMissingDocs.length > 0
+        ? `Proceeding without: ${actualMissingDocs.join(", ")}. Documents can still be uploaded later.`
+        : missingRequiredDocs.length === 0
           ? "All required documents uploaded and processed by OCR."
           : `Missing required document(s): ${missingRequiredDocs.join(", ")}`,
       actionLabel:
@@ -3184,6 +3223,15 @@ export default function CasePage({ params }: { params: { id: string } }) {
           ? "Manage / Upload Docs"
           : "Upload Documents",
       onAction: () => setShowUpload(true),
+      // Bypass when a document can't be obtained (underwriter / admin only).
+      secondaryActionLabel:
+        canWaiveAcr && actualMissingDocs.length > 0
+          ? docsWaived
+            ? "Undo waiver"
+            : "Proceed without"
+          : undefined,
+      onSecondaryAction: () => toggleDocsWaived(!docsWaived),
+      secondaryBusy: false,
     },
     {
       id: "eapp",
@@ -3209,20 +3257,22 @@ export default function CasePage({ params }: { params: { id: string } }) {
       description: medicalDone
         ? `Medical examination status: ${medical?.status}`
         : medicalReportsSubmitted
-          ? `Customer submitted ${medicalReports.length} report${medicalReports.length === 1 ? "" : "s"} covering ${medicalReportsCoveredTests} of ${medical?.required_tests.length ?? 0} required tests — review them and record the results.`
+          ? `The lab submitted ${medicalReports.length} report${medicalReports.length === 1 ? "" : "s"} covering ${medicalReportsCoveredTests} of ${medical?.required_tests.length ?? 0} required tests — review them and record the results.`
           : medical?.status === "Invited" && medicalReports.length > 0
-            ? `Customer has uploaded reports for ${medicalReportsCoveredTests} of ${medical.required_tests.length} required tests and has not submitted yet.`
+            ? `The lab has uploaded reports for ${medicalReportsCoveredTests} of ${medical.required_tests.length} required tests and has not submitted yet.`
             : "Non-medical limit grid or panel diagnostic check required.",
       actionLabel: medBusy
         ? "Assessing…"
         : medicalReportsSubmitted
           ? "Review Reports"
           : medical?.status === "Scheduled"
-            ? "Record Lab Results"
+            ? "Lab Link & Results"
             : "Assess Medical",
-      onAction: medicalAwaitingReview
+      onAction: medicalReportsSubmitted
         ? () => setShowResultModal(true)
-        : handleAssessMedical,
+        : medical?.status === "Scheduled"
+          ? () => { setLabLink(null); setMedErr(null); setShowLabLinkModal(true); }
+          : handleAssessMedical,
       busy: medBusy,
     },
     {
@@ -4215,6 +4265,20 @@ export default function CasePage({ params }: { params: { id: string } }) {
                 busy={medBusy}
                 onClose={() => setShowResultModal(false)}
                 onSubmit={handleRecordResults}
+              />
+            )}
+
+            {showLabLinkModal && medical && (
+              <MedicalLabLinkModal
+                order={medical}
+                customerName={customer?.name}
+                link={labLink ? portalUrl(labLink.link_path) : null}
+                labLink={labLink}
+                busy={medBusy}
+                error={medErr}
+                onGenerate={handleLabLink}
+                onEnterManually={() => { setShowLabLinkModal(false); setShowResultModal(true); }}
+                onClose={() => setShowLabLinkModal(false)}
               />
             )}
 
@@ -5418,6 +5482,97 @@ export default function CasePage({ params }: { params: { id: string } }) {
 // (app/underwriting/page.tsx) so the two entry points behave identically.
 // ─────────────────────────────────────────────────────────────────────────────
 
+function MedicalLabLinkModal({
+  order,
+  customerName,
+  link,
+  labLink,
+  busy,
+  error,
+  onGenerate,
+  onEnterManually,
+  onClose,
+}: Readonly<{
+  order: MedicalExamOrder;
+  customerName?: string;
+  link: string | null;
+  labLink: LabLink | null;
+  busy: boolean;
+  error: string | null;
+  onGenerate: () => void;
+  onEnterManually: () => void;
+  onClose: () => void;
+}>) {
+  const clinic = order.clinic;
+  const sentTo = labLink?.emailed_to ?? order.lab_link_sent_to;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
+          <h3 className="font-bold text-slate-900 text-sm">{tx("Lab report link")}</h3>
+          <p className="text-xs text-slate-500">{customerName ?? "—"}</p>
+        </div>
+        <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto text-xs">
+          <div className="border border-slate-200 rounded-xl p-3 space-y-1">
+            <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">{tx("Lab chosen by the customer")}</p>
+            <p className="font-bold text-slate-800 text-sm">{clinic?.name ?? "—"}</p>
+            {clinic?.address && <p className="text-slate-600">{clinic.address}</p>}
+            {clinic?.phone && <p className="text-slate-600">{clinic.phone}</p>}
+            <p className="text-slate-600">
+              {tx("Email:")} {order.lab_email ?? <span className="text-amber-700">{tx("not on file")}</span>}
+            </p>
+            <p className="text-slate-600">
+              {tx("Appointment:")} {order.appointment_at ? displayDate(order.appointment_at) + " " + order.appointment_at.slice(11, 16) : "—"}
+            </p>
+          </div>
+          <p className="text-slate-600">
+            {tx("Tests to upload:")} <span className="font-semibold text-slate-800">{(order.required_tests ?? []).length}</span>
+          </p>
+          {link ? (
+            <div>
+              <p className="text-[11px] text-slate-500 mb-1">{tx("Send this link to the lab's doctor — it replaces any earlier lab link:")}</p>
+              <div className="flex items-center gap-1.5">
+                <input readOnly value={link} onFocus={(e) => e.currentTarget.select()}
+                  className="text-[10px] border border-slate-200 rounded px-2 py-1.5 w-full font-mono text-slate-600 bg-white" />
+                <button onClick={() => navigator.clipboard.writeText(link)}
+                  className="text-[10px] font-bold text-blue-700 px-2.5 py-1.5 bg-blue-50 border border-blue-200/60 rounded shrink-0 hover:bg-blue-100">
+                  {tx("Copy")}
+                </button>
+              </div>
+              <p className="mt-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 text-[11px] font-medium text-slate-600">
+                {labLink?.email_status === "sent"
+                  ? tx("Link emailed to {0}", { 0: labLink.emailed_to ?? "" })
+                  : tx("No email on file for this lab — share the link manually")}
+              </p>
+            </div>
+          ) : (
+            <p className="text-slate-600">
+              {sentTo
+                ? tx("The lab link was emailed to {0}. Generate it again to resend or to get a copyable link.", { 0: sentTo })
+                : tx("Generate the link to send to the lab's doctor. They will see the applicant's details and upload the reports.")}
+            </p>
+          )}
+          {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-2.5 text-red-700">{error}</p>}
+        </div>
+        <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex flex-wrap justify-between items-center gap-2">
+          <button onClick={onEnterManually} className="text-xs font-semibold text-slate-600 hover:text-slate-800">
+            {tx("Enter results manually")}
+          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={onGenerate} disabled={busy}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold">
+              {busy ? tx("Working…") : link || sentTo ? tx("Resend / new link") : tx("Generate & send link")}
+            </button>
+            <button onClick={onClose} className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold">
+              {tx("Close")}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MedicalAssessModal({
   order,
   link,
@@ -5537,7 +5692,7 @@ function MedicalAssessModal({
                 <div>
                   <p className="text-[11px] text-slate-500 mb-1">
                     {tx(
-                      "The customer's link — they see the required tests and approved labs, then upload their reports:",
+                      "The customer's link — they choose a lab and time. The lab's doctor then uploads the reports:",
                     )}
                   </p>
                   <div className="flex items-center gap-1.5">

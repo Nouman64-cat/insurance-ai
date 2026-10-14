@@ -570,23 +570,29 @@ async def public_book_medical_exam(raw_token: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/medical-exam/{raw_token}/book")
 
 
-@app.post("/public/medical-exam/{raw_token}/reports", tags=["Pre-Underwriting"])
-async def public_upload_medical_report(raw_token: str, request: Request):
-    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/medical-exam/{raw_token}/reports")
+@app.get("/public/medical-lab/{raw_token}", tags=["Pre-Underwriting"], summary="[Public] Lab: applicant, tests and uploaded reports")
+async def public_get_lab_exam(raw_token: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/medical-lab/{raw_token}")
 
 
-@app.post("/public/medical-exam/{raw_token}/reports/auto", tags=["Pre-Underwriting"])
-async def public_auto_upload_medical_report(raw_token: str, request: Request):
-    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/medical-exam/{raw_token}/reports/auto")
+@app.post("/public/medical-lab/{raw_token}/reports", tags=["Pre-Underwriting"], summary="[Public] Lab: upload one medical report")
+async def lab_upload_medical_report(raw_token: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/medical-lab/{raw_token}/reports")
 
 
-@app.post(
-    "/public/medical-exam/{raw_token}/complete",
-    tags=["Pre-Underwriting"],
-    summary="[Public] Submit uploaded medical reports for review",
-)
-async def public_complete_medical_exam(raw_token: str, request: Request):
-    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/medical-exam/{raw_token}/complete")
+@app.post("/public/medical-lab/{raw_token}/reports/auto", tags=["Pre-Underwriting"], summary="[Public] Lab: upload a report, auto-match tests")
+async def lab_auto_upload_medical_report(raw_token: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/medical-lab/{raw_token}/reports/auto")
+
+
+@app.post("/public/medical-lab/{raw_token}/complete", tags=["Pre-Underwriting"], summary="[Public] Lab: submit reports for review")
+async def lab_complete_medical_exam(raw_token: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/medical-lab/{raw_token}/complete")
+
+
+@app.post("/tenants/{tenant_id}/cases/{case_id}/medical-exam/lab-link", tags=["Pre-Underwriting"], summary="(Re)send the booked lab its report-upload link")
+async def issue_lab_link(tenant_id: UUID, case_id: UUID, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/medical-exam/lab-link")
 
 
 @app.post("/tenants/{tenant_id}/cases/{case_id}/medical-exam/ai-review", tags=["Pre-Underwriting"])

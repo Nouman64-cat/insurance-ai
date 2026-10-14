@@ -1554,6 +1554,27 @@ POST_DATA_MIGRATIONS: list[tuple[str, str]] = [
         "CREATE INDEX IF NOT EXISTS ix_organizations_acquisition_source_id ON organizations (acquisition_source_id)",
     ),
     (
+        "med-lab-a — panel_clinics.email",
+        "ALTER TABLE panel_clinics ADD COLUMN IF NOT EXISTS email VARCHAR(255)",
+    ),
+    (
+        "med-lab-b — medical_exam_orders lab link columns",
+        "ALTER TABLE medical_exam_orders ADD COLUMN IF NOT EXISTS lab_token_hash VARCHAR(64), "
+        "ADD COLUMN IF NOT EXISTS lab_token_expires_at TIMESTAMP, "
+        "ADD COLUMN IF NOT EXISTS lab_sent_at TIMESTAMP, "
+        "ADD COLUMN IF NOT EXISTS lab_sent_to VARCHAR(255)",
+    ),
+    (
+        "med-lab-d — medical_exam_orders doctor e-signature columns",
+        "ALTER TABLE medical_exam_orders ADD COLUMN IF NOT EXISTS lab_signed_by VARCHAR(255), "
+        "ADD COLUMN IF NOT EXISTS lab_signer_license VARCHAR(100), "
+        "ADD COLUMN IF NOT EXISTS lab_signed_at TIMESTAMP",
+    ),
+    (
+        "med-lab-c — index medical_exam_orders.lab_token_hash",
+        "CREATE INDEX IF NOT EXISTS ix_medical_exam_orders_lab_token_hash ON medical_exam_orders (lab_token_hash)",
+    ),
+    (
         "acq-src-group-e — backfill family_groups source from an assigned source login",
         "UPDATE family_groups fg SET acquisition_source_id = s.id FROM acquisition_sources s "
         "WHERE fg.acquisition_source_id IS NULL AND s.user_id = fg.assigned_agent_id AND s.tenant_id = fg.tenant_id",

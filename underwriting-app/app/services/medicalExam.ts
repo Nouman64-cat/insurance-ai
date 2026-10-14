@@ -71,12 +71,15 @@ export interface MedicalExamOrder {
   estimated_cost: number;
   fasting_required?: boolean;
   clinic: PanelClinic | null;
+  lab_email?: string | null;
   clinic_id?: string | null;
   appointment_at: string | null;
   home_sampling?: boolean;
   appointment_note?: string | null;
   invited_at?: string | null;
   invite_expires_at?: string | null;
+  lab_link_sent_at?: string | null;
+  lab_link_sent_to?: string | null;
   results: Record<string, any> | null;
   outcome: MedicalExamOutcome | null;
   abnormal_findings: AbnormalFinding[];
@@ -122,6 +125,20 @@ export async function assessMedicalExam(caseId: string): Promise<MedicalExamOrde
 
 export async function inviteMedicalExam(caseId: string): Promise<MedicalExamInvite> {
   const res = await api.post(`/tenants/${tenantId()}/cases/${caseId}/medical-exam/invite`);
+  return res.data;
+}
+
+export interface LabLink {
+  link_path: string;
+  expires_at: string;
+  lab_name: string;
+  emailed_to?: string | null;
+  email_status?: "sent" | "failed" | "no_email";
+}
+
+/** (Re)issue the booked lab's report-upload link and email it to the lab. Replaces any earlier link. */
+export async function issueLabLink(caseId: string): Promise<LabLink> {
+  const res = await api.post(`/tenants/${tenantId()}/cases/${caseId}/medical-exam/lab-link`);
   return res.data;
 }
 
