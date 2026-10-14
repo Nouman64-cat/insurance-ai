@@ -43,6 +43,7 @@ import {
   type AgentConfidentialReport,
 } from "@/app/services/agentConfidentialReport";
 import ModalPortal from "@/components/ModalPortal";
+import { HoldCaseModal } from "@/components/entities/HoldCaseModal";
 import {
   getCompliance,
   runCompliance,
@@ -171,6 +172,12 @@ interface CaseData {
   sourceChannel: string;
   createdAt: string;
   updatedAt: string;
+  /** Underwriting hold: the process is frozen where it stands until the hold is removed. */
+  on_hold?: boolean;
+  hold_reason?: string | null;
+  held_at?: string | null;
+  held_by?: string | null;
+  held_from_status?: string | null;
 }
 
 interface AcquisitionSourceData {
@@ -1791,6 +1798,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const abortRef = useRef<AbortController | null>(null);
 
   const [overriding, setOverriding] = useState<string | null>(null);
+  const [holdModal, setHoldModal] = useState(false);
+  const [holdBusy, setHoldBusy] = useState(false);
+  const [holdError, setHoldError] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [postingNote, setPostingNote] = useState(false);
   const [noteSent, setNoteSent] = useState(false);
@@ -3085,6 +3095,40 @@ export default function CasePage({ params }: { params: { id: string } }) {
     }
   };
 
+  // Put the whole case on hold / take it off. The server freezes every write while it is held, keeps the case exactly
+  // where it stands, and the lead shows as On hold; removing the hold carries on from the same step.
+  const putOnHold = async (reason: string) => {
+    if (!tenantId) return;
+    setHoldBusy(true);
+    setHoldError(null);
+    try {
+      await api.post(`/tenants/${tenantId}/cases/${caseId}/hold`, { reason });
+      setHoldModal(false);
+      await fetchDetail();
+      setSuccessMessage(tx("Underwriting is on hold. Nothing was changed; remove the hold to continue."));
+      window.setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err: any) {
+      setHoldError(err.message ?? tx("Could not put the case on hold."));
+    } finally {
+      setHoldBusy(false);
+    }
+  };
+
+  const removeHold = async () => {
+    if (!tenantId) return;
+    setHoldBusy(true);
+    try {
+      await api.post(`/tenants/${tenantId}/cases/${caseId}/release`, {});
+      await fetchDetail();
+      setSuccessMessage(tx("Hold removed. Underwriting continues from where it stopped."));
+      window.setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err: any) {
+      setError(err.message ?? tx("Could not remove the hold."));
+    } finally {
+      setHoldBusy(false);
+    }
+  };
+
   // Ask the summarizer to draft a concise underwriter note from the case
   // context assembled at the call site (customer, policy, scores, decision,
   // reasons). The draft lands in the textarea for review/edit before posting.
@@ -3559,7 +3603,20 @@ export default function CasePage({ params }: { params: { id: string } }) {
   // or the AI's own Auto Approve/Decline) there is nothing left to override, so they are hidden rather than let a
   // stale click re-assert the same status and bounce off the policy state machine ("Approved → Approved").
   const prereqsIncomplete = missingPreChecks.length > 0;
-  const decisionButtons =
+  const onHold = !!c.on_hold;
+  const decisionButtons = onHold ? (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <span className="px-3 py-2 text-sm font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg">{tx("On hold")}</span>
+      <button
+        onClick={removeHold}
+        disabled={holdBusy || userRole === "Agent"}
+        title={userRole === "Agent" ? tx("Currently, you have no access to do this, ask your manager") : tx("Take the case off hold and continue from where it stopped.")}
+        className={`px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg transition-colors shadow-sm ${userRole === "Agent" ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-700"}`}
+      >
+        {holdBusy ? <Spinner /> : tx("Remove hold")}
+      </button>
+    </div>
+  ) :
     c.caseStatus !== "Approved" && c.caseStatus !== "Rejected" ? (
       <div className="flex flex-wrap items-center justify-end gap-2">
         {prereqsIncomplete && (
@@ -3571,16 +3628,12 @@ export default function CasePage({ params }: { params: { id: string } }) {
           </p>
         )}
         <button
-          onClick={() => {
-            // Deliberately changes nothing: no status, no decision, no API call. The toast only confirms it.
-            setSuccessMessage("Application left on hold — nothing was changed.");
-            window.setTimeout(() => setSuccessMessage(null), 4000);
-          }}
+          onClick={() => { setHoldError(null); setHoldModal(true); }}
           disabled={overriding !== null || userRole === "Agent"}
           title={
             userRole === "Agent"
               ? tx("Currently, you have no access to do this, ask your manager")
-              : tx("Leave the case as it is for now. Nothing is changed.")
+              : tx("Pause the whole underwriting process exactly where it is. The lead shows as On hold until you remove the hold.")
           }
           className={`px-4 py-2 text-sm font-semibold text-slate-700 border border-slate-300 rounded-lg transition-colors ${userRole === "Agent" ? "opacity-50 cursor-not-allowed bg-slate-100" : "hover:bg-slate-50"}`}
         >
@@ -3756,6 +3809,19 @@ export default function CasePage({ params }: { params: { id: string } }) {
           </button>
         </div>
       </div>
+
+      {onHold && (
+        <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-amber-900">{tx("Underwriting is on hold")}</p>
+            <p className="text-xs text-amber-800 mt-0.5">
+              {c.hold_reason ? <>{tx("Reason")}: <span className="font-semibold">{c.hold_reason}</span> · </> : null}
+              {c.held_at ? <>{tx("Since")} {displayDate(c.held_at)} · </> : null}
+              {tx("Paused at: {0}. Every step is frozen; remove the hold to continue from here.", { 0: c.held_from_status ?? c.caseStatus })}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── Plan switcher (multi-plan underwriting group) ─────────────────── */}
       {isGroup &&
@@ -4241,8 +4307,10 @@ export default function CasePage({ params }: { params: { id: string } }) {
                       {canWaiveAcr && !["Approved", "Rejected", "Closed"].includes(c.caseStatus) && (
                         <button
                           type="button"
+                          disabled={onHold}
+                          title={onHold ? tx("The case is on hold. Remove the hold to continue.") : undefined}
                           onClick={() => setShowChangePlan(true)}
-                          className="shrink-0 rounded-md border border-blue-600 px-2.5 py-1 text-xs font-semibold text-blue-600 transition-colors hover:bg-blue-50"
+                          className="shrink-0 rounded-md border border-blue-600 px-2.5 py-1 text-xs font-semibold text-blue-600 transition-colors hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           {tx("Change plan")}
                         </button>
@@ -4566,10 +4634,13 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   !customer ||
                   requiredDocsMissing ||
                   requirementsOpen ||
-                  userRole === "Agent"
+                  userRole === "Agent" ||
+                  onHold
                 }
                 title={
-                  userRole === "Agent"
+                  onHold
+                    ? tx("The case is on hold. Remove the hold to continue.")
+                    : userRole === "Agent"
                     ? tx(
                         "Currently, you have no access to do this, ask your manager",
                       )
@@ -4689,7 +4760,16 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
                         {/* Action Link / Button */}
                         <div className="shrink-0 pl-1 sm:pl-0 flex items-center gap-2">
-                          {step.actionHref ? (
+                          {step.actionHref && onHold ? (
+                            <span
+                              aria-disabled="true"
+                              title={tx("The case is on hold. Remove the hold to continue.")}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-400 text-xs font-bold rounded-lg border border-slate-200 cursor-not-allowed"
+                            >
+                              <span>{step.actionLabel}</span>
+                              <span className="text-[10px]">↗</span>
+                            </span>
+                          ) : step.actionHref ? (
                             <Link
                               href={step.actionHref}
                               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-blue-700 text-xs font-bold rounded-lg border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all"
@@ -4700,9 +4780,11 @@ export default function CasePage({ params }: { params: { id: string } }) {
                           ) : step.onAction ? (
                             <button
                               onClick={step.onAction}
-                              disabled={step.busy || userRole === "Agent"}
+                              disabled={step.busy || userRole === "Agent" || onHold}
                               title={
-                                userRole === "Agent"
+                                onHold
+                                  ? tx("The case is on hold. Remove the hold to continue.")
+                                  : userRole === "Agent"
                                   ? tx(
                                       "Currently, you have no access to do this, ask your manager",
                                     )
@@ -4712,7 +4794,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                                 step.done
                                   ? "bg-white hover:bg-slate-100 text-slate-700 border-slate-200/90"
                                   : "bg-blue-600 hover:bg-blue-700 text-white border-blue-600 shadow-2xs"
-                              } ${userRole === "Agent" ? "opacity-50 cursor-not-allowed" : ""}`}
+                              } ${userRole === "Agent" || onHold ? "opacity-50 cursor-not-allowed" : ""}`}
                             >
                               {step.busy ? (
                                 <Spinner className="w-3 h-3 border-white border-t-transparent" />
@@ -4723,7 +4805,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
                           {step.secondaryActionLabel && step.onSecondaryAction && (
                             <button
                               onClick={step.onSecondaryAction}
-                              disabled={step.secondaryBusy}
+                              disabled={step.secondaryBusy || onHold}
+                              title={onHold ? tx("The case is on hold. Remove the hold to continue.") : undefined}
                               className="px-3 py-1.5 text-xs font-bold rounded-lg border bg-white hover:bg-slate-100 text-slate-700 border-slate-200/90 transition-all disabled:opacity-50"
                             >
                               {step.secondaryActionLabel}
@@ -4865,10 +4948,13 @@ export default function CasePage({ params }: { params: { id: string } }) {
                       effStatus === "streaming" ||
                       requiredDocsMissing ||
                       requirementsOpen ||
-                      userRole === "Agent"
+                      userRole === "Agent" ||
+                      onHold
                     }
                     title={
-                      userRole === "Agent"
+                      onHold
+                        ? tx("The case is on hold. Remove the hold to continue.")
+                        : userRole === "Agent"
                         ? tx(
                             "Currently, you have no access to do this, ask your manager",
                           )
@@ -5015,7 +5101,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
               <p className="section-label">{tx("Underwriting Requirements")}</p>
               <button
                 onClick={runDetermineRequirements}
-                disabled={requirementsBusy || userRole === "Agent"}
+                disabled={requirementsBusy || userRole === "Agent" || onHold}
+                title={onHold ? tx("The case is on hold. Remove the hold to continue.") : undefined}
                 className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {requirementsBusy ? (
@@ -5135,8 +5222,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
                           userRole !== "Agent" && (
                             <button
                               onClick={() => waiveRequirement(req.id)}
-                              className="text-[11px] font-semibold text-slate-400 hover:text-slate-600"
-                              title={tx("Waive this requirement")}
+                              disabled={onHold}
+                              className="text-[11px] font-semibold text-slate-400 hover:text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                              title={onHold ? tx("The case is on hold. Remove the hold to continue.") : tx("Waive this requirement")}
                             >
                               {tx("Waive")}
                             </button>

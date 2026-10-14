@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import selectinload
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -25,6 +26,8 @@ from shared.models.core import (
     CaseTypeEnum,
     CaseWorkflow,
     ActionTypeEnum,
+    InitialPremiumPayment,
+    IPPStatusEnum,
     CaseAuditTrail,
     AssignmentTypeEnum,
     AssignmentStatusEnum,
@@ -43,13 +46,15 @@ from schemas import (
     CaseRead,
     CaseUpdate,
     CaseStatusUpdate,
+    CaseHoldBody,
+    CaseReleaseBody,
     CaseAssignmentCreate,
     CaseCommentCreate,
     CaseRequirementWaiveBody,
     WorkflowAdvanceBody,
     PolicyRead,
 )
-from shared.services.policy_state_machine import IllegalStateTransition, apply_transition
+from shared.services.policy_state_machine import IllegalStateTransition, apply_transition, record_event
 from family_approval import head_case_ids, owner_case_id, pending_insured_members
 
 router = APIRouter(prefix="/tenants/{tenant_id}/cases", tags=["Cases"])
@@ -87,6 +92,28 @@ def generate_case_number() -> str:
     random_hex = uuid.uuid4().hex[:6].upper()
     return f"APP-{datetime.utcnow().year}-{random_hex}"
 
+
+def _initial_premium_required(policy: Policy) -> bool:
+    """An individual application must have its initial premium cleared on the proposal before an underwriting case opens
+    (Section 30, "no premium, no risk"). Family and group policies follow their own approval flows and are not held here.
+    Switch off with REQUIRE_INITIAL_PREMIUM_BEFORE_UNDERWRITING=false."""
+    if os.environ.get("REQUIRE_INITIAL_PREMIUM_BEFORE_UNDERWRITING", "true").lower() != "true":
+        return False
+    return policy.family_policy_id is None and policy.master_policy_id is None
+
+
+async def _attach_initial_payment(session: AsyncSession, policy_id: Optional[UUID], case_id: UUID) -> None:
+    """The payment taken on the proposal had no case yet: it belongs to this one from now on."""
+    if policy_id is None:
+        return
+    ipp = (await session.exec(select(InitialPremiumPayment).where(
+        InitialPremiumPayment.policy_id == policy_id, InitialPremiumPayment.case_id.is_(None)))).first()
+    if ipp is not None:
+        ipp.case_id = case_id
+        session.add(ipp)
+        await session.commit()
+
+
 @router.post("", response_model=CaseRead, status_code=201)
 async def create_case(
     tenant_id: UUID,
@@ -119,7 +146,17 @@ async def create_case(
             )
         )).scalars().first()
         if existing_case:
+            await _attach_initial_payment(session, policy.id, existing_case.caseld)
             return existing_case
+
+        if body.caseType == CaseTypeEnum.UNDERWRITING and _initial_premium_required(policy):
+            paid = (await session.exec(select(InitialPremiumPayment.id).where(
+                InitialPremiumPayment.policy_id == policy.id, InitialPremiumPayment.status == IPPStatusEnum.REALIZED))).first()
+            if paid is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="The initial premium must be paid before this application goes to underwriting.",
+                )
 
     # Falls back to the customer's own assigned agent when the caller doesn't
     # name one explicitly (e.g. the chatbot's create_case tool never has —
@@ -161,6 +198,7 @@ async def create_case(
 
     await session.commit()
     await session.refresh(case)
+    await _attach_initial_payment(session, case.policy_id, case.caseld)
 
     # Documents the customer already uploaded through the proposal's document link join this case.
     await docreq.adopt_documents(session, case)
@@ -834,6 +872,78 @@ async def delete_case(
     await session.delete(case)
     await session.commit()
     return None
+
+
+# ── Underwriting hold ─────────────────────────────────────────────────────────
+# "On hold" freezes the whole underwriting process exactly where it stands. The case keeps its status and every step already
+# done; while it is held every write to the case is refused (the guard in main.py), so nothing moves — not the AI run, a
+# decision, requirements, medicals, the e-application, ACR, premium or comments-as-process. Releasing clears the flag and the
+# process carries on from the same step, because nothing was reset.
+
+_HOLDABLE = (CaseStatusEnum.NEW, CaseStatusEnum.IN_PROGRESS, CaseStatusEnum.PENDING_DOCUMENTS, CaseStatusEnum.UNDER_REVIEW)
+
+
+async def _hold_actor(session: AsyncSession, token: str):
+    user = await _get_current_user(token, session)
+    role_name = await _role_name(user, session)
+    if role_name not in _CASE_DECISION_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=f"Holding or releasing a case requires one of: {', '.join(sorted(_CASE_DECISION_ROLES))} (you are {role_name}).")
+    return user
+
+
+async def _hold_audit(session: AsyncSession, case: Case, user, event_type: str, detail: dict) -> None:
+    session.add(CaseHistory(caseld=case.caseld, actionType=ActionTypeEnum.COMMENT, fromStatus=case.caseStatus.value,
+                            toStatus=case.caseStatus.value, changedBy=user.id, changeTimestamp=datetime.utcnow()))
+    if case.policy_id:
+        policy = await session.get(Policy, case.policy_id)
+        if policy is not None:
+            record_event(session, policy, event_type=event_type, actor=str(user.id), detail={"case": case.caseNumber, **detail})
+
+
+@router.post("/{case_id}/hold", response_model=CaseRead)
+async def hold_case(
+    tenant_id: UUID, case_id: UUID, body: CaseHoldBody,
+    session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme),
+):
+    user = await _hold_actor(session, token)
+    case = (await session.execute(select(Case).where(Case.tenant_id == tenant_id, Case.caseld == case_id).with_for_update())).scalar_one_or_none()
+    if not case:
+        raise HTTPException(404, "Case not found")
+    if case.on_hold:
+        raise HTTPException(409, detail={"code": "CASE_ALREADY_ON_HOLD", "message": "This case is already on hold."})
+    if case.caseStatus not in _HOLDABLE:
+        raise HTTPException(409, detail={"code": "CASE_NOT_HOLDABLE", "message": f"A case that is {case.caseStatus.value} cannot be put on hold."})
+    case.on_hold, case.hold_reason = True, body.reason.strip()
+    case.held_at, case.held_by, case.held_from_status = datetime.utcnow(), (getattr(user, "email", None) or str(user.id)), case.caseStatus.value
+    case.updatedAt = datetime.utcnow()
+    session.add(case)
+    await _hold_audit(session, case, user, "UnderwritingHeld", {"reason": case.hold_reason, "at_status": case.caseStatus.value})
+    await session.commit()
+    await session.refresh(case)
+    return case
+
+
+@router.post("/{case_id}/release", response_model=CaseRead)
+async def release_case(
+    tenant_id: UUID, case_id: UUID, body: CaseReleaseBody,
+    session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme),
+):
+    user = await _hold_actor(session, token)
+    case = (await session.execute(select(Case).where(Case.tenant_id == tenant_id, Case.caseld == case_id).with_for_update())).scalar_one_or_none()
+    if not case:
+        raise HTTPException(404, "Case not found")
+    if not case.on_hold:
+        raise HTTPException(409, detail={"code": "CASE_NOT_ON_HOLD", "message": "This case is not on hold."})
+    held_for = case.hold_reason
+    case.on_hold, case.hold_reason, case.held_at, case.held_by = False, None, None, None
+    resumed_at = case.held_from_status
+    case.held_from_status = None
+    case.updatedAt = datetime.utcnow()
+    session.add(case)
+    await _hold_audit(session, case, user, "UnderwritingResumed", {"resumed_at": resumed_at or case.caseStatus.value, "was_held_for": held_for, "note": body.note})
+    await session.commit()
+    await session.refresh(case)
+    return case
 
 
 @router.patch("/{case_id}/status", response_model=CaseRead)

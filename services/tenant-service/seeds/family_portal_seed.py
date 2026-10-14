@@ -94,8 +94,8 @@ async def _issue(session: AsyncSession, tenant_id: UUID, *, holder: Customer, fp
     p.current_version_id = v.id
     session.add(p)
 
-    per = {"Annual": 1, "SemiAnnual": 2, "Quarterly": 4, "Monthly": 12}[frequency]
-    step = {"Annual": 12, "SemiAnnual": 6, "Quarterly": 3, "Monthly": 1}[frequency]
+    per = {"Annual": 1, "SemiAnnual": 2, "Quarterly": 4}[frequency]
+    step = {"Annual": 12, "SemiAnnual": 6, "Quarterly": 3}[frequency]
     amount = round(annual_premium / per, 2)
     for n in range(per):
         month = effective.month - 1 + n * step

@@ -94,8 +94,9 @@ class TenantClient:
         raise_for(resp)
         return resp.body
 
-    async def upload(self, path: str, filename: str, content: bytes, content_type: str, note: Optional[str]) -> Any:
-        resp = await self._send("POST", path, files={"file": (filename, content, content_type)}, data={"note": note} if note else None)
+    async def upload(self, path: str, filename: str, content: bytes, content_type: str, note: Optional[str], fields: Optional[dict] = None) -> Any:
+        data = {**({"note": note} if note else {}), **{k: v for k, v in (fields or {}).items() if v}}
+        resp = await self._send("POST", path, files={"file": (filename, content, content_type)}, data=data or None)
         raise_for(resp)
         return resp.body
 

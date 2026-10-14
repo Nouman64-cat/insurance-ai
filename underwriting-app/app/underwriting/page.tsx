@@ -1316,7 +1316,8 @@ function UnderwritingMainContent() {
                       const g2Done = acrCleared(c);
                       const g3Unlocked = g2Done;
                       const g3Done = c.compliance_status === "Passed";
-                      // The initial premium is collected at issuance, not here,
+                      // The initial premium is no longer a gate here: it is collected on the
+                      // proposal (after Start Review) before this case can even be opened,
                       // so insurance history follows compliance directly.
                       const g5Unlocked = g3Done;
                       const g5Done = c.insurance_history_status === "Clear";

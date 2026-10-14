@@ -358,7 +358,6 @@ _INSTALLMENTS_PER_YEAR = {
     BillingFrequencyEnum.ANNUAL: 1,
     BillingFrequencyEnum.SEMI_ANNUAL: 2,
     BillingFrequencyEnum.QUARTERLY: 4,
-    BillingFrequencyEnum.MONTHLY: 12,
 }
 
 

@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 // Only the customer-facing data routes are relayed. Auth has its own handlers (they manage cookies) and /internal is never
 // reachable from here.
-const ALLOWED = ["me", "dashboard", "policies", "payments", "claims", "documents", "profile", "notifications", "family"];
+const ALLOWED = ["me", "dashboard", "policies", "payments", "claims", "documents", "profile", "notifications", "family", "walk-in"];
 const FORWARD = ["content-type", "idempotency-key", "accept-language"];
 const RETURN = ["content-type", "content-disposition", "retry-after"];
 

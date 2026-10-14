@@ -1,5 +1,6 @@
 "use client";
 import { Suspense, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { PasswordInput } from "@/components/PasswordInput";
@@ -71,6 +72,11 @@ function LoginForm() {
               <p>{t("login.forgot")}</p>
             </div>
           </form>
+          <div className="card p-5 mt-4 text-center space-y-2">
+            <p className="text-sm font-bold text-slate-800">{t("login.newHere")}</p>
+            <p className="text-xs text-slate-500">{t("login.newHereText")}</p>
+            <Link href="/walk-in/start" className="btn-secondary w-full">{t("login.walkIn")}</Link>
+          </div>
           <p className="text-center text-[11px] text-slate-400 mt-5">{t("login.secure")}</p>
         </div>
       </main>

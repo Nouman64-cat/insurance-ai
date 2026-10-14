@@ -52,3 +52,6 @@ export interface Ticket {
 }
 
 export interface Me { id: string; full_name: string | null; email: string; role_name: string; staff: boolean }
+
+export type View = "" | "active" | "overdue" | "unassigned" | "mine" | "waiting" | "finished";
+export interface Summary { active: number; overdue: number; unassigned: number; mine: number; waiting: number; finished: number; total: number }

@@ -94,3 +94,33 @@ def decode_access_token(token: str) -> Optional[dict[str, Any]]:
     except JWTError:
         return None
     return claims if claims.get("scp") in ("full", "pwd_change") and claims.get("sub") and claims.get("sid") else None
+
+
+# ── walk-in tokens: a different audience and scope, so no customer endpoint accepts them (and vice versa) ──
+
+WALKIN_AUDIENCE = "customer-portal-walkin"
+
+
+def issue_walk_in_token(*, identity_id: str, tenant_id: str, session_id: str) -> tuple[str, int]:
+    now = datetime.now(timezone.utc)
+    ttl = settings.walkin_session_minutes
+    claims = {"iss": settings.jwt_issuer, "aud": WALKIN_AUDIENCE, "sub": identity_id, "tid": tenant_id, "sid": session_id, "scp": "walk_in",
+              "jti": uuid.uuid4().hex, "iat": int(now.timestamp()), "exp": int((now + timedelta(minutes=ttl)).timestamp())}
+    return jwt.encode(claims, settings.jwt_secret, algorithm="HS256", headers={"typ": "at+jwt"}), ttl * 60
+
+
+def decode_walk_in_token(token: str) -> Optional[dict[str, Any]]:
+    if not settings.jwt_secret:
+        return None
+    try:
+        header = jwt.get_unverified_header(token)
+        if header.get("typ") != "at+jwt" or header.get("alg") != "HS256":
+            return None
+        claims = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"], audience=WALKIN_AUDIENCE, issuer=settings.jwt_issuer)
+    except JWTError:
+        return None
+    return claims if claims.get("scp") == "walk_in" and claims.get("sub") and claims.get("sid") else None
+
+
+def otp_hash(email: str, code: str) -> str:
+    return hashlib.sha256(f"{settings.jwt_secret}|otp|{email}|{code}".encode()).hexdigest()

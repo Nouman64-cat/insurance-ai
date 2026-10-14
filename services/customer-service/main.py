@@ -77,15 +77,48 @@ async def health():
     return {'status':'ok'}
 @app.get('/v1/me')
 async def me(u=Depends(identity)): return {k:v for k,v in u.items() if k!='token'}
-@app.get('/v1/tickets')
-async def listing(page:int=Query(1,ge=1),page_size:int=Query(20,ge=1,le=100),status:str|None=None,q:str=Query('',max_length=200),u=Depends(identity)):
-    where='tenant_id=:t'; args={'t':UUID(u['tenant_id']),'limit':page_size,'offset':(page-1)*page_size}
+OPEN_STATUSES="('OPEN','IN_PROGRESS','WAITING_CUSTOMER')"
+FINISHED_STATUSES="('RESOLVED','CLOSED','CANCELLED')"
+# Plain-language views of the queue. `active` is everything still being worked; the rest narrow it down to what needs a person.
+VIEWS={
+    'active':'status IN '+OPEN_STATUSES,
+    'finished':'status IN '+FINISHED_STATUSES,
+    'unassigned':'assignee_id IS NULL AND status IN '+OPEN_STATUSES,
+    'overdue':'due_at<now() AND status IN '+OPEN_STATUSES,
+    'waiting':"status='WAITING_CUSTOMER'",
+}
+def scope(u,args):
+    where='tenant_id=:t'; args['t']=UUID(u['tenant_id'])
     if not u['staff']: where+=' AND requester_id=:r';args['r']=UUID(u['id'])
+    return where
+@app.get('/v1/tickets/summary')
+async def summary(u=Depends(identity)):
+    """How the queue stands, in the counts the desk shows at the top: what is still open, what is late, what nobody has taken yet,
+    what is mine, and what is waiting on the customer."""
+    args={}; where=scope(u,args); args['me']=UUID(u['id'])
+    async with engine.connect() as c:
+        row=(await c.execute(text("""SELECT
+            count(*) FILTER (WHERE status IN """+OPEN_STATUSES+""") AS active,
+            count(*) FILTER (WHERE due_at<now() AND status IN """+OPEN_STATUSES+""") AS overdue,
+            count(*) FILTER (WHERE assignee_id IS NULL AND status IN """+OPEN_STATUSES+""") AS unassigned,
+            count(*) FILTER (WHERE assignee_id=:me AND status IN """+OPEN_STATUSES+""") AS mine,
+            count(*) FILTER (WHERE status='WAITING_CUSTOMER') AS waiting,
+            count(*) FILTER (WHERE status IN """+FINISHED_STATUSES+""") AS finished,
+            count(*) AS total
+            FROM customer_service.tickets WHERE """+where),args)).mappings().one()
+    return {k:int(v or 0) for k,v in row.items()}
+@app.get('/v1/tickets')
+async def listing(page:int=Query(1,ge=1),page_size:int=Query(20,ge=1,le=100),status:str|None=None,q:str=Query('',max_length=200),view:str|None=Query(None,pattern='^(active|finished|unassigned|overdue|waiting|mine)$'),u=Depends(identity)):
+    args={'limit':page_size,'offset':(page-1)*page_size}; where=scope(u,args)
     if status: where+=' AND status=:s';args['s']=status
+    if view=='mine': where+=' AND assignee_id=:me AND status IN '+OPEN_STATUSES;args['me']=UUID(u['id'])
+    elif view: where+=' AND '+VIEWS[view]
     if q: where+=' AND (title ILIKE :q OR description ILIKE :q)';args['q']='%'+q+'%'
+    # What needs doing first: late and soon-due open tickets lead; finished ones follow, newest first.
+    order="CASE WHEN status IN "+OPEN_STATUSES+" THEN 0 ELSE 1 END, CASE WHEN status IN "+OPEN_STATUSES+" THEN due_at END ASC, updated_at DESC" if view in (None,'active','unassigned','overdue','waiting','mine') else "updated_at DESC"
     async with engine.connect() as c:
         total=(await c.execute(text('SELECT count(*) FROM customer_service.tickets WHERE '+where),args)).scalar()
-        rows=(await c.execute(text("SELECT *, (due_at<now() AND status NOT IN ('RESOLVED','CLOSED','CANCELLED')) AS overdue FROM customer_service.tickets WHERE "+where+" ORDER BY created_at DESC LIMIT :limit OFFSET :offset"),args)).mappings().all()
+        rows=(await c.execute(text("SELECT *, (due_at<now() AND status NOT IN ('RESOLVED','CLOSED','CANCELLED')) AS overdue FROM customer_service.tickets WHERE "+where+" ORDER BY "+order+" LIMIT :limit OFFSET :offset"),args)).mappings().all()
     return {'items':[dict(r) for r in rows],'total':total,'page':page,'page_size':page_size}
 @app.post('/v1/tickets')
 async def create(body:Create,u=Depends(identity)):
