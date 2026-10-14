@@ -117,6 +117,7 @@ SAFE_TOOLS = {
     "navigate_to_page",
     "show_record",
     "search_records",
+    "list_leads",
     "list_customers",
     "list_cases",
     "get_case_details",
@@ -303,6 +304,7 @@ STEP_LABELS: dict[str, str] = {
     "navigate_to_page": "Navigating",
     "show_record": "Locating record",
     "search_records": "Searching",
+    "list_leads": "Fetching leads",
     "list_customers": "Fetching customers",
     "list_cases": "Fetching cases",
     "get_case_details": "Loading case details",
@@ -440,6 +442,7 @@ AGENT_ALLOWED_TOOLS = {
     "prepare_family_insurance",
     "bulk_add_customers",
     "quick_start_workflow",
+    "list_leads",
     "list_customers",
     "list_organizations",
     "list_family_groups",
@@ -570,6 +573,7 @@ CLAIMS_ADJUSTER_ALLOWED_TOOLS = CLAIMS_READ_TOOLS | {
     "navigate_to_page",
     "show_record",
     "search_records",
+    "list_leads",
     "list_customers",
     "list_cases",
     "get_case_details",
@@ -702,9 +706,8 @@ WORKFLOW_STEP_TOOLS = {
 
 
 def requires_confirmation(tool_name: str) -> bool:
-    if tool_name in WORKFLOW_STEP_TOOLS:
-        return False
-    return tool_name in MUTATING_TOOLS
+    """The user's action request authorizes execution; no extra Yes/Cancel gate."""
+    return False
 
 
 # Args that are only required outside demo mode: a demo employer "pays" with a

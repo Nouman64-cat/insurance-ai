@@ -44,7 +44,7 @@ def _as_text(content: Any) -> str:
         for block in content:
             if isinstance(block, str):
                 parts.append(block)
-            elif isinstance(block, dict):
+            elif isinstance(block, dict) and block.get("type", "text") == "text" and not block.get("thought") and not (block.get("extras") or {}).get("thought"):
                 parts.append(block.get("text", ""))
         return "".join(parts)
     return str(content) if content else ""
@@ -61,6 +61,7 @@ async def _consume(graph, config, input_):
     event carries an explicit "open this page and highlight this row"
     instruction from tools like show_record.
     """
+    streamed_ids: set[str] = set()
     seq = 0  # monotonically increasing suffix so repeated tools get distinct step ids
 
     def step(step_id: str, label: str, status: str) -> str:
@@ -70,7 +71,28 @@ async def _consume(graph, config, input_):
         thinking_open = True
         yield step("think", "Understanding request", "active")
 
-        async for update in graph.astream(input_, config=config, stream_mode="updates"):
+        async for mode, update in graph.astream(input_, config=config, stream_mode=["messages", "updates"]):
+            if mode == "messages":
+                chunk, metadata = update
+                # Internal model calls (titles, plan advice) stay out of chat.
+                if metadata.get("langgraph_node") != "agent":
+                    continue
+                text = _as_text(chunk.content) if chunk.content else ""
+                message_id = chunk.id
+                if text and message_id:
+                    if thinking_open:
+                        thinking_open = False
+                        yield step("think", "Understanding request", "done")
+                    streamed_ids.add(message_id)
+                    yield _event({"type": "token", "content": text, "message_id": message_id, "delta": True})
+                continue
+
+            # Drop any abandoned partial response from a failed/retried call.
+            if "agent" in update:
+                final_ids = {m.id for m in update["agent"].get("messages", []) if isinstance(m, AIMessage)}
+                for abandoned in streamed_ids - final_ids:
+                    yield _event({"type": "message_discard", "message_id": abandoned})
+                streamed_ids.clear()
             if "__interrupt__" in update:
                 intr = update["__interrupt__"][0]
                 if thinking_open:
@@ -109,7 +131,7 @@ async def _consume(graph, config, input_):
                             yield step(f"tool:{tc['name']}:{seq}", step_label(tc["name"]), "active")
                         text = _as_text(m.content) if m.content else ""
                         if text:
-                            yield _event({"type": "token", "content": text})
+                            yield _event({"type": "token", "content": text, "message_id": m.id, "delta": False})
                     if isinstance(m, ToolMessage):
                         try:
                             result = json.loads(m.content)

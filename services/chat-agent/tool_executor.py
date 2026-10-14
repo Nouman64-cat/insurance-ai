@@ -329,34 +329,188 @@ async def _navigate(args: dict, ctx: Ctx) -> dict:
 # Raw ids are included everywhere: the model frequently echoes back the id a
 # create_* tool just returned ("show the case you just created" → the case's
 # UUID), and that must resolve just as well as a human-friendly name.
+# `gateway` sources are read through the API gateway instead of tenant-service;
+# leads have no endpoint of their own and are assembled by _load_leads.
 _RECORD_SOURCES: dict[str, dict[str, Any]] = {
+    "lead":         {"fields": ("display_id", "id", "cnic", "registration_number", "name", "contact_person", "contact_email")},
     "customer":     {"path": "/customers",        "fields": ("id", "cnic", "first_name", "last_name", "email")},
     "case":         {"path": "/cases",            "fields": ("caseld", "id", "caseNumber", "applicant_name", "customer_name", "customer_cnic")},
+    "policy":       {"path": "/policies",         "fields": ("id", "policy_number", "customer_name", "case_number")},
+    "claim":        {"path": "/claims",           "fields": ("id", "claim_number", "claimant_name", "policy_number")},
     "user":         {"path": "/users/",           "fields": ("id", "full_name", "email")},
     "organization": {"path": "/organizations",    "fields": ("id", "name", "contact_person", "contact_email")},
     "family":       {"path": "/families",         "fields": ("id", "name", "contact_person")},
+    "quote":        {"gateway": "/quotes",        "fields": ("quote_id", "customer_name", "customer_cnic", "plan_label")},
     "plan":         {"path": "/insurance-plans",  "fields": ("id", "name", "product_name", "insurance_type")},
 }
+
+# The Leads board's three lanes and the list calls that fill them — the same
+# calls, in the same order, that frontend/app/admin/leads/page.tsx makes.
+_LEAD_LANES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
+    ("INDIVIDUAL", "IND",  "/customers",     ("full_details", "quick_lead", "not_interested")),
+    ("FAMILY",     "FAM",  "/families",      ("in_progress", "new")),
+    ("CORPORATE",  "CORP", "/organizations", ("in_progress", "new")),
+)
+_LEAD_ID_RE = re.compile(r"^(IND|FAM|CORP)-?(\d{4})-?(\d+)$")
+
+
+def _created_key(row: dict) -> str:
+    # ISO timestamps sort chronologically as strings; a missing one sorts first.
+    return str(row.get("created_at") or "")
+
+
+async def _load_leads(ctx: Ctx) -> list[dict]:
+    """Every row on the Leads board, tagged with the ID the board shows for it.
+
+    Lead IDs (IND-2610-003, FAM-…, CORP-…) are not stored anywhere: the board
+    numbers leads per lane in creation order and stamps each with its own
+    created YYMM. Rebuild them the same way so an ID read off the screen
+    resolves here. Numbering is over the unfiltered board — with a branch/city/
+    date filter applied the board currently renumbers, and its IDs won't match.
+    """
+    calls = [(lane, prefix, path, category)
+             for lane, prefix, path, categories in _LEAD_LANES
+             for category in categories]
+    responses = await asyncio.gather(*(
+        ctx.client.get(ctx.tsvc(path), params={"category": category})
+        for _, _, path, category in calls
+    ))
+
+    leads: list[dict] = []
+    for (lane, prefix, _, _), res in zip(calls, responses):
+        res.raise_for_status()
+        for row in res.json():
+            if row.get("profile_status") == "POLICYHOLDER":
+                continue
+            leads.append({
+                **row,
+                "lead_type": lane,
+                "lead_status": row.get("profile_status") or "LEAD",
+                "_prefix": prefix,
+            })
+
+    leads.sort(key=_created_key)  # stable, like the board's Array.sort
+    seq: dict[str, int] = {}
+    for lead in leads:
+        prefix = lead.pop("_prefix")
+        seq[prefix] = seq.get(prefix, 0) + 1
+        created = _created_key(lead)
+        yymm = f"{created[2:4]}{created[5:7]}" if len(created) >= 7 else "0000"
+        lead["display_id"] = f"{prefix}-{yymm}-{seq[prefix]:03d}"
+    return leads
+
+
+def _match_lead(leads: list[dict], identifier: str) -> Optional[dict]:
+    """Exact lead ID first; then the same lane + sequence number with any YYMM,
+    since the board derives YYMM from the browser's timezone and a lead created
+    near midnight on the 1st can land in the neighbouring month."""
+    wanted = re.sub(r"\s+", "", identifier).upper()
+    exact = next((l for l in leads if l["display_id"] == wanted), None)
+    if exact:
+        return exact
+    m = _LEAD_ID_RE.match(wanted)
+    if not m:
+        return None
+    prefix, seq = m.group(1), int(m.group(3))
+    return next((l for l in leads if l["display_id"].startswith(prefix + "-")
+                 and int(l["display_id"].rsplit("-", 1)[1]) == seq), None)
+
+
+async def _fetch_records(record_type: str, ctx: Ctx) -> list[dict]:
+    if record_type == "lead":
+        return await _load_leads(ctx)
+    source = _RECORD_SOURCES[record_type]
+    url = ctx.gateway(source["gateway"]) if "gateway" in source else ctx.tsvc(source["path"])
+    res = await ctx.client.get(url)
+    res.raise_for_status()
+    return res.json()
+
+
+def _find_record(record_type: str, rows: list[dict], identifier: str) -> Optional[dict]:
+    if record_type == "lead":
+        hit = _match_lead(rows, identifier)
+        if hit:
+            return hit
+    fields = _RECORD_SOURCES[record_type]["fields"]
+    # An exact hit on any identifying field beats a substring one, so
+    # IND-2610-001 can't land on IND-2610-0012 or "Ali" on "Alina".
+    wanted = identifier.strip().lower()
+    exact = next((r for r in rows if any(str(r.get(f) or "").lower() == wanted for f in fields)), None)
+    return exact or next((r for r in rows if _matches(r, identifier, fields)), None)
 
 
 def _record_id(record_type: str, record: dict) -> str:
     """The value the destination page's highlight param expects — CNIC for the
-    customer pages, the case id for the case pages, otherwise the row id."""
+    customer pages, the case id for the case pages, otherwise something the
+    row actually displays so the highlighter's text fallback can find it."""
     if record_type == "customer":
         return str(record.get("cnic") or record.get("id") or "")
+    if record_type == "lead":
+        # admin/leads opens the detail panel off ?cnic= matched against CNIC /
+        # registration number; family leads have neither, so pop the row by ID.
+        return str(record.get("cnic") or record.get("registration_number") or record.get("display_id") or "")
     if record_type == "case":
         return _case_id(record)
+    if record_type == "policy":
+        return str(record.get("policy_number") or record.get("id") or "")
+    if record_type == "claim":
+        return str(record.get("claim_number") or record.get("id") or "")
+    if record_type == "quote":
+        return str(record.get("customer_cnic") or record.get("quote_id") or "")
     return str(record.get("id") or "")
 
 
+def _raw_id(record: dict) -> str:
+    return str(record.get("id") or record.get("quote_id") or "")
+
+
 def _describe(record_type: str, record: dict) -> str:
+    if record_type == "lead":
+        return (f"{record.get('display_id')} — {_full_name(record) or 'unnamed'} "
+                f"({record.get('lead_type', '').lower()}, {record.get('lead_status')})")
     if record_type == "case":
         return f"{record.get('caseNumber')} — {record.get('applicant_name') or record.get('customer_name') or 'unknown applicant'}"
     if record_type == "customer":
         return f"{_full_name(record)} ({record.get('cnic')})"
+    if record_type == "policy":
+        return (f"{record.get('policy_number') or 'unnumbered policy'} — {record.get('customer_name') or '—'} · "
+                f"{record.get('product_name') or '—'} ({record.get('status')})")
+    if record_type == "claim":
+        return f"{record.get('claim_number')} — {record.get('claimant_name') or '—'} ({_claim_status(record)})"
+    if record_type == "quote":
+        return f"{record.get('customer_name') or '—'} — {record.get('plan_label') or 'quote'} ({record.get('status')})"
     if record_type == "user":
         return f"{record.get('full_name')} <{record.get('email')}>"
     return _full_name(record) or str(record.get("id"))
+
+
+async def _search_all(ctx: Ctx, query: str, targets: list[str]) -> list[dict]:
+    """Search several record types at once. One unavailable collection
+    shouldn't sink the whole search, so failures just contribute nothing."""
+    async def one(record_type: str) -> list[dict]:
+        try:
+            rows = await _fetch_records(record_type, ctx)
+        except httpx.HTTPError:
+            return []
+        fields = _RECORD_SOURCES[record_type]["fields"]
+        found = [r for r in rows if _matches(r, query, fields)]
+        if record_type == "lead":
+            lead = _match_lead(rows, query)
+            if lead and lead not in found:
+                found.insert(0, lead)
+        return [{"type": record_type, "label": _describe(record_type, r),
+                 "id": _record_id(record_type, r), "_raw": _raw_id(r)} for r in found]
+
+    per_type = await asyncio.gather(*(one(t) for t in targets if t in _RECORD_SOURCES))
+    hits = [h for group in per_type for h in group]
+
+    # An unconverted customer / family / organization is also a lead. Keep the
+    # lead hit — it carries the ID the user sees on the board — and drop the twin.
+    lead_ids = {h["_raw"] for h in hits if h["type"] == "lead"}
+    hits = [h for h in hits if h["type"] == "lead" or h["_raw"] not in lead_ids]
+    for h in hits:
+        h.pop("_raw")
+    return hits[:20]
 
 
 @handles("show_record")
@@ -364,17 +518,27 @@ async def _show_record(args: dict, ctx: Ctx) -> dict:
     record_type = (args.get("record_type") or "").strip()
     identifier = (args.get("identifier") or "").strip()
 
-    source = _RECORD_SOURCES.get(record_type)
     page = page_for_record(record_type)
-    if not source or not page:
+    if record_type not in _RECORD_SOURCES or not page:
         return {"success": False, "error": f"I can't look up '{record_type}' records yet."}
 
-    res = await ctx.client.get(ctx.tsvc(source["path"]))
-    res.raise_for_status()
-    rows = res.json()
-
-    match = next((r for r in rows if _matches(r, identifier, source["fields"])), None)
+    match = _find_record(record_type, await _fetch_records(record_type, ctx), identifier)
     if not match:
+        # Users often name the wrong type ("lead CASE-2026-…"). Before calling
+        # it missing, see whether the identifier is some other kind of record.
+        elsewhere = await _search_all(ctx, identifier, [t for t in _RECORD_SOURCES if t != record_type])
+        if elsewhere:
+            lines = "\n".join(f"- **{h['type']}** — {h['label']}" for h in elsewhere[:5])
+            return {
+                "success": False,
+                "message": f'No {record_type} matching "{identifier}", but it matches:\n{lines}',
+                "results": elsewhere,
+                "quick_actions": [
+                    {"label": f"Show {h['label'][:28]}", "actionType": "submit",
+                     "payload": f"Show me the {h['type']} {h['label']}"}
+                    for h in elsewhere[:3]
+                ],
+            }
         return {
             "success": False,
             "message": f'No {record_type} matching "{identifier}". It may not exist yet.',
@@ -398,23 +562,7 @@ async def _show_record(args: dict, ctx: Ctx) -> dict:
 async def _search_records(args: dict, ctx: Ctx) -> dict:
     query = (args.get("query") or "").strip()
     only = args.get("record_type")
-    targets = [only] if only else list(_RECORD_SOURCES)
-
-    hits: list[dict] = []
-    for record_type in targets:
-        source = _RECORD_SOURCES.get(record_type)
-        if not source:
-            continue
-        try:
-            res = await ctx.client.get(ctx.tsvc(source["path"]))
-            res.raise_for_status()
-        except httpx.HTTPError:
-            continue  # one unavailable collection shouldn't sink the whole search
-        for row in res.json():
-            if _matches(row, query, source["fields"]):
-                hits.append({"type": record_type, "label": _describe(record_type, row), "id": _record_id(record_type, row)})
-            if len(hits) >= 20:
-                break
+    hits = await _search_all(ctx, query, [only] if only else list(_RECORD_SOURCES))
 
     if not hits:
         return {"success": True, "message": f'Nothing matched "{query}".', "results": []}
@@ -435,6 +583,99 @@ async def _search_records(args: dict, ctx: Ctx) -> dict:
 # ═══════════════════════════════════════════════════════════════════════════
 # Read / list
 # ═══════════════════════════════════════════════════════════════════════════
+
+_LEAD_STATUS_LABELS = {
+    "LEAD": "New Lead",
+    "PROSPECT": "Prospect",
+    "DRAFT": "Draft",
+    "UNDERWRITING_READY": "Ready for Underwriting",
+    "NOT_INTERESTED": "Not Interested",
+    "POLICYHOLDER": "Policyholder",
+}
+
+
+def _lead_status_label(value: str) -> str:
+    return _LEAD_STATUS_LABELS.get(value, value.replace("_", " ").title())
+
+
+@handles("list_leads")
+async def _list_leads(args: dict, ctx: Ctx) -> dict:
+    if args.get("record_scope") == "policyholders":
+        return await _list_policyholders(args, ctx)
+    if args.get("record_scope") == "customers":
+        return await _list_customers(args, ctx)
+    rows = await _load_leads(ctx)
+    if args.get("lead_type"):
+        rows = [r for r in rows if r["lead_type"] == args["lead_type"]]
+    if args.get("search"):
+        rows = [r for r in rows if _matches(r, args["search"],
+                _RECORD_SOURCES["lead"]["fields"] + ("first_name", "last_name"))]
+    total = len(rows)
+    limit = max(1, min(100, int(args.get("limit") or 20)))
+    offset = max(0, int(args.get("offset") or 0))
+    shown = [{**row, "status_label": _lead_status_label(row["lead_status"]),
+              "type_label": row["lead_type"].title()} for row in rows[offset:offset + limit]]
+    def cell(value: Any) -> str:
+        return str(value if value is not None and value != "" else "—").replace("\\", "\\\\").replace("|", "\\|").replace("\r", " ").replace("\n", " ")
+
+    table = ["| Lead ID | Name | Type | Status | Occupation | Declared Income (PKR) |",
+             "| --- | --- | --- | --- | --- | ---: |"]
+    for row in shown:
+        income = row.get("declared_income")
+        if isinstance(income, (int, float)):
+            income = f"{income:,.0f}"
+        values = (row["display_id"], _full_name(row), row["type_label"],
+                  row["status_label"], row.get("occupation"), income)
+        table.append("| " + " | ".join(cell(value) for value in values) + " |")
+    lines = "\n".join(table)
+    message = f"{total} lead(s) match."
+    if shown:
+        message += f" Showing {offset + 1}–{offset + len(shown)}:\n\n{lines}"
+    elif total:
+        message += " No leads on this page; use a smaller offset."
+    return {
+        "success": True, "message": message, "leads": shown, "total": total,
+        "offset": offset, "has_more": offset + len(shown) < total,
+        "quick_actions": [{"label": "Open Leads", "actionType": "navigate", "payload": "admin/leads"}],
+    }
+
+
+async def _list_policyholders(args: dict, ctx: Ctx) -> dict:
+    # Same three active-category queries used by the Policy Holders directory.
+    sources = [("individual", "/customers"), ("family", "/families"), ("organization", "/organizations")]
+    responses = await asyncio.gather(*(ctx.client.get(ctx.tsvc(path), params={"category": "active"})
+                                       for _, path in sources))
+    rows = []
+    for (segment, _), response in zip(sources, responses):
+        response.raise_for_status()
+        rows.extend({**row, "segment": segment,
+                     "type_label": {"individual": "Individual", "family": "Family", "organization": "Corporate"}[segment]}
+                    for row in response.json())
+    if args.get("segment"):
+        rows = [r for r in rows if r["segment"] == args["segment"]]
+    if args.get("search"):
+        rows = [r for r in rows if _matches(r, args["search"],
+                ("name", "first_name", "last_name", "cnic", "registration_number", "active_policy_number"))]
+    rows.sort(key=_created_key, reverse=True)
+    total = len(rows)
+    offset = max(0, int(args.get("offset") or 0))
+    limit = max(1, min(100, int(args.get("limit") or 20)))
+    shown = rows[offset:offset + limit]
+    def cell(value):
+        return str(value or "—").replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ").replace("\r", " ")
+    table = ["| Name | Type | CNIC / Registration No. | Policy No. |",
+             "| --- | --- | --- | --- |"]
+    for row in shown:
+        table.append("| " + " | ".join(cell(v) for v in
+                     (_full_name(row), row["type_label"], row.get("cnic") or row.get("registration_number"),
+                      row.get("active_policy_number"))) + " |")
+    message = f"{total} policyholder(s) with active coverage."
+    if shown:
+        message += f" Showing {offset + 1}–{offset + len(shown)}:\n\n" + "\n".join(table)
+    return {"success": True, "message": message, "policyholders": shown, "total": total,
+            "offset": offset, "has_more": offset + len(shown) < total,
+            "quick_actions": [{"label": "Open Policy Holders", "actionType": "navigate", "payload": "admin/policyholders"}]}
+
 
 @handles("list_customers")
 async def _list_customers(args: dict, ctx: Ctx) -> dict:
@@ -491,7 +732,34 @@ async def _list_cases(args: dict, ctx: Ctx) -> dict:
 
 @handles("get_case_details")
 async def _get_case_details(args: dict, ctx: Ctx) -> dict:
-    case = await _resolve_case(args, ctx)
+    try:
+        case = await _resolve_case(args, ctx)
+    except LookupError:
+        # An application exists before an underwriting case does. Read its
+        # live customer and proposal records instead of calling it missing.
+        customers_res = await ctx.client.get(ctx.tsvc("/customers"))
+        customers_res.raise_for_status()
+        customer = _find_customer(customers_res.json(), args.get("cnic"), args.get("applicant_name"))
+        if not customer:
+            raise
+        policies_res = await ctx.client.get(ctx.tsvc(f"/customers/{customer['id']}/policies"))
+        policies_res.raise_for_status()
+        policies = policies_res.json()
+        policies.sort(key=_created_key, reverse=True)
+        policy = policies[0] if policies else {}
+        status = policy.get("status")
+        stages = {"Quoted": "Proposal Draft", "Draft": "Proposal Draft", "Proposed": "Proposal Submitted",
+                  "UnderReview": "Proposal Under Review", "InformationRequested": "Proposal — Information Requested",
+                  "Approved": "Proposal Approved", "AcceptedWithLoadings": "Proposal Approved",
+                  "Declined": "Proposal Declined", "PendingPayment": "Policy Issuance — Awaiting Payment",
+                  "Issued": "Policy Issued", "Active": "Active Policy"}
+        stage = stages.get(status, "Proposal Draft — Generation Pending" if customer.get("profile_status") == "DRAFT" else "Lead — Ready for Proposal")
+        return {"success": True, "application_stage": stage, "customer": customer, "policies": policies,
+                "underwriting_case": None,
+                "message": f"**{_full_name(customer)}** is at **{stage}**.\n\n" +
+                           (f"Proposal status: **{_readable_label(status)}**.\n\n" if status else "") +
+                           "An underwriting case has not been opened. The application remains in Proposals until it is sent to underwriting.",
+                "quick_actions": [{"label": "Open Proposals", "actionType": "navigate", "payload": "proposal"}]}
     case_id = _case_id(case)
     res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/detail"))
     res.raise_for_status()
@@ -499,17 +767,28 @@ async def _get_case_details(args: dict, ctx: Ctx) -> dict:
     customer = detail.get("customer") or {}
     policy = detail.get("policy") or {}
     assessment = detail.get("latest_assessment") or {}
+    policy_status = policy.get("status")
+    if policy_status == "Active":
+        stage = "Active Policy"
+    elif policy_status in {"Issued", "PendingPayment"} or case.get("caseStatus") == "Approved":
+        stage = "Policy Issuance"
+    elif assessment:
+        stage = "Underwriting"
+    else:
+        stage = "Pre-Underwriting"
 
     return {
         "success": True,
         "message": (
             f"**{case.get('caseNumber')}** — {_full_name(customer) or '—'}\n"
+            f"- Application stage: **{stage}**\n"
             f"- Status: {case.get('caseStatus')}\n"
             f"- Type: {case.get('caseType')} · Priority: {case.get('priorityLevel')}\n"
             f"- Product: {policy.get('product_name') or 'no proposal yet'}\n"
             f"- AI decision: {assessment.get('ai_decision') or 'not assessed yet'}"
         ),
         "case": detail,
+        "application_stage": stage,
         "navigate": _nav("cases", case_id),
         "quick_actions": [
             {"label": "View Case", "actionType": "embed", "payload": f"case/{case_id}"},
@@ -649,6 +928,27 @@ _HANDLERS["list_family_groups"] = _simple_list("/families", "admin/families", "f
 _HANDLERS["list_insurance_plans"] = _simple_list("/insurance-plans", "plans", "insurance plans")
 
 
+# Match the labels used on the Proposals page.
+_INSURANCE_TYPE_LABELS = {
+    "TERM_LIFE": "Term Life",
+    "WHOLE_LIFE": "Whole Life",
+    "ENDOWMENT": "Endowment / Savings Plan",
+    "CHILD_EDUCATION_MARRIAGE": "Child Education & Marriage Plan",
+    "GROUP_LIFE": "Group Life",
+    "SAVINGS": "Savings / Investment Plan",
+    "SINGLE_PREMIUM": "Single Premium Investment",
+    "HEALTH_CASH": "Hospital Cash / Health Plan",
+}
+
+
+def _readable_label(value: Any) -> str:
+    if value is None or value == "":
+        return "—"
+    text = str(value)
+    text = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
+    return text.replace("_", " ").strip().title()
+
+
 @handles("list_quotes")
 async def _list_quotes(args: dict, ctx: Ctx) -> dict:
     res = await ctx.client.get(ctx.gateway("/quotes"))
@@ -656,13 +956,25 @@ async def _list_quotes(args: dict, ctx: Ctx) -> dict:
     rows = res.json()
     if not rows:
         return {"success": True, "message": "No quotations generated yet.", "quotes": []}
-    lines = "\n".join(
-        f"- **{q.get('customer_name') or q.get('customer_id')}** — PKR {(q.get('annual_premium') or 0):,.0f}/yr"
-        for q in rows[:10]
-    )
+    rows = [{**q,
+             "insurance_type_label": _INSURANCE_TYPE_LABELS.get(q.get("insurance_type"), _readable_label(q.get("insurance_type"))),
+             "status_label": _readable_label(q.get("status"))} for q in rows]
+    def cell(value: Any) -> str:
+        return str(value if value is not None and value != "" else "—").replace("\\", "\\\\").replace("|", "\\|").replace("\r", " ").replace("\n", " ")
+
+    table = ["| Customer Name | Coverage Amount (PKR) | Insurance Type | Status |",
+             "| --- | ---: | --- | --- |"]
+    for q in rows[:10]:
+        coverage = q.get("coverage_amount")
+        if isinstance(coverage, (int, float)):
+            coverage = f"{coverage:,.0f}"
+        values = (q.get("customer_name") or q.get("customer_id"), coverage,
+                  q["insurance_type_label"], q["status_label"])
+        table.append("| " + " | ".join(cell(value) for value in values) + " |")
+    lines = "\n".join(table)
     return {
         "success": True,
-        "message": f"{len(rows)} quotation(s):\n{lines}",
+        "message": f"{len(rows)} quotation(s) — showing {min(len(rows), 10)}:\n\n{lines}",
         "quotes": rows,
         "quick_actions": [{"label": "Open Proposals", "actionType": "navigate", "payload": "proposal"}],
     }
@@ -947,6 +1259,27 @@ async def _update_customer(args: dict, ctx: Ctx) -> dict:
     customer = _find_customer(res.json(), args.get("cnic"), args.get("name"))
     if not customer:
         raise LookupError(f"No customer found for \"{args.get('name') or args.get('cnic')}\".")
+
+    if args.get("send_to_draft"):
+        detail_res = await ctx.client.get(ctx.tsvc(f"/customers/{customer['id']}"))
+        detail_res.raise_for_status()
+        detail = detail_res.json()
+        details = dict(detail.get("details") or {})
+        pending_plan = details.pop("pending_plan", None)
+        if pending_plan:
+            proposal_res = await ctx.client.post(ctx.tsvc(f"/customers/{customer['id']}/policies"), json=pending_plan)
+            proposal_res.raise_for_status()
+        payload = {"profile_status": "DRAFT"}
+        if pending_plan:
+            payload["details"] = details
+        draft_res = await ctx.client.put(ctx.tsvc(f"/customers/{customer['id']}"), json=payload)
+        draft_res.raise_for_status()
+        name = _full_name(customer)
+        return {"success": True, "sent_to_draft": True,
+                "message": f"**{name}** has been sent to Proposals as a draft. Proposal generation may take a moment. No underwriting case was opened or advanced.",
+                "last_action": _action("update_customer", "customer", customer.get("cnic", ""), "proposal", f"{name} sent to draft"),
+                "navigate": {"route": "proposal", "entity_id": customer.get("cnic", ""), "highlight": True},
+                "quick_actions": [{"label": "Open Proposals", "actionType": "navigate", "payload": "proposal"}]}
 
     updates = {k: v for k, v in {
         "occupation": args.get("occupation"),

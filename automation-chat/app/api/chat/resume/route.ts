@@ -12,13 +12,16 @@ export async function POST(req: NextRequest) {
       "X-Tenant-Id": req.headers.get("x-tenant-id") || "",
     },
     body,
+    cache: "no-store",
+    signal: req.signal,
   });
 
   return new Response(upstream.body, {
     status: upstream.status,
     headers: {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no",
       Connection: "keep-alive",
     },
   });

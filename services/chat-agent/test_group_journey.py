@@ -831,7 +831,7 @@ def test_phase5_6_tools_are_registered_gated_and_routed():
     assert new <= {t.name for t in ALL_TOOLS} and new <= permission.GROUP_TOOLS and new <= toolsets.DOMAIN_TOOLS["group"]
     reads = {"get_group_renewal", "list_group_claims", "preview_group_claim_payout", "get_group_ptf_report"}
     for name in new:
-        assert permission.requires_confirmation(name) == (name not in reads), name
+        assert not permission.requires_confirmation(name), name
         assert name in permission.STEP_LABELS, name
     print("PASS test_phase5_6_tools_are_registered_gated_and_routed")
 

@@ -110,6 +110,9 @@ _BY_RECORD: dict[str, Page] = {}
 for _p in PAGES:
     if _p.lists and _p.lists not in _BY_RECORD:
         _BY_RECORD[_p.lists] = _p
+# A lead is an individual, family or corporate that hasn't converted yet, so it
+# has no `lists` of its own — the Leads board is customer's canonical home too.
+_BY_RECORD["lead"] = _BY_ROUTE["admin/leads"]
 
 
 def page_for_route(route: str) -> Optional[Page]:

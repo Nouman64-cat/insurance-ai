@@ -35,7 +35,7 @@ function NodeIcon({ status }: { status: ProcessStep["status"] }) {
   return (
     <span className="relative w-5 h-5 flex items-center justify-center shrink-0">
       <span className="absolute inset-0 rounded-full bg-blue-400 opacity-60 animate-ping" />
-      <span className="relative w-3 h-3 rounded-full bg-gradient-to-br from-blue-500 to-fuchsia-500" />
+      <span className="relative w-3 h-3 rounded-full bg-gradient-to-br from-blue-500 to-sky-500" />
     </span>
   );
 }

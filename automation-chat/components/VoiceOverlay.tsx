@@ -104,7 +104,7 @@ export default function VoiceOverlay({onClose, context, onPlatformRequest, minim
       <button className={control} onClick={finish} aria-label={text('Close voice call', 'وائس کال بند کریں')}>×</button>
     </header>
     <div className="flex flex-col items-center gap-4 py-6 px-5">
-      <div className={`w-28 h-28 rounded-full flex items-center justify-center border border-indigo-300/30 bg-gradient-to-br from-indigo-500 to-fuchsia-700 shadow-[0_0_55px_rgba(99,102,241,.35)] ${status === 'speaking' ? 'animate-pulse' : ''}`}>
+      <div className={`w-28 h-28 rounded-full flex items-center justify-center border border-indigo-300/30 bg-gradient-to-br from-indigo-500 to-sky-700 shadow-[0_0_55px_rgba(99,102,241,.35)] ${status === 'speaking' ? 'animate-pulse' : ''}`}>
         <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/>{muted && <path d="m3 3 18 18"/>}</svg>
       </div>
       <p role="status" className="text-sm text-indigo-100">{label}</p>

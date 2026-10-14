@@ -30,8 +30,18 @@ class RevisionTests(unittest.IsolatedAsyncioTestCase):
   state=await self.gate({'kind':'revise','message':'Actually, I need family insurance'})
   self.assertEqual(state['messages'][-1].content,'Actually, I need family insurance')
   self.assertIsNone(state.get('lead_tool'))
- async def test_revision_at_confirmation_never_executes_destructive_action(self):
-  await self.gate({'kind':'revise','message':'Actually, keep this user and change direction'},'delete_user',{'email':'test@example.test'},'Admin')
+ async def test_requested_action_executes_without_extra_confirmation(self):
+  builder=StateGraph(ChatState)
+  builder.add_node('permission_gate',graph.permission_gate)
+  builder.add_node('agent',lambda state:{})
+  builder.add_edge(START,'permission_gate');builder.add_edge('agent',END)
+  app=builder.compile(checkpointer=MemorySaver())
+  execute=AsyncMock(return_value={'success':True,'message':'User deleted'})
+  with patch('graph.execute_tool',execute):
+   result=await app.ainvoke({'messages':[HumanMessage(content='Delete this user'),AIMessage(content='',tool_calls=[{'name':'delete_user','args':{'email':'test@example.test'},'id':'call-1'}])],'tenant_id':'test','jwt_token':'test','user_role':'Admin','platform':'web'},{'configurable':{'thread_id':'no-confirm'}})
+  self.assertNotIn('__interrupt__',result)
+  execute.assert_awaited_once()
+  self.assertEqual(execute.call_args.args[0],'delete_user')
  async def test_spoken_correction_does_not_select_a_plan(self):
   await self.gate('Actually, I need family insurance instead')
  async def test_unknown_plan_never_executes(self):

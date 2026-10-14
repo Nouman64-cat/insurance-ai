@@ -121,25 +121,35 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    localStorage.setItem(storageKey, JSON.stringify(messages));
-  }, [messages, storageKey]);
+    // Avoid synchronously writing the entire transcript on every token.
+    const timer = window.setTimeout(() => {
+      localStorage.setItem(storageKey, JSON.stringify(messages));
+    }, isLoading ? 200 : 0);
+    return () => window.clearTimeout(timer);
+  }, [messages, storageKey, isLoading]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     localStorage.setItem(`${storageKey}_actions`, JSON.stringify(turnActions));
   }, [turnActions, storageKey]);
 
-  // Each "token" event carries one fully-formed assistant message (the graph
-  // does one Gemini call per agent turn, not real per-token streaming), so it
-  // always starts a new bubble rather than appending to the previous one.
+  // Chunks share a message ID and append to one bubble. The final snapshot
+  // reconciles its text, including retries and non-streaming fallbacks.
   const handleEvent = useCallback(
     (evt: AgentStreamEvent) => {
       switch (evt.type) {
         case "token":
           if (evt.content) {
             setMessages((prev) => {
+              const messageId = evt.message_id ? `agent:${evt.message_id}` : undefined;
+              const existing = messageId ? prev.findIndex((m) => m.id === messageId) : -1;
+              if (existing >= 0) {
+                const copy = [...prev];
+                copy[existing] = { ...copy[existing], text: evt.delta ? copy[existing].text + evt.content : evt.content };
+                return copy;
+              }
               const last = prev[prev.length - 1];
-              if (last && last.role === "assistant" && last.text === evt.content) {
+              if (!messageId && last && last.role === "assistant" && last.text === evt.content) {
                 return prev;
               }
               const copy = [...prev];
@@ -168,7 +178,7 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
                 }
               }
               copy.push({
-                id: newId(),
+                id: messageId || newId(),
                 role: "assistant",
                 text: evt.content,
                 turnUserId: turnUserIdRef.current || undefined,
@@ -182,6 +192,10 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
             pendingQuickActionsRef.current = null;
             pendingFamilyMembersRef.current = null;
           }
+          break;
+
+        case "message_discard":
+          setMessages((prev) => prev.filter((m) => m.id !== `agent:${evt.message_id}`));
           break;
 
         case "interrupt": {
@@ -378,7 +392,7 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
             try {
               const event = JSON.parse(line.slice(6)) as AgentStreamEvent;
               handleEvent(event);
-              if (event.type === "token" && event.content) reply.message = event.content;
+              if (event.type === "token" && event.content) reply.message = event.delta ? reply.message + event.content : event.content;
               if (event.type === "interrupt") {
                 reply.pending = event.kind;
                 reply.options = event.options;

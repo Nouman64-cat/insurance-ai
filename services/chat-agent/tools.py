@@ -24,9 +24,12 @@ from pydantic import BaseModel, Field
 
 from pages import PAGE_ROUTES
 
+# Every value here must have a source in tool_executor._RECORD_SOURCES — the
+# model treats this enum as a promise. Artifacts and assessments hang off a
+# case, so they're reached through list_artifacts / get_risk_assessment instead.
 RecordType = Literal[
-    "customer", "case", "user", "organization", "family",
-    "quote", "artifact", "assessment", "plan",
+    "lead", "customer", "case", "policy", "claim", "user", "organization",
+    "family", "quote", "plan",
 ]
 
 _AGENT_NAME_DESCRIPTION = (
@@ -63,7 +66,8 @@ def navigate_to_page(page_name: str, entity_id: Optional[str] = None) -> str:
 class ShowRecordArgs(BaseModel):
     record_type: RecordType = Field(description="What kind of record to surface.")
     identifier: str = Field(
-        description="Anything that identifies it — name, CNIC, case number, email, "
+        description="Anything that identifies it — name, CNIC, lead ID (IND-2610-003, "
+        "FAM-…, CORP-…), case number, policy number, claim number, email, "
         "organization name, or a raw id."
     )
 
@@ -73,9 +77,11 @@ def show_record(record_type: str, identifier: str) -> str:
     """Find one specific record, navigate to the page that lists it, and visually
     highlight it so the user can see exactly which row it is. Use this whenever
     the user asks to SEE, VIEW, FIND, OPEN or LOCATE a particular record
-    ("show me Ahmed Khan", "where is case CASE-2026-A3F9C1", "pull up that
-    organization"). Prefer this over plain navigate_to_page when a specific
-    record is named — it lands on the row, not just the list."""
+    ("show me Ahmed Khan", "where is case CASE-2026-A3F9C1", "check lead
+    IND-2610-003", "pull up that organization"). Prefer this over plain
+    navigate_to_page when a specific record is named — it lands on the row,
+    not just the list. If the identifier belongs to a different record type
+    than the one asked for, the result says which type it actually is."""
     return "{}"
 
 
@@ -97,6 +103,27 @@ def search_records(query: str, record_type: Optional[str] = None) -> str:
 # ═══════════════════════════════════════════════════════════════════════════
 # Read / list
 # ═══════════════════════════════════════════════════════════════════════════
+
+class ListLeadsArgs(BaseModel):
+    record_scope: Literal["leads", "customers", "policyholders"] = Field(default="leads", description="Use policyholders for policy holders or customers with active coverage; leads for the Leads board; customers for all registered customers.")
+    segment: Optional[Literal["individual", "family", "organization"]] = Field(default=None, description="Customer segment; used only with record_scope customers.")
+    search: Optional[str] = Field(default=None, description="Filter by lead name, board ID, CNIC or contact.")
+    lead_type: Optional[Literal["INDIVIDUAL", "FAMILY", "CORPORATE"]] = None
+    limit: int = Field(default=20, ge=1, le=100, description="Maximum rows shown; total counts all matching leads.")
+    offset: int = Field(default=0, ge=0, description="Rows to skip for pagination.")
+
+
+@tool(args_schema=ListLeadsArgs)
+def list_leads(**kwargs) -> str:
+    """Count and list leads from the Leads board, including individual, family
+    and corporate leads. Use for 'how many leads do I have?' and 'show my leads'.
+    Display the returned leads as a Markdown table, preserving the tool's columns
+    and readable status_label/type_label values instead of raw database enums.
+    Excludes converted policyholders. Customer counts are not lead counts.
+    For registered customers, set record_scope to customers. For policyholders,
+    ALWAYS set record_scope to policyholders; only active coverage qualifies."""
+    return "{}"
+
 
 class ListCustomersArgs(BaseModel):
     search: Optional[str] = Field(default=None, description="Filter by name or CNIC.")
@@ -134,8 +161,10 @@ class CaseLookupArgs(BaseModel):
 
 @tool(args_schema=CaseLookupArgs)
 def get_case_details(**kwargs) -> str:
-    """Fetch the full detail of one case — status, applicant, policy, latest AI
-    decision, and assigned underwriter."""
+    """Look up the current application stage across the lead, proposal and
+    underwriting case using fresh records. Use for "what stage is his case/application?".
+    An application can be in Proposal Draft, Submitted or Under Review without an
+    underwriting case. Also returns case details when one exists."""
     return "{}"
 
 
@@ -187,7 +216,8 @@ def list_family_groups() -> str:
 
 @tool(args_schema=EmptyArgs)
 def list_quotes() -> str:
-    """List generated quotations / proposals with their premium figures."""
+    """List generated quotations / proposals. Display the returned Markdown table
+    using insurance_type_label and status_label, never raw enums."""
     return "{}"
 
 
@@ -258,6 +288,7 @@ def add_customer(**kwargs) -> str:
 
 
 class UpdateCustomerArgs(BaseModel):
+    send_to_draft: bool = Field(default=False, description="Set true for send draft / move lead to proposals. Creates a draft proposal without opening or advancing an underwriting case.")
     cnic: Optional[str] = None
     name: Optional[str] = None
     occupation: Optional[str] = None
@@ -270,7 +301,8 @@ class UpdateCustomerArgs(BaseModel):
 @tool(args_schema=UpdateCustomerArgs)
 def update_customer(**kwargs) -> str:
     """Update an existing customer's details. Identify them by cnic or name, then
-    pass only the fields that change."""
+    pass only the fields that change. For send draft / send to proposals, set
+    send_to_draft=true. This is the Leads page Send Draft action, not create_case."""
     return "{}"
 
 
@@ -1896,7 +1928,7 @@ ALL_TOOLS = [
     show_record,
     search_records,
     # read / list
-    list_customers,
+    list_leads,
     list_cases,
     get_case_details,
     get_document_checklist,

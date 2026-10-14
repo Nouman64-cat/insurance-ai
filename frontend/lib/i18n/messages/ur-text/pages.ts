@@ -70,6 +70,8 @@ const pages: Record<string, string> = {
   "Info requested": "معلومات طلب کی گئیں",
   "Approved / policy": "منظور / پالیسی",
   "Not interested": "دلچسپی نہیں",
+  "Ready for proposal": "پروپوزل کے لیے تیار",
+  "Proposal not created": "پروپوزل ابھی نہیں بنایا گیا",
   "In proposal": "پروپوزل میں",
   "Proposal draft": "پروپوزل ڈرافٹ",
   "Proposal submitted": "پروپوزل جمع شدہ",

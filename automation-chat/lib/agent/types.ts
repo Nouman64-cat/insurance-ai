@@ -155,7 +155,8 @@ export interface ProcessStep {
 
 // SSE event payloads emitted by chat-agent (via api-gateway's /chat/stream, /chat/resume)
 export type AgentStreamEvent =
-  | { type: "token"; content: string }
+  | { type: "token"; content: string; message_id?: string; delta?: boolean }
+  | { type: "message_discard"; message_id: string }
   | {
       type: "interrupt"; can_revise?: boolean;
       thread_id: string;

@@ -47,6 +47,7 @@ def build_chat(entry: dict, *, max_tokens: int = 2048, **kw):
     `max_tokens` is normalised to each SDK's own parameter name. `max_retries`
     is forced to 0 — agent_node owns the only retry loop.
     """
+    kw.setdefault("streaming", True)
     provider = (entry.get("provider") or "").lower()
     model = entry.get("model")
     api_key = entry.get("api_key")

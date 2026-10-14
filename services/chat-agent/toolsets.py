@@ -35,7 +35,7 @@ CORE_TOOLS: set[str] = {
     "show_record",
     "search_records",
     # everyday reads
-    "list_customers",
+    "list_leads",
     "list_cases",
     "get_case_details",
     "get_document_checklist",

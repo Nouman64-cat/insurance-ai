@@ -219,16 +219,16 @@ export const IMPACT_TYPE_CONFIG: Record<ImpactType, ImpactTypeConfig> = {
   REFER_TO_UNDERWRITER: {
     label: "Refer to Senior Underwriter",
     description: "Escalate case for manual review by a senior underwriting officer.",
-    badge: "bg-violet-50 text-violet-700 border-violet-200",
-    cardColor: "bg-violet-50 border-violet-200 text-violet-800",
+    badge: "bg-blue-50 text-blue-700 border-blue-200",
+    cardColor: "bg-blue-50 border-blue-200 text-blue-800",
     // user-check
     iconPath: "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z",
   },
   REINSURANCE_FACULTATIVE: {
     label: "Facultative Reinsurance",
     description: "Route case to reinsurer for individual facultative treaty assessment.",
-    badge: "bg-purple-50 text-purple-700 border-purple-200",
-    cardColor: "bg-purple-50 border-purple-200 text-purple-800",
+    badge: "bg-blue-50 text-blue-700 border-blue-200",
+    cardColor: "bg-blue-50 border-blue-200 text-blue-800",
     // arrows exchange / flow
     iconPath: "M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4",
   },

@@ -65,8 +65,11 @@ export function leadStage(lead: LeadLike): LeadStageInfo {
     case "Proposed": return { step: 2, label: "Proposal submitted", note: "Awaiting review", tone: "blue", ...proposal };
     case "Quoted": return { step: 2, label: "Proposal draft", note: "Not submitted yet", tone: "blue", ...proposal };
   }
-  if (lead.status === "PROSPECT" || lead.status === "UNDERWRITING_READY")
+  if (lead.proposalStatus)
     return { step: 2, label: "In proposal", note: "Being prepared", tone: "blue", ...proposal };
+  // Completed lead details do not mean a proposal has been created.
+  if (["PROSPECT", "UNDERWRITING_READY", "DRAFT"].includes(lead.status))
+    return { step: 1, label: "Ready for proposal", note: "Proposal not created", tone: "amber" };
   return { step: 1, label: "New lead", note: "Not started", tone: "amber" };
 }
 

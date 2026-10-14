@@ -6,7 +6,7 @@
 `agent` is a single Gemini call bound to the 12 tools (tools.py). Whenever it
 proposes a tool call, `permission_gate` decides whether it's safe to run
 immediately, needs a clarifying question (missing/ambiguous required args), or
-needs an explicit yes/no confirmation (any mutating action) — using
+needs clarification for missing information — using
 `interrupt()` so the graph genuinely pauses at a checkpoint until the frontend
 calls POST /chat/resume, instead of the old prompt-only "please ask first"
 convention.
@@ -72,7 +72,6 @@ from permission import (
     is_destructive,
     is_role_allowed,
     missing_args,
-    requires_confirmation,
 )
 from state import ChatState
 from tool_executor import (
@@ -145,12 +144,22 @@ When the user changes direction, revise the pending plan rather than restarting 
 10. confirm_policy_payment → confirm first premium, activate coverage (moves to Active)
 11. get_active_policy_status → verify the policy is Active and in the post-issuance section
 
+Execute the user’s requested action once required information is available. Do not ask for an extra Yes/Cancel or “proceed?” confirmation.
+
+“Send draft”, “move lead to draft” and “send lead to proposals” mean **update_customer** with send_to_draft=true. Stop after this action. Do not create an underwriting case, update a case status, or start the underwriting journey for this request.
+
+For “what stage is his case/application?” call **get_case_details** with the customer’s CNIC or name from context and report application_stage. Always fetch fresh data. An absent underwriting case does not mean an absent application. Draft → Proposal Submitted → Proposal Under Review → Pre-Underwriting → Underwriting → Policy Issuance → Active Policy. Do not offer to open a case while the application is still in Proposals.
+
 ## SHOWING & FINDING THINGS
 
-- User names a specific record ("show me Ahmed", "open case CASE-2026-X")
-  → use **show_record**: it navigates AND visually highlights the exact row.
+- User names a specific record ("show me Ahmed", "open case CASE-2026-X",
+  "check lead IND-2610-003") → use **show_record**: it navigates AND visually
+  highlights the exact row. Lead IDs start IND-/FAM-/CORP-; use record_type "lead".
 - User asks to open a page ("go to fraud detection") → **navigate_to_page**.
 - User is searching vaguely ("any customers called Malik?") → **search_records**.
+- For lead counts or lists ("how many leads do I have?", "show my leads"), call **list_leads**. Report its total and returned leads in a Markdown table with columns Lead ID, Name, Type, Status, Occupation, and Declared Income (PKR). Use an em dash for missing values. Display status_label and type_label as readable labels (e.g. Ready for Underwriting, Draft, Individual), never raw enums such as UNDERWRITING_READY. Preserve the table returned by the tool instead of rewriting it as a numbered or bullet list; never substitute registered customer counts or infer zero without a successful lead lookup.
+- For policyholder counts or lists, call **list_leads** with record_scope="policyholders". Only customers, families and organizations with active coverage qualify. Never label all registered customers or proposal applicants as policyholders. When the user disputes a count, fetch fresh results with the correct scope before answering.
+- In user-facing text and tables, use readable labels for insurance types and statuses. For proposals, preserve list_quotes’ table and use insurance_type_label/status_label (Term Life, Single Premium Investment, Under Review), never raw enums. Keep IDs unchanged.
 - Questions about data ("how many cases are pending?") → the matching list_*/get_* tool.
 
 ## PAGES YOU CAN NAVIGATE TO
@@ -713,7 +722,22 @@ def _direct_intake_demo(state: ChatState) -> dict | None:
     return {"messages": [AIMessage(content="", tool_calls=[call])]}
 
 
+def _draft_request(messages: list) -> bool:
+    human = next((m for m in reversed(messages) if isinstance(m, HumanMessage)), None)
+    text = human.content if human and isinstance(human.content, str) else ""
+    return bool(re.search(r"\b(?:send|move)\b.{0,80}\b(?:draft|proposals?)\b", text, re.I))
+
+
 async def agent_node(state: ChatState, config: RunnableConfig | None = None) -> dict:
+    if _draft_request(state["messages"]):
+        last = state["messages"][-1]
+        if isinstance(last, ToolMessage):
+            try:
+                result = json.loads(last.content)
+            except (TypeError, ValueError):
+                result = {}
+            if result.get("success") and result.get("sent_to_draft"):
+                return {"messages": [AIMessage(content=result["message"])]}
     direct = _direct_group_continue(state) or _direct_intake_demo(state)
     if direct is not None:
         return direct
@@ -744,6 +768,18 @@ async def agent_node(state: ChatState, config: RunnableConfig | None = None) -> 
     for attempt in range(3):
         try:
             response = await llm.ainvoke(messages)
+            if _draft_request(state["messages"]) and response.tool_calls:
+                calls = []
+                for call in response.tool_calls:
+                    if call["name"] in {"create_case", "update_case_status", "create_proposal", "start_underwriting_journey"}:
+                        original = call.get("args") or {}
+                        call = {**call, "name": "update_customer", "args": {
+                            "cnic": original.get("cnic"),
+                            "name": original.get("applicant_name") or original.get("name"),
+                            "send_to_draft": True,
+                        }}
+                    calls.append(call)
+                response = response.model_copy(update={"tool_calls": calls})
             usage.record(
                 response,
                 tenant_id=state.get("tenant_id"),
@@ -2414,35 +2450,6 @@ async def _permission_gate(state: ChatState) -> Command:
             name, call_id, {"success": False, "message": "Waiting for corrected input from the user."}
         )
         return back_to_agent({"messages": [placeholder, HumanMessage(content=str(answer))]})
-
-    if requires_confirmation(name):
-        # Destructive actions name their target so "Yes" is informed consent,
-        # not a reflex click on a generic prompt.
-        target = args.get("name") or args.get("applicant_name") or args.get("cnic") \
-            or args.get("case_number") or args.get("email") or args.get("full_name") \
-            or args.get("organization_name") or ""
-        if is_destructive(name):
-            question = f"⚠️ This permanently deletes {target or 'this record'} and cannot be undone. Proceed?"
-        elif name == "deploy_rule_version":
-            # Deploying a rule version changes live underwriting behaviour for every
-            # case evaluated afterwards — give the user the rule set code so "Yes"
-            # is informed consent rather than a reflex click.
-            rs_code = args.get("rule_set_code") or target or "this rule set"
-            question = (
-                f"⚠️ About to deploy a new ACTIVE version of **`{rs_code}`** — "
-                "this changes underwriting decisions for every case evaluated from now on. Proceed?"
-            )
-        else:
-            question = f"Ready to {name.replace('_', ' ')}" + (f" for {target}" if target else "") + " — proceed?"
-        answer = interrupt({
-            "kind": "confirm",
-            "tool_call": {"name": name, "args": args},
-            "question": question,
-            "options": ["Yes", "Cancel"],
-        })
-        if answer not in (True, "yes", "Yes", "confirm"):
-            result = {"success": False, "message": "Okay, cancelled."}
-            return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
 
     if name in JOURNEY_TOOLS:
         # Hand off to the autonomous pipeline: stash the tool_call so
