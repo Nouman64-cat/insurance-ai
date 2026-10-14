@@ -58,6 +58,21 @@ interface UnifiedLead {
   onHold?: boolean;
   holdReason?: string | null;
   holdCaseId?: string | null;
+  /** Set when this lead came in through the customer portal's walk-in sign-up: its routing / acknowledgement state. */
+  walkIn?: WalkInInfo | null;
+}
+
+interface WalkInInfo {
+  id: string;
+  applicantType: "Self" | "Family";
+  reference: string;
+  planLabel: string | null;
+  routingStatus: string;
+  awaiting: boolean;
+  overdue: boolean;
+  escalated: boolean;
+  unassigned: boolean;
+  reason: string | null;
 }
 
 /** "Send Draft" only makes sense for a lead that has no proposal yet. Once it has been sent (a proposal exists, or it has moved on to
@@ -350,7 +365,7 @@ export default function LeadsHubPage() {
             id: c.id,
             type: "INDIVIDUAL",
             name: c.name,
-            contact_info: c.details?.phone || "No phone",
+            contact_info: c.details?.phone || c.details?.contact_phone || "No phone",
             created_at: c.created_at,
             status: c.profile_status || "LEAD",
             primaryIdentifier: c.cnic,
@@ -358,7 +373,7 @@ export default function LeadsHubPage() {
             assignedAgentName: agentNameFor(c.assigned_agent_id),
             sourceName: c.acquisition_source?.name ?? null,
             sourceType: c.acquisition_source?.source_type ?? null,
-            pendingPlan: c.details?.pending_plan?.product_name ?? null,
+            pendingPlan: c.details?.pending_plan?.product_name ?? c.details?.walk_in?.plan_label ?? null,
           });
         }
       });
@@ -486,6 +501,20 @@ export default function LeadsHubPage() {
         });
       } catch { /* cases unavailable */ }
 
+      // Leads from the customer portal's walk-in sign-up: who has them and whether anyone has picked them up yet.
+      try {
+        const rows: any[] = (await api.get(`/tenants/${tenantId}/walk-in-leads`)).data ?? [];
+        const byCustomer = new Map(rows.map((r) => [r.family_group_id ?? r.customer_id, r]));       // a family request is about its family group
+        unified.forEach((l) => {
+          const r = byCustomer.get(l.id);
+          if (!r) return;
+          l.walkIn = {
+            id: r.id, applicantType: r.applicant_type === "Family" ? "Family" : "Self", reference: r.reference, planLabel: r.plan_label, routingStatus: r.routing_status, awaiting: !!r.awaiting_acknowledgement,
+            overdue: !!r.overdue, escalated: !!r.escalated, unassigned: r.routing_status === "Unassigned" || r.routing_status === "Pending", reason: r.escalation_reason ?? r.routing_reason ?? null,
+          };
+        });
+      } catch { /* walk-in queue unavailable: leads still list normally */ }
+
       // 2. Sort by newest first
       unified.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       announceNewLeads(unified);
@@ -561,6 +590,7 @@ export default function LeadsHubPage() {
       case "INFO_REQUESTED": return st.label === "Info requested";
       case "UNDERWRITING": return st.label === "In underwriting";
       case "ON_HOLD": return !!l.onHold;
+      case "WALK_IN": return !!l.walkIn && (l.walkIn.awaiting || l.walkIn.escalated || l.walkIn.unassigned);
       case "APPROVED": return st.label === "Approved" || st.step === 5;
       case "REJECTED": return st.tone === "red";
       case "DEAD": return l.status === "NOT_INTERESTED";
@@ -662,6 +692,32 @@ export default function LeadsHubPage() {
       await fetchLeads();
     } catch (err: any) {
       setError(err.message ?? tx("Could not remove the hold."));
+    } finally {
+      setActionBusyId(null);
+    }
+  };
+
+  // What a walk-in family submitted: the head's details and the household, to enrol the members from.
+  const [walkInDetail, setWalkInDetail] = useState<any | null>(null);
+  const openWalkInDetail = async (lead: UnifiedLead) => {
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId || !lead.walkIn) return;
+    try { setWalkInDetail((await api.get(`/tenants/${tenantId}/walk-in-leads/${lead.walkIn.id}`)).data); }
+    catch (err: any) { setError(err?.response?.data?.detail || err?.message || tx("Could not load the walk-in details")); }
+  };
+
+  // The agent confirms they have the walk-in lead; this stops the escalation timer.
+  const handleAcknowledgeWalkIn = async (lead: UnifiedLead) => {
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId || !lead.walkIn) return;
+    setActionBusyId(lead.id);
+    setError("");
+    try {
+      await api.post(`/tenants/${tenantId}/walk-in-leads/${lead.walkIn.id}/acknowledge`);
+      setNotice(tx("\"{0}\" acknowledged.", { 0: lead.name }));
+      await fetchLeads();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || tx("Could not acknowledge the lead"));
     } finally {
       setActionBusyId(null);
     }
@@ -924,6 +980,7 @@ export default function LeadsHubPage() {
             { id: "INFO_REQUESTED", label: "Info requested", dot: "bg-amber-400" },
             { id: "UNDERWRITING", label: "Underwriting", dot: "bg-blue-500" },
             { id: "ON_HOLD", label: "On hold", dot: "bg-amber-400" },
+            { id: "WALK_IN", label: "Walk-in queue", dot: "bg-amber-400" },
             { id: "APPROVED", label: "Approved / policy", dot: "bg-emerald-500" },
             { id: "REJECTED", label: "Rejected", dot: "bg-rose-500" },
             { id: "DEAD", label: "Not interested", dot: "bg-slate-300" },
@@ -977,6 +1034,61 @@ export default function LeadsHubPage() {
         )}
       </div>
 
+      {walkInDetail && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-[2px] flex items-start justify-center overflow-y-auto py-10 px-4" onClick={() => setWalkInDetail(null)}>
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+              <p className="text-sm font-semibold text-slate-700">{tx("Walk-in family")} · <span className="font-mono">{walkInDetail.reference}</span></p>
+              <button onClick={() => setWalkInDetail(null)} className="text-slate-400 hover:text-slate-600" aria-label={tx("Close")}>✕</button>
+            </div>
+            <div className="p-5 space-y-4 text-sm text-slate-700">
+              {(() => {
+                const hh = walkInDetail.household;
+                const fam = hh?.family ?? {};
+                const members: any[] = hh?.members ?? [];
+                const head = members.find((m) => m.relationship === "Self") ?? {};
+                return (
+                  <>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">{tx("Family")} · {fam.family_name ?? ""}</p>
+                      <p className="text-xs text-slate-500">{[fam.contact_person, walkInDetail.contact_phone, walkInDetail.contact_email].filter(Boolean).join(" · ")}</p>
+                      <p className="text-xs text-slate-500">{[[fam.city, fam.province].filter(Boolean).join(", "), fam.household_declared_income ? `${tx("household income")} PKR ${Number(fam.household_declared_income).toLocaleString()}` : null].filter(Boolean).join(" · ")}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">{tx("Policy wanted")}</p>
+                      <p className="text-xs text-slate-600">
+                        {fam.policy_type === "LifeBundle" ? tx("Life Bundle") : tx("Health Floater")} · {walkInDetail.plan_label}
+                        {fam.total_sum_insured ? ` · ${tx("sum assured")} PKR ${Number(fam.total_sum_insured).toLocaleString()}` : ""}
+                        {fam.discount_percentage ? ` · ${fam.discount_percentage}% ${tx("discount")}` : ""} · {fam.term_years} {tx("year(s)")}{fam.effective_date ? ` · ${tx("from")} ${fam.effective_date}` : ""}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">{tx("Members")}</p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead className="text-slate-400 text-left"><tr><th className="py-1 pr-2">{tx("Name")}</th><th className="pr-2">{tx("Relationship")}</th><th className="pr-2">{tx("Date of birth")}</th><th className="pr-2">{tx("Insured")}</th><th className="pr-2">{tx("Occupation / income")}</th><th className="text-right">{tx("Share")}</th></tr></thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {members.map((m, i) => (
+                              <tr key={i}>
+                                <td className="py-1.5 pr-2 font-medium text-slate-800">{m.name}{m.cnic ? <span className="block font-mono font-normal text-slate-400">{m.cnic}</span> : null}</td>
+                                <td className="pr-2">{m.relationship === "Self" ? tx("Head") : m.relationship}</td><td className="pr-2">{m.dob ?? "—"}</td><td className="pr-2">{m.is_insured ? tx("Yes") : tx("Nominee")}</td>
+                                <td className="pr-2">{m.is_insured ? `${m.occupation ?? ""} · PKR ${Number(m.declared_income ?? 0).toLocaleString()}` : "—"}{m.coverage_amount ? ` · ${tx("cover")} PKR ${Number(m.coverage_amount).toLocaleString()}` : ""}</td>
+                                <td className="text-right tabular-nums">{m.relationship === "Self" ? "—" : `${m.share_pct}%`}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                    {walkInDetail.message && <p className="text-xs text-slate-500">{tx("Their note")}: {walkInDetail.message}</p>}
+                    <p className="text-[11px] text-slate-400">{tx("These are exactly the rows of the Add New Family form. Enrol the members from the Families page when you are ready; nothing has been set up for them yet.")}</p>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
       {notice && (
         <div className="p-4 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl text-sm font-medium flex justify-between items-center">
           <span>{notice}</span>
@@ -1162,7 +1274,21 @@ export default function LeadsHubPage() {
                                 <td className="px-6 py-4 font-mono text-slate-500 font-medium text-[11px] whitespace-nowrap bg-slate-50 border-r border-slate-100">
                                   {lead.displayId || "-"}
                                 </td>
-                                <td className="px-6 py-4 font-semibold text-slate-900">{lead.name}</td>
+                                <td className="px-6 py-4 font-semibold text-slate-900">
+                                  {lead.name}
+                                  {lead.walkIn && (
+                                    <div className="mt-1 flex flex-wrap items-center gap-1 font-normal">
+                                      <span
+                                        className={`text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-full px-1.5 py-0.5 ${lead.walkIn.applicantType === "Family" ? "cursor-pointer hover:bg-blue-100" : ""}`}
+                                        title={lead.walkIn.applicantType === "Family" ? tx("View the household they submitted") : lead.walkIn.reference}
+                                        onClick={lead.walkIn.applicantType === "Family" ? (e) => { e.stopPropagation(); openWalkInDetail(lead); } : undefined}
+                                      >{tx("Digital Walk-In")}{lead.walkIn.applicantType === "Family" ? ` · ${tx("Family")}` : ""}{lead.walkIn.planLabel ? ` · ${lead.walkIn.planLabel}` : ""}</span>
+                                      {lead.walkIn.escalated && <span className="text-[10px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-full px-1.5 py-0.5" title={lead.walkIn.reason ?? ""}>{tx("Escalated")}</span>}
+                                      {!lead.walkIn.escalated && lead.walkIn.unassigned && <span className="text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-1.5 py-0.5" title={lead.walkIn.reason ?? ""}>{tx("No agent yet")}</span>}
+                                      {!lead.walkIn.escalated && lead.walkIn.awaiting && <span className={`text-[10px] font-semibold rounded-full px-1.5 py-0.5 border ${lead.walkIn.overdue ? "text-rose-700 bg-rose-50 border-rose-200" : "text-amber-800 bg-amber-50 border-amber-200"}`}>{lead.walkIn.overdue ? tx("Overdue to acknowledge") : tx("Awaiting acknowledgement")}</span>}
+                                    </div>
+                                  )}
+                                </td>
                                 <td className="px-6 py-4">
                                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${typeStyles[lead.type]}`}>
                                     {lead.type}
@@ -1198,6 +1324,15 @@ export default function LeadsHubPage() {
                                       </button>
                                     ) : (
                                       <>
+                                        {lead.walkIn && (lead.walkIn.awaiting || lead.walkIn.escalated) && (
+                                          <button
+                                            disabled={busy}
+                                            onClick={() => handleAcknowledgeWalkIn(lead)}
+                                            className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                                          >
+                                            {tx("Acknowledge")}
+                                          </button>
+                                        )}
                                         {isLead && (
                                           <button
                                             disabled={busy}

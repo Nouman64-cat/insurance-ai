@@ -15,6 +15,8 @@ import { updateQuote } from "../services/quotes";
 import { listUnderwriters, Agent } from "../services/agents";
 import { listAcquisitionSources, AcquisitionSource } from "../services/acquisitionSources";
 import { updateCustomer } from "../services/customers";
+import { getPolicyIPP, requestPolicyPayment, type IPP } from "../services/initialPremiumPayment";
+import { PaymentPanel } from "@/components/proposal/PaymentPanel";
 import { listInsurancePlans, InsurancePlan } from "../services/insurancePlans";
 import { getPlanValidationError } from "@/components/entities/customerShared";
 import SourcePicker, { useAcquisitionSources } from "@/components/entities/SourcePicker";
@@ -278,6 +280,10 @@ function getAvailableActions(
   forBatch: boolean,
   canSendToUnderwriting: boolean,
   isAgent: boolean,
+  // Where the initial premium stands for an individual application under review: "due" (not asked for yet), "requested" (waiting on
+  // the customer) until it clears, then "paid".
+  // "none" for everything the payment step does not apply to (family and group policies, or a batch).
+  payment: "none" | "due" | "requested" | "paid" = "none",
 ): ProposalActionOption[] {
   const opts: ProposalActionOption[] = [];
 
@@ -300,7 +306,11 @@ function getAvailableActions(
     // An Agent's part of the journey stops here: sending to underwriting is for
     // Underwriters and above, so the option isn't offered to an Agent at all.
     if (canSendToUnderwriting) {
-      opts.push({ value: "underwriting", label: "Send to Underwriting", tier: "submission" });
+      // The initial premium is collected after the review has started; underwriting opens only once it has cleared.
+      // The initial premium is paid by the customer (a link, a receipt or "I have paid", then staff confirm) or recorded by staff:
+      // see PaymentPanel. Underwriting opens only once it has cleared.
+      if (payment === "due") opts.push({ value: "payment_request", label: "Payment Required from Customer", tier: "submission" });
+      else if (payment === "paid" || payment === "none") opts.push({ value: "underwriting", label: "Send to Underwriting", tier: "submission" });
     }
     opts.push({ value: "status:InformationRequested", label: "Request Info", tier: "submission" });
     // Undo an accidental Start Review — back to Submitted, no harm done.
@@ -518,6 +528,19 @@ export default function QuotePage() {
     try {
       const tenantId = localStorage.getItem("tenant_id");
       if (!tenantId) throw new Error(tx("Tenant ID not found"));
+
+      // Individual applications cannot open underwriting until their initial premium has cleared.
+      const unpaid: string[] = [];
+      for (const q of selectedQuotes) {
+        if (q.master_policy_id || q.family_policy_id) continue;
+        const paid = await getPolicyIPP(q.policy_id).then((r) => r.status === "Realized", () => false);
+        if (!paid) unpaid.push(q.plan_label || q.customer_name);
+      }
+      if (unpaid.length > 0) {
+        setBulkProceedError(tx("Collect the initial premium first (open each application): {list}", { list: unpaid.join(", ") }));
+        setIsBulkProceeding(false);
+        return;
+      }
 
       if (selectedQuotes.length === 1) {
         const q = selectedQuotes[0];
@@ -1427,6 +1450,16 @@ function ActionIcon({ value }: { value: string }) {
       <svg {...ACTION_ICON_PROPS}><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" /><polyline points="9 12 11 14 15 10" /></svg>
     );
   }
+  if (value === "payment_request") {
+    return (
+      <svg {...ACTION_ICON_PROPS}><path d="M4 4h16v12H5.2L4 17.2V4z" /><polyline points="4 6 12 12 20 6" /></svg>
+    );
+  }
+  if (value === "payment") {
+    return (
+      <svg {...ACTION_ICON_PROPS}><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></svg>
+    );
+  }
   if (value === "save_info") {
     return (
       <svg {...ACTION_ICON_PROPS}><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
@@ -1828,26 +1861,33 @@ function ProposalsGrid({
 
 // The three moves a proposal makes on its way to underwriting. `current` is the one waiting to be done:
 // Draft waits on Submit, Submitted on Start Review, Under Review on Send to Underwriting. Past that, all done.
-const PROPOSAL_STEPS_UI = [
-  { n: 1, label: "Submit proposal" },
-  { n: 2, label: "Start review" },
-  { n: 3, label: "Send to underwriting" },
-];
+// Individual applications pay the initial premium between the review and underwriting, so they have a fourth step.
+const STEP_SUBMIT = { label: "Submit proposal" };
+const STEP_REVIEW = { label: "Start review" };
+const STEP_PAYMENT = { label: "Initial payment" };
+const STEP_UNDERWRITING = { label: "Send to underwriting" };
 
-function proposalProgress(status: string): { current: number; note?: string; tone?: "amber" | "red" } {
+function proposalSteps(withPayment: boolean) {
+  return (withPayment ? [STEP_SUBMIT, STEP_REVIEW, STEP_PAYMENT, STEP_UNDERWRITING] : [STEP_SUBMIT, STEP_REVIEW, STEP_UNDERWRITING])
+    .map((st, i) => ({ n: i + 1, label: st.label }));
+}
+
+function proposalProgress(status: string, withPayment: boolean, paid: boolean): { current: number; note?: string; tone?: "amber" | "red" } {
+  const last = withPayment ? 4 : 3;
   switch (status) {
     case "Quoted": return { current: 1 };
     case "InformationRequested": return { current: 1, note: "Info requested: add the details and re-submit", tone: "amber" };
     case "Proposed": return { current: 2 };
-    case "UnderReview": return { current: 3 };
-    case "Declined": return { current: 4, note: "Rejected", tone: "red" };
-    default: return { current: 4 };          // approved, issued...: the whole path is behind it
+    case "UnderReview": return { current: withPayment && paid ? last : withPayment ? 3 : last };
+    case "Declined": return { current: last + 1, note: "Rejected", tone: "red" };
+    default: return { current: last + 1 };          // approved, issued...: the whole path is behind it
   }
 }
 
-function ProposalProgress({ status }: { status: string }) {
+function ProposalProgress({ status, withPayment = false, paid = false }: { status: string; withPayment?: boolean; paid?: boolean }) {
   const { tx } = useI18n();
-  const { current, note, tone } = proposalProgress(status);
+  const { current, note, tone } = proposalProgress(status, withPayment, paid);
+  const PROPOSAL_STEPS_UI = proposalSteps(withPayment);
   return (
     <div>
       <ol className="flex items-start" aria-label={tx("Progress")}>
@@ -1914,6 +1954,22 @@ function QuoteDetailModal({
   const { locale, tx } = useI18n();
 
   const [startError, setStartError] = useState<string | null>(null);
+  // The initial premium (individual applications only): collected after the review starts, and it must clear before
+  // the underwriting case can open.
+  const hasPaymentStep = !!detail && !detail.master_policy_id && !detail.family_policy_id && !String(detail.policy_id ?? "").startsWith("draft-");
+  const [ipp, setIpp] = useState<IPP | null>(null);
+  const loadIpp = useCallback(async () => {
+    if (!detail || !hasPaymentStep || detail.status !== "UnderReview") { setIpp(null); return; }
+    try { setIpp(await getPolicyIPP(detail.policy_id)); } catch { setIpp(null); }
+  }, [detail?.policy_id, detail?.status, hasPaymentStep]);
+  useEffect(() => { loadIpp(); }, [loadIpp]);
+  // While the customer is paying from their side, pick up their screenshot without anyone reloading the page.
+  useEffect(() => {
+    if (!hasPaymentStep || detail?.status !== "UnderReview" || !ipp?.requested_at || ipp.status === "Realized") return;
+    const id = setInterval(() => { if (document.visibilityState === "visible") loadIpp(); }, 15000);
+    return () => clearInterval(id);
+  }, [hasPaymentStep, detail?.status, ipp?.requested_at, ipp?.status, loadIpp]);
+  const payment: "none" | "due" | "requested" | "paid" = !hasPaymentStep ? "none" : ipp?.status === "Realized" ? "paid" : ipp?.requested_at ? "requested" : "due";
   // A Draft is a proposal; from Submitted onward it is an application.
   const isApp = !!detail && detail.status !== "Quoted";
 
@@ -2231,13 +2287,19 @@ function QuoteDetailModal({
   // along) as the batch dropdown — see getAvailableActions above.
   const modalOptions = useMemo(() => {
     if (!detail) return [];
-    return getAvailableActions(detail.status, missingFields.length > 0, false, canSendToUnderwriting, isAgent);
-  }, [detail?.status, missingFields.length, canSendToUnderwriting, isAgent]);
+    return getAvailableActions(detail.status, missingFields.length > 0, false, canSendToUnderwriting, isAgent, payment);
+  }, [detail?.status, missingFields.length, canSendToUnderwriting, isAgent, payment]);
 
   const handleApplyAction = async (value: string) => {
     if (!detail) return;
     setStartError(null);
     try {
+      if (value === "payment_request") {
+        // Opens the payment request: the secure link and the email to the customer (see PaymentPanel for everything after that).
+        const res = await requestPolicyPayment(detail.policy_id);
+        setIpp(res.ipp);
+        return;
+      }
       if (value === "underwriting") {
         // The last step: opens the underwriting case and takes the user there. Only now does the window close.
         await onStartUnderwriting();
@@ -2289,7 +2351,18 @@ function QuoteDetailModal({
 
         {detail && !loading && (
           <div className="space-y-4 border-b border-slate-100 bg-slate-50/70 px-5 py-4">
-            <ProposalProgress status={detail.status} />
+            <ProposalProgress status={detail.status} withPayment={hasPaymentStep} paid={payment === "paid"} />
+            {hasPaymentStep && detail.status === "UnderReview" && ipp !== null && (
+              <PaymentPanel policyId={detail.policy_id} ipp={ipp} canAct={canAct && !isAgent} onChange={setIpp}
+                onCleared={async () => { await loadIpp(); onRefresh(); await onReloadDetail(); }} />
+            )}
+            {hasPaymentStep && detail.status === "UnderReview" && (
+              <p className={`text-center text-xs font-semibold ${payment === "paid" ? "text-emerald-600" : "text-amber-600"}`}>
+                {payment === "paid"
+                  ? tx("Initial premium received. This application can now go to underwriting.")
+                  : tx("Waiting for the initial premium. Underwriting opens once the payment has cleared.")}
+              </p>
+            )}
             {isAgent && modalOptions.length === 0 && ["Proposed", "UnderReview", "Approved", "AcceptedWithLoadings", "Declined", "Issued"].includes(detail.status) && (
               <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-500" title={tx("Currently, you have no access to do this, ask your manager")}>
                 {tx("This application has been sent to the admin team for further review, so it can no longer be changed from here. You can follow its progress on this page.")}

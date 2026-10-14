@@ -47,8 +47,8 @@ class FakeTenant:
     async def patch(self, path, payload):
         return self._answer("PATCH", path, payload)
 
-    async def upload(self, path, filename, content, content_type, note):
-        return self._answer("UPLOAD", path, filename)
+    async def upload(self, path, filename, content, content_type, note, fields=None):
+        return self._answer("UPLOAD", path, {"filename": filename, "note": note, **(fields or {})})
 
     async def download(self, path, **q):
         return self._answer("GET", path)

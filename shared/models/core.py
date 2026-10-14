@@ -2130,7 +2130,8 @@ class InitialPremiumPayment(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
-    case_id: UUID = Field(foreign_key="cases.caseld", index=True, unique=True, nullable=False)
+    # Null while the payment is collected on the proposal, before an underwriting case exists; set when the case is opened.
+    case_id: Optional[UUID] = Field(default=None, foreign_key="cases.caseld", index=True, unique=True, nullable=True)
     policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
 
     amount: float = Field(ge=0)
@@ -2140,6 +2141,25 @@ class InitialPremiumPayment(SQLModel, table=True):
 
     initiated_at: Optional[datetime] = Field(default=None, nullable=True)
     realized_at: Optional[datetime] = Field(default=None, nullable=True)
+
+    # Customer-side payment: staff ask the customer to pay and a secure link (signed from this row's id and
+    # `request_version`, never stored) is sent to them. The customer pays outside the system and uploads a screenshot
+    # as proof. Staff review it and either confirm (status becomes Realized) or reject it.
+    request_version: int = Field(default=0, nullable=False)           # 0 = never requested; bumping it retires the old link
+    request_expires_at: Optional[datetime] = Field(default=None, nullable=True)
+    requested_at: Optional[datetime] = Field(default=None, nullable=True)
+    requested_by: Optional[str] = Field(default=None, max_length=255, nullable=True)
+    proof_status: str = Field(default="None", max_length=20, nullable=False)   # None | Submitted | Accepted | Rejected
+    proof_artifact_id: Optional[UUID] = Field(default=None, nullable=True)
+    proof_uploaded_at: Optional[datetime] = Field(default=None, nullable=True)
+    proof_note: Optional[str] = Field(default=None, max_length=500, nullable=True)
+    proof_review_note: Optional[str] = Field(default=None, max_length=500, nullable=True)
+    proof_reviewed_at: Optional[datetime] = Field(default=None, nullable=True)
+    proof_reviewed_by: Optional[str] = Field(default=None, max_length=255, nullable=True)
+    proof_method: Optional[str] = Field(default=None, max_length=50, nullable=True)       # how the customer says they paid
+    proof_reference: Optional[str] = Field(default=None, max_length=100, nullable=True)   # the transaction id they quote
+    reminder_count: int = Field(default=0, nullable=False)
+    last_reminded_at: Optional[datetime] = Field(default=None, nullable=True)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
@@ -3763,3 +3783,71 @@ from shared.models.commission import (  # noqa: E402,F401
 
 # Register tenant-service's Request Management integration table (see request_integration.py).
 from shared.models.request_integration import CustomerProfileCorrection  # noqa: E402,F401
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# WALK-IN LEADS (customer portal self-service)
+# A walk-in is NOT a separate lead system: the lead is a real Customer (profile_status LEAD). This row only records what the
+# self-service request added to it — the reference number, the plan the person is interested in (interest only), their contact
+# preferences, and the routing/acknowledgement trail that makes sure a human picks it up.
+# ═════════════════════════════════════════════════════════════════════════════
+
+class WalkInLead(SQLModel, table=True):
+    __tablename__ = "walk_in_leads"
+    __table_args__ = (UniqueConstraint("tenant_id", "request_key", name="uq_walk_in_request_key"),)
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    # An individual request is a Customer; a family request is a FamilyGroup (customer_id stays empty until members are enrolled).
+    customer_id: Optional[UUID] = Field(default=None, foreign_key="customers.id", index=True, nullable=True)
+    applicant_type: str = Field(default="Self", max_length=10)           # Self | Family
+    family_group_id: Optional[UUID] = Field(default=None, foreign_key="family_groups.id", index=True, nullable=True)
+    household_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))   # the head's details and the household as submitted
+    reference: str = Field(max_length=30, unique=True, index=True)
+    request_key: str = Field(max_length=120)                     # idempotency: one request, one lead
+
+    plan_id: Optional[UUID] = Field(default=None)                # InsurancePlan id at submission (interest only)
+    plan_code: Optional[str] = Field(default=None, max_length=50)
+    plan_label: Optional[str] = Field(default=None, max_length=255)
+    plan_category: Optional[str] = Field(default=None, max_length=50)
+
+    contact_email: str = Field(max_length=255, index=True)       # the VERIFIED address that owns this request
+    contact_phone: Optional[str] = Field(default=None, max_length=50)
+    preferred_contact: Optional[str] = Field(default=None, max_length=30)
+    message: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    consent_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    linked_existing: bool = Field(default=False)                 # attached to a customer record that already existed
+
+    # Routing. Pending → Assigned | Unassigned → (Escalated) ; only "Assigned" once the agent is really saved on the customer.
+    routing_status: str = Field(default="Pending", max_length=20, index=True)
+    routing_method: Optional[str] = Field(default=None, max_length=20)     # ai | deterministic | manual | existing
+    routing_reason: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    assigned_agent_id: Optional[UUID] = Field(default=None, index=True)
+    assigned_at: Optional[datetime] = Field(default=None)
+    ack_due_at: Optional[datetime] = Field(default=None, index=True)
+    acknowledged_at: Optional[datetime] = Field(default=None)
+    acknowledged_by: Optional[str] = Field(default=None, max_length=255)
+    escalated_at: Optional[datetime] = Field(default=None)
+    escalation_reason: Optional[str] = Field(default=None, max_length=300)
+
+    # Agent notification (retry-safe): Pending → Sent | Failed (retried by the sweep, up to a limit).
+    notify_status: str = Field(default="Pending", max_length=12)
+    notify_attempts: int = Field(default=0)
+    notified_at: Optional[datetime] = Field(default=None)
+    next_notify_at: Optional[datetime] = Field(default=None)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class WalkInLeadEvent(SQLModel, table=True):
+    """Append-only trail of everything that happened to a walk-in lead (submitted, routed, notified, acknowledged, escalated …)."""
+    __tablename__ = "walk_in_lead_events"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(index=True, nullable=False)
+    walk_in_lead_id: UUID = Field(foreign_key="walk_in_leads.id", index=True, nullable=False)
+    event_type: str = Field(max_length=60)
+    actor: str = Field(default="system", max_length=255)
+    detail_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)

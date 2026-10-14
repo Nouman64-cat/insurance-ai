@@ -96,6 +96,8 @@ from routers.commissions import router as commissions_router
 from routers.request_management_internal import router as request_management_internal_router
 from routers.customer_portal_internal import router as customer_portal_internal_router
 from routers.customer_portal_family import router as customer_portal_family_router
+from routers.customer_portal_walkin import router as customer_portal_walkin_router
+from routers.walk_in_leads import router as walk_in_leads_router
 # STAGE B — POST-ISSUANCE: renewal scheduler import disabled for now.
 # from routers.renewal_scheduler import start_renewal_scheduler
 from shared.models.core import Role
@@ -160,6 +162,8 @@ async def lifespan(app: FastAPI):
     group_renewal_task = start_group_renewal_scheduler(stop_event, _session_factory)
     from services.policy_delivery import start_delivery_worker
     delivery_task = start_delivery_worker(stop_event, _session_factory)
+    from services.lead_routing import start_sweeper
+    walkin_task = start_sweeper(stop_event, _session_factory) if os.environ.get("WALKIN_SWEEP", "true").lower() == "true" else None
 
     # ── STAGE B — POST-ISSUANCE LIFECYCLE (renewal scheduler) ──────────────────
     # Daily state machine (ACTIVE → GracePeriod → Lapsed + renewals). Runs AFTER
@@ -174,6 +178,8 @@ async def lifespan(app: FastAPI):
     stop_event.set()
     await worker_task
     await delivery_task
+    if walkin_task is not None:
+        await walkin_task
     if group_renewal_task is not None:
         await group_renewal_task
     # await renewal_task  # STAGE B — disabled (see above)
@@ -274,6 +280,8 @@ app.include_router(commissions_router)
 app.include_router(request_management_internal_router)
 app.include_router(customer_portal_internal_router)
 app.include_router(customer_portal_family_router)
+app.include_router(customer_portal_walkin_router)
+app.include_router(walk_in_leads_router)
 
 
 @app.get("/health", tags=["Ops"])

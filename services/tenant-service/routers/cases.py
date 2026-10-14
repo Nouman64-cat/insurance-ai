@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import selectinload
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -25,6 +26,8 @@ from shared.models.core import (
     CaseTypeEnum,
     CaseWorkflow,
     ActionTypeEnum,
+    InitialPremiumPayment,
+    IPPStatusEnum,
     CaseAuditTrail,
     AssignmentTypeEnum,
     AssignmentStatusEnum,
@@ -89,6 +92,28 @@ def generate_case_number() -> str:
     random_hex = uuid.uuid4().hex[:6].upper()
     return f"APP-{datetime.utcnow().year}-{random_hex}"
 
+
+def _initial_premium_required(policy: Policy) -> bool:
+    """An individual application must have its initial premium cleared on the proposal before an underwriting case opens
+    (Section 30, "no premium, no risk"). Family and group policies follow their own approval flows and are not held here.
+    Switch off with REQUIRE_INITIAL_PREMIUM_BEFORE_UNDERWRITING=false."""
+    if os.environ.get("REQUIRE_INITIAL_PREMIUM_BEFORE_UNDERWRITING", "true").lower() != "true":
+        return False
+    return policy.family_policy_id is None and policy.master_policy_id is None
+
+
+async def _attach_initial_payment(session: AsyncSession, policy_id: Optional[UUID], case_id: UUID) -> None:
+    """The payment taken on the proposal had no case yet: it belongs to this one from now on."""
+    if policy_id is None:
+        return
+    ipp = (await session.exec(select(InitialPremiumPayment).where(
+        InitialPremiumPayment.policy_id == policy_id, InitialPremiumPayment.case_id.is_(None)))).first()
+    if ipp is not None:
+        ipp.case_id = case_id
+        session.add(ipp)
+        await session.commit()
+
+
 @router.post("", response_model=CaseRead, status_code=201)
 async def create_case(
     tenant_id: UUID,
@@ -121,7 +146,17 @@ async def create_case(
             )
         )).scalars().first()
         if existing_case:
+            await _attach_initial_payment(session, policy.id, existing_case.caseld)
             return existing_case
+
+        if body.caseType == CaseTypeEnum.UNDERWRITING and _initial_premium_required(policy):
+            paid = (await session.exec(select(InitialPremiumPayment.id).where(
+                InitialPremiumPayment.policy_id == policy.id, InitialPremiumPayment.status == IPPStatusEnum.REALIZED))).first()
+            if paid is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="The initial premium must be paid before this application goes to underwriting.",
+                )
 
     # Falls back to the customer's own assigned agent when the caller doesn't
     # name one explicitly (e.g. the chatbot's create_case tool never has —
@@ -163,6 +198,7 @@ async def create_case(
 
     await session.commit()
     await session.refresh(case)
+    await _attach_initial_payment(session, case.policy_id, case.caseld)
 
     # Documents the customer already uploaded through the proposal's document link join this case.
     await docreq.adopt_documents(session, case)

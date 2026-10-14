@@ -85,6 +85,38 @@ class Tickets(unittest.IsolatedAsyncioTestCase):
    self.assertFalse((await c.execute(text("SELECT has_table_privilege(current_user,'customer_service.events','DELETE')"))).scalar())
    self.assertFalse((await c.execute(text("SELECT has_table_privilege(current_user,'customer_service.events','UPDATE')"))).scalar())
 
+ async def make(self,title,priority='NORMAL'):
+  r=await self.client.post('/v1/tickets',json={'title':title,'description':'Please look into this one','priority':priority,'idempotency_key':str(uuid4())});self.assertEqual(r.status_code,200,r.text);return r.json()
+ async def test_views_and_summary_tell_the_desk_what_needs_a_person(self):
+  self.user.update(staff=True,role_name='Admin')
+  a=await self.make('Late one','URGENT');b=await self.make('Taken one');c=await self.make('Waiting one');d=await self.make('Done one')
+  async with main.engine.begin() as conn:                                      # make "Late one" overdue without waiting for the clock
+   await conn.execute(text("UPDATE customer_service.tickets SET due_at=now()-interval '2 hours' WHERE id=:i"),{'i':a['id']})
+  v=lambda q:self.client.get('/v1/tickets?'+q)
+  r=await self.client.post(f"/v1/tickets/{b['id']}/assignment",json={'version':b['version'],'user_id':self.user['id']});self.assertEqual(r.status_code,200,r.text)
+  for t,steps in ((c,['IN_PROGRESS','WAITING_CUSTOMER']),(d,['IN_PROGRESS','RESOLVED'])):
+   ver=t['version']
+   for st in steps:
+    r=await self.client.post(f"/v1/tickets/{t['id']}/status",json={'version':ver,'status':st,'reason':'moving it along'});self.assertEqual(r.status_code,200,r.text);ver+=1
+  titles=lambda r:[x['title'] for x in r.json()['items']]
+  self.assertEqual(sorted(titles(await v('view=active'))),['Late one','Taken one','Waiting one'])
+  self.assertEqual(titles(await v('view=overdue')),['Late one'])
+  self.assertEqual(sorted(titles(await v('view=unassigned'))),['Late one','Waiting one'])
+  self.assertEqual(titles(await v('view=mine')),['Taken one'])
+  self.assertEqual(titles(await v('view=waiting')),['Waiting one'])
+  self.assertEqual(titles(await v('view=finished')),['Done one'])
+  self.assertEqual((await v('view=active')).json()['items'][0]['title'],'Late one')      # the late one leads
+  self.assertEqual((await v('view=bogus')).status_code,422)
+  s=(await self.client.get('/v1/tickets/summary')).json()
+  self.assertEqual((s['active'],s['overdue'],s['unassigned'],s['mine'],s['waiting'],s['finished'],s['total']),(3,1,2,1,1,1,4))
+ async def test_a_requester_only_counts_their_own_tickets(self):
+  await self.make('Mine')
+  other=dict(self.user);self.user['id']=str(uuid4())                              # someone else in the same tenant (not staff)
+  await self.make('Theirs')
+  s=(await self.client.get('/v1/tickets/summary')).json();self.assertEqual(s['total'],1)
+  self.user.update(staff=True,role_name='Admin');self.assertEqual((await self.client.get('/v1/tickets/summary')).json()['total'],2)
+
+
 class IdentityChecks(unittest.IsolatedAsyncioTestCase):
  async def test_verified_identity_and_spoofing(self):
   from starlette.requests import Request

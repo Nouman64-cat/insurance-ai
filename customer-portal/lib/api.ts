@@ -36,8 +36,17 @@ function refresh(): Promise<boolean> {
 }
 
 function sessionOver(): never {
-  if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
-    window.location.href = "/login?expired=1";
+  if (typeof window !== "undefined") {
+    const walkIn = window.location.pathname.startsWith("/walk-in");
+    if (walkIn && !window.location.pathname.startsWith("/walk-in/start") && !window.location.pathname.startsWith("/walk-in/pay/")) {
+      // The cookie must go first: while it exists the middleware treats the visitor as signed in and bounces /walk-in/start
+      // straight back to the application page, which would loop forever.
+      fetch("/api/portal/auth/walk-in/logout", { method: "POST", headers: HEADERS, cache: "no-store" })
+        .catch(() => undefined)
+        .finally(() => { window.location.href = "/walk-in/start?expired=1"; });
+    } else if (!walkIn && !window.location.pathname.startsWith("/login")) {
+      window.location.href = "/login?expired=1";
+    }
   }
   throw new ApiError(401, "SESSION_EXPIRED", "Your session has ended.");
 }
@@ -64,6 +73,7 @@ async function call(path: string, o: RequestOptions): Promise<Response> {
   if (res.status === 401) {
     const err = await parseError(res.clone());
     if (err.code === "SESSION_EXPIRED" || err.code === "UNAUTHENTICATED") {
+      if (typeof window !== "undefined" && window.location.pathname.startsWith("/walk-in")) sessionOver();   // walk-in sessions have no refresh token
       if (!(await refresh())) sessionOver();
       res = await send(path, o);
       if (res.status === 401) sessionOver();

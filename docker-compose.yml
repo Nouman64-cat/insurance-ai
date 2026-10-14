@@ -349,6 +349,8 @@ services:
       CM_DATABASE_URL: postgresql+asyncpg://customer_management_app:${CM_DB_APP_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
       CM_MIGRATION_DATABASE_URL: postgresql+asyncpg://customer_management_owner:${CM_DB_OWNER_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
       TENANT_SERVICE_URL: http://tenant-service:8001
+      CM_WALKIN_TENANT_CODE: ${CM_WALKIN_TENANT_CODE:-}
+      CM_WALKIN_DEV_OTP: ${CM_WALKIN_DEV_OTP:-}   # development only; ignored when CM_ENV=production
     depends_on:
       tenant-service:
         condition: service_started

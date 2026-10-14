@@ -52,5 +52,15 @@ class Settings:
 
     env: str = field(default_factory=lambda: os.environ.get("CM_ENV", "development"))
 
+    # Walk-in (email one-time-code) access. The tenant is fixed by configuration, never taken from the browser.
+    walkin_tenant_code: str = field(default_factory=lambda: os.environ.get("CM_WALKIN_TENANT_CODE", ""))
+    walkin_otp_minutes: int = field(default_factory=lambda: _int("CM_WALKIN_OTP_MINUTES", 10))
+    walkin_otp_attempts: int = field(default_factory=lambda: _int("CM_WALKIN_OTP_ATTEMPTS", 5))
+    walkin_otp_per_email: int = field(default_factory=lambda: _int("CM_WALKIN_OTP_PER_EMAIL", 5))     # codes per email per 15 minutes
+    walkin_otp_per_ip: int = field(default_factory=lambda: _int("CM_WALKIN_OTP_PER_IP", 20))
+    walkin_session_minutes: int = field(default_factory=lambda: _int("CM_WALKIN_SESSION_MINUTES", 120))
+    # Development only: when the mail provider cannot deliver, accept this fixed code instead. Ignored when CM_ENV=production.
+    walkin_dev_otp: str = field(default_factory=lambda: os.environ.get("CM_WALKIN_DEV_OTP", ""))
+
 
 settings = Settings()
