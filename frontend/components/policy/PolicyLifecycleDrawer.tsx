@@ -31,6 +31,14 @@ interface DrawerProps {
   policyId: string;
   fallbackName?: string;
   onClose: () => void;
+  /** The page's next step for this policy (e.g. Issue Policy), shown in the footer. */
+  primaryAction?: {
+    label: string;
+    onClick: () => void;
+    disabled?: boolean;
+    title?: string;
+    icon?: ReactNode;
+  };
 }
 
 const SCHEDULE_TONE: Record<string, string> = {
@@ -117,7 +125,7 @@ function Panel({ title, action, children }: Readonly<{ title: string; action?: R
  * billing schedule, generated documents and the immutable audit event
  * timeline (from GET /events).
  */
-export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Readonly<DrawerProps>) {
+export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose, primaryAction }: Readonly<DrawerProps>) {
   const [detail, setDetail] = useState<PolicyDetail | null>(null);
   const [events, setEvents] = useState<PolicyEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -413,6 +421,29 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
               </section>
             </div>
           ) : null}
+        </div>
+
+        {/* Footer — always visible, so the next step never scrolls away */}
+        <div className="flex items-center justify-end gap-3 border-t border-slate-200/80 bg-white px-6 py-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100"
+            >
+              {tx("Close")}
+            </button>
+            {primaryAction && (
+              <button
+                onClick={primaryAction.onClick}
+                disabled={primaryAction.disabled || loading}
+                title={primaryAction.title}
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:from-blue-700 hover:to-indigo-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {primaryAction.icon}
+                {primaryAction.label}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

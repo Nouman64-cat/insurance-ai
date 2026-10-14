@@ -906,6 +906,31 @@ function PolicyIssuanceContent() {
           policyId={viewPolicy.id}
           fallbackName={viewPolicy.customer_name}
           onClose={() => setViewPolicy(null)}
+          primaryAction={(() => {
+            // Same next step as the row's action button, for the same statuses.
+            const st = (viewPolicy.status || "").toUpperCase().replace(/[^A-Z]/g, "");
+            const noAccess = userRole === "Agent" ? tx("Currently, you have no access to do this, ask your manager") : undefined;
+            if (st === "PENDINGPAYMENT")
+              return {
+                label: tx("Confirm Payment"),
+                disabled: userRole === "Agent",
+                title: noAccess,
+                onClick: () => { setViewPolicy(null); setPaymentPolicy(viewPolicy); },
+              };
+            if (st === "APPROVED" || st === "ACCEPTEDWITHLOADINGS")
+              return {
+                label: tx("Issue Policy"),
+                disabled: userRole === "Agent",
+                title: noAccess,
+                icon: (
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5" aria-hidden>
+                    <polygon points="5 3 19 12 5 21" />
+                  </svg>
+                ),
+                onClick: () => { setViewPolicy(null); setSelectedPolicy(viewPolicy); },
+              };
+            return undefined;
+          })()}
         />
       )}
       {issuanceResult && (
