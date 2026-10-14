@@ -90,6 +90,10 @@ SYSTEM_PROMPT = """You are Insurance AI Agent, a warm, expert assistant for the 
 underwriting platform. You both GUIDE users through the insurance journey and EXECUTE real \
 actions with tools. Never pretend to act — always call the tool.
 
+## FRESH CUSTOMER LOOKUPS
+
+Always call list_customers or search_records again for a customer list or follow-up status comparison. Never repeat names, counts or statuses solely from an earlier reply. Keep same-name customers separate using their CNIC.
+
 ## DELETING CUSTOMERS & RECORDS
 
 - Customer records CANNOT be deleted because we must maintain all customer records and audit trails for future use and compliance.
@@ -793,6 +797,15 @@ def _draft_request(messages: list) -> bool:
 
 
 async def agent_node(state: ChatState, config: RunnableConfig | None = None) -> dict:
+    # Explicit named-customer list requests must query this turn, not replay history.
+    if state["messages"] and isinstance(state["messages"][-1], HumanMessage):
+        text = str(state["messages"][-1].content).strip()
+        match = re.fullmatch(r"(?:please\s+)?(?:list|show(?:\s+me)?|find)\s+(.+?)\s+customers[.!?]*", text, re.I)
+        if match:
+            return {"messages": [AIMessage(content="", tool_calls=[{
+                "name": "list_customers", "args": {"search": match[1], "limit": 50},
+                "id": f"fresh-customers-{uuid.uuid4().hex[:12]}", "type": "tool_call",
+            }])]}
     if _draft_request(state["messages"]):
         last = state["messages"][-1]
         if isinstance(last, ToolMessage):
@@ -1775,6 +1788,29 @@ async def _permission_gate(state: ChatState) -> Command:
         })
 
     if name == "create_proposal":
+        try:
+            proposal_context = await execute_tool("get_proposal_customer_context", args, ctx)
+        except Exception as exc:
+            return back_to_agent({"messages": [_tool_result_message(name, call_id, {"success": False, "error": str(exc)})]})
+        if not proposal_context["success"]:
+            return back_to_agent({"messages": [_tool_result_message(name, call_id, proposal_context)]})
+        customer = proposal_context["customer"]
+        args["cnic"] = customer["cnic"]
+        saved = (customer.get("details") or {}).get("pending_plan")
+        if not saved:
+            open_policies = [p for p in proposal_context["policies"] if p.get("status") in {"Draft", "Quoted", "Proposed", "UnderReview", "InformationRequested"}]
+            products = {p.get("product_name") for p in open_policies if p.get("product_name")}
+            if len(products) == 1:
+                saved = open_policies[0]
+            elif len(products) > 1 and not args.get("product_name"):
+                return back_to_agent({"messages": [_tool_result_message(name, call_id, {
+                    "success": False, "message": "This customer has multiple selected plans. Choose the existing proposal to continue.",
+                    "quick_actions": [{"label": product, "actionType": "submit", "payload": f"Create proposal for CNIC {customer['cnic']} with product_name {product}"} for product in sorted(products)],
+                })]})
+        if saved and not args.get("product_name"):
+            for field in ("product_name", "insurance_type", "coverage_amount", "term_years"):
+                if args.get(field) is None and saved.get(field) is not None:
+                    args[field] = saved[field]
         provided_plan = args.get("product_name")
         plans_res = await execute_tool("list_insurance_plans", {}, ctx)
         plans = plans_res.get("items", [])
@@ -1782,6 +1818,9 @@ async def _permission_gate(state: ChatState) -> Command:
             return back_to_agent({"messages": [_tool_result_message(name, call_id, {"success": False, "error": "No insurance plans found in the catalog. Please ask an Admin to set up the catalog."})]})
         
         valid_options = [p.get("label") or p.get("name") for p in plans if p.get("label") or p.get("name")]
+        if saved and provided_plan == saved.get("product_name") and provided_plan not in valid_options:
+            return back_to_agent({"messages": [_tool_result_message(name, call_id, {"success": False, "message": "The saved plan is unavailable in the current catalog. Confirm a replacement plan."})]})
+
         if provided_plan and provided_plan.lower() in ("any", "random", "auto"):
             args["product_name"] = valid_options[0] if valid_options else "Term Life Plus"
         elif not provided_plan or provided_plan not in valid_options:
@@ -1843,7 +1882,7 @@ async def _permission_gate(state: ChatState) -> Command:
                 answer = interrupt({
                     "kind": "clarify",
                     "tool_call": {"name": name, "args": args},
-                    "question": "Which insurance plan would you like to propose? I've analyzed the customer's profile and recommend these top options:",
+                    "question": "Which insurance plan would you like to propose?",
                     "options": options[:5],
                 })
                 # Inject the selected plan directly into args and execute immediately —

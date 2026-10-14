@@ -834,7 +834,8 @@ async def _get_case_details(args: dict, ctx: Ctx) -> dict:
         ),
         "case": detail,
         "application_stage": stage,
-        "navigate": _nav("cases", case_id),
+        # The application's own view, inline in the chat — a status question never leaves the conversation.
+        "navigate": {"route": f"case/{case_id}", "entity_id": "", "highlight": False, "embed": True},
         "quick_actions": [
             *[{k: a[k] for k in ("label", "actionType", "payload")} for a in state["allowed_actions"][:3]],
             {"label": "View Application", "actionType": "embed", "payload": f"case/{case_id}"},
@@ -1840,13 +1841,37 @@ _OPEN_PROPOSAL_STATUSES = {"Draft", "Quoted", "Proposed", "UnderReview", "Inform
                            "Approved", "AcceptedWithLoadings", "PendingPayment"}
 
 
+@handles("get_proposal_customer_context")
+async def proposal_customer_context(args: dict, ctx: Ctx) -> dict:
+    """Fresh, unambiguous identity and existing plan selection before asking for a plan."""
+    response = await ctx.client.get(ctx.tsvc("/customers"))
+    response.raise_for_status()
+    rows = response.json()
+    cnic = args.get("cnic")
+    name = (args.get("applicant_name") or args.get("customer_name") or "").strip()
+    if cnic:
+        matches = [c for c in rows if c.get("cnic") == cnic]
+    else:
+        exact = [c for c in rows if _full_name(c).casefold() == name.casefold()] if name else []
+        matches = exact or [c for c in rows if name and _matches(c, name, ("name", "first_name", "last_name"))]
+    if len(matches) != 1:
+        return {"success": False, "message": "Select the customer before creating a proposal." if matches else "No matching customer found. Provide their CNIC.",
+                "quick_actions": [{"label": f"{_full_name(c)} ({c.get('cnic')})", "actionType": "submit",
+                                   "payload": f"Create proposal for CNIC {c.get('cnic')}"} for c in matches]}
+    customer = matches[0]
+    detail = await ctx.client.get(ctx.tsvc(f"/customers/{customer['id']}"))
+    detail.raise_for_status()
+    policies = await ctx.client.get(ctx.tsvc(f"/customers/{customer['id']}/policies"))
+    policies.raise_for_status()
+    return {"success": True, "customer": detail.json(), "policies": policies.json()}
+
+
 @handles("create_proposal")
 async def _create_proposal(args: dict, ctx: Ctx) -> dict:
-    cust_res = await ctx.client.get(ctx.tsvc("/customers"))
-    cust_res.raise_for_status()
-    customer = _find_customer(cust_res.json(), args.get("cnic"), args.get("applicant_name"))
-    if not customer:
-        raise LookupError(f"No customer found for \"{args.get('applicant_name') or args.get('cnic')}\".")
+    context = await proposal_customer_context(args, ctx)
+    if not context["success"]:
+        return context
+    customer = context["customer"]
 
     # Re-read the customer's proposals first: a second click or a retried
     # request must not open a duplicate of a proposal that is still in flight.

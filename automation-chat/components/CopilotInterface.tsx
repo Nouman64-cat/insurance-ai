@@ -352,77 +352,28 @@ function buildRequirementsBlockedResult(
   };
 }
 
+function customerChoiceRows(actions: QuickAction[]) {
+  if (actions.length < 2) return null;
+  const rows = actions.map((action) => {
+    const match = action.label.match(/^(.+?)\s*\((\d{5}-\d{7}-\d)\)$/);
+    return action.actionType === "submit" && match
+      ? { name: match[1], cnic: match[2] }
+      : null;
+  });
+  return rows.every((row) => row !== null) ? rows : null;
+}
+
 function getRecommendedActions(
   lastMessage: AgentMessage | undefined,
 ): QuickAction[] {
   if (!lastMessage) {
     return [
-      {
-        label: "Add a new customer",
-        actionType: "submit",
-        payload: "Add a new customer",
-      },
-      {
-        label: "Start underwriting",
-        actionType: "submit",
-        payload: "Start underwriting journey for a customer",
-      },
-      {
-        label: "Add a new rule ⚡",
-        actionType: "submit",
-        payload: "Add a new rule",
-      },
-      {
-        label: "Commission Summary ⚡",
-        actionType: "submit",
-        payload: "Show commission position and summary",
-      },
-      {
-        label: "Add new commission type ⚡",
-        actionType: "submit",
-        payload: "Add a new commission type in the commission engine",
-      },
-
-      {
-        label: "Add new bonuses ⚡",
-        actionType: "submit",
-        payload: "Create a new performance bonus plan",
-      },
-      {
-        label: "Rate Cards & Bonuses ⚡",
-        actionType: "submit",
-        payload: "List commission rate card rules and performance bonus plans",
-      },
-      {
-        label: "Register a claim (FNOL)",
-        actionType: "submit",
-        payload: "Register a new claim",
-      },
-      {
-        label: "Get claims info 📋",
-        actionType: "submit",
-        payload: "Show claims dashboard and summary",
-      },
-      {
-        label: "Open Rule Engine ⚡",
-        actionType: "navigate",
-        payload: "admin/rule-engine",
-      },
-      {
-        label: "Open Commission Engine ⚡",
-        actionType: "navigate",
-        payload: "commissions",
-      },
-      {
-        label: "Calculate Commission",
-        actionType: "submit",
-        payload: "Calculate commission for active policy",
-      },
-      {
-        label: "Check pending cases",
-        actionType: "submit",
-        payload: "Show me all pending cases",
-      },
+      { label: "Add customer", actionType: "submit", payload: "Add a new customer" },
+      { label: "Underwrite", actionType: "submit", payload: "Start underwriting journey for a customer" },
+      { label: "Register claim", actionType: "submit", payload: "Register a new claim" },
+      { label: "Pending cases", actionType: "submit", payload: "Show me all pending cases" },
+      { label: "Commissions", actionType: "submit", payload: "Show commission position and summary" },
+      { label: "Rule engine", actionType: "navigate", payload: "admin/rule-engine" },
     ];
   }
 
@@ -1374,24 +1325,19 @@ export function CopilotInterface() {
       const sep = path.includes("?") ? "&" : "?";
       // Underwriting pages (case views) come from the Underwriting Workbench, everything else from the portal.
       const targetUrl = `${pageOrigin(path)}${path}${sep}_portal=1`;
-      if (embed) {
-        // A case view that is open is a piece of work in progress (requirements being completed, documents being
-        // uploaded). A reply from the model must not swap it for some other page; another case may replace it.
-        const open = casePanelUrlRef.current;
-        if (
-          open &&
-          new URL(open).pathname.startsWith("/case/") &&
-          !path.startsWith("/case/")
-        )
-          return;
-        // The journey pausing mid pre-underwriting is the one case that
-        // should open the case view automatically, inline in the chat —
-        // no click needed, since that's exactly the moment the user needs
-        // to track/act on the 6 gates.
-        setCasePanel({ url: targetUrl, title: routeLabel(route) });
-      } else {
-        window.open(targetUrl, "_blank");
-      }
+      // Navigation the agent sends on its own always opens inline in the chat, never in a new tab: the user asked a
+      // question here and should stay here. (`embed` is kept for callers; a tab is only ever opened by a click.)
+      void embed;
+      // A case view that is open is a piece of work in progress (requirements being completed, documents being
+      // uploaded). A reply from the model must not swap it for some other page; another case may replace it.
+      const open = casePanelUrlRef.current;
+      if (
+        open &&
+        new URL(open).pathname.startsWith("/case/") &&
+        !path.startsWith("/case/")
+      )
+        return;
+      setCasePanel({ url: targetUrl, title: routeLabel(route) });
     },
     [],
   );
@@ -1496,9 +1442,7 @@ export function CopilotInterface() {
   const [ruleBuilderModalArgs, setRuleBuilderModalArgs] = useState<any | null>(
     null,
   );
-  // Inline case view for "navigate" actions — embeds the destination page via
-  // iframe directly in the conversation instead of opening a new tab, so the
-  // user tracks a case's gates, documents and results without leaving the chat.
+  // Optional page link anchored to the reply that offered it.
   const [casePanel, setCasePanelState] = useState<{
     url: string;
     title: string;
@@ -1515,33 +1459,9 @@ export function CopilotInterface() {
       return { ...panel, anchorMessageId: latest?.id ?? null };
     });
   }, []);
-  // Gate / document / decision actions taken through chat must show up in the
-  // open case view. The iframe used to be reloaded on every new message, which
-  // threw away whatever the user was doing in it (scroll position, open
-  // sections, a half-filled form) at random moments. Now it stays mounted and is
-  // just told to re-read its data; pages that don't listen simply keep what they
-  // have.
   useEffect(() => {
     casePanelUrlRef.current = casePanel?.url ?? null;
   }, [casePanel]);
-  const casePanelFrameRef = useRef<HTMLIFrameElement | null>(null);
-  const casePanelScrollRef = useRef<HTMLDivElement | null>(null);
-  const scrollCasePanel = (dir: -1 | 1) =>
-    casePanelScrollRef.current?.scrollBy({
-      left: dir * 360,
-      behavior: "smooth",
-    });
-  useEffect(() => {
-    if (!casePanel) return;
-    // Addressed to the app the panel was opened on; the browser drops it if the frame has since moved elsewhere.
-    const frameOrigin = originOf(casePanel.url);
-    if (!frameOrigin) return;
-    casePanelFrameRef.current?.contentWindow?.postMessage(
-      { source: "insurance-ai-copilot", type: "refresh" },
-      frameOrigin,
-    );
-  }, [messages.length]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // ── Proposal journey, run from the chat ───────────────────────────────────
   // Mirrors the manual Proposal page's workflow and its per-status options
   // (getAvailableActions in app/proposal/page.tsx) — one chat button per
@@ -2107,14 +2027,6 @@ export function CopilotInterface() {
         setCasePanel(null);
         announceOrganizationEnrolledRef.current?.(
           event.data as EnrolledOrganization,
-        );
-      } else if (event.data.type === "document_uploaded") {
-        // The case view is open and already re-reads its own checklist after an upload. Asking the model to
-        // "re-check" sent it off on a turn whose tools navigate — which swapped this panel for another page
-        // in the middle of the requirements. Leave the panel where it is; the page refreshes itself.
-        casePanelFrameRef.current?.contentWindow?.postMessage(
-          { source: "insurance-ai-copilot", type: "refresh" },
-          event.origin,
         );
       } else if (event.data.type === "gates_cleared") {
         // All 6 gates are done — the case view has nothing further for the
@@ -3591,7 +3503,7 @@ export function CopilotInterface() {
 
   const handleQuickAction = useCallback(
     (action: QuickAction) => {
-      if (action.actionType === "navigate") {
+      if (action.actionType === "navigate" || action.actionType === "embed") {
         // Payloads carry the destination page's own self-select param
         // ("cases?case_id=…", "admin/leads?cnic=…") — mirror it into the
         // highlighter so the row pops, not just loads.
@@ -3606,20 +3518,9 @@ export function CopilotInterface() {
         const path = action.payload.startsWith("/")
           ? action.payload
           : `/${action.payload}`;
-        const sep = path.includes("?") ? "&" : "?";
-        window.open(`${pageOrigin(path)}${path}${sep}_portal=1`, "_blank");
-      } else if (action.actionType === "embed") {
-        // Opens the page inline in the chat panel. Used for the 6 pre-underwriting
-        // gate stages and the customer intake form ("Fill the form instead") —
-        // everything else uses "navigate" above and opens a normal new tab.
-        const path = action.payload.startsWith("/")
-          ? action.payload
-          : `/${action.payload}`;
-        const sep = path.includes("?") ? "&" : "?";
-        setCasePanel({
-          url: `${pageOrigin(path)}${path}${sep}_portal=1`,
-          title: routeLabel(action.payload),
-        });
+        const destination = new URL(`${pageOrigin(path)}${path}`);
+        destination.searchParams.delete("_portal");
+        window.open(destination.toString(), "_blank", "noopener,noreferrer");
       } else if (action.actionType === "proposal_step") {
         runProposalStep(JSON.parse(action.payload));
       } else if (action.actionType === "uw_requirements") {
@@ -6077,13 +5978,17 @@ export function CopilotInterface() {
 
                         {renderComposer(true)}
 
-                        {/* Action Cards */}
-                        <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-5">
+                        {/* Compact starting points below the composer. */}
+                        <div
+                          role="group"
+                          aria-label={t("composer.suggestedPrompts")}
+                          className="w-full flex flex-wrap items-center justify-center gap-2.5 mt-6"
+                        >
                           {(turnActions.length > 0
                             ? turnActions
                             : getRecommendedActions(undefined)
                           )
-                            .slice(0, 12)
+                            .slice(0, 6)
                             .map((action, idx) =>
                               action.actionType === "select" ? (
                                 <QuickActionSelect
@@ -6092,37 +5997,32 @@ export function CopilotInterface() {
                                   onRun={(text) =>
                                     handleSubmit(undefined, text)
                                   }
-                                  variant="card"
+                                  variant="chip"
                                 />
                               ) : (
                                 <button
                                   key={idx}
+                                  type="button"
                                   onClick={() => handleQuickAction(action)}
-                                  className="flex flex-col items-start p-5 bg-white border border-zinc-200/80 hover:border-blue-200 hover:shadow-[0_14px_30px_-14px_rgba(139,92,246,0.35)] rounded-2xl transition-all text-start group"
+                                  disabled={isLoading || isUploading}
+                                  className="group inline-flex min-h-11 items-center gap-2.5 rounded-full border border-zinc-200/80 bg-white/75 ps-3 pe-4 py-2 text-start shadow-[0_1px_2px_rgba(0,0,0,0.025)] transition-[background-color,border-color,box-shadow,transform] duration-200 hover:border-blue-200 hover:bg-blue-50/70 hover:shadow-[0_4px_12px_rgba(59,130,246,0.08)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none motion-reduce:transition-none"
                                 >
-                                  <span className="text-zinc-700 group-hover:text-blue-600 transition-colors mb-6">
+                                  <span aria-hidden="true" className="flex h-7 w-7 items-center justify-center rounded-full bg-zinc-100/80 text-zinc-500 transition-colors group-hover:bg-white group-hover:text-blue-600 [&_svg]:h-4 [&_svg]:w-4">
                                     <ActionCardIcon action={action} />
                                   </span>
                                   <span
                                     dir="auto"
-                                    className="text-[15px] font-semibold text-zinc-900 mb-1"
+                                    className="text-[13px] font-medium text-zinc-600 transition-colors group-hover:text-zinc-950"
                                   >
                                     {cardTitle(action.label)}
                                   </span>
-                                  <span
-                                    dir="auto"
-                                    className="text-[13px] leading-snug text-zinc-400 w-full line-clamp-2"
-                                  >
-                                    {action.actionType === "navigate"
-                                      ? routeLabel(action.payload)
-                                      : action.payload}
-                                  </span>
+
                                 </button>
                               ),
                             )}
                         </div>
 
-                        <p className="mt-10 text-center text-xs text-zinc-400">
+                        <p className="mt-7 text-center text-xs text-zinc-400">
                           {t("composer.disclaimer")}
                         </p>
                       </div>
@@ -6585,6 +6485,39 @@ export function CopilotInterface() {
                                   effectiveActions.length === 0
                                 )
                                   return null;
+                                const customerRows = customerChoiceRows(effectiveActions);
+                                if (customerRows) {
+                                  const selected = usedActions[msg.id];
+                                  return (
+                                    <div className="mt-4 w-full overflow-x-auto rounded-xl border border-zinc-200 bg-white">
+                                      <table className="w-full text-left text-sm">
+                                        <caption className="sr-only">Matching customers — select a customer to continue</caption>
+                                        <thead className="bg-zinc-50 text-xs text-zinc-500">
+                                          <tr><th scope="col" className="px-4 py-3 font-medium">Customer</th><th scope="col" className="px-4 py-3 font-medium">CNIC</th><th scope="col" className="px-4 py-3 font-medium text-right">Action</th></tr>
+                                        </thead>
+                                        <tbody>
+                                          {customerRows.map((row, idx) => row && (
+                                            <tr key={`${row.cnic}-${idx}`} className={`border-t border-zinc-100 ${selected === idx ? "bg-blue-50" : "hover:bg-zinc-50/70"}`}>
+                                              <td className="px-4 py-3 font-medium text-zinc-800">{row.name}</td>
+                                              <td className="px-4 py-3 font-mono text-xs text-zinc-500 whitespace-nowrap">{row.cnic}</td>
+                                              <td className="px-4 py-3 text-right">
+                                                <button type="button" disabled={selected !== undefined || isLoading || isUploading}
+                                                  aria-label={`Select ${row.name}, CNIC ${row.cnic}`}
+                                                  onClick={() => {
+                                                    setUsedActions((prev) => ({ ...prev, [msg.id]: idx }));
+                                                    handleQuickAction(effectiveActions[idx]);
+                                                  }}
+                                                  className="rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:opacity-50">
+                                                  {selected === idx ? "Selected" : "Select"}
+                                                </button>
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  );
+                                }
                                 return (
                                   <div
                                     className={`flex flex-wrap gap-2 mt-4 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
@@ -6706,128 +6639,19 @@ export function CopilotInterface() {
                             </div>
                           </div>
                         </div>
-                        {/* Live case view — embedded inline in the conversation
-                       (not an overlay/modal, not a sidebar) so it reads as
-                       part of this reply and the chat stays fully usable
-                       above and below it. Anchored to the message that opened it;
-                       later messages leave the frame mounted in the same place. */}
-                      {casePanel && casePanel.anchorMessageId === msg.id && (
-                        <div className="w-full px-4 py-4">
-                          <div className="max-w-5xl mx-auto">
-                            <div className="rounded-2xl border border-slate-200 shadow-sm bg-white flex flex-col overflow-hidden">
-                              <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-200 bg-slate-50 shrink-0">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-                                  <span className="font-bold text-xs text-slate-800 truncate">
-                                    {casePanel.title}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-1 shrink-0">
-                                  {/* Sideways scroll for the embedded page. Overlay scrollbars (Firefox on
-                                   Linux, macOS) stay hidden until hovered, so these are always there. */}
-                                  <button
-                                    type="button"
-                                    onClick={() => scrollCasePanel(-1)}
-                                    title="Scroll left"
-                                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
-                                  >
-                                    <svg
-                                      className="w-3.5 h-3.5"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M15 19l-7-7 7-7"
-                                      />
-                                    </svg>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => scrollCasePanel(1)}
-                                    title="Scroll right"
-                                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
-                                  >
-                                    <svg
-                                      className="w-3.5 h-3.5"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M9 5l7 7-7 7"
-                                      />
-                                    </svg>
-                                  </button>
-                                  <a
-                                    href={casePanel.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    title="Open in new tab"
-                                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
-                                  >
-                                    <svg
-                                      className="w-3.5 h-3.5"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                                      />
-                                    </svg>
-                                  </a>
-                                  <button
-                                    type="button"
-                                    onClick={() => setCasePanel(null)}
-                                    title="Close"
-                                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
-                                  >
-                                    <svg
-                                      className="w-3.5 h-3.5"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M6 18L18 6M6 6l12 12"
-                                      />
-                                    </svg>
-                                  </button>
-                                </div>
-                              </div>
-                              {/* The embedded pages are laid out for a desktop width, so the frame
-                               keeps a minimum width and the panel scrolls sideways when the chat
-                               column is narrower — instead of cutting the right-hand side off. */}
-                              <div
-                                ref={casePanelScrollRef}
-                                className="overflow-x-auto overflow-y-hidden [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 [&::-webkit-scrollbar-track]:bg-slate-100"
-                              >
-                                <iframe
-                                  ref={casePanelFrameRef}
-                                  key={casePanel.url}
-                                  src={casePanel.url}
-                                  className="w-full border-0 block"
-                                  style={{ height: "70vh", minWidth: 980 }}
-                                  title={casePanel.title}
-                                />
-                              </div>
+                        {/* Page destinations are links; pages never load inside chat. */}
+                        {casePanel && casePanel.anchorMessageId === msg.id && (
+                          <div className="w-full px-4 py-3">
+                            <div className="max-w-3xl mx-auto flex items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50/50 px-4 py-3">
+                              <a href={(() => { const url = new URL(casePanel.url); url.searchParams.delete("_portal"); return url.toString(); })()}
+                                target="_blank" rel="noopener noreferrer"
+                                className="text-sm font-medium text-blue-700 hover:underline">
+                                {casePanel.title} ↗
+                              </a>
+                              <button type="button" onClick={() => setCasePanel(null)} aria-label="Dismiss page link" className="text-slate-400 hover:text-slate-700">×</button>
                             </div>
                           </div>
-                        </div>
-                      )}
+                        )}
 
                         </React.Fragment>
                       ))}

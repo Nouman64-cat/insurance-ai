@@ -315,7 +315,7 @@ export function DocumentUploadDialog({
             </div>
             <div className="flex-1 overflow-auto bg-slate-100 flex items-center justify-center min-h-[40vh]">
               {preview.isPdf ? (
-                <iframe src={preview.url} title={preview.name} className="w-full h-[70vh] border-0 bg-white" />
+                <a href={preview.url} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-white px-5 py-3 text-sm font-semibold text-blue-700 shadow-sm hover:underline">Open PDF in new tab ↗</a>
               ) : (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={preview.url} alt={preview.name} className="max-w-full max-h-[70vh] object-contain" />
