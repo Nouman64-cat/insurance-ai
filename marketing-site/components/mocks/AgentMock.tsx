@@ -86,7 +86,7 @@ export function AgentMock() {
                 <span
                   key={t.label}
                   className={`flex flex-1 flex-col items-center gap-0.5 text-[9px] font-medium ${
-                    t.active ? "text-brand" : "text-faint"
+                    t.active ? "text-accent" : "text-faint"
                   }`}
                 >
                   <svg

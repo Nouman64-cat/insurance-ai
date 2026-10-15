@@ -21,7 +21,7 @@ export function StageLoop({ className = "" }: Readonly<{ className?: string }>) 
   }, []);
 
   return (
-    <div className={`rounded-2xl bg-card/90 p-5 shadow-surface ring-1 ring-line ${className}`} role="img" aria-label="A case moving from lead to decision, demo">
+    <div className={`glass rounded-2xl p-5 shadow-surface ${className}`} role="img" aria-label="A case moving from lead to decision, demo">
       <div aria-hidden="true">
         <div className="flex items-center justify-between text-xs">
           <span className="font-semibold uppercase tracking-wider text-muted">A case, start to finish</span>

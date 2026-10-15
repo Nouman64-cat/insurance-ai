@@ -118,7 +118,7 @@ export function CompareBand({
             <div className="grid grid-cols-[1.1fr_repeat(3,1.4fr)] gap-4 bg-alt px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted 2xl:px-8">
               <span />
               {heads.map((h) => (
-                <span key={h} className="text-brand">
+                <span key={h} className="text-accent">
                   {h}
                 </span>
               ))}

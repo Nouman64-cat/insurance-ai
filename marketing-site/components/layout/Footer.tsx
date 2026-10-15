@@ -9,7 +9,7 @@ export function Footer() {
       <Container className="py-12">
         <div className="grid gap-10 md:grid-cols-[1.4fr_repeat(4,1fr)]">
           <div>
-            <Logo />
+            <Logo className="h-9" />
             <p className="mt-3 max-w-xs text-sm leading-relaxed text-body">{siteConfig.tagline}.</p>
           </div>
           {footerNav.map((group) => (

@@ -36,7 +36,7 @@ export function TrustSection() {
             <div aria-hidden="true">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted">Decision record</p>
-                <span className="rounded-full bg-card px-2.5 py-1 text-[0.6875rem] font-semibold text-brand">Immutable</span>
+                <span className="rounded-full bg-card px-2.5 py-1 text-[0.6875rem] font-semibold text-accent">Immutable</span>
               </div>
               <dl className="mt-4 space-y-2.5 text-[0.8125rem]">
                 {record.map(([k, v]) => (
@@ -57,7 +57,7 @@ export function TrustSection() {
         <ul className="grid gap-x-10 gap-y-8 sm:grid-cols-2">
           {principles.map((p, i) => (
             <li key={p.title} data-reveal style={stagger(i)} className={i === principles.length - 1 ? "sm:col-span-2" : ""}>
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-chip text-brand">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-chip text-accent">
                 <Icon name={p.icon} />
               </span>
               <h3 className="mt-4 text-base font-semibold text-ink">{p.title}</h3>

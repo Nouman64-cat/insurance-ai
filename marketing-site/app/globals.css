@@ -26,12 +26,14 @@
   }
 
   ::selection {
-    @apply bg-brand/20 text-ink;
+    @apply bg-brand/15 text-ink;
   }
 
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-track { @apply bg-canvas; }
   ::-webkit-scrollbar-thumb { @apply rounded-full border-2 border-solid border-canvas bg-line-strong; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-brand/50; }
+  html { scrollbar-color: #c9d3ea #ffffff; }
 }
 
 /* ── Responsive scale ─────────────────────────────────────────────────────
@@ -81,17 +83,10 @@ html[data-splash="pending"] { --intro-delay: 2s; }
   0%, 100% { opacity: 0.55; }
   50% { opacity: 1; }
 }
-@keyframes draw {
-  to { stroke-dashoffset: 0; }
-}
 @keyframes logo-pop {
   0% { opacity: 0; transform: scale(0.55) rotate(-8deg); }
   70% { transform: scale(1.06) rotate(0); }
   100% { opacity: 1; transform: none; }
-}
-@keyframes letter-rise {
-  from { opacity: 0; transform: translateY(0.6em); }
-  to { opacity: 1; transform: none; }
 }
 @keyframes sc-in {
   from { opacity: 0; transform: translateY(0.6rem); }
@@ -225,14 +220,9 @@ html[data-splash="pending"] .intro-drop {
    the failsafes hide them and show the header logo even if JavaScript never runs. */
 .splash-layer { display: none; }
 html[data-splash="pending"] .splash-layer { display: block; animation: splash-failsafe 0.01s linear 6s forwards; }
-html[data-splash="pending"] .splash-fly { display: flex; }
-html[data-splash="pending"] .splash-tag { animation: fade-in 0.8s ease both 1.5s, splash-failsafe 0.01s linear 6s forwards; }
 html[data-splash="pending"]:not([data-logo-ready]) [data-logo-target] { opacity: 0; animation: logo-failsafe 0.01s linear 6s forwards; }
 .splash-mark { animation: logo-pop 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.1) 0.1s both; }
-.logo-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 0.8s ease forwards 0.45s; }
-.logo-draw-2 { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 0.5s ease forwards 1.05s; }
-.splash-letter { display: inline-block; animation: letter-rise 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(0.85s + var(--i, 0) * 45ms); }
-.splash-tag { animation: fade-in 0.8s ease both 1.5s; }
+.splash-tag { animation: fade-in 0.8s ease both 0.5s; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -243,6 +233,9 @@ html[data-splash="pending"]:not([data-logo-ready]) [data-logo-target] { opacity:
     transition-delay: 0s !important;
   }
   .js [data-reveal] { opacity: 1; transform: none; }
+  /* Hero decision feed: no rotation, just the first case with its bars filled */
+  .feed-item, .feed-bar { animation: none; }
+  .feed-item:first-child { opacity: 1; }
 }
 
 @layer components {
@@ -258,6 +251,20 @@ html[data-splash="pending"]:not([data-logo-ready]) [data-logo-target] { opacity:
     @apply text-xs font-semibold uppercase tracking-widest text-accent;
   }
 
+  /* Frosted panel: translucent white, blurred backdrop, hairline border, soft shadow */
+  .glass {
+    @apply border border-line bg-white/70 shadow-card backdrop-blur-xl;
+  }
+
+  /* Hover for glass cards: the border turns brand blue and a soft blue/violet glow appears */
+  .glass-hover {
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+  .glass-hover:hover {
+    border-color: rgb(37 99 235 / 0.35);
+    box-shadow: 0 0 0 1px rgb(34 184 214 / 0.12), 0 18px 44px -22px rgb(37 99 235 / 0.35), 0 18px 54px -30px rgb(109 40 217 / 0.25);
+  }
+
   .field {
     @apply block w-full rounded-lg border border-line-strong bg-alt px-3.5 py-2.5 text-sm text-ink placeholder:text-faint focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25;
   }
@@ -265,7 +272,7 @@ html[data-splash="pending"]:not([data-logo-ready]) [data-logo-target] { opacity:
 
 
 /* ── Cursor effects (see components/effects) ─────────────────────────────── */
-/* Small deep-blue glow trailing the pointer, moved by transform only */
+/* Small blue-violet glow trailing the pointer, moved by transform only */
 .cursor-glow {
   position: fixed;
   left: 0;
@@ -277,7 +284,7 @@ html[data-splash="pending"]:not([data-logo-ready]) [data-logo-target] { opacity:
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.5s ease;
-  background: radial-gradient(closest-side, rgb(30 64 175 / 0.32), rgb(30 64 175 / 0.14) 50%, transparent);
+  background: radial-gradient(closest-side, rgb(37 99 235 / 0.18), rgb(109 40 217 / 0.08) 50%, transparent);
   will-change: transform;
 }
 
@@ -291,29 +298,13 @@ html[data-splash="pending"]:not([data-logo-ready]) [data-logo-target] { opacity:
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.25s ease;
-  background: radial-gradient(20rem circle at var(--mx, 50%) var(--my, 50%), rgb(37 99 235 / 0.1), transparent 65%);
+  background: radial-gradient(20rem circle at var(--mx, 50%) var(--my, 50%), rgb(37 99 235 / 0.07), transparent 65%);
 }
 .card:hover::before, .glow:hover::before { opacity: 1; }
 
 @media (hover: none) {
   .cursor-glow, .card::before, .glow::before { display: none; }
 }
-
-/* Header: no divider line, no shadow edge, ever. Once scrolled it is solid white and its bottom
-   edge dissolves into the page with a fade strip, so there is no line or colour step to see. */
-.site-header { background-color: transparent; transition: background-color 0.25s ease; }
-.site-header::after {
-  content: "";
-  position: absolute;
-  inset: 100% 0 auto 0;
-  height: 2rem;
-  background: linear-gradient(to bottom, rgb(255 255 255 / 0.97), rgb(255 255 255 / 0));
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.25s ease;
-}
-html[data-scrolled] .site-header { background-color: rgb(255 255 255 / 0.97); }
-html[data-scrolled] .site-header::after { opacity: 1; }
 
 /* ── Click feedback (see components/effects/ClickRipple.tsx) ─────────────── */
 .btn { position: relative; overflow: hidden; -webkit-tap-highlight-color: transparent; }
@@ -338,3 +329,33 @@ html[data-scrolled] .site-header::after { opacity: 1; }
   0% { box-shadow: 0 0 0 0 rgb(255 255 255 / 0.6); }
   100% { box-shadow: 0 0 0 0.9rem rgb(255 255 255 / 0); }
 }
+
+/* ── Backdrop utilities ──────────────────────────────────────────────────── */
+/* Faint navy 48px grid that fades out from the centre */
+.bg-grid {
+  background-image:
+    linear-gradient(to right, rgb(14 10 46 / 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(14 10 46 / 0.05) 1px, transparent 1px);
+  background-size: 48px 48px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 100%);
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 100%);
+}
+/* Brand horizon: a wide elliptical glow, cyan core fading through blue to violet, meant to sit at the bottom of a hero */
+.glow-arc {
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 50% 100% at 50% 100%, rgb(34 184 214 / 0.16), transparent 70%),
+    radial-gradient(ellipse 70% 120% at 50% 100%, rgb(37 99 235 / 0.16), rgb(109 40 217 / 0.08) 45%, transparent 75%);
+  filter: blur(2px);
+}
+
+/* ── Brand gradient (the logo shield: cyan → blue → violet) ──────────────── */
+.bg-brand-gradient { background-image: linear-gradient(135deg, #22b8d6, #2563eb, #6d28d9); }
+.text-brand-gradient {
+  background-image: linear-gradient(135deg, #22b8d6, #2563eb, #6d28d9);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+/* Same gradient with a deeper cyan start, for white text on it: at least 4.5:1 at every point */
+.bg-brand-gradient-strong { background-image: linear-gradient(135deg, #0b7fa3, #2563eb, #6d28d9); }

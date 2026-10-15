@@ -27,62 +27,64 @@ export default function HomePage() {
   return (
     <>
       <section className="relative -mt-16 overflow-hidden bg-canvas">
-        {/* Pale blue wash behind the hero. Static layers: painted once. */}
+        {/* Faint grid, and a violet horizon: a glow behind the edge of a huge dark ellipse. Static layers. */}
         <div aria-hidden="true" className="pointer-events-none absolute inset-0">
-          <div className="absolute -left-[10%] top-[-35%] h-[48rem] w-[48rem] rounded-full bg-[radial-gradient(closest-side,rgba(37,99,235,0.12),transparent)]" />
-          <div className="absolute -right-[12%] top-[0%] h-[52rem] w-[52rem] rounded-full bg-[radial-gradient(closest-side,rgba(96,165,250,0.18),transparent)]" />
+          <div className="bg-grid absolute inset-0" />
+          <div className="glow-arc absolute inset-x-[-20%] bottom-0 h-[26rem]" />
+          <div className="absolute left-1/2 top-[calc(100%-7rem)] h-[60rem] w-[200%] -translate-x-1/2 rounded-[50%] border-t border-brand/30 bg-canvas shadow-[0_-24px_90px_-30px_rgb(37_99_235/0.35)] sm:w-[160%]" />
         </div>
 
-        <Container className="relative pb-16 pt-[calc(4rem+3.5rem)] sm:pt-[calc(4rem+5rem)] lg:pb-20 2xl:pb-28 2xl:pt-[calc(4rem+7rem)]">
-          <HeroDecisionFeed className="intro-right absolute right-10 top-[calc(4rem+5rem)] hidden w-[38%] max-w-[38rem] min-[1400px]:block 2xl:right-16 2xl:top-[calc(4rem+7rem)]" />
-          <p className="eyebrow fade-up-intro" style={stagger(0)}>
+        <Container className="relative pb-36 pt-[calc(4rem+3rem)] text-center sm:pb-44 sm:pt-[calc(4rem+4.5rem)] 2xl:pt-[calc(4rem+6rem)]">
+          <p className="eyebrow fade-up-intro glass inline-flex rounded-full px-3.5 py-1.5" style={stagger(0)}>
             AI-powered insurance intelligence
           </p>
-          <h1 className="mt-5 text-[clamp(2.75rem,6.4vw,6.75rem)] font-semibold leading-[1.02] tracking-[-0.035em] text-ink">
+          <h1 className="mx-auto mt-6 text-[clamp(2.5rem,6vw,5.5rem)] font-semibold leading-[1.04] tracking-[-0.035em] text-ink">
             <span className="hero-line">
               <span style={stagger(0)}>From lead to claim.</span>
             </span>
             <span className="hero-line">
-              <span style={stagger(1)}>Every decision, explained.</span>
+              <span style={stagger(1)}>Every decision, <span className="text-brand-gradient">explained.</span></span>
             </span>
           </h1>
 
-          <div className="mt-8 grid gap-10 lg:mt-12 lg:grid-cols-12 lg:items-end">
-            <div className="lg:col-span-6 xl:col-span-5">
-              <p className="fade-up-intro max-w-xl text-lg leading-relaxed text-body 2xl:max-w-2xl 2xl:text-xl" style={stagger(3)}>
-                AI-assisted underwriting for life and takaful insurers. Analyze medical, financial, and fraud risk,
-                apply deterministic rules, and maintain a complete audit trail from quote to payout.
-              </p>
-              <div className="fade-up-intro mt-8 flex flex-wrap gap-3" style={stagger(4)}>
-                <ButtonLink href="/contact" arrow>
-                  Request a demo
-                </ButtonLink>
-                <ButtonLink href="/platform" variant="ghost">
-                  Explore the platform
-                </ButtonLink>
-              </div>
-            </div>
-
-            <ul className="fade-up-intro grid gap-4 sm:grid-cols-3 lg:col-span-6 lg:col-start-7 xl:col-span-6 xl:col-start-7" style={stagger(5)}>
-              {cues.map((c) => (
-                <li key={c.title} className="border-t-2 border-brand pt-3">
-                  <p className="flex items-center gap-2 text-sm font-semibold text-ink">
-                    <Icon name={c.icon} className="h-4 w-4 text-brand" />
-                    {c.title}
-                  </p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted">{c.body}</p>
-                </li>
-              ))}
-            </ul>
+          <p className="fade-up-intro mx-auto mt-6 max-w-[40rem] text-lg leading-relaxed text-body" style={stagger(3)}>
+            AI-assisted underwriting for life and takaful insurers. Analyze medical, financial, and fraud risk,
+            apply deterministic rules, and maintain a complete audit trail from quote to payout.
+          </p>
+          <div className="fade-up-intro mt-8 flex flex-wrap justify-center gap-3" style={stagger(4)}>
+            <ButtonLink href="/contact" arrow>
+              Request a demo
+            </ButtonLink>
+            <ButtonLink href="/platform" variant="ghost">
+              Explore the platform
+            </ButtonLink>
           </div>
 
-          <div className="fade-up-intro mt-12 lg:mt-16 2xl:mt-20" style={stagger(6)}>
-            <ProductSurface stage={3} />
+          <div className="fade-up-intro mx-auto mt-14 max-w-[40rem] text-left" style={stagger(5)}>
+            <HeroDecisionFeed className="w-full" />
           </div>
 
-          <ScrollCue />
+          <ul className="fade-up-intro mx-auto mt-12 grid max-w-[56rem] gap-8 md:grid-cols-3 md:gap-6" style={stagger(6)}>
+            {cues.map((c) => (
+              <li key={c.title}>
+                <p className="flex items-center justify-center gap-2 text-sm font-semibold text-ink">
+                  <Icon name={c.icon} className="h-4 w-4 text-accent" />
+                  {c.title}
+                </p>
+                <p className="mx-auto mt-1 max-w-[18rem] text-xs leading-relaxed text-muted">{c.body}</p>
+              </li>
+            ))}
+          </ul>
         </Container>
       </section>
+
+      <Container className="pb-16 lg:pb-20 2xl:pb-28">
+        <div className="fade-up-intro" style={stagger(7, 7)}>
+          <ProductSurface stage={3} />
+        </div>
+
+        <ScrollCue />
+      </Container>
 
       <ProductStory />
 
