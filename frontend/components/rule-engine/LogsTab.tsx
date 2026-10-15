@@ -1,107 +1,119 @@
 "use client";
 
 import { displayDateTime } from '../../lib/dateDisplay';
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNotify } from "@/components/NotificationContext";
-import { RuleEvaluationLog, listEvaluationLogs } from "@/app/services/ruleEngine";
+import { RuleEvaluationLog, RuleSetSummary, listEvaluationLogs, listRuleSets } from "@/app/services/ruleEngine";
+import { BOOLEAN_FIELDS, plainFieldLabel } from "./constants";
 import { tx } from "@/lib/i18n/tx";
 
+function plain(field: string, v: any): string {
+  if (v === null || v === undefined || v === "") return "—";
+  if (BOOLEAN_FIELDS.has(field) || typeof v === "boolean") return v === true || v === "true" ? tx("Yes") : tx("No");
+  if (typeof v === "number") return v.toLocaleString();
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
+
+/** Every time the app (or a test) checked a rule set, newest first. */
 export default function LogsTab({ tenantId }: { tenantId: string }) {
   const { notify } = useNotify();
   const [logs, setLogs] = useState<RuleEvaluationLog[]>([]);
+  const [sets, setSets] = useState<Record<string, RuleSetSummary>>({});
   const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState<string | null>(null);
-
-  useEffect(() => {
-    load();
-  }, [tenantId]);
+  const [open, setOpen] = useState<string | null>(null);
+  const [filter, setFilter] = useState("");
 
   const load = async () => {
     setLoading(true);
     try {
-      setLogs(await listEvaluationLogs(tenantId, 100));
+      const [l, s] = await Promise.all([listEvaluationLogs(tenantId, 100), listRuleSets(tenantId)]);
+      setLogs(l);
+      setSets(Object.fromEntries(s.map((r) => [r.rule_code, r])));
     } catch (err: any) {
-      notify(err.message || tx("Failed to load audit logs."), false);
+      notify(err.message || tx("Failed to load activity."), false);
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => { load(); }, [tenantId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const shown = filter ? logs.filter((l) => l.rule_set_code === filter) : logs;
+  const codes = Array.from(new Set(logs.map((l) => l.rule_set_code)));
+
   return (
-    <div className="bg-white border border-slate-200 rounded-xl shadow-sm">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-        <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">{tx("Rule Evaluation Audit Trail")}</h2>
-        <button onClick={load} className="text-xs font-semibold text-blue-600 hover:underline">{tx("Refresh")}</button>
+    <div className="rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900">{tx("Activity")}</h2>
+          <p className="mt-0.5 text-xs text-slate-500">{tx("Each time a rule set was checked, what it was given and which rules matched.")}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <select value={filter} onChange={(e) => setFilter(e.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100">
+            <option value="">{tx("All rule sets")}</option>
+            {codes.map((c) => <option key={c} value={c}>{sets[c]?.name ?? c}</option>)}
+          </select>
+          <button onClick={load} className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">{tx("Refresh")}</button>
+        </div>
       </div>
 
       {loading ? (
-        <div className="p-8 text-center text-slate-400 text-sm animate-pulse font-medium">{tx("Loading logs...")}</div>
-      ) : logs.length === 0 ? (
-        <div className="p-8 text-center text-slate-500 text-sm font-medium">{tx("No evaluations logged yet.")}</div>
+        <div className="space-y-2 p-5">{[1, 2, 3].map((i) => <div key={i} className="h-14 animate-pulse rounded-xl bg-slate-100" />)}</div>
+      ) : shown.length === 0 ? (
+        <div className="p-12 text-center text-sm text-slate-500">{tx("Nothing has been checked yet.")}</div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs whitespace-nowrap">
-            <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-100">
-              <tr>
-                <th className="px-4 py-3">{tx("Evaluated At")}</th>
-                <th className="px-4 py-3">{tx("Rule Set")}</th>
-                <th className="px-4 py-3">{tx("Customer CNIC")}</th>
-                <th className="px-4 py-3 text-right">{tx("TSAR Accumulated")}</th>
-                <th className="px-4 py-3">{tx("Matched Rules")}</th>
-                <th className="px-4 py-3 text-right">{tx("Duration (ms)")}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {logs.map((log) => (
-                <Fragment key={log.id}>
-                  <tr
-                    onClick={() => setExpanded(expanded === log.id ? null : log.id)}
-                    className="hover:bg-slate-50/80 cursor-pointer transition"
-                  >
-                    <td className="px-4 py-3 text-slate-500">{displayDateTime(log.evaluated_at)}</td>
-                    <td className="px-4 py-3 font-mono text-slate-700">{log.rule_set_code}</td>
-                    <td className="px-4 py-3 text-slate-600">{log.customer_cnic || "—"}</td>
-                    <td className="px-4 py-3 text-right font-semibold text-slate-800">
-                      {log.tsar_accumulated ? log.tsar_accumulated.toLocaleString() : "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      {log.matched_rule_codes.length === 0 ? (
-                        <span className="italic text-slate-400">{tx("None")}</span>
-                      ) : (
-                        <span className="font-mono text-[10px] text-slate-600">{log.matched_rule_codes.join(", ")}</span>
+        <ul className="divide-y divide-slate-100">
+          {shown.map((log) => {
+            const name = sets[log.rule_set_code]?.name ?? log.rule_set_code;
+            const n = log.matched_rule_codes.length;
+            const isOpen = open === log.id;
+            const facts = Object.entries(log.input_context_snapshot || {}).filter(([, v]) => v !== null && v !== "" && typeof v !== "object");
+            return (
+              <li key={log.id}>
+                <button onClick={() => setOpen(isOpen ? null : log.id)} className="flex w-full items-center gap-4 px-5 py-3.5 text-left transition hover:bg-slate-50/80">
+                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-semibold ${n ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-500"}`}>{n}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-slate-900">{name}</span>
+                    <span className="block truncate text-xs text-slate-500">
+                      {n === 0 ? tx("No rule matched") : n === 1 ? tx("1 rule matched") : tx("{0} rules matched", { 0: n })}
+                      {log.customer_cnic && <> · {tx("Customer")} {log.customer_cnic}</>}
+                      {log.actor && <> · {log.actor}</>}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-xs text-slate-400">{displayDateTime(log.evaluated_at)}</span>
+                  <svg className={`h-4 w-4 shrink-0 text-slate-300 transition ${isOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                </button>
+                {isOpen && (
+                  <div className="grid grid-cols-1 gap-4 bg-slate-50/60 px-5 py-4 md:grid-cols-2">
+                    <div>
+                      <p className="mb-2 text-xs font-medium text-slate-700">{tx("Details it was given")}</p>
+                      {facts.length === 0 ? <p className="text-xs text-slate-400">—</p> : (
+                        <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                          {facts.map(([k, v]) => (
+                            <div key={k} className="contents">
+                              <dt className="truncate text-slate-500">{tx(plainFieldLabel(k))}</dt>
+                              <dd className="truncate font-medium text-slate-800">{plain(k, v)}</dd>
+                            </div>
+                          ))}
+                        </dl>
                       )}
-                    </td>
-                    <td className="px-4 py-3 text-right text-slate-500">{log.execution_duration_ms.toFixed(1)}</td>
-                  </tr>
-                  {expanded === log.id && (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-3 bg-slate-50 whitespace-normal">
-                        <div className="grid grid-cols-2 gap-4 text-[11px]">
-                          <div>
-                            <p className="font-bold text-slate-600 uppercase mb-1">{tx("Input Context")}</p>
-                            <pre className="bg-white border border-slate-200 rounded-lg p-2.5 overflow-x-auto">{JSON.stringify(log.input_context_snapshot, null, 2)}</pre>
-                          </div>
-                          <div>
-                            <p className="font-bold text-slate-600 uppercase mb-1">{tx("Final Impacts")}</p>
-                            <pre className="bg-white border border-slate-200 rounded-lg p-2.5 overflow-x-auto">{JSON.stringify(log.final_impacts, null, 2)}</pre>
-                          </div>
-                        </div>
-                        {log.reasons.length > 0 && (
-                          <div className="mt-2">
-                            <p className="font-bold text-slate-600 uppercase mb-1 text-[11px]">{tx("Reasons")}</p>
-                            <ul className="list-disc list-inside text-slate-600 text-[11px]">
-                              {log.reasons.map((r, i) => <li key={i}>{r}</li>)}
-                            </ul>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </div>
+                    <div>
+                      <p className="mb-2 text-xs font-medium text-slate-700">{tx("Rules that matched")}</p>
+                      {log.reasons.length === 0 ? <p className="text-xs text-slate-400">{tx("None")}</p> : (
+                        <ul className="space-y-1 text-xs text-slate-600">
+                          {log.reasons.map((r, i) => <li key={i}>• {r.replace(/^Rule '([^']+)' matched.*$/, "$1")}</li>)}
+                        </ul>
+                      )}
+                      <p className="mt-3 text-[11px] text-slate-400">{tx("Version {0} · took {1} ms", { 0: log.version_number, 1: log.execution_duration_ms.toFixed(0) })}</p>
+                    </div>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       )}
     </div>
   );

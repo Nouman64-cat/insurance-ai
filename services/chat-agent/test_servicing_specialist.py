@@ -47,7 +47,7 @@ from servicing_specialist import SERVICING_TOOLS, SERVICING_DOMAINS, servicing_p
     ('Surrender policy and calculate commission',None,None),
     ('Renew policy and create proposal',None,None),
     ('Create customer and renew policy',None,None),
-    ('Renew group policy',None,None),
+    ('Renew group policy',None,'group'),
     ('Family policy surrender',None,None),
     ('List customers','servicing',None),
     ('Hello','servicing',None),
@@ -56,7 +56,7 @@ def test_routing(text,previous,expected):
     state={**initial(text),'active_specialist':previous}
     update=coordinator_node(state)
     assert update['active_specialist']==expected
-    assert route_coordinator(update)=={'servicing':'servicing_agent','underwriting':'underwriting_agent','claims':'claims_agent','commission':'commission_agent'}.get(expected,'general_agent')
+    assert route_coordinator(update)=={'servicing':'servicing_agent','underwriting':'underwriting_agent','claims':'claims_agent','commission':'commission_agent','group':'group_agent'}.get(expected,'general_agent')
 
 
 def test_flag_independent_and_blocks_mixed_content(monkeypatch):

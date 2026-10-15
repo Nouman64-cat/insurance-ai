@@ -25,7 +25,7 @@ from tool_executor import ExecCtx, execute_tool
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 _SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"}
-_PLANNER_NODES = {'agent', 'general_agent', 'commission_agent', 'claims_agent', 'underwriting_agent', 'servicing_agent'}
+_PLANNER_NODES = {'agent', 'general_agent', 'commission_agent', 'claims_agent', 'underwriting_agent', 'servicing_agent', 'group_agent'}
 
 
 def _event(payload: dict) -> str:
@@ -112,7 +112,7 @@ async def _consume(graph, config, input_):
                 handoff = node_data.get('specialist_handoff')
                 if handoff:
                     yield step('specialist:' + handoff['agent'],
-                               {'commission':'Commission specialist selected', 'claims':'Claims specialist selected', 'underwriting':'Underwriting specialist selected', 'servicing':'Policy servicing specialist selected'}.get(handoff['agent'], 'Main assistant selected'), 'done')
+                               {'commission':'Commission specialist selected', 'claims':'Claims specialist selected', 'underwriting':'Underwriting specialist selected', 'servicing':'Policy servicing specialist selected', 'group':'Group insurance specialist selected'}.get(handoff['agent'], 'Main assistant selected'), 'done')
 
                 # Autonomous journey stages narrate themselves: each pipeline
                 # node reports its own completion (journey_done) and what runs

@@ -49,8 +49,10 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
 
   const { notify } = useNotify();
   const [codeError, setCodeError] = useState("");
-  const [depthLevel, setDepthLevel] = useState<1 | 2 | 3>(1);
-  const [navSearch, setNavSearch] = useState("");
+  const [connection, setConnection] = useState<"all" | "connected" | "unconnected">("all");
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [showManage, setShowManage] = useState(false);
 
   useEffect(() => {
     load();
@@ -63,166 +65,187 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
         if (showCreateSet) setShowCreateSet(false);
         if (showCreateCategory) setShowCreateCategory(false);
         if (showCreateSubCategory) setShowCreateSubCategory(false);
+        if (showManage) setShowManage(false);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [showCreateSet, showCreateCategory, showCreateSubCategory]);
+  }, [showCreateSet, showCreateCategory, showCreateSubCategory, showManage]);
+
+  /** "Claims Management & Settlement" → "CLAIMS_MANAGEMENT_SETTLEMENT" */
+  const toCode = (name: string) => name.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 50);
+  /** Next free RS-<AREA>-NNN code for a new rule set. */
+  const suggestSetCode = (name: string) => {
+    const area = (name.replace(/[^A-Za-z]/g, "").slice(0, 4) || "GEN").toUpperCase();
+    const used = new Set(allRuleSets.map((r) => r.rule_code));
+    let n = 1;
+    while (used.has(`RS-${area}-${String(n).padStart(3, "0")}`)) n++;
+    return `RS-${area}-${String(n).padStart(3, "0")}`;
+  };
 
   const handleCodeChange = (v: string) => {
     setNewSetCode(v);
     if (v && !RULE_CODE_REGEX.test(v)) {
-      setCodeError(tx("Format: lowercase.dotted_code (e.g. medical.nml_grid)"));
+      setCodeError(tx("Use RS-AREA-000 (e.g. RS-MED-005) or lowercase.dotted_code"));
     } else {
       setCodeError("");
     }
   };
 
+  const categoryNames: Record<string, string> = Object.fromEntries(categories.map((c) => [c.code, c.name]));
+  const q = search.trim().toLowerCase();
+  const visible = allRuleSets.filter((rs) =>
+    (connection === "all" || (connection === "connected" ? rs.connected : !rs.connected)) &&
+    (!categoryFilter || rs.category_code === categoryFilter) &&
+    (!q || [rs.name, rs.description, rs.rule_code, rs.used_by, categoryNames[rs.category_code ?? ""]]
+      .some((t) => (t ?? "").toLowerCase().includes(q))));
+  const inUse = allRuleSets.filter((r) => r.connected);
+  const totalRules = allRuleSets.reduce((n, r) => n + (r.rule_count || 0), 0);
+  const categoryCounts = categories
+    .map((c) => ({ ...c, count: allRuleSets.filter((r) => r.category_code === c.code).length }))
+    .filter((c) => c.count > 0);
+  const isFiltered = !!(q || categoryFilter || connection !== "all");
+  const clearAll = () => { setSearch(""); setCategoryFilter(null); setConnection("all"); clearFilter(); };
+
   return (
     <>
-      {/* Spacious Three-panel layout (4 columns navigation, 8 columns rule list) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-auto lg:h-[calc(100vh-190px)] min-h-[600px]">
-        {/* LEFT: Hierarchy nav (4 cols for breathing room) */}
-        <div className="lg:col-span-4 flex flex-col overflow-y-auto min-h-0 pr-1">
-          {/* Panel header */}
-          <div className="mb-3">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">{tx("Navigation")}</h2>
-              {(filter.categoryCode || filter.subcategoryCode || navSearch) && (
-                <button
-                  onClick={() => {
-                    clearFilter();
-                    setNavSearch("");
-                  }}
-                  className="text-xs font-semibold text-blue-600 hover:underline"
-                >
-                  {tx("Reset Filter")}
-                </button>
-              )}
-            </div>
+      {/* Summary */}
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <button type="button" onClick={() => setConnection("connected")} className="rounded-2xl border border-slate-200/80 bg-white p-4 text-left shadow-sm transition hover:shadow-md">
+          <p className="text-xs font-medium text-slate-500">{tx("In use by the app")}</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900">{inUse.length}</p>
+          <p className="mt-0.5 truncate text-[11px] text-slate-400">{inUse.map((r) => r.name).join(" · ") || "—"}</p>
+        </button>
+        <button type="button" onClick={() => setConnection("unconnected")} className="rounded-2xl border border-slate-200/80 bg-white p-4 text-left shadow-sm transition hover:shadow-md">
+          <p className="text-xs font-medium text-slate-500">{tx("Reference only")}</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900">{allRuleSets.length - inUse.length}</p>
+          <p className="mt-0.5 text-[11px] text-slate-400">{tx("Documented, not yet used in decisions")}</p>
+        </button>
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+          <p className="text-xs font-medium text-slate-500">{tx("Rules in total")}</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900">{totalRules}</p>
+          <p className="mt-0.5 text-[11px] text-slate-400">{tx("across {0} rule sets in {1} areas", { 0: allRuleSets.length, 1: categoryCounts.length })}</p>
+        </div>
+      </div>
 
-            {/* Navigation Search Bar */}
-            <div className="relative mb-2">
-              <svg className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="text"
-                value={navSearch}
-                onChange={(e) => setNavSearch(e.target.value)}
-                placeholder={tx("Search categories or rule sets...")}
-                className="w-full pl-8 pr-7 py-1.5 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
+      {/* Toolbar */}
+      <div className="sticky top-0 z-10 -mx-1 mb-6 space-y-3 bg-slate-50/80 px-1 pb-3 pt-1 backdrop-blur supports-[backdrop-filter]:bg-slate-50/60">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative min-w-[220px] flex-1">
+            <svg className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={tx("Search rules, e.g. smoking, BMI, knockout…")}
+              className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm text-slate-800 shadow-sm placeholder:text-slate-400 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
+          <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm" role="tablist" aria-label={tx("Show")}>
+            {([["all", tx("All")], ["connected", tx("In use")], ["unconnected", tx("Reference")]] as const).map(([key, label]) => (
+              <button
+                key={key}
+                role="tab"
+                aria-selected={connection === key}
+                onClick={() => setConnection(key)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${connection === key ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-800"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowManage(true)}
+            className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            {tx("Manage areas")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowCreateSet(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+            {tx("New rule set")}
+          </button>
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
+          <button
+            type="button"
+            onClick={() => setCategoryFilter(null)}
+            className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition ${!categoryFilter ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"}`}
+          >
+            {tx("All areas")}
+          </button>
+          {categoryCounts.map((c) => (
+            <button
+              key={c.code}
+              type="button"
+              onClick={() => setCategoryFilter(categoryFilter === c.code ? null : c.code)}
+              className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition ${categoryFilter === c.code ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"}`}
+            >
+              {c.name} <span className={categoryFilter === c.code ? "text-slate-300" : "text-slate-400"}>{c.count}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <RuleSetList
+        ruleSets={visible}
+        categoryNames={categoryNames}
+        loading={loading}
+        selectedId={selectedRuleSetId}
+        onSelect={openDetail}
+        onCreateNew={() => setShowCreateSet(true)}
+        isFiltered={isFiltered}
+        onClearFilter={clearAll}
+      />
+
+      {/* Manage areas (categories & subcategories) */}
+      {showManage && (
+        <div
+          className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"
+          onClick={() => setShowManage(false)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div onClick={(e) => e.stopPropagation()} className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-6 py-5">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">{tx("Manage areas")}</h2>
+                <p className="mt-0.5 text-xs text-slate-500">{tx("Areas group rule sets, e.g. Underwriting Risk. Open the ⋯ menu on an item to delete it.")}</p>
+              </div>
+              <button onClick={() => setShowManage(false)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label={tx("Close")}>
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-3">
+              <HierarchyTree
+                categories={categories}
+                ruleSets={allRuleSets}
+                value={filter}
+                onChange={handleFilterChange}
+                onSelectRuleSet={(id) => { setShowManage(false); openDetail(id); }}
+                selectedRuleSetId={selectedRuleSetId}
+                depthLevel={1}
+                searchQuery=""
+                onAction={(type, _action, id, name) => setDeletePrompt({ type, id, name })}
               />
-              {navSearch && (
-                <button
-                  type="button"
-                  onClick={() => setNavSearch("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
-                >
-                  ✕
-                </button>
-              )}
             </div>
-
-            {/* Clean Segmented Depth Level Switcher */}
-            <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100/90 rounded-xl border border-slate-200/80">
-              <button
-                type="button"
-                onClick={() => {
-                  setDepthLevel(1);
-                  clearFilter();
-                }}
-                className={`py-1.5 px-2 text-xs font-bold rounded-lg transition text-center cursor-pointer ${
-                  depthLevel === 1 && !filter.categoryCode
-                    ? "bg-white text-blue-700 shadow-sm border border-slate-200/80"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                {tx("Categories")}
+            <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50/60 px-6 py-4">
+              <button onClick={openCreateSubCategoryModal} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                {tx("New sub-area")}
               </button>
-              <button
-                type="button"
-                onClick={() => setDepthLevel(2)}
-                className={`py-1.5 px-2 text-xs font-bold rounded-lg transition text-center cursor-pointer ${
-                  depthLevel === 2
-                    ? "bg-white text-indigo-700 shadow-sm border border-slate-200/80"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                {tx("Subcategories")}
-              </button>
-              <button
-                type="button"
-                onClick={() => setDepthLevel(3)}
-                className={`py-1.5 px-2 text-xs font-bold rounded-lg transition text-center cursor-pointer ${
-                  depthLevel === 3
-                    ? "bg-white text-slate-900 shadow-sm border border-slate-200/80"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                {tx("All Rule Sets")}
+              <button onClick={() => setShowCreateCategory(true)} className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800">
+                {tx("New area")}
               </button>
             </div>
           </div>
-
-          <HierarchyTree
-            categories={categories}
-            ruleSets={allRuleSets}
-            value={filter}
-            onChange={handleFilterChange}
-            onSelectRuleSet={openDetail}
-            selectedRuleSetId={selectedRuleSetId}
-            depthLevel={depthLevel}
-            searchQuery={navSearch}
-            onAction={(type, action, id, name) => {
-              if (action === 'delete') {
-                setDeletePrompt({ type, id, name });
-              } else if (action === 'rename') {
-                alert("Rename functionality is coming soon!");
-              }
-            }}
-          />
         </div>
-
-        {/* CENTER: Rule set list (8 cols) */}
-        <div className="lg:col-span-8 flex flex-col overflow-y-auto min-h-0">
-          {/* Breadcrumb context */}
-          {(filter.categoryCode || filter.subcategoryCode) && (
-            <div className="flex items-center gap-2 mb-3 px-1 py-1 text-xs text-slate-600 bg-slate-50 border border-slate-200/60 rounded-lg w-fit">
-              <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
-              </svg>
-              <span className="font-bold text-slate-900">
-                {categories.find((c) => c.code === filter.categoryCode)?.name || filter.categoryCode}
-              </span>
-              {filter.subcategoryCode && (
-                <>
-                  <svg className="w-3.5 h-3.5 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                  </svg>
-                  <span className="font-semibold text-slate-700">
-                    {categories.find((c) => c.code === filter.categoryCode)?.subcategories.find((s) => s.code === filter.subcategoryCode)?.name || filter.subcategoryCode}
-                  </span>
-                </>
-              )}
-            </div>
-          )}
-          <RuleSetList
-            ruleSets={ruleSets}
-            loading={loading}
-            selectedId={selectedRuleSetId}
-            onSelect={openDetail}
-            onCreateNew={() => setShowCreateSet(true)}
-            onCreateCategory={() => setShowCreateCategory(true)}
-            onCreateSubCategory={openCreateSubCategoryModal}
-            onClearFilter={() => {
-              clearFilter();
-              setNavSearch("");
-            }}
-            isFiltered={!!(filter.categoryCode || filter.subcategoryCode || navSearch)}
-          />
-        </div>
-      </div>
+      )}
 
       {/* RIGHT: Drawer */}
       {selectedRuleSetId && (
@@ -263,9 +286,9 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
           >
             <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-slate-900">{tx("Add New Rule Set")}</h2>
+                <h2 className="text-base font-bold text-slate-900">{tx("New rule set")}</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  {tx("Group related decision rules under a category scope.")}
+                  {tx("A rule set groups the rules for one decision, e.g. “Smoker loadings”.")}
                 </p>
               </div>
               <button
@@ -282,7 +305,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
             <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  {tx("Category & SubCategory Scope")}{" "}<span className="text-red-500">*</span>
+                  {tx("Area")}{" "}<span className="text-red-500">*</span>
                 </label>
                 <HierarchyTree
                   categories={categories}
@@ -294,12 +317,12 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  {tx("Rule Set Code")}{" "}<span className="text-red-500">*</span>
+                  {tx("Reference code")}{" "}<span className="text-red-500">*</span>
                 </label>
                 <input
                   value={newSetCode}
                   onChange={(e) => handleCodeChange(e.target.value)}
-                  placeholder={tx("e.g. medical.nml_grid")}
+                  placeholder={tx("e.g. RS-MED-005")}
                   className={`w-full border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 transition ${
                     codeError ? "border-red-300 focus:ring-red-400" : "border-slate-200 focus:ring-blue-500 focus:border-blue-400"
                   }`}
@@ -308,7 +331,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                 {codeError ? (
                   <p className="text-[11px] text-red-500 mt-1">{codeError}</p>
                 ) : (
-                  <p className="text-[11px] text-slate-400 mt-1">{tx("Format: lowercase.dotted_code")}</p>
+                  <p className="text-[11px] text-slate-400 mt-1">{tx("Filled in from the name — change it only if you need a specific code.")}</p>
                 )}
               </div>
 
@@ -318,7 +341,11 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                 </label>
                 <input
                   value={newSetName}
-                  onChange={(e) => setNewSetName(e.target.value)}
+                  onChange={(e) => {
+                    const prev = newSetName;
+                    setNewSetName(e.target.value);
+                    if (!newSetCode || newSetCode === suggestSetCode(prev)) setNewSetCode(e.target.value ? suggestSetCode(e.target.value) : "");
+                  }}
                   placeholder={tx("e.g. Non-Medical Limit Underwriting Grid")}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition"
                   required
@@ -331,7 +358,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                   value={newSetDesc}
                   onChange={(e) => setNewSetDesc(e.target.value)}
                   rows={2}
-                  placeholder={tx("Brief description of what this rule set governs…")}
+                  placeholder={tx("What does this rule set decide?")}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition resize-none"
                 />
               </div>
@@ -350,7 +377,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                 disabled={!!codeError}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg shadow-sm transition"
               >
-                {tx("Create Rule Set")}
+                {tx("Create rule set")}
               </button>
             </div>
           </form>
@@ -372,9 +399,9 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
           >
             <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-slate-900">{tx("Add New Category")}</h2>
+                <h2 className="text-base font-bold text-slate-900">{tx("New area")}</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  {tx("Create a top-level rule category (e.g., UNDERWRITING, CLAIMS).")}
+                  {tx("Areas group related rule sets, e.g. Underwriting or Claims.")}
                 </p>
               </div>
               <button
@@ -391,7 +418,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
             <div className="px-6 py-5 space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  {tx("Category Code")}{" "}<span className="text-red-500">*</span>
+                  {tx("Reference code")}{" "}<span className="text-red-500">*</span>
                 </label>
                 <input
                   value={newCatCode}
@@ -400,16 +427,19 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono uppercase focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition"
                   required
                 />
-                <p className="text-[11px] text-slate-400 mt-1">{tx("Unique uppercase code (e.g. UNDERWRITING_GATES)")}</p>
+                <p className="text-[11px] text-slate-400 mt-1">{tx("Filled in from the name.")}</p>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  {tx("Category Name")}{" "}<span className="text-red-500">*</span>
+                  {tx("Area name")}{" "}<span className="text-red-500">*</span>
                 </label>
                 <input
                   value={newCatName}
-                  onChange={(e) => setNewCatName(e.target.value)}
+                  onChange={(e) => {
+                    if (!newCatCode || newCatCode === toCode(newCatName)) setNewCatCode(toCode(e.target.value));
+                    setNewCatName(e.target.value);
+                  }}
                   placeholder={tx("e.g. Claims Management & Settlement")}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition"
                   required
@@ -422,7 +452,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                   value={newCatDesc}
                   onChange={(e) => setNewCatDesc(e.target.value)}
                   rows={2}
-                  placeholder={tx("Brief description of what this domain governs…")}
+                  placeholder={tx("What kind of decisions live here?")}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition resize-none"
                 />
               </div>
@@ -440,7 +470,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                 type="submit"
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
               >
-                {tx("Create Category")}
+                {tx("Create area")}
               </button>
             </div>
           </form>
@@ -462,9 +492,9 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
           >
             <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-slate-900">{tx("Add New Sub Category")}</h2>
+                <h2 className="text-base font-bold text-slate-900">{tx("New sub-area")}</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  {tx("Create a sub-domain under an existing parent category.")}
+                  {tx("A smaller group inside an area, e.g. Death claims under Claims.")}
                 </p>
               </div>
               <button
@@ -481,7 +511,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
             <div className="px-6 py-5 space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  {tx("Parent Category")}{" "}<span className="text-red-500">*</span>
+                  {tx("Inside area")}{" "}<span className="text-red-500">*</span>
                 </label>
                 <select
                   value={newSubCategoryId}
@@ -489,7 +519,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition bg-white"
                   required
                 >
-                  <option value="" disabled>{tx("Select Parent Category...")}</option>
+                  <option value="" disabled>{tx("Choose an area…")}</option>
                   {categories.map((cat) => (
                     <option key={cat.id} value={cat.id}>
                       {cat.name} ({cat.code})
@@ -500,7 +530,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  {tx("SubCategory Code")}{" "}<span className="text-red-500">*</span>
+                  {tx("Reference code")}{" "}<span className="text-red-500">*</span>
                 </label>
                 <input
                   value={newSubCode}
@@ -509,16 +539,19 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono uppercase focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition"
                   required
                 />
-                <p className="text-[11px] text-slate-400 mt-1">{tx("Unique uppercase code (e.g. ACCIDENTAL_DEATH)")}</p>
+                <p className="text-[11px] text-slate-400 mt-1">{tx("Filled in from the name.")}</p>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  {tx("SubCategory Name")}{" "}<span className="text-red-500">*</span>
+                  {tx("Sub-area name")}{" "}<span className="text-red-500">*</span>
                 </label>
                 <input
                   value={newSubName}
-                  onChange={(e) => setNewSubName(e.target.value)}
+                  onChange={(e) => {
+                    if (!newSubCode || newSubCode === toCode(newSubName)) setNewSubCode(toCode(e.target.value));
+                    setNewSubName(e.target.value);
+                  }}
                   placeholder={tx("e.g. Death Benefit Claims")}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition"
                   required
@@ -539,7 +572,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                 disabled={!newSubCategoryId}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg shadow-sm transition"
               >
-                {tx("Create SubCategory")}
+                {tx("Create sub-area")}
               </button>
             </div>
           </form>
@@ -561,10 +594,10 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
             <div className="px-6 py-5 border-b border-slate-100">
               <h2 className="text-base font-bold text-slate-900">{tx("Confirm Deletion")}</h2>
               <p className="text-xs text-slate-500 mt-2">
-                {tx("Are you sure you want to delete the")}{" "}{deletePrompt.type} <strong>{deletePrompt.name}</strong>?
-                {deletePrompt.type === 'ruleset' && " " + tx("All associated versions and rules will also be deleted.")}
-                {deletePrompt.type === 'category' && " " + tx("Make sure it has no subcategories.")}
-                {deletePrompt.type === 'subcategory' && " " + tx("Make sure it has no rule sets.")}
+                {tx("Delete")}{" "}<strong>{deletePrompt.name}</strong>?
+                {deletePrompt.type === 'ruleset' && " " + tx("All its versions and rules are deleted too.")}
+                {deletePrompt.type === 'category' && " " + tx("It must not contain any sub-areas.")}
+                {deletePrompt.type === 'subcategory' && " " + tx("It must not contain any rule sets.")}
               </p>
               <p className="text-xs text-red-500 mt-1 font-semibold">{tx("This action cannot be undone.")}</p>
             </div>
@@ -586,7 +619,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
                 }}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
               >
-                {tx("Delete")}{" "}{deletePrompt.type}
+                {tx("Delete")}
               </button>
             </div>
           </div>

@@ -38,7 +38,7 @@ from underwriting_specialist import UNDERWRITING_TOOLS, UNDERWRITING_DOMAINS, un
     ('Underwrite Ahmed and show claims',None,None),
     ('Create customer and proposal',None,None),
     ('Underwrite this family',None,None),
-    ('Group underwriting status',None,None),
+    ('Group underwriting status',None,'group'),
     ('Deploy underwriting rule set',None,None),
     ('Surrender the policy','underwriting','servicing'),
     ('List customers','underwriting',None),
@@ -48,7 +48,7 @@ def test_routing(text,previous,expected):
     state={**initial(text),'active_specialist':previous}
     update=coordinator_node(state)
     assert update['active_specialist']==expected
-    assert route_coordinator(update)=={'underwriting':'underwriting_agent','claims':'claims_agent','commission':'commission_agent','servicing':'servicing_agent'}.get(expected,'general_agent')
+    assert route_coordinator(update)=={'underwriting':'underwriting_agent','claims':'claims_agent','commission':'commission_agent','servicing':'servicing_agent','group':'group_agent'}.get(expected,'general_agent')
 
 
 def test_flag_independent_and_blocks_mixed_content(monkeypatch):

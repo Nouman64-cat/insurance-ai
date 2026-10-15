@@ -207,11 +207,11 @@ _RULES: list[dict] = [
 
 RISK_RULE_SET: dict = {
     "code": RISK_RULE_SET_CODE,
-    "name": "Profile Risk Screening",
+    "name": "Lead Risk Assessment",
     "description": ("Decides which profile facts are risks, how much each adds, and why. Drives the Risk "
                     "Assessment shown on a lead before a proposal exists."),
     "category_code": "UNDERWRITING_RISK", "category_name": "Underwriting Risk",
-    "sub_code": "PROFILE_RISK", "sub_name": "Profile Risk Screening",
+    "sub_code": "PROFILE_RISK", "sub_name": "Lead Risk Assessment",
     "scope_type": "GLOBAL", "channel_code": None,
     "rules": _RULES,
 }

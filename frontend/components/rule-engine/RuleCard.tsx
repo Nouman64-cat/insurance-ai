@@ -1,269 +1,100 @@
 "use client";
 
-import React, { useState } from "react";
-import { RuleDetail, RuleCriteriaDraft } from "@/app/services/ruleEngine";
-import { IMPACT_TYPE_CONFIG, criterionSentence, detectOverlap } from "./constants";
+import React from "react";
+import { RuleDetail } from "@/app/services/ruleEngine";
+import { IMPACT_TYPE_CONFIG, RISK_FACTOR_OPTIONS, criterionParts, detectOverlap } from "./constants";
 import { tx } from "@/lib/i18n/tx";
 
 interface Props {
   rule: RuleDetail;
   allRules: RuleDetail[];
   isLocked?: boolean;
-  isDraft?: boolean;
-  authoredBy?: string;
   onEdit: (rule: RuleDetail) => void;
   onDelete: (ruleId: string) => void;
-  onDragStart?: (e: React.DragEvent, ruleId: string) => void;
-  onDragOver?: (e: React.DragEvent, ruleId: string) => void;
-  onDrop?: (e: React.DragEvent, ruleId: string) => void;
 }
 
-const FRIENDLY_IMPACT_LABELS: Record<string, string> = {
-  extra_mortality_pct: "Extra Mortality",
-  flat_extra_per_thousand: "Flat Extra",
-  hlv_max_multiple: "HLV Max Multiple",
-  reinsurance_retention_limit: "Reinsurance Limit",
-  underwriter_authority_level: "Authority Level",
-  commission_pct: "Commission Rate",
-  withholding_tax_pct: "Withholding Tax",
-  medical_profile_codes: "Medical Profile",
-  exclusion_riders: "Exclusions",
-};
-
-function formatValue(key: string, value: any): string {
-  if (Array.isArray(value)) return value.join(", ");
-  if (typeof value === "number") {
-    if (key.includes("pct")) return `${value}%`;
-    if (key.includes("limit") || key.includes("flat_extra")) return `${value.toLocaleString()} PKR`;
-    if (key.includes("multiple")) return `${value}×`;
-  }
-  return String(value);
-}
-
-function buildConditionsSummary(criteria: RuleCriteriaDraft[]): string {
-  if (criteria.length === 0) return "Always applies";
-  const groupIds = Array.from(new Set(criteria.map((c) => c.group_id))).sort();
-  const groups = groupIds.map((gid) => {
-    const group = criteria.filter((c) => c.group_id === gid);
-    return group.map((c) => criterionSentence(c)).join(" AND ");
-  });
-  const full = groups.join(" OR ");
-  return full.length > 130 ? full.slice(0, 127) + "…" : full;
-}
-
-export default function RuleCard({
-  rule, allRules, isLocked = false, isDraft = false, authoredBy, onEdit, onDelete, onDragStart, onDragOver, onDrop,
-}: Props) {
-  const [expanded, setExpanded] = useState(false);
-
+/** One rule, read as a sentence: "If <condition> → <outcome>", with the reason underneath. */
+export default function RuleCard({ rule, allRules, isLocked = false, onEdit, onDelete }: Props) {
   const editable = !isLocked;
-  const impactCfg = IMPACT_TYPE_CONFIG[rule.impact_type] || IMPACT_TYPE_CONFIG.AUTO_APPROVE;
+  const impact = IMPACT_TYPE_CONFIG[rule.impact_type] || IMPACT_TYPE_CONFIG.AUTO_APPROVE;
+  const data = rule.impact_data || ({} as RuleDetail["impact_data"]);
+  const groupIds = Array.from(new Set(rule.criteria.map((c) => c.group_id))).sort((a, b) => a - b);
+  const overlaps = allRules.filter((r) => r.id !== rule.id && detectOverlap(rule.criteria, r.criteria).length > 0);
+  const factor = RISK_FACTOR_OPTIONS.find((o) => o.code === data.risk_factor);
 
-  const conflictingRules = allRules
-    .filter((r) => r.id !== rule.id)
-    .filter((r) => {
-      const overlaps = detectOverlap(rule.criteria, r.criteria);
-      return overlaps.length > 0;
-    });
-  const hasConflict = conflictingRules.length > 0;
-
-  const groupIds = Array.from(new Set(rule.criteria.map((c) => c.group_id))).sort();
-  const conditionSummary = buildConditionsSummary(rule.criteria);
-
-  // Filter meaningful impact data entries (hide 0 values and empty arrays)
-  const activeImpactEntries = Object.entries(rule.impact_data).filter(
-    ([k, v]) => k !== "is_terminal" && v !== null && v !== 0 && !(Array.isArray(v) && v.length === 0)
-  );
+  const chips: { label: string; tone: string }[] = [];
+  if (factor) chips.push({ label: tx("{0}: {1}% risk", { 0: tx(factor.label), 1: Math.round((data.risk_level ?? 0) * 100) }), tone: "bg-rose-50 text-rose-700 ring-rose-100" });
+  if (data.extra_mortality_pct) chips.push({ label: tx("Loading +{0}%", { 0: data.extra_mortality_pct }), tone: "bg-indigo-50 text-indigo-700 ring-indigo-100" });
+  if (data.medical_profile_codes?.length) chips.push({ label: tx("Tests: {0}", { 0: data.medical_profile_codes.join(", ") }), tone: "bg-blue-50 text-blue-700 ring-blue-100" });
+  if (data.exclusion_riders?.length) chips.push({ label: tx("Excludes: {0}", { 0: data.exclusion_riders.join(", ").replace(/_/g, " ") }), tone: "bg-amber-50 text-amber-700 ring-amber-100" });
+  if (data.hlv_max_multiple) chips.push({ label: tx("Max {0}× income", { 0: data.hlv_max_multiple }), tone: "bg-slate-100 text-slate-600 ring-slate-200" });
+  if (data.commission_pct != null) chips.push({ label: tx("Commission {0}%", { 0: data.commission_pct }), tone: "bg-slate-100 text-slate-600 ring-slate-200" });
+  if (data.is_terminal) chips.push({ label: tx("Stops further checks"), tone: "bg-slate-100 text-slate-600 ring-slate-200" });
 
   return (
-    <div
-      className={`group rounded-xl border bg-white transition-all ${
-        expanded ? "border-slate-300 shadow-sm" : "border-slate-200 hover:border-slate-300"
-      }`}
-      draggable={editable}
-      onDragStart={editable ? (e) => onDragStart?.(e, rule.id) : undefined}
-      onDragOver={editable ? (e) => onDragOver?.(e, rule.id) : undefined}
-      onDrop={editable ? (e) => onDrop?.(e, rule.id) : undefined}
-    >
-      {/* ── Compact row ─────────────────────────────────────────── */}
-      <div
-        className="flex items-start gap-3 px-4 py-3 cursor-pointer select-none"
-        onClick={() => setExpanded((x) => !x)}
-      >
-        {/* Drag handle */}
-        {editable && (
-          <div
-            className="mt-0.5 text-slate-300 hover:text-slate-500 cursor-grab active:cursor-grabbing shrink-0"
-            title={tx("Drag to reorder rule priority")}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M7 2a1 1 0 000 2h6a1 1 0 100-2H7zM7 8a1 1 0 000 2h6a1 1 0 100-2H7zM7 14a1 1 0 000 2h6a1 1 0 100-2H7z" />
-            </svg>
+    <div className="group rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm transition hover:border-slate-300">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="text-sm font-semibold text-slate-900">{rule.name}</h4>
+            {!rule.is_active && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">{tx("Off")}</span>}
           </div>
-        )}
 
-        {/* Priority badge */}
-        <span className="mt-0.5 inline-block font-mono text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded shrink-0 min-w-[32px] text-center" title={tx("Evaluation Priority")}>
-          #{rule.priority}
-        </span>
-
-        {/* Rule name + code + status */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-bold text-slate-900 truncate">
-              {rule.name}
-            </span>
-            <span className="font-mono text-xs text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
-              {rule.rule_code}
-            </span>
-            {!rule.is_active && (
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-500 border border-slate-200">
-                {tx("Inactive")}
-              </span>
-            )}
-            {rule.impact_data.is_terminal && (
-              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-800 border border-amber-200">
-                <svg className="w-3 h-3 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-                {tx("Terminal")}
-              </span>
-            )}
-            {hasConflict && (
-              <span
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-orange-50 text-orange-800 border border-orange-200"
-                title={tx("Overlap with: {0}", { 0: conflictingRules.map((r) => r.name).join(", ") })}
-              >
-                <svg className="w-3 h-3 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-                {tx("Overlap")}
-              </span>
+          <div className="mt-2 space-y-1 text-[13px] leading-relaxed text-slate-600">
+            {rule.criteria.length === 0 ? (
+              <p>{tx("Always applies")}</p>
+            ) : (
+              groupIds.map((gid, gi) => (
+                <p key={gid}>
+                  <span className="font-medium text-slate-400">{gi === 0 ? tx("If") : tx("or if")} </span>
+                  {rule.criteria.filter((c) => c.group_id === gid).map((c, i) => {
+                    const p = criterionParts(c);
+                    return (
+                      <span key={i}>
+                        {i > 0 && <span className="font-medium text-slate-400"> {tx("and")} </span>}
+                        <span className="text-slate-800">{tx(p.field)}</span> {tx(p.verb)} <span className="font-semibold text-slate-900">{p.value}</span>
+                      </span>
+                    );
+                  })}
+                </p>
+              ))
             )}
           </div>
 
-          <p className="text-xs text-slate-600 mt-1 leading-relaxed font-mono">
-            {conditionSummary}
-          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${impact.badge}`}>
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d={impact.iconPath} /></svg>
+              {tx(impact.label)}
+            </span>
+            {chips.map((c) => (
+              <span key={c.label} className={`rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ${c.tone}`}>{c.label}</span>
+            ))}
+          </div>
+
+          {data.reason && (
+            <p className="mt-2.5 rounded-xl bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
+              <span className="font-semibold text-slate-700">{tx("Why")}: </span>{data.reason}
+            </p>
+          )}
+          {overlaps.length > 0 && (
+            <p className="mt-2 text-[11px] text-orange-700">{tx("Overlaps with: {0}", { 0: overlaps.map((r) => r.name).join(", ") })}</p>
+          )}
         </div>
 
-        {/* Impact badge */}
-        <div className="shrink-0 flex items-center gap-2 mt-0.5">
-          <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold border uppercase tracking-wider ${impactCfg.badge}`}>
-            <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={impactCfg.iconPath} />
-            </svg>
-            {tx(impactCfg.label)}
-          </span>
-
-          <svg
-            className={`w-4 h-4 text-slate-400 transition-transform shrink-0 ${expanded ? "rotate-180" : ""}`}
-            fill="none" viewBox="0 0 24 24" stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <span className="font-mono text-[10px] text-slate-300 group-hover:text-slate-400" title={tx("Reference code")}>{rule.rule_code}</span>
+          {editable && (
+            <div className="flex items-center gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
+              <button onClick={() => onEdit(rule)} className="rounded-lg p-1.5 text-slate-400 hover:bg-blue-50 hover:text-blue-600" aria-label={tx("Edit rule")} title={tx("Edit")}>
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+              </button>
+              <button onClick={() => onDelete(rule.id)} className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" aria-label={tx("Delete rule")} title={tx("Delete")}>
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+              </button>
+            </div>
+          )}
         </div>
       </div>
-
-      {/* ── Expanded detail ──────────────────────────────────────── */}
-      {expanded && (
-        <div className="border-t border-slate-100 px-4 py-3 space-y-3 bg-slate-50/50">
-          {/* Conditions breakdown */}
-          <div>
-            <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">{tx("Conditions")}</h4>
-            {rule.criteria.length === 0 ? (
-              <p className="text-xs italic text-slate-500">{tx("No conditions — rule always applies.")}</p>
-            ) : (
-              <div className="space-y-1.5">
-                {groupIds.map((gid, idx) => {
-                  const group = rule.criteria.filter((c) => c.group_id === gid);
-                  return (
-                    <div key={gid}>
-                      {idx > 0 && (
-                        <div className="flex items-center gap-2 my-1">
-                          <div className="flex-1 h-px bg-slate-200" />
-                          <span className="text-[10px] font-bold text-blue-600 uppercase">{tx("OR")}</span>
-                          <div className="flex-1 h-px bg-slate-200" />
-                        </div>
-                      )}
-                      <div className="rounded-lg border border-blue-200 bg-blue-50/50 px-3 py-1.5 space-y-0.5">
-                        {group.map((c, i) => (
-                          <div key={i} className="flex items-center gap-2 text-xs">
-                            <span className="font-bold text-blue-600 uppercase w-7 text-right shrink-0">
-                              {i === 0 ? tx("IF") : tx("AND")}
-                            </span>
-                            <code className="text-xs text-slate-800 font-mono">
-                              {criterionSentence(c)}
-                            </code>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Ultra-compact Impact Details pills */}
-          {(activeImpactEntries.length > 0 || (rule.action_outcome && rule.action_outcome !== rule.impact_type)) && (
-            <div>
-              <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">{tx("Impact Details")}</h4>
-              <div className="flex items-center gap-2 flex-wrap">
-                {rule.action_outcome && rule.action_outcome !== rule.impact_type && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white border border-slate-200 text-xs font-medium text-slate-700">
-                    <span className="text-slate-400">{tx("Outcome:")}</span>
-                    <span className="font-bold font-mono text-slate-900">{rule.action_outcome}</span>
-                  </span>
-                )}
-                {activeImpactEntries.map(([k, v]) => (
-                  <span key={k} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white border border-slate-200 text-xs font-medium text-slate-700">
-                    <span className="text-slate-500">{FRIENDLY_IMPACT_LABELS[k] || k}:</span>
-                    <span className="font-bold text-slate-900">{formatValue(k, v)}</span>
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Overlap alert */}
-          {hasConflict && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-orange-50 border border-orange-200 rounded-lg">
-              <svg className="w-3.5 h-3.5 text-orange-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              <p className="text-xs text-orange-900 font-medium">
-                {tx("Overlap with:")}{" "}<span className="font-bold">{conflictingRules.map((r) => r.name).join(", ")}</span>
-              </p>
-            </div>
-          )}
-
-          {/* Actions */}
-          {editable && (
-            <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
-              <button
-                onClick={(e) => { e.stopPropagation(); onDelete(rule.id); }}
-                className="flex items-center gap-1 px-3 py-1 text-xs font-semibold text-slate-600 hover:text-red-600 hover:bg-red-50 border border-slate-200 hover:border-red-200 rounded-lg transition"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-                {tx("Delete")}
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); onEdit(rule); }}
-                className="flex items-center gap-1 px-3 py-1 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                </svg>
-                {tx("Edit Rule")}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

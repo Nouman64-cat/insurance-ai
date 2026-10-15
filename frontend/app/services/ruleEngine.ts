@@ -81,6 +81,10 @@ export interface RuleSetSummary {
   version_count: number;
   rule_count: number;
   updated_at: string;
+  /** True when the app evaluates this rule set at runtime; otherwise it is reference content. */
+  connected?: boolean;
+  /** Where the app uses it, when connected. */
+  used_by?: string | null;
 }
 
 export interface RuleCriteriaDraft {
@@ -107,6 +111,12 @@ export interface ActuarialImpactDetail {
   is_terminal: boolean;
   commission_pct: number | null;
   withholding_tax_pct: number | null;
+  /** Why the rule matters — shown to users wherever the rule fires (e.g. Lead Risk Assessment). */
+  reason?: string | null;
+  /** Lead Risk Assessment (RS-RISK-001): the profile factor this rule scores … */
+  risk_factor?: string | null;
+  /** … and how adverse a match is, 0 (safe) to 1 (fully adverse). */
+  risk_level?: number | null;
 }
 
 export const DEFAULT_IMPACT_DATA: ActuarialImpactDetail = {
@@ -235,6 +245,7 @@ export interface EvaluationResult {
   version_number?: string;
   status: string;
   matched_rule_codes: string[];
+  matched_impacts?: { rule_code: string; name: string; impact_type: string; reason?: string | null }[];
   final_impacts: ActuarialImpactDetail;
   reasons?: string[];
   rule_set_results?: EvaluationResult[];

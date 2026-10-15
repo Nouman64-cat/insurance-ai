@@ -1,9 +1,9 @@
 import { ComparisonOperator, ImpactType } from "@/app/services/ruleEngine";
 
 // ── Validation ─────────────────────────────────────────────────────────────
-// Valid formats: medical.nml_grid | commission.secp_rate | aml.sanctions_matrix
-// Blocks:        a | RS-MED-001 | ADAM_JEE
-export const RULE_CODE_REGEX = /^[a-z][a-z0-9]*(\.[a-z_][a-z0-9_]*)+$/;
+// Valid formats: RS-MED-005 (the catalogue's own style) | medical.nml_grid
+// Blocks:        a | ADAM_JEE
+export const RULE_CODE_REGEX = /^(RS-[A-Z]{2,6}-\d{3}|[a-z][a-z0-9]*(\.[a-z_][a-z0-9_]*)+)$/;
 
 // Plain-English field translations for non-technical users.
 export const FIELD_LABELS: Record<string, string> = {
@@ -39,7 +39,42 @@ export const FIELD_LABELS: Record<string, string> = {
   term_in_band: "Term Within Band",
   maturity_age_ok: "Maturity Age OK",
   coverage_within_multiple: "Coverage Within Income Multiple",
+  // Lead Risk Assessment profile facts (RS-RISK-001)
+  smoking_status: "Smoking Status (current / former / never)",
+  alcohol_level: "Alcohol Level (none / occasional / moderate / heavy)",
+  drug_history: "Recreational Drug Use History",
+  has_heart_disease: "Heart Disease Declared",
+  is_diabetic: "Diabetic",
+  has_hypertension: "Hypertension",
+  has_pre_existing: "Pre-existing Condition Declared",
+  has_surgical_history: "Surgical History",
+  condition_count: "Number of Recorded Conditions",
+  family_history_count: "Relatives With Declared Conditions",
+  occupation_hazard: "Occupation Hazard Level (low / medium / high)",
+  hazardous_activity_count: "Hazardous Activities Count",
+  driving_violations: "Driving Violations (3 years)",
+  dui_history: "Drink-Driving History",
+  criminal_record: "Criminal Record",
+  cover_income_multiple: "Cover ÷ Annual Income (×)",
+  credit_score: "Credit Score",
+  credit_default: "Loan Default on Record",
+  delinquency_count: "Payment Delinquencies",
 };
+
+/** Profile factors a Lead Risk Assessment rule can score, grouped as the assessment shows them. */
+export const RISK_FACTOR_OPTIONS: { code: string; label: string; section: string }[] = [
+  { code: "medical", label: "Medical history", section: "Medical risk" },
+  { code: "age", label: "Age", section: "Medical risk" },
+  { code: "bmi", label: "Body mass index", section: "Medical risk" },
+  { code: "family_history", label: "Family medical history", section: "Medical risk" },
+  { code: "occupation", label: "Occupation hazard", section: "Occupational risk" },
+  { code: "cover_income", label: "Cover vs income", section: "Financial risk" },
+  { code: "credit", label: "Credit & financial health", section: "Financial risk" },
+  { code: "smoking", label: "Smoking", section: "Avocational risk" },
+  { code: "alcohol", label: "Alcohol & substances", section: "Avocational risk" },
+  { code: "lifestyle", label: "Hazardous activities", section: "Avocational risk" },
+  { code: "conduct", label: "Driving & conduct record", section: "Avocational risk" },
+];
 
 export function fieldLabel(field: string): string {
   return FIELD_LABELS[field] || field;
@@ -93,6 +128,32 @@ export const GROUPED_FIELDS: { group: string; fields: { code: string; label: str
       { code: "ipp_status", label: "Initial Payment Status (ipp_status)" },
       { code: "insurance_history_status", label: "Insurance History (insurance_history_status)" },
       { code: "medical_status", label: "Medical Requirement (medical_status)" },
+    ],
+  },
+  {
+    group: "Lead Risk Assessment (profile facts)",
+    fields: [
+      { code: "age", label: "Applicant Age (age)" },
+      { code: "bmi", label: "Body Mass Index (bmi)" },
+      { code: "has_heart_disease", label: "Heart Disease (has_heart_disease)" },
+      { code: "is_diabetic", label: "Diabetic (is_diabetic)" },
+      { code: "has_hypertension", label: "Hypertension (has_hypertension)" },
+      { code: "has_pre_existing", label: "Pre-existing Condition (has_pre_existing)" },
+      { code: "has_surgical_history", label: "Surgical History (has_surgical_history)" },
+      { code: "condition_count", label: "Recorded Conditions (condition_count)" },
+      { code: "family_history_count", label: "Family History Count (family_history_count)" },
+      { code: "occupation_hazard", label: "Occupation Hazard (occupation_hazard)" },
+      { code: "cover_income_multiple", label: "Cover ÷ Income (cover_income_multiple)" },
+      { code: "credit_score", label: "Credit Score (credit_score)" },
+      { code: "credit_default", label: "Loan Default (credit_default)" },
+      { code: "delinquency_count", label: "Delinquencies (delinquency_count)" },
+      { code: "smoking_status", label: "Smoking Status (smoking_status)" },
+      { code: "alcohol_level", label: "Alcohol Level (alcohol_level)" },
+      { code: "drug_history", label: "Drug Use History (drug_history)" },
+      { code: "hazardous_activity_count", label: "Hazardous Activities (hazardous_activity_count)" },
+      { code: "driving_violations", label: "Driving Violations (driving_violations)" },
+      { code: "dui_history", label: "Drink-Driving (dui_history)" },
+      { code: "criminal_record", label: "Criminal Record (criminal_record)" },
     ],
   },
   {
@@ -321,4 +382,97 @@ export function detectOverlap(
     }
   }
   return overlapping;
+}
+
+// ── Plain-English helpers for the redesigned rule screens ───────────────────
+
+/** Field label without the "(code)" suffix used in the field picker. */
+export function plainFieldLabel(field: string): string {
+  const grouped = GROUPED_FIELDS.flatMap((g) => g.fields).find((f) => f.code === field);
+  const label = FIELD_LABELS[field] || grouped?.label || field.replace(/_/g, " ");
+  return label.replace(/\s*\([^)]*\)\s*$/, "");
+}
+
+/** Yes/no facts — edited with a Yes/No picker instead of free text. */
+export const BOOLEAN_FIELDS = new Set([
+  "is_smoker", "sanctions_matched", "is_pep", "has_adverse_disclosure", "facultative_required",
+  "age_in_entry_band", "term_in_band", "maturity_age_ok", "coverage_within_multiple",
+  "has_heart_disease", "is_diabetic", "has_hypertension", "has_pre_existing", "has_surgical_history",
+  "drug_history", "dui_history", "criminal_record", "credit_default",
+]);
+
+/** Facts with a fixed set of values — edited with a picker. */
+export const OPTION_FIELDS: Record<string, { value: string; label: string }[]> = {
+  smoking_status: [{ value: "current", label: "Current smoker" }, { value: "former", label: "Former smoker" }, { value: "never", label: "Never smoked" }],
+  alcohol_level: [{ value: "none", label: "None" }, { value: "occasional", label: "Occasional" }, { value: "moderate", label: "Regular" }, { value: "heavy", label: "Heavy" }],
+  occupation_hazard: [{ value: "low", label: "Low" }, { value: "medium", label: "Medium" }, { value: "high", label: "High" }],
+};
+
+export const FRIENDLY_OPERATORS: { value: ComparisonOperator; label: string }[] = [
+  { value: "eq", label: "is" },
+  { value: "neq", label: "is not" },
+  { value: "gt", label: "is more than" },
+  { value: "gte", label: "is at least" },
+  { value: "lt", label: "is less than" },
+  { value: "lte", label: "is at most" },
+  { value: "between", label: "is between" },
+  { value: "in_set", label: "is one of" },
+  { value: "contains", label: "contains" },
+  { value: "field_gt", label: "is more than another field ×" },
+  { value: "field_gte", label: "is at least another field ×" },
+];
+
+function plainValue(field: string, v: any): string {
+  if (v === null || v === undefined || v === "") return "—";
+  if (BOOLEAN_FIELDS.has(field) || v === true || v === false || v === "true" || v === "false") {
+    return String(v).toLowerCase() === "true" ? "Yes" : "No";
+  }
+  const opt = OPTION_FIELDS[field]?.find((o) => o.value === String(v).toLowerCase());
+  if (opt) return opt.label;
+  if (typeof v === "number") return v.toLocaleString();
+  return String(v);
+}
+
+/** A condition as readable parts: "<field> <verb> <value>". */
+export function criterionParts(c: {
+  field_name: string; operator: ComparisonOperator;
+  value_numeric?: number | null; value_string?: string | null;
+  value_range_min?: number | null; value_range_max?: number | null;
+  value_list?: any[] | null; target_field_name?: string | null; target_multiplier?: number;
+}): { field: string; verb: string; value: string } {
+  const field = plainFieldLabel(c.field_name);
+  const verb = FRIENDLY_OPERATORS.find((o) => o.value === c.operator)?.label ?? c.operator;
+  if (c.operator === "between") {
+    return { field, verb, value: `${plainValue(c.field_name, c.value_range_min)} and ${plainValue(c.field_name, c.value_range_max)}` };
+  }
+  if (c.operator === "in_set") {
+    return { field, verb, value: (c.value_list ?? []).map((x) => plainValue(c.field_name, x)).join(", ") };
+  }
+  if (c.operator === "field_gt" || c.operator === "field_gte") {
+    const mult = c.target_multiplier && c.target_multiplier !== 1 ? ` × ${c.target_multiplier}` : "";
+    return { field, verb: c.operator === "field_gt" ? "is more than" : "is at least", value: `${plainFieldLabel(c.target_field_name || "")}${mult}` };
+  }
+  const raw = c.value_string !== null && c.value_string !== undefined && c.value_string !== "" ? c.value_string : c.value_numeric;
+  return { field, verb, value: plainValue(c.field_name, raw) };
+}
+
+const CATEGORY_TONES = [
+  "bg-blue-50 text-blue-600 ring-blue-100", "bg-violet-50 text-violet-600 ring-violet-100",
+  "bg-emerald-50 text-emerald-600 ring-emerald-100", "bg-amber-50 text-amber-600 ring-amber-100",
+  "bg-rose-50 text-rose-600 ring-rose-100", "bg-cyan-50 text-cyan-600 ring-cyan-100",
+  "bg-indigo-50 text-indigo-600 ring-indigo-100", "bg-orange-50 text-orange-600 ring-orange-100",
+];
+
+/** A stable soft colour per category, so each area is recognisable at a glance. */
+export function categoryTone(code: string | null | undefined): string {
+  const s = code || "";
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return CATEGORY_TONES[h % CATEGORY_TONES.length];
+}
+
+/** Two-letter monogram for a category or rule set name. */
+export function monogram(name: string): string {
+  const words = name.replace(/[^A-Za-z0-9 &]/g, " ").split(/\s+/).filter((w) => w && w !== "&");
+  return ((words[0]?.[0] ?? "") + (words[1]?.[0] ?? "")).toUpperCase() || "R";
 }

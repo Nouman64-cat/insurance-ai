@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { GROUPED_FIELDS, FIELD_LABELS } from "./constants";
+import { GROUPED_FIELDS, plainFieldLabel } from "./constants";
 import { tx } from "@/lib/i18n/tx";
 
 interface Props {
@@ -25,7 +25,7 @@ export default function FieldSearchSelect({ value, onChange }: Props) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const selectedLabel = FIELD_LABELS[value] || value || "Select Evaluation Field";
+  const selectedLabel = value ? plainFieldLabel(value) : "";
 
   // Filter fields based on search query
   const filteredGroups = GROUPED_FIELDS.map((g) => {
@@ -46,16 +46,13 @@ export default function FieldSearchSelect({ value, onChange }: Props) {
           setIsOpen((prev) => !prev);
           setSearch("");
         }}
-        className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-left font-semibold text-slate-800 hover:border-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-left text-slate-800 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 cursor-pointer"
       >
         <span className="truncate">
           {value ? (
-            <span className="flex items-center gap-1.5 truncate">
-              <span className="text-slate-900 font-bold">{selectedLabel}</span>
-              <code className="text-[10px] text-slate-400 font-mono">({value})</code>
-            </span>
+            <span className="truncate font-medium text-slate-900">{tx(selectedLabel)}</span>
           ) : (
-            <span className="text-slate-400 italic">{tx("Select Field...")}</span>
+            <span className="text-slate-400">{tx("Choose what to check…")}</span>
           )}
         </span>
         <svg
@@ -68,7 +65,7 @@ export default function FieldSearchSelect({ value, onChange }: Props) {
 
       {/* Floating Searchable Menu */}
       {isOpen && (
-        <div className="absolute left-0 top-full mt-1 z-50 w-72 max-h-64 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden flex flex-col">
+        <div className="absolute left-0 top-full mt-1 z-50 w-72 max-h-72 bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden flex flex-col">
           {/* Search Box Header */}
           <div className="p-2 border-b border-slate-100 bg-slate-50 shrink-0">
             <div className="relative">
@@ -80,7 +77,7 @@ export default function FieldSearchSelect({ value, onChange }: Props) {
                 autoFocus
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder={tx("Search field or keyword (e.g. age, bmi, smoker)...")}
+                placeholder={tx("Search, e.g. age, BMI, smoking…")}
                 className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
               />
             </div>
@@ -100,7 +97,7 @@ export default function FieldSearchSelect({ value, onChange }: Props) {
                     }}
                     className="block mt-1 mx-auto text-blue-600 font-bold hover:underline"
                   >
-                    {tx("Use custom keyword: \"")}{search}{tx("\"")}
+                    {tx("Use “{0}” as a custom field", { 0: search })}
                   </button>
                 )}
               </div>
@@ -126,8 +123,7 @@ export default function FieldSearchSelect({ value, onChange }: Props) {
                             : "hover:bg-slate-50 text-slate-700"
                         }`}
                       >
-                        <span className="truncate leading-snug">{f.label.split(" (")[0]}</span>
-                        <code className="text-[10px] font-mono text-slate-400 ml-2 shrink-0">{f.code}</code>
+                        <span className="truncate leading-snug">{tx(f.label.split(" (")[0])}</span>
                       </button>
                     );
                   })}

@@ -1054,6 +1054,13 @@ async def ensure_profile_risk_rule_set(session: AsyncSession) -> None:
     await seed_rules_if_empty(session)
     existing = (await session.exec(select(RuleSet).where(RuleSet.rule_code == RISK_RULE_SET["code"]))).first()
     if existing is not None:
+        # Only the display names are kept in step with the code; rules and versions belong to the admins.
+        sub = await session.get(SubCategory, existing.subcategory_id)
+        if existing.name != RISK_RULE_SET["name"] or (sub and sub.name != RISK_RULE_SET["sub_name"]):
+            existing.name = RISK_RULE_SET["name"]
+            if sub:
+                sub.name = RISK_RULE_SET["sub_name"]
+            await session.commit()
         return
     category = await _get_or_create_category(session, RISK_RULE_SET["category_code"], RISK_RULE_SET["category_name"])
     sub = await _get_or_create_subcategory(session, category.id, RISK_RULE_SET["sub_code"], RISK_RULE_SET["sub_name"])
@@ -1296,6 +1303,20 @@ async def _rule_set_hierarchy_labels(session: AsyncSession, rule_set: RuleSet):
     return category, subcategory, eligibility
 
 
+# Rule sets the application actually evaluates at runtime, and where. Every other rule set is
+# reference content: editing it does not change how the app behaves. Keep in step with the
+# evaluate_rule_set callers (services/early_knockout.py, routers/customers.get_customer_risk_profile).
+CONNECTED_RULE_SETS: Dict[str, str] = {
+    "RS-ELG-002": "Lead capture & plan selection — early knockout",
+    "RS-RISK-001": "Lead Risk Assessment on the customer profile",
+}
+
+
+def _connection(rule_code: str) -> Dict[str, Any]:
+    used_by = CONNECTED_RULE_SETS.get(rule_code)
+    return {"connected": used_by is not None, "used_by": used_by}
+
+
 @router.get("/sets", summary="List rule sets")
 async def list_rule_sets(
     tenant_id: UUID,
@@ -1347,7 +1368,9 @@ async def list_rule_sets(
             "version_count": len(versions),
             "rule_count": rule_count,
             "updated_at": rs.updated_at.isoformat(),
+            **_connection(rs.rule_code),
         })
+    output.sort(key=lambda r: (not r["connected"], r["name"].lower()))
     return output
 
 
@@ -1452,6 +1475,7 @@ async def get_rule_set_detail(tenant_id: UUID, rule_set_id: UUID, session: Async
         "channel_code": elig.channel_code if elig else None,
         "is_active": rule_set.is_active,
         "versions": versions_data,
+        **_connection(rule_set.rule_code),
     }
 
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { RuleCriteriaDraft, ComparisonOperator } from "@/app/services/ruleEngine";
-import { OPERATOR_OPTIONS } from "./constants";
+import { BOOLEAN_FIELDS, FRIENDLY_OPERATORS, OPTION_FIELDS } from "./constants";
 import FieldSearchSelect from "./FieldSearchSelect";
 import { tx } from "@/lib/i18n/tx";
 
@@ -13,7 +13,7 @@ interface Props {
 const EMPTY_CRITERION = (groupId: number): RuleCriteriaDraft => ({
   group_id: groupId,
   field_name: "age",
-  operator: "eq",
+  operator: "gte",
   value_numeric: null,
   value_string: "",
   value_range_min: null,
@@ -23,197 +23,165 @@ const EMPTY_CRITERION = (groupId: number): RuleCriteriaDraft => ({
   target_multiplier: 1,
 });
 
+const control = "rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100";
+
+/** Operators that make sense for a field: yes/no and option facts only compare for equality. */
+function operatorsFor(field: string) {
+  if (BOOLEAN_FIELDS.has(field)) return FRIENDLY_OPERATORS.filter((o) => o.value === "eq");
+  if (OPTION_FIELDS[field]) return FRIENDLY_OPERATORS.filter((o) => ["eq", "neq", "in_set"].includes(o.value));
+  return FRIENDLY_OPERATORS;
+}
+
 export default function CriteriaGroupBuilder({ criteria, onChange }: Props) {
   const groupIds = Array.from(new Set(criteria.map((c) => c.group_id))).sort((a, b) => a - b);
 
-  const updateCriterion = (index: number, patch: Partial<RuleCriteriaDraft>) => {
+  const update = (index: number, patch: Partial<RuleCriteriaDraft>) => {
     const next = criteria.slice();
     next[index] = { ...next[index], ...patch };
     onChange(next);
   };
+  const remove = (index: number) => onChange(criteria.filter((_, i) => i !== index));
+  const addTo = (groupId: number) => onChange([...criteria, EMPTY_CRITERION(groupId)]);
+  const addGroup = () => onChange([...criteria, EMPTY_CRITERION(groupIds.length ? Math.max(...groupIds) + 1 : 1)]);
 
-  const removeCriterion = (index: number) => {
-    onChange(criteria.filter((_, i) => i !== index));
+  const changeField = (index: number, field: string) => {
+    // Reset the comparison to one that suits the new field.
+    if (BOOLEAN_FIELDS.has(field)) return update(index, { field_name: field, operator: "eq", value_string: "true", value_numeric: null });
+    if (OPTION_FIELDS[field]) return update(index, { field_name: field, operator: "eq", value_string: OPTION_FIELDS[field][0].value, value_numeric: null });
+    const current = criteria[index];
+    const keepOp = FRIENDLY_OPERATORS.some((o) => o.value === current.operator) ? current.operator : "gte";
+    update(index, { field_name: field, operator: keepOp, value_string: "", value_numeric: null });
   };
 
-  const addConditionToGroup = (groupId: number) => {
-    onChange([...criteria, EMPTY_CRITERION(groupId)]);
+  const valueInput = (item: RuleCriteriaDraft, idx: number) => {
+    const f = item.field_name;
+    if (BOOLEAN_FIELDS.has(f)) {
+      return (
+        <select value={String(item.value_string || "true").toLowerCase()} onChange={(e) => update(idx, { value_string: e.target.value, value_numeric: null })} className={control}>
+          <option value="true">{tx("Yes")}</option>
+          <option value="false">{tx("No")}</option>
+        </select>
+      );
+    }
+    if (OPTION_FIELDS[f] && item.operator !== "in_set") {
+      return (
+        <select value={item.value_string || ""} onChange={(e) => update(idx, { value_string: e.target.value, value_numeric: null })} className={control}>
+          {OPTION_FIELDS[f].map((o) => <option key={o.value} value={o.value}>{tx(o.label)}</option>)}
+        </select>
+      );
+    }
+    if (item.operator === "between") {
+      return (
+        <div className="flex items-center gap-1.5">
+          <input type="number" placeholder={tx("from")} value={item.value_range_min ?? ""}
+            onChange={(e) => update(idx, { value_range_min: e.target.value === "" ? null : parseFloat(e.target.value) })}
+            className={`${control} w-24`} />
+          <span className="text-xs text-slate-400">{tx("and")}</span>
+          <input type="number" placeholder={tx("to")} value={item.value_range_max ?? ""}
+            onChange={(e) => update(idx, { value_range_max: e.target.value === "" ? null : parseFloat(e.target.value) })}
+            className={`${control} w-24`} />
+        </div>
+      );
+    }
+    if (item.operator === "in_set") {
+      return (
+        <input type="text" placeholder={OPTION_FIELDS[f] ? OPTION_FIELDS[f].map((o) => o.value).join(", ") : tx("e.g. high, very high")}
+          value={item.value_list?.join(", ") ?? ""}
+          onChange={(e) => update(idx, { value_list: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
+          className={`${control} w-48`} />
+      );
+    }
+    if (item.operator === "field_gt" || item.operator === "field_gte") {
+      return (
+        <div className="flex items-center gap-1.5">
+          <div className="w-44"><FieldSearchSelect value={item.target_field_name ?? ""} onChange={(v) => update(idx, { target_field_name: v })} /></div>
+          <span className="text-xs text-slate-400">×</span>
+          <input type="number" step="0.1" value={item.target_multiplier ?? 1}
+            onChange={(e) => update(idx, { target_multiplier: parseFloat(e.target.value) || 1 })}
+            className={`${control} w-16`} />
+        </div>
+      );
+    }
+    return (
+      <input type="text" placeholder={tx("value")}
+        value={item.value_string || (item.value_numeric !== null && item.value_numeric !== undefined ? String(item.value_numeric) : "")}
+        onChange={(e) => {
+          const v = e.target.value;
+          const num = parseFloat(v);
+          if (!isNaN(num) && String(num) === v.trim()) update(idx, { value_numeric: num, value_string: "" });
+          else update(idx, { value_string: v, value_numeric: null });
+        }}
+        className={`${control} w-32`} />
+    );
   };
 
-  const addGroup = () => {
-    const nextGroupId = groupIds.length > 0 ? Math.max(...groupIds) + 1 : 1;
-    onChange([...criteria, EMPTY_CRITERION(nextGroupId)]);
-  };
-
-  const removeGroup = (groupId: number) => {
-    onChange(criteria.filter((c) => c.group_id !== groupId));
-  };
+  if (groupIds.length === 0) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-3">
+        <span className="text-xs text-slate-500">{tx("No conditions — this rule applies to everyone.")}</span>
+        <button type="button" onClick={addGroup} className="rounded-xl bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700">
+          {tx("Add a condition")}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
-      {groupIds.length === 0 ? (
-        <div className="p-3 text-center text-xs text-slate-500 bg-slate-50 border border-dashed border-slate-200 rounded-xl flex items-center justify-between">
-          <span>{tx("Rule always applies (no conditions).")}</span>
-          <button
-            type="button"
-            onClick={addGroup}
-            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm cursor-pointer"
-          >
-            {tx("+ Add Condition")}
-          </button>
-        </div>
-      ) : (
-        groupIds.map((groupId, gIdx) => {
-          const groupIndices = criteria
-            .map((c, i) => (c.group_id === groupId ? i : -1))
-            .filter((i) => i !== -1);
-
-          return (
-            <div key={groupId}>
-              {gIdx > 0 && (
-                <div className="flex items-center gap-2 my-2">
-                  <div className="flex-1 h-px bg-slate-200" />
-                  <span className="text-[10px] font-bold text-blue-600 uppercase bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                    {tx("OR")}
-                  </span>
-                  <div className="flex-1 h-px bg-slate-200" />
-                </div>
-              )}
-
-              <div className="border border-slate-200 rounded-xl bg-slate-50/50 p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                    {gIdx === 0 ? tx("Condition Group") : tx("Group #{0}", { 0: gIdx + 1 })}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => removeGroup(groupId)}
-                    className="text-xs font-semibold text-slate-400 hover:text-red-600 transition cursor-pointer"
-                  >
-                    {tx("Delete Group")}
-                  </button>
-                </div>
-
-                <div className="space-y-2">
-                  {groupIndices.map((critIdx, idx) => {
-                    const item = criteria[critIdx];
-
-                    return (
-                      <div key={critIdx} className="flex items-center gap-2 bg-white p-2 border border-slate-200 rounded-lg flex-wrap sm:flex-nowrap">
-                        <span className="text-xs font-bold text-slate-400 w-7 text-center shrink-0">
-                          {idx === 0 ? tx("IF") : tx("AND")}
-                        </span>
-
-                        {/* Searchable Field Dropdown Selector */}
-                        <FieldSearchSelect
-                          value={item.field_name}
-                          onChange={(val) => updateCriterion(critIdx, { field_name: val })}
-                        />
-
-                        {/* Operator Selector */}
-                        <select
-                          value={item.operator}
-                          onChange={(e) => updateCriterion(critIdx, { operator: e.target.value as ComparisonOperator })}
-                          className="w-32 border border-slate-200 rounded px-2.5 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
-                        >
-                          {OPERATOR_OPTIONS.map((op) => (
-                            <option key={op.value} value={op.value}>
-                              {tx(op.label)}
-                            </option>
-                          ))}
-                        </select>
-
-                        {/* Value inputs */}
-                        {item.operator === "between" ? (
-                          <div className="flex items-center gap-1">
-                            <input
-                              type="number"
-                              placeholder={tx("min")}
-                              value={item.value_range_min ?? ""}
-                              onChange={(e) => updateCriterion(critIdx, { value_range_min: e.target.value === "" ? null : parseFloat(e.target.value) })}
-                              className="w-16 border border-slate-200 rounded px-2 py-1.5 text-xs font-semibold text-slate-800"
-                            />
-                            <span className="text-slate-400 text-xs">–</span>
-                            <input
-                              type="number"
-                              placeholder={tx("max")}
-                              value={item.value_range_max ?? ""}
-                              onChange={(e) => updateCriterion(critIdx, { value_range_max: e.target.value === "" ? null : parseFloat(e.target.value) })}
-                              className="w-16 border border-slate-200 rounded px-2 py-1.5 text-xs font-semibold text-slate-800"
-                            />
-                          </div>
-                        ) : item.operator === "in_set" ? (
-                          <input
-                            type="text"
-                            placeholder={tx("val1, val2")}
-                            value={item.value_list?.join(", ") ?? ""}
-                            onChange={(e) => updateCriterion(critIdx, { value_list: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
-                            className="w-36 border border-slate-200 rounded px-2 py-1.5 text-xs font-mono font-semibold"
-                          />
-                        ) : item.operator === "field_gt" || item.operator === "field_gte" ? (
-                          <input
-                            type="text"
-                            placeholder={tx("target_field")}
-                            value={item.target_field_name ?? ""}
-                            onChange={(e) => updateCriterion(critIdx, { target_field_name: e.target.value })}
-                            className="w-32 border border-slate-200 rounded px-2 py-1.5 text-xs font-mono font-semibold"
-                          />
-                        ) : (
-                          <input
-                            type="text"
-                            placeholder={tx("value")}
-                            value={item.value_string || (item.value_numeric !== null ? String(item.value_numeric) : "")}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              const num = parseFloat(v);
-                              if (!isNaN(num) && String(num) === v.trim()) {
-                                updateCriterion(critIdx, { value_numeric: num, value_string: "" });
-                              } else {
-                                updateCriterion(critIdx, { value_string: v, value_numeric: null });
-                              }
-                            }}
-                            className="w-32 border border-slate-200 rounded px-2 py-1.5 text-xs font-semibold text-slate-800"
-                          />
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() => removeCriterion(critIdx)}
-                          className="p-1 text-slate-400 hover:text-red-600 transition cursor-pointer"
-                        >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="flex justify-start pt-1">
-                  <button
-                    type="button"
-                    onClick={() => addConditionToGroup(groupId)}
-                    className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
-                  >
-                    {tx("+ Add AND condition")}
-                  </button>
-                </div>
+      {groupIds.map((groupId, gIdx) => {
+        const indices = criteria.map((c, i) => (c.group_id === groupId ? i : -1)).filter((i) => i !== -1);
+        return (
+          <div key={groupId}>
+            {gIdx > 0 && (
+              <div className="my-3 flex items-center gap-3">
+                <div className="h-px flex-1 bg-slate-200" />
+                <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-500">{tx("or")}</span>
+                <div className="h-px flex-1 bg-slate-200" />
               </div>
+            )}
+            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-[11px] font-medium text-slate-500">
+                  {indices.length > 1 ? tx("All of these are true") : tx("This is true")}
+                </span>
+                {groupIds.length > 1 && (
+                  <button type="button" onClick={() => onChange(criteria.filter((c) => c.group_id !== groupId))} className="text-[11px] font-medium text-slate-400 hover:text-red-600">
+                    {tx("Remove group")}
+                  </button>
+                )}
+              </div>
+              <div className="space-y-2">
+                {indices.map((critIdx, i) => {
+                  const item = criteria[critIdx];
+                  return (
+                    <div key={critIdx} className="flex flex-wrap items-center gap-2 rounded-xl bg-white p-2 ring-1 ring-slate-200/70">
+                      <span className="w-8 shrink-0 text-center text-[11px] font-semibold text-slate-400">{i === 0 ? tx("If") : tx("and")}</span>
+                      <div className="min-w-[180px] flex-1"><FieldSearchSelect value={item.field_name} onChange={(v) => changeField(critIdx, v)} /></div>
+                      <select
+                        value={item.operator}
+                        onChange={(e) => update(critIdx, { operator: e.target.value as ComparisonOperator })}
+                        className={control}
+                      >
+                        {operatorsFor(item.field_name).map((op) => <option key={op.value} value={op.value}>{tx(op.label)}</option>)}
+                      </select>
+                      {valueInput(item, critIdx)}
+                      <button type="button" onClick={() => remove(critIdx)} className="ml-auto rounded-lg p-1.5 text-slate-300 hover:bg-red-50 hover:text-red-600" aria-label={tx("Remove condition")}>
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <button type="button" onClick={() => addTo(groupId)} className="mt-2 text-xs font-semibold text-blue-600 hover:underline">
+                {tx("+ And another condition")}
+              </button>
             </div>
-          );
-        })
-      )}
-
-      {groupIds.length > 0 && (
-        <button
-          type="button"
-          onClick={addGroup}
-          className="text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg transition cursor-pointer"
-        >
-          {tx("+ Add OR Group")}
-        </button>
-      )}
+          </div>
+        );
+      })}
+      <button type="button" onClick={addGroup} className="rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+        {tx("+ Or a different set of conditions")}
+      </button>
     </div>
   );
 }

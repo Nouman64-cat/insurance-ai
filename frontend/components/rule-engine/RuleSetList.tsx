@@ -2,206 +2,127 @@
 
 import { displayDate } from '../../lib/dateDisplay';
 import { RuleSetSummary } from "@/app/services/ruleEngine";
+import { categoryTone, monogram } from "./constants";
 import { tx } from "@/lib/i18n/tx";
 
 interface Props {
   ruleSets: RuleSetSummary[];
+  /** category code → display name, for the section headings */
+  categoryNames: Record<string, string>;
   loading: boolean;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onCreateNew: () => void;
-  onCreateCategory?: () => void;
-  onCreateSubCategory?: () => void;
-  onClearFilter?: () => void;
   isFiltered?: boolean;
+  onClearFilter?: () => void;
 }
 
-function formatDate(iso: string): string {
-  return displayDate(iso, { month: "short", day: "numeric" });
+function RuleSetCard({ rs, selected, onSelect }: { rs: RuleSetSummary; selected: boolean; onSelect: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`group relative flex h-full flex-col rounded-2xl border bg-white p-4 text-left transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+        selected ? "border-blue-300 ring-1 ring-blue-200 shadow-md" : "border-slate-200/80 shadow-sm"
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-bold ring-1 ${categoryTone(rs.category_code)}`}>
+          {monogram(rs.name)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold leading-snug text-slate-900 line-clamp-2">{rs.name}</h3>
+          {rs.connected ? (
+            <span className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />{tx("In use")}
+            </span>
+          ) : (
+            <span className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />{tx("Reference only")}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <p className="mt-3 flex-1 text-xs leading-relaxed text-slate-500 line-clamp-2">
+        {rs.connected && rs.used_by ? tx("Decides: {0}", { 0: rs.used_by }) : rs.description || tx("No description yet.")}
+      </p>
+
+      <div className="mt-4 flex items-center justify-between gap-2 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
+        <span>
+          <span className="font-semibold text-slate-700">{rs.rule_count}</span> {rs.rule_count === 1 ? tx("rule") : tx("rules")}
+          {rs.updated_at && <span className="text-slate-400"> · {tx("updated")} {displayDate(rs.updated_at, { month: "short", day: "numeric" })}</span>}
+        </span>
+        {rs.active_version_number ? (
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600">{tx("Version {0}", { 0: rs.active_version_number })}</span>
+        ) : (
+          <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700">{tx("Not published")}</span>
+        )}
+      </div>
+    </button>
+  );
 }
 
 export default function RuleSetList({
-  ruleSets,
-  loading,
-  selectedId,
-  onSelect,
-  onCreateNew,
-  onCreateCategory,
-  onCreateSubCategory,
-  onClearFilter,
-  isFiltered = false,
+  ruleSets, categoryNames, loading, selectedId, onSelect, onCreateNew, isFiltered = false, onClearFilter,
 }: Props) {
   if (loading) {
     return (
-      <div className="space-y-3">
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-16 bg-slate-100 rounded-xl animate-pulse" />
-        ))}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {[1, 2, 3, 4, 5, 6].map((i) => <div key={i} className="h-44 animate-pulse rounded-2xl bg-slate-100" />)}
       </div>
     );
   }
 
   if (ruleSets.length === 0) {
     return (
-      <div className="border border-dashed border-slate-200 rounded-2xl p-10 text-center bg-slate-50/50">
-        <div className="w-12 h-12 bg-slate-100 text-slate-400 rounded-xl flex items-center justify-center mx-auto mb-3">
-          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-        </div>
-        <h3 className="text-sm font-bold text-slate-800">
-          {isFiltered ? tx("No rule sets in this category") : tx("No rule sets found")}
-        </h3>
-        <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-          {isFiltered
-            ? tx("Try selecting another category or clearing the current navigation filter.")
-            : tx("Create your first rule set to begin configuring automated decision logic.")}
+      <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-14 text-center">
+        <p className="text-sm font-semibold text-slate-800">
+          {isFiltered ? tx("Nothing matches your search") : tx("No rule sets yet")}
         </p>
-
-        <div className="flex items-center justify-center gap-2.5 mt-4 flex-wrap">
+        <p className="mx-auto mt-1 max-w-sm text-xs text-slate-500">
+          {isFiltered ? tx("Try another word or clear the filters.") : tx("Create a rule set to start defining how decisions are made.")}
+        </p>
+        <div className="mt-4 flex justify-center gap-2">
           {isFiltered && onClearFilter && (
-            <button
-              onClick={onClearFilter}
-              className="px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition"
-            >
-              {tx("Clear Navigation Filter")}
+            <button onClick={onClearFilter} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+              {tx("Clear filters")}
             </button>
           )}
-          {onCreateCategory && (
-            <button
-              onClick={onCreateCategory}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-              </svg>
-              {tx("Add New Category")}
-            </button>
-          )}
-          {onCreateSubCategory && (
-            <button
-              onClick={onCreateSubCategory}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-              </svg>
-              {tx("Add New Sub Category")}
-            </button>
-          )}
-          <button
-            onClick={onCreateNew}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            {tx("Add New Rule Set")}
+          <button onClick={onCreateNew} className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700">
+            {tx("New rule set")}
           </button>
         </div>
       </div>
     );
   }
 
+  // Group by category, keeping the incoming order (in-use sets first) within each group.
+  const groups = new Map<string, RuleSetSummary[]>();
+  for (const rs of ruleSets) {
+    const key = rs.category_code || "_other";
+    groups.set(key, [...(groups.get(key) ?? []), rs]);
+  }
+  const ordered = Array.from(groups.entries()).sort(([a, x], [b, y]) => {
+    const used = Number(y.some((r) => r.connected)) - Number(x.some((r) => r.connected));
+    return used || (categoryNames[a] ?? a).localeCompare(categoryNames[b] ?? b);
+  });
+
   return (
-    <div className="flex flex-col gap-2.5">
-      {/* Header bar */}
-      <div className="flex items-center justify-between px-1 mb-1 gap-2 flex-wrap">
-        <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-          {tx("Rule Sets (")}{ruleSets.length})
-        </span>
-        <div className="flex items-center gap-2 flex-wrap">
-          {onCreateCategory && (
-            <button
-              onClick={onCreateCategory}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-              </svg>
-              {tx("Add New Category")}
-            </button>
-          )}
-          {onCreateSubCategory && (
-            <button
-              onClick={onCreateSubCategory}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-              </svg>
-              {tx("Add New Sub Category")}
-            </button>
-          )}
-          <button
-            onClick={onCreateNew}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            {tx("Add New Rule Set")}
-          </button>
-        </div>
-      </div>
-
-      {/* List items */}
-      <div className="space-y-2">
-        {ruleSets.map((rs) => {
-          const isSelected = selectedId === rs.id;
-
-          return (
-            <div
-              key={rs.id}
-              onClick={() => onSelect(rs.id)}
-              className={`p-3.5 rounded-xl border transition cursor-pointer flex items-center justify-between gap-4 ${
-                isSelected
-                  ? "bg-blue-50/70 border-blue-500 ring-1 ring-blue-500 shadow-sm"
-                  : "bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm"
-              }`}
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-xs font-bold text-slate-900 truncate" title={rs.name}>
-                    {rs.name}
-                  </h3>
-                  <span className="text-xs font-mono text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 shrink-0">
-                    {rs.rule_code}
-                  </span>
-                </div>
-                <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
-                  <span>{tx("Scope:")}{" "}<span className="font-semibold text-slate-700">{rs.scope_type}</span></span>
-                  <span>·</span>
-                  <span>{rs.rule_count} {rs.rule_count === 1 ? tx("rule") : tx("rules")}</span>
-                  {rs.updated_at && (
-                    <>
-                      <span>·</span>
-                      <span>{tx("Updated")}{" "}{formatDate(rs.updated_at)}</span>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 shrink-0">
-                {/* Active version badge - fixed v— bug */}
-                {rs.active_version_number ? (
-                  <span className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-1 rounded-md">
-                    v{rs.active_version_number}{" "}{tx("Live")}
-                  </span>
-                ) : (
-                  <span className="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-300 px-2.5 py-1 rounded-md">
-                    {tx("No active version")}
-                  </span>
-                )}
-
-                <svg className={`w-4 h-4 transition ${isSelected ? "text-blue-600" : "text-slate-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+    <div className="space-y-8">
+      {ordered.map(([code, sets]) => (
+        <section key={code}>
+          <div className="mb-3 flex items-baseline gap-2">
+            <h2 className="text-sm font-semibold text-slate-800">{categoryNames[code] ?? tx("Other")}</h2>
+            <span className="text-xs text-slate-400">{sets.length}</span>
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {sets.map((rs) => (
+              <RuleSetCard key={rs.id} rs={rs} selected={selectedId === rs.id} onSelect={() => onSelect(rs.id)} />
+            ))}
+          </div>
+        </section>
+      ))}
     </div>
   );
 }

@@ -44,9 +44,9 @@ from test_commission_specialist import call, initial
     ('Show claims and commissions',None,None),
     ('Create a customer and register a claim',None,None),
     ('Issue a policy and register a claim',None,None),
-    ('List group claims',None,None),
-    ('Show group claim CLM-1',None,None),
-    ('Show master policy claims',None,None),
+    ('List group claims',None,'group'),
+    ('Show group claim CLM-1',None,'group'),
+    ('Show master policy claims',None,'group'),
     ('List customers','claims',None),
     ('Run underwriting','claims','underwriting'),
     ('Hello','claims',None),
@@ -56,7 +56,7 @@ def test_coordinator_resolves_claims_vs_commission_context(text, previous, expec
     monkeypatch.setenv('COMMISSION_SPECIALIST_ENABLED','true')
     update=coordinator_node({'messages':[HumanMessage(text)],'active_specialist':previous})
     assert update['active_specialist']==expected
-    assert route_coordinator(update)=={'claims':'claims_agent','commission':'commission_agent','underwriting':'underwriting_agent'}.get(expected,'general_agent')
+    assert route_coordinator(update)=={'claims':'claims_agent','commission':'commission_agent','underwriting':'underwriting_agent','group':'group_agent'}.get(expected,'general_agent')
 
 
 def test_claims_rollout_flag_is_independent_and_mixed_image_text_stays_general(monkeypatch):

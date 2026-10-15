@@ -20,7 +20,7 @@ interface Props {
   allowGlobalOption?: boolean;
   depthLevel?: 1 | 2 | 3;
   searchQuery?: string;
-  onAction?: (type: 'category' | 'subcategory' | 'ruleset', action: 'rename' | 'delete', id: string, name: string) => void;
+  onAction?: (type: 'category' | 'subcategory' | 'ruleset', action: 'delete', id: string, name: string) => void;
 }
 
 // ── SVG Icons ─────────────────────────────────────────────────────────────────
@@ -281,14 +281,7 @@ export default function HierarchyTree({
                     <div className="absolute right-0 mt-1 w-32 bg-white border border-slate-200 rounded-lg shadow-xl z-[60] overflow-hidden py-1">
                       <button
                         type="button"
-                        className="w-full text-left px-3 py-2 text-xs font-medium hover:bg-slate-50 text-slate-700 transition"
-                        onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('category', 'rename', cat.id, cat.name); }}
-                      >
-                        {tx("Rename")}
-                      </button>
-                      <button
-                        type="button"
-                        className="w-full text-left px-3 py-2 text-xs font-medium hover:bg-red-50 text-red-600 transition border-t border-slate-100"
+                        className="w-full text-left px-3 py-2 text-xs font-medium hover:bg-red-50 text-red-600 transition"
                         onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('category', 'delete', cat.id, cat.name); }}
                       >
                         {tx("Delete")}
@@ -368,14 +361,7 @@ export default function HierarchyTree({
                             <div className="absolute right-0 mt-1 w-32 bg-white border border-slate-200 rounded-lg shadow-xl z-[60] overflow-hidden py-1">
                               <button
                                 type="button"
-                                className="w-full text-left px-3 py-2 text-xs font-medium hover:bg-slate-50 text-slate-700 transition"
-                                onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('subcategory', 'rename', sub.id, sub.name); }}
-                              >
-                                {tx("Rename")}
-                              </button>
-                              <button
-                                type="button"
-                                className="w-full text-left px-3 py-2 text-xs font-medium hover:bg-red-50 text-red-600 transition border-t border-slate-100"
+                                className="w-full text-left px-3 py-2 text-xs font-medium hover:bg-red-50 text-red-600 transition"
                                 onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('subcategory', 'delete', sub.id, sub.name); }}
                               >
                                 {tx("Delete")}
@@ -418,6 +404,9 @@ export default function HierarchyTree({
                           }`} title={rs.name}>
                             {rs.name}
                           </span>
+                          {rs.connected && (
+                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" title={rs.used_by ?? "Connected"} />
+                          )}
 
                           {onAction && (
                             <div className="relative" onClick={(e) => e.stopPropagation()}>
@@ -444,14 +433,7 @@ export default function HierarchyTree({
                                 <div className="absolute right-0 mt-1 w-32 bg-white border border-slate-200 rounded-lg shadow-xl z-[60] overflow-hidden py-1">
                                   <button
                                     type="button"
-                                    className="w-full text-left px-3 py-2 text-xs font-medium hover:bg-slate-50 text-slate-700 transition"
-                                    onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('ruleset', 'rename', rs.id, rs.name); }}
-                                  >
-                                    {tx("Rename")}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="w-full text-left px-3 py-2 text-xs font-medium hover:bg-red-50 text-red-600 transition border-t border-slate-100"
+                                    className="w-full text-left px-3 py-2 text-xs font-medium hover:bg-red-50 text-red-600 transition"
                                     onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('ruleset', 'delete', rs.id, rs.name); }}
                                   >
                                     {tx("Delete")}
