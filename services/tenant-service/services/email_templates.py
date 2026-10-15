@@ -11,8 +11,8 @@ from __future__ import annotations
 import html as _html
 from typing import Optional
 
-_BRAND = "#0f766e"   # teal-700, matches the app accent
-_BRAND_DARK = "#115e59"
+_BRAND = "#2563eb"   # blue-600: the same blue as the portals
+_BRAND_DARK = "#1d4ed8"
 _INK = "#0f172a"
 _MUTE = "#64748b"
 _BG = "#f1f5f9"
@@ -21,6 +21,83 @@ _LINE = "#e2e8f0"
 
 def _pkr(n: Optional[float]) -> str:
     return f"PKR {n:,.0f}" if n is not None else "—"
+
+
+_FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,Helvetica,sans-serif"
+
+
+def _contact_line(tenant_phone: Optional[str], tenant_email: Optional[str]) -> str:
+    return "  ·  ".join(b for b in [f"UAN: {tenant_phone}" if tenant_phone else "", f"Email: {tenant_email}" if tenant_email else ""] if b)
+
+
+def shell(*, tenant_name: str, heading: str, inner_html: str, contact: str = "", note: str = "") -> str:
+    """The common layout of every customer email: a blue header band, one white card, a quiet footer. Simple on purpose:
+    one column, inline styles, no images, so it renders the same in every mail client."""
+    e = _html.escape
+    return f"""\
+<!doctype html><html><body style="margin:0;padding:0;background:{_BG};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{_BG};padding:24px 0;">
+<tr><td align="center">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;font-family:{_FONT};">
+    <tr><td style="background:{_BRAND};padding:22px 28px;">
+      <div style="color:#ffffff;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;opacity:.85;">{e(tenant_name)}</div>
+      <div style="color:#ffffff;font-size:22px;font-weight:700;margin-top:4px;">{e(heading)}</div>
+    </td></tr>
+    <tr><td style="padding:28px;">{inner_html}</td></tr>
+    <tr><td style="background:#f8fafc;padding:18px 28px;border-top:1px solid {_LINE};">
+      <div style="color:{_INK};font-size:13px;font-weight:600;">{e(tenant_name)}</div>
+      {f'<div style="color:{_MUTE};font-size:12px;margin-top:4px;">{e(contact)}</div>' if contact else ''}
+      <div style="color:{_MUTE};font-size:11px;margin-top:8px;">{e(note or "This is a system-generated message. Please do not reply to this email.")}</div>
+    </td></tr>
+  </table>
+</td></tr>
+</table>
+</body></html>"""
+
+
+def button(label: str, url: str) -> str:
+    return (f'<div style="text-align:center;margin:22px 0;"><a href="{_html.escape(url, quote=True)}" style="display:inline-block;'
+            f'background:{_BRAND};color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">'
+            f'{_html.escape(label)}</a></div>')
+
+
+def welcome_email(
+    *, customer_name: str, tenant_name: str, policy_number: str, policyholder_id: Optional[str],
+    attached: list, left_out: list, creds_html: str, creds_text: str, portal_url: Optional[str],
+    tenant_phone: Optional[str] = None, tenant_email: Optional[str] = None,
+) -> tuple[str, str, str]:
+    """Welcome email: confirms the policy, lists the attached documents, and gives the portal sign-in details."""
+    e = _html.escape
+    subject = f"Welcome to your policy {policy_number}"
+    docs = "".join(f'<li style="margin:3px 0;">{e(n)}</li>' for n in attached)
+    more = (f'<p style="color:{_MUTE};font-size:12px;margin:8px 0 0;">Too large to attach, available in the customer portal: '
+            f'{e(", ".join(left_out))}.</p>') if left_out else ""
+    pid = (f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px;"><tr>'
+           f'<td style="padding:10px 0;border-bottom:1px solid {_LINE};color:{_MUTE};font-size:13px;">Policy number</td>'
+           f'<td style="padding:10px 0;border-bottom:1px solid {_LINE};color:{_INK};font-size:13px;font-weight:600;text-align:right;">{e(policy_number)}</td></tr>'
+           + (f'<tr><td style="padding:10px 0;border-bottom:1px solid {_LINE};color:{_MUTE};font-size:13px;">Policyholder ID</td>'
+              f'<td style="padding:10px 0;border-bottom:1px solid {_LINE};color:{_INK};font-size:13px;font-weight:600;text-align:right;">{e(policyholder_id)}</td></tr>'
+              if policyholder_id else "") + '</table>')
+    inner = (
+        f'<p style="color:{_INK};font-size:15px;margin:0 0 12px;">Dear {e(customer_name)},</p>'
+        f'<p style="color:{_INK};font-size:14px;line-height:22px;margin:0 0 18px;">Thank you for choosing {e(tenant_name)}. '
+        f'Your policy is active and your protection has begun.</p>{pid}'
+        + (f'<p style="color:{_INK};font-size:14px;margin:0 0 6px;font-weight:600;">Attached to this email</p>'
+           f'<ul style="color:{_INK};font-size:13px;line-height:20px;margin:0;padding-left:20px;">{docs}</ul>{more}' if attached else "")
+        + (creds_html or "")
+        + (button("Go to customer portal", portal_url) if portal_url else "")
+        + f'<p style="color:{_MUTE};font-size:12px;line-height:18px;margin:0;">Please keep these documents safe.</p>'
+    )
+    text = (
+        f"Dear {customer_name},\n\nThank you for choosing {tenant_name}. Your policy {policy_number} is active."
+        + (f" Your policyholder ID is {policyholder_id}." if policyholder_id else "")
+        + ("\n\nAttached: " + ", ".join(attached) + "." if attached else "")
+        + (" Too large to attach, available in the customer portal: " + ", ".join(left_out) + "." if left_out else "")
+        + (creds_text or (f"\n\nCustomer portal: {portal_url}" if portal_url else ""))
+        + f"\n\n{tenant_name}"
+    )
+    return subject, text, shell(tenant_name=tenant_name, heading="Welcome to your policy", inner_html=inner,
+                                contact=_contact_line(tenant_phone, tenant_email))
 
 
 def credentials_email(
@@ -127,9 +204,9 @@ def credentials_email(
       {sign_in_button}
 
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0 0;">
-        <tr><td style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:14px 16px;">
-          <div style="color:#92400e;font-size:13px;font-weight:700;margin-bottom:4px;">Keep this secure</div>
-          <p style="color:#92400e;font-size:12px;line-height:18px;margin:0;">
+        <tr><td style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;">
+          <div style="color:#1e3a8a;font-size:13px;font-weight:700;margin-bottom:4px;">Keep this secure</div>
+          <p style="color:#1e3a8a;font-size:12px;line-height:18px;margin:0;">
             Change your password immediately after signing in, then delete this email.
             Never share these credentials with anyone.
           </p>
@@ -219,7 +296,7 @@ def issuance_email(
 <!doctype html><html><body style="margin:0;padding:0;background:{_BG};">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{_BG};padding:24px 0;">
 <tr><td align="center">
-  <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,Helvetica,sans-serif;">
     <tr><td style="background:{_BRAND};padding:22px 28px;">
       <div style="color:#ffffff;font-size:13px;letter-spacing:1px;text-transform:uppercase;opacity:.85;">{tenant_name}</div>
       <div style="color:#ffffff;font-size:22px;font-weight:700;margin-top:4px;">Your policy is active</div>
@@ -303,7 +380,7 @@ def endorsement_email(
     html = f"""\
 <!doctype html><html><body style="margin:0;padding:0;background:{_BG};">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{_BG};padding:24px 0;"><tr><td align="center">
-  <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,Helvetica,sans-serif;">
     <tr><td style="background:{_BRAND};padding:22px 28px;">
       <div style="color:#ffffff;font-size:13px;letter-spacing:1px;text-transform:uppercase;opacity:.85;">{tenant_name}</div>
       <div style="color:#ffffff;font-size:22px;font-weight:700;margin-top:4px;">Policy endorsement applied</div>
@@ -382,7 +459,7 @@ def reinstatement_email(
     html = f"""\
 <!doctype html><html><body style="margin:0;padding:0;background:{_BG};">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{_BG};padding:24px 0;"><tr><td align="center">
-  <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,Helvetica,sans-serif;">
     <tr><td style="background:{_BRAND};padding:22px 28px;">
       <div style="color:#ffffff;font-size:13px;letter-spacing:1px;text-transform:uppercase;opacity:.85;">{_html.escape(tenant_name)}</div>
       <div style="color:#ffffff;font-size:22px;font-weight:700;margin-top:4px;">Your policy has been reinstated</div>
@@ -393,8 +470,8 @@ def reinstatement_email(
         Your lapsed policy is back in force. Your original policy number and history are unchanged.
       </p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 16px;">{detail_rows}</table>
-      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:14px 16px;margin:0 0 18px;">
-        <div style="color:#92400e;font-size:13px;font-weight:700;margin-bottom:4px;">Important</div>
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px;margin:0 0 18px;">
+        <div style="color:#1e3a8a;font-size:13px;font-weight:700;margin-bottom:4px;">Important</div>
         {terms_html}
         <p style="color:{_INK};font-size:13px;line-height:20px;margin:0;">{_html.escape(gap)}</p>
       </div>
@@ -420,7 +497,7 @@ def _simple_email(*, tenant_name: str, heading: str, greeting: str, intro: str,
     return f"""\
 <!doctype html><html><body style="margin:0;padding:0;background:{_BG};">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{_BG};padding:24px 0;"><tr><td align="center">
-  <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,Helvetica,sans-serif;">
     <tr><td style="background:{_BRAND};padding:22px 28px;">
       <div style="color:#ffffff;font-size:13px;letter-spacing:1px;text-transform:uppercase;opacity:.85;">{_html.escape(tenant_name)}</div>
       <div style="color:#ffffff;font-size:22px;font-weight:700;margin-top:4px;">{_html.escape(heading)}</div>
@@ -589,7 +666,7 @@ def customer_action_link_email(
     html = f"""\
 <!doctype html><html><body style="margin:0;padding:0;background:{_BG};">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{_BG};padding:24px 0;"><tr><td align="center">
-  <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,Helvetica,sans-serif;">
     <tr><td style="background:{_BRAND};padding:22px 28px;">
       <div style="color:#ffffff;font-size:13px;letter-spacing:1px;text-transform:uppercase;opacity:.85;">{_html.escape(tenant_name)}</div>
       <div style="color:#ffffff;font-size:22px;font-weight:700;margin-top:4px;">{_html.escape(heading)}</div>

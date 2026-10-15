@@ -253,6 +253,37 @@ async def generate_and_store_premium_notice(session: AsyncSession, policy: Polic
     return doc
 
 
+# Largest email we try to send. Mail servers reject big messages (AWS SES allows 10 MB in all, and email encoding adds about a third to attachments), so attachments beyond this
+# are left out of the email and the customer is pointed to the portal for them.
+EMAIL_ATTACHMENT_LIMIT = int(6.5 * 1024 * 1024)   # email encoding adds about a third
+_EMAIL_DOC_ORDER = ["PremiumNotice", "PolicySchedule", "CertificateOfInsurance", "PolicyWording", "ApplicationDossier"]
+
+
+async def email_attachments(session: AsyncSession, policy: Policy, welcome_kit_path: Optional[str] = None):
+    """The files to attach to the welcome email: the five policy documents (initial premium receipt, schedule,
+    certificate, wording and application dossier) and the welcome kit, each under its own name.
+    Returns (attachments, left_out_names); documents that would push the email over the size limit are left out."""
+    import os
+    docs = (await session.exec(select(PolicyDocument).where(PolicyDocument.policy_id == policy.id))).all()
+    by_type = {getattr(d.document_type, "value", d.document_type): d for d in docs}
+    candidates = []
+    for t in _EMAIL_DOC_ORDER:
+        d = by_type.get(t)
+        if d is not None and d.storage_url and os.path.isfile(d.storage_url):
+            candidates.append((d.storage_url, f"{d.document_name}.pdf".replace("/", "-")))
+    if welcome_kit_path and os.path.isfile(welcome_kit_path):
+        candidates.append((welcome_kit_path, f"Welcome Kit - {policy.policy_number or 'policy'}.pdf"))
+    attached, left_out, total = [], [], 0
+    for path, name in candidates:
+        size = os.path.getsize(path)
+        if total + size > EMAIL_ATTACHMENT_LIMIT:
+            left_out.append(name)
+            continue
+        total += size
+        attached.append((path, name))
+    return attached, left_out
+
+
 async def render_welcome_kit(session: AsyncSession, policy: Policy, extra: Optional[dict] = None) -> dict:
     """Render the Stage B welcome-kit PDF and return {document_name, file_path}.
 

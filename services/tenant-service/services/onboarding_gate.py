@@ -44,11 +44,8 @@ def _v(x) -> str:
 
 def _contact(customer: Customer | None) -> dict:
     """Customer contact lives in Customer.details JSON (no dedicated columns)."""
-    details = (customer.details if customer else None) or {}
-    return {
-        "email": details.get("contact_email") or details.get("email"),
-        "phone": details.get("contact_phone") or details.get("phone") or details.get("mobile_number"),
-    }
+    from services.customer_links import customer_email, customer_phone   # also reads the registration form's details.contact
+    return {"email": customer_email(customer), "phone": customer_phone(customer)}
 
 
 async def compute_onboarding(session: AsyncSession, policy: Policy) -> dict:
