@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "GetInsuredAI",
+    "slug": "customer-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.insuranceai.customer"
+    },
+    "android": {
+      "package": "com.insuranceai.customer",
+      "softwareKeyboardLayoutMode": "pan",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      }
+    },
+    "plugins": [
+      "expo-status-bar",
+      "expo-font",
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Insurance AI to attach a photo of a document or payment receipt.",
+          "cameraPermission": "Allow Insurance AI to photograph a document or payment receipt."
+        }
+      ],
+      "expo-document-picker",
+      "expo-sharing",
+      "@react-native-community/datetimepicker"
+    ],
+    "icon": "./assets/icon.png",
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
