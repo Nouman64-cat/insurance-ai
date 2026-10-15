@@ -53,6 +53,34 @@ class PortalCredentials:
         }
 
 
+def credentials_block(creds: Optional[dict]) -> tuple[str, str]:
+    """Plain-text and HTML text for the welcome email: how to sign in to the customer portal. `creds` is what the
+    provisioning call returned; with no temporary password (the customer already chose their own) the block says so."""
+    import html as _h
+    if not creds:
+        return "", ""
+    url = creds.get("portal_url") or PORTAL_BASE_URL
+    user = creds.get("username") or ""
+    pwd = creds.get("temp_password")
+    if pwd:
+        text = (f"\n\nCustomer portal sign-in\n  Portal:   {url}\n  Username: {user}\n  Temporary password: {pwd}\n"
+                "You will be asked to choose a new password the first time you sign in. Please do not share these details.\n")
+        html = (
+            '<div style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px;padding:16px;margin:20px 0">'
+            '<p style="margin:0 0 8px;font-size:13px;color:#64748b;text-transform:uppercase;font-weight:bold;letter-spacing:1px">'
+            'Customer portal sign-in</p>'
+            f'<p style="margin:4px 0"><strong>Portal:</strong> <a href="{_h.escape(url, quote=True)}">{_h.escape(url)}</a></p>'
+            f'<p style="margin:4px 0"><strong>Username:</strong> <span style="font-family:monospace">{_h.escape(user)}</span></p>'
+            f'<p style="margin:4px 0"><strong>Temporary password:</strong> <span style="font-family:monospace">{_h.escape(pwd)}</span></p>'
+            '<p style="margin:10px 0 0;font-size:12px;color:#64748b">You will be asked to choose a new password the first time '
+            'you sign in. Please do not share these details.</p></div>')
+        return text, html
+    text = (f"\n\nCustomer portal: {url}\nUsername: {user}\nSign in with the password you chose earlier.\n")
+    html = (f'<p>Customer portal: <a href="{_h.escape(url, quote=True)}">{_h.escape(url)}</a><br>'
+            f'Username: <span style="font-family:monospace">{_h.escape(user)}</span><br>Sign in with the password you chose earlier.</p>')
+    return text, html
+
+
 def hash_password(raw: str) -> str:
     return _pwd.hash(raw)
 

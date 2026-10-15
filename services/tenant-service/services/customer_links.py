@@ -17,9 +17,20 @@ PORTAL_PUBLIC_URL = os.environ.get("PORTAL_PUBLIC_URL", "http://localhost:3000")
 
 
 def customer_email(customer: Optional[Customer]) -> Optional[str]:
+    """The customer's email wherever it was recorded: the post-issuance capture (contact_email), the top level of
+    details, or the registration form's details.contact.email."""
     details = (customer.details if customer else None) or {}
-    email = (details.get("contact_email") or details.get("email") or "").strip()
+    contact = details.get("contact") if isinstance(details.get("contact"), dict) else {}
+    email = (details.get("contact_email") or details.get("email") or contact.get("email") or "").strip()
     return email or None
+
+
+def customer_phone(customer: Optional[Customer]) -> Optional[str]:
+    details = (customer.details if customer else None) or {}
+    contact = details.get("contact") if isinstance(details.get("contact"), dict) else {}
+    phone = (details.get("contact_phone") or details.get("phone") or details.get("mobile_number")
+             or contact.get("mobile_number") or contact.get("phone_number") or "").strip()
+    return phone or None
 
 
 async def email_customer_link(

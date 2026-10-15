@@ -22,7 +22,9 @@ from services.policy_documents import render_welcome_kit
 from services import portal_service
 
 log = logging.getLogger(__name__)
-KINDS = ("WelcomeKit", "WelcomeEmail", "IssuanceEmail")
+# One email goes out when a policy is issued (WelcomeEmail: policy summary, documents and portal sign-in). The old separate
+# IssuanceEmail job is no longer queued; any still waiting from before is completed without sending a second email.
+KINDS = ("WelcomeKit", "WelcomeEmail")
 
 
 def value(v):
@@ -91,8 +93,29 @@ async def _ensure_kit(session, policy, customer):
     return row
 
 
+async def summary_rows_for_email(session, policy) -> list:
+    """The policy summary shown in the issuance email: product, sum assured, premium, dates, free-look."""
+    from services.email_templates import _pkr
+    version = await session.get(PolicyVersion, policy.current_version_id) if policy.current_version_id else None
+    schedule = (await session.exec(select(PremiumSchedule).where(PremiumSchedule.policy_id == policy.id)
+                                   .order_by(PremiumSchedule.installment_no))).first()
+    premium = version.total_premium if version else (schedule.amount_due if schedule else None)
+    freq = value(schedule.billing_frequency) if schedule else "Annual"
+    iso = lambda d: d.isoformat() if d else None
+    return [
+        ("Product", policy.product_name),
+        ("Sum assured", _pkr(policy.coverage_amount)),
+        ("Premium", f"{_pkr(premium)} ({freq})" if premium is not None else None),
+        ("Commencement date", iso(policy.effective_date)),
+        ("Maturity date", iso(policy.maturity_date)),
+        ("Free-look until", iso(policy.free_look_end_date)),
+    ]
+
+
 async def execute_job(session, job, policy):
     """Returns an actionable retry reason, or None when work is complete."""
+    if job.kind == "IssuanceEmail":
+        return None
     customer = await session.get(Customer, policy.customer_id)
     if customer is None:
         return "Customer record is missing."
@@ -115,12 +138,19 @@ async def execute_job(session, job, policy):
         if not row.welcome_kit_path or not os.path.isfile(row.welcome_kit_path):
             return "Waiting for welcome-kit generation."
         name = tenant.name if tenant else "Your Insurer"
-        subject = f"Welcome to your policy {policy.policy_number}"
-        text = (f"Dear {customer.name},\n\nYour policy {policy.policy_number} is active. "
-                f"Your policyholder ID is {customer.policyholder_id or 'being assigned'}. "
-                f"Your welcome kit is attached. Customer portal: {portal_service.PORTAL_BASE_URL}\n\nThe {name} Team")
-        html = f"<p>Dear {escape(customer.name)},</p><p>Your policy <strong>{escape(policy.policy_number or '')}</strong> is active.</p><p>Your welcome kit is attached. <a href='{escape(portal_service.PORTAL_BASE_URL, quote=True)}'>Customer portal</a></p><p>The {escape(name)} Team</p>"
-        ok = await email_utils.send_email(address, subject, text, html, attachments=[row.welcome_kit_path])
+        from services.policy_documents import email_attachments
+        from services.email_templates import welcome_email
+        from routers.post_issuance import portal_credentials_for_email
+        creds = await portal_credentials_for_email(session, policy.tenant_id, policy, commit=False)
+        cred_text, cred_html = portal_service.credentials_block(creds)
+        attachments, left_out = await email_attachments(session, policy, row.welcome_kit_path)
+        subject, text, html = welcome_email(
+            customer_name=customer.name, tenant_name=name, policy_number=policy.policy_number or "",
+            policyholder_id=customer.policyholder_id, attached=[n for _, n in attachments], left_out=left_out,
+            creds_html=cred_html, creds_text=cred_text, portal_url=portal_service.PORTAL_BASE_URL,
+            tenant_phone=tenant.contact_phone if tenant else None, tenant_email=tenant.contact_email if tenant else None,
+            summary_rows=await summary_rows_for_email(session, policy))
+        ok = await email_utils.send_email(address, subject, text, html, attachments=attachments)
         event_type = "WelcomeSent"
     else:
         version = await session.get(PolicyVersion, policy.current_version_id) if policy.current_version_id else None
@@ -135,7 +165,15 @@ async def execute_job(session, job, policy):
             free_look_end_date=policy.free_look_end_date.isoformat() if policy.free_look_end_date else None,
             policyholder_id=customer.policyholder_id, portal_url=portal_service.PORTAL_BASE_URL,
             tenant_phone=tenant.contact_phone if tenant else None, tenant_email=tenant.contact_email if tenant else None)
-        ok = await email_utils.send_email(address, subject, text, html)
+        # The policy documents travel with the issuance email: receipt, schedule, certificate, wording, dossier.
+        from services.policy_documents import email_attachments
+        attachments, left_out = await email_attachments(session, policy, None)
+        if attachments:
+            names = ", ".join(n for _, n in attachments)
+            text += f"\n\nAttached: {names}." + (f" Too large to attach, available in the customer portal: {', '.join(left_out)}." if left_out else "")
+            html += (f"<p style='font-size:13px;color:#475569'>Attached to this email: {escape(names)}."
+                     + (f" Too large to attach, available in the customer portal: {escape(', '.join(left_out))}." if left_out else "") + "</p>")
+        ok = await email_utils.send_email(address, subject, text, html, attachments=attachments)
         event_type = "IssuanceEmailSent"
     if not ok:
         record_event(session, policy, event_type="WelcomeEmailFailed" if job.kind == "WelcomeEmail" else "IssuanceEmailFailed",

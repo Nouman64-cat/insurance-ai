@@ -34,6 +34,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 import email_utils
+from services.customer_links import customer_email, customer_phone
 from services import payment_gateway, portal_service, document_generator, insurer_config
 from services import customer_management_client as customer_management
 from services.onboarding_gate import ONBOARDING_STATUSES, compute_onboarding
@@ -465,6 +466,13 @@ async def provision_portal(
     body: Optional[PortalBody] = None,
     session: AsyncSession = Depends(get_session),
 ):
+    return await _provision_portal(tenant_id, policy_id, request, body, session, commit=True)
+
+
+async def _provision_portal(
+    tenant_id: UUID, policy_id: UUID, request: Optional[Request], body: Optional[PortalBody],
+    session: AsyncSession, commit: bool,
+):
     """Provision (or reset) the customer's portal account. Returns the one-time temporary password — surfaced ONCE
     and never stored in plaintext.
 
@@ -477,8 +485,7 @@ async def provision_portal(
         raise HTTPException(404, "Customer not found")
     body = body or PortalBody()
 
-    details = customer.details or {}
-    email = details.get("contact_email") or details.get("email")
+    email = customer_email(customer)
     creds = portal_service.provision(customer.policyholder_id, email, str(customer.id))
 
     portal = (await session.exec(
@@ -499,7 +506,7 @@ async def provision_portal(
             raise HTTPException(503, "The customer portal service is unavailable. Nothing was changed — try again shortly.")
         if result.get("status") in ("already_active", "suspended"):
             await _get_or_create_onboarding(session, policy)
-            await session.commit()
+            await (session.commit() if commit else session.flush())
             return {"reset": False, "already_active": True, "suspended": result.get("status") == "suspended",
                     "username": result.get("username"), "temp_password": None, "portal_url": portal_service.PORTAL_BASE_URL,
                     "invite_expires_at": None}
@@ -525,8 +532,11 @@ async def provision_portal(
         event_type="PortalCredentialsReset" if reset else "PortalProvisioned",
         actor="system", detail={"username": creds.username},
     )
-    await session.commit()
-    await _publish_policy_event(request, policy, event)
+    if commit:
+        await session.commit()
+        await _publish_policy_event(request, policy, event)
+    else:
+        await session.flush()      # the background worker commits the whole job itself
     return {"reset": reset, "already_active": False, **creds.public_dict()}
 
 
@@ -580,6 +590,19 @@ async def set_onboarding_contact(
     return await compute_onboarding(session, policy)
 
 
+async def portal_credentials_for_email(
+    session: AsyncSession, tenant_id: UUID, policy: Policy, request: Optional[Request] = None, commit: bool = True,
+) -> Optional[dict]:
+    """Sign-in details to put in the welcome email: provisions the portal account (or refreshes the temporary password
+    of one the customer has not used yet). None if the portal could not be provisioned; the email is then sent without
+    sign-in details."""
+    try:
+        return await _provision_portal(tenant_id, policy.id, request, PortalBody(), session, commit)
+    except HTTPException:
+        log.warning("could not provision portal sign-in for the welcome email of policy %s", policy.id, exc_info=True)
+        return None
+
+
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/onboarding/send-welcome")
 async def send_welcome(
     tenant_id: UUID, policy_id: UUID,
@@ -600,9 +623,8 @@ async def send_welcome(
     if not row.welcome_kit_path:
         raise HTTPException(400, "Generate the welcome kit before sending it")
 
-    details = customer.details or {}
-    email = details.get("contact_email") or details.get("email")
-    phone = details.get("contact_phone") or details.get("phone") or details.get("mobile_number")
+    email = customer_email(customer)
+    phone = customer_phone(customer)
 
     # "Manual" records a physical / handed-over delivery — the fallback when the
     # customer has no digital contact, so onboarding is never stuck. Digital
@@ -616,37 +638,20 @@ async def send_welcome(
 
     channel = "Manual" if manual else (body.channel or ("Email" if email else "SMS"))
     if not manual and email:
-        html_body = f"""
-        <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #334155; line-height: 1.6;">
-            <div style="background-color: #0f766e; padding: 25px; text-align: center; border-radius: 8px 8px 0 0;">
-                <h1 style="color: #ffffff; margin: 0; font-size: 24px; letter-spacing: 0.5px;">Welcome to {tenant_name}</h1>
-            </div>
-            <div style="padding: 30px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 8px 8px; background-color: #ffffff;">
-                <p style="font-size: 16px; margin-top: 0;">Dear <strong>{customer.name}</strong>,</p>
-                <p style="font-size: 16px;">Thank you for choosing us for your insurance needs. Your policy <strong>{policy.policy_number or ''}</strong> is now officially active, and your protection has begun.</p>
-                
-                <div style="background-color: #f8fafc; padding: 20px; border-radius: 6px; margin: 25px 0; border: 1px solid #cbd5e1; text-align: center;">
-                    <p style="margin: 0; font-size: 13px; color: #64748b; text-transform: uppercase; font-weight: bold; letter-spacing: 1px;">Your Policyholder ID</p>
-                    <p style="margin: 8px 0 0; font-size: 24px; font-weight: bold; color: #0f766e;">{customer.policyholder_id or 'Being Assigned'}</p>
-                </div>
-
-                <p style="font-size: 16px;">Please find your comprehensive <strong>Welcome Kit</strong> attached to this email as a PDF. It contains vital details about your coverage and instructions on how to access our customer portal.</p>
-                
-                <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 30px 0;">
-                <p style="font-size: 14px; color: #64748b; margin-bottom: 0;">Warm regards,<br><strong style="color: #334155;">The {tenant_name} Team</strong></p>
-            </div>
-        </div>
-        """
-
+        from services.policy_documents import email_attachments
+        from services.email_templates import welcome_email
+        from services.policy_delivery import summary_rows_for_email
+        creds = await portal_credentials_for_email(session, tenant_id, policy, request)
+        cred_text, cred_html = portal_service.credentials_block(creds)
+        attachments, left_out = await email_attachments(session, policy, row.welcome_kit_path)
+        subject, text_body, html_body = welcome_email(
+            customer_name=customer.name, tenant_name=tenant_name, policy_number=policy.policy_number or "",
+            policyholder_id=customer.policyholder_id, attached=[n for _, n in attachments], left_out=left_out,
+            creds_html=cred_html, creds_text=cred_text, portal_url=portal_service.PORTAL_BASE_URL,
+            tenant_phone=tenant.contact_phone if tenant else None, tenant_email=tenant.contact_email if tenant else None,
+            summary_rows=await summary_rows_for_email(session, policy))
         delivered = await email_utils.send_email(
-            to_email=email,
-            subject=f"Welcome to your policy {policy.policy_number or ''}".strip(),
-            text_body=f"Dear {customer.name},\n\nYour policy {policy.policy_number or ''} is now active. Your policyholder ID is "
-                      f"{customer.policyholder_id or 'being assigned'}. Please find your welcome kit attached and "
-                      f"sign in to the customer portal to manage your policy.\n\nThank you.",
-            html_body=html_body,
-            attachments=[row.welcome_kit_path]
-        )
+            to_email=email, subject=subject, text_body=text_body, html_body=html_body, attachments=attachments)
         if not delivered:
             raise HTTPException(502, "Welcome email was not delivered. Automatic delivery will retry.")
 
@@ -1046,9 +1051,8 @@ async def remind_installment(
         raise HTTPException(400, "Installment already settled — nothing to remind about")
 
     customer = await session.get(Customer, policy.customer_id)
-    details = (customer.details if customer else None) or {}
-    email = details.get("contact_email") or details.get("email")
-    phone = details.get("contact_phone") or details.get("phone") or details.get("mobile_number")
+    email = customer_email(customer)
+    phone = customer_phone(customer)
 
     channel = body.channel if body.channel in insurer_config.REMINDER_CHANNELS else "Email"
     template = body.template if body.template in insurer_config.REMINDER_TEMPLATES else "Standard"
@@ -1468,8 +1472,7 @@ async def send_issuance_email(
         raise HTTPException(400, "Policy has not been issued yet")
 
     customer = await session.get(Customer, policy.customer_id)
-    details = (customer.details if customer else None) or {}
-    email = details.get("contact_email") or details.get("email")
+    email = customer_email(customer)
     if not email:
         raise HTTPException(400, "No email on record — add a contact before sending the issuance email")
 
@@ -1590,8 +1593,8 @@ async def endorsements_overview(
             "province": customer.province if customer else None,
         },
         "contact": {
-            "email": details.get("contact_email") or details.get("email"),
-            "phone": details.get("contact_phone") or details.get("phone") or details.get("mobile_number"),
+            "email": customer_email(customer),
+            "phone": customer_phone(customer),
         },
         "beneficiaries": [
             {"name": b.name, "cnic": b.cnic, "relationship": b.relationship, "share_pct": b.share_pct}
@@ -1907,8 +1910,7 @@ async def email_endorsement(
     if not endorsement or endorsement.policy_id != policy_id:
         raise HTTPException(404, "Endorsement not found")
     customer = await session.get(Customer, policy.customer_id)
-    details = (customer.details if customer else None) or {}
-    email = details.get("contact_email") or details.get("email")
+    email = customer_email(customer)
     if not email:
         raise HTTPException(400, "No email on record — add a contact before emailing the endorsement")
 

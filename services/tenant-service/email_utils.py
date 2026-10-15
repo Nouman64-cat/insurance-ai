@@ -36,7 +36,7 @@ def _send_sync(
     subject: str,
     text_body: str,
     html_body: str | None = None,
-    attachments: list[str] | None = None
+    attachments: list | None = None
 ) -> None:
     msg = MIMEMultipart("mixed")
     msg["Subject"] = subject
@@ -50,15 +50,22 @@ def _send_sync(
     msg.attach(body_msg)
 
     if attachments:
-        for filepath in attachments:
+        for item in attachments:
+            # An attachment is a path, or a (path, file name) pair when the file should arrive under a friendlier name.
+            filepath, shown = item if isinstance(item, (tuple, list)) else (item, os.path.basename(item))
             if not os.path.isfile(filepath):
                 continue
             with open(filepath, "rb") as f:
-                part = MIMEApplication(f.read(), Name=os.path.basename(filepath))
-            part["Content-Disposition"] = f'attachment; filename="{os.path.basename(filepath)}"'
+                part = MIMEApplication(f.read())
+            # A name with non-ASCII characters (the en-dash in "Policy Schedule – POLICY-…") must be RFC 2231 encoded;
+            # a raw one makes SES reject the whole message ("Expected disposition").
+            part.add_header("Content-Disposition", "attachment", filename=("utf-8", "", shown))
             msg.attach(part)
 
-    with smtplib.SMTP(SES_SMTP_HOST, SES_SMTP_PORT, timeout=15) as server:
+    # Sending the policy documents means uploading several MB, which a 15-second socket timeout cannot cover on a slow
+    # connection ("The write operation timed out"). Messages without attachments still fail fast.
+    timeout = 180 if attachments else 15
+    with smtplib.SMTP(SES_SMTP_HOST, SES_SMTP_PORT, timeout=timeout) as server:
         server.starttls()
         server.login(SES_USERNAME, SES_PASSWORD)
         server.sendmail(SES_FROM_EMAIL, [to_email], msg.as_string())
@@ -69,7 +76,7 @@ async def send_email(
     subject: str,
     text_body: str,
     html_body: str | None = None,
-    attachments: list[str] | None = None
+    attachments: list | None = None
 ) -> bool:
     """Best-effort send. Returns True on success, False otherwise — never raises."""
     if EMAIL_PROVIDER != "ses" or not (SES_FROM_EMAIL and SES_USERNAME and SES_PASSWORD):
