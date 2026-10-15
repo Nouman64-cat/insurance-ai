@@ -285,6 +285,49 @@ async def _indicative(session: AsyncSession, policy: Policy, ctx: dict, today: d
     return out
 
 
+async def _outlook(session: AsyncSession, policy: Policy, ctx: dict, today: date) -> dict:
+    """What the policy returns if no claim is made (it runs to the end) versus leaving early — a projection that
+    assumes every scheduled premium is paid on time. Protection-only products return nothing in either case."""
+    rows = (await session.exec(select(PremiumSchedule).where(PremiumSchedule.policy_id == policy.id))).all()
+    live = [r for r in rows if eng._v(r.status) != PremiumScheduleStatusEnum.WAIVED.value]
+    paid = round(sum(float(r.amount_paid or 0) for r in live), 2)
+    scheduled = round(sum(float(r.amount_due or 0) for r in live), 2)
+    end = policy.maturity_date
+    term_years = eng.completed_years(policy.effective_date, end) if (policy.effective_date and end) else None
+    base = {"profile": ctx["profile"], "premiums_paid": paid, "premiums_scheduled": scheduled, "term_years": term_years,
+            "projection_basis": "Assumes every scheduled premium is paid on time and the placeholder fund growth rate."}
+    if ctx["profile"] != "Savings":
+        return {**base, "no_claim": {"benefit": 0.0, "note": "Protection only: if no claim is made the cover simply ends at the term date and nothing is paid back."},
+                "surrender": {"benefit": 0.0, "note": "A protection-only product has no cash or surrender value, so leaving early returns nothing."},
+                "schedule": []}
+    projected = sorted(((r.due_date, float(r.amount_due)) for r in live if float(r.amount_due or 0) > 0))
+    rules = ctx["rules"]
+    mat = eng.calculate_settlement(exit_type="Maturity", valuation_date=end or today, contributions=projected, effective_date=policy.effective_date,
+                                   sum_assured=policy.coverage_amount, rules=rules, loans=[])
+    schedule = []
+    if policy.effective_date and end:
+        for y in range(int(rules["surrender_min_years"]), (term_years or 0) + 1):
+            try:
+                anniv = policy.effective_date.replace(year=policy.effective_date.year + y)
+            except ValueError:   # 29 Feb
+                anniv = policy.effective_date.replace(year=policy.effective_date.year + y, day=28)
+            if anniv >= end:
+                break
+            paid_by = sum(a for d, a in projected if d <= anniv)
+            try:
+                sv = eng.calculate_settlement(exit_type="Surrender", valuation_date=anniv, contributions=projected, effective_date=policy.effective_date,
+                                              sum_assured=policy.coverage_amount, rules=rules, loans=[])
+            except ValueError:
+                continue
+            schedule.append({"year": y, "date": anniv.isoformat(), "premiums_paid": round(paid_by, 2), "fund": sv["fund"]["value"],
+                             "factor": sv["surrender_factor"], "value": sv["net"], "reached": anniv <= today})
+    return {**base, "no_claim": {"benefit": mat["net"], "fund": mat["fund"]["value"], "growth": mat["fund"]["growth"],
+                                 "note": "If no claim is made the policy runs to its term and pays this at maturity."},
+            "surrender": {"benefit": next((x["value"] for x in reversed(schedule) if x["reached"]), None),
+                          "note": f"Leaving early pays only a share of the fund, and nothing before {rules['surrender_min_years']} completed years."},
+            "schedule": schedule}
+
+
 # ── views ─────────────────────────────────────────────────────────────────────
 
 async def _timeline(session: AsyncSession, policy_id: UUID, case: PolicyExit) -> list[dict]:
@@ -391,6 +434,7 @@ async def _overview(session: AsyncSession, policy: Policy) -> dict:
         "extension": {"allowed": ctx["extension_allowed"], "open_renewal_no": ctx["open_renewal"].renewal_no if ctx["open_renewal"] else None},
         "natural": natural,
         "indicative": None if (closed or ctx["profile"] == "Group") else await _indicative(session, policy, ctx, today),
+        "outlook": None if (closed or ctx["profile"] == "Group") else await _outlook(session, policy, ctx, today),
         "loans": await eng.loans_on(session, policy.id, today),
         "claim_closure": ({"claim_no": ctx["claim_closure"]["claim_no"], "at": _iso(ctx["claim_closure"]["at"]),
                            "benefit_paid": ctx["claim_closure"]["benefit_paid"], "category": ctx["claim_closure"]["category"]}

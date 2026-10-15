@@ -23,11 +23,15 @@ export function useSegment(): [Segment, (s: Segment) => void, boolean] {
 
 export function SegmentTabs({ segment, onChange }: { segment: Segment; onChange: (s: Segment) => void }) {
   const { t } = useI18n();
+  const icon = { individual: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0", family: "M17 20h5v-2a4 4 0 0 0-3-3.87M9 20H4v-2a4 4 0 0 1 3-3.87m6-3.13a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" };
   return (
-    <div role="group" aria-label={t("segment.label")} className="inline-flex rounded-xl border border-slate-200 bg-white p-0.5 mb-4">
+    <div role="group" aria-label={t("segment.label")} className="mb-4 inline-flex rounded-2xl border border-slate-200 bg-slate-100/80 p-1">
       {(["individual", "family"] as const).map((s) => (
         <button key={s} type="button" aria-pressed={segment === s} onClick={() => onChange(s)}
-          className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-colors ${segment === s ? "bg-blue-600 text-white" : "text-slate-600 hover:text-slate-900"}`}>{t(`segment.${s}`)}</button>
+          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition-all ${segment === s ? "bg-white text-blue-700 shadow-sm ring-1 ring-blue-100" : "text-slate-500 hover:text-slate-800"}`}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true"><path d={icon[s]} /></svg>
+          {t(`segment.${s}`)}
+        </button>
       ))}
     </div>
   );

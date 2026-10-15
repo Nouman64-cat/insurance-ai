@@ -63,6 +63,21 @@ async def _get_case(session: AsyncSession, tenant_id: UUID, case_id: UUID) -> Ca
     return case
 
 
+async def _premium_for(session: AsyncSession, tenant_id: UUID, policy_id: UUID) -> tuple[float, Optional[dict]]:
+    """What the first premium is, and how it is made up. This is the SAME calculation issuance uses (base, loading, policy fee, stamp duty,
+    sales tax), so the amount collected before underwriting is the amount the policy will carry, not a rougher estimate of it."""
+    policy = await session.get(Policy, policy_id)
+    if policy is not None:
+        try:
+            from routers.policies import _price_breakdown
+            breakdown, _loading = await _price_breakdown(session, tenant_id, policy)
+            if breakdown.total_premium and breakdown.total_premium > 0:
+                return round(float(breakdown.total_premium), 2), breakdown.to_dict()
+        except Exception:                                            # pricing unavailable for this policy: fall back to the quote
+            pass
+    return round(await _latest_quote_amount(session, tenant_id, policy_id), 2), None
+
+
 async def _latest_quote_amount(session: AsyncSession, tenant_id: UUID, policy_id: UUID) -> float:
     stmt = (
         select(PremiumQuote)
@@ -108,6 +123,8 @@ class IPPRead(BaseModel):
     last_reminded_at: Optional[datetime] = None
     link_expired: bool = False
     amount_due: Optional[float] = None           # the premium to collect, known before anything has been requested
+    breakdown: Optional[dict] = None             # how that premium is made up
+    breakdown_due: Optional[dict] = None         # the same, worked out now, for a payment not yet requested
 
 
 def _to_read(ipp: Optional[InitialPremiumPayment]) -> IPPRead:
@@ -121,7 +138,7 @@ def _to_read(ipp: Optional[InitialPremiumPayment]) -> IPPRead:
                     proof_status=ipp.proof_status, proof_uploaded_at=ipp.proof_uploaded_at, proof_note=ipp.proof_note,
                     proof_artifact_id=ipp.proof_artifact_id, proof_method=ipp.proof_method, proof_reference=ipp.proof_reference,
                     proof_review_note=ipp.proof_review_note, proof_reviewed_by=ipp.proof_reviewed_by, proof_reviewed_at=ipp.proof_reviewed_at,
-                    reminder_count=ipp.reminder_count, last_reminded_at=ipp.last_reminded_at,
+                    reminder_count=ipp.reminder_count, last_reminded_at=ipp.last_reminded_at, breakdown=ipp.breakdown_json,
                     link_expired=ipp.request_version > 0 and not payment_requests.is_open(ipp), amount_due=ipp.amount)
 
 
@@ -160,7 +177,7 @@ async def _initiate(session: AsyncSession, tenant_id: UUID, policy_id: UUID, cas
     if ipp is not None and ipp.status == IPPStatusEnum.REALIZED:
         raise HTTPException(status_code=409, detail="Initial premium has already been paid for this case.")
 
-    amount = await _latest_quote_amount(session, tenant_id, policy_id)
+    amount, breakdown = await _premium_for(session, tenant_id, policy_id)
     try:
         intent = payment_gateway.initiate_payment(amount, method)
     except ValueError as exc:
@@ -168,6 +185,7 @@ async def _initiate(session: AsyncSession, tenant_id: UUID, policy_id: UUID, cas
 
     def _apply(row: InitialPremiumPayment, now: datetime) -> None:
         row.amount = amount
+        row.breakdown_json = breakdown
         row.status = IPPStatusEnum.INITIATED
         row.method = intent.method.value
         row.reference = intent.reference
@@ -179,7 +197,7 @@ async def _initiate(session: AsyncSession, tenant_id: UUID, policy_id: UUID, cas
 
     now = datetime.utcnow()
     if ipp is None:
-        ipp = InitialPremiumPayment(tenant_id=tenant_id, case_id=case_id, policy_id=policy_id, amount=amount,
+        ipp = InitialPremiumPayment(tenant_id=tenant_id, case_id=case_id, policy_id=policy_id, amount=amount, breakdown_json=breakdown,
                                     status=IPPStatusEnum.INITIATED, method=intent.method.value, reference=intent.reference,
                                     initiated_at=now, updated_at=now)
         session.add(ipp)
@@ -287,10 +305,11 @@ async def _get_policy(session: AsyncSession, tenant_id: UUID, policy_id: UUID) -
 async def get_policy_ipp(tenant_id: UUID, policy_id: UUID, token: str = Depends(oauth2_scheme), session: AsyncSession = Depends(get_session)):
     await _get_current_user_id(token)
     await _get_policy(session, tenant_id, policy_id)
-    out = _to_read(await _find_ipp(session, tenant_id, None, policy_id))
-    if out.amount_due is None:
+    ipp = await _find_ipp(session, tenant_id, None, policy_id)
+    out = _to_read(ipp)
+    if ipp is None or ipp.status != IPPStatusEnum.REALIZED:          # not yet received: show what it would be now, never a stale figure
         try:
-            out.amount_due = round(await _latest_quote_amount(session, tenant_id, policy_id), 2)
+            out.amount_due, out.breakdown_due = await _premium_for(session, tenant_id, policy_id)
         except HTTPException:
             pass
     return out
@@ -341,7 +360,7 @@ async def request_policy_payment(tenant_id: UUID, policy_id: UUID, token: str = 
         raise HTTPException(status_code=409, detail="Start the review of this application before asking the customer to pay.")
     if ipp is not None and ipp.status == IPPStatusEnum.REALIZED:
         raise HTTPException(status_code=409, detail="Initial premium has already been paid for this case.")
-    if ipp is None or ipp.status in (IPPStatusEnum.NOT_STARTED, IPPStatusEnum.FAILED) or not ipp.amount:
+    if ipp is None or ipp.status != IPPStatusEnum.REALIZED:         # always re-priced here, so the customer is asked for today's figure
         await _initiate(session, tenant_id, policy_id, None, None)
         ipp = await _find_ipp(session, tenant_id, None, policy_id)
     customer = await session.get(Customer, policy.customer_id)
@@ -434,7 +453,7 @@ async def mark_policy_payment_received(tenant_id: UUID, policy_id: UUID, body: I
         raise HTTPException(status_code=409, detail="Start the review of this application before recording the payment.")
     if not body.method.strip():
         raise HTTPException(status_code=422, detail="Say how the payment was received.")
-    if ipp is None or not ipp.amount:
+    if ipp is None or not ipp.amount or ipp.status != IPPStatusEnum.REALIZED:   # recorded against the current premium, not an old estimate
         await _initiate(session, tenant_id, policy_id, None, None)
         ipp = await _find_ipp(session, tenant_id, None, policy_id)
     now = datetime.utcnow()

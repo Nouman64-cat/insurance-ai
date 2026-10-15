@@ -40,6 +40,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from routers.artifacts import _presign_url
 from routers.claim_workflow import RegisterBody, receive_document, register_claim
+from routers import policy_exit as px
 from routers.policies import _get_policy, _st
 from routers.post_issuance import CollectBody, collect_installment
 from services import claim_engine as eng
@@ -835,6 +836,69 @@ async def intimate_claim(tenant_id: UUID, customer_id: UUID, policy_id: UUID, bo
     claim = (await session.exec(select(Claim).where(Claim.policy_id == policy.id).order_by(Claim.created_at.desc()))).first()  # type: ignore[attr-defined]
     proc = (await session.exec(select(ClaimProcess).where(ClaimProcess.claim_id == claim.id))).first()
     return await _claim_detail(session, policy, claim, proc, access)
+
+
+# ── early surrender ───────────────────────────────────────────────────────────
+
+async def _surrender_policy(session: AsyncSession, tenant_id: UUID, customer_id: UUID, policy_id: UUID) -> Policy:
+    """Only the policy's owner can surrender it (an insured family member or guardian cannot end the contract)."""
+    policy, access = await _owned_policy_access(session, tenant_id, customer_id, policy_id, family="full")
+    if access.owner_customer_id != customer_id:
+        raise HTTPException(404, "Policy not found")
+    return policy
+
+
+@router.get("/tenants/{tenant_id}/customers/{customer_id}/policies/{policy_id}/surrender")
+async def surrender_quote(tenant_id: UUID, customer_id: UUID, policy_id: UUID, session: AsyncSession = Depends(get_session)):
+    """What the policy would pay if surrendered today, and any surrender request already open."""
+    policy = await _surrender_policy(session, tenant_id, customer_id, policy_id)
+    ctx = await px._context(session, policy)
+    today = date.today()
+    ind = await px._indicative(session, policy, ctx, today)
+    sv = ind["surrender"]
+    open_case = await px.eng.get_open_case(session, policy.id)
+    elig = await px._evaluate(session, policy, "Surrender", today, ctx)
+    review_note = elig["message"] if elig["blockers"] else None
+    s = sv.get("settlement")
+    return {
+        "policy_id": str(policy.id), "policy_number": policy.policy_number, "status": _st(policy),
+        "available": bool(sv["available"]) and open_case is None, "reason": sv.get("reason"),
+        "review_note": review_note,
+        "min_years": ctx["rules"]["surrender_min_years"], "completed_years": px.eng.completed_years(policy.effective_date, today),
+        "settlement": ({"gross": s["gross"], "net": s["net"], "total_deductions": s["total_deductions"], "factor": s["surrender_factor"],
+                        "premiums_paid": s["fund"]["premiums_paid"], "fund": s["fund"]["value"],
+                        "deductions": [{"label": d["label"], "amount": d["amount"]} for d in s["deductions"]]} if s else None),
+        "open_request": ({"exit_no": open_case.exit_no, "exit_type": open_case.exit_type, "status": open_case.status,
+                          "requested_at": open_case.created_at.isoformat()} if open_case else None),
+        "indicative": True,
+    }
+
+
+class SurrenderRequest(BaseModel):
+    reason: str = PField(min_length=5, max_length=500)
+
+
+@router.post("/tenants/{tenant_id}/customers/{customer_id}/policies/{policy_id}/surrender", status_code=201)
+async def request_surrender(tenant_id: UUID, customer_id: UUID, policy_id: UUID, body: SurrenderRequest, request: Request,
+                            session: AsyncSession = Depends(get_session)):
+    """The policyholder asks to surrender. This opens the same Surrender case staff open in Maturity & Exit; nothing is
+    paid until staff verify it, the customer accepts the settlement and it is authorised."""
+    customer = await _customer(session, tenant_id, customer_id)
+    policy = await _surrender_policy(session, tenant_id, customer_id, policy_id)
+    await session.refresh(policy, with_for_update=True)
+    if _st(policy) in px._FINAL:
+        raise HTTPException(409, detail={"code": "POLICY_CLOSED", "message": "This policy has already ended."})
+    if await px.eng.get_open_case(session, policy.id):
+        raise HTTPException(409, detail={"code": "ALREADY_REQUESTED", "message": "A surrender or exit is already open on this policy."})
+    # Unlike staff, the customer is never turned away by the eligibility checks (free-look window, minimum years…): the
+    # request is recorded with those findings and staff decide — approve and process it, or decline and tell the customer.
+    reason = body.reason.strip()
+    case, events = await px._create_case(session, policy, "Surrender", _portal_actor(customer), "Customer portal",
+                                         px.OpenBody(exit_type="Surrender", reason=reason, requested_by=customer.name,
+                                                     relationship="Policyholder", channel="Portal"))
+    await session.commit()
+    await px._publish(request, policy, events)
+    return await surrender_quote(tenant_id, customer_id, policy_id, session)
 
 
 @router.post("/tenants/{tenant_id}/customers/{customer_id}/claims/{claim_id}/documents/{key}")

@@ -8,11 +8,13 @@ import {
   uploadClaimDocument, waiveClaimDocument, returnClaimDocument, requestClaimDocument, claimDocumentUrl, claimChecklistUrl,
   claimLetterUrl, addClaimFinding, completeClaimInvestigation, assessClaim, decideClaim, verifyClaimPayees,
   authorizeClaimDisbursement, disburseClaim, reconcileClaim, closeClaim, sendClaimLetter,
+  getExitOverview, openExit, type ExitOverview,
   type ClaimsOverview, type ClaimWorkspace, type ClaimStage, type ClaimCategory, type ClaimPayee, type RegisterClaimBody,
 } from "@/app/services/postIssuance";
 import {
   AuditTimeline, btnDanger, btnGhost, btnPrimary, CheckList, Chip, fmtDate, fmtDateTime, inputCls, KV, StageDot, TRACKER_TEXT,
 } from "@/components/policy/panelKit";
+import { SurrenderCard } from "@/components/policy/ExitPanel";
 import { tx } from "@/lib/i18n/tx";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -54,7 +56,7 @@ type Run = (fn: () => Promise<unknown>, success: string) => Promise<boolean>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function ClaimsPanel({ policyId, onChanged }: Readonly<{ policyId: string; onChanged: () => Promise<void> }>) {
+export default function ClaimsPanel({ policyId, onChanged, onOpenExit }: Readonly<{ policyId: string; onChanged: () => Promise<void>; onOpenExit?: () => void }>) {
   const { notify } = useNotify();
   const [ov, setOv] = useState<ClaimsOverview | null>(null);
   const [ws, setWs] = useState<ClaimWorkspace | null>(null);
@@ -64,6 +66,7 @@ export default function ClaimsPanel({ policyId, onChanged }: Readonly<{ policyId
   const [openStep, setOpenStep] = useState<string | null>(null);
   const [showRegister, setShowRegister] = useState(false);
   const [regCategory, setRegCategory] = useState<ClaimCategory>("Death");
+  const [exitOv, setExitOv] = useState<ExitOverview | null>(null);
 
   useEffect(() => { if (typeof window !== "undefined") setRole(localStorage.getItem("user_role")); }, []);
 
@@ -72,6 +75,8 @@ export default function ClaimsPanel({ policyId, onChanged }: Readonly<{ policyId
     catch (e: any) { setErr(e?.response?.data?.detail ?? e?.message ?? tx("Failed to load claims.")); }
   }, [policyId]);
   useEffect(() => { loadOverview(); }, [loadOverview]);
+  const loadExit = useCallback(async () => { try { setExitOv(await getExitOverview(policyId)); } catch { /* the card simply stays hidden */ } }, [policyId]);
+  useEffect(() => { loadExit(); }, [loadExit]);
 
   const open = async (claimId: string) => {
     try { setWs(await getClaimWorkspace(policyId, claimId)); setShowRegister(false); }
@@ -120,6 +125,22 @@ export default function ClaimsPanel({ policyId, onChanged }: Readonly<{ policyId
         <div className="rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
           {tx("🔒 Claims actions need a claims role — you can view claims on this policy.")}
         </div>
+      )}
+
+      {/* Early surrender: the customer ends the policy before its term — handled by the Maturity & Exit workflow */}
+      {exitOv && !exitOv.closed && exitOv.profile !== "Group" && (
+        exitOv.case?.case.is_open && exitOv.case.case.exit_type === "Surrender" ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold text-slate-800">{tx("Early surrender in progress")}</p>
+              <p className="text-xs text-slate-600">{tx("A surrender request is open on this policy. Continue it in Maturity & Exit.")}</p>
+            </div>
+            {onOpenExit && <button className={btnPrimary} onClick={onOpenExit}>{tx("Open Maturity & Exit")}</button>}
+          </div>
+        ) : (
+          <SurrenderCard ov={exitOv} locked={locked}
+            onRequest={(b) => run(async () => { await openExit(policyId, { exit_type: "Surrender", ...b }); await loadExit(); }, tx("Surrender requested."))} />
+        )
       )}
 
       {/* Cover: the periods claims are tested against */}

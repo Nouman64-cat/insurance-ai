@@ -490,6 +490,9 @@ class CustomerRead(BaseModel):
     details:          Optional[dict] = None
 
     active_policy_number: Optional[str] = None
+    # Set on the single-customer view only, for someone whose policy has left (surrendered / matured / expired) and who has none in force
+    exited_policy: Optional[dict] = None
+    policy_status: Optional[str] = None   # status of that policy: Active, or Matured / Surrendered / Expired once it has left
 
     # Who brought this customer in (nullable — legacy/API-created rows may have none)
     acquisition_source_id: Optional[UUID] = None

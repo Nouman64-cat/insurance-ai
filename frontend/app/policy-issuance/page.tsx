@@ -271,8 +271,9 @@ function IssuanceModal({
                 </div>
               </div>
 
-              {/* Premium breakdown */}
-              {pb && (
+              {/* Premium breakdown: only when nothing has been collected yet. A premium already received (before underwriting) is
+                  shown in the payment box below, with its breakdown on the receipt, so it is not repeated here. */}
+              {pb && !prepaid && (
                 <div>
                   <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">
                     {tx("Premium breakdown")}

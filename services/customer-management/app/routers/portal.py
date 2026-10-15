@@ -317,6 +317,28 @@ async def submit_claim(policy_id: UUID, body: ClaimIn, p: Principal = Depends(cu
     return result
 
 
+@router.get("/policies/{policy_id}/surrender")
+async def surrender_quote(policy_id: UUID, p: Principal = Depends(current_customer)):
+    c, scope = _up(p)
+    return await c.get(f"{scope}/policies/{policy_id}/surrender")
+
+
+class SurrenderIn(Strict):
+    reason: str = Field(min_length=5, max_length=500)
+
+
+@router.post("/policies/{policy_id}/surrender", status_code=201)
+async def request_surrender(policy_id: UUID, body: SurrenderIn, p: Principal = Depends(current_customer), idempotency_key: Optional[str] = Header(None)):
+    """The policyholder asks to surrender early. Opens a Surrender case for staff; nothing is paid until it is verified."""
+    key = _idem(idempotency_key)
+    c, scope = _up(p)
+    payload = body.model_dump(mode="json")
+    result = await _idempotent(p, f"surrender:{policy_id}", key, payload, lambda: c.post(f"{scope}/policies/{policy_id}/surrender", payload))
+    async with db.transaction() as conn:
+        await accounts.audit(conn, "SURRENDER_REQUESTED", account_id=p.account_id, tenant_id=p.tenant_id, policy_id=str(policy_id))
+    return result
+
+
 @router.post("/claims/{claim_id}/documents/{doc_key}")
 async def upload_claim_document(claim_id: UUID, doc_key: str, request: Request, p: Principal = Depends(current_customer),
                                 file: UploadFile = File(...), note: Optional[str] = Form(None)):

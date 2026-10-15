@@ -1552,10 +1552,10 @@ function ActionDropdown({
       <button
         onClick={handleApply}
         disabled={disabled || applying || optionDisabled}
-        className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-colors disabled:opacity-50 ${
+        className={`inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg text-sm font-bold shadow-sm transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
           selectedOption?.tier === "decision"
-            ? "bg-rose-600 text-white hover:bg-rose-700"
-            : "bg-blue-600 text-white hover:bg-blue-700"
+            ? "bg-rose-600 text-white hover:bg-rose-700 shadow-rose-600/20 focus-visible:ring-rose-500"
+            : "bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/25 focus-visible:ring-blue-500"
         }`}
       >
         {applying ? (

@@ -9,14 +9,18 @@ const TONE: Record<Notice["severity"], string> = {
   critical: "bg-rose-50 text-rose-600", warning: "bg-amber-50 text-amber-600", success: "bg-emerald-50 text-emerald-600", info: "bg-blue-50 text-blue-600",
 };
 
-/** A notification, worded from its kind and parameters in the viewer's language. */
-export function NoticeRow({ n, compact = false, action }: { n: Notice; compact?: boolean; action?: React.ReactNode }) {
-  const { t, locale } = useI18n();
-  const p = n.params;
-  const vars = {
+/** The values a notification's wording needs, formatted for the viewer's language. */
+export function noticeVars(p: Notice["params"], locale: Parameters<typeof date>[1]) {
+  return {
     policy: p.policy_number ?? "", amount: typeof p.amount === "number" ? money(p.amount) : "", date: p.due_date ? date(String(p.due_date), locale) : p.date ? date(String(p.date), locale) : "",
     graceUntil: p.grace_until ? date(String(p.grace_until), locale) : "", days: p.days ?? p.days_left ?? "", claim: p.claim_number ?? "",
   };
+}
+
+/** A notification, worded from its kind and parameters in the viewer's language. */
+export function NoticeRow({ n, compact = false, action }: { n: Notice; compact?: boolean; action?: React.ReactNode }) {
+  const { t, locale } = useI18n();
+  const vars = noticeVars(n.params, locale);
   const href = n.claim_id ? `/claims/${n.claim_id}` : n.policy_id ? `/policies/${n.policy_id}` : "/dashboard";
   return (
     <li className={`flex items-start gap-3 ${n.read ? "opacity-70" : ""}`}>

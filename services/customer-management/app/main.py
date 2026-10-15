@@ -12,7 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from app import db, migrate
 from app.config import settings
 from app.errors import ApiError, api_error_handler, unhandled_error_handler, validation_error_handler
-from app.routers import auth, family, health, internal, portal, support, walk_in
+from app.routers import auth, family, health, internal, live, portal, support, walk_in
 
 
 class JsonFormatter(logging.Formatter):
@@ -79,6 +79,7 @@ app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(portal.router)
 app.include_router(support.router)
+app.include_router(live.router)
 app.include_router(family.router)
 app.include_router(walk_in.router)
 app.include_router(internal.router)

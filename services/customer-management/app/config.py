@@ -52,6 +52,11 @@ class Settings:
 
     env: str = field(default_factory=lambda: os.environ.get("CM_ENV", "development"))
 
+    # Live updates (Server-Sent Events): how often the customer's own claims and tickets are checked, and how long one connection lives
+    # before the browser reconnects (so an expired session is noticed).
+    stream_poll_seconds: float = field(default_factory=lambda: float(os.environ.get("CM_STREAM_POLL_SECONDS", "5")))
+    stream_max_seconds: float = field(default_factory=lambda: float(os.environ.get("CM_STREAM_MAX_SECONDS", "600")))
+
     # Support tickets are kept by the Customer Service service; this key signs our calls to it.
     support_url: str = field(default_factory=lambda: os.environ.get("CUSTOMER_SERVICE_URL", "http://customer-service:8008").rstrip("/"))
     support_key: str = field(default_factory=lambda: os.environ.get("CS_PORTAL_KEY", ""))

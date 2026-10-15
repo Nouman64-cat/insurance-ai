@@ -100,6 +100,16 @@ export default function PayPage({ params }: { params: { token: string } }) {
                   <p className="text-sm font-semibold text-slate-700">{t("walkin.pay.amount")}</p>
                   <p className="text-2xl font-bold text-blue-700 ltr-num" dir="ltr">{money(view.amount)}</p>
                 </div>
+                {view.breakdown && (
+                  <details open className="rounded-xl border border-slate-200 text-sm">
+                    <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-600">{t("walkin.pay.breakdown")}</summary>
+                    <dl className="divide-y divide-slate-100 border-t border-slate-100">
+                      {([["walkin.pay.b.base", view.breakdown.base_premium], ["walkin.pay.b.loading", view.breakdown.loading_amount], ["walkin.pay.b.fee", view.breakdown.policy_fee],
+                        ["walkin.pay.b.stamp", view.breakdown.stamp_duty_amount], ["walkin.pay.b.tax", view.breakdown.tax_amount]] as [string, number][]).map(([k, v]) => (
+                        <div key={k} className="flex justify-between gap-3 px-3 py-1.5"><dt className="text-slate-500">{t(k)}</dt><dd className="font-medium text-slate-800 ltr-num" dir="ltr">{money(v)}</dd></div>))}
+                    </dl>
+                  </details>
+                )}
                 {view.reference && <p className="text-xs text-slate-500">{t("walkin.pay.reference")}: <span className="font-mono text-slate-700" dir="ltr">{view.reference}</span></p>}
 
                 {state === "Paid" && <Banner tone="success" title={t("walkin.pay.paid")}>{t("walkin.pay.paidText")}</Banner>}

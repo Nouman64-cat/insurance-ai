@@ -130,6 +130,8 @@ export default function ExitPanel({
           hint={loansTotal > 0 ? tx("recovered from any proceeds") : tx("none recorded")} />
       </div>
 
+      {ov.outlook && <OutlookCard o={ov.outlook} />}
+
       {/* A closed policy */}
       {ov.closed && (
         <div className="rounded-xl border border-slate-300 bg-slate-100 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
@@ -242,11 +244,59 @@ function SettlementBreakdown({ s, compact }: Readonly<{ s: ExitSettlement; compa
   );
 }
 
+function OutlookCard({ o }: Readonly<{ o: NonNullable<ExitOverview["outlook"]> }>) {
+  const savings = o.profile === "Savings";
+  const noClaim = o.no_claim.benefit;
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+      <div>
+        <p className="text-sm font-bold text-slate-800">{tx("What this policy returns")}</p>
+        <p className="text-[11px] text-slate-400">{tx("Premiums paid so far")} {fmtPKR(o.premiums_paid)} {tx("of")} {fmtPKR(o.premiums_scheduled)} {tx("scheduled over the term")}</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">{tx("If no claim is made")}</p>
+          <p className="mt-1 text-xl font-extrabold text-emerald-700">{noClaim > 0 ? fmtPKR(noClaim) : tx("No return")}</p>
+          <p className="mt-1 text-xs text-slate-600">{tx(o.no_claim.note)}</p>
+          {savings && o.no_claim.fund != null && <p className="mt-1 text-[11px] text-slate-500">{tx("Includes growth of")} {fmtPKR(o.no_claim.growth ?? 0)}</p>}
+        </div>
+        <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-700">{tx("If surrendered early")}</p>
+          <p className="mt-1 text-xl font-extrabold text-amber-700">{o.surrender.benefit ? fmtPKR(o.surrender.benefit) : savings ? "—" : tx("No return")}</p>
+          <p className="mt-1 text-xs text-slate-600">{tx(o.surrender.note)}</p>
+        </div>
+      </div>
+      {o.schedule.length > 0 && (
+        <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 text-slate-500"><tr>
+              {[tx("Year"), tx("Premiums paid"), tx("Fund value"), tx("Surrender %"), tx("Surrender value")].map((h) => <th key={h} className="px-3 py-2 text-start font-semibold">{h}</th>)}
+            </tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {o.schedule.map((r) => (
+                <tr key={r.year} className={r.reached ? "bg-blue-50/40" : ""}>
+                  <td className="px-3 py-1.5 font-medium text-slate-700">{r.year}</td>
+                  <td className="px-3 py-1.5 tabular-nums">{fmtPKR(r.premiums_paid)}</td>
+                  <td className="px-3 py-1.5 tabular-nums">{fmtPKR(r.fund)}</td>
+                  <td className="px-3 py-1.5 tabular-nums">{r.factor != null ? `${r.factor}%` : "—"}</td>
+                  <td className="px-3 py-1.5 font-semibold tabular-nums text-slate-900">{fmtPKR(r.value)}</td>
+                </tr>
+              ))}
+              <tr className="bg-emerald-50/50"><td className="px-3 py-1.5 font-medium text-slate-700">{o.term_years ?? tx("Term")} ({tx("maturity")})</td><td className="px-3 py-1.5 tabular-nums">{fmtPKR(o.premiums_scheduled)}</td><td className="px-3 py-1.5 tabular-nums">{fmtPKR(o.no_claim.fund ?? 0)}</td><td className="px-3 py-1.5">100%</td><td className="px-3 py-1.5 font-semibold tabular-nums text-emerald-700">{fmtPKR(noClaim)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="text-[11px] italic text-slate-400">{tx(o.projection_basis)}</p>
+    </div>
+  );
+}
+
 function Line({ k, v, strong, muted }: Readonly<{ k: string; v: string; strong?: boolean; muted?: boolean }>) {
   return <div className="flex justify-between gap-6 text-xs"><span className={strong ? "font-bold text-slate-800" : muted ? "text-slate-500" : "text-slate-600"}>{k}</span><span className={`tabular-nums ${strong ? "font-bold text-slate-900" : "text-slate-700"}`}>{v}</span></div>;
 }
 
-function SurrenderCard({
+export function SurrenderCard({
   ov, locked, onRequest,
 }: Readonly<{ ov: ExitOverview; locked: boolean; onRequest: (b: { reason: string; requested_by: string; relationship: string; channel: string }) => void }>) {
   const sv = ov.indicative?.surrender;

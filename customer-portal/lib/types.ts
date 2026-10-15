@@ -384,6 +384,7 @@ export interface WalkInPayView {
   insurer: { name: string | null; phone: string | null; email: string | null };
   expires_at: string | null; proof_uploaded_at: string | null; review_note: string | null;
   has_receipt?: boolean; proof_method?: string | null; proof_reference?: string | null;
+  breakdown?: { base_premium: number; loading_amount: number; policy_fee: number; stamp_duty_amount: number; tax_amount: number; total_premium: number } | null;
   receipt?: { receipt_no: string; received_at: string; amount: number; method: string | null; reference: string | null; confirmed_by: string | null; customer_name: string | null; plan_label: string | null; insurer: { name: string | null } } | null;
 }
 

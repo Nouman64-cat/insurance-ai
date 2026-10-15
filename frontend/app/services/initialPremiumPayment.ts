@@ -29,9 +29,13 @@ export interface IPP {
   last_reminded_at?: string | null;
   link_expired?: boolean;
   amount_due?: number | null;
+  breakdown?: PremiumBreakdown | null;
+  breakdown_due?: PremiumBreakdown | null;
 }
 
 export interface PaymentRequestResult { ipp: IPP; link: string; emailed: boolean; customer_email: string | null }
+
+export interface PremiumBreakdown { base_premium: number; loading_amount: number; policy_fee: number; stamp_duty_amount: number; tax_amount: number; total_premium: number }
 
 export interface PaymentMethod { code: string; label: string }
 export interface PaymentIntent { reference: string; method: string; amount: number; status: string }
@@ -95,6 +99,7 @@ export async function withdrawPolicyPayment(policyId: string): Promise<IPP> {
 
 export interface PaymentReceipt {
   receipt_no: string; received_at: string; amount: number; method: string | null; reference: string | null; confirmed_by: string | null;
+  breakdown?: PremiumBreakdown | null;
   customer_name: string | null; plan_label: string | null; insurer: { name: string | null; phone: string | null; email: string | null };
 }
 

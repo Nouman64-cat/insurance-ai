@@ -55,3 +55,19 @@ export function newIdempotencyKey(): string {
   const c: Crypto | undefined = typeof crypto !== "undefined" ? crypto : undefined;
   return c?.randomUUID ? c.randomUUID() : `k${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
 }
+
+/** "5 minutes ago" in the viewer's language; falls back to the date for anything older than a week. */
+export function ago(value: string | null | undefined, locale: Locale = "en"): string {
+  if (!value) return "—";
+  const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(value) ? value : `${value}Z`;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const secs = Math.round((d.getTime() - Date.now()) / 1000);
+  const abs = Math.abs(secs);
+  if (abs > 7 * 86400) return dateTime(value, locale);
+  const rtf = new Intl.RelativeTimeFormat(locale === "ur" ? "ur" : "en", { numeric: "auto" });
+  if (abs < 60) return rtf.format(0, "second");
+  if (abs < 3600) return rtf.format(Math.round(secs / 60), "minute");
+  if (abs < 86400) return rtf.format(Math.round(secs / 3600), "hour");
+  return rtf.format(Math.round(secs / 86400), "day");
+}

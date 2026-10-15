@@ -1,10 +1,12 @@
 "use client";
-import { useState } from "react";
-import { Banner, Card, EmptyState, ErrorState, Field, Modal, Skeleton, Spinner, errorText, useToast } from "@/components/ui";
+import { useCallback, useState } from "react";
+import { Banner, EmptyState, ErrorState, Field, Icon, Modal, Skeleton, Spinner, errorText, useToast } from "@/components/ui";
 import { ApiError, api, useApi } from "@/lib/api";
-import { dateTime } from "@/lib/format";
+import { ago, dateTime } from "@/lib/format";
 import { newIdempotencyKey } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/I18nProvider";
+import { LiveBadge, useLive, type LiveEvent } from "@/lib/live";
+import { StatTile } from "@/components/DashboardParts";
 import type { PolicyCard, SupportTicket, SupportTicketDetail, TicketStatus } from "@/lib/types";
 
 // Raise a request to the insurer's service team, follow it, reply, and withdraw or reopen it. The tickets are kept by Customer Service;
@@ -115,30 +117,78 @@ function TicketView({ id, onClose, onChanged }: { id: string; onClose: () => voi
   );
 }
 
+const ACTIVE = ["IN_PROGRESS"];
+
+/** The customer's support requests: the counts, then each request as a card. Updates from the service team arrive live. */
 export function SupportTickets() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const toast = useToast();
   const list = useApi<{ items: SupportTicket[] }>("support/tickets");
   const [creating, setCreating] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+  const [flash, setFlash] = useState<Set<string>>(new Set());
   const items = list.data?.items || [];
+  const reload = list.reload;
+
+  const onLive = useCallback((e: LiveEvent) => {
+    if (e.type !== "ticket") return;
+    const d = e.data;
+    reload();
+    const title = d.title;
+    const status = t(`ticket.status.${d.status}`);
+    toast(d.kind === "new" ? t("live.ticket.new", { title }) : d.kind === "status"
+      ? (d.status === "IN_PROGRESS" ? t("live.ticket.handling", { title }) : d.status === "RESOLVED" || d.status === "CLOSED" ? t("live.ticket.resolved", { title })
+        : d.status === "WAITING_CUSTOMER" ? t("live.ticket.waiting", { title }) : t("live.ticket.status", { title, status }))
+      : t("live.ticket.update", { title }), d.status === "WAITING_CUSTOMER" ? "info" : "success");
+    setFlash((f) => new Set(f).add(d.id));
+    window.setTimeout(() => setFlash((f) => { const n = new Set(f); n.delete(d.id); return n; }), 6000);
+  }, [reload, t, toast]);
+  const live = useLive(onLive);
+
+  const stats = {
+    open: items.filter((x) => x.status === "OPEN").length,
+    progress: items.filter((x) => ACTIVE.includes(x.status) || x.status === "WAITING_CUSTOMER").length,
+    resolved: items.filter((x) => x.status === "RESOLVED" || x.status === "CLOSED").length,
+    reply: items.filter((x) => x.status === "WAITING_CUSTOMER").length,
+  };
+  const wait = list.loading && !list.data;
+  const down = !!list.error && !list.data;
+
   return (
     <>
-      <Card title={t("ticket.mine")} action={<button type="button" className="btn-primary !px-3 !py-1.5 text-xs" onClick={() => setCreating(true)}>+ {t("ticket.new")}</button>}>
-        {list.loading && !list.data ? <Skeleton className="h-20" /> : list.error && !list.data ? <ErrorState error={list.error} onRetry={list.reload} />
-          : items.length === 0 ? <EmptyState title={t("ticket.none")} text={t("ticket.noneText")} action={<button type="button" className="btn-primary" onClick={() => setCreating(true)}>{t("ticket.new")}</button>} />
+      <section aria-label={t("ticket.summary")} className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatTile label={t("ticket.stat.open")} value={stats.open} icon="support" tone={stats.open ? "blue" : "muted"} loading={wait} unavailable={down} note={t("ticket.stat.openNote")} />
+        <StatTile label={t("ticket.stat.progress")} value={stats.progress} icon="calendar" tone={stats.progress ? "blue" : "muted"} loading={wait} unavailable={down} note={t("ticket.stat.progressNote")} />
+        <StatTile label={t("ticket.stat.resolved")} value={stats.resolved} icon="check" tone={stats.resolved ? "emerald" : "muted"} loading={wait} unavailable={down} note={t("ticket.stat.resolvedNote")} />
+        <StatTile label={t("ticket.stat.reply")} value={stats.reply || t("ticket.stat.replyNone")} icon="bell" tone={stats.reply ? "amber" : "muted"} loading={wait} unavailable={down} note={stats.reply ? t("ticket.stat.replyNote") : t("ticket.stat.replyOk")} />
+      </section>
+
+      <section aria-labelledby="my-tickets" className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 id="my-tickets" className="flex items-center gap-3 text-sm font-bold text-slate-900">{t("ticket.mine")}<LiveBadge connected={live} label={t("live.on")} offLabel={t("live.off")} /></h3>
+          <button type="button" className="btn-primary shadow-md shadow-blue-200" onClick={() => setCreating(true)}>+ {t("ticket.new")}</button>
+        </div>
+        {wait ? <div className="space-y-3"><Skeleton className="h-20" /><Skeleton className="h-20" /></div>
+          : down ? <div className="card"><ErrorState error={list.error} onRetry={list.reload} /></div>
+          : items.length === 0 ? <div className="card"><EmptyState title={t("ticket.none")} text={t("ticket.noneText")} action={<button type="button" className="btn-primary" onClick={() => setCreating(true)}>{t("ticket.new")}</button>} /></div>
           : (
-            <ul className="divide-y divide-slate-100 -my-2">
-              {items.map((x) => (
-                <li key={x.id}>
-                  <button type="button" onClick={() => setOpen(x.id)} className="w-full flex items-center justify-between gap-3 py-3 text-start hover:bg-slate-50 rounded-lg px-1">
-                    <span className="min-w-0"><span className="block truncate text-sm font-semibold text-slate-800">{x.title}</span>
-                      <span className="block text-[11px] text-slate-500">{t(`ticket.cat.${x.category}`)} · {t("ticket.updated", { when: dateTime(x.updated_at) })}</span></span>
+            <ul className="space-y-3">
+              {items.map((x) => {
+                const reply = x.status === "WAITING_CUSTOMER", finished = x.status === "RESOLVED" || x.status === "CLOSED" || x.status === "CANCELLED";
+                return (
+                  <li key={x.id} className={`flex flex-wrap items-center gap-3 rounded-2xl border bg-white p-4 shadow-[0_2px_12px_rgb(15,23,42,0.04)] transition-all duration-300 hover:shadow-[0_8px_24px_rgb(15,23,42,0.08)] ${flash.has(x.id) ? "border-blue-400 ring-2 ring-blue-300/60" : reply ? "border-amber-300" : "border-slate-200/80"}`}>
+                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${reply ? "bg-amber-50 text-amber-600" : finished ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`} aria-hidden="true"><Icon name={finished ? "check" : reply ? "bell" : "support"} className="h-5 w-5" /></span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-slate-900">{x.title}</p>
+                      <p className="mt-0.5 truncate text-xs text-slate-500">{t(`ticket.cat.${x.category}`)} · {t("ticket.updated", { when: ago(x.updated_at, locale) })}</p>
+                    </div>
                     <Status s={x.status} />
-                  </button>
-                </li>))}
+                    <button type="button" onClick={() => setOpen(x.id)} className={reply ? "btn-primary !py-1.5 text-xs" : "btn-secondary !py-1.5 text-xs"}>{reply ? t("ticket.act.reply") : finished ? t("ticket.act.view") : t("ticket.act.open")}</button>
+                  </li>
+                );
+              })}
             </ul>)}
-      </Card>
+      </section>
       {creating && <NewTicket onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); list.reload(); setOpen(id); toast(t("ticket.created"), "success"); }} />}
       {open && <TicketView id={open} onClose={() => setOpen(null)} onChanged={list.reload} />}
     </>

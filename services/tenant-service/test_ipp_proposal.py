@@ -220,6 +220,11 @@ async def test_every_way_a_payment_can_arrive():
         async with S() as s:
             before = await ipp.get_policy_ipp(tenant_id, policy_a, token="t", session=s)
             assert before.status == IPPStatusEnum.NOT_STARTED and before.amount_due and before.amount_due > 0
+            # the amount asked for before underwriting is the amount issuance will carry: the same calculation, with its breakdown
+            import routers.policies as pol
+            priced, _ = await pol._price_breakdown(s, tenant_id, await s.get(Policy, policy_a))
+            assert before.amount_due == round(priced.total_premium, 2) and before.breakdown_due["total_premium"] == before.amount_due
+            assert {"base_premium", "loading_amount", "policy_fee", "stamp_duty_amount", "tax_amount"} <= set(before.breakdown_due)
             await expect(422, ipp.mark_policy_payment_received(tenant_id, policy_a, ipp.IPPReceivedRequest(method=" "), token="t", session=s))
             done = await ipp.mark_policy_payment_received(tenant_id, policy_a, ipp.IPPReceivedRequest(method="Cash", reference="RCPT-1", note="paid at the branch"), token="t", session=s)
         assert (done.status, done.method, done.proof_status, done.proof_reviewed_by) == (IPPStatusEnum.REALIZED, "Cash", "Accepted", "Sam Staff")
@@ -228,6 +233,7 @@ async def test_every_way_a_payment_can_arrive():
             rc = await ipp.policy_payment_receipt(tenant_id, policy_a, token="t", session=s)
             assert rc["receipt_no"].startswith("RCT-") and rc["amount"] == before.amount_due and rc["method"] == "Cash" and rc["reference"] == "RCPT-1"
             assert (rc["customer_name"], rc["plan_label"], rc["confirmed_by"]) == ("Proposal Pay", "Term", "Sam Staff")
+            assert rc["breakdown"]["total_premium"] == rc["amount"] and rc["breakdown"]["base_premium"] > 0
             await expect(409, ipp.policy_payment_receipt(tenant_id, policy_b, token="t", session=s))               # nothing received on B yet
         async with S() as s:
             await expect(409, ipp.mark_policy_payment_received(tenant_id, policy_a, ipp.IPPReceivedRequest(method="Cash"), token="t", session=s))
