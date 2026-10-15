@@ -65,38 +65,45 @@ def welcome_email(
     *, customer_name: str, tenant_name: str, policy_number: str, policyholder_id: Optional[str],
     attached: list, left_out: list, creds_html: str, creds_text: str, portal_url: Optional[str],
     tenant_phone: Optional[str] = None, tenant_email: Optional[str] = None,
+    summary_rows: Optional[list] = None,
 ) -> tuple[str, str, str]:
-    """Welcome email: confirms the policy, lists the attached documents, and gives the portal sign-in details."""
+    """The one email a customer gets when the policy is issued: the policy summary, the attached documents and the portal
+    sign-in details. `summary_rows` is a list of (label, value) pairs."""
     e = _html.escape
     subject = f"Welcome to your policy {policy_number}"
     docs = "".join(f'<li style="margin:3px 0;">{e(n)}</li>' for n in attached)
     more = (f'<p style="color:{_MUTE};font-size:12px;margin:8px 0 0;">Too large to attach, available in the customer portal: '
             f'{e(", ".join(left_out))}.</p>') if left_out else ""
-    pid = (f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px;"><tr>'
-           f'<td style="padding:10px 0;border-bottom:1px solid {_LINE};color:{_MUTE};font-size:13px;">Policy number</td>'
-           f'<td style="padding:10px 0;border-bottom:1px solid {_LINE};color:{_INK};font-size:13px;font-weight:600;text-align:right;">{e(policy_number)}</td></tr>'
-           + (f'<tr><td style="padding:10px 0;border-bottom:1px solid {_LINE};color:{_MUTE};font-size:13px;">Policyholder ID</td>'
-              f'<td style="padding:10px 0;border-bottom:1px solid {_LINE};color:{_INK};font-size:13px;font-weight:600;text-align:right;">{e(policyholder_id)}</td></tr>'
-              if policyholder_id else "") + '</table>')
+    rows = [("Policy number", policy_number)]
+    if policyholder_id:
+        rows.append(("Policyholder ID", policyholder_id))
+    rows += [(k, v) for k, v in (summary_rows or []) if v]
+    pid = ('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px;">'
+           + "".join(
+               f'<tr><td style="padding:10px 0;border-bottom:1px solid {_LINE};color:{_MUTE};font-size:13px;">{e(str(k))}</td>'
+               f'<td style="padding:10px 0;border-bottom:1px solid {_LINE};color:{_INK};font-size:13px;font-weight:600;text-align:right;">{e(str(v))}</td></tr>'
+               for k, v in rows) + '</table>')
     inner = (
         f'<p style="color:{_INK};font-size:15px;margin:0 0 12px;">Dear {e(customer_name)},</p>'
         f'<p style="color:{_INK};font-size:14px;line-height:22px;margin:0 0 18px;">Thank you for choosing {e(tenant_name)}. '
-        f'Your policy is active and your protection has begun.</p>{pid}'
+        f'Your policy has been issued and your cover is now in force. Here is a summary for your records.</p>{pid}'
         + (f'<p style="color:{_INK};font-size:14px;margin:0 0 6px;font-weight:600;">Attached to this email</p>'
            f'<ul style="color:{_INK};font-size:13px;line-height:20px;margin:0;padding-left:20px;">{docs}</ul>{more}' if attached else "")
         + (creds_html or "")
         + (button("Go to customer portal", portal_url) if portal_url else "")
-        + f'<p style="color:{_MUTE};font-size:12px;line-height:18px;margin:0;">Please keep these documents safe.</p>'
+        + f'<p style="color:{_MUTE};font-size:12px;line-height:18px;margin:0;">Please keep these documents safe. If any detail above is '
+          f'incorrect, contact us within the free-look period.</p>'
     )
     text = (
-        f"Dear {customer_name},\n\nThank you for choosing {tenant_name}. Your policy {policy_number} is active."
-        + (f" Your policyholder ID is {policyholder_id}." if policyholder_id else "")
+        f"Dear {customer_name},\n\nThank you for choosing {tenant_name}. Your policy {policy_number} is now active.\n\n"
+        + "\n".join(f"  {k}: {v}" for k, v in ([("Policy number", policy_number)] + ([("Policyholder ID", policyholder_id)] if policyholder_id else [])
+                                                 + [(k, v) for k, v in (summary_rows or []) if v]))
         + ("\n\nAttached: " + ", ".join(attached) + "." if attached else "")
         + (" Too large to attach, available in the customer portal: " + ", ".join(left_out) + "." if left_out else "")
         + (creds_text or (f"\n\nCustomer portal: {portal_url}" if portal_url else ""))
         + f"\n\n{tenant_name}"
     )
-    return subject, text, shell(tenant_name=tenant_name, heading="Welcome to your policy", inner_html=inner,
+    return subject, text, shell(tenant_name=tenant_name, heading="Your policy is active", inner_html=inner,
                                 contact=_contact_line(tenant_phone, tenant_email))
 
 

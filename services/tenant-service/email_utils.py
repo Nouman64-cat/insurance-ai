@@ -62,7 +62,10 @@ def _send_sync(
             part.add_header("Content-Disposition", "attachment", filename=("utf-8", "", shown))
             msg.attach(part)
 
-    with smtplib.SMTP(SES_SMTP_HOST, SES_SMTP_PORT, timeout=15) as server:
+    # Sending the policy documents means uploading several MB, which a 15-second socket timeout cannot cover on a slow
+    # connection ("The write operation timed out"). Messages without attachments still fail fast.
+    timeout = 180 if attachments else 15
+    with smtplib.SMTP(SES_SMTP_HOST, SES_SMTP_PORT, timeout=timeout) as server:
         server.starttls()
         server.login(SES_USERNAME, SES_PASSWORD)
         server.sendmail(SES_FROM_EMAIL, [to_email], msg.as_string())

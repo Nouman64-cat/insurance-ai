@@ -22,7 +22,9 @@ from services.policy_documents import render_welcome_kit
 from services import portal_service
 
 log = logging.getLogger(__name__)
-KINDS = ("WelcomeKit", "WelcomeEmail", "IssuanceEmail")
+# One email goes out when a policy is issued (WelcomeEmail: policy summary, documents and portal sign-in). The old separate
+# IssuanceEmail job is no longer queued; any still waiting from before is completed without sending a second email.
+KINDS = ("WelcomeKit", "WelcomeEmail")
 
 
 def value(v):
@@ -91,8 +93,29 @@ async def _ensure_kit(session, policy, customer):
     return row
 
 
+async def summary_rows_for_email(session, policy) -> list:
+    """The policy summary shown in the issuance email: product, sum assured, premium, dates, free-look."""
+    from services.email_templates import _pkr
+    version = await session.get(PolicyVersion, policy.current_version_id) if policy.current_version_id else None
+    schedule = (await session.exec(select(PremiumSchedule).where(PremiumSchedule.policy_id == policy.id)
+                                   .order_by(PremiumSchedule.installment_no))).first()
+    premium = version.total_premium if version else (schedule.amount_due if schedule else None)
+    freq = value(schedule.billing_frequency) if schedule else "Annual"
+    iso = lambda d: d.isoformat() if d else None
+    return [
+        ("Product", policy.product_name),
+        ("Sum assured", _pkr(policy.coverage_amount)),
+        ("Premium", f"{_pkr(premium)} ({freq})" if premium is not None else None),
+        ("Commencement date", iso(policy.effective_date)),
+        ("Maturity date", iso(policy.maturity_date)),
+        ("Free-look until", iso(policy.free_look_end_date)),
+    ]
+
+
 async def execute_job(session, job, policy):
     """Returns an actionable retry reason, or None when work is complete."""
+    if job.kind == "IssuanceEmail":
+        return None
     customer = await session.get(Customer, policy.customer_id)
     if customer is None:
         return "Customer record is missing."
@@ -125,7 +148,8 @@ async def execute_job(session, job, policy):
             customer_name=customer.name, tenant_name=name, policy_number=policy.policy_number or "",
             policyholder_id=customer.policyholder_id, attached=[n for _, n in attachments], left_out=left_out,
             creds_html=cred_html, creds_text=cred_text, portal_url=portal_service.PORTAL_BASE_URL,
-            tenant_phone=tenant.contact_phone if tenant else None, tenant_email=tenant.contact_email if tenant else None)
+            tenant_phone=tenant.contact_phone if tenant else None, tenant_email=tenant.contact_email if tenant else None,
+            summary_rows=await summary_rows_for_email(session, policy))
         ok = await email_utils.send_email(address, subject, text, html, attachments=attachments)
         event_type = "WelcomeSent"
     else:

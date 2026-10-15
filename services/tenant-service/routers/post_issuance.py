@@ -640,6 +640,7 @@ async def send_welcome(
     if not manual and email:
         from services.policy_documents import email_attachments
         from services.email_templates import welcome_email
+        from services.policy_delivery import summary_rows_for_email
         creds = await portal_credentials_for_email(session, tenant_id, policy, request)
         cred_text, cred_html = portal_service.credentials_block(creds)
         attachments, left_out = await email_attachments(session, policy, row.welcome_kit_path)
@@ -647,7 +648,8 @@ async def send_welcome(
             customer_name=customer.name, tenant_name=tenant_name, policy_number=policy.policy_number or "",
             policyholder_id=customer.policyholder_id, attached=[n for _, n in attachments], left_out=left_out,
             creds_html=cred_html, creds_text=cred_text, portal_url=portal_service.PORTAL_BASE_URL,
-            tenant_phone=tenant.contact_phone if tenant else None, tenant_email=tenant.contact_email if tenant else None)
+            tenant_phone=tenant.contact_phone if tenant else None, tenant_email=tenant.contact_email if tenant else None,
+            summary_rows=await summary_rows_for_email(session, policy))
         delivered = await email_utils.send_email(
             to_email=email, subject=subject, text_body=text_body, html_body=html_body, attachments=attachments)
         if not delivered:
