@@ -55,6 +55,94 @@ def test_proposal_uses_saved_plan_without_recommending_again():
     created=next(args for name,args in seen if name=='create_proposal')
     assert created['product_name']=='Apna Savings' and created['coverage_amount']==900000 and created['term_years']==12
 
+# ── Usman Khan × 2: a CNIC never lands on a namesake, and a proposal always has its case ──
+
+class CaseClient:
+    """Two customers called Usman Khan; only the teacher (33333) has a case."""
+    def __init__(self, policies=None):
+        self.customers=[{'id':'doc','name':'Usman Khan','first_name':'Usman','last_name':'Khan','cnic':'36302-0072138-8'},
+                        {'id':'tea','name':'Usman Khan','first_name':'Usman','last_name':'Khan','cnic':'33100-2094014-7'}]
+        self.cases=[{'id':'case-teacher','caseNumber':'APP-T','customer_cnic':'33100-2094014-7','customer_name':'Usman Khan','caseStatus':'New'}]
+        self.policies=policies or []
+        self.posts=[]
+    async def get(self,url,**kw):
+        if url.endswith('/customers'): data=self.customers
+        elif url.endswith('/cases'): data=self.cases
+        elif url.endswith('/policies'): data=self.policies
+        else: data=next((c for c in self.customers if url.endswith('/'+c['id'])),{})
+        return httpx.Response(200,json=data,request=httpx.Request('GET',url))
+    async def post(self,url,json=None,**kw):
+        self.posts.append((url,json))
+        if url.endswith('/cases'):
+            case={'id':'case-new','caseNumber':'APP-NEW','customer_cnic':'36302-0072138-8','caseStatus':'New'}
+            self.cases.append(case); data=case
+        else: data={'id':'pol-new'}
+        return httpx.Response(201,json=data,request=httpx.Request('POST',url))
+
+def test_cnic_without_a_case_never_falls_back_to_a_namesakes_case():
+    from tool_executor import _find_case, _find_customer
+    client=CaseClient()
+    assert _find_case(client.cases, cnic='36302-0072138-8', applicant_name='Usman Khan') is None
+    assert _find_case(client.cases, cnic='3310020940147')['id']=='case-teacher'  # dashes optional
+    assert _find_customer(client.customers, '99999-9999999-9', 'Usman Khan') is None
+
+def test_proposal_opens_its_own_case_and_links_to_it():
+    client=CaseClient()
+    result=asyncio.run(_HANDLERS['create_proposal']({'cnic':'36302-0072138-8','product_name':'Apna Savings'},_ctx(client)))
+    assert [u.rsplit('/',1)[-1] for u,_ in client.posts]==['policies','cases']
+    assert result['case_id']=='case-new' and result['navigate']['route']=='case/case-new'
+    assert client.posts[1][1]['policy_id']=='pol-new'  # the case is linked to its proposal
+    assert 'APP-NEW' in result['message']
+
+def test_e_application_opens_the_missing_case_for_an_open_proposal():
+    from tool_executor import _case_for_open_proposal
+    client=CaseClient(policies=[{'status':'Proposed','product_name':'Apna Savings'}])
+    case=asyncio.run(_case_for_open_proposal({'cnic':'36302-0072138-8'},_ctx(client)))
+    assert case['id']=='case-new'
+    assert asyncio.run(_case_for_open_proposal({'cnic':'36302-0072138-8'},_ctx(CaseClient()))) is None  # no proposal, no case
+
+def test_create_case_reuses_the_open_case_and_offers_gate_one():
+    client=CaseClient(policies=[{'status':'Proposed'}])
+    result=asyncio.run(_HANDLERS['create_case']({'cnic':'33100-2094014-7'},_ctx(client)))
+    assert result['skipped'] and result['case_id']=='case-teacher' and not client.posts
+    assert result['quick_actions'][0]['label'].startswith('1. Generate E-App Link')
+
+def test_model_invented_plan_and_figures_are_dropped():
+    args={'cnic':'36302-0072138-8','product_name':'COVID-19 Protection Plan','insurance_type':'HEALTH_CASH','coverage_amount':19200000,'term_years':5}
+    graph._drop_invented_plan_terms(args,'no, the doctor one')
+    assert args=={'cnic':'36302-0072138-8'}
+    args={'product_name':'Apna Savings','coverage_amount':2000000,'term_years':15}
+    graph._drop_invented_plan_terms(args,'create apna savings proposal for 20 lakh over 15 years')
+    assert args['product_name']=='Apna Savings' and args['coverage_amount']==2000000
+    args={'product_name':'Apna Savings','coverage_amount':2000000}
+    graph._drop_invented_plan_terms(args,'Create proposal with Apna Savings for CNIC 36302-0072138-8')
+    assert 'coverage_amount' not in args  # a CNIC is not a figure
+
+def test_chosen_plan_sets_its_type_and_term_range():
+    plans=[{'label':'Roshan Aaj Aur Kal','insurance_type':'CHILD_EDUCATION_MARRIAGE','term_min_years':10,'term_max_years':24}]
+    args={'product_name':'Roshan Aaj Aur Kal'}; graph._apply_catalog_plan(args,plans)
+    assert args=={'product_name':'Roshan Aaj Aur Kal','insurance_type':'CHILD_EDUCATION_MARRIAGE','term_years':10}
+    args={'product_name':'Roshan Aaj Aur Kal','term_years':30}; graph._apply_catalog_plan(args,plans)
+    assert args['term_years']==24
+
+def test_bare_create_proposal_asks_for_the_plan_instead_of_guessing():
+    from langchain_core.messages import AIMessage
+    context={'success':True,'customer':{'id':'u1','cnic':'36302-0072138-8','details':{}},'policies':[]}
+    async def execute(name,args,ctx):
+        if name=='get_proposal_customer_context':return context
+        if name=='list_insurance_plans':return {'items':[{'label':'COVID-19 Protection Plan'},{'label':'Apna Savings'}]}
+        if name=='list_customers':return {'customers':[]}
+        raise AssertionError(f'{name} ran before a plan was chosen')
+    class Asked(Exception):pass
+    def ask(payload):
+        assert payload['question'].startswith('Which insurance plan'); raise Asked
+    state={'tenant_id':'t','jwt_token':'','user_role':'Admin',
+           'messages':[HumanMessage('okay create proposal'),AIMessage(content='',tool_calls=[{'name':'create_proposal','args':{'cnic':'36302-0072138-8','product_name':'COVID-19 Protection Plan','coverage_amount':19200000},'id':'p1','type':'tool_call'}])]}
+    with patch('graph.execute_tool',execute), patch('graph.interrupt',side_effect=ask):
+        try:
+            asyncio.run(graph._permission_gate(state)); raise AssertionError('no plan question')
+        except Asked: pass
+
 if __name__=='__main__':
     for name,fn in sorted(list(globals().items())):
         if name.startswith('test_'):

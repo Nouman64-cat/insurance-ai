@@ -398,6 +398,8 @@ async def list_cases(
             row["customer_segment"] = "individual"
         row["product_name"] = policy.product_name if policy else None
         row["coverage_amount"] = policy.coverage_amount if policy else None
+        # Lets the queues tell a case that has moved on to issuance (or been issued) from one still in underwriting.
+        row["policy_status"] = (policy.status.value if hasattr(policy.status, "value") else policy.status) if policy else None
         row["latest_ai_decision"] = latest.ai_decision.value if latest else None
         row["latest_composite_score"] = latest.composite_risk_score if latest else None
         e_app_status = e_app_status_by_case.get(c.caseld)

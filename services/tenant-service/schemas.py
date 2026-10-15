@@ -1201,6 +1201,7 @@ class CaseRead(BaseModel):
     organization_id:      Optional[str] = None
     product_name:           Optional[str] = None
     coverage_amount:         Optional[float] = None
+    policy_status:           Optional[str] = None
     latest_ai_decision:      Optional[str] = None
     latest_composite_score:  Optional[int] = None
     e_application_status:    Optional[str] = None

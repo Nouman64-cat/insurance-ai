@@ -2,7 +2,9 @@
 
 import { displayDate } from '../../../lib/dateDisplay';
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -18,7 +20,7 @@ import LazyMarkdown from "@/components/LazyMarkdown";
 import { useNotify } from "@/components/NotificationContext";
 import CaseDocumentList from "@/components/case/CaseDocumentList";
 import { DecisionBanner, StatusBadge } from "@/components/StatusBadge";
-import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
+import { RiskScoreBar, CompositeScoreRing, scoreColor, scoreTier } from "@/components/RiskScoreBar";
 import {
   fmtCoverage,
   fmtDob,
@@ -684,6 +686,79 @@ function DocumentThumb({ doc }: Readonly<{ doc: ArtifactData }>) {
 
 // Full-size preview of one document, inside the page. A fresh signed link is
 // fetched on open, so it works however long the case page has been open.
+// Asks why the case is being held — the server requires a reason (3+ characters) and shows it on the case and lead.
+function HoldCaseDialog({
+  busy,
+  error,
+  onConfirm,
+  onClose,
+}: Readonly<{ busy: boolean; error: string | null; onConfirm: (reason: string) => void; onClose: () => void }>) {
+  const [reason, setReason] = useState("");
+  const tooShort = reason.trim().length < 3;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !busy && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm" onClick={() => !busy && onClose()}>
+      <div
+        role="dialog"
+        aria-label={tx("Put case on hold")}
+        className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="border-b border-slate-100 px-5 py-4">
+          <h2 className="text-lg font-bold text-slate-900">{tx("Put case on hold")}</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            {tx("Underwriting pauses exactly where it is. Nothing is changed, and you can remove the hold to continue from the same step.")}
+          </p>
+        </div>
+        <form
+          className="space-y-3 px-5 py-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!tooShort && !busy) onConfirm(reason.trim());
+          }}
+        >
+          <label className="block text-sm font-semibold text-slate-700" htmlFor="hold-reason">
+            {tx("Reason")}
+          </label>
+          <textarea
+            id="hold-reason"
+            autoFocus
+            rows={3}
+            maxLength={1000}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder={tx("e.g. Waiting for the customer's updated medical report")}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+          />
+          {error && <p className="text-sm font-medium text-red-600">{error}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={busy}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {tx("Cancel")}
+            </button>
+            <button
+              type="submit"
+              disabled={tooShort || busy}
+              className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {busy ? tx("Putting on hold…") : tx("Put on hold")}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function DocumentPreviewModal({ doc, onClose }: Readonly<{ doc: ArtifactData; onClose: () => void }>) {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState(false);
@@ -880,7 +955,71 @@ function ApplicationFolderModal({
 // Sub-components
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Open requirements first, then what has been met, then what was waived.
+const REQUIREMENT_ORDER: Record<string, number> = {
+  Missing: 0, Invalid: 0, Requested: 1, Submitted: 2, Satisfied: 3, Waived: 4,
+};
+const REQUIREMENT_ACRONYMS = new Set(["CNIC", "ECG", "ACR", "PEP", "NML", "BMI", "HIV", "MER", "KYC", "AML", "ID", "DOB", "NTN", "CBC", "LFT", "RFT"]);
+
+/** MEDICAL_EXAMINATION → "Medical examination"; acronyms such as CNIC and ECG stay as they are. */
+function requirementName(code: string): string {
+  return code
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((w, i) => {
+      const up = w.toUpperCase();
+      if (REQUIREMENT_ACRONYMS.has(up)) return up;
+      const lower = w.toLowerCase();
+      return i === 0 ? lower.charAt(0).toUpperCase() + lower.slice(1) : lower;
+    })
+    .join(" ");
+}
+
+function RequirementIcon({ status }: { status: string }) {
+  if (status === "Satisfied")
+    return (
+      <span className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+          <path d="M5 12l5 5L20 7" />
+        </svg>
+      </span>
+    );
+  if (status === "Waived")
+    return (
+      <span className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-500" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="h-3.5 w-3.5">
+          <path d="M6 12h12" />
+        </svg>
+      </span>
+    );
+  if (status === "Invalid")
+    return (
+      <span className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-red-100 text-sm font-bold text-red-600" aria-hidden="true">
+        !
+      </span>
+    );
+  return <span className="mt-0.5 h-6 w-6 flex-shrink-0 rounded-full border-2 border-amber-400" aria-hidden="true" />;
+}
+
+// The case page's sections, one tab each, instead of one long two-column scroll.
+type CaseTab = "overview" | "requirements" | "documents" | "applicant";
+const CASE_TABS: { id: CaseTab; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "requirements", label: "Requirements" },
+  { id: "documents", label: "Documents" },
+  { id: "applicant", label: "Applicant & Policy" },
+];
+
 function DataRow({ label, value }: { label: string; value: React.ReactNode }) {
+  const panel = useContext(SectionsAsPanels);
+  if (panel) {
+    return (
+      <div className="min-w-0">
+        <dt className="text-xs text-slate-500">{label}</dt>
+        <dd className="mt-0.5 break-words text-sm font-medium text-slate-900">{value}</dd>
+      </div>
+    );
+  }
   return (
     <div className="data-row">
       <span className="data-key">{label}</span>
@@ -908,9 +1047,14 @@ function SectionCard({
   );
 }
 
+// Inside a tab that exists only to show these sections (Applicant, Documents) they start open.
+const AccordionsOpenByDefault = createContext(false);
+// The Applicant & Policy tab lays each section out as its own card with a two-column grid of fields.
+const SectionsAsPanels = createContext(false);
+
 function Accordion({
   title,
-  defaultOpen = false,
+  defaultOpen,
   action,
   children,
 }: {
@@ -919,7 +1063,20 @@ function Accordion({
   action?: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const openByDefault = useContext(AccordionsOpenByDefault);
+  const panel = useContext(SectionsAsPanels);
+  const [open, setOpen] = useState(defaultOpen ?? openByDefault);
+  if (panel) {
+    return (
+      <section className="card overflow-hidden">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3.5">
+          <h3 className="section-label">{title}</h3>
+          {action}
+        </div>
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-4 px-5 py-4 sm:grid-cols-2">{children}</dl>
+      </section>
+    );
+  }
   return (
     <div className="border-b border-slate-100 last:border-b-0">
       <div className="flex items-center justify-between">
@@ -946,20 +1103,6 @@ function Accordion({
         {action && <div className="ml-3 flex-shrink-0">{action}</div>}
       </div>
       {open && <div className="pb-4">{children}</div>}
-    </div>
-  );
-}
-
-function InitialsAvatar({ name }: { name: string }) {
-  const initials = name
-    .split(" ")
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-  return (
-    <div className="w-14 h-14 rounded-xl bg-blue-700 flex items-center justify-center flex-shrink-0 shadow-sm">
-      <span className="text-xl font-bold text-white">{initials}</span>
     </div>
   );
 }
@@ -1799,6 +1942,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
   const [overriding, setOverriding] = useState<string | null>(null);
   const [holdModal, setHoldModal] = useState(false);
+  // Which section of the case is showing (see CASE_TABS). Hidden tabs stay mounted, so nothing typed or running is lost.
+  const [caseTab, setCaseTab] = useState<CaseTab>("overview");
   const [holdBusy, setHoldBusy] = useState(false);
   const [holdError, setHoldError] = useState<string | null>(null);
   const [note, setNote] = useState("");
@@ -2598,7 +2743,10 @@ export default function CasePage({ params }: { params: { id: string } }) {
       historyReady &&
       medicalReady;
 
-    if (allReady) {
+    // Only news while the case is still waiting for its first AI run — not on every visit to an assessed or decided case.
+    const awaitingAi =
+      !detail?.latest_assessment && !["Approved", "Rejected", "Closed"].includes(detail?.case?.caseStatus ?? "");
+    if (allReady && awaitingAi) {
       if (!notifiedPreUnderwritingRef.current) {
         notifiedPreUnderwritingRef.current = true;
         notify(
@@ -3619,14 +3767,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
   ) :
     c.caseStatus !== "Approved" && c.caseStatus !== "Rejected" ? (
       <div className="flex flex-wrap items-center justify-end gap-2">
-        {prereqsIncomplete && (
-          <p className="mr-auto text-xs text-slate-500">
-            {tx("Proceed unlocks when all {0} steps above are done ({1} of {0} so far).", {
-              0: prereqSteps.length,
-              1: prereqSteps.filter((s) => s.done).length,
-            })}
-          </p>
-        )}
         <button
           onClick={() => { setHoldError(null); setHoldModal(true); }}
           disabled={overriding !== null || userRole === "Agent"}
@@ -3687,7 +3827,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
   return (
     <div
-      className="max-w-screen-2xl mx-auto px-6 pb-6 space-y-5"
+      className="case-modern max-w-screen-2xl mx-auto px-6 pb-10 space-y-5"
       style={{ ["--case-head" as any]: `${headHeight}px` }}
     >
       {successMessage && (
@@ -3709,106 +3849,130 @@ export default function CasePage({ params }: { params: { id: string } }) {
         </div>
       )}
 
-      {/* ── Breadcrumb & case header ──────────────────────────────────────── */}
+      {/* ── Case header: who, where it stands, and what you can do — then the tabs ───────────── */}
       <div
         ref={headRef}
-        className="sticky top-0 z-20 -mx-6 flex flex-col gap-4 border-b border-slate-200/70 bg-slate-50 px-6 pb-3 pt-6 sm:flex-row sm:items-center sm:justify-between"
+        className="sticky top-0 z-20 -mx-6 border-b border-slate-200 bg-white/95 px-6 pt-5 backdrop-blur supports-[backdrop-filter]:bg-white/80"
       >
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <Link
-              href={appHref("/")}
-              className="text-xs text-slate-500 hover:text-blue-700 font-medium transition-colors"
-            >
-              {tx("← Dashboard")}
-            </Link>
-            <span className="text-slate-300">/</span>
-            <a
-              href={appHref("/cases")}
-              className="text-xs text-slate-500 hover:text-blue-700 font-medium transition-colors"
-            >
-              {tx("Applications")}
-            </a>
-            <span className="text-slate-300">/</span>
-            <span className="text-xs text-slate-700 font-semibold">
-              {c.caseNumber}
-            </span>
+        {/* Cases are opened from the pre-underwriting queue, so that is the way back. */}
+        <Link
+          href="/underwriting?tab=pre-underwriting"
+          className="mb-3 inline-flex items-center gap-1.5 text-sm text-slate-500 transition-colors hover:text-blue-700"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 rtl:-scale-x-100" aria-hidden="true">
+            <path d="M19 12H5M12 19l-7-7 7-7" />
+          </svg>
+          {tx("Pre-Underwriting")}
+          <span className="text-slate-300">·</span>
+          <span className="font-mono text-xs text-slate-400">{c.caseNumber}</span>
+        </Link>
+
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex min-w-0 items-start gap-4">
+            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-base font-bold text-white shadow-sm">
+              {(customer?.name ?? "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="truncate text-2xl font-bold tracking-tight text-slate-900">
+                  {customer?.name ?? tx("Unknown Customer")}
+                </h1>
+                <span
+                  className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${CASE_STATUS_STYLE[c.caseStatus] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}
+                >
+                  {c.caseStatus}
+                </span>
+                {aiDecision && (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
+                    {tx("AI")}
+                    <StatusBadge decision={aiDecision} size="sm" />
+                  </span>
+                )}
+              </div>
+              <dl className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
+                {[
+                  { k: tx("CNIC"), v: customer?.cnic, mono: true },
+                  { k: tx("Plan"), v: policy?.product_name },
+                  { k: tx("Cover"), v: policy ? fmtCoverage(policy.coverage_amount) : null },
+                  { k: tx("Term"), v: policy ? `${policy.term_years} ${tx("yrs")}` : null },
+                  { k: tx("Opened"), v: displayDate(c.createdAt) },
+                ]
+                  .filter((f) => f.v)
+                  .map((f) => (
+                    <div key={f.k} className="flex items-baseline gap-1.5">
+                      <dt className="text-slate-400">{f.k}</dt>
+                      <dd className={`font-medium text-slate-700 ${f.mono ? "font-mono text-[13px]" : ""}`}>{f.v}</dd>
+                    </div>
+                  ))}
+              </dl>
+            </div>
           </div>
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-              {customer?.name ?? tx("Unknown Customer")}
-            </h1>
-            {aiDecision && <StatusBadge decision={aiDecision} size="lg" />}
-            <span
-              className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border ${CASE_STATUS_STYLE[c.caseStatus] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}
+
+          <div className="flex flex-shrink-0 flex-wrap items-center gap-2 lg:justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                setShowDocuments(true);
+                void fetchArtifacts();
+              }}
+              title={tx("Open Application Folder")}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
             >
-              {c.caseStatus}
-            </span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-slate-500" aria-hidden="true">
+                <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              </svg>
+              {tx("Folder")}
+              <span className="rounded-full bg-slate-100 px-1.5 text-xs text-slate-500">{artifacts.length}</span>
+            </button>
+            <button
+              onClick={downloadApplication}
+              disabled={downloadingApp}
+              title={
+                hasAny
+                  ? tx("Download the complete application dossier (PDF)")
+                  : tx("Best generated after underwriting — includes whatever detail is available")
+              }
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+            >
+              {downloadingApp ? (
+                <Spinner className="w-4 h-4 border-slate-300 border-t-slate-700" />
+              ) : (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 text-slate-500">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3" />
+                </svg>
+              )}
+              {downloadingApp ? tx("Generating…") : tx("Download")}
+            </button>
+            {decisionButtons && <span className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" aria-hidden="true" />}
+            {decisionButtons}
           </div>
-          <p className="text-sm text-slate-500 mt-1">
-            {c.caseNumber} {tx("·  Opened")}{" "}
-            {displayDate(c.createdAt)} {tx("via")}{" "}
-            {c.sourceChannel}
-            {policy && (
-              <>
-                {" "}
-                {tx("·")} {policy.product_name} {tx("·")}{" "}
-                {fmtCoverage(policy.coverage_amount)} {tx("coverage")}
-              </>
-            )}
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              setShowDocuments(true);
-              void fetchArtifacts();
-            }}
-            className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:border-blue-300 hover:text-blue-700"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
-              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-            </svg>
-            {tx("Open Application Folder")}
-            <span className="rounded-full bg-slate-100 px-1.5 text-[10px] text-slate-500">{artifacts.length}</span>
-          </button>
         </div>
 
-        {/* Final step after underwriting — generate the full application dossier */}
-        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
-          {decisionButtons}
-          <button
-            onClick={downloadApplication}
-            disabled={downloadingApp}
-            title={
-              hasAny
-                ? tx("Download the complete application dossier (PDF)")
-                : tx(
-                    "Best generated after underwriting — includes whatever detail is available",
-                  )
-            }
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-blue-700 rounded-lg hover:bg-blue-800 disabled:opacity-50 transition-colors shadow-sm"
-          >
-            {downloadingApp ? (
-              <Spinner />
-            ) : (
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                className="w-4 h-4"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3"
-                />
-              </svg>
-            )}
-            {downloadingApp ? tx("Generating…") : tx("Download Application")}
-          </button>
+        <div className="-mb-px mt-4 flex gap-1 overflow-x-auto" role="tablist" aria-label={tx("Case sections")}>
+          {CASE_TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={caseTab === t.id}
+              onClick={() => setCaseTab(t.id)}
+              className={`inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
+                caseTab === t.id
+                  ? "border-blue-600 text-blue-700"
+                  : "border-transparent text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              {tx(t.label)}
+              {t.id === "documents" && artifacts.length > 0 && (
+                <span className={`rounded-full px-1.5 text-xs ${caseTab === t.id ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-500"}`}>
+                  {artifacts.length}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
       </div>
+
 
       {onHold && (
         <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
@@ -3956,43 +4120,877 @@ export default function CasePage({ params }: { params: { id: string } }) {
         </div>
       )}
 
-      {/* ── Main grid: 3 cols ─────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* ── LEFT COLUMN: Customer + Policy ─────────────────────────────── */}
-        {/* Stays in view while the right column scrolls; if it is taller than the screen it scrolls on its own. */}
-        <div className="lg:col-span-1 space-y-4 lg:sticky lg:top-[calc(var(--case-head,8rem)+0.75rem)] lg:self-start lg:max-h-[calc(100vh-var(--case-head,8rem)-7.25rem)] lg:overflow-y-auto lg:pr-1 [scrollbar-width:thin]">
-          {customer && (
-            <div className="card p-5">
-              <div className="flex items-center gap-3 mb-4 pb-4 border-b border-slate-100">
-                <InitialsAvatar
-                  name={
-                    !detail?.is_principal_participant &&
-                    detail?.principal_participant_name
-                      ? detail.principal_participant_name
-                      : customer.name
-                  }
-                />
-                <div>
-                  <p className="font-bold text-slate-900 leading-tight">
-                    {!detail?.is_principal_participant &&
-                    detail?.principal_participant_name
-                      ? detail.principal_participant_name
-                      : customer.name}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {detail?.principal_participant_name ||
-                    detail?.is_principal_participant
-                      ? tx("Principal Participant")
-                      : customer.gender}
-                  </p>
-                  <p className="text-xs text-blue-600 font-mono mt-0.5">
-                    {!detail?.principal_participant_name ||
-                    detail?.is_principal_participant
-                      ? customer.cnic
-                      : tx("Family Group Owner")}
+
+      {/* ── Overview: the assessment and the decision ─────────────────────── */}
+      <div className={caseTab === "overview" ? "grid grid-cols-1 gap-5 lg:grid-cols-3" : "hidden"}>
+        <div className="space-y-5 lg:col-span-2">
+          {!hasAny ? (
+            <div className="card space-y-5 p-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h3 className="section-label">{tx("AI underwriting")}</h3>
+                  <p className="mt-1 max-w-xl text-sm text-slate-500">
+                    {requiredDocsMissing
+                      ? tx("Not run yet. Finish the steps below, then run it to score medical, financial and fraud risk and get a recommendation.")
+                      : tx("Everything is in place. Run it to score medical, financial and fraud risk and get a recommendation.")}
                   </p>
                 </div>
+                <button
+                  onClick={handleRun}
+                  disabled={
+                    effStatus === "streaming" ||
+                    !policy ||
+                    !customer ||
+                    requiredDocsMissing ||
+                    requirementsOpen ||
+                    userRole === "Agent" ||
+                    onHold
+                  }
+                  title={
+                    onHold
+                      ? tx("The case is on hold. Remove the hold to continue.")
+                      : userRole === "Agent"
+                      ? tx(
+                          "Currently, you have no access to do this, ask your manager",
+                        )
+                      : requirementsOpen
+                        ? requirementsOpenText
+                        : requiredDocsMissing
+                          ? tx("Complete missing requirements first: {0}", {
+                              0: missingPreChecks.join("; "),
+                            })
+                          : undefined
+                  }
+                  className="flex flex-shrink-0 items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {effStatus === "streaming" ? <Spinner /> : null}
+                  {effStatus === "streaming"
+                    ? tx("Running…")
+                    : tx("Run AI Underwriting")}
+                </button>
               </div>
+              {trace.open && (
+                <RunTracker trace={trace} onDismiss={() => setTrace(CLOSED_TRACE)} />
+              )}
+              {requirementsOpen && !requiredDocsMissing && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-amber-50 px-4 py-3">
+                  <p className="max-w-xl text-sm text-amber-800">
+                    {requirementsOpenText}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={runDetermineRequirements}
+                    disabled={requirementsBusy || userRole === "Agent"}
+                    title={
+                      userRole === "Agent"
+                        ? tx(
+                            "Currently, you have no access to do this, ask your manager",
+                          )
+                        : tx(
+                            "Re-check the requirements once the missing item has been added",
+                          )
+                    }
+                    className="flex items-center gap-2 rounded-lg border border-blue-200 bg-white px-4 py-2 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-50 disabled:opacity-50"
+                  >
+                    {requirementsBusy ? (
+                      <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" />
+                    ) : null}
+                    {requirementsBusy ? tx("Checking…") : tx("Resubmit")}
+                  </button>
+                </div>
+              )}
+              {requiredDocsMissing && (
+                <div className="border-t border-slate-100 pt-5">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-slate-900">{tx("Before you can run it")}</p>
+                    <span className="text-sm text-slate-500">
+                      <span className="font-semibold text-slate-900">{prereqSteps.filter((s) => s.done).length}</span>{" "}
+                      {tx("of")} {prereqSteps.length} {tx("ready")}
+                    </span>
+                  </div>
+
+                  {/* Vertical Thread Stepper */}
+                  <div className="relative pl-7 space-y-4 before:absolute before:left-3 before:top-3 before:bottom-3 before:w-0.5 before:bg-slate-200">
+                    {prereqSteps.map((step, idx) => (
+                      <div
+                        key={step.id}
+                        className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
+                      >
+                        {/* Thread Node Circle */}
+                        <div
+                          className={`absolute -left-7 w-6 h-6 rounded-full border-2 flex items-center justify-center text-[10px] font-bold transition-all z-10 ${
+                            step.done
+                              ? "bg-emerald-500 border-emerald-600 text-white shadow-xs"
+                              : "bg-white border-amber-500 text-amber-600 shadow-2xs animate-pulse"
+                          }`}
+                        >
+                          {step.done ? "✓" : idx + 1}
+                        </div>
+
+                        {/* Step Details */}
+                        <div className="min-w-0 flex-1 pl-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span
+                              className={`text-xs ${step.done ? "font-bold text-slate-800" : "font-extrabold text-slate-900"}`}
+                            >
+                              {tx(step.title)}
+                            </span>
+                            <span
+                              className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                                step.done
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200/80"
+                                  : "bg-amber-50 text-amber-800 border-amber-300/80"
+                              }`}
+                            >
+                              {step.statusLabel}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-1 leading-snug">
+                            {tx(step.description)}
+                          </p>
+                        </div>
+
+                        {/* Action Link / Button */}
+                        <div className="shrink-0 pl-1 sm:pl-0 flex items-center gap-2">
+                          {step.actionHref && onHold ? (
+                            <span
+                              aria-disabled="true"
+                              title={tx("The case is on hold. Remove the hold to continue.")}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-400 text-xs font-bold rounded-lg border border-slate-200 cursor-not-allowed"
+                            >
+                              <span>{step.actionLabel}</span>
+                              <span className="text-[10px]">↗</span>
+                            </span>
+                          ) : step.actionHref ? (
+                            <Link
+                              href={step.actionHref}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-blue-700 text-xs font-bold rounded-lg border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all"
+                            >
+                              <span>{step.actionLabel}</span>
+                              <span className="text-[10px]">↗</span>
+                            </Link>
+                          ) : step.onAction ? (
+                            <button
+                              onClick={step.onAction}
+                              disabled={step.busy || userRole === "Agent" || onHold}
+                              title={
+                                onHold
+                                  ? tx("The case is on hold. Remove the hold to continue.")
+                                  : userRole === "Agent"
+                                  ? tx(
+                                      "Currently, you have no access to do this, ask your manager",
+                                    )
+                                  : undefined
+                              }
+                              className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-all flex items-center gap-1.5 ${
+                                step.done
+                                  ? "bg-white hover:bg-slate-100 text-slate-700 border-slate-200/90"
+                                  : "bg-blue-600 hover:bg-blue-700 text-white border-blue-600 shadow-2xs"
+                              } ${userRole === "Agent" || onHold ? "opacity-50 cursor-not-allowed" : ""}`}
+                            >
+                              {step.busy ? (
+                                <Spinner className="w-3 h-3 border-white border-t-transparent" />
+                              ) : null}
+                              <span>{step.actionLabel}</span>
+                            </button>
+                          ) : null}
+                          {step.secondaryActionLabel && step.onSecondaryAction && (
+                            <button
+                              onClick={step.onSecondaryAction}
+                              disabled={step.secondaryBusy || onHold}
+                              title={onHold ? tx("The case is on hold. Remove the hold to continue.") : undefined}
+                              className="px-3 py-1.5 text-xs font-bold rounded-lg border bg-white hover:bg-slate-100 text-slate-700 border-slate-200/90 transition-all disabled:opacity-50"
+                            >
+                              {step.secondaryActionLabel}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {effStreamError && !requiredDocsMissing && (
+                <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-2">
+                  {effStreamError}
+                </p>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* AI assessment: the composite score, the three risk dimensions with the AI's finding for each, and the
+                  recommendation — one card instead of bars, a ring, three repeat tiles and a banner. */}
+              <div className="card overflow-hidden">
+                <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+                  <h3 className="section-label">{tx("AI assessment")}</h3>
+                  <div className="flex items-center gap-2">
+                    {assessment && (
+                      <button
+                        onClick={downloadPDF}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 text-slate-500">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3" />
+                        </svg>
+                        {tx("Report")}
+                      </button>
+                    )}
+                    <button
+                      onClick={handleRun}
+                      disabled={
+                        effStatus === "streaming" ||
+                        requiredDocsMissing ||
+                        requirementsOpen ||
+                        userRole === "Agent" ||
+                        onHold
+                      }
+                      title={
+                        onHold
+                          ? tx("The case is on hold. Remove the hold to continue.")
+                          : userRole === "Agent"
+                          ? tx(
+                              "Currently, you have no access to do this, ask your manager",
+                            )
+                          : requirementsOpen
+                            ? requirementsOpenText
+                            : requiredDocsMissing
+                              ? tx("Complete missing requirements first: {0}", {
+                                  0: missingPreChecks.join("; "),
+                                })
+                              : undefined
+                      }
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {effStatus === "streaming" ? (
+                        <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" />
+                      ) : null}
+                      {effStatus === "streaming"
+                        ? tx("Re-running…")
+                        : tx("Re-run")}
+                    </button>
+                  </div>
+                </div>
+
+                {trace.open && (
+                  <div className="px-5 pt-4">
+                    <RunTracker trace={trace} onDismiss={() => setTrace(CLOSED_TRACE)} />
+                  </div>
+                )}
+                {effStreamError && !trace.open && (
+                  <p className="mx-5 mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+                    {effStreamError}
+                  </p>
+                )}
+
+                <div className="grid gap-6 p-5 md:grid-cols-[200px_1fr]">
+                  {(() => {
+                    const tier = scoreTier(compositeScore);
+                    return (
+                      <div className="flex flex-col justify-center rounded-xl bg-slate-50 p-5">
+                        <p className="text-sm text-slate-500">{tx("Composite risk")}</p>
+                        <p className="mt-1 text-5xl font-bold tracking-tight text-slate-900 tabular-nums">
+                          {compositeScore}
+                          <span className="text-2xl font-semibold text-slate-400">%</span>
+                        </p>
+                        <p className={`mt-1 text-sm font-semibold ${tier.color}`}>{tx(tier.label)}</p>
+                        <div className="mt-4 h-1.5 rounded-full bg-slate-200">
+                          <div className={`h-1.5 rounded-full ${scoreColor(compositeScore)}`} style={{ width: `${Math.min(100, compositeScore)}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  <div className="divide-y divide-slate-100">
+                    {[
+                      {
+                        label: tx("Medical"),
+                        score: medicalScore,
+                        finding: underwritingResults?.medical
+                          ? [
+                              underwritingResults.medical.risk_class,
+                              underwritingResults.medical.loading_percentage
+                                ? `+${underwritingResults.medical.loading_percentage}% ${tx("loading")}`
+                                : null,
+                              underwritingResults.medical.requires_human_review ? tx("needs human review") : null,
+                            ].filter(Boolean).join(" · ")
+                          : null,
+                      },
+                      {
+                        label: tx("Financial"),
+                        score: financialScore,
+                        finding: underwritingResults?.financial
+                          ? [
+                              underwritingResults.financial.financially_justified ? tx("Justified") : tx("Not justified"),
+                              `${underwritingResults.financial.coverage_to_income_ratio.toFixed(1)}× ${tx("income")}`,
+                              underwritingResults.financial.maximum_supported_cover != null
+                                ? `${tx("max")} ${fmtCoverage(underwritingResults.financial.maximum_supported_cover)}`
+                                : null,
+                            ].filter(Boolean).join(" · ")
+                          : null,
+                      },
+                      {
+                        label: tx("Fraud"),
+                        score: fraudPct,
+                        finding: underwritingResults?.fraud
+                          ? [
+                              underwritingResults.fraud.severity,
+                              underwritingResults.fraud.investigation_required ? tx("investigation required") : null,
+                            ].filter(Boolean).join(" · ")
+                          : null,
+                      },
+                    ].map((r) => (
+                      <div key={r.label} className="py-3 first:pt-0 last:pb-0">
+                        <div className="flex items-center gap-4">
+                          <span className="w-20 flex-shrink-0 text-sm font-medium text-slate-700">{r.label}</span>
+                          <div className="h-1.5 flex-1 rounded-full bg-slate-100">
+                            <div className={`h-1.5 rounded-full ${scoreColor(r.score)}`} style={{ width: `${Math.min(100, r.score)}%` }} />
+                          </div>
+                          <span className="w-12 flex-shrink-0 text-right text-sm font-semibold text-slate-900 tabular-nums">{r.score}%</span>
+                        </div>
+                        {r.finding && <p className="mt-1 pl-24 text-sm text-slate-500">{r.finding}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {aiDecision && !trace.open && (
+                  <div className="border-t border-slate-100 px-5 py-4">
+                    <DecisionBanner decision={aiDecision} variant="compact" />
+                  </div>
+                )}
+              </div>
+
+              {/* AI analysis: every factor the AI weighed, as a list or a table */}
+              <div className="card p-5">
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="section-label">{tx("AI analysis")}</h3>
+                    {hasCategorizedReasons && (
+                      <div className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                        <button
+                          onClick={() => setAnalysisView("list")}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${analysisView === "list" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                        >
+                          <svg
+                            className="w-3.5 h-3.5"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M4 6h16M4 12h16M4 18h16"
+                            />
+                          </svg>
+                          {tx("List")}
+                        </button>
+                        <button
+                          onClick={() => setAnalysisView("table")}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${analysisView === "table" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                        >
+                          <svg
+                            className="w-3.5 h-3.5"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M3 10h18M3 14h18M12 4v16M4 4h16v16H4z"
+                            />
+                          </svg>
+                          {tx("Table")}
+                        </button>
+                      </div>
+                    )}
+                </div>
+                  {hasCategorizedReasons ? (
+                  analysisView === "list" ? (
+                    <div className="space-y-5">
+                      {reasonSections.map((s) => (
+                        <ReasonGroup
+                          key={s.label}
+                          label={s.label}
+                          scoreLabel={s.scoreLabel}
+                          reasons={s.reasons}
+                          accentColor={s.accentColor}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <ReasonTable sections={reasonSections} />
+                  )
+                ) : (
+                  <ul className="space-y-1.5">
+                    {(assessment?.reasons ?? []).map((reason, i) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <span className="text-slate-300 mt-0.5 flex-shrink-0">
+                          •
+                        </span>
+                        <span className="text-xs text-slate-600 leading-relaxed">
+                          {reason}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+              </div>
+            </>
+          )}
+
+        </div>
+        <aside className="space-y-5 lg:sticky lg:top-[calc(var(--case-head,8rem)+1.25rem)] lg:self-start">
+          {/* Underwriter notes */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-3">
+              <p className="section-label">{tx("Underwriter Notes")}</p>
+              <button
+                onClick={() => generateNote(buildNoteContext())}
+                disabled={generatingNote || !hasAny || userRole === "Agent"}
+                title={
+                  userRole === "Agent"
+                    ? tx(
+                        "Currently, you have no access to do this, ask your manager",
+                      )
+                    : hasAny
+                      ? tx("Draft a note from the case details with AI")
+                      : tx("Run underwriting first to generate a note")
+                }
+                className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {generatingNote ? (
+                  <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" />
+                ) : (
+                  <svg
+                    className="w-3.5 h-3.5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"
+                    />
+                  </svg>
+                )}
+                {generatingNote ? tx("Generating…") : tx("Generate with AI")}
+              </button>
+            </div>
+            {noteGenError && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+                {noteGenError}
+              </p>
+            )}
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              disabled={userRole === "Agent"}
+              className="w-full h-24 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 resize-none placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition disabled:opacity-50 disabled:cursor-not-allowed"
+              placeholder={
+                userRole === "Agent"
+                  ? tx("Notes disabled for Agent role.")
+                  : tx(
+                      "Add case notes, override justification, or referral comments here — or click Generate with AI for a draft…",
+                    )
+              }
+            />
+            <div className="flex items-center justify-end gap-2 mt-3">
+              {noteSent && (
+                <span className="text-xs text-blue-600 font-semibold mr-auto">
+                  {tx("✓ Posted")}
+                </span>
+              )}
+              <button
+                onClick={submitNote}
+                disabled={postingNote || !note.trim() || userRole === "Agent"}
+                title={
+                  userRole === "Agent"
+                    ? tx(
+                        "Currently, you have no access to do this, ask your manager",
+                      )
+                    : undefined
+                }
+                className="px-3 py-1.5 text-xs font-semibold text-white bg-blue-700 rounded-md hover:bg-blue-800 disabled:opacity-50 transition-colors"
+              >
+                {postingNote ? tx("Posting…") : tx("Post Note")}
+              </button>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      {/* ── Requirements: what underwriting still needs ──────────────────────── */}
+      <div className={caseTab === "requirements" ? "space-y-5" : "hidden"}>
+          {/* Requirements & Verification — the case-driven underwriting workflow's
+              requirements engine + cross-document verification findings. */}
+          <div className="card overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+              <div>
+                <h3 className="section-label">{tx("Underwriting requirements")}</h3>
+                {requirements.length > 0 && (() => {
+                  const met = requirements.filter((r) => r.status === "Satisfied").length;
+                  const waived = requirements.filter((r) => r.status === "Waived").length;
+                  const open = requirements.length - met - waived;
+                  return (
+                    <p className="mt-1 text-sm text-slate-500">
+                      <span className="font-semibold text-slate-900">{met}</span> {tx("of")} {requirements.length} {tx("met")}
+                      {open > 0 && <> · <span className="font-medium text-amber-700">{open} {tx("open")}</span></>}
+                      {waived > 0 && <> · {waived} {tx("waived")}</>}
+                    </p>
+                  );
+                })()}
+              </div>
+              <button
+                onClick={runDetermineRequirements}
+                disabled={requirementsBusy || userRole === "Agent" || onHold}
+                title={onHold ? tx("The case is on hold. Remove the hold to continue.") : tx("Re-run the requirements engine for this case")}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {requirementsBusy ? (
+                  <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" />
+                ) : null}
+                {requirementsBusy
+                  ? tx("Determining…")
+                  : tx("Determine requirements")}
+              </button>
+            </div>
+            {requirements.length > 0 && (
+              <div className="h-1 bg-slate-100">
+                <div
+                  className="h-1 bg-emerald-500 transition-all"
+                  style={{ width: `${(100 * requirements.filter((r) => r.status === "Satisfied" || r.status === "Waived").length) / requirements.length}%` }}
+                />
+              </div>
+            )}
+            {requirementsError && (
+              <p className="mx-5 mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+                {requirementsError}
+              </p>
+            )}
+            {requirements.length === 0 ? (
+              <p className="px-5 py-6 text-sm text-slate-500">
+                {tx(
+                  'No requirements determined yet — click "Determine Requirements" to run the Requirements Engine for this case.',
+                )}
+              </p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {[...requirements].sort((x, y) => REQUIREMENT_ORDER[x.status] - REQUIREMENT_ORDER[y.status]).map((req) => {
+                  const statusStyle: Record<CaseRequirement["status"], string> =
+                    {
+                      Missing: "bg-red-50 text-red-700 border-red-200",
+                      Requested: "bg-amber-50 text-amber-700 border-amber-200",
+                      Submitted: "bg-blue-50 text-blue-700 border-blue-200",
+                      Satisfied:
+                        "bg-emerald-50 text-emerald-700 border-emerald-200",
+                      Waived: "bg-slate-100 text-slate-500 border-slate-200",
+                      Invalid: "bg-red-50 text-red-700 border-red-200",
+                    };
+                  return (
+                    <li
+                      key={req.id}
+                      className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-start"
+                    >
+                      <RequirementIcon status={req.status} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-semibold text-slate-900">
+                            {tx(requirementName(req.code))}
+                          </span>
+                          <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">
+                            {tx(req.category.charAt(0) + req.category.slice(1).toLowerCase())}
+                          </span>
+                          {!req.required && (
+                            <span className="text-xs text-slate-400">{tx("Optional")}</span>
+                          )}
+                        </div>
+                        {req.reason && (
+                          <p className="mt-0.5 text-sm text-slate-500">
+                            {req.reason}
+                          </p>
+                        )}
+                        {req.satisfied_by_artifact_id &&
+                          (() => {
+                            const doc = artifacts.find((a) => a.id === req.satisfied_by_artifact_id);
+                            return doc ? (
+                              <button
+                                type="button"
+                                onClick={() => setPreviewDoc(doc)}
+                                title={tx("Preview {0}", { 0: doc.file_name })}
+                                className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+                              >
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true">
+                                  <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+                                  <path d="M14 3v5h5" />
+                                </svg>
+                                <span className="truncate">{doc.file_name}</span>
+                              </button>
+                            ) : (
+                              <p className="mt-0.5 text-[11px] text-slate-400">
+                                {tx("Linked document is no longer on file")}
+                              </p>
+                            );
+                          })()}
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span
+                          className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border ${statusStyle[req.status]}`}
+                        >
+                          {tx(req.status)}
+                        </span>
+                        {REQUIREMENT_DOC_TYPES[req.code] &&
+                          ["Missing", "Invalid", "Requested"].includes(req.status) &&
+                          (requirementDoc(req).processing || requirementDoc(req).accepted) && (
+                            <span className="inline-flex items-center gap-1.5 rounded-md bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+                              <Spinner className="w-3 h-3 border-blue-200 border-t-blue-600" />
+                              {requirementDoc(req).accepted ? tx("Updating…") : tx("Reading document…")}
+                            </span>
+                          )}
+                        {REQUIREMENT_DOC_TYPES[req.code] &&
+                          ["Missing", "Invalid", "Requested"].includes(req.status) &&
+                          !requirementDoc(req).processing &&
+                          !requirementDoc(req).accepted && (
+                            <button
+                              onClick={() => {
+                                setUploadForRequirement(REQUIREMENT_DOC_TYPES[req.code]);
+                                setShowUpload(true);
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                              title={tx("Upload the {0} for this case", { 0: REQUIREMENT_DOC_TYPES[req.code] })}
+                            >
+                              ↑ {req.status === "Invalid" || requirementDoc(req).unreadable ? tx("Re-upload") : tx("Upload")}
+                            </button>
+                          )}
+                        {req.status !== "Waived" &&
+                          req.status !== "Satisfied" &&
+                          userRole !== "Agent" && (
+                            <button
+                              onClick={() => waiveRequirement(req.id)}
+                              disabled={onHold}
+                              className="rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                              title={onHold ? tx("The case is on hold. Remove the hold to continue.") : tx("Waive this requirement")}
+                            >
+                              {tx("Waive")}
+                            </button>
+                          )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            {verificationFindings.length > 0 && (
+              <div className="border-t border-slate-100">
+                <p className="section-label px-5 pt-4">
+                  {tx("Verification findings")}
+                </p>
+                <ul className="divide-y divide-slate-100">
+                  {verificationFindings.map((f) => {
+                    const severityStyle: Record<
+                      VerificationFinding["severity"],
+                      string
+                    > = {
+                      Info: "bg-slate-100 text-slate-500 border-slate-200",
+                      Low: "bg-blue-50 text-blue-700 border-blue-200",
+                      Medium: "bg-amber-50 text-amber-700 border-amber-200",
+                      High: "bg-red-50 text-red-700 border-red-200",
+                    };
+                    return (
+                      <li
+                        key={f.id}
+                        className="flex items-start justify-between gap-3 px-5 py-4"
+                      >
+                        <div className="min-w-0">
+                          <span className="text-sm font-semibold text-slate-900">
+                            {tx(requirementName(f.field))}
+                          </span>
+                          <p className="text-sm text-slate-500 mt-0.5">
+                            {f.explanation}
+                          </p>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {tx("Declared:")}{" "}
+                            {JSON.stringify(f.declared_value) ?? "—"}{" "}
+                            {tx("·  Observed:")}{" "}
+                            {JSON.stringify(f.observed_value) ?? "—"}
+                          </p>
+                        </div>
+                        <span
+                          className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border flex-shrink-0 ${severityStyle[f.severity]}`}
+                        >
+                          {f.severity}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </div>
+      </div>
+
+      {/* ── Documents: the AI read of the paperwork, and the checklist / uploads ───── */}
+      <AccordionsOpenByDefault.Provider value={true}>
+      <div className={caseTab === "documents" ? "grid grid-cols-1 items-start gap-5 lg:grid-cols-3" : "hidden"}>
+        <div className="space-y-5 lg:col-span-2">
+          {/* Every file on the case: preview, re-type or remove */}
+          <div className="card overflow-hidden">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3.5">
+              <h3 className="section-label">
+                {tx("Files")}
+                {artifacts.length > 0 && <span className="ml-2 text-sm font-normal text-slate-400">{artifacts.length}</span>}
+              </h3>
+              <button
+                disabled={userRole === "Agent"}
+                onClick={() => {
+                  if (userRole === "Agent") return;
+                  setShowUpload(true);
+                }}
+                title={userRole === "Agent" ? tx("Currently, you have no access to do this, ask your manager") : undefined}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="h-4 w-4" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                {tx("Upload")}
+              </button>
+            </div>
+            <div className="p-5">
+              {artifacts.length > 0 ? (
+                  <CaseDocumentList
+                    documents={artifacts}
+                    requiredTypes={docs.required}
+                    canEdit={userRole !== "Agent"}
+                    onChanged={(message) => {
+                      notify(message, true);
+                      // The checklist and requirements follow the documents' types.
+                      fetchArtifacts();
+                      fetchDetail();
+                      fetchRequirements();
+                      fetchVerificationFindings();
+                    }}
+                    onError={(message) => notify(message, false)}
+                  />
+              ) : (
+                <p className="py-6 text-center text-sm text-slate-500">{tx("No files uploaded yet.")}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Document summary — categorized medical/financial/occupational read
+              of the uploaded paperwork, generated before underwriting runs. */}
+          <div className="card p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="section-label">{tx("Document Summary (AI)")}</p>
+              <button
+                onClick={summarizeDocuments}
+                disabled={
+                  summarizing ||
+                  artifacts.filter((a) => a.ocr_result).length === 0 ||
+                  userRole === "Agent"
+                }
+                title={
+                  userRole === "Agent"
+                    ? tx(
+                        "Currently, you have no access to do this, ask your manager",
+                      )
+                    : undefined
+                }
+                className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {summarizing ? (
+                  <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" />
+                ) : null}
+                {summarizing
+                  ? tx("Summarizing…")
+                  : docSummary
+                    ? tx("Re-summarize")
+                    : tx("Summarize Documents")}
+              </button>
+            </div>
+            {artifacts.filter((a) => a.ocr_result).length === 0 &&
+              !docSummary && (
+                <p className="text-xs text-slate-400">
+                  {tx(
+                    "Upload and OCR document(s) to generate a medical / financial / occupational summary.",
+                  )}
+                </p>
+              )}
+            {artifacts.some((a) => a.ocr_result) && !docSummary && !summarizing && (
+              <p className="text-sm text-slate-500">
+                {tx("No summary yet. Summarize Documents reads the uploaded paperwork and groups what it finds into medical, financial and occupational notes.")}
+              </p>
+            )}
+            {summarizeError && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {summarizeError}
+              </p>
+            )}
+            {docSummary && (
+              <LazyMarkdown components={MD_COMPONENTS}>
+                {docSummary}
+              </LazyMarkdown>
+            )}
+          </div>
+        </div>
+        <aside className="lg:sticky lg:top-[calc(var(--case-head,8rem)+1.25rem)]">
+          {/* Required documents for this plan, ticked off as they arrive */}
+          <div className="card overflow-hidden">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3.5">
+              <h3 className="section-label">{tx("Required documents")}</h3>
+              {docs.required.length > 0 && (
+                <span className="text-sm text-slate-500">
+                  <span className="font-semibold text-slate-900">{docs.required.filter((d) => docs.received.includes(d)).length}</span>{" "}
+                  {tx("of")} {docs.required.length} {tx("received")}
+                </span>
+              )}
+            </div>
+            {docs.required.length === 0 ? (
+              <p className="px-5 py-4 text-sm text-slate-500">{tx("No documents required for this plan type.")}</p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {docs.required.map((d) => {
+                  const got = docs.received.includes(d);
+                  return (
+                    <li key={d} className="flex items-center gap-3 px-5 py-3">
+                      <span
+                        className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full ${got ? "bg-emerald-500 text-white" : "border-2 border-amber-400"}`}
+                        aria-hidden="true"
+                      >
+                        {got && (
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                            <path d="M5 12l5 5L20 7" />
+                          </svg>
+                        )}
+                      </span>
+                      <span className={`flex-1 text-sm ${got ? "text-slate-700" : "font-medium text-slate-900"}`}>{d}</span>
+                      <span className={`text-xs font-semibold ${got ? "text-emerald-700" : "text-amber-700"}`}>
+                        {got ? tx("Received") : tx("Missing")}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </aside>
+      </div>
+
+      </AccordionsOpenByDefault.Provider>
+
+      {/* ── Applicant: everything we know about the person ─────────────────── */}
+      <AccordionsOpenByDefault.Provider value={true}>
+      <SectionsAsPanels.Provider value={true}>
+      <div className={caseTab === "applicant" ? "grid grid-cols-1 items-start gap-5 lg:grid-cols-3" : "hidden"}>
+        <div className="lg:col-span-2">
+          {customer && (
+            <div className="space-y-5">
+              {/* Name, gender and CNIC are in the page header; only the family context is repeated here. */}
               {!detail?.is_principal_participant &&
                 detail?.principal_participant_name && (
                   <div className="mb-4 bg-blue-50 border border-blue-100 rounded-lg p-3">
@@ -4126,6 +5124,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                 </div>
               )}
 
+              <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-2">
               <Accordion title={tx("Customer Details")}>
                 {detail?.principal_participant_name && (
                   <DataRow label={tx("Member Name")} value={customer.name} />
@@ -4286,11 +5285,13 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   </p>
                 )}
               </Accordion>
+              </div>
             </div>
           )}
-
+        </div>
+        <div>
           {policy && (
-            <div className="card p-5 space-y-4">
+            <div className="space-y-5">
               <Accordion title={tx("Policy Details")} defaultOpen={true}>
                 <DataRow
                   label={tx("Product")}
@@ -4343,6 +5344,10 @@ export default function CasePage({ params }: { params: { id: string } }) {
               </Accordion>
             </div>
           )}
+        </div>
+      </div>
+      </SectionsAsPanels.Provider>
+      </AccordionsOpenByDefault.Provider>
 
           <ModalPortal>
             {showResultModal && medical && (medical.reports ?? []).length > 0 && (
@@ -4450,921 +5455,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
           </ModalPortal>
 
-          {/* Document checklist + upload */}
-          <div className="card p-5">
-            <Accordion
-              title={tx("Documents")}
-              action={
-                <button
-                  disabled={userRole === "Agent"}
-                  onClick={() => {
-                    if (userRole === "Agent") return;
-                    setShowUpload(true);
-                  }}
-                  title={
-                    userRole === "Agent"
-                      ? "Currently, you have no access to do this, ask your manager"
-                      : undefined
-                  }
-                  className={`text-xs font-semibold ${userRole === "Agent" ? "text-slate-400 opacity-50 cursor-not-allowed" : "text-blue-600 hover:text-blue-700"}`}
-                >
-                  {tx("+ Upload")}
-                </button>
-              }
-            >
-              {docs.required.length === 0 ? (
-                <p className="text-xs text-slate-400">
-                  {tx("No documents required for this plan type.")}
-                </p>
-              ) : (
-                <ul className="space-y-1.5 mb-3">
-                  {docs.required.map((d) => {
-                    const got = docs.received.includes(d);
-                    return (
-                      <li
-                        key={d}
-                        className="flex items-center justify-between text-xs"
-                      >
-                        <span
-                          className={got ? "text-slate-700" : "text-slate-400"}
-                        >
-                          {d}
-                        </span>
-                        <span
-                          className={`font-semibold ${got ? "text-blue-600" : "text-amber-600"}`}
-                        >
-                          {got ? tx("Received") : tx("Missing")}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-
-              {artifacts.length > 0 && (
-                <CaseDocumentList
-                  documents={artifacts}
-                  requiredTypes={docs.required}
-                  canEdit={userRole !== "Agent"}
-                  onChanged={(message) => {
-                    notify(message, true);
-                    // The checklist and requirements follow the documents' types.
-                    fetchArtifacts();
-                    fetchDetail();
-                    fetchRequirements();
-                    fetchVerificationFindings();
-                  }}
-                  onError={(message) => notify(message, false)}
-                />
-              )}
-            </Accordion>
-          </div>
-
-          {/* Quick score summary */}
-          {hasAny && (
-            <div className="card p-5">
-              <Accordion title={tx("Score Summary")}>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-500">{tx("Medical Risk")}</span>
-                    <span className="font-bold text-slate-900">
-                      {medicalScore}%
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-500">
-                      {tx("Financial Risk")}
-                    </span>
-                    <span className="font-bold text-slate-900">
-                      {financialScore}%
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-500">{tx("Fraud Risk")}</span>
-                    <span className="font-bold text-slate-900">
-                      {fraudPct}%
-                    </span>
-                  </div>
-                  <div className="h-px bg-slate-100 my-1" />
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="font-semibold text-slate-700">
-                      {tx("Composite Score")}
-                    </span>
-                    <span className="font-extrabold text-slate-900">
-                      {compositeScore}%
-                    </span>
-                  </div>
-                </div>
-              </Accordion>
-            </div>
-          )}
-        </div>
-
-        {/* ── RIGHT COLUMN: Risk assessment + Recommendation ────────────── */}
-        <div className="lg:col-span-2 space-y-4">
-          {/* Document summary — categorized medical/financial/occupational read
-              of the uploaded paperwork, generated before underwriting runs. */}
-          <div className="card p-5 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="section-label">{tx("Document Summary (AI)")}</p>
-              <button
-                onClick={summarizeDocuments}
-                disabled={
-                  summarizing ||
-                  artifacts.filter((a) => a.ocr_result).length === 0 ||
-                  userRole === "Agent"
-                }
-                title={
-                  userRole === "Agent"
-                    ? tx(
-                        "Currently, you have no access to do this, ask your manager",
-                      )
-                    : undefined
-                }
-                className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {summarizing ? (
-                  <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" />
-                ) : null}
-                {summarizing
-                  ? tx("Summarizing…")
-                  : docSummary
-                    ? tx("Re-summarize")
-                    : tx("Summarize Documents")}
-              </button>
-            </div>
-            {artifacts.filter((a) => a.ocr_result).length === 0 &&
-              !docSummary && (
-                <p className="text-xs text-slate-400">
-                  {tx(
-                    "Upload and OCR document(s) to generate a medical / financial / occupational summary.",
-                  )}
-                </p>
-              )}
-            {summarizeError && (
-              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                {summarizeError}
-              </p>
-            )}
-            {docSummary && (
-              <LazyMarkdown components={MD_COMPONENTS}>
-                {docSummary}
-              </LazyMarkdown>
-            )}
-          </div>
-
-          {!hasAny ? (
-            <div className="card p-8 flex flex-col items-center justify-center text-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center">
-                <span className="text-2xl">🩺</span>
-              </div>
-              <p className="text-sm font-semibold text-slate-700">
-                {tx("This case hasn't been underwritten yet")}
-              </p>
-              <p className="text-xs text-slate-400 max-w-sm">
-                {tx(
-                  "Run the AI underwriting pipeline to score medical, financial, and fraud risk and get a decision recommendation.",
-                )}
-              </p>
-              <button
-                onClick={handleRun}
-                disabled={
-                  effStatus === "streaming" ||
-                  !policy ||
-                  !customer ||
-                  requiredDocsMissing ||
-                  requirementsOpen ||
-                  userRole === "Agent" ||
-                  onHold
-                }
-                title={
-                  onHold
-                    ? tx("The case is on hold. Remove the hold to continue.")
-                    : userRole === "Agent"
-                    ? tx(
-                        "Currently, you have no access to do this, ask your manager",
-                      )
-                    : requirementsOpen
-                      ? requirementsOpenText
-                      : requiredDocsMissing
-                        ? tx("Complete missing requirements first: {0}", {
-                            0: missingPreChecks.join("; "),
-                          })
-                        : undefined
-                }
-                className="mt-2 flex items-center gap-2 px-5 py-2.5 bg-blue-700 text-white rounded-lg text-sm font-semibold hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
-              >
-                {effStatus === "streaming" ? <Spinner /> : null}
-                {effStatus === "streaming"
-                  ? tx("Running…")
-                  : tx("Run AI Underwriting")}
-              </button>
-              {trace.open && (
-                <div className="mt-2 w-full max-w-2xl text-left">
-                  <RunTracker trace={trace} onDismiss={() => setTrace(CLOSED_TRACE)} />
-                </div>
-              )}
-              {requirementsOpen && !requiredDocsMissing && (
-                <div className="flex flex-col items-center gap-2 text-center">
-                  <p className="max-w-md text-xs text-amber-700">
-                    {requirementsOpenText}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={runDetermineRequirements}
-                    disabled={requirementsBusy || userRole === "Agent"}
-                    title={
-                      userRole === "Agent"
-                        ? tx(
-                            "Currently, you have no access to do this, ask your manager",
-                          )
-                        : tx(
-                            "Re-check the requirements once the missing item has been added",
-                          )
-                    }
-                    className="flex items-center gap-2 rounded-lg border border-blue-200 bg-white px-4 py-2 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-50 disabled:opacity-50"
-                  >
-                    {requirementsBusy ? (
-                      <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" />
-                    ) : null}
-                    {requirementsBusy ? tx("Checking…") : tx("Resubmit")}
-                  </button>
-                </div>
-              )}
-              {requiredDocsMissing && (
-                <div className="w-full bg-slate-50/80 rounded-2xl border border-slate-200/90 p-5 mt-4 text-left shadow-2xs">
-                  <div className="flex items-center justify-between pb-3.5 mb-4 border-b border-slate-200/70 flex-wrap gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold text-sm border border-amber-200/60 shadow-2xs">
-                        ⚡
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">
-                          {tx("Pre-Underwriting Prerequisites Checklist")}
-                        </h4>
-                        <p className="text-[11px] text-slate-500 mt-0.5">
-                          {tx(
-                            "Complete all required workflow steps below to enable Risk Engine execution",
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                    <span className="text-xs font-bold font-mono px-3 py-1 rounded-full bg-white text-slate-700 border border-slate-200/90 shadow-2xs">
-                      <span className="text-emerald-600 font-extrabold">
-                        {prereqSteps.filter((s) => s.done).length}
-                      </span>{" "}
-                      / {prereqSteps.length} {tx("Steps Ready")}
-                    </span>
-                  </div>
-
-                  {/* Vertical Thread Stepper */}
-                  <div className="relative pl-7 space-y-4 before:absolute before:left-3 before:top-3 before:bottom-3 before:w-0.5 before:bg-slate-200">
-                    {prereqSteps.map((step, idx) => (
-                      <div
-                        key={step.id}
-                        className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
-                      >
-                        {/* Thread Node Circle */}
-                        <div
-                          className={`absolute -left-7 w-6 h-6 rounded-full border-2 flex items-center justify-center text-[10px] font-bold transition-all z-10 ${
-                            step.done
-                              ? "bg-emerald-500 border-emerald-600 text-white shadow-xs"
-                              : "bg-white border-amber-500 text-amber-600 shadow-2xs animate-pulse"
-                          }`}
-                        >
-                          {step.done ? "✓" : idx + 1}
-                        </div>
-
-                        {/* Step Details */}
-                        <div className="min-w-0 flex-1 pl-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span
-                              className={`text-xs ${step.done ? "font-bold text-slate-800" : "font-extrabold text-slate-900"}`}
-                            >
-                              {tx(step.title)}
-                            </span>
-                            <span
-                              className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
-                                step.done
-                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200/80"
-                                  : "bg-amber-50 text-amber-800 border-amber-300/80"
-                              }`}
-                            >
-                              {step.statusLabel}
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-500 mt-1 leading-snug">
-                            {tx(step.description)}
-                          </p>
-                        </div>
-
-                        {/* Action Link / Button */}
-                        <div className="shrink-0 pl-1 sm:pl-0 flex items-center gap-2">
-                          {step.actionHref && onHold ? (
-                            <span
-                              aria-disabled="true"
-                              title={tx("The case is on hold. Remove the hold to continue.")}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-400 text-xs font-bold rounded-lg border border-slate-200 cursor-not-allowed"
-                            >
-                              <span>{step.actionLabel}</span>
-                              <span className="text-[10px]">↗</span>
-                            </span>
-                          ) : step.actionHref ? (
-                            <Link
-                              href={step.actionHref}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-blue-700 text-xs font-bold rounded-lg border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all"
-                            >
-                              <span>{step.actionLabel}</span>
-                              <span className="text-[10px]">↗</span>
-                            </Link>
-                          ) : step.onAction ? (
-                            <button
-                              onClick={step.onAction}
-                              disabled={step.busy || userRole === "Agent" || onHold}
-                              title={
-                                onHold
-                                  ? tx("The case is on hold. Remove the hold to continue.")
-                                  : userRole === "Agent"
-                                  ? tx(
-                                      "Currently, you have no access to do this, ask your manager",
-                                    )
-                                  : undefined
-                              }
-                              className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-all flex items-center gap-1.5 ${
-                                step.done
-                                  ? "bg-white hover:bg-slate-100 text-slate-700 border-slate-200/90"
-                                  : "bg-blue-600 hover:bg-blue-700 text-white border-blue-600 shadow-2xs"
-                              } ${userRole === "Agent" || onHold ? "opacity-50 cursor-not-allowed" : ""}`}
-                            >
-                              {step.busy ? (
-                                <Spinner className="w-3 h-3 border-white border-t-transparent" />
-                              ) : null}
-                              <span>{step.actionLabel}</span>
-                            </button>
-                          ) : null}
-                          {step.secondaryActionLabel && step.onSecondaryAction && (
-                            <button
-                              onClick={step.onSecondaryAction}
-                              disabled={step.secondaryBusy || onHold}
-                              title={onHold ? tx("The case is on hold. Remove the hold to continue.") : undefined}
-                              className="px-3 py-1.5 text-xs font-bold rounded-lg border bg-white hover:bg-slate-100 text-slate-700 border-slate-200/90 transition-all disabled:opacity-50"
-                            >
-                              {step.secondaryActionLabel}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {effStreamError && !requiredDocsMissing && (
-                <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-2">
-                  {effStreamError}
-                </p>
-              )}
-            </div>
-          ) : (
-            <>
-              {/* Risk Assessment Scores */}
-              <SectionCard title={tx("AI Risk Assessment")}>
-                <div className="space-y-5">
-                  <RiskScoreBar
-                    label={tx("Medical Risk Score")}
-                    score={medicalScore}
-                    valueLabel={`${medicalScore}%`}
-                  />
-                  <RiskScoreBar
-                    label={tx("Financial Risk Score")}
-                    score={financialScore}
-                    valueLabel={`${financialScore}%`}
-                  />
-                  <RiskScoreBar
-                    label={tx("Fraud Risk Score")}
-                    score={fraudPct}
-                    valueLabel={`${fraudPct}%`}
-                  />
-                  <div className="pt-2 border-t border-slate-100">
-                    <CompositeScoreRing score={compositeScore} />
-                  </div>
-
-                  {underwritingResults && (
-                    <div className="pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      {underwritingResults.medical && (
-                        <div className="bg-slate-50 rounded-lg p-3">
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                            {tx("Medical")}
-                          </p>
-                          <p className="text-sm font-bold text-slate-800">
-                            {underwritingResults.medical.risk_class}
-                          </p>
-                          {underwritingResults.medical.loading_percentage ? (
-                            <p className="text-xs text-amber-700 mt-0.5">
-                              +{underwritingResults.medical.loading_percentage}
-                              {tx("% loading")}
-                            </p>
-                          ) : null}
-                          {underwritingResults.medical
-                            .requires_human_review && (
-                            <p className="text-[11px] text-blue-600 mt-0.5">
-                              {tx("Requires human review")}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                      {underwritingResults.financial && (
-                        <div className="bg-slate-50 rounded-lg p-3">
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                            {tx("Financial")}
-                          </p>
-                          <p className="text-sm font-bold text-slate-800">
-                            {underwritingResults.financial.financially_justified
-                              ? tx("Justified")
-                              : tx("Not Justified")}
-                          </p>
-                          <p className="text-[11px] text-slate-500 mt-0.5">
-                            {tx("Ratio")}{" "}
-                            {underwritingResults.financial.coverage_to_income_ratio.toFixed(
-                              1,
-                            )}
-                            x
-                            {underwritingResults.financial
-                              .maximum_supported_cover != null && (
-                              <>
-                                {" "}
-                                {tx("· Max cover")}{" "}
-                                {fmtCoverage(
-                                  underwritingResults.financial
-                                    .maximum_supported_cover,
-                                )}
-                              </>
-                            )}
-                          </p>
-                          {underwritingResults.financial.verified_income !=
-                            null && (
-                            <p className="text-[11px] text-slate-500">
-                              {tx("Verified income:")}{" "}
-                              {fmtIncome(
-                                underwritingResults.financial.verified_income,
-                              )}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                      {underwritingResults.fraud && (
-                        <div className="bg-slate-50 rounded-lg p-3">
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                            {tx("Fraud")}
-                          </p>
-                          <p className="text-sm font-bold text-slate-800">
-                            {underwritingResults.fraud.severity}
-                          </p>
-                          <p className="text-[11px] text-slate-500 mt-0.5">
-                            {tx("Probability")}{" "}
-                            {(
-                              underwritingResults.fraud.probability * 100
-                            ).toFixed(0)}
-                            %
-                          </p>
-                          {underwritingResults.fraud.investigation_required && (
-                            <p className="text-[11px] text-purple-600 mt-0.5">
-                              {tx("Investigation required")}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </SectionCard>
-
-              {/* AI Recommendation */}
-              <div className="card p-5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <p className="section-label">{tx("AI Recommendation")}</p>
-                  <button
-                    onClick={handleRun}
-                    disabled={
-                      effStatus === "streaming" ||
-                      requiredDocsMissing ||
-                      requirementsOpen ||
-                      userRole === "Agent" ||
-                      onHold
-                    }
-                    title={
-                      onHold
-                        ? tx("The case is on hold. Remove the hold to continue.")
-                        : userRole === "Agent"
-                        ? tx(
-                            "Currently, you have no access to do this, ask your manager",
-                          )
-                        : requirementsOpen
-                          ? requirementsOpenText
-                          : requiredDocsMissing
-                            ? tx("Complete missing requirements first: {0}", {
-                                0: missingPreChecks.join("; "),
-                              })
-                            : undefined
-                    }
-                    className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {effStatus === "streaming" ? (
-                      <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" />
-                    ) : null}
-                    {effStatus === "streaming"
-                      ? tx("Re-running…")
-                      : tx("↻ Re-run AI Underwriting")}
-                  </button>
-                </div>
-
-                {trace.open && <RunTracker trace={trace} onDismiss={() => setTrace(CLOSED_TRACE)} />}
-                {aiDecision && !trace.open && <DecisionBanner decision={aiDecision} />}
-                {effStreamError && !trace.open && (
-                  <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                    {effStreamError}
-                  </p>
-                )}
-
-                {/* Explainability report — list (grouped) or table (compact) view */}
-                <div className="pt-2 border-t border-slate-100">
-                  <div className="flex items-center justify-between mb-4">
-                    <p className="text-sm font-bold uppercase tracking-widest text-slate-700">
-                      {tx("AI Analysis")}
-                    </p>
-                    {hasCategorizedReasons && (
-                      <div className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
-                        <button
-                          onClick={() => setAnalysisView("list")}
-                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${analysisView === "list" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-                        >
-                          <svg
-                            className="w-3.5 h-3.5"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                            strokeWidth={2}
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M4 6h16M4 12h16M4 18h16"
-                            />
-                          </svg>
-                          {tx("List")}
-                        </button>
-                        <button
-                          onClick={() => setAnalysisView("table")}
-                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${analysisView === "table" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-                        >
-                          <svg
-                            className="w-3.5 h-3.5"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                            strokeWidth={2}
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M3 10h18M3 14h18M12 4v16M4 4h16v16H4z"
-                            />
-                          </svg>
-                          {tx("Table")}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  {hasCategorizedReasons ? (
-                    analysisView === "list" ? (
-                      <div className="space-y-5">
-                        {reasonSections.map((s) => (
-                          <ReasonGroup
-                            key={s.label}
-                            label={s.label}
-                            scoreLabel={s.scoreLabel}
-                            reasons={s.reasons}
-                            accentColor={s.accentColor}
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <ReasonTable sections={reasonSections} />
-                    )
-                  ) : (
-                    <ul className="space-y-1.5">
-                      {(assessment?.reasons ?? []).map((reason, i) => (
-                        <li key={i} className="flex items-start gap-2">
-                          <span className="text-slate-300 mt-0.5 flex-shrink-0">
-                            •
-                          </span>
-                          <span className="text-xs text-slate-600 leading-relaxed">
-                            {reason}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-
-                  {/* Download PDF for this specific plan */}
-                  {assessment && (
-                    <div className="mt-5 flex justify-end">
-                      <button
-                        onClick={downloadPDF}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors shadow-sm"
-                      >
-                        <svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          className="w-3.5 h-3.5"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3"
-                          />
-                        </svg>
-                        {tx("Download PDF Report")}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Requirements & Verification — the case-driven underwriting workflow's
-              requirements engine + cross-document verification findings. */}
-          <div className="card p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <p className="section-label">{tx("Underwriting Requirements")}</p>
-              <button
-                onClick={runDetermineRequirements}
-                disabled={requirementsBusy || userRole === "Agent" || onHold}
-                title={onHold ? tx("The case is on hold. Remove the hold to continue.") : undefined}
-                className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {requirementsBusy ? (
-                  <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" />
-                ) : null}
-                {requirementsBusy
-                  ? tx("Determining…")
-                  : tx("Determine Requirements")}
-              </button>
-            </div>
-            {requirementsError && (
-              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                {requirementsError}
-              </p>
-            )}
-            {requirements.length === 0 ? (
-              <p className="text-xs text-slate-400 italic">
-                {tx(
-                  'No requirements determined yet — click "Determine Requirements" to run the Requirements Engine for this case.',
-                )}
-              </p>
-            ) : (
-              <ul className="space-y-2">
-                {requirements.map((req) => {
-                  const statusStyle: Record<CaseRequirement["status"], string> =
-                    {
-                      Missing: "bg-red-50 text-red-700 border-red-200",
-                      Requested: "bg-amber-50 text-amber-700 border-amber-200",
-                      Submitted: "bg-blue-50 text-blue-700 border-blue-200",
-                      Satisfied:
-                        "bg-emerald-50 text-emerald-700 border-emerald-200",
-                      Waived: "bg-slate-100 text-slate-500 border-slate-200",
-                      Invalid: "bg-red-50 text-red-700 border-red-200",
-                    };
-                  return (
-                    <li
-                      key={req.id}
-                      className="flex items-start justify-between gap-3 border border-slate-100 rounded-lg px-3 py-2"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-slate-700">
-                            {req.code.replace(/_/g, " ")}
-                          </span>
-                          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">
-                            {req.category}
-                          </span>
-                          {req.required && (
-                            <span className="text-[10px] font-semibold text-red-500">
-                              {tx("Required")}
-                            </span>
-                          )}
-                        </div>
-                        {req.reason && (
-                          <p className="text-xs text-slate-500 mt-0.5">
-                            {req.reason}
-                          </p>
-                        )}
-                        {req.satisfied_by_artifact_id &&
-                          (() => {
-                            const doc = artifacts.find((a) => a.id === req.satisfied_by_artifact_id);
-                            return doc ? (
-                              <button
-                                type="button"
-                                onClick={() => setPreviewDoc(doc)}
-                                title={tx("Preview {0}", { 0: doc.file_name })}
-                                className="group mt-1.5 flex max-w-xs items-center gap-2.5 rounded-lg border border-slate-200 bg-white p-1.5 pr-3 text-left transition-colors hover:border-blue-300 hover:bg-blue-50/40"
-                              >
-                                <span className="relative block h-11 w-8 flex-shrink-0 overflow-hidden rounded border border-slate-200">
-                                  <DocumentThumb doc={doc} />
-                                </span>
-                                <span className="min-w-0">
-                                  <span className="block truncate text-[11px] font-semibold text-slate-700">{doc.file_name}</span>
-                                  <span className="text-[11px] font-semibold text-blue-600 group-hover:underline">
-                                    {tx("Preview")}
-                                  </span>
-                                </span>
-                              </button>
-                            ) : (
-                              <p className="mt-0.5 text-[11px] text-slate-400">
-                                {tx("Linked document is no longer on file")}
-                              </p>
-                            );
-                          })()}
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <span
-                          className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border ${statusStyle[req.status]}`}
-                        >
-                          {req.status}
-                        </span>
-                        {REQUIREMENT_DOC_TYPES[req.code] &&
-                          ["Missing", "Invalid", "Requested"].includes(req.status) &&
-                          (requirementDoc(req).processing || requirementDoc(req).accepted) && (
-                            <span className="inline-flex items-center gap-1.5 rounded-md bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
-                              <Spinner className="w-3 h-3 border-blue-200 border-t-blue-600" />
-                              {requirementDoc(req).accepted ? tx("Updating…") : tx("Reading document…")}
-                            </span>
-                          )}
-                        {REQUIREMENT_DOC_TYPES[req.code] &&
-                          ["Missing", "Invalid", "Requested"].includes(req.status) &&
-                          !requirementDoc(req).processing &&
-                          !requirementDoc(req).accepted && (
-                            <button
-                              onClick={() => {
-                                setUploadForRequirement(REQUIREMENT_DOC_TYPES[req.code]);
-                                setShowUpload(true);
-                              }}
-                              className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-blue-700"
-                              title={tx("Upload the {0} for this case", { 0: REQUIREMENT_DOC_TYPES[req.code] })}
-                            >
-                              ↑ {req.status === "Invalid" || requirementDoc(req).unreadable ? tx("Re-upload") : tx("Upload")}
-                            </button>
-                          )}
-                        {req.status !== "Waived" &&
-                          req.status !== "Satisfied" &&
-                          userRole !== "Agent" && (
-                            <button
-                              onClick={() => waiveRequirement(req.id)}
-                              disabled={onHold}
-                              className="text-[11px] font-semibold text-slate-400 hover:text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                              title={onHold ? tx("The case is on hold. Remove the hold to continue.") : tx("Waive this requirement")}
-                            >
-                              {tx("Waive")}
-                            </button>
-                          )}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-
-            {verificationFindings.length > 0 && (
-              <div className="pt-3 border-t border-slate-100">
-                <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-2">
-                  {tx("Verification Findings")}
-                </p>
-                <ul className="space-y-2">
-                  {verificationFindings.map((f) => {
-                    const severityStyle: Record<
-                      VerificationFinding["severity"],
-                      string
-                    > = {
-                      Info: "bg-slate-100 text-slate-500 border-slate-200",
-                      Low: "bg-blue-50 text-blue-700 border-blue-200",
-                      Medium: "bg-amber-50 text-amber-700 border-amber-200",
-                      High: "bg-red-50 text-red-700 border-red-200",
-                    };
-                    return (
-                      <li
-                        key={f.id}
-                        className="flex items-start justify-between gap-3 border border-slate-100 rounded-lg px-3 py-2"
-                      >
-                        <div className="min-w-0">
-                          <span className="text-xs font-bold text-slate-700">
-                            {f.field.replace(/_/g, " ")}
-                          </span>
-                          <p className="text-xs text-slate-500 mt-0.5">
-                            {f.explanation}
-                          </p>
-                          <p className="text-[11px] text-slate-400 mt-0.5">
-                            {tx("Declared:")}{" "}
-                            {JSON.stringify(f.declared_value) ?? "—"}{" "}
-                            {tx("·  Observed:")}{" "}
-                            {JSON.stringify(f.observed_value) ?? "—"}
-                          </p>
-                        </div>
-                        <span
-                          className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border flex-shrink-0 ${severityStyle[f.severity]}`}
-                        >
-                          {f.severity}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            )}
-          </div>
-
-          {/* Underwriter notes */}
-          <div className="card p-5">
-            <div className="flex items-center justify-between mb-3">
-              <p className="section-label">{tx("Underwriter Notes")}</p>
-              <button
-                onClick={() => generateNote(buildNoteContext())}
-                disabled={generatingNote || !hasAny || userRole === "Agent"}
-                title={
-                  userRole === "Agent"
-                    ? tx(
-                        "Currently, you have no access to do this, ask your manager",
-                      )
-                    : hasAny
-                      ? tx("Draft a note from the case details with AI")
-                      : tx("Run underwriting first to generate a note")
-                }
-                className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {generatingNote ? (
-                  <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" />
-                ) : (
-                  <svg
-                    className="w-3.5 h-3.5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"
-                    />
-                  </svg>
-                )}
-                {generatingNote ? tx("Generating…") : tx("Generate with AI")}
-              </button>
-            </div>
-            {noteGenError && (
-              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
-                {noteGenError}
-              </p>
-            )}
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              disabled={userRole === "Agent"}
-              className="w-full h-24 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 resize-none placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition disabled:opacity-50 disabled:cursor-not-allowed"
-              placeholder={
-                userRole === "Agent"
-                  ? tx("Notes disabled for Agent role.")
-                  : tx(
-                      "Add case notes, override justification, or referral comments here — or click Generate with AI for a draft…",
-                    )
-              }
-            />
-            <div className="flex items-center justify-end gap-2 mt-3">
-              {noteSent && (
-                <span className="text-xs text-blue-600 font-semibold mr-auto">
-                  {tx("✓ Posted")}
-                </span>
-              )}
-              <button
-                onClick={submitNote}
-                disabled={postingNote || !note.trim() || userRole === "Agent"}
-                title={
-                  userRole === "Agent"
-                    ? tx(
-                        "Currently, you have no access to do this, ask your manager",
-                      )
-                    : undefined
-                }
-                className="px-3 py-1.5 text-xs font-semibold text-white bg-blue-700 rounded-md hover:bg-blue-800 disabled:opacity-50 transition-colors"
-              >
-                {postingNote ? tx("Posting…") : tx("Post Note")}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {showUpload && (
         <UploadModal
           tenantId={tenantId}
@@ -5407,6 +5497,17 @@ export default function CasePage({ params }: { params: { id: string } }) {
             artifacts={artifacts}
             portalHref={appHref(`/cases?case_id=${caseId}`)}
             onClose={() => setShowDocuments(false)}
+          />
+        </ModalPortal>
+      )}
+
+      {holdModal && (
+        <ModalPortal>
+          <HoldCaseDialog
+            busy={holdBusy}
+            error={holdError}
+            onConfirm={putOnHold}
+            onClose={() => setHoldModal(false)}
           />
         </ModalPortal>
       )}

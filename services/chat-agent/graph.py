@@ -1503,6 +1503,55 @@ async def _ensure_subcategory(name: str, args: dict, ctx: ExecCtx, category: dic
     return {**(created.get("subcategory") or {}), "eligibility_profiles": []}
 
 
+def _latest_user_text(state: ChatState) -> str:
+    latest = next((m for m in reversed(state["messages"]) if isinstance(m, HumanMessage)), None)
+    if latest is None:
+        return ""
+    content = latest.content
+    if isinstance(content, list):
+        content = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+    return str(content)
+
+
+_CNIC_RE = re.compile(r"\d{5}-?\d{7}-?\d")
+_FIGURE_RE = re.compile(r"\d|\b(lakh|lac|crore|million|mn|thousand)\b", re.I)
+
+
+def _drop_invented_plan_terms(args: dict, user_text: str) -> None:
+    """Keep only the proposal terms the user actually gave. On a bare "create proposal" the model fills product_name,
+    coverage and term itself — it once proposed a COVID-19 plan at PKR 19.2M over 5 years for a doctor nobody had
+    picked a plan for. A plan the user didn't name goes to the plan picker (or the customer's saved plan) instead,
+    and figures the user didn't state fall back to the saved plan or the chosen plan's own range."""
+    text = user_text.casefold()
+    plan = str(args.get("product_name") or "").strip()
+    if plan and plan.lower() not in ("any", "random", "auto") and plan.casefold() not in text:
+        args.pop("product_name", None)
+        args.pop("insurance_type", None)
+    if not _FIGURE_RE.search(_CNIC_RE.sub(" ", user_text)):
+        args.pop("coverage_amount", None)
+        args.pop("term_years", None)
+
+
+def _apply_catalog_plan(args: dict, plans: list[dict]) -> None:
+    """The chosen catalog plan decides its own insurance type, and the term must sit inside the plan's range — the
+    tool's own fallbacks (TERM_LIFE, 10 years) are wrong for most of the catalog."""
+    plan = next((p for p in plans if (p.get("label") or p.get("name")) == args.get("product_name")), None)
+    if not plan:
+        return
+    if plan.get("insurance_type"):
+        args["insurance_type"] = plan["insurance_type"]
+    lo, hi = plan.get("term_min_years"), plan.get("term_max_years")
+    term = args.get("term_years")
+    try:
+        term = int(term) if term is not None else None
+    except (TypeError, ValueError):
+        term = None
+    if lo and (term is None or term < lo):
+        args["term_years"] = lo
+    elif hi and term and term > hi:
+        args["term_years"] = hi
+
+
 async def _permission_gate(state: ChatState) -> Command:
     last = state["messages"][-1]
     # One action per turn — matches the platform's existing "ask, then act"
@@ -1796,6 +1845,7 @@ async def _permission_gate(state: ChatState) -> Command:
             return back_to_agent({"messages": [_tool_result_message(name, call_id, proposal_context)]})
         customer = proposal_context["customer"]
         args["cnic"] = customer["cnic"]
+        _drop_invented_plan_terms(args, _latest_user_text(state))
         saved = (customer.get("details") or {}).get("pending_plan")
         if not saved:
             open_policies = [p for p in proposal_context["policies"] if p.get("status") in {"Draft", "Quoted", "Proposed", "UnderReview", "InformationRequested"}]
@@ -1890,13 +1940,19 @@ async def _permission_gate(state: ChatState) -> Command:
                 selected = str(answer).strip()
                 chosen = select_plan(selected, valid_options)
                 if not chosen:
+                    # Typing while the picker is open arrives here as the "answer". It is usually a new request
+                    # ("list usman customers"), not a bad plan name — say so, or the model answers it from memory.
                     return back_to_agent({"messages": [
-                        _tool_result_message(name, call_id, {"success": False, "message": "No plan selected. Ask the user to choose a valid plan or revise the insurance type. Do not choose a default."}),
+                        _tool_result_message(name, call_id, {"success": False, "cancelled": True, "message": (
+                            "No plan was chosen and no proposal was created. The user's next message is a new request, "
+                            "not a plan choice: handle it on its own, and call the tools again for current data instead of "
+                            "reusing earlier results. Do not choose a plan yourself.")}),
                         HumanMessage(content=selected),
                     ]})
                 args["product_name"] = chosen
                 # Continue through the standard validation and confirmation gate.
                 # Choosing a plan is not permission to create a proposal.
+        _apply_catalog_plan(args, plans)
 
     # ── Rules engine: standalone create_rule_category and create_rule_subcategory ──
     if name == "create_rule_category" and not args.get("name"):

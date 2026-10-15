@@ -72,7 +72,8 @@ export function StatusBadge({ decision, size = "md" }: StatusBadgeProps) {
 }
 
 /** Large banner variant used in the AI Recommendation panel */
-export function DecisionBanner({ decision }: { decision: AIDecision }) {
+/** `compact` is a slim one-line callout in sentence case (the case page's Overview); the default is the large box. */
+export function DecisionBanner({ decision, variant = "default" }: { decision: AIDecision; variant?: "default" | "compact" }) {
   const BANNER: Record<AIDecision, { bg: string; border: string; text: string; sub: string; icon: string }> = {
     "Auto Approve": {
       bg: "bg-blue-50",
@@ -146,6 +147,20 @@ export function DecisionBanner({ decision }: { decision: AIDecision }) {
   };
 
   const cfg = BANNER[decision];
+  if (variant === "compact") {
+    const title = LABEL[decision].charAt(0) + LABEL[decision].slice(1).toLowerCase();
+    return (
+      <div className={`flex items-start gap-3 rounded-xl ${cfg.bg} px-4 py-3`}>
+        <span className={`mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-white text-sm font-bold ${cfg.text}`}>
+          {cfg.icon}
+        </span>
+        <div className="min-w-0">
+          <p className={`text-sm font-semibold ${cfg.text}`}>{title}</p>
+          <p className={`text-sm leading-relaxed ${cfg.sub}`}>{SUB[decision]}</p>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={`rounded-xl border-2 ${cfg.bg} ${cfg.border} p-5`}>
       <div className="flex items-center gap-3">

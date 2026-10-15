@@ -69,6 +69,66 @@ const CASE_STATUS_STYLE: Record<string, string> = {
   Closed: "bg-slate-200 text-slate-700 border-slate-300",
 };
 
+// Pre-underwriting queue as a table: one row per case, one column per clearance gate. A row opens the case; the
+// full gate timeline (with its actions) shows only for a single case opened from its case page.
+const PRE_GATES = [
+  { key: "eapp", short: "E-App", label: "Gate 1: E-Application" },
+  { key: "acr", short: "ACR", label: "Gate 2: Agent Confidential Report" },
+  { key: "pep", short: "PEP / AML", label: "Gate 3: PEP / Sanctions Screening" },
+  { key: "history", short: "Ins. History", label: "Gate 4: Insurance History" },
+  { key: "medical", short: "Medical", label: "Gate 5: Medical Examination" },
+] as const;
+// applicant + type + product + status + 5 gates + progress + action
+const PRE_TABLE_COLS = 4 + PRE_GATES.length + 2;
+
+// The queue's Type column: what the business calls each kind of applicant.
+const PRE_TYPE_LABEL: Record<string, string> = { individual: "Individual", family: "Family", organization: "Corporate" };
+
+type PreGateState = "done" | "review" | "issue" | "pending" | "locked";
+const PRE_GATE_STYLE: Record<PreGateState, string> = {
+  done: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  review: "bg-amber-50 text-amber-700 border-amber-200",
+  issue: "bg-red-50 text-red-700 border-red-200",
+  pending: "bg-blue-50 text-blue-700 border-blue-200",
+  locked: "bg-transparent text-slate-400 border-transparent font-medium",
+};
+
+// Where a case stands overall. Underwriting is "completed" once the case has moved on to policy issuance (or the
+// policy is already issued) — those rows used to sit in this queue looking unstarted, or were hidden entirely.
+type PreStage =
+  | "in_progress" | "awaiting_docs" | "under_review" | "ready" | "awaiting_decision" | "on_hold" | "completed" | "declined" | "closed";
+const PRE_STAGE_META: Record<PreStage, { label: string; style: string; order: number }> = {
+  in_progress: { label: "In Progress", style: "bg-blue-50 text-blue-700 border-blue-200", order: 0 },
+  awaiting_docs: { label: "Awaiting Documents", style: "bg-amber-50 text-amber-700 border-amber-200", order: 0 },
+  under_review: { label: "Under Review", style: "bg-indigo-50 text-indigo-700 border-indigo-200", order: 0 },
+  on_hold: { label: "On Hold", style: "bg-orange-50 text-orange-700 border-orange-200", order: 1 },
+  ready: { label: "Ready for AI Underwriting", style: "bg-teal-50 text-teal-700 border-teal-200", order: 2 },
+  // The AI has scored the case; an underwriter now holds, declines or proceeds.
+  awaiting_decision: { label: "Awaiting Decision", style: "bg-violet-50 text-violet-700 border-violet-200", order: 2 },
+  completed: { label: "Completed", style: "bg-emerald-50 text-emerald-700 border-emerald-200", order: 3 },
+  declined: { label: "Declined", style: "bg-red-50 text-red-700 border-red-200", order: 4 },
+  closed: { label: "Closed", style: "bg-slate-100 text-slate-600 border-slate-200", order: 4 },
+};
+// Policy statuses that mean underwriting is over and the policy is in, or past, issuance.
+const ISSUANCE_POLICY_STATUSES = new Set(["Approved", "AcceptedWithLoadings", "PendingPayment"]);
+const ISSUED_POLICY_STATUSES = new Set([
+  "Issued", "Active", "GracePeriod", "Lapsed", "Cancelled", "Matured", "Surrendered", "Expired",
+]);
+
+type PreStatusFilter = "all" | "underwriting" | "on_hold" | "ready" | "awaiting_decision" | "completed" | "ended";
+const PRE_STATUS_FILTERS: { value: PreStatusFilter; label: string; stages: PreStage[] }[] = [
+  { value: "all", label: "All statuses", stages: [] },
+  { value: "underwriting", label: "In underwriting", stages: ["in_progress", "awaiting_docs", "under_review"] },
+  { value: "on_hold", label: "On hold", stages: ["on_hold"] },
+  { value: "ready", label: "Ready for AI underwriting", stages: ["ready"] },
+  { value: "awaiting_decision", label: "Awaiting decision", stages: ["awaiting_decision"] },
+  { value: "completed", label: "Completed", stages: ["completed"] },
+  { value: "ended", label: "Declined & closed", stages: ["declined", "closed"] },
+];
+
+/** "NotStarted" → "Not Started". */
+const spacedStatus = (s: string) => s.replace(/([a-z])([A-Z])/g, "$1 $2");
+
 const ACTIVE_STATUSES = new Set([
   "New",
   "InProgress",
@@ -98,8 +158,7 @@ function StatusPill({
   if (locked) {
     return (
       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide bg-slate-100 text-slate-400 border border-slate-200/80">
-        <span className="text-[9px]">🔒</span>
-        <span>{tx("Locked")}</span>
+        <span>{tx("Not yet")}</span>
       </span>
     );
   }
@@ -184,7 +243,7 @@ function GateStepItem({
           </div>
         ) : (
           <div className="w-9 h-9 rounded-full bg-slate-100 text-slate-400 border border-slate-200 flex items-center justify-center text-xs font-bold">
-            {step.isLocked ? "🔒" : step.num}
+            {step.num}
           </div>
         )}
       </div>
@@ -302,25 +361,13 @@ function UnderwritingMainContent() {
       : null;
   const { notify } = useNotify();
 
-  const initialTab =
-    (searchParams.get("tab") as "pre-underwriting" | "risk-engine") ||
-    "pre-underwriting";
-
-  const [activeTab, setActiveTab] = useState<
-    "pre-underwriting" | "risk-engine"
-  >(initialTab);
+  // The hub has one tab now (the Risk Engine & OCR Ops tab was removed); an old ?tab=risk-engine link lands here.
+  const activeTab = "pre-underwriting" as const;
   const [cases, setCases] = useState<CaseQueueItem[]>([]);
   const [expandedGates, setExpandedGates] = useState<Record<string, number>>(
     {},
   );
   const [showAllGates, setShowAllGates] = useState<Record<string, boolean>>({});
-
-  useEffect(() => {
-    const tab = searchParams.get("tab");
-    if (tab === "pre-underwriting" || tab === "risk-engine") {
-      setActiveTab(tab);
-    }
-  }, [searchParams]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -328,7 +375,7 @@ function UnderwritingMainContent() {
 
   // Pre-Underwriting state
   const [preSearch, setPreSearch] = useState("");
-  const [showCompleted, setShowCompleted] = useState(false);
+  const [preStatusFilter, setPreStatusFilter] = useState<PreStatusFilter>("all");
   const [linkBusyFor, setLinkBusyFor] = useState<string | null>(null);
   // The invite link only exists in plain form when it is generated (the server keeps just a
   // hash), so keep it for the session to let "Open link" work after a page refresh.
@@ -574,12 +621,48 @@ function UnderwritingMainContent() {
     c.insurance_history_status === "Clear" &&
     medicalCleared(c);
 
+  // Each gate's state for the queue table, in the timeline's order: a gate is locked until the one before it clears.
+  const preGateCells = (c: CaseQueueItem) => {
+    const eapp = c.e_application_status ?? "NotSent";
+    const acr = c.acr_status ?? "NotStarted";
+    const pep = c.compliance_status ?? "NotStarted";
+    const hist = c.insurance_history_status ?? "NotStarted";
+    const med = c.medical_exam_status ?? "NotAssessed";
+    const done = [eapp === "Verified", acrCleared(c), pep === "Passed", hist === "Clear", medicalCleared(c)];
+    const raws = [eapp, acr, pep, hist, med];
+    return PRE_GATES.map((g, i) => {
+      const raw = raws[i];
+      let state: PreGateState = "pending";
+      if (done[i]) state = "done";
+      else if (i > 0 && !done[i - 1]) state = "locked";
+      else if (raw === "Failed" || raw === "Flagged" || raw === "Expired") state = "issue";
+      else if (raw === "Submitted") state = "review";
+      return { key: g.key, label: g.label, state, raw: spacedStatus(raw) };
+    });
+  };
+
+  const preStage = (c: CaseQueueItem): { stage: PreStage; detail?: string } => {
+    const policy = c.policy_status ?? "";
+    if (c.on_hold) return { stage: "on_hold", detail: c.hold_reason ?? undefined };
+    if (policy === "Declined" || c.caseStatus === "Rejected") return { stage: "declined" };
+    if (ISSUED_POLICY_STATUSES.has(policy))
+      return { stage: "completed", detail: policy === "Active" || policy === "Issued" ? "Policy issued" : `Policy ${spacedStatus(policy).toLowerCase()}` };
+    if (ISSUANCE_POLICY_STATUSES.has(policy) || c.caseStatus === "Approved")
+      return { stage: "completed", detail: "In policy issuance" };
+    if (c.caseStatus === "Closed") return { stage: "closed" };
+    if (c.latest_ai_decision) return { stage: "awaiting_decision", detail: `AI: ${c.latest_ai_decision}` };
+    if (isFullyReady(c)) return { stage: "ready" };
+    if (c.caseStatus === "Pending Documents" || policy === "InformationRequested") return { stage: "awaiting_docs" };
+    if (c.caseStatus === "Under Review" || policy === "UnderReview") return { stage: "under_review" };
+    return { stage: "in_progress" };
+  };
+
   const preFiltered = useMemo(() => {
     if (focusCase) return cases.filter((c) => c.caseld === focusCase);
     const q = preSearch.trim().toLowerCase();
+    const wanted = PRE_STATUS_FILTERS.find((f) => f.value === preStatusFilter)?.stages ?? [];
     return cases
-      .filter((c) => ACTIVE_STATUSES.has(c.caseStatus))
-      .filter((c) => showCompleted || !isFullyReady(c))
+      .filter((c) => !wanted.length || wanted.includes(preStage(c).stage))
       .filter(
         (c) =>
           !q ||
@@ -587,15 +670,15 @@ function UnderwritingMainContent() {
           (c.customer_cnic ?? "").toLowerCase().includes(q) ||
           c.caseNumber.toLowerCase().includes(q),
       )
+      // Work still to do first, finished cases last.
       .sort((a, b) => {
-        const aDone = isFullyReady(a);
-        const bDone = isFullyReady(b);
-        if (aDone !== bDone) return aDone ? 1 : -1;
+        const byStage = PRE_STAGE_META[preStage(a).stage].order - PRE_STAGE_META[preStage(b).stage].order;
+        if (byStage) return byStage;
         return (
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         );
       });
-  }, [cases, preSearch, showCompleted, focusCase]);
+  }, [cases, preSearch, preStatusFilter, focusCase]);
 
   const preKpis = useMemo(() => {
     const active = cases.filter((c) => ACTIVE_STATUSES.has(c.caseStatus));
@@ -1064,7 +1147,7 @@ function UnderwritingMainContent() {
               <MetricCard
                 title={tx("Fully Cleared")}
                 value={preKpis.ready}
-                subtitle={tx("all 5 gates settled — ready for risk engine")}
+                subtitle={tx("all 5 gates settled — ready for AI underwriting")}
                 accent="emerald"
                 icon={
                   <svg
@@ -1136,15 +1219,17 @@ function UnderwritingMainContent() {
                 )}
               </div>
 
-              <label className="flex items-center gap-2 text-xs font-semibold text-slate-600 cursor-pointer select-none bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
-                <input
-                  type="checkbox"
-                  checked={showCompleted}
-                  onChange={(e) => setShowCompleted(e.target.checked)}
-                  className="rounded text-blue-600 focus:ring-blue-500"
-                />
-                {tx("Show fully-cleared proposals")}
-              </label>
+              <select
+                value={preStatusFilter}
+                onChange={(e) => setPreStatusFilter(e.target.value as PreStatusFilter)}
+                className="text-xs font-semibold text-slate-700 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              >
+                {PRE_STATUS_FILTERS.map((f) => (
+                  <option key={f.value} value={f.value}>
+                    {tx(f.label)}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
 
@@ -1157,16 +1242,32 @@ function UnderwritingMainContent() {
             ) : preFiltered.length === 0 ? (
               <div className="py-16 bg-white rounded-xl border border-slate-200 text-center px-4">
                 <p className="text-sm font-bold text-slate-700">
-                  {tx("No proposals requiring intake attention right now.")}
+                  {tx("No applications match right now.")}
                 </p>
                 <p className="text-xs text-slate-400 mt-1">
                   {tx(
-                    'Check "Show fully-cleared proposals" or try another search.',
+                    'Try another status filter or search.',
                   )}
                 </p>
               </div>
             ) : (
-              pagedPre.map((c) => {
+              <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50 font-semibold uppercase tracking-wider text-[11px] text-slate-500">
+                      <th className="pl-5 pr-3 py-3 text-left">{tx("Applicant")}</th>
+                      <th className="px-3 py-3 text-left">{tx("Type")}</th>
+                      <th className="px-3 py-3 text-left">{tx("Product")}</th>
+                      <th className="px-3 py-3 text-left">{tx("Status")}</th>
+                      {PRE_GATES.map((g) => (
+                        <th key={g.key} className="px-2 py-3 text-center whitespace-nowrap">{tx(g.short)}</th>
+                      ))}
+                      <th className="px-3 py-3 text-left">{tx("Progress")}</th>
+                      <th className="px-4 py-3 text-right" />
+                    </tr>
+                  </thead>
+                  <tbody>
+              {pagedPre.map((c) => {
                 const cleared = isFullyReady(c);
                 const g1Done = c.e_application_status === "Verified";
                 const g2Done = acrCleared(c);
@@ -1182,132 +1283,124 @@ function UnderwritingMainContent() {
                   g6Done,
                 ].filter(Boolean).length;
 
-                return (
-                  <div
-                    key={c.caseld}
-                    className={`bg-white rounded-2xl border transition-all duration-300 overflow-hidden ${
-                      cleared
-                        ? "border-emerald-300/80 shadow-xs bg-gradient-to-b from-emerald-50/10 via-white to-white"
-                        : "border-slate-200/90 shadow-xs hover:shadow-md hover:border-slate-300"
-                    }`}
-                  >
-                    {/* Card Header */}
-                    <div className="px-5 py-4 bg-slate-50/70 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      <div className="flex items-center gap-3.5">
-                        <div
-                          className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-xs tracking-wider shadow-xs ${
-                            cleared
-                              ? "bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-emerald-500/20"
-                              : "bg-gradient-to-br from-blue-700 to-indigo-800 text-white shadow-blue-900/10"
-                          }`}
-                        >
-                          {c.customer_name?.slice(0, 2).toUpperCase() ??
-                            tx("CA")}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h3
-                              onClick={() => router.push(`/case/${c.caseld}`)}
-                              className="font-bold text-slate-900 text-sm tracking-tight hover:text-blue-600 cursor-pointer transition-colors"
-                            >
-                              {c.customer_name}
-                            </h3>
-                            <span className="font-mono text-[10px] text-slate-600 bg-slate-200/70 px-2 py-0.5 rounded font-semibold border border-slate-300/50">
-                              {c.caseNumber}
-                            </span>
-                            {c.customer_segment && (
-                              <span
-                                className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider border ${SEGMENT_BADGE_STYLE[c.customer_segment]}`}
-                              >
-                                {tx(SEGMENT_LABEL[c.customer_segment])}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap">
-                            <span className="inline-flex items-center gap-1 font-mono text-[11px]">
-                              <span className="text-slate-400 font-sans font-medium">
-                                {tx("CNIC:")}
-                              </span>{" "}
-                              {c.customer_cnic ?? "—"}
-                            </span>
-                            <span className="text-slate-300">•</span>
-                            <span className="inline-flex items-center gap-1 text-[11px] text-slate-600">
-                              <span className="text-slate-400 font-medium">
-                                {tx("Product:")}
-                              </span>{" "}
-                              {c.product_name ?? tx("Standard Plan")}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
+                // The gate timeline (with its actions) only shows when this page is opened for one case from its
+                // case page; in the queue a row simply opens the case.
+                const isOpen = !!focusCase;
+                const { stage, detail } = preStage(c);
+                const finished = stage === "completed" || stage === "declined" || stage === "closed";
 
-                      {/* Stepper Progress & Action */}
-                      <div className="flex items-center gap-4 border-t md:border-t-0 pt-3 md:pt-0 border-slate-200/60">
-                        <div className="flex flex-col items-end min-w-[130px]">
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                              {tx("Gate Progress")}
-                            </span>
-                            <span
-                              className={`text-xs font-black font-mono ${cleared ? "text-emerald-700" : "text-slate-800"}`}
-                            >
-                              {stepCount}/5
-                            </span>
-                          </div>
-                          {/* Segmented Progress Bar */}
-                          <div className="flex gap-1 w-full max-w-[120px]">
+                return (
+                  <React.Fragment key={c.caseld}>
+                    <tr
+                      onClick={() => router.push(`/case/${c.caseld}`)}
+                      className={`border-b border-slate-100 cursor-pointer transition-colors ${cleared ? "bg-emerald-50/30 hover:bg-emerald-50/60" : "hover:bg-slate-50"}`}
+                    >
+                      <td className="pl-5 pr-3 py-3">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/case/${c.caseld}`);
+                          }}
+                          className="font-semibold text-slate-900 hover:text-blue-600 transition-colors text-left"
+                        >
+                          {c.customer_name}
+                        </button>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {tx("CNIC:")} <span className="font-mono">{c.customer_cnic ?? "—"}</span>
+                        </p>
+                      </td>
+                      <td className="px-3 py-3">
+                        {c.customer_segment ? (
+                          <span
+                            className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border ${SEGMENT_BADGE_STYLE[c.customer_segment]}`}
+                          >
+                            {tx(PRE_TYPE_LABEL[c.customer_segment])}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-slate-600">
+                        {c.product_name ?? tx("Standard Plan")}
+                      </td>
+                      <td className="px-3 py-3">
+                        <span
+                          title={detail ? tx(detail) : undefined}
+                          className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap ${PRE_STAGE_META[stage].style}`}
+                        >
+                          {tx(PRE_STAGE_META[stage].label)}
+                        </span>
+                        {detail && stage !== "on_hold" && (
+                          <p className="text-[11px] text-slate-500 mt-0.5 whitespace-nowrap">{tx(detail)}</p>
+                        )}
+                        {stage === "on_hold" && detail && (
+                          <p className="text-[11px] text-slate-500 mt-0.5 max-w-[180px] truncate" title={detail}>{detail}</p>
+                        )}
+                      </td>
+                      {finished ? (
+                        <td colSpan={PRE_GATES.length} className="px-2 py-3 text-center text-xs text-slate-400">
+                          {stage === "completed" ? tx("Underwriting complete") : "—"}
+                        </td>
+                      ) : preGateCells(c).map((g) => (
+                        <td key={g.key} className="px-2 py-3 text-center">
+                          <span
+                            title={g.state === "locked" ? `${tx(g.label)}: ${tx("waiting on the previous gate")}` : `${tx(g.label)}: ${g.raw}`}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap ${PRE_GATE_STYLE[g.state]}`}
+                          >
+                            {g.state === "done" ? (
+                              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M5 12l5 5L20 7" />
+                              </svg>
+                            ) : g.state === "issue" ? (
+                              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                                <circle cx="12" cy="12" r="9" />
+                                <path d="M12 8v4M12 16h.01" />
+                              </svg>
+                            ) : g.state !== "locked" ? (
+                              <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                            ) : null}
+                            {g.state === "done" ? tx("Cleared") : g.state === "locked" ? tx("Not yet") : tx(g.raw)}
+                          </span>
+                        </td>
+                      ))}
+                      <td className="px-3 py-3">
+                        {finished ? (
+                          <span className={`text-xs font-semibold ${stage === "completed" ? "text-emerald-700" : "text-slate-400"}`}>
+                            {stage === "completed" ? tx("Done") : "—"}
+                          </span>
+                        ) : (
+                        <div className="flex items-center gap-2">
+                          <div className="flex gap-0.5 w-16">
                             {[1, 2, 3, 4, 5].map((step) => (
                               <div
                                 key={step}
-                                className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
-                                  step <= stepCount
-                                    ? cleared
-                                      ? "bg-emerald-500"
-                                      : "bg-blue-600"
-                                    : "bg-slate-200"
-                                }`}
+                                className={`h-1.5 flex-1 rounded-full ${step <= stepCount ? (cleared ? "bg-emerald-500" : "bg-blue-600") : "bg-slate-200"}`}
                               />
                             ))}
                           </div>
+                          <span className={`text-xs font-bold font-mono ${cleared ? "text-emerald-700" : "text-slate-700"}`}>
+                            {stepCount}/5
+                          </span>
                         </div>
-
-                        {cleared ? (
-                          <button
-                            onClick={() => router.push(`/case/${c.caseld}`)}
-                            className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold shadow-sm hover:shadow transition-all flex items-center gap-1.5 active:scale-[0.98]"
-                          >
-                            <span>{tx("Trigger Risk Engine")}</span>
-                            <svg
-                              className="w-3.5 h-3.5"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2.5"
-                            >
-                              <path d="M5 12h14M12 5l7 7-7 7" />
-                            </svg>
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => router.push(`/case/${c.caseld}`)}
-                            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-xs hover:shadow transition-all flex items-center gap-1.5 active:scale-[0.98]"
-                          >
-                            <span>{tx("View Application Detail")}</span>
-                            <svg
-                              className="w-3.5 h-3.5 text-slate-400"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            >
-                              <path d="M9 18l6-6-6-6" />
-                            </svg>
-                          </button>
                         )}
-                      </div>
-                    </div>
-
-                    {/* Pre-Underwriting Operational Progression Timeline — Vertical Progress Lines */}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/case/${c.caseld}`);
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors ${stage === "ready" ? "bg-emerald-600 hover:bg-emerald-700 text-white" : stage === "awaiting_decision" ? "bg-violet-600 hover:bg-violet-700 text-white" : "bg-white hover:bg-slate-100 text-slate-700 border border-slate-200"}`}
+                        >
+                          {stage === "ready" ? tx("Run AI Underwriting")
+                            : stage === "awaiting_decision" ? tx("Review Decision")
+                            : finished ? tx("View") : tx("Open")}
+                        </button>
+                      </td>
+                    </tr>
+                    {isOpen && (
+                      <tr className="border-b border-slate-200">
+                        <td colSpan={PRE_TABLE_COLS} className="p-0 bg-slate-50/40">
                     {(() => {
                       const g1Done = c.e_application_status === "Verified";
                       const g1Submitted =
@@ -1937,326 +2030,18 @@ function UnderwritingMainContent() {
                         </div>
                       );
                     })()}
-                  </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 );
-              })
+              })}
+                  </tbody>
+                </table>
+              </div>
             )}
             {!loading && (
               <Pagination pagination={prePagination} noun={tx("proposals")} />
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── TAB 2: RISK ENGINE & OCR OPS ─────────────────────────────────────── */}
-      {activeTab === "risk-engine" && (
-        <div className="space-y-6 animate-in fade-in duration-300">
-          {/* KPI Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {riskKpis.map((k) => (
-              <MetricCard key={k.title} {...k} />
-            ))}
-          </div>
-
-          {/* Search & Filter Toolbar */}
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
-              <input
-                type="text"
-                placeholder={tx("Search customer, CNIC, or case number…")}
-                value={riskSearch}
-                onChange={(e) => setRiskSearch(e.target.value)}
-                className="w-full max-w-xs px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-white"
-              />
-              <SegmentDropdown
-                value={segment}
-                onChange={setSegment}
-                counts={segmentCounts}
-              />
-
-              <FiltersPanel
-                dateFrom={dateFrom}
-                dateTo={dateTo}
-                onDateFromChange={setDateFrom}
-                onDateToChange={setDateTo}
-                statusFilter={filterStatus}
-                onStatusChange={setFilterStatus}
-                statusOptions={[
-                  { value: "New", label: "New" },
-                  { value: "InProgress", label: "In Progress" },
-                  { value: "Pending Documents", label: "Pending Documents" },
-                  { value: "Under Review", label: "Under Review" },
-                  { value: "Approved", label: "Approved" },
-                  { value: "Rejected", label: "Rejected" },
-                  { value: "Closed", label: "Closed" },
-                ]}
-                activeCount={
-                  [filterStatus !== "ALL", dateFrom || dateTo].filter(Boolean)
-                    .length
-                }
-                onClearAll={() => {
-                  setFilterStatus("ALL");
-                  setDateFrom("");
-                  setDateTo("");
-                }}
-              />
-            </div>
-
-            <div className="inline-flex bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
-              <button
-                onClick={() => setViewMode("list")}
-                className={`p-1.5 rounded-lg transition-all ${viewMode === "list" ? "bg-white text-blue-600 shadow-xs" : "text-slate-500 hover:text-slate-700"}`}
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  className="w-4 h-4"
-                >
-                  <line x1="3" y1="6" x2="21" y2="6" />
-                  <line x1="3" y1="12" x2="21" y2="12" />
-                  <line x1="3" y1="18" x2="21" y2="18" />
-                </svg>
-              </button>
-              <button
-                onClick={() => setViewMode("grid")}
-                className={`p-1.5 rounded-lg transition-all ${viewMode === "grid" ? "bg-white text-blue-600 shadow-xs" : "text-slate-500 hover:text-slate-700"}`}
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  className="w-4 h-4"
-                >
-                  <rect x="3" y="3" width="7" height="7" />
-                  <rect x="14" y="3" width="7" height="7" />
-                  <rect x="14" y="14" width="7" height="7" />
-                  <rect x="3" y="14" width="7" height="7" />
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          {/* Customer Group Folders */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-            {loading ? (
-              <div className="py-16 flex justify-center">
-                <div className="animate-spin h-6 w-6 rounded-full border-2 border-slate-100 border-t-blue-600" />
-              </div>
-            ) : folders.length === 0 ? (
-              <div className="py-16 flex flex-col items-center justify-center text-center px-4">
-                <p className="text-sm font-bold text-slate-700">
-                  {tx("No underwriting case folders match your criteria.")}
-                </p>
-                <p className="text-xs text-slate-400 mt-1">
-                  {tx(
-                    "Applications open automatically when a quotation is proceeded.",
-                  )}
-                </p>
-              </div>
-            ) : (
-              <div
-                className={
-                  viewMode === "grid"
-                    ? "p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
-                    : "p-4 flex flex-col gap-3"
-                }
-              >
-                {pagedFolders.map((folder) => {
-                  const isExpanded = expandedCustomerId === folder.customer_id;
-                  const decidedCount = folder.cases.filter(
-                    (c) => c.latest_ai_decision,
-                  ).length;
-                  return (
-                    <div
-                      key={folder.customer_id}
-                      className={`flex flex-col border rounded-xl overflow-hidden transition-all duration-200 ${
-                        isExpanded
-                          ? "border-blue-300 shadow-md ring-1 ring-blue-500/20"
-                          : "border-slate-200 shadow-xs hover:shadow-md hover:border-blue-200 bg-white"
-                      }`}
-                    >
-                      <div
-                        onClick={() =>
-                          setExpandedCustomerId(
-                            isExpanded ? null : folder.customer_id,
-                          )
-                        }
-                        className={`flex items-start justify-between cursor-pointer select-none p-4 ${isExpanded ? "bg-blue-50/40" : "bg-white"}`}
-                      >
-                        <div className="flex items-start gap-3 flex-1 min-w-0">
-                          <div
-                            className={`w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-xl ${isExpanded ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-500"}`}
-                          >
-                            <svg
-                              width="18"
-                              height="18"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            >
-                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                            </svg>
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <h3 className="text-sm font-bold text-slate-900 truncate">
-                              {folder.customer_name}
-                            </h3>
-                            <p className="text-[11px] text-slate-500 font-mono mt-0.5">
-                              {folder.customer_cnic}
-                            </p>
-                            <div className="flex flex-wrap gap-1.5 mt-2">
-                              <span
-                                className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold border uppercase tracking-wide ${SEGMENT_BADGE_STYLE[folder.customer_segment]}`}
-                              >
-                                {tx(SEGMENT_LABEL[folder.customer_segment])}
-                              </span>
-                              {decidedCount > 0 && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">
-                                  {decidedCount} {tx("evaluated")}
-                                </span>
-                              )}
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                                {folder.cases.length}{" "}
-                                {folder.cases.length === 1
-                                  ? tx("Application")
-                                  : tx("Applications")}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="pt-1">
-                          <svg
-                            width="18"
-                            height="18"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            className={`text-slate-400 transition-transform ${isExpanded ? "rotate-180 text-blue-500" : ""}`}
-                          >
-                            <polyline points="6 9 12 15 18 9" />
-                          </svg>
-                        </div>
-                      </div>
-
-                      {isExpanded && (
-                        <div className="border-t border-slate-100 bg-white overflow-x-auto">
-                          <table className="w-full text-xs">
-                            <thead>
-                              <tr className="border-b border-slate-100 bg-slate-50 font-semibold uppercase tracking-wider text-slate-400">
-                                <th className="px-4 py-2.5 text-left">
-                                  {tx("Application")}
-                                </th>
-                                <th className="px-4 py-2.5 text-left">
-                                  {tx("Product")}
-                                </th>
-                                <th className="px-4 py-2.5 text-right">
-                                  {tx("Sum Assured")}
-                                </th>
-                                <th className="px-4 py-2.5 text-left">
-                                  {tx("Status")}
-                                </th>
-                                <th className="px-4 py-2.5 text-left">
-                                  {tx("AI Decision")}
-                                </th>
-                                <th className="px-4 py-2.5 text-right" />
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50">
-                              {folder.cases.map((c) => (
-                                <tr
-                                  key={c.caseld}
-                                  onClick={() =>
-                                    router.push(`/case/${c.caseld}`)
-                                  }
-                                  className="hover:bg-slate-50 cursor-pointer transition-colors"
-                                >
-                                  <td className="px-4 py-2.5">
-                                    <p className="font-semibold text-slate-900">
-                                      {c.customer_name}
-                                    </p>
-                                    <p className="font-mono text-[10px] text-slate-500 mt-0.5">
-                                      {c.caseNumber}
-                                    </p>
-                                  </td>
-                                  <td className="px-4 py-2.5 text-slate-600">
-                                    {c.product_name ?? "—"}
-                                  </td>
-                                  <td className="px-4 py-2.5 text-right font-semibold text-slate-700">
-                                    {c.coverage_amount != null
-                                      ? fmtCoverage(c.coverage_amount)
-                                      : "—"}
-                                  </td>
-                                  <td className="px-4 py-2.5">
-                                    <span
-                                      className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border ${CASE_STATUS_STYLE[c.caseStatus] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}
-                                    >
-                                      {c.caseStatus}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-2.5">
-                                    {c.latest_ai_decision ? (
-                                      <StatusBadge
-                                        decision={c.latest_ai_decision}
-                                      />
-                                    ) : (
-                                      <span className="text-[10px] text-slate-400 italic">
-                                        {tx("Not evaluated")}
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td className="px-4 py-2.5 text-right">
-                                    <div className="flex items-center justify-end gap-2">
-                                      {c.latest_ai_decision && (
-                                        <button
-                                          onClick={(e) =>
-                                            handleDownloadReport(c, e)
-                                          }
-                                          className="text-xs font-semibold text-slate-500 hover:text-slate-800"
-                                        >
-                                          {tx("Report")}
-                                        </button>
-                                      )}
-                                      {c.policy_id &&
-                                        c.caseStatus !== "Approved" &&
-                                        c.caseStatus !== "Rejected" && (
-                                          <button
-                                            disabled={userRole === "Agent"}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              if (userRole !== "Agent")
-                                                setCounterOfferCase(c);
-                                            }}
-                                            className={`text-xs font-semibold ${userRole === "Agent" ? "text-slate-300 cursor-not-allowed" : "text-amber-600 hover:text-amber-700"}`}
-                                          >
-                                            {tx("Counter-offer")}
-                                          </button>
-                                        )}
-                                      <span className="text-xs font-bold text-blue-600">
-                                        {tx("Open →")}
-                                      </span>
-                                    </div>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            {!loading && (
-              <Pagination
-                pagination={folderPagination}
-                noun={tx("customer folders")}
-              />
             )}
           </div>
         </div>

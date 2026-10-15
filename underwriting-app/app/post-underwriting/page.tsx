@@ -282,7 +282,7 @@ function GateStepItem({ step, isLast, isExpanded, onToggle }: { step: any; isLas
           </div>
         ) : (
           <div className="w-9 h-9 rounded-full bg-slate-100 text-slate-400 border border-slate-200 flex items-center justify-center text-xs font-bold">
-            {step.isLocked ? "🔒" : step.num}
+            {step.num}
           </div>
         )}
       </div>

@@ -306,6 +306,7 @@ def test_unchanged_status_is_a_no_op():
 
 def test_duplicate_open_proposal_is_not_created():
     client = FakeClient({("GET", "/customers"): [{"id": "c-1", "name": "Ali Khan", "cnic": "35202-1111111-1"}],
+                         ("GET", "/customers/c-1"): {"id": "c-1", "name": "Ali Khan", "cnic": "35202-1111111-1", "details": {}},
                          ("GET", "/customers/c-1/policies"): [{"id": "p-9", "product_name": "Term Life Plus",
                                                                "status": "Proposed", "created_at": "2026-10-01"}]})
     res = _call("create_proposal", {"cnic": "35202-1111111-1"}, client)

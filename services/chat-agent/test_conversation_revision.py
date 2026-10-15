@@ -16,14 +16,22 @@ class RevisionTests(unittest.IsolatedAsyncioTestCase):
   builder.add_node('agent',lambda state:{})
   builder.add_edge(START,'permission_gate');builder.add_edge('agent',END)
   app=builder.compile(checkpointer=MemorySaver());cfg={'configurable':{'thread_id':'revision-test'}}
-  execute=AsyncMock(return_value={'items':[{'name':'Individual Term Life'},{'name':'Family Protection'}]})
+  async def fixture_execute(tool, tool_args, ctx):
+   if tool == 'get_proposal_customer_context':
+    return {'success': True, 'customer': {'id': 'test-customer', 'cnic': '35202-1111111-1', 'details': {}}, 'policies': []}
+   if tool == 'list_customers':
+    return {'success': True, 'customers': []}
+   if tool == 'list_insurance_plans':
+    return {'items':[{'name':'Individual Term Life'},{'name':'Family Protection'}]}
+   raise AssertionError(f'Unexpected execution during revision: {tool}')
+  execute=AsyncMock(side_effect=fixture_execute)
   with patch('graph.execute_tool',execute):
    initial=await app.ainvoke({'messages':[HumanMessage(content='Create a proposal for this saved customer'),AIMessage(content='',tool_calls=[{'name':name,'args':args or {},'id':'call-1'}])],'tenant_id':'test','jwt_token':'test','user_role':role,'platform':'web'},cfg)
    self.assertTrue(initial['__interrupt__'][0].value['can_revise'])
    await app.ainvoke(Command(resume=answer),cfg)
    state=(await app.aget_state(cfg)).values
   if name=="create_proposal": self.assertTrue(execute.call_args_list)
-  self.assertTrue(all(c.args[0]=='list_insurance_plans' for c in execute.call_args_list))
+  self.assertTrue(all(c.args[0] in {'get_proposal_customer_context','list_insurance_plans','list_customers'} for c in execute.call_args_list))
   self.assertTrue(any(isinstance(m,ToolMessage) for m in state['messages']))
   return state
  async def test_explicit_revision_supersedes_pending_action(self):

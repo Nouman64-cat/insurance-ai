@@ -214,11 +214,18 @@ def _matches(record: dict, needle: str, fields: tuple[str, ...]) -> bool:
     return n in _full_name(record).lower()
 
 
+def _same_cnic(a: Any, b: Any) -> bool:
+    """CNICs compared on their digits, so 3630200721388 and 36302-0072138-8 are the same person."""
+    da, db = re.sub(r"\D", "", str(a or "")), re.sub(r"\D", "", str(b or ""))
+    return bool(da) and da == db
+
+
 def _find_customer(customers: list[dict], cnic: Optional[str], name: Optional[str]) -> Optional[dict]:
-    if cnic:
-        exact = next((c for c in customers if c.get("cnic") == cnic), None)
-        if exact:
-            return exact
+    # A CNIC names exactly one person. When it matches nobody, falling back to the name would land on
+    # whichever namesake comes first (two "Usman Khan"s), so a given CNIC is the whole answer.
+    if cnic and re.search(r"\d", str(cnic)):
+        return next((c for c in customers if _same_cnic(c.get("cnic"), cnic)), None)
+    name = name or cnic  # a "CNIC" with no digits is the model passing the name in the wrong field
     if name:
         return next((c for c in customers if _matches(c, name, ("first_name", "last_name", "cnic"))), None)
     return None
@@ -240,10 +247,10 @@ def _find_case(
         )
         if exact:
             return exact
-    if cnic:
-        exact = next((c for c in cases if c.get("customer_cnic") == cnic), None)
-        if exact:
-            return exact
+    if cnic and re.search(r"\d", str(cnic)):
+        # Same as _find_customer: no case on this CNIC means none — not a namesake's case.
+        return next((c for c in cases if _same_cnic(c.get("customer_cnic"), cnic)), None)
+    applicant_name = applicant_name or cnic
     if applicant_name:
         return next(
             (c for c in cases if _matches(c, applicant_name, ("applicant_name", "customer_name", "caseNumber"))),
@@ -266,6 +273,47 @@ async def _resolve_case(args: dict, ctx: Ctx) -> dict:
         hint = args.get("case_number") or args.get("applicant_name") or args.get("cnic") or "that"
         raise LookupError(f'No case found for "{hint}". Create a case first, or check the spelling.')
     return case
+
+
+_CLOSED_CASE_STATUSES = {"Rejected", "Closed"}
+
+
+async def _case_for_open_proposal(args: dict, ctx: Ctx) -> Optional[dict]:
+    """The case for a customer (by CNIC) who has an open proposal but no case, opened now. None when they have no
+    open proposal — then there is nothing to underwrite and "create a case first" stands."""
+    if not args.get("cnic"):
+        return None
+    cust_res = await ctx.client.get(ctx.tsvc("/customers"))
+    cust_res.raise_for_status()
+    customer = _find_customer(cust_res.json(), args["cnic"], None)
+    if not customer:
+        return None
+    pol_res = await ctx.client.get(ctx.tsvc(f"/customers/{customer['id']}/policies"))
+    pol_res.raise_for_status()
+    open_proposals = [p for p in pol_res.json() if p.get("status") in _OPEN_PROPOSAL_STATUSES]
+    if not open_proposals:
+        return None
+    case, _ = await _ensure_case(customer, ctx, sorted(open_proposals, key=_created_key, reverse=True)[0].get("id"))
+    return case
+
+
+async def _ensure_case(customer: dict, ctx: Ctx, policy_id: Optional[str] = None) -> tuple[dict, bool]:
+    """The customer's open underwriting case, opened now when they have none, and whether it was just opened.
+    A proposal is worked on its case: without one, Gate 1 (the e-application link) has nothing to attach to.
+    A new case is linked to `policy_id` — unlinked, the queue shows it as "Standard Plan" with no cover until Gate 3
+    links it lazily."""
+    res = await ctx.client.get(ctx.tsvc("/cases"))
+    res.raise_for_status()
+    mine = [c for c in res.json() if _same_cnic(c.get("customer_cnic"), customer.get("cnic"))]
+    open_case = next((c for c in mine if c.get("caseStatus") not in _CLOSED_CASE_STATUSES), None)
+    if open_case:
+        return open_case, False
+    res = await ctx.client.post(ctx.tsvc("/cases"), json={
+        "customer_id": customer["id"], "caseType": "Underwriting", "priorityLevel": "Normal", "sourceChannel": "Online",
+        **({"policy_id": policy_id} if policy_id else {}),
+    })
+    res.raise_for_status()
+    return {"customer_name": _full_name(customer), "customer_cnic": customer.get("cnic"), **res.json()}, True
 
 
 async def _issuance_case(args: dict, ctx: Ctx) -> dict:
@@ -1689,30 +1737,50 @@ async def _create_case(args: dict, ctx: Ctx) -> dict:
             f"No customer found for \"{args.get('applicant_name') or args.get('cnic')}\". Register them first."
         )
 
-    res = await ctx.client.post(ctx.tsvc("/cases"), json={
-        "customer_id": customer["id"],
-        "caseType": args.get("case_type") or "Underwriting",
-        "priorityLevel": args.get("priority_level") or "Normal",
-        "sourceChannel": "Online",
-    })
-    res.raise_for_status()
-    data = res.json()
-    case_id = data.get("caseld") or data.get("id")
+    # create_proposal opens the case with the proposal, so a later "open the case" must not make a second one.
+    cases_res = await ctx.client.get(ctx.tsvc("/cases"))
+    cases_res.raise_for_status()
+    existing = next((c for c in cases_res.json() if _same_cnic(c.get("customer_cnic"), customer.get("cnic"))
+                     and c.get("caseStatus") not in _CLOSED_CASE_STATUSES), None)
+    # The next step depends on whether the proposal already exists: offering "Create Proposal" after one was made
+    # sent users round in a circle. A new case is also linked to that proposal.
+    pol_res = await ctx.client.get(ctx.tsvc(f"/customers/{customer['id']}/policies"))
+    open_proposals = sorted((p for p in (pol_res.json() if pol_res.status_code == 200 else [])
+                             if p.get("status") in _OPEN_PROPOSAL_STATUSES), key=_created_key, reverse=True)
+    has_proposal = bool(open_proposals)
+    if existing:
+        data, opened = existing, False
+    else:
+        res = await ctx.client.post(ctx.tsvc("/cases"), json={
+            "customer_id": customer["id"],
+            "caseType": args.get("case_type") or "Underwriting",
+            "priorityLevel": args.get("priority_level") or "Normal",
+            "sourceChannel": "Online",
+            **({"policy_id": open_proposals[0].get("id")} if open_proposals else {}),
+        })
+        res.raise_for_status()
+        data, opened = res.json(), True
+    case_id = _case_id(data)
     case_no = data.get("caseNumber") or case_id
     route = build_route("cases", case_id)
+    next_step = (
+        {"label": "1. Generate E-App Link (Gate 1)", "actionType": "submit",
+         "payload": f"Generate e-application link for CNIC {customer.get('cnic')}"}
+        if has_proposal else
+        {"label": "Create Proposal", "actionType": "submit",
+         "payload": f"Create a proposal for CNIC {customer.get('cnic')}"}
+    )
     return {
         "success": True,
         "case_id": case_id,
-        "message": f"Case **{case_no}** opened for {_full_name(customer)}.",
-        "last_action": _action("create_case", "case", case_id, route, f"Case {case_no} created"),
-        # Show the new case inline in the chat panel straight away; the proposal
-        # (next step) then appears in the same view.
+        **({} if opened else {"skipped": True, "result": {"status": "skipped", "reason": "open_case_exists"}}),
+        "message": (f"Case **{case_no}** opened for {_full_name(customer)}." if opened else
+                    f"{_full_name(customer)} already has an open case, **{case_no}** — no new case was opened."),
+        "last_action": _action("create_case", "case", case_id, route,
+                               f"Case {case_no} created" if opened else f"Case {case_no}"),
+        # Show the case inline in the chat panel straight away; the proposal then appears in the same view.
         "navigate": {"route": f"case/{case_id}", "entity_id": case_id, "highlight": False, "embed": True},
-        "quick_actions": [
-            {"label": "View Application", "actionType": "embed", "payload": f"case/{case_id}"},
-            {"label": "Create Proposal", "actionType": "submit",
-             "payload": f"Create a proposal for CNIC {customer.get('cnic')}"},
-        ],
+        "quick_actions": [next_step, {"label": "View Application", "actionType": "embed", "payload": f"case/{case_id}"}],
     }
 
 
@@ -1909,23 +1977,27 @@ async def _create_proposal(args: dict, ctx: Ctx) -> dict:
 
     route = build_route("admin/leads", customer.get("cnic"))
 
-    # The proposal lives on the customer's case — show that case inline so the
-    # new proposal is visible before the pre-underwriting gates begin.
-    case_view = None
+    # The proposal is worked on the customer's case. Open it now if there isn't one, so "Pre-Underwriting" below is
+    # true and the Gate 1 button works — it used to fail with "No case found" every time — then show it inline.
+    case_view, case_line = None, ""
     try:
-        case = await _resolve_case({"cnic": customer.get("cnic"), "applicant_name": _full_name(customer)}, ctx)
+        case, opened = await _ensure_case(customer, ctx, data.get("id"))
         case_view = f"case/{_case_id(case)}"
-    except LookupError:
-        pass  # no case yet — the lead view below still works
+        if opened:
+            case_line = f"Underwriting case **{case.get('caseNumber') or _case_id(case)}** opened for it.\n\n"
+    except httpx.HTTPError:
+        pass  # the proposal stands; the lead view below still works and Gate 1 can open the case later
 
     return {
         "success": True,
         "policy_id": data.get("id"),
+        "case_id": _case_id(case) if case_view else None,
         "message": (
             f"Proposal created for **{_full_name(customer)}** — "
             f"{args.get('product_name') or 'Term Life Plus'}, PKR {coverage:,.0f} over "
-            f"{int(args.get('term_years') or 10)} years.\n\n"
-            f"The case is now in **Pre-Underwriting**. To proceed, complete the 5 clearance gates sequentially starting with **Gate 1: Customer E-Application**."
+            f"{int(args.get('term_years') or 10)} years.\n\n{case_line}"
+            + ("The case is now in **Pre-Underwriting**. To proceed, complete the 5 clearance gates sequentially starting with **Gate 1: Customer E-Application**."
+               if case_view else "No underwriting case could be opened yet — Gate 1 will open it when you generate the e-application link.")
         ),
         "last_action": _action("create_proposal", "customer", customer.get("cnic", ""), route, "Proposal created"),
         **({"navigate": {"route": case_view, "entity_id": "", "highlight": False, "embed": True}} if case_view else {}),
@@ -2252,9 +2324,16 @@ def _link_delivery_line(invite_data: dict, who: str) -> str:
 
 @handles("verify_e_application")
 async def _verify_e_application(args: dict, ctx: Ctx) -> dict:
-    case = await _resolve_case(args, ctx)
-    case_id = _case_id(case)
     action = args.get("action") or "invite"
+    try:
+        case = await _resolve_case(args, ctx)
+    except LookupError:
+        # A proposal made before cases were opened with it has no case yet. Sending the link is the user's request,
+        # so open the case and carry on rather than stopping at "create a case first".
+        case = await _case_for_open_proposal(args, ctx) if action == "invite" else None
+        if not case:
+            raise
+    case_id = _case_id(case)
     cust_name = case.get("customer_name") or "the applicant"
 
     # Step 1: Check existing status first

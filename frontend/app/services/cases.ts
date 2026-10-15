@@ -18,6 +18,8 @@ export interface CaseQueueItem {
   customer_segment: CustomerSegment | null;
   product_name: string | null;
   coverage_amount: number | null;
+  /** The linked policy's lifecycle status (Proposed, Approved, PendingPayment, Active, Declined, …). */
+  policy_status?: string | null;
   latest_ai_decision: "Auto Approve" | "Approve with Loading" | "Human Review" | "Decline" | null;
   latest_composite_score: number | null;
   /** Underwriting hold: the case is frozen where it stands until the hold is removed. */

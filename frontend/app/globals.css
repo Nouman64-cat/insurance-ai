@@ -413,3 +413,37 @@ html.dark .to-slate-50 { --tw-gradient-to: #1e293b var(--tw-gradient-to-position
 html.dark .to-blue-50 { --tw-gradient-to: rgba(59, 130, 246, 0.12) var(--tw-gradient-to-position) !important; }
 html.dark .to-indigo-50 { --tw-gradient-to: rgba(99, 102, 241, 0.12) var(--tw-gradient-to-position) !important; }
 html.dark .to-fuchsia-50 { --tw-gradient-to: rgba(217, 70, 239, 0.12) var(--tw-gradient-to-position) !important; }
+
+/* ── Underwriting case page (underwriting-app/app/case/[id]) ─────────────────────────────────────────────────────
+   Scoped restyle of the shared card / section / key-value classes for that page only: sentence-case section titles
+   instead of spaced-out uppercase labels, softer cards, and key-value rows on one line. Other pages are unchanged. */
+.case-modern .card {
+  border-radius: 1rem;
+  border-color: rgb(226 232 240 / 0.8);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+.case-modern .section-label {
+  text-transform: none;
+  letter-spacing: -0.01em;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+.case-modern .data-row {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.625rem 0;
+}
+.case-modern .data-key {
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: #64748b;
+}
+.case-modern .data-val {
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-align: right;
+}
+html.dark .case-modern .section-label { color: #f8fafc; }

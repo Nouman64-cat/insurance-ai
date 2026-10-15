@@ -7,7 +7,7 @@ interface RiskScoreBarProps {
   size?: "sm" | "md";
 }
 
-function scoreColor(score: number) {
+export function scoreColor(score: number) {
   if (score <= 10) return "bg-blue-500";
   if (score <= 20) return "bg-blue-400";
   if (score <= 30) return "bg-lime-400";
@@ -33,7 +33,7 @@ function scoreTierColor(score: number) {
   return "text-red-800";
 }
 
-function scoreTier(score: number) {
+export function scoreTier(score: number) {
   const color = scoreTierColor(score);
   if (score <= 25) return { label: "Low Risk",      color };
   if (score <= 50) return { label: "Moderate Risk", color };

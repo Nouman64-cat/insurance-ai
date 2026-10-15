@@ -467,9 +467,12 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
   );
 
   const resolveInterrupt = useCallback(
-    async (resumeValue: any, source?: "voice") => {
+    async (resumeValue: any, source?: "voice", typedText?: string) => {
       if (!pendingInterrupt) return;
       setPendingInterrupt(null);
+      // An answer typed into the input box (rather than a button click) is something the user said: show it, or the
+      // agent's reply to it appears with nothing before it.
+      if (typedText) setMessages((prev) => [...prev, { id: newId(), role: "user", text: typedText }]);
       // A resume continues the same turn, so the process graph keeps growing
       // rather than restarting — but the "Waiting for you" node is now
       // answered, so settle it instead of leaving it pulsing forever.

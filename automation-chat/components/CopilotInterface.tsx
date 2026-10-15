@@ -3076,7 +3076,7 @@ export function CopilotInterface() {
       ) {
         resolveInterrupt(revision(text));
       } else if (pendingInterrupt?.kind === "clarify") {
-        resolveInterrupt(text.trim());
+        resolveInterrupt(text.trim(), undefined, text.trim());
       } else if (pendingInterrupt?.kind === "confirm") {
         const lowerText = text.trim().toLowerCase();
         if (lowerText === "yes" || lowerText === "y") {
@@ -5187,12 +5187,12 @@ export function CopilotInterface() {
               <div className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-xl bg-gradient-to-br from-blue-300 via-blue-400 to-sky-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.5),0_6px_14px_-4px_rgba(37,99,235,0.35)]">
                 <img
                   src="/rizvi.png"
-                  alt="Undrix AI"
+                  alt="GetInsuredAI"
                   className="w-5 h-5 object-contain brightness-0 invert"
                 />
               </div>
               <span className="text-[19px] font-semibold tracking-tight text-zinc-900 truncate">
-                Undrix <span className="text-blue-500">AI</span>
+                GetInsured<span className="text-blue-500">AI</span>
               </span>
             </div>
             <button
@@ -5797,7 +5797,7 @@ export function CopilotInterface() {
                   <div className="flex items-center gap-2 h-11 ps-2 pe-3 rounded-xl ring-1 ring-zinc-200/80 bg-white min-w-0">
                     <span className="copilot-orb w-7 h-7 flex-shrink-0" />
                     <span className="font-medium text-[15px] text-zinc-900 tracking-tight truncate">
-                      Undrix AI
+                      GetInsuredAI
                     </span>
                     <span className="hidden sm:inline-block px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-600 text-[10px] font-semibold uppercase tracking-wider">
                       {t("header.beta")}
