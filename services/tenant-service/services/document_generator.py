@@ -48,7 +48,7 @@ def _pkr(n: Optional[float]) -> str:
 
 def _styles():
     ss = getSampleStyleSheet()
-    ss.add(ParagraphStyle("DocTitle", parent=ss["Title"], textColor=_BRAND, fontSize=20, spaceAfter=2))
+    ss.add(ParagraphStyle("DocTitle", parent=ss["Title"], textColor=_BRAND, fontSize=20, leading=26, spaceAfter=6))
     ss.add(ParagraphStyle("DocSub", parent=ss["Normal"], textColor=_MUTE, fontSize=9, spaceAfter=10))
     ss.add(ParagraphStyle("H", parent=ss["Heading2"], textColor=_INK, fontSize=12, spaceBefore=10, spaceAfter=4))
     ss.add(ParagraphStyle("Body", parent=ss["Normal"], textColor=_INK, fontSize=9.5, leading=14))
@@ -372,31 +372,17 @@ def generate_policy_documents(ctx: dict) -> list[dict]:
     # ── 3. Policy Wording / Terms & Conditions ────────────────────────────────
     wording = os.path.join(out_dir, "policy_wording.pdf")
     story = _header(ss, tenant, "Policy Wording", f"{ctx.get('product_name','—')} — {policy_number}")
-    clauses = [
-        ("1. Cover", f"The insurer agrees, subject to the terms herein, to pay the sum assured of "
-                     f"{_pkr(ctx.get('coverage_amount'))} on a valid claim during the policy term."),
-        ("2. Premium", "Cover is conditional on payment of the first premium and subsequent premiums "
-                       "when due. Non-payment beyond the grace period lapses the policy."),
-        ("3. Free-look Period", "The policyholder may cancel within 14 days of receipt for a refund of "
-                                "premium less expenses incurred."),
-        ("4. Beneficiaries", "The benefit is payable to the nominated beneficiaries in the shares recorded "
-                             "in the schedule."),
-        ("5. Exclusions", "Standard exclusions apply (e.g. suicide within the first policy year, "
-                          "material misrepresentation)."),
-    ]
-    excl = ctx.get("exclusions") or []
-    if excl:
-        clauses.append(("6. Special Exclusions (Underwriting)",
-                        "The following additional exclusions apply to this policy: " + "; ".join(excl) + "."))
-    for h, body in clauses:
+    from services import plan_terms
+    for h, paras in plan_terms.clauses(ctx):
         story.append(Paragraph(h, ss["H"]))
-        story.append(Paragraph(body, ss["Body"]))
+        for para in paras:
+            story.append(Paragraph(para.replace("&", "&amp;"), ss["Body"]))
+            story.append(Spacer(1, 3))
     story += _footer(ss)
     _build(wording, story)
     results.append({"document_type": PolicyDocumentTypeEnum.WORDING.value,
-                    "document_name": f"Policy Wording & Endorsements – {ctx.get('product_name','—')}",
+                    "document_name": f"Policy Wording & Endorsements \u2013 {ctx.get('product_name','\u2014')}",
                     "file_path": wording})
-
     return results
 
 

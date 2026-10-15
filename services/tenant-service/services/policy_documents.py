@@ -19,6 +19,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from services import document_generator
 from services.insurer_config import NOTICE_VALIDITY_DAYS
 from shared.models.core import (
+    InsurancePlan,
     Beneficiary,
     Customer,
     Policy,
@@ -80,6 +81,23 @@ async def build_document_context(session: AsyncSession, policy: Policy) -> dict:
         loadings_text = "Terms to be confirmed by underwriting."
 
     bens = (await session.exec(select(Beneficiary).where(Beneficiary.policy_id == policy.id))).all()
+
+    # The plan attached to the policy: the wording is written from it.
+    plan_row = (await session.exec(select(InsurancePlan).where(
+        InsurancePlan.tenant_id == policy.tenant_id, InsurancePlan.label == policy.product_name))).first()
+    plan_ctx = None
+    if plan_row is not None:
+        def _e(x):
+            return getattr(x, "value", x)
+        plan_ctx = {
+            "code": plan_row.code, "label": plan_row.label, "insurance_type": _e(plan_row.insurance_type),
+            "category": _e(plan_row.category), "product_category": _e(plan_row.product_category),
+            "description": plan_row.description, "entry_age_min": plan_row.entry_age_min,
+            "entry_age_max": plan_row.entry_age_max, "entry_age_label": plan_row.entry_age_label,
+            "term_min_years": plan_row.term_min_years, "term_max_years": plan_row.term_max_years,
+            "max_maturity_age": plan_row.max_maturity_age, "max_income_multiple": plan_row.max_income_multiple,
+            "wakala_fee_pct": getattr(plan_row, "wakala_fee_pct", None), "surrender_terms": plan_row.surrender_terms,
+        }
 
     # ── PremiumSchedule — billing frequency + period ──────────────────────────
     schedule = (await session.exec(
@@ -162,6 +180,8 @@ async def build_document_context(session: AsyncSession, policy: Policy) -> dict:
         "issue_date": issue_date.isoformat(),
         "challan_ref": challan_ref,
         "ipp_paid": ipp_paid,
+
+        "plan": plan_ctx,
 
         # Underwriting
         "loadings_text": loadings_text,
