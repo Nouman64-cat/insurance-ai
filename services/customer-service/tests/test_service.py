@@ -19,7 +19,7 @@ class Tickets(unittest.IsolatedAsyncioTestCase):
   with patch.dict(os.environ,{'CS_MIGRATION_DATABASE_URL':owner}): await migrate.run()
   app_url=admin_url.set(database=self.db,username='customer_service_app',password=os.environ['CS_DB_APP_PASSWORD'])
   main.engine=create_async_engine(app_url)
-  self.user={'id':str(uuid4()),'tenant_id':str(uuid4()),'role_name':'Agent','staff':False,'full_name':'Test agent','email':'test@example.test','token':'Bearer test'}
+  self.user={'id':str(uuid4()),'tenant_id':str(uuid4()),'role_name':'Agent','staff':False,'can_work':False,'full_name':'Test agent','email':'test@example.test','token':'Bearer test'}
   main.app.dependency_overrides[main.identity]=lambda:self.user
   self.client=httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app),base_url='http://test')
  async def asyncTearDown(self):
@@ -37,27 +37,27 @@ class Tickets(unittest.IsolatedAsyncioTestCase):
   t=await self.ticket();self.user['id']=str(uuid4())
   self.assertEqual((await self.client.get('/v1/tickets/'+t['id'])).status_code,404)
   self.assertEqual((await self.client.get('/v1/tickets')).json()['total'],0)
-  self.user.update(staff=True,tenant_id=str(uuid4()),role_name='Admin')
+  self.user.update(staff=True,can_work=True,tenant_id=str(uuid4()),role_name='CustomerService')
   self.assertEqual((await self.client.get('/v1/tickets/'+t['id'])).status_code,404)
  async def test_internal_notes_and_staff_actions(self):
   t=await self.ticket();id=t['id'];r=await self.client.post(f'/v1/tickets/{id}/comments',json={'body':'Private note','internal':True});self.assertEqual(r.status_code,403)
-  self.user.update(staff=True,role_name='Admin')
+  self.user.update(staff=True,can_work=True,role_name='CustomerService')
   self.assertEqual((await self.client.post(f'/v1/tickets/{id}/comments',json={'body':'Private note','internal':True})).status_code,200)
-  self.user.update(staff=False,role_name='Agent')
+  self.user.update(staff=False,can_work=False,role_name='Agent')
   self.assertEqual(len((await self.client.get('/v1/tickets/'+id)).json()['events']),1)
   self.assertEqual((await self.client.post(f'/v1/tickets/{id}/status',json={'version':1,'status':'IN_PROGRESS','reason':'Starting work'})).status_code,403)
  async def test_status_version_resolution_reopen(self):
-  t=await self.ticket();id=t['id'];self.user.update(staff=True,role_name='Admin')
+  t=await self.ticket();id=t['id'];self.user.update(staff=True,can_work=True,role_name='CustomerService')
   self.assertEqual((await self.client.post(f'/v1/tickets/{id}/status',json={'version':1,'status':'RESOLVED','reason':'Done already'})).status_code,409)
   for version,status in [(1,'IN_PROGRESS'),(2,'RESOLVED'),(3,'CLOSED')]:
    self.assertEqual((await self.client.post(f'/v1/tickets/{id}/status',json={'version':version,'status':status,'reason':'Resolved the enquiry'})).status_code,200)
   self.assertEqual((await self.client.post(f'/v1/tickets/{id}/status',json={'version':1,'status':'IN_PROGRESS','reason':'Stale change'})).status_code,409)
-  self.user.update(staff=False,role_name='Agent')
+  self.user.update(staff=False,can_work=False,role_name='Agent')
   self.assertEqual((await self.client.post(f'/v1/tickets/{id}/status',json={'version':4,'status':'IN_PROGRESS','reason':'Problem still exists'})).status_code,200)
  async def test_claim_and_forbid_other_assignee(self):
   t=await self.ticket();id=t['id'];payload={'version':1,'user_id':self.user['id']}
   self.assertEqual((await self.client.post(f'/v1/tickets/{id}/assignment',json=payload)).status_code,403)
-  self.user.update(staff=True,role_name='Admin')
+  self.user.update(staff=True,can_work=True,role_name='CustomerService')
   self.assertEqual((await self.client.post(f'/v1/tickets/{id}/assignment',json=payload)).status_code,200)
   payload.update(version=2,user_id=str(uuid4()))
   self.assertEqual((await self.client.post(f'/v1/tickets/{id}/assignment',json=payload)).status_code,403)
@@ -70,13 +70,13 @@ class Tickets(unittest.IsolatedAsyncioTestCase):
    self.assertEqual((await self.client.post('/v1/tickets',json=payload)).status_code,422)
   self.assertEqual((await self.client.get('/v1/tickets')).json()['total'],0)
  async def test_demo_seed_is_guarded_and_idempotent(self):
-  self.user.update(staff=True,role_name='Admin')
+  self.user.update(staff=True,can_work=True,role_name='Admin')
   with patch.dict(os.environ,{'ENV_VAR':'production'}):
    self.assertEqual((await self.client.post('/v1/demo/seed')).status_code,404)
   with patch.dict(os.environ,{'ENV_VAR':'demo'}):
    self.assertEqual((await self.client.post('/v1/demo/seed')).json()['created'],8)
    self.assertEqual((await self.client.post('/v1/demo/seed')).json()['created'],0)
-   self.user.update(staff=False,role_name='Agent')
+   self.user.update(staff=False,can_work=False,role_name='Agent')
    self.assertEqual((await self.client.post('/v1/demo/seed')).status_code,403)
  async def test_no_auth_and_database_audit_protection(self):
   main.app.dependency_overrides.clear()
@@ -88,7 +88,7 @@ class Tickets(unittest.IsolatedAsyncioTestCase):
  async def make(self,title,priority='NORMAL'):
   r=await self.client.post('/v1/tickets',json={'title':title,'description':'Please look into this one','priority':priority,'idempotency_key':str(uuid4())});self.assertEqual(r.status_code,200,r.text);return r.json()
  async def test_views_and_summary_tell_the_desk_what_needs_a_person(self):
-  self.user.update(staff=True,role_name='Admin')
+  self.user.update(staff=True,can_work=True,role_name='CustomerService')
   a=await self.make('Late one','URGENT');b=await self.make('Taken one');c=await self.make('Waiting one');d=await self.make('Done one')
   async with main.engine.begin() as conn:                                      # make "Late one" overdue without waiting for the clock
    await conn.execute(text("UPDATE customer_service.tickets SET due_at=now()-interval '2 hours' WHERE id=:i"),{'i':a['id']})
@@ -114,8 +114,70 @@ class Tickets(unittest.IsolatedAsyncioTestCase):
   other=dict(self.user);self.user['id']=str(uuid4())                              # someone else in the same tenant (not staff)
   await self.make('Theirs')
   s=(await self.client.get('/v1/tickets/summary')).json();self.assertEqual(s['total'],1)
-  self.user.update(staff=True,role_name='Admin');self.assertEqual((await self.client.get('/v1/tickets/summary')).json()['total'],2)
+  self.user.update(staff=True,can_work=True,role_name='CustomerService');self.assertEqual((await self.client.get('/v1/tickets/summary')).json()['total'],2)
 
+
+ # customers of the customer portal ---------------------------------------------------------------
+ def signed(self,method,path,body=None,key=None,customer=None,tenant=None):
+  import json,sys
+  sys.path.insert(0,'/app/shared_copy') if False else None
+  import hashlib,hmac,time
+  data=json.dumps(body).encode() if body is not None else b''
+  ts=str(int(time.time()));key=key if key is not None else os.environ['CS_PORTAL_KEY']
+  sig=hmac.new(key.encode(),f"{ts}\n{method}\n{path}\n{hashlib.sha256(data).hexdigest()}".encode(),hashlib.sha256).hexdigest()
+  h={'x-service-signature':sig,'x-service-timestamp':ts,'x-service-caller':'customer-management','x-portal-tenant':tenant or self.tenant,'x-portal-customer':customer or self.cust,'x-portal-name':'Sana Customer','content-type':'application/json'}
+  return self.client.request(method,path,content=data,headers=h)
+ async def test_portal_customer_tickets(self):
+  os.environ.setdefault('CS_PORTAL_KEY','k'*32);self.tenant=str(uuid4());self.cust=str(uuid4());B='/internal/v1/portal/tickets'
+  body={'title':'Address change','description':'Please update my address on file','category':'POLICY_SERVICING','idempotency_key':str(uuid4())}
+  self.assertEqual((await self.signed('POST',B,body,key='wrong')).status_code,401)
+  r=await self.signed('POST',B,body);self.assertEqual(r.status_code,200,r.text);t=r.json()
+  self.assertEqual((t['priority'],str(t['customer_id']),t['requester_name']),('NORMAL',self.cust,'Sana Customer'))
+  self.assertEqual((await self.signed('POST',B,body)).json()['id'],t['id'])                      # idempotent
+  self.assertEqual((await self.signed('POST',B,{**body,'priority':'URGENT'})).status_code,422)   # priority is not the customer's to set
+  self.assertEqual(len((await self.signed('GET',B)).json()['items']),1)
+  self.assertEqual((await self.signed('GET',B,customer=str(uuid4()))).json()['items'],[])        # another customer sees nothing
+  self.assertEqual((await self.signed('GET',f'{B}/{t["id"]}',customer=str(uuid4()))).status_code,404)
+  self.assertEqual((await self.signed('GET',f'{B}/{t["id"]}',tenant=str(uuid4()))).status_code,404)
+  # staff reply + internal note; the customer sees the reply only
+  self.user.update(staff=True,can_work=True,role_name='CustomerService',tenant_id=self.tenant)
+  await self.client.post(f'/v1/tickets/{t["id"]}/comments',json={'body':'Secret staff note','internal':True})
+  await self.client.post(f'/v1/tickets/{t["id"]}/comments',json={'body':'We have updated it','internal':False})
+  d=(await self.signed('GET',f'{B}/{t["id"]}')).json();bodies=[e['body'] for e in d['events']]
+  self.assertIn('We have updated it',bodies);self.assertNotIn('Secret staff note',bodies);self.assertNotIn('internal',d['events'][0])
+  self.assertEqual((await self.signed('POST',f'{B}/{t["id"]}/reply',{'body':'Thank you'})).status_code,200)
+  self.assertEqual((await self.signed('POST',f'{B}/{t["id"]}/reply',{'body':'x','internal':True})).status_code,422)
+  self.assertEqual((await self.signed('POST',f'{B}/{t["id"]}/withdraw',{})).status_code,200)       # still OPEN: may be withdrawn
+  self.assertEqual((await self.signed('GET',f'{B}/{t["id"]}')).json()['status'],'CANCELLED')
+
+
+ async def test_admin_can_view_but_not_work_tickets(self):
+  t=await self.ticket();id=t['id'];self.user.update(staff=True,can_work=False,role_name='Admin',tenant_id=self.user['tenant_id'],id=str(uuid4()))
+  self.assertEqual((await self.client.get('/v1/tickets/'+id)).status_code,200)
+  self.assertEqual((await self.client.get('/v1/tickets')).json()['total'],1)
+  self.assertEqual((await self.client.get('/v1/tickets/summary')).status_code,200)
+  self.assertEqual((await self.client.post(f'/v1/tickets/{id}/comments',json={'body':'Admin reply'})).status_code,403)
+  self.assertEqual((await self.client.post(f'/v1/tickets/{id}/comments',json={'body':'Admin note','internal':True})).status_code,403)
+  self.assertEqual((await self.client.post(f'/v1/tickets/{id}/assignment',json={'version':1,'user_id':self.user['id']})).status_code,403)
+  self.assertEqual((await self.client.post(f'/v1/tickets/{id}/status',json={'version':1,'status':'IN_PROGRESS','reason':'Admin starts it'})).status_code,403)
+ async def test_open_desk_acts_as_one_fixed_tenant_and_only_when_switched_on(self):
+  main.app.dependency_overrides.clear()
+  tenant=str(uuid4());h={'x-open-desk':'1'}
+  with patch.object(main,'OPEN_DESK',False):
+   self.assertEqual((await self.client.get('/v1/tickets',headers=h)).status_code,401)                       # off: no way in without signing in
+  with patch.object(main,'OPEN_DESK',True),patch.object(main,'OPEN_TENANT',tenant):
+   self.assertEqual((await self.client.get('/v1/tickets')).status_code,401)                                 # needs the open-desk header
+   self.assertEqual((await self.client.get('/v1/tickets',headers={**h,'authorization':'Bearer x'})).status_code,401)   # a token means normal sign-in
+   me=(await self.client.get('/v1/me',headers=h)).json();self.assertEqual((me['role_name'],me['tenant_id'],me['can_work']),('ServiceDesk',tenant,True))
+   # a customer's ticket in that tenant, then the desk works it; another tenant's ticket stays invisible
+   cust=str(uuid4());other=str(uuid4())
+   body={'title':'Portal question','description':'Where is my receipt please','idempotency_key':str(uuid4())}
+   async with main.engine.begin() as c:
+    for t_,n in ((tenant,'mine'),(other,'theirs')):
+     await main.insert_ticket(main.Create(**{**body,'idempotency_key':str(uuid4())}),{'id':cust,'tenant_id':t_,'full_name':n,'email':n})
+   items=(await self.client.get('/v1/tickets',headers=h)).json()['items'];self.assertEqual([i['requester_name'] for i in items],['mine'])
+   i=items[0];ok=await self.client.post(f"/v1/tickets/{i['id']}/assignment",json={'version':i['version'],'user_id':str(main.OPEN_ACTOR)},headers=h);self.assertEqual(ok.status_code,200,ok.text)
+   self.assertEqual((await self.client.post(f"/v1/tickets/{i['id']}/comments",json={'body':'Sent it to you'},headers=h)).status_code,200)
 
 class IdentityChecks(unittest.IsolatedAsyncioTestCase):
  async def test_verified_identity_and_spoofing(self):

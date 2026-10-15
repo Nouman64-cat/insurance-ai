@@ -22,13 +22,15 @@ export function portalHome(role: string): string {
   return portalUrl("/cases");
 }
 
-export default function AppHeader({ title, home, icon, actions, sections, sectionsLabel }: {
+export default function AppHeader({ title, home, icon, actions, sections, sectionsLabel, open = false }: {
   title: string;
   home: string;
   icon: ReactNode;
   actions?: ReactNode;
   sections?: HeaderSection[];
   sectionsLabel?: string;
+  /** An app with no sign-in: no account, no sign-out, no way back to the portal. */
+  open?: boolean;
 }) {
   const { t } = useI18n();
   const user = useSatelliteUser();
@@ -45,6 +47,7 @@ export default function AppHeader({ title, home, icon, actions, sections, sectio
         <div className="ms-auto flex items-center gap-2 sm:gap-3">
           {actions}
           <LanguageSwitcher />
+          {!open && (<>
           <a href={portalHome(user.role_name)} className="hidden whitespace-nowrap rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 md:inline-flex">
             {tx("← Back to the portal")}
           </a>
@@ -63,6 +66,7 @@ export default function AppHeader({ title, home, icon, actions, sections, sectio
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
             </svg>
           </button>
+          </>)}
         </div>
         {sections && sections.length > 0 && (
           <nav aria-label={sectionsLabel} className="order-last -mb-2.5 flex w-full gap-1 overflow-x-auto">

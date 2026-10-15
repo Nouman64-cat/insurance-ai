@@ -47,6 +47,8 @@ from shared.models.core import (
     CounterOffer,
     CounterOfferStatusEnum,
     Customer,
+    InitialPremiumPayment,
+    IPPStatusEnum,
     Policy,
     PolicyDocument,
     PolicyRequirement,
@@ -217,10 +219,16 @@ async def compute_readiness(session: AsyncSession, policy: Policy) -> dict:
         )
 
     # ── Step 3 — First premium (post-draft; informational) ────────────────────
+    # The first premium is asked for ONCE, on the proposal. If that payment has been received it counts here, and issuance credits it
+    # against the contract: only a balance (if the final premium came out higher) can still be owed.
     paid = [s for s in schedules if s.status == PremiumScheduleStatusEnum.PAID]
+    prepaid = (await session.exec(select(InitialPremiumPayment).where(
+        InitialPremiumPayment.policy_id == pid, InitialPremiumPayment.status == IPPStatusEnum.REALIZED))).first()
     premium = {
-        "status": "paid" if paid else ("pending" if schedules else "none"),
+        "status": "paid" if paid else ("prepaid" if prepaid else ("pending" if schedules else "none")),
         "total": len(schedules), "paid": len(paid),
+        "prepaid_amount": round(float(prepaid.amount or 0), 2) if prepaid else None,
+        "prepaid_reference": prepaid.reference if prepaid else None,
     }
 
     # ── Step 4 — Compliance (AML / Sanctions / SECP) ──────────────────────────

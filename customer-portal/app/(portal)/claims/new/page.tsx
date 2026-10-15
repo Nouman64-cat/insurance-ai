@@ -15,7 +15,7 @@ function NewClaim() {
   const policies = useApi<{ items: PolicyCard[] }>("policies?segment=all");   // individual + the family policies this customer may act on
   const [policyId, setPolicyId] = useState(params.get("policy") || "");
   const options = useApi<ClaimOptions>(policyId ? `policies/${encodeURIComponent(policyId)}/claims/options` : null);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();   // the customer's own date, not UTC
   const [f, setF] = useState({ category: "", event_date: "", event_end_date: "", cause: "", event_place: "", description: "", claimed_amount: "", hospital: "", diagnosis: "" });
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [coveredId, setCoveredId] = useState("");
@@ -36,6 +36,28 @@ function NewClaim() {
 
   const amount = Number(f.claimed_amount);
   const valid1 = !!policyId && !!opt?.can_claim_online && cats.length > 0 && !!f.category && (!isFamily || (!!covered && (!covered.needs_consent || consent)));
+  const descLen = f.description.trim().length;
+  // What is stopping "Next" on step 2, in words, so a disabled button is never a mystery.
+  const problems2: string[] = [];
+  if (!f.event_date) problems2.push(t("claimNew.need.eventDate"));
+  else if (f.event_date > today) problems2.push(t("claimNew.need.eventFuture"));
+  if (f.event_end_date && f.event_date && f.event_end_date < f.event_date) problems2.push(t("claimNew.need.endBefore"));
+  if (f.category === "Hospitalization" && f.hospital.trim().length < 2) problems2.push(t("claimNew.need.hospital"));
+  if (descLen < 10) problems2.push(t("claimNew.need.description", { n: 10 - descLen }));
+  if (!(amount > 0)) problems2.push(t("claimNew.need.amount"));
+
+  // Fills the form with a believable claim for the chosen type, to save time when trying the flow out.
+  const demo = () => {
+    const back = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+    const start = back(9), end = back(5);
+    const cause = (opt?.causes || []).find((c) => c === "Illness") || (opt?.causes || [])[0] || "";
+    setF((x) => f.category === "Hospitalization"
+      ? { ...x, event_date: start, event_end_date: end, cause, event_place: "Lahore", hospital: "Shaukat Khanum Memorial Hospital", diagnosis: "Acute appendicitis",
+          description: "Admitted with severe abdominal pain, diagnosed with appendicitis and operated on. Discharged after four days.", claimed_amount: "185000" }
+      : { ...x, event_date: start, event_end_date: end, cause, event_place: "Lahore", hospital: "", diagnosis: "",
+          description: "Disabled by an accident at work and unable to work since. Medical reports are available.", claimed_amount: "250000" });
+  };
+
   const valid2 = !!f.event_date && f.event_date <= today && (!f.event_end_date || f.event_end_date >= f.event_date) && f.description.trim().length >= 10 && amount > 0
     && (f.category !== "Hospitalization" || (f.hospital.trim().length > 1));
 
@@ -119,7 +141,7 @@ function NewClaim() {
           )}
 
           {step === 2 && (
-            <Card title={t("claimNew.step.2")}>
+            <Card title={t("claimNew.step.2")} action={<button type="button" className="btn-secondary !px-3 !py-1.5 text-xs" onClick={demo}>{t("claimNew.demo")}</button>}>
               <div className="grid sm:grid-cols-2 gap-4">
                 <Field label={t("claimNew.eventDate")} htmlFor="event_date" hint={t("claimNew.eventDateHint")}><input id="event_date" type="date" className="input" max={today} value={f.event_date} onChange={set("event_date")} required /></Field>
                 <Field label={t("claimNew.eventEnd")} htmlFor="event_end"><input id="event_end" type="date" className="input" min={f.event_date || undefined} max={today} value={f.event_end_date} onChange={set("event_end_date")} /></Field>
@@ -129,9 +151,10 @@ function NewClaim() {
                 </>}
                 <Field label={t("claimNew.cause")} htmlFor="cause"><select id="cause" className="input" value={f.cause} onChange={set("cause")}><option value="">{t("claimNew.noCause")}</option>{(opt?.causes || []).map((c) => <option key={c} value={c}>{t(`cause.${c}`)}</option>)}</select></Field>
                 <Field label={t("claimNew.place")} htmlFor="place"><input id="place" className="input" value={f.event_place} onChange={set("event_place")} maxLength={200} /></Field>
-                <div className="sm:col-span-2"><Field label={t("claimNew.description")} htmlFor="description" hint={t("claimNew.descriptionHint")}><textarea id="description" className="input min-h-[110px]" value={f.description} onChange={set("description")} maxLength={4000} required /></Field></div>
+                <div className="sm:col-span-2"><Field label={t("claimNew.description")} htmlFor="description" hint={descLen > 0 && descLen < 10 ? t("claimNew.need.description", { n: 10 - descLen }) : t("claimNew.descriptionHint")}><textarea id="description" className="input min-h-[110px]" value={f.description} onChange={set("description")} maxLength={4000} required /></Field></div>
                 <Field label={t("claimNew.amount")} htmlFor="amount" hint={t("claimNew.amountHint")}><input id="amount" type="number" inputMode="decimal" min="1" step="any" className="input" dir="ltr" value={f.claimed_amount} onChange={set("claimed_amount")} required /></Field>
               </div>
+              {problems2.length > 0 && <p className="mt-4 text-xs text-amber-700" role="status">{t("claimNew.need.title")} {problems2.join(" · ")}</p>}
               <div className="flex justify-between mt-5"><button type="button" className="btn-secondary" onClick={() => setStep(1)}>{t("common.back")}</button><button type="button" className="btn-primary" disabled={!valid2} onClick={() => setStep(3)}>{t("common.next")}</button></div>
             </Card>
           )}

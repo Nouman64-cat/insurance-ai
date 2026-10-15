@@ -28,6 +28,11 @@ export interface SatelliteUser {
 
 const SessionContext = createContext<SatelliteUser | null>(null);
 
+/** For an app that runs without a sign-in (the Customer Service open desk): supplies the user the app is acting as. */
+export function OpenSessionProvider({ user, children }: { user: SatelliteUser; children: ReactNode }) {
+  return <SessionContext.Provider value={user}>{children}</SessionContext.Provider>;
+}
+
 /** The verified user. Only available below the gate. */
 export function useSatelliteUser(): SatelliteUser {
   const user = useContext(SessionContext);

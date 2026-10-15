@@ -400,7 +400,7 @@ function SuccessModal({ result, policyName, onClose }: SuccessModalProps) {
             </h2>
             <p className="text-sm mt-1 text-blue-100">
               {policyName}
-              {isPending ? " " + tx("— next: collect the first premium") : ""}
+              {isPending ? " " + tx("— next: collect the remaining balance") : ""}
             </p>
           </div>
         </div>
@@ -413,8 +413,11 @@ function SuccessModal({ result, policyName, onClose }: SuccessModalProps) {
               label: "Maturity Date",
               value: result.maturity_date ?? result.expiry_date,
             },
+            ...((result as any).initial_premium_credited > 0
+              ? [{ label: "Already paid at proposal", value: fmtPKR((result as any).initial_premium_credited) }]
+              : []),
             {
-              label: isPending ? "Amount Due" : "Total Annual Premium",
+              label: isPending ? "Balance Due" : "Total Annual Premium",
               value: fmtPKR(
                 result.amount_due ?? result.premium_breakdown.total_premium,
               ),
