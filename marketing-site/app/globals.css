@@ -14,7 +14,7 @@
   }
 
   html {
-    color-scheme: dark;
+    color-scheme: light;
   }
 
   body {
@@ -26,14 +26,14 @@
   }
 
   ::selection {
-    @apply bg-brand/40 text-ink;
+    @apply bg-brand/15 text-ink;
   }
 
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-track { @apply bg-canvas; }
   ::-webkit-scrollbar-thumb { @apply rounded-full border-2 border-solid border-canvas bg-line-strong; }
-  ::-webkit-scrollbar-thumb:hover { @apply bg-brand/60; }
-  html { scrollbar-color: rgb(255 255 255 / 0.16) #07070c; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-brand/50; }
+  html { scrollbar-color: #c9d3ea #ffffff; }
 }
 
 /* ── Responsive scale ─────────────────────────────────────────────────────
@@ -256,25 +256,25 @@ html[data-splash="pending"]:not([data-logo-ready]) [data-logo-target] { opacity:
     transition: border-color 0.25s ease;
   }
   .card:hover {
-    border-color: rgb(37 99 235 / 0.5);
+    border-color: rgb(37 99 235 / 0.4);
   }
 
   .eyebrow {
     @apply text-xs font-semibold uppercase tracking-widest text-accent;
   }
 
-  /* Frosted panel: translucent fill, blurred backdrop, hairline border */
+  /* Frosted panel: translucent white, blurred backdrop, hairline border, soft shadow */
   .glass {
-    @apply border border-line bg-card backdrop-blur-xl;
+    @apply border border-line bg-white/70 shadow-card backdrop-blur-xl;
   }
 
-  /* Hover for glass cards: the border brightens toward cyan and a soft brand glow appears */
+  /* Hover for glass cards: the border turns brand blue and a soft blue/violet glow appears */
   .glass-hover {
     transition: border-color 0.3s ease, box-shadow 0.3s ease;
   }
   .glass-hover:hover {
-    border-color: rgb(103 212 240 / 0.35);
-    box-shadow: 0 0 0 1px rgb(37 99 235 / 0.15), 0 18px 50px -24px rgb(37 99 235 / 0.55), 0 18px 60px -30px rgb(109 40 217 / 0.4);
+    border-color: rgb(37 99 235 / 0.35);
+    box-shadow: 0 0 0 1px rgb(34 184 214 / 0.12), 0 18px 44px -22px rgb(37 99 235 / 0.35), 0 18px 54px -30px rgb(109 40 217 / 0.25);
   }
 
   .field {
@@ -296,7 +296,7 @@ html[data-splash="pending"]:not([data-logo-ready]) [data-logo-target] { opacity:
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.5s ease;
-  background: radial-gradient(closest-side, rgb(37 99 235 / 0.28), rgb(109 40 217 / 0.12) 50%, transparent);
+  background: radial-gradient(closest-side, rgb(37 99 235 / 0.18), rgb(109 40 217 / 0.08) 50%, transparent);
   will-change: transform;
 }
 
@@ -310,7 +310,7 @@ html[data-splash="pending"]:not([data-logo-ready]) [data-logo-target] { opacity:
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.25s ease;
-  background: radial-gradient(20rem circle at var(--mx, 50%) var(--my, 50%), rgb(34 184 214 / 0.12), transparent 65%);
+  background: radial-gradient(20rem circle at var(--mx, 50%) var(--my, 50%), rgb(37 99 235 / 0.07), transparent 65%);
 }
 .card:hover::before, .glow:hover::before { opacity: 1; }
 
@@ -342,12 +342,12 @@ html[data-splash="pending"]:not([data-logo-ready]) [data-logo-target] { opacity:
   100% { box-shadow: 0 0 0 0.9rem rgb(255 255 255 / 0); }
 }
 
-/* ── Dark backdrop utilities ─────────────────────────────────────────────── */
-/* Faint 48px grid that fades out from the centre */
+/* ── Backdrop utilities ──────────────────────────────────────────────────── */
+/* Faint navy 48px grid that fades out from the centre */
 .bg-grid {
   background-image:
-    linear-gradient(to right, rgb(125 190 255 / 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgb(125 190 255 / 0.05) 1px, transparent 1px);
+    linear-gradient(to right, rgb(14 10 46 / 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(14 10 46 / 0.05) 1px, transparent 1px);
   background-size: 48px 48px;
   -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 100%);
   mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 100%);
@@ -356,8 +356,8 @@ html[data-splash="pending"]:not([data-logo-ready]) [data-logo-target] { opacity:
 .glow-arc {
   pointer-events: none;
   background:
-    radial-gradient(ellipse 50% 100% at 50% 100%, rgb(103 212 240 / 0.3), transparent 70%),
-    radial-gradient(ellipse 70% 120% at 50% 100%, rgb(37 99 235 / 0.45), rgb(109 40 217 / 0.25) 45%, transparent 75%);
+    radial-gradient(ellipse 50% 100% at 50% 100%, rgb(34 184 214 / 0.16), transparent 70%),
+    radial-gradient(ellipse 70% 120% at 50% 100%, rgb(37 99 235 / 0.16), rgb(109 40 217 / 0.08) 45%, transparent 75%);
   filter: blur(2px);
 }
 

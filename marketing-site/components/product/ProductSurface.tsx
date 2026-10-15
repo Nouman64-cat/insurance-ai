@@ -63,7 +63,7 @@ export function ProductSurface({ stage, className = "" }: Readonly<{ stage: numb
     >
       <div aria-hidden="true">
         {/* Window bar */}
-        <div className="flex items-center justify-between gap-3 border-b border-line bg-card px-4 py-3 sm:px-5">
+        <div className="flex items-center justify-between gap-3 border-b border-line bg-alt/60 px-4 py-3 sm:px-5">
           <div className="flex min-w-0 items-center gap-2.5">
             <LogoMark className="h-6 w-6 shrink-0 rounded-md" />
             <span className="flex min-w-0 flex-col sm:flex-row sm:items-baseline sm:gap-2">
@@ -113,7 +113,7 @@ export function ProductSurface({ stage, className = "" }: Readonly<{ stage: numb
         {/* Three panels: what AI says, what the rules do, what is recorded */}
         <div className="grid gap-3 p-3 sm:p-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,0.95fr)]">
           {/* AI analysis */}
-          <section className="min-w-0 rounded-xl border border-line bg-canvas/50 p-4">
+          <section className="min-w-0 rounded-xl border border-line bg-alt/70 p-4">
             <PanelHead title="Risk analysis" tag="AI advises" tone="ai" />
             <div className="mt-4 flex items-center gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-gradient-strong text-sm font-semibold text-white">AK</span>
@@ -124,7 +124,7 @@ export function ProductSurface({ stage, className = "" }: Readonly<{ stage: numb
             </div>
             <span
               className={`mt-3 inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[0.6875rem] font-semibold transition-colors duration-500 ${
-                s === 3 ? "bg-emerald-400/10 text-emerald-300 ring-1 ring-inset ring-emerald-400/25" : "bg-chip text-accent"
+                s === 3 ? "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20" : "bg-chip text-accent"
               }`}
             >
               {status[s]}
@@ -163,7 +163,7 @@ export function ProductSurface({ stage, className = "" }: Readonly<{ stage: numb
           </section>
 
           {/* Rules */}
-          <section className="min-w-0 rounded-xl border border-line bg-canvas/50 p-4">
+          <section className="min-w-0 rounded-xl border border-line bg-alt/70 p-4">
             <PanelHead title="Rules" tag="Deterministic" tone="rules" />
             <ul className="mt-4 space-y-3">
               {rules.map((r, i) => {
@@ -172,7 +172,7 @@ export function ProductSurface({ stage, className = "" }: Readonly<{ stage: numb
                   <li key={r} className="flex items-center gap-3">
                     <span className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-chip">
                       <span
-                        className={`absolute inset-0 flex items-center justify-center rounded-full bg-emerald-400/15 text-emerald-300 ring-1 ring-inset ring-emerald-400/40 transition duration-500 ${
+                        className={`absolute inset-0 flex items-center justify-center rounded-full bg-emerald-50 text-emerald-600 ring-1 ring-inset ring-emerald-600/30 transition duration-500 ${
                           on ? "scale-100 opacity-100" : "scale-50 opacity-0"
                         }`}
                         style={{ transitionDelay: on ? `${i * 260}ms` : "0ms" }}
@@ -199,7 +199,7 @@ export function ProductSurface({ stage, className = "" }: Readonly<{ stage: numb
           </section>
 
           {/* Audit trail */}
-          <section className="min-w-0 rounded-xl border border-line bg-canvas/50 p-4">
+          <section className="min-w-0 rounded-xl border border-line bg-alt/70 p-4">
             <PanelHead title="Audit trail" tag="Recorded" tone="audit" />
             <ol className="relative mt-4 space-y-3.5 pl-6">
               <span className="absolute bottom-1 left-[0.4375rem] top-1 w-px bg-line-strong" aria-hidden="true" />

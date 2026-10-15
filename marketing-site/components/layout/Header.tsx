@@ -11,7 +11,7 @@ import { siteConfig } from "@/lib/site-config";
 export function Header() {
   return (
     <header className="pointer-events-none sticky top-0 z-40 h-16 px-4 pt-4 sm:px-6">
-      <div className="glass pointer-events-auto relative mx-auto flex h-12 w-full max-w-[56rem] items-center justify-between gap-4 rounded-full bg-canvas/70 pl-4 pr-1.5 shadow-card">
+      <div className="glass pointer-events-auto relative mx-auto flex h-12 w-full max-w-[56rem] items-center justify-between gap-4 rounded-full bg-white/80 pl-4 pr-1.5 shadow-card">
         <Logo intro />
         <nav
           className="intro-drop hidden items-center md:flex"

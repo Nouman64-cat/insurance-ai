@@ -100,7 +100,7 @@ export function ProductStory() {
         {/* Faint brand glow behind the interface */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_55%_45%_at_68%_50%,rgb(37_99_235/0.14),transparent_70%),radial-gradient(ellipse_35%_35%_at_85%_75%,rgb(109_40_217/0.12),transparent_70%),radial-gradient(ellipse_30%_30%_at_55%_25%,rgb(34_184_214/0.08),transparent_70%)]"
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_55%_45%_at_68%_50%,rgb(37_99_235/0.08),transparent_70%),radial-gradient(ellipse_35%_35%_at_85%_75%,rgb(109_40_217/0.06),transparent_70%),radial-gradient(ellipse_30%_30%_at_55%_25%,rgb(34_184_214/0.08),transparent_70%)]"
         />
         <Container className="relative grid gap-10 lg:grid-cols-[minmax(0,4fr)_minmax(0,8.5fr)] lg:items-center lg:gap-14 2xl:gap-20">
           <div>

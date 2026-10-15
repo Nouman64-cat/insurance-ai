@@ -14,7 +14,7 @@ export function JourneyExplorer() {
   return (
     <section className="relative overflow-hidden bg-alt py-20 sm:py-24 2xl:py-32">
         {/* Faint brand glow behind the stage cards */}
-        <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_50%_40%_at_45%_70%,rgb(37_99_235/0.12),transparent_70%),radial-gradient(ellipse_35%_30%_at_15%_85%,rgb(109_40_217/0.1),transparent_70%),radial-gradient(ellipse_30%_25%_at_85%_30%,rgb(34_184_214/0.07),transparent_70%)]" />
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_50%_40%_at_45%_70%,rgb(37_99_235/0.07),transparent_70%),radial-gradient(ellipse_35%_30%_at_15%_85%,rgb(109_40_217/0.05),transparent_70%),radial-gradient(ellipse_30%_25%_at_85%_30%,rgb(34_184_214/0.07),transparent_70%)]" />
       <Container className="relative">
         <div data-reveal className="flex flex-col justify-between gap-8 lg:flex-row lg:items-end">
           <div className="max-w-3xl">
@@ -77,10 +77,10 @@ export function JourneyExplorer() {
               </ul>
 
               <div className="mt-auto pt-5">
-                <div className="flex items-center justify-between gap-2 rounded-lg border border-line bg-canvas/60 px-3 py-2">
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-line bg-alt px-3 py-2">
                   <span className="text-[0.6875rem] font-semibold uppercase tracking-wider text-muted">{st.result.label}</span>
                   <span className="flex items-center gap-1.5 text-xs font-semibold text-ink">
-                    {st.result.ok && <Icon name="check" className="h-3.5 w-3.5 shrink-0 text-emerald-400" />}
+                    {st.result.ok && <Icon name="check" className="h-3.5 w-3.5 shrink-0 text-emerald-600" />}
                     {st.result.value}
                   </span>
                 </div>

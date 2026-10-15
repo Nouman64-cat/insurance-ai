@@ -24,7 +24,7 @@ export function MobileNav() {
         <Icon name={open ? "close" : "menu"} />
       </button>
       {open && (
-        <div className="absolute inset-x-0 top-[calc(100%+0.5rem)] rounded-2xl border border-line bg-canvas/95 shadow-float backdrop-blur-xl">
+        <div className="absolute inset-x-0 top-[calc(100%+0.5rem)] rounded-2xl border border-line bg-white/95 shadow-float backdrop-blur-xl">
           <nav className="flex flex-col gap-1 p-3">
             {mainNav.map((item) => {
               const active = isActivePath(pathname, item.href);
