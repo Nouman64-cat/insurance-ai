@@ -69,6 +69,11 @@ export function ReceiptCard({ policyId }: { policyId: string }) {
         <span className="text-2xl font-extrabold tracking-tight text-emerald-700">{pkr(r.amount)}</span>
       </div>
 
+      {r.breakdown?.split && r.breakdown.split.remaining_amount > 0 && (
+        <p className="mx-5 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+          {tx("{0}% of the premium has been paid. The remaining {1}% (PKR {2}) is paid at policy issuance.", { 0: r.breakdown.split.upfront_pct, 1: r.breakdown.split.remaining_pct, 2: Math.round(r.breakdown.split.remaining_amount).toLocaleString() })}
+        </p>
+      )}
       <dl className="grid gap-x-8 px-5 py-3 sm:grid-cols-2">
         {rows.map(([k, v]) => (
           <div key={k} className="flex items-baseline justify-between gap-4 border-b border-slate-100 py-2.5 last:border-0 sm:[&:nth-last-child(2):nth-child(odd)]:border-0">

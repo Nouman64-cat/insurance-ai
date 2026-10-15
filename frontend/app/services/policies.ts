@@ -22,6 +22,7 @@ export interface PolicyListItem {
   case_status?: string | null;
   /** What was collected at the proposal, if anything. */
   initial_premium_received?: number | null;
+  initial_premium_balance?: number | null;   // still to pay at issuance when only part was paid at the proposal
   effective_date: string | null;
   expiry_date: string | null;
   created_at: string;
@@ -100,6 +101,8 @@ export interface IssuancePreview {
     loading_pct: number;
   };
   premium_breakdown: PremiumBreakdown;
+  /** Set when part of the premium was paid at the proposal: the premium quoted then (fee, duty and tax included) and the loading added now. */
+  split_pricing?: { quoted_total: number; loading: number } | null;
   beneficiaries: { name: string; relationship: string; share_pct: number }[];
   readiness: { ready_to_issue: boolean; blockers: string[]; warnings: string[] };
 }
@@ -361,6 +364,8 @@ export function fmtPKR(amount: number): string {
 export interface PrepaidStatus {
   received: boolean; amount?: number; method?: string | null; reference?: string | null; received_at?: string | null;
   premium?: number | null; settled?: boolean; awaiting_activation?: boolean;
+  /** RS-PAY-001: part of the premium was paid at the proposal; this is what remains to pay now, with the message to show. */
+  remaining_due?: number | null; remaining_message?: string | null; split?: { upfront_pct: number; remaining_pct: number; upfront_amount: number; remaining_amount: number; total: number } | null;
 }
 
 /** The initial premium collected at the proposal, if any. */

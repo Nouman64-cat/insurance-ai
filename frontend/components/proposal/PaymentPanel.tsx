@@ -82,6 +82,9 @@ export function PaymentPanel({ policyId, ipp, canAct, onChange, onCleared }: {
       </div>
 
       <div className="px-3.5 py-3 space-y-3">
+        {(ipp?.breakdown ?? ipp?.breakdown_due)?.split?.message_upfront && (
+          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">{(ipp?.breakdown ?? ipp?.breakdown_due)!.split!.message_upfront}</p>
+        )}
         {(ipp?.breakdown ?? ipp?.breakdown_due) && (
           <details open className="group">
             <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-600">{tx("How this amount is made up")}</summary>

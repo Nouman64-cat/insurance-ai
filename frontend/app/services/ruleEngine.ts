@@ -117,6 +117,8 @@ export interface ActuarialImpactDetail {
   risk_factor?: string | null;
   /** … and how adverse a match is, 0 (safe) to 1 (fully adverse). */
   risk_level?: number | null;
+  /** Initial-premium split (RS-PAY-001): the % of the premium collected before underwriting; the rest is paid at policy issuance. */
+  upfront_payment_pct?: number | null;
 }
 
 export const DEFAULT_IMPACT_DATA: ActuarialImpactDetail = {

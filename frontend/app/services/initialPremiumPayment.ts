@@ -35,7 +35,8 @@ export interface IPP {
 
 export interface PaymentRequestResult { ipp: IPP; link: string; emailed: boolean; customer_email: string | null }
 
-export interface PremiumBreakdown { base_premium: number; loading_amount: number; policy_fee: number; stamp_duty_amount: number; tax_amount: number; total_premium: number }
+export interface PaymentSplit { upfront_pct: number; upfront_amount: number; remaining_pct: number; remaining_amount: number; total: number; message_upfront?: string | null; message_remaining?: string | null }
+export interface PremiumBreakdown { base_premium: number; loading_amount: number; policy_fee: number; stamp_duty_amount: number; tax_amount: number; total_premium: number; split?: PaymentSplit | null }
 
 export interface PaymentMethod { code: string; label: string }
 export interface PaymentIntent { reference: string; method: string; amount: number; status: string }

@@ -63,16 +63,25 @@ async def _get_case(session: AsyncSession, tenant_id: UUID, case_id: UUID) -> Ca
     return case
 
 
+def _enum_val(v) -> Optional[str]:
+    return v.value if hasattr(v, "value") else (str(v) if v is not None else None)
+
+
 async def _premium_for(session: AsyncSession, tenant_id: UUID, policy_id: UUID) -> tuple[float, Optional[dict]]:
-    """What the first premium is, and how it is made up. This is the SAME calculation issuance uses (base, loading, policy fee, stamp duty,
+    """What is collected before underwriting, and how the premium is made up. Priced WITHOUT loading: that is decided by underwriting and
+    is added at policy issuance, together with the remaining part of this premium. This is the SAME calculation issuance uses (base, loading, policy fee, stamp duty,
     sales tax), so the amount collected before underwriting is the amount the policy will carry, not a rougher estimate of it."""
     policy = await session.get(Policy, policy_id)
     if policy is not None:
         try:
             from routers.policies import _price_breakdown
-            breakdown, _loading = await _price_breakdown(session, tenant_id, policy)
+            breakdown, _loading = await _price_breakdown(session, tenant_id, policy, loading_override=0.0)
             if breakdown.total_premium and breakdown.total_premium > 0:
-                return round(float(breakdown.total_premium), 2), breakdown.to_dict()
+                # RS-PAY-001: only part of the premium is collected now; the rest is paid at policy issuance.
+                from services.payment_split import resolve_split
+                split = await resolve_split(session, tenant_id, total=float(breakdown.total_premium), insurance_type=_enum_val(policy.insurance_type),
+                                            product_name=policy.product_name, coverage_amount=policy.coverage_amount)
+                return split["upfront_amount"], {**breakdown.to_dict(), "split": split}
         except Exception:                                            # pricing unavailable for this policy: fall back to the quote
             pass
     return round(await _latest_quote_amount(session, tenant_id, policy_id), 2), None

@@ -670,14 +670,8 @@ function UnderwritingMainContent() {
           (c.customer_cnic ?? "").toLowerCase().includes(q) ||
           c.caseNumber.toLowerCase().includes(q),
       )
-      // Work still to do first, finished cases last.
-      .sort((a, b) => {
-        const byStage = PRE_STAGE_META[preStage(a).stage].order - PRE_STAGE_META[preStage(b).stage].order;
-        if (byStage) return byStage;
-        return (
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
-      });
+      // Newest first, so a freshly added case lands at the top.
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [cases, preSearch, preStatusFilter, focusCase]);
 
   const preKpis = useMemo(() => {

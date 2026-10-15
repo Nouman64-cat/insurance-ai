@@ -251,7 +251,7 @@ async def _effective_loading_pct(session: AsyncSession, policy: Policy) -> tuple
 
 
 async def _price_breakdown(session: AsyncSession, tenant_id: UUID, policy: Policy,
-                           coverage_override: Optional[float] = None):
+                           coverage_override: Optional[float] = None, loading_override: Optional[float] = None):
     """Compute the premium breakdown for a policy (shared by /issue, the
     issuance-preview and endorsement re-quotes). Reads the customer's rating
     factors, resolves the effective loading, and delegates to
@@ -262,6 +262,8 @@ async def _price_breakdown(session: AsyncSession, tenant_id: UUID, policy: Polic
     cust = await session.get(Customer, policy.customer_id)
     is_smoker = bool(getattr(cust, "is_smoker", False))
     loading_pct, _basis = await _effective_loading_pct(session, policy)
+    if loading_override is not None:           # price without (or with a fixed) loading, e.g. the proposal-stage premium
+        loading_pct = loading_override
     ins_type_str = policy.insurance_type.value if hasattr(policy.insurance_type, "value") else str(policy.insurance_type)
     base_rate, smoker_factor = await _load_plan_rates(session, tenant_id, policy.insurance_type)
     return PricingEngine.calculate(
@@ -276,6 +278,27 @@ async def _price_breakdown(session: AsyncSession, tenant_id: UUID, policy: Polic
         height_cm=getattr(cust, "height_cm", None),
         weight_kg=getattr(cust, "weight_kg", None),
     ), loading_pct
+
+
+async def _issuance_breakdown(session: AsyncSession, tenant_id: UUID, policy: Policy):
+    """The premium to issue and collect. Normally the full underwritten price. When a split payment (RS-PAY-001) was made at the proposal,
+    that payment was worked out WITHOUT loading, so the policy fee, stamp duty and sales tax were already part of what the customer was
+    quoted: issuing adds only the underwriting loading on top of that quoted premium (no further fee, duty or tax)."""
+    import dataclasses
+    breakdown, loading_pct = await _price_breakdown(session, tenant_id, policy)
+    ipp = await _realized_ipp(session, policy)
+    quoted = (ipp.breakdown_json or {}) if ipp else {}
+    split = quoted.get("split")
+    if not split or float(quoted.get("loading_amount") or 0) > 0.01:
+        # no split, or a split paid when the proposal premium still included loading: that premium is already the full price
+        return breakdown, loading_pct, None
+    base, fee = float(quoted["base_premium"]), float(quoted["policy_fee"])
+    stamp, tax = float(quoted["stamp_duty_amount"]), float(quoted["tax_amount"])
+    quoted_total = float(split["total"])
+    loading = round(float(breakdown.loading_amount or 0), 2)
+    charged = dataclasses.replace(breakdown, base_premium=base, policy_fee=fee, stamp_duty_amount=stamp, tax_amount=tax,
+                                  total_premium=round(quoted_total + loading, 2))
+    return charged, loading_pct, {"quoted_total": quoted_total, "loading": loading}
 
 
 def _maturity_date(effective: date, term_years: int) -> date:
@@ -600,10 +623,13 @@ async def list_policies(
     }
 
     # What was collected at the proposal, per policy: a policy still "pending payment" with this set is only waiting to be activated.
-    received = {
-        r.policy_id: round(float(r.amount or 0), 2)
-        for r in (await session.exec(select(InitialPremiumPayment).where(
-            InitialPremiumPayment.tenant_id == tenant_id, InitialPremiumPayment.status == IPPStatusEnum.REALIZED))).all()
+    ipp_rows = (await session.exec(select(InitialPremiumPayment).where(
+        InitialPremiumPayment.tenant_id == tenant_id, InitialPremiumPayment.status == IPPStatusEnum.REALIZED))).all()
+    received = {r.policy_id: round(float(r.amount or 0), 2) for r in ipp_rows}
+    # With a split (RS-PAY-001) part of the premium is still to pay at issuance: such a policy is not "ready to activate".
+    balance_after_ipp = {
+        r.policy_id: round(float(((r.breakdown_json or {}).get("split") or {}).get("remaining_amount") or 0), 2)
+        for r in ipp_rows if float(((r.breakdown_json or {}).get("split") or {}).get("remaining_amount") or 0) > 0.01
     }
 
     out = []
@@ -640,6 +666,7 @@ async def list_policies(
             "case_number": case_number,
             "case_status": case_status,
             "initial_premium_received": received.get(p.id),
+            "initial_premium_balance": balance_after_ipp.get(p.id),
             "effective_date": p.effective_date.isoformat() if p.effective_date else None,
             "expiry_date": p.expiry_date.isoformat() if p.expiry_date else None,
             "created_at": p.created_at.isoformat(),
@@ -755,7 +782,7 @@ async def issuance_preview(
     breakdown, the beneficiaries, and the Stage-A readiness (blockers/warnings)."""
     policy = await _get_policy(session, tenant_id, policy_id)
     cust = await session.get(Customer, policy.customer_id)
-    breakdown, loading_pct = await _price_breakdown(session, tenant_id, policy)
+    breakdown, loading_pct, split_pricing = await _issuance_breakdown(session, tenant_id, policy)
 
     effective = policy.effective_date or date.today()
     maturity = _maturity_date(effective, policy.term_years)
@@ -785,6 +812,7 @@ async def issuance_preview(
             "loading_pct": loading_pct,
         },
         "premium_breakdown": breakdown.to_dict(),
+        "split_pricing": split_pricing,   # {quoted_total, loading} when part was paid at the proposal: issuing adds only the loading
         "beneficiaries": [
             {"name": b.name, "relationship": b.relationship, "share_pct": b.share_pct}
             for b in bens
@@ -838,7 +866,7 @@ async def issue_policy(
     # ── Pricing ──────────────────────────────────────────────────────────────
     # Same shared formula POST /quote ran, and the effective loading now honours
     # an accepted counter-offer and the panel medical, not just the AI's number.
-    breakdown, loading_pct = await _price_breakdown(session, tenant_id, policy)
+    breakdown, loading_pct, _ = await _issuance_breakdown(session, tenant_id, policy)
     _, loading_basis = await _effective_loading_pct(session, policy)
 
     today = date.today()
@@ -853,7 +881,10 @@ async def issue_policy(
     prepaid = float(ipp.amount or 0) if ipp else 0.0
     # The first premium is collected ONCE, at the proposal. Having been received, it settles the first premium: the contract is not
     # billed a second time, and any difference from the final premium is recorded (premium_difference), not asked for again.
-    fully_prepaid = ipp is not None and prepaid > 0
+    # With a split (RS-PAY-001) only part was collected there: the rest is the balance paid now. A payment made before the split
+    # existed records none and keeps the original meaning (it settled the whole first premium).
+    split = ((ipp.breakdown_json or {}).get("split") if ipp else None)
+    fully_prepaid = ipp is not None and prepaid > 0 and (not split or float(split.get("remaining_amount") or 0) <= 0.01)
     premium_difference = round(breakdown.total_premium - prepaid, 2) if fully_prepaid else 0.0
     balance_due = 0.0 if fully_prepaid else round(max(0.0, breakdown.total_premium - prepaid), 2)
 
@@ -1064,7 +1095,15 @@ async def prepaid_status(tenant_id: UUID, policy_id: UUID, session: AsyncSession
         return {"received": False}
     schedule = (await session.exec(select(PremiumSchedule).where(PremiumSchedule.policy_id == policy_id)
                                    .order_by(PremiumSchedule.installment_no))).first()  # type: ignore[arg-type]
+    split = (ipp.breakdown_json or {}).get("split") or None
+    split_open = bool(split and float(split.get("remaining_amount") or 0) > 0.01)
+    remaining = None
+    if split_open:
+        total_now = float(schedule.amount_due) if schedule else float(split.get("total") or 0)
+        remaining = round(max(total_now - float(ipp.amount or 0), 0.0), 2)
     return {
+        "split": split, "remaining_due": remaining,
+        "remaining_message": (split.get("message_remaining") if split_open else None),
         "received": True, "amount": round(float(ipp.amount or 0), 2), "method": ipp.method, "reference": ipp.reference,
         "received_at": ipp.realized_at.isoformat() if ipp.realized_at else None,
         "premium": round(float(schedule.amount_due), 2) if schedule else None,
@@ -1083,6 +1122,9 @@ async def apply_prepaid(tenant_id: UUID, policy_id: UUID, request: Request, sess
     ipp = await _received_initial_premium(session, policy_id)
     if ipp is None or not (ipp.amount or 0) > 0:
         raise HTTPException(409, "No initial premium has been received for this policy.")
+    _split = (ipp.breakdown_json or {}).get("split")
+    if _split and float(_split.get("remaining_amount") or 0) > 0.01:
+        raise HTTPException(409, "Only part of the premium was paid at the proposal. Collect the remaining balance to activate cover.")
     schedule = await _pending_schedule(session, policy_id)
     if schedule is None:
         raise HTTPException(400, "No pending premium installment found for this policy")

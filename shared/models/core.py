@@ -3623,6 +3623,7 @@ class ActuarialImpactDetail(SQLModel):
     reason: Optional[str] = None                              # why the rule matters, shown to users
     risk_factor: Optional[str] = None                         # profile risk screening (RS-RISK-001) factor key
     risk_level: Optional[float] = None                        # 0 (safe) – 1 (fully adverse) for that factor
+    upfront_payment_pct: Optional[float] = None               # initial-premium split (RS-PAY-001): % of the premium collected before underwriting
 
 
 # ── Hierarchy: Category -> SubCategory -> EligibilityProfile ──────────────────

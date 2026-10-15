@@ -133,6 +133,11 @@ async def lifespan(app: FastAPI):
             await ensure_profile_risk_rule_set(session)
         except Exception:
             logging.getLogger(__name__).exception("Could not seed the profile risk screening rule set")
+        try:
+            from routers.rules import ensure_payment_split_rule_set
+            await ensure_payment_split_rule_set(session)
+        except Exception:
+            logging.getLogger(__name__).exception("Could not seed the initial-premium split rule set")
 
     # Kafka producer — shared across all request handlers via app.state
     producer = AIOKafkaProducer(

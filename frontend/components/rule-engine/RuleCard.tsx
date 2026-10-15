@@ -29,6 +29,7 @@ export default function RuleCard({ rule, allRules, isLocked = false, onEdit, onD
   if (data.exclusion_riders?.length) chips.push({ label: tx("Excludes: {0}", { 0: data.exclusion_riders.join(", ").replace(/_/g, " ") }), tone: "bg-amber-50 text-amber-700 ring-amber-100" });
   if (data.hlv_max_multiple) chips.push({ label: tx("Max {0}× income", { 0: data.hlv_max_multiple }), tone: "bg-slate-100 text-slate-600 ring-slate-200" });
   if (data.commission_pct != null) chips.push({ label: tx("Commission {0}%", { 0: data.commission_pct }), tone: "bg-slate-100 text-slate-600 ring-slate-200" });
+  if (data.upfront_payment_pct != null) chips.push({ label: tx("{0}% before underwriting · {1}% at issuance", { 0: data.upfront_payment_pct, 1: Math.round((100 - data.upfront_payment_pct) * 100) / 100 }), tone: "bg-emerald-50 text-emerald-700 ring-emerald-100" });
   if (data.is_terminal) chips.push({ label: tx("Stops further checks"), tone: "bg-slate-100 text-slate-600 ring-slate-200" });
 
   return (

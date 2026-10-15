@@ -408,6 +408,7 @@ async def evaluate_rule_set(
             "rule_code": rule.rule_code, "name": rule.name, "impact_type": impact_label,
             "reason": data.get("reason"),
             "risk_factor": data.get("risk_factor"), "risk_level": data.get("risk_level"),
+            "upfront_payment_pct": data.get("upfront_payment_pct"),
             "medical_profile_codes": data.get("medical_profile_codes") or [],
             "extra_mortality_pct": data.get("extra_mortality_pct") or 0,
         })

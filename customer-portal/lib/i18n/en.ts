@@ -108,6 +108,7 @@ const en = {
   "surrender.submit": "Request surrender",
   "surrender.reviewTitle": "Needs our team's approval",
   "surrender.reviewText": "You can still send the request — our team will review it and tell you the outcome.",
+  "walkin.pay.split": "You pay {paidPct}% ({paid}) now to continue. The remaining {remPct}% ({remaining}) is paid later, when your policy is issued, together with any loading charged by underwriting.",
   "claims.title": "Claims", "claims.subtitle": "Your claims and their progress.", "claims.new": "New claim", "claims.death.title": "Death claims",
   "claims.death.text": "Death claims are made by a nominee or legal heir and need identity checks, so they cannot be filed from a policyholder's account. Please contact your insurer.",
   "claims.none": "No claims", "claims.noneText": "Claims you submit will appear here.", "claims.number": "Claim no.", "claims.policy": "Policy", "claims.type": "Claim type",
