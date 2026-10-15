@@ -3,7 +3,7 @@ import { Icon } from "@/components/ui/Icon";
 
 // A compact "live decision" card for the hero. Three demo cases take turns (one every 4 s,
 // CSS only): each shows who it is for, the verdict the rules reached, and the three scores the
-// AI contributed. It sits under the CTAs on small screens and above the cues from lg up.
+// AI contributed. It sits centred under the hero CTAs, above the cues.
 const cases = [
   { kind: "Individual", who: "Term Life · PKR 5,000,000", verdict: "Auto Approve", scores: [38, 22, 6] },
   { kind: "Family", who: "Khan family · 5 members", verdict: "Approve with Loading", scores: [52, 30, 9] },

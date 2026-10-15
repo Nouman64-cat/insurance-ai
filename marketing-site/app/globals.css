@@ -245,6 +245,9 @@ html[data-splash="pending"]:not([data-logo-ready]) [data-logo-target] { opacity:
     transition-delay: 0s !important;
   }
   .js [data-reveal] { opacity: 1; transform: none; }
+  /* Hero decision feed: no rotation, just the first case with its bars filled */
+  .feed-item, .feed-bar { animation: none; }
+  .feed-item:first-child { opacity: 1; }
 }
 
 @layer components {
@@ -305,22 +308,6 @@ html[data-splash="pending"]:not([data-logo-ready]) [data-logo-target] { opacity:
 @media (hover: none) {
   .cursor-glow, .card::before, .glow::before { display: none; }
 }
-
-/* Header: no divider line, no shadow edge, ever. Once scrolled it is solid canvas and its bottom
-   edge dissolves into the page with a fade strip, so there is no line or colour step to see. */
-.site-header { background-color: transparent; transition: background-color 0.25s ease; }
-.site-header::after {
-  content: "";
-  position: absolute;
-  inset: 100% 0 auto 0;
-  height: 2rem;
-  background: linear-gradient(to bottom, rgb(7 7 12 / 0.97), rgb(7 7 12 / 0));
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.25s ease;
-}
-html[data-scrolled] .site-header { background-color: rgb(7 7 12 / 0.97); }
-html[data-scrolled] .site-header::after { opacity: 1; }
 
 /* ── Click feedback (see components/effects/ClickRipple.tsx) ─────────────── */
 .btn { position: relative; overflow: hidden; -webkit-tap-highlight-color: transparent; }

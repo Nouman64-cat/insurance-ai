@@ -5,7 +5,6 @@ import { Splash } from "@/components/layout/Splash";
 import { ScrollReveal } from "@/components/effects/ScrollReveal";
 import { CursorEffects } from "@/components/effects/CursorEffects";
 import { ClickRipple } from "@/components/effects/ClickRipple";
-import { HeaderShadow } from "@/components/effects/HeaderShadow";
 import { siteConfig } from "@/lib/site-config";
 import "@fontsource-variable/inter";
 import "./globals.css";
@@ -43,7 +42,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <ScrollReveal />
         <CursorEffects />
         <ClickRipple />
-        <HeaderShadow />
         <Header />
         <main className="flex flex-1 flex-col">{children}</main>
         <Footer />

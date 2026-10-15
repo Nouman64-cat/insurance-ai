@@ -19,13 +19,13 @@ export function MobileNav() {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-label={open ? "Close menu" : "Open menu"}
-        className="btn rounded-lg p-2 text-body hover:bg-chip"
+        className="btn rounded-full p-2 text-body hover:bg-chip"
       >
         <Icon name={open ? "close" : "menu"} />
       </button>
       {open && (
-        <div className="absolute inset-x-0 top-full bg-card shadow-float">
-          <nav className="mx-auto flex max-w-[150rem] flex-col gap-1 px-4 py-4">
+        <div className="absolute inset-x-0 top-[calc(100%+0.5rem)] rounded-2xl border border-line bg-canvas/95 shadow-float backdrop-blur-xl">
+          <nav className="flex flex-col gap-1 p-3">
             {mainNav.map((item) => {
               const active = isActivePath(pathname, item.href);
               return (
