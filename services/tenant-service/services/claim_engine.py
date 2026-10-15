@@ -255,13 +255,18 @@ def evaluate_eligibility_facts(
     contract_period: Optional[dict] = None,
     is_floater: bool = False,
     arrears_at_event: float = 0.0,
+    product_rules: Optional[dict] = None,
 ) -> dict:
     """Verify the claim against the policy ON THE EVENT DATE (pure).
+
+    `product_rules` (insurer_config.claim_rules) applies the product's own wording on top of
+    the defaults: its maximum sum assured, whole-term exclusions and intimation deadline.
 
     status: Eligible (clean) | Referred (cover applies but an officer must look at one or
     more points) | Ineligible (a hard rule fails).
     """
     checks: list[dict] = []
+    rules = product_rules or {}
     spec = CATEGORIES[category]
     in_period = covered_on(periods, event_date)
     cover_start = periods[0]["from"] if periods else None
@@ -306,6 +311,13 @@ def evaluate_eligibility_facts(
                            riders=riders, event_date=event_date)
     checks.append(check("benefit", f"{spec['label']} benefit applies", benefit["available"], benefit["detail"]))
 
+    plan_max = rules.get("max_sum_assured")
+    if plan_max and coverage_amount > plan_max:
+        checks.append(check("plan_limit", "Sum assured within the plan's limits", False,
+                            f"The policy's sum assured (PKR {coverage_amount:,.0f}) exceeds the plan's maximum of PKR {plan_max:,.0f} — "
+                            "it was issued outside the product's limits. Underwriting must confirm the contractual benefit before anything is paid.",
+                            "review"))
+
     if category in ("Death", "AccidentalDeath", "Disability") and not is_floater:
         ok = covered_relationship == "Self"
         checks.append(check("insured_person", "Claim is for the life assured", ok,
@@ -335,11 +347,22 @@ def evaluate_eligibility_facts(
         checks.append(check("contestable", "Outside the contestability period", True,
                             f"More than {contest_days} days since inception / reinstatement."))
 
-    if cause == "Suicide" and category in ("Death", "AccidentalDeath") and cover_start:
+    if cause == "Suicide" and category in ("Death", "AccidentalDeath") and rules.get("suicide_excluded_any_time"):
+        # The product excludes suicide for the whole term: no benefit, only an ex-gratia override.
+        checks.append(check("exclusion", "Suicide exclusion does not apply", False,
+                            "This plan excludes death by suicide at any time during the term — no death benefit is payable."))
+    elif cause == "Suicide" and category in ("Death", "AccidentalDeath") and cover_start:
         within = (event_date - (last_reinstatement_date or cover_start)).days <= cfg.CLAIM_SUICIDE_EXCLUSION_DAYS
         checks.append(check("exclusion", "Suicide exclusion does not apply", not within,
                             f"Suicide within {cfg.CLAIM_SUICIDE_EXCLUSION_DAYS} days of cover starting / being reinstated — the policy exclusion may apply."
                             if within else "Outside the suicide-exclusion period.", "review"))
+
+    if rules.get("pre_existing_excluded") and category == "Death" and (cause or "Natural / illness") != "Accident" and cover_start:
+        days_in = (event_date - (last_reinstatement_date or cover_start)).days
+        checks.append(check("pre_existing", "Death not caused by a pre-existing condition", False,
+                            f"This plan excludes death arising from pre-existing medical conditions. Death {days_in} day(s) after cover "
+                            "started — confirm from prior treatment records that the cause did not exist before cover began.",
+                            "review"))
 
     wait = cfg.CLAIM_WAITING_PERIOD_DAYS.get(category)
     if wait and cover_start and (cause or "Natural / illness") != "Accident":
@@ -350,9 +373,10 @@ def evaluate_eligibility_facts(
                             if days < wait else f"Waiting period of {wait} days served.", "review"))
 
     late = (reported_date - event_date).days
-    checks.append(check("late_report", "Reported promptly", late <= cfg.CLAIM_LATE_REPORT_DAYS,
-                        f"Reported {late} days after the event (limit {cfg.CLAIM_LATE_REPORT_DAYS})." if late > cfg.CLAIM_LATE_REPORT_DAYS
-                        else f"Reported {max(late, 0)} day(s) after the event.", "review"))
+    limit = int(rules.get("intimation_days") or cfg.CLAIM_LATE_REPORT_DAYS)
+    checks.append(check("late_report", "Reported promptly", late <= limit,
+                        f"Reported {late} days after the event (limit {limit})." if late > limit
+                        else f"Reported {max(late, 0)} day(s) after the event (limit {limit}).", "review"))
 
     checks.append(check("duplicate", "No duplicate claim", duplicate_count == 0,
                         f"{duplicate_count} other {spec['label'].lower()}(s) already registered for this date." if duplicate_count
@@ -396,13 +420,19 @@ def _applies(when: str, *, segment: str, cause: Optional[str], claimant_is_nomin
 
 
 def build_checklist(*, category: str, segment: str, cause: Optional[str], claimant_is_nominee: bool,
-                    contestable: bool, now: Optional[datetime] = None) -> list[dict]:
+                    contestable: bool, now: Optional[datetime] = None, product_rules: Optional[dict] = None) -> list[dict]:
     """The Adamjee-style document list for this claim: the type's items filtered by what
     this particular claim needs (individual vs group form, illness vs accident, whether
     the claimant is the named nominee, contestability)."""
     now = now or datetime.utcnow()
     out, seen = [], set()
-    for d in cfg.CLAIM_DOCUMENTS.get(category, []):
+    # The product's own claim section wins over a default item with the same key.
+    extra = list(((product_rules or {}).get("extra_documents") or {}).get(category, []))
+    extra_keys = {d["key"] for d in extra}
+    base = [d for d in cfg.CLAIM_DOCUMENTS.get(category, []) if d["key"] not in extra_keys]
+    core = [d for d in base if d["key"] in ("policy_doc", "bank_details")]
+    ordered = [d for d in base if d not in core] + extra + core
+    for d in ordered:
         if not _applies(d["when"], segment=segment, cause=cause, claimant_is_nominee=claimant_is_nominee, contestable=contestable):
             continue
         if d["key"] in seen:
@@ -464,8 +494,16 @@ def investigation_flags(
         add("duplicate", "high", "Flagged as a possible duplicate of another claim.")
     if fraud_probability >= 0.5:
         add("fraud_score", "high", f"Fraud score {fraud_probability:.0%} is at or above the review threshold.")
-    if "exclusion" in review_keys:
+    blocker_keys = {c["key"] for c in eligibility.get("blockers", [])}
+    if "exclusion" in review_keys or "exclusion" in blocker_keys:
         add("exclusion", "high", "A policy exclusion (suicide) may apply.")
+    if "plan_limit" in review_keys:
+        add("plan_limit", "high", "The sum assured exceeds the plan's maximum — confirm the contractual benefit with underwriting.")
+    if "pre_existing" in review_keys:
+        early = bool(cover_start and 0 <= (event_date - cover_start).days < cfg.CLAIM_EARLY_CLAIM_DAYS)
+        add("pre_existing", "high" if early else "medium",
+            "The plan excludes death from pre-existing conditions — obtain prior treatment records"
+            + (" (early death claim)." if early else "."))
     if "waiting_period" in review_keys:
         add("waiting_period", "medium", "Illness inside the waiting period.")
     if "late_report" in review_keys:

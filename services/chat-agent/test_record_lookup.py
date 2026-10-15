@@ -116,6 +116,15 @@ def test_show_record_family_lead_highlights_by_board_id():
     assert res["navigate"]["entity_id"] == "FAM-2610-001"
 
 
+def test_customer_without_cnic_navigates_by_customer_id():
+    row = {'id': 'quick-uuid', 'name': 'Quick Lead', 'cnic': None}
+    data = {('/customers', None): [row]}
+    res = _run(_HANDLERS['show_record']({'record_type': 'customer', 'identifier': 'quick-uuid'}, _ctx(FakeClient(data))))
+    assert res['success']
+    assert res['navigate']['route'] == 'admin/leads?customer_id=quick-uuid'
+    assert 'customer ID quick-uuid; no CNIC recorded' in res['message']
+
+
 def test_wrong_record_type_points_at_the_right_one():
     res = _run(_HANDLERS["show_record"]({"record_type": "lead", "identifier": "CASE-2026-A3F9C1"}, _ctx()))
     assert not res["success"]

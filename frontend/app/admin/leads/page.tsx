@@ -130,6 +130,7 @@ export default function LeadsHubPage() {
   const searchParams = useSearchParams();
   const { notify } = useNotify();
   const cnicQuery = searchParams.get("cnic");
+  const customerIdQuery = searchParams.get("customer_id");
   const [leads, setLeads] = useState<UnifiedLead[]>([]);
   const tourSeenIds = useRef<Set<string> | null>(null);
   // An Agent works the same board as an admin, minus the destructive tools: no demo reset and no delete.
@@ -283,11 +284,12 @@ export default function LeadsHubPage() {
   }, [dateFrom, dateTo, cityFilter, provinceFilter, branchFilter, sourceFilter]);
 
   useEffect(() => {
-    if (cnicQuery && leads.length > 0) {
-      const match = leads.find(l => l.primaryIdentifier === cnicQuery);
+    if ((customerIdQuery || cnicQuery) && leads.length > 0) {
+      const match = customerIdQuery ? leads.find(l => l.id === customerIdQuery && l.type === 'INDIVIDUAL')
+        : leads.find(l => l.primaryIdentifier === cnicQuery);
       if (match) setSelectedEntity({ id: match.id, type: match.type });
     }
-  }, [cnicQuery, leads]);
+  }, [customerIdQuery, cnicQuery, leads]);
 
   useEffect(() => {
     const addType = searchParams.get("add");

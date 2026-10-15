@@ -269,8 +269,123 @@ def test_money_release_stays_with_claims_managers():
 
 def test_commission_administration_is_admin_only_but_agents_see_their_own_earnings():
     for role in ("Agent", "Underwriter", "Viewer", "ClaimsManager"):
-        for tool in ("list_commission_agreements", "list_commission_exceptions", "assign_policy_producers"):
+        for tool in ("get_customer_commission_setup", "list_commission_agreements", "list_commission_exceptions", "assign_policy_producers"):
             assert not is_role_allowed(tool, role), f"{role} may run {tool}"
     for platform in ("web", "mobile"):
         assert is_role_allowed("explain_commission_earning", "Agent", platform)
         assert is_role_allowed("get_agent_statement", "Agent", platform)
+
+
+def test_quick_lead_commission_setup_uses_customer_uuid_without_cnic_or_writes():
+    customer = {'id': 'quick-uuid', 'name': 'QA Quick Lead', 'cnic': None}
+    setup = {'customer': {**customer, 'assigned_agent_name': 'Bilal Ahmed', 'acquisition_source_name': 'Bilal Ahmed'},
+             'policies': [], 'has_more': False, 'approved_agreement_count': 0}
+    client = FakeClient({('GET', '/customers'): [customer], ('GET', '/commissions/setup'): setup})
+    out = _call('get_customer_commission_setup', {'customer_id': 'quick-uuid'}, client)
+    assert 'Assigned agent: Bilal Ahmed' in out['message']
+    assert 'No individual policy' in out['message']
+    assert client.calls[-1]['params'] == {'customer_id': 'quick-uuid'}
+    assert not client.writes()
+
+
+def test_commission_setup_does_not_choose_first_same_name_customer():
+    client = FakeClient({('GET', '/customers'): [{'id': 'a', 'name': 'Ali'}, {'id': 'b', 'name': 'Ali'}]})
+    with pytest.raises(ChoiceNeeded):
+        _call('get_customer_commission_setup', {'customer_name': 'Ali'}, client)
+    assert len(client.calls) == 1 and not client.writes()
+
+
+# ── Register FNOL offers only what the policy covers ─────────────────────────
+
+DEATH_ONLY = {"benefits": [
+    {"category": "Death", "label": "Death Claim", "available": True},
+    {"category": "AccidentalDeath", "label": "Accidental Death Claim", "available": False},
+    {"category": "Disability", "label": "Disability Claim", "available": False},
+    {"category": "Hospitalization", "label": "Hospitalization / Reimbursement", "available": False,
+     "detail": "This product has no hospitalization / reimbursement benefit and no rider covering it."},
+]}
+LIFE_POLICY = {"id": "p-1", "policy_number": "PL-2026-0001", "customer_name": "Hassan Baig", "status": "Active",
+               "product_name": "Life Protection Plus", "coverage_amount": 29800000}
+
+
+def _fnol_routes(overview=DEATH_ONLY):
+    return {("GET", "/policies"): [LIFE_POLICY], ("GET", "/policies/p-1/claims-management"): overview}
+
+
+def test_death_only_policy_is_not_offered_hospital_claim_types():
+    out = _call("register_claim", {"policy_number": "PL-2026-0001"}, FakeClient(_fnol_routes()), role="ClaimsAdjuster")
+    # The one covered type is picked, so the next question is the amount — never Hospitalization/Surgery.
+    assert "How much is being claimed" in out["error"]
+    assert all("Death Claim" in a["payload"] for a in out["quick_actions"])
+
+
+def test_uncovered_claim_type_is_refused_with_the_reason():
+    client = FakeClient(_fnol_routes())
+    out = _call("register_claim", {"policy_number": "PL-2026-0001", "claim_type": "Surgery", "submitted_amount": 50000},
+                client, role="ClaimsAdjuster")
+    assert "Surgery is not covered" in out["error"] and "no hospitalization" in out["error"]
+    assert [a["label"] for a in out["quick_actions"]] == ["Death Claim"] and not client.writes()
+
+
+def test_unreadable_benefit_menu_does_not_block_fnol():
+    out = _call("register_claim", {"policy_number": "PL-2026-0001"},
+                FakeClient(_fnol_routes((500, {"detail": "down"}))), role="ClaimsAdjuster")
+    assert [a["label"] for a in out["quick_actions"]] == ["Hospitalization", "Surgery", "Death Claim", "Reimbursement"]
+
+
+# ── Life Protection Plus: early death claim and early surrender ──────────────
+
+LPP_RULES = {"max_sum_assured": 2500000.0, "pre_existing_excluded": True, "suicide_excluded_any_time": True, "intimation_days": 30}
+
+
+def test_fnol_on_term_plan_warns_about_plan_maximum_and_pre_existing_exclusion():
+    policy = {**LIFE_POLICY, "effective_date": "2026-10-13"}
+    overview = {**DEATH_ONLY, "rules": {"product": LPP_RULES}}
+    client = FakeClient({("GET", "/policies"): [policy], ("GET", "/policies/p-1/claims-management"): overview,
+                         ("POST", "/claims"): {"id": "c-4", "claim_number": "CLM-2026-0004", "status": "New",
+                                               "is_contestable": True, "ai_recommendation": "REFER_TO_ADJUSTER"}})
+    out = _call("register_claim", {"policy_number": "PL-2026-0001", "submitted_amount": 29800000,
+                                    "incident_date": "2026-10-14"}, client, role="ClaimsAdjuster")
+    assert "Above the plan's maximum" in out["message"] and "PKR 2,500,000" in out["message"]
+    assert "Early death claim" in out["message"] and "pre-existing" in out["message"]
+    assert "suicide at any time" in out["message"]
+    # Fresh FNOL: never jump to underwriting verdicts.
+    assert not any("Resolve underwriting" in a["payload"] for a in out["quick_actions"])
+
+
+TERM = {"id": "p-1", "policy_number": "PL-2026-0001", "customer_id": "cu-1", "customer_name": "Hassan Baig",
+        "product_name": "Life Protection Plus", "status": "Active"}
+NO_VALUE = {"indicative": {"surrender": {"available": False, "reason": "A protection-only product has no cash or surrender value."}}}
+
+
+def _exit_routes(free_look, extra=None):
+    r = {("GET", "/policies"): [TERM], ("GET", "/policies/p-1/free-look"): free_look, ("GET", "/policies/p-1/exit"): NO_VALUE}
+    r.update(extra or {})
+    return r
+
+
+def test_term_plan_surrender_inside_free_look_offers_the_free_look_refund_and_opens_nothing():
+    client = FakeClient(_exit_routes({"is_open": True, "free_look_end_date": "2026-10-27"}))
+    out = _call("submit_policy_exit_request", {"policy_number": "PL-2026-0001", "exit_type": "surrender",
+                                               "customer_confirmed": True, "reason": "No longer needed"}, client)
+    assert out["error_code"] == "no_surrender_value" and "medical examination" in out["error"]
+    assert out["quick_actions"][0]["label"] == "Cancel under free-look" and not client.writes()
+
+
+def test_term_plan_after_free_look_says_nothing_is_returned_instead_of_pointing_to_surrender():
+    client = FakeClient(_exit_routes({"is_open": False, "free_look_end_date": "2026-10-27"}))
+    out = _call("submit_policy_exit_request", {"policy_number": "PL-2026-0001", "exit_type": "free_look_cancellation",
+                                               "customer_confirmed": True}, client)
+    assert "a surrender is the route" not in out["error"] and "returns nothing" in out["error"]
+
+
+def test_free_look_refund_passes_the_medical_exam_deduction_and_reports_it():
+    client = FakeClient(_exit_routes({"is_open": True, "free_look_end_date": "2026-10-27", "refund_amount": 18000},
+                                     {("POST", "/policies/p-1/free-look/cancel"):
+                                      {"refund_amount": 15500, "premium_paid": 18000, "medical_exam_deduction": 2500}}))
+    out = _call("submit_policy_exit_request", {"policy_number": "PL-2026-0001", "exit_type": "free_look_cancellation",
+                                               "customer_confirmed": True, "medical_exam_deduction": 2500,
+                                               "medical_exam_note": "Lab invoice 4471"}, client)
+    assert client.writes()[0]["body"] == {"reason": None, "medical_exam_deduction": 2500.0, "medical_exam_note": "Lab invoice 4471"}
+    assert "PKR 15,500" in out["message"] and "less PKR 2,500 medical examination" in out["message"]
+    assert "has not been paid yet" in out["message"]

@@ -394,6 +394,44 @@ function getRecommendedActions(
   // ── Claims: blocked on documents ────────────────────────────────────────
   // The single most common dead end in the claims flow: the API refuses every
   // approval and payout without a document, so lead with the upload buttons.
+  // A death claim needs the death certificate first, not hospital bills.
+  if (
+    looksLikeClaim &&
+    text.includes("death") &&
+    (text.includes("no documents") ||
+      text.includes("document gate") ||
+      text.includes("nothing on file") ||
+      text.includes("upload required documents") ||
+      text.includes("at least one required document"))
+  ) {
+    return [
+      {
+        label: "Upload Death Certificate",
+        actionType: "upload",
+        payload: JSON.stringify({ document_type: "Death Certificate", claim_number: claimRef }),
+      },
+      {
+        label: "Upload CNIC",
+        actionType: "upload",
+        payload: JSON.stringify({ document_type: "CNIC", claim_number: claimRef }),
+      },
+      {
+        label: "What's still missing?",
+        actionType: "submit",
+        payload: claimRef
+          ? `What documents are missing on claim ${claimRef}?`
+          : "What documents are missing on this claim?",
+      },
+      {
+        label: "Claim workflow",
+        actionType: "submit",
+        payload: claimRef
+          ? `Show the claim workflow for ${claimRef}`
+          : "Show the claim workflow",
+      },
+    ];
+  }
+
   if (
     looksLikeClaim &&
     (text.includes("no documents") ||
@@ -482,11 +520,16 @@ function getRecommendedActions(
   }
 
   // ── Claims: re-underwriting referral open ───────────────────────────────
+  // Only once the claim has actually been referred. A fresh FNOL inside the
+  // contestability window mentions "contestability" / "a referral may be
+  // required" — offering underwriting verdicts there skips the whole review.
   if (
     looksLikeClaim &&
-    (text.includes("re-underwriting") ||
-      text.includes("contestability") ||
-      text.includes("non-disclosure"))
+    (text.includes("re-underwriting required") ||
+      text.includes("referred to underwriting") ||
+      text.includes("referred for re-underwriting") ||
+      text.includes("underwriting referral is open") ||
+      text.includes("awaiting underwriting"))
   ) {
     return [
       {
@@ -4808,21 +4851,9 @@ export function CopilotInterface() {
           )}
           {pendingInterrupt &&
             pendingInterrupt.kind !== "client_execute" &&
-            pendingInterrupt.canRevise && (
+            pendingInterrupt.canRevise &&
+            canSwitchToFamily && (
               <div className="px-5 pt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-                <span>
-                  You can change an earlier choice without starting again.
-                </span>
-                <button
-                  type="button"
-                  disabled={isLoading}
-                  className="rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50"
-                  onClick={() => {
-                    setInput("Actually, I want to change ");
-                  }}
-                >
-                  Change an earlier choice
-                </button>
                 {canSwitchToFamily && (
                   <button
                     type="button"
@@ -7613,21 +7644,9 @@ export function CopilotInterface() {
               )}
               {pendingInterrupt &&
                 pendingInterrupt.kind !== "client_execute" &&
-                pendingInterrupt.canRevise && (
+                pendingInterrupt.canRevise &&
+                canSwitchToFamily && (
                   <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                    <span>
-                      You can change an earlier choice without starting again.
-                    </span>
-                    <button
-                      type="button"
-                      disabled={isLoading}
-                      className="rounded border px-2 py-1 text-blue-700 disabled:opacity-50"
-                      onClick={() => {
-                        setInput("Actually, I want to change ");
-                      }}
-                    >
-                      Change an earlier choice
-                    </button>
                     {canSwitchToFamily && (
                       <button
                         type="button"

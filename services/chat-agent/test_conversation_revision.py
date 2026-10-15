@@ -63,6 +63,14 @@ class RevisionTests(unittest.IsolatedAsyncioTestCase):
   self.assertIsNone(revision_message({'kind':'revise','message':''}))
   self.assertTrue(is_revision_text('Switch to family insurance'))
   self.assertFalse(is_revision_text('Yes'))
+ def test_everyday_ways_of_going_back_are_revisions(self):
+  for text in ['no no I go back','Actually, I want to change','wait, wrong policy','that\'s wrong','not that one',
+               'undo','I meant Hassan','oops','pick a different policy','nahi nahi galat hai','wapas jao','نہیں نہیں']:
+   self.assertTrue(is_revision_text(text), text)
+ def test_real_answers_are_not_mistaken_for_going_back(self):
+  for text in ['No','cancel','Partial approval','He had a back injury','something went wrong at the hospital',
+               'PL-2026-0006 — Ahmed Malik (Salary Protection Plan, cover PKR 10,500,000)','Natural / illness']:
+   self.assertFalse(is_revision_text(text), text)
  async def test_prepare_family_is_read_only_and_links_existing_customer(self):
   from types import SimpleNamespace
   customer='11111111-1111-4111-8111-111111111111'

@@ -262,6 +262,120 @@ class CommissionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await c.get(self.url('summary'))).json()['accrued_gross'], '100.00')
             self.assertEqual((await c.post(self.url('reconcile'), json={'receipt_ids': [str(uuid4())]})).status_code, 404)
 
+    async def test_individual_agent_assignment_to_first_premium_and_renewal(self):
+        """Customer ownership alone earns nothing; an approved policy split does."""
+        from routers.policies import confirm_payment, PaymentConfirmRequest
+        from routers.post_issuance import collect_installment, CollectBody
+        from shared.models.core import PolicyStatusEnum
+
+        async with factory() as s:
+            customer = await s.get(Customer, self.customer.id)
+            customer.name = 'QA Commission Individual'
+            customer.assigned_agent_id = self.users[2].id
+            customer.acquisition_source_id = self.source.id
+            s.add(customer)
+            await s.delete(await s.get(CommissionAssignment, self.assignment.id))
+            await s.commit()
+        self.assertEqual((await self.post_receipt()).status, 'EXCEPTION')
+        async with await self.client(2, 'Agent') as c:
+            self.assertEqual(Decimal((await c.get(self.url('summary'))).json()['accrued_gross']), Decimal('0'))
+
+        contract = dict(code='INDIVIDUAL_QA', version=1, name='QA individual contract',
+                        first_year_pct='12.5', renewal_pct='5', effective_from='2024-01-01')
+        async with await self.client() as c:
+            created = await c.post(self.url('agreements'), json=contract)
+            self.assertEqual(created.status_code, 201, created.text)
+            aid = created.json()['id']
+            self.assertEqual((await c.post(self.url(f'agreements/{aid}/approve'))).status_code, 403)
+        async with await self.client(1) as c:
+            approved = await c.post(self.url(f'agreements/{aid}/approve'))
+            self.assertEqual(approved.status_code, 200, approved.text)
+        async with await self.client() as c:
+            assigned = await c.put(self.url(f'policies/{self.policy.id}/assignments'), json={
+                'producers': [{'source_id': str(self.source.id), 'agreement_id': aid, 'split_pct': '100'}],
+            })
+            self.assertEqual(assigned.status_code, 200, assigned.text)
+
+        async with factory() as s:
+            policy = await s.get(Policy, self.policy.id)
+            policy.status = PolicyStatusEnum.PENDING_PAYMENT
+            policy.effective_date = date(date.today().year, 1, 1)
+            schedule = await s.get(PremiumSchedule, self.schedule.id)
+            schedule.due_date = date.today()
+            schedule.amount_due, schedule.amount_paid = 12000, 0
+            schedule.status = PremiumScheduleStatusEnum.PENDING
+            s.add_all([policy, schedule]); await s.commit()
+            with patch('routers.policies.generate_and_store_documents', new=AsyncMock()):
+                result = await confirm_payment(self.tenant.id, policy.id, None,
+                    PaymentConfirmRequest(amount=12000, reference='QA-FIRST', method='BankTransfer'), s)
+            self.assertEqual(result['status'], 'Active')
+        async with factory() as s:
+            first = (await s.exec(select(CommissionEarning).where(
+                CommissionEarning.policy_id == self.policy.id))).one()
+            self.assertEqual((first.basis_amount, first.gross_amount, first.policy_year),
+                             (Decimal('12000.00'), Decimal('1500.00'), 1))
+            self.assertEqual(first.source_id, self.source.id)
+            self.assertEqual(first.snapshot['customer_name'], 'QA Commission Individual')
+            self.assertEqual(first.snapshot['agreement_code'], 'INDIVIDUAL_QA')
+            first_receipt_id = first.receipt_id
+            renewal = PremiumSchedule(policy_id=self.policy.id,
+                due_date=date(date.today().year + 1, 1, 1),
+                amount_due=12000, amount_paid=0, status=PremiumScheduleStatusEnum.PENDING)
+            s.add(renewal); await s.commit()
+            with patch('routers.post_issuance.document_generator.generate_receipt', return_value={'file_path': 'qa-only.pdf'}), \
+                 patch('routers.post_issuance.compute_billing', new=AsyncMock(return_value={})):
+                await collect_installment(self.tenant.id, self.policy.id, renewal.id,
+                    CollectBody(manual=True, reference='QA-RENEWAL'), None, s)
+        async with await self.client() as c:
+            for _ in range(2):
+                replay = await c.post(self.url('reconcile'), json={'receipt_ids': [str(first_receipt_id)]})
+                self.assertEqual(replay.status_code, 200, replay.text)
+        async with await self.client(2, 'Agent') as c:
+            ledger = (await c.get(self.url('earnings'))).json()
+            self.assertEqual(ledger['total'], 2)
+            self.assertEqual(sorted(Decimal(e['gross_amount']) for e in ledger['items']),
+                             [Decimal('600.00'), Decimal('1500.00')])
+            self.assertEqual((await c.get(self.url('summary'))).json()['accrued_gross'], '2100.00')
+        async with await self.client(1, 'Agent') as c:
+            self.assertEqual((await c.get(self.url('earnings'))).json()['total'], 0)
+
+    async def test_setup_is_read_only_tenant_scoped_and_suggests_linked_agent(self):
+        async with factory() as s:
+            customer = await s.get(Customer, self.customer.id)
+            customer.assigned_agent_id = self.users[2].id
+            s.add(customer); await s.commit()
+        async with await self.client() as c:
+            response = await c.get(self.url('setup'), params={'customer_id': str(self.customer.id)})
+            self.assertEqual(response.status_code, 200, response.text)
+            data = response.json()
+            self.assertEqual(data['actor_id'], str(self.users[0].id))
+            self.assertEqual(data['customer']['assigned_agent_name'], 'User 2')
+            self.assertEqual(data['customer']['recommended_source_id'], str(self.source.id))
+            self.assertTrue(data['policies'][0]['ready'])
+            self.assertFalse(data['policies'][0]['frozen'])
+            self.assertEqual(data['policies'][0]['assignments'][0]['agreement_id'], str(self.agreement.id))
+            self.assertEqual((await c.get(self.url('setup'), params={'search': 'Test term'})).json()['policies'][0]['id'], str(self.policy.id))
+            self.assertEqual((await c.get(self.url('setup'), params={'search': str(self.policy.id)})).json()['policies'][0]['id'], str(self.policy.id))
+            self.assertEqual((await c.get(self.url('setup'), params={'search': '%'})).json()['policies'], [])
+            self.assertEqual((await c.get(self.url('setup'), params={'customer_id': str(uuid4())})).status_code, 404)
+        await self.post_receipt()
+        async with await self.client() as c:
+            self.assertTrue((await c.get(self.url('setup'))).json()['policies'][0]['frozen'])
+        async with await self.client(2, 'Agent') as c:
+            self.assertEqual((await c.get(self.url('setup'))).status_code, 403)
+        async with await self.client() as c:
+            self.assertEqual((await c.get(f'/tenants/{uuid4()}/commissions/setup')).status_code, 403)
+
+    async def test_setup_quick_lead_without_policy_needs_no_cnic(self):
+        async with factory() as s:
+            quick = Customer(tenant_id=self.tenant.id, name='Quick lead', assigned_agent_id=self.users[2].id)
+            s.add(quick); await s.commit()
+        async with await self.client() as c:
+            data = (await c.get(self.url('setup'), params={'customer_id': str(quick.id)})).json()
+            self.assertIsNone(data['customer']['cnic'])
+            self.assertEqual(data['customer']['assigned_agent_name'], 'User 2')
+            self.assertEqual(data['policies'], [])
+
 
 if __name__ == '__main__':
     import sys

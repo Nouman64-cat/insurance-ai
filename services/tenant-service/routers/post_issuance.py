@@ -28,7 +28,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -73,6 +73,10 @@ router = APIRouter(tags=["Stage B — Post-Issuance"])
 class FreeLookCancelBody(BaseModel):
     reason: Optional[str] = None          # customer's stated reason (optional)
     requested_by: Optional[str] = None    # who lodged the cancellation
+    # Adamjee's free-look wording refunds the premium but "reserves the right to deduct the
+    # expenses incurred on medical examination(s) of the Life Assured" for this policy.
+    medical_exam_deduction: float = Field(default=0.0, ge=0)
+    medical_exam_note: Optional[str] = None   # what the examination was / the invoice reference
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -108,10 +112,13 @@ def _free_look_view(policy: Policy, premium_paid: float, cancelled_evt: Optional
         "is_open": is_open,
         "days_remaining": days_remaining,
         "premium_paid": premium_paid,
-        "refund_amount": premium_paid,   # free-look = full refund of premium collected
+        # The premium collected; medical examination expenses may be deducted when cancelling.
+        "refund_amount": premium_paid,
+        "refund_basis": "Premium paid, less any medical examination expenses incurred on issuing the policy",
         "cancelled": cancelled_evt is not None,
         "cancellation": ({
             "refund_amount": (cancelled_evt.detail_json or {}).get("refund_amount"),
+            "medical_exam_deduction": (cancelled_evt.detail_json or {}).get("medical_exam_deduction") or 0.0,
             "refund_reference": (cancelled_evt.detail_json or {}).get("refund_reference"),
             "reason": (cancelled_evt.detail_json or {}).get("reason"),
             "at": cancelled_evt.created_at.isoformat(),
@@ -151,7 +158,8 @@ async def cancel_within_free_look(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ):
-    """Cancel an in-force policy inside its free-look window for a full refund.
+    """Cancel an in-force policy inside its free-look window for a refund of the premium,
+    less any medical examination expenses the insurer incurred issuing it.
 
     Guards: the policy must be ACTIVE and the window must still be open (today on
     or before free_look_end_date). The realized premium is refunded and the policy
@@ -166,7 +174,13 @@ async def cancel_within_free_look(
     if date.today() > policy.free_look_end_date:
         raise HTTPException(400, f"Free-look window closed on {policy.free_look_end_date.isoformat()}")
 
-    refund_amount = await _premium_paid_total(session, policy_id)
+    premium_paid = await _premium_paid_total(session, policy_id)
+    deduction = round(body.medical_exam_deduction or 0.0, 2)
+    if deduction > premium_paid:
+        raise HTTPException(400, f"The medical examination deduction (PKR {deduction:,.2f}) cannot exceed the premium paid (PKR {premium_paid:,.2f}).")
+    if deduction > 0 and not (body.medical_exam_note or "").strip():
+        raise HTTPException(400, "Say which medical examination the deduction is for (e.g. the lab invoice reference).")
+    refund_amount = round(premium_paid - deduction, 2)
     refund = payment_gateway.refund_payment(refund_amount)
 
     try:
@@ -187,6 +201,9 @@ async def cancel_within_free_look(
             detail={
                 "reason": body.reason or "free_look",
                 "refund_amount": refund_amount,
+                "premium_paid": premium_paid,
+                "medical_exam_deduction": deduction,
+                "medical_exam_note": (body.medical_exam_note or "").strip() or None,
                 "refund_reference": refund.reference,
                 "refunded_at": (refund.realized_at or datetime.utcnow()).isoformat(),
                 "free_look_end_date": policy.free_look_end_date.isoformat(),
@@ -209,6 +226,8 @@ async def cancel_within_free_look(
         "status": _st(policy),
         "refund": refund.to_dict(),
         "refund_amount": refund_amount,
+        "premium_paid": premium_paid,
+        "medical_exam_deduction": deduction,
     }
 
 

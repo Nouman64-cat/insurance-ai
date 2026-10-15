@@ -559,7 +559,7 @@ def _describe(record_type: str, record: dict) -> str:
     if record_type == "case":
         return f"{record.get('caseNumber')} — {record.get('applicant_name') or record.get('customer_name') or 'unknown applicant'}"
     if record_type == "customer":
-        return f"{_full_name(record)} ({record.get('cnic')})"
+        return f"{_full_name(record)} (" + (f"CNIC {record['cnic']}" if record.get('cnic') else f"customer ID {record.get('id')}; no CNIC recorded") + ")"
     if record_type == "policy":
         return (f"{record.get('policy_number') or 'unnumbered policy'} — {record.get('customer_name') or '—'} · "
                 f"{record.get('product_name') or '—'} ({record.get('status')})")
@@ -653,13 +653,15 @@ async def _show_record(args: dict, ctx: Ctx) -> dict:
 
     entity_id = _record_id(record_type, match)
     label = _describe(record_type, match)
+    route = (f"{page.route}?customer_id={_raw_id(match)}"
+             if record_type == 'customer' and not match.get('cnic') else build_route(page.route, entity_id))
     return {
         "success": True,
         "message": f"Found **{label}** — opening {page.label} and highlighting it.",
         "record": match,
         "entity": _entity(record_type, match, ctx.tenant_id),
-        "navigate": _nav(page.route, entity_id),
-        "last_action": _action("show_record", record_type, entity_id, build_route(page.route, entity_id), f"Showing {label}"),
+        "navigate": {"route": route, "entity_id": entity_id, "highlight": True},
+        "last_action": _action("show_record", record_type, entity_id, route, f"Showing {label}"),
     }
 
 
@@ -5880,23 +5882,114 @@ async def fetch_claimable_policies(exec_ctx: ExecCtx) -> list[dict]:
     return claimable or policies
 
 
+# Which register claim types each claims-management benefit pays for. The register
+# has no separate accidental-death or disability type: an accidental death is a
+# Death Claim, and disability is only claimable through the claims workflow.
+_BENEFIT_CLAIM_TYPES = {
+    "Death": ("Death Claim",),
+    "AccidentalDeath": ("Death Claim",),
+    "Hospitalization": ("Hospitalization", "Surgery", "Reimbursement"),
+}
+
+
+async def _covered_claim_types(policy: dict, ctx: Ctx) -> tuple[tuple[str, ...], dict[str, str], dict]:
+    """The claim types this policy actually covers, read from the same benefit menu
+    the policy's Claims Management page shows — plus why each other type isn't covered.
+    Falls back to every type if the benefit menu can't be read, so an outage never
+    blocks an FNOL (the workflow's eligibility check still applies afterwards).
+    Also returns the product's own claim rules (plan maximum, exclusions, intimation days)."""
+    try:
+        res = await ctx.client.get(ctx.tsvc(f"/policies/{policy['id']}/claims-management"))
+        res.raise_for_status()
+        overview = res.json()
+        benefits = overview.get("benefits") or []
+        product_rules = (overview.get("rules") or {}).get("product") or {}
+    except (httpx.HTTPError, ValueError, KeyError):
+        return CLAIM_TYPES, {}, {}
+    covered: list[str] = []
+    reasons: dict[str, str] = {}
+    for b in benefits:
+        for t in _BENEFIT_CLAIM_TYPES.get(b.get("category"), ()):
+            if b.get("available"):
+                if t not in covered:
+                    covered.append(t)
+            else:
+                reasons.setdefault(t, b.get("detail") or f"{b.get('label')} is not covered.")
+    return tuple(t for t in CLAIM_TYPES if t in covered), {t: r for t, r in reasons.items() if t not in covered}, product_rules
+
+
+def _plan_rule_warnings(product_rules: dict, policy: dict, claim_type: str, amount: float,
+                        incident_date: Optional[str]) -> list[str]:
+    """What the product's own wording says about this claim — said at FNOL, not discovered at payment."""
+    out: list[str] = []
+    plan_max = product_rules.get("max_sum_assured")
+    cover = float(policy.get("coverage_amount") or 0)
+    if plan_max and max(cover, amount) > float(plan_max):
+        out.append(f"⚠️ **Above the plan's maximum** — {policy.get('product_name')} covers at most PKR {float(plan_max):,.0f}, "
+                   f"but this {'policy' if cover > float(plan_max) else 'claim'} is for PKR {max(cover, amount):,.0f}. "
+                   "Underwriting must confirm the contractual benefit before anything is paid.")
+    death = claim_type == "Death Claim"
+    if death and product_rules.get("pre_existing_excluded"):
+        start = policy.get("effective_date") or policy.get("issue_date")
+        days = None
+        try:
+            if start:
+                days = (date.fromisoformat(str(incident_date or date.today().isoformat())[:10]) - date.fromisoformat(str(start)[:10])).days
+        except ValueError:
+            days = None
+        early = days is not None and 0 <= days < 365
+        out.append(("⚠️ **Early death claim** — death " + (f"{days} day(s) " if days is not None else "") + "after cover started. "
+                    if early else "") + "This plan **excludes death from pre-existing medical conditions**: prior treatment "
+                   "records are required to confirm the cause did not exist before cover began.")
+    if death and product_rules.get("suicide_excluded_any_time"):
+        out.append("This plan excludes **suicide at any time** — if that is the cause, no death benefit is payable.")
+    days_limit = product_rules.get("intimation_days")
+    if days_limit and incident_date:
+        try:
+            late = (date.today() - date.fromisoformat(str(incident_date)[:10])).days
+            if late > int(days_limit):
+                out.append(f"⚠️ Intimated {late} days after the event — the plan asks for intimation within {days_limit} days.")
+        except ValueError:
+            pass
+    return out
+
+
 @handles("register_claim")
 async def _register_claim(args: dict, ctx: Ctx) -> dict:
     policy = await _resolve_claim_policy(args, ctx)
+    number = policy.get("policy_number")
+    covered, not_covered, product_rules = await _covered_claim_types(policy, ctx)
+    if not covered:
+        return {
+            "success": False,
+            "error": f"Policy {number} ({policy.get('product_name') or '—'}) has no claimable benefit on record, "
+                     "so no claim can be registered against it.",
+            "quick_actions": [{"label": "Open claims workflow", "actionType": "embed", "payload": f"post-issuance/{policy['id']}"}],
+        }
 
     claim_type = (args.get("claim_type") or "").strip()
     matched_type = next((t for t in CLAIM_TYPES if t.lower() == claim_type.lower()), None) \
         or next((t for t in CLAIM_TYPES if claim_type and claim_type.lower() in t.lower()), None)
+    chips = [
+        {"label": t, "actionType": "submit",
+         "payload": f"Register a {t} claim on policy {number}"
+                    + (f" for {args['submitted_amount']:.0f}" if args.get("submitted_amount") else "")}
+        for t in covered
+    ]
+    if matched_type and matched_type not in covered:
+        return {
+            "success": False,
+            "error": f"{matched_type} is not covered on {number} ({policy.get('product_name') or '—'}). "
+                     f"{not_covered.get(matched_type, '')} It covers: {', '.join(covered)}.".replace("  ", " "),
+            "quick_actions": chips,
+        }
+    if not matched_type and len(covered) == 1:
+        matched_type = covered[0]          # one covered benefit is not a question
     if not matched_type:
         return {
             "success": False,
-            "error": f"What kind of claim is this on policy {policy.get('policy_number')}?",
-            "quick_actions": [
-                {"label": t, "actionType": "submit",
-                 "payload": f"Register a {t} claim on policy {policy.get('policy_number')}"
-                            + (f" for {args['submitted_amount']:.0f}" if args.get("submitted_amount") else "")}
-                for t in CLAIM_TYPES
-            ],
+            "error": f"What kind of claim is this on policy {number}? It covers: {', '.join(covered)}.",
+            "quick_actions": chips,
         }
 
     amount = _as_float(args.get("submitted_amount"))
@@ -5928,7 +6021,7 @@ async def _register_claim(args: dict, ctx: Ctx) -> dict:
     res.raise_for_status()
     claim = res.json()
 
-    warn = []
+    warn = _plan_rule_warnings(product_rules, policy, matched_type, float(amount), body.get("incident_date"))
     if claim.get("duplicate_flag"):
         warn.append("⚠️ **Duplicate suspected** — a claim of the same type and amount already exists on this policy. "
                     "Approving it will require written rationale (15+ characters).")

@@ -317,6 +317,58 @@ CLAIM_DOCUMENTS: dict[str, list[dict]] = {
     ] + [d for d in _CORE if d["key"] != "policy_doc"],
 }
 
+# Per-product claim rules, keyed by lower-cased product name, layered over the defaults
+# above. Only what the product's published wording actually states goes here.
+#
+#   max_sum_assured           the plan's largest cover; a policy above it was issued outside
+#                             the product and its benefit must be confirmed before payment
+#   suicide_excluded_any_time suicide is excluded for the whole term, not only year one
+#   pre_existing_excluded     death arising from a pre-existing condition is excluded
+#   intimation_days           the claim should be intimated within this many days
+#   extra_documents           checklist items the product's claim section adds
+CLAIM_PRODUCT_RULES: dict[str, dict] = {
+    # Adamjee Life Protection Plus Plan 2023 (MCB bancassurance): one-year renewable term,
+    # plans A–D of PKR 0.5M / 1M / 1.5M / 2.5M, ages 18–59, cover to 60. Exclusions: pre-existing
+    # conditions, suicide, terrorism, military service, hazardous sports, unlawful acts,
+    # non-scheduled aviation. Nominee intimates within 30 calendar days; documents: claim form,
+    # death certificate (NADRA / UC), original policy, hospital & medical records, CNICs of the
+    # nominee(s) and the insured; for an accidental death also police, post-mortem and rescue
+    # reports and a newspaper cutting.
+    # Source: tmp/pdfs/adamjee/Adamjee-Life-Protection-Plus-Plan-2023.pdf
+    "life protection plus": {
+        "max_sum_assured": 2_500_000.0,
+        "suicide_excluded_any_time": True,
+        "pre_existing_excluded": True,
+        "intimation_days": 30,
+        "extra_documents": {
+            "Death": [
+                {"key": "nominee_cnic", "label": "CNIC copies of the nominee(s)", "required": True, "when": "always"},
+                {"key": "medical_records", "label": "Hospital & medical records of the deceased", "required": True, "when": "always"},
+                {"key": "prior_treatment", "label": "Prior treatment / medical history records (pre-existing condition exclusion)",
+                 "required": True, "when": "illness"},
+                {"key": "rescue_report", "label": "Rescue (1122) report", "required": True, "when": "accident_or_unnatural"},
+                {"key": "newspaper_cutting", "label": "Newspaper cutting of the incident", "required": False, "when": "accident_or_unnatural"},
+            ],
+        },
+        "source": "Adamjee Life Protection Plus Plan 2023 brochure",
+    },
+}
+
+
+def claim_rules(product_name: str | None) -> dict:
+    """The defaults overlaid with the product's own claim wording, if any."""
+    rules = {
+        "max_sum_assured": None,
+        "suicide_excluded_any_time": False,
+        "pre_existing_excluded": False,
+        "intimation_days": CLAIM_LATE_REPORT_DAYS,
+        "extra_documents": {},
+        "source": None,
+    }
+    rules.update(CLAIM_PRODUCT_RULES.get((product_name or "").strip().lower(), {}))
+    return rules
+
+
 # Requirements for a payee to be accepted for disbursement.
 CLAIM_IBAN_PATTERN = r"^PK\d{2}[A-Z]{4}[A-Z0-9]{16}$"
 

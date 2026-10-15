@@ -23,7 +23,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
-from tool_executor import ChoiceNeeded, Ctx, _action, _parse_json_arg, handles, relay_forbidden
+from tool_executor import ChoiceNeeded, Ctx, _action, _parse_json_arg, _full_name, handles, relay_forbidden
 
 _NAV = {"label": "Open commissions", "actionType": "navigate", "payload": "commissions"}
 
@@ -97,6 +97,46 @@ async def _policy_numbers(ctx: Ctx) -> dict[str, str]:
 
 
 # ── Agreements ───────────────────────────────────────────────────────────────
+
+@handles("get_customer_commission_setup")
+async def _get_customer_commission_setup(args: dict, ctx: Ctx) -> dict:
+    """Use UUIDs as UUIDs. Quick leads do not need a CNIC for a read."""
+    needle = str(args.get('customer_id') or args.get('customer_name') or '').strip()
+    if not needle:
+        return {'success': False, 'message': 'Which customer should I check? Give their name or customer ID.'}
+    response = await ctx.client.get(ctx.tsvc('/customers'))
+    response.raise_for_status()
+    rows = response.json()
+    exact = [c for c in rows if needle.casefold() in (str(c.get('id', '')).casefold(), _full_name(c).casefold())]
+    hits = exact or [c for c in rows if needle.casefold() in _full_name(c).casefold()]
+    if not hits:
+        return {'success': False, 'message': f'No customer matches {needle}.'}
+    if len(hits) > 1:
+        raise ChoiceNeeded('Which customer should I check?', [
+            _chip(f"{_full_name(c)} ({c.get('cnic') or c['id']})",
+                  f"Check customer commission setup for customer_id {c['id']}") for c in hits[:6]])
+    response = await ctx.client.get(ctx.tsvc('/commissions/setup'), params={'customer_id': hits[0]['id']})
+    if response.status_code == 403:
+        return {'success': False, 'error_code': 'forbidden', 'message': 'Commission setup requires an administrator.'}
+    response.raise_for_status()
+    data = response.json()
+    customer = data['customer']
+    lines = [f"**{customer['name']}** · customer ID {customer['id']}",
+             f"Assigned agent: {customer.get('assigned_agent_name') or 'Unassigned'}.",
+             f"Acquisition source: {customer.get('acquisition_source_name') or 'Unassigned'}.",
+             f"Approved agreements effective today: {data['approved_agreement_count']}."]
+    if not data['policies']:
+        lines.append('No individual policy exists yet. Customer ownership alone does not accrue commission.')
+    for p in data['policies']:
+        lines.append(f"- {p.get('policy_number') or p['id']} · {p['product_name']}: " +
+                     ('configured for receipts dated today' if p['ready'] else '; '.join(p['blocking_reasons'])) +
+                     ('; producer assignment frozen after posting' if p['frozen'] else ''))
+    if data['has_more']:
+        lines.append('Only the first 50 policies are shown; narrow the selection in Commission earnings.')
+    lines.append('An approved agreement and explicit policy producer split are required before a premium receipt can accrue earnings. Payouts are not enabled.')
+    return {'success': True, 'message': '\n\n'.join(lines), 'setup': data,
+            'quick_actions': [{'label': 'Configure commissions', 'actionType': 'navigate',
+                               'payload': f"commissions?customer_id={customer['id']}"}]}
 
 @handles("list_commission_agreements")
 async def _list_commission_agreements(args: dict, ctx: Ctx) -> dict:

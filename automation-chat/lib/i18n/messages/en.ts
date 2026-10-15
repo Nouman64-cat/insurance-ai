@@ -57,7 +57,7 @@ const en = {
     greeting: "Hello! I am your AI Underwriting Copilot. I can help you onboard applicants, run risk assessments, or pull case details instantly. What would you like to automate today?",
     askAnything: "Ask anything...",
     message: "Message…",
-    typeAnswer: "Type your answer…",
+    typeAnswer: "Type your answer, or say “go back” to change something…",
     attach: "Attach",
     attachDocument: "Attach Document",
     voiceAgent: "Live Voice Agent",

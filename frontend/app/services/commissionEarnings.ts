@@ -9,6 +9,17 @@ export interface Earning {
 export interface Agreement {
   id: string; code: string; version: number; name: string; first_year_pct: string;
   renewal_pct: string; status: string; effective_from: string; effective_to: string | null;
+  created_by?: string;
+}
+export interface SetupPolicy {
+  id: string; policy_number: string | null; customer_id: string; customer_name: string;
+  product_name: string; status: string; recommended_source_id: string | null;
+  assignments: Producer[]; frozen: boolean; ready: boolean; blocking_reasons: string[];
+}
+export interface Setup {
+  actor_id: string;
+  customer: {id: string; name: string; assigned_agent_name: string | null; acquisition_source_name: string | null} | null;
+  policies: SetupPolicy[]; has_more: boolean; approved_agreement_count: number;
 }
 export interface Payee { id: string; name: string; code: string; active: boolean }
 export interface AccrualException { id: string; policy_id: string; receipt_id: string; reason: string; status: string }
@@ -25,6 +36,7 @@ export const loadSummary = async () => (await api.get<Summary>(`${base()}/summar
 export const loadPayees = async () => (await api.get<Payee[]>(`${base()}/payees`, auth())).data;
 export const loadAgreements = async () => (await api.get<Agreement[]>(`${base()}/agreements`, auth())).data;
 export const loadExceptions = async () => (await api.get<AccrualException[]>(`${base()}/exceptions`, auth())).data;
+export const loadSetup = async (search = '', customer_id?: string) => (await api.get<Setup>(`${base()}/setup`, {...auth(), params: {search, customer_id}})).data;
 export const createAgreement = async (body: Omit<Agreement, 'id' | 'status'>) => (await api.post(`${base()}/agreements`, body, auth())).data;
 export const approveAgreement = async (id: string) => (await api.post(`${base()}/agreements/${id}/approve`, {}, auth())).data;
 export const loadAssignments = async (policy: string) => (await api.get<Producer[]>(`${base()}/policies/${encodeURIComponent(policy)}/assignments`, auth())).data;

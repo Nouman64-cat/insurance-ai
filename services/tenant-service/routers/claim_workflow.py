@@ -301,6 +301,7 @@ async def _evaluate(session: AsyncSession, policy: Policy, claim: Claim, proc: C
         contract_period=await _contract_period(session, policy, proc.event_date),
         is_floater=(policy.insurance_type.value if hasattr(policy.insurance_type, "value") else str(policy.insurance_type)) == "FAMILY_FLOATER",
         arrears_at_event=await eng.arrears_at(session, policy.id, proc.event_date),
+        product_rules=cfg.claim_rules(policy.product_name),
     )
     result["claimant_is_nominee"] = await _claimant_is_nominee(session, policy, claim)
     result["duplicate_count"] = len(others)
@@ -328,7 +329,8 @@ async def _run_eligibility(session: AsyncSession, policy: Policy, claim: Claim, 
         await _move(session, claim, ClaimStatusEnum.TRIAGED, user, f"Eligibility verified: {elig['status']}. {elig['message']}")
     if elig["status"] != "Ineligible" or proc.eligibility_override_by:
         wanted = eng.build_checklist(category=proc.category, segment=proc.segment, cause=proc.event_cause,
-                                     claimant_is_nominee=elig["claimant_is_nominee"], contestable=elig["contestable"], now=now)
+                                     claimant_is_nominee=elig["claimant_is_nominee"], contestable=elig["contestable"], now=now,
+                                     product_rules=cfg.claim_rules(policy.product_name))
         proc.documents_json = eng.merge_documents(proc.documents_json, wanted)
         proc.checklist_generated_at = proc.checklist_generated_at or now
     await _refresh_investigation(session, policy, claim, proc, elig)
@@ -508,7 +510,8 @@ async def _overview(session: AsyncSession, policy: Policy) -> dict:
             "covered_relationships": cfg.CLAIM_COVERED_RELATIONSHIPS, "payout_methods": cfg.CLAIM_PAYOUT_METHODS,
         },
         "rules": {"sla_working_days": cfg.CLAIM_DECISION_SLA_WORKING_DAYS, "manager_limit": cfg.CLAIM_MANAGER_LIMIT,
-                  "contestable_days": cfg.CLAIM_CONTESTABLE_DAYS},
+                  "contestable_days": cfg.CLAIM_CONTESTABLE_DAYS,
+                  "product": {k: v for k, v in cfg.claim_rules(policy.product_name).items() if k != "extra_documents"}},
     }
 
 
@@ -690,7 +693,8 @@ async def override_eligibility(
     proc.eligibility_override_by, proc.eligibility_override_note = _actor(user), body.note.strip()
     wanted = eng.build_checklist(category=proc.category, segment=proc.segment, cause=proc.event_cause,
                                  claimant_is_nominee=(proc.eligibility_json or {}).get("claimant_is_nominee", True),
-                                 contestable=bool((proc.eligibility_json or {}).get("contestable")))
+                                 contestable=bool((proc.eligibility_json or {}).get("contestable")),
+                                 product_rules=cfg.claim_rules(policy.product_name))
     proc.documents_json = eng.merge_documents(proc.documents_json, wanted)
     proc.checklist_generated_at = proc.checklist_generated_at or _now()
     await _sync_documents(session, claim, proc, user)

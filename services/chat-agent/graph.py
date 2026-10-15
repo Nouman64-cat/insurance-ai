@@ -474,6 +474,9 @@ bank detail — ask for it. Each result carries the next legal steps as buttons.
 DOMAIN_PROMPTS["commission_admin"] = """
 
 ## COMMISSION ADMINISTRATION
+For an individual customer's assigned agent, source, or commission readiness, start
+with **get_customer_commission_setup** using customer_name or customer_id. A customer
+UUID is never a CNIC. Quick leads may have no CNIC; do not request one for this read.
 Commission posts per premium RECEIPT: receipt base × agreement rate (first-year or
 renewal) × producer split. A receipt posts only when the policy has producers assigned
 under an APPROVED agreement in date; otherwise it becomes an exception.
@@ -2808,7 +2811,9 @@ async def permission_gate(state: ChatState) -> Command:
         last = state["messages"][-1]
         replies = [_tool_result_message(call["name"], call["id"], {
             "success": False, "cancelled": True,
-            "message": "Pending action superseded by a user correction. No pending action was executed. Already saved records remain unchanged."
+            "message": "Pending action superseded by a user correction. No pending action was executed. Already saved records remain unchanged. "
+                       "If the user said what to change, apply it. If they only said to go back (\"no no\", \"wait\", \"go back\"), "
+                       "ask in one short sentence which earlier answer they want to change — never ask them to start over."
         }) for call in last.tool_calls]
         return Command(goto="agent", update={
             "messages": [*replies, HumanMessage(content=revision.message)],

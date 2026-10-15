@@ -12,9 +12,13 @@ The portal at `/commissions` now reads persisted **accrued gross earnings** from
 1. Create the real producer in **Acquisition Sources**. Link its login account for the agent to see its own earnings.
 2. In **Commission earnings**, create an agreement with an explicit code/version, first-year and renewal rates, and effective dates. No statutory or tax rate is seeded or selected automatically.
 3. A **different administrator** approves the draft. Approved agreements have no edit/delete endpoint; create a new version for new assignments.
-4. Assign the approved agreement to the individual policy's producer(s). Positive splits must total exactly 100%. Assignments freeze after the first successful posting.
+4. Search by customer, plan or policy number in **Commission earnings** and select the individual policy. The customer's active acquisition source (or a unique source linked to their assigned agent) is suggested. Select an approved agreement and explicitly save the producer split. Positive splits must total exactly 100%. Assignments freeze after the first successful posting.
 5. Collect a premium through the existing payment flow. The receipt, accrual and earnings are written in the **same database transaction**. Missing/expired configuration creates an exception without inventing an amount.
 6. After correcting configuration, reconcile the receipt by ID. Previously posted receipts return their existing accrual without creating new earnings.
+
+The setup checklist shows missing producer configuration and whether the assigned agreement is approved and effective today. Receipt dates still determine actual eligibility, including reconciliation of older receipts. **Review setup** on an exception selects that receipt and policy, including policies outside the first search page. Draft creators see **Awaiting another administrator** instead of an enabled self-approval action.
+
+In Automation Chat, ask “Check commission setup for [customer name]”. The read-only `get_customer_commission_setup` tool identifies the agent and acquisition source, lists individual policy readiness, and links to the customer's commission setup. Quick leads without a CNIC are supported using customer UUIDs; names shared by several customers require selection. These setup details require Admin/SuperAdmin access. Customer ownership never substitutes for a policy producer assignment.
 
 The first-premium path creates a stable receipt when cover binds, including a credited initial premium payment. A top-up requests and accepts only the unpaid balance. Later full or partial collections each retain their own receipt. Historical Active policies are not automatically backfilled from their status; only existing receipt records can be reconciled.
 
@@ -43,6 +47,7 @@ All routes are under `/tenants/{tenant_id}/commissions` and require a valid bear
 | Method | Route | Access |
 |---|---|---|
 | GET | `/payees` | Tenant staff; agents see their own sources |
+| GET | `/setup` | Admin / SuperAdmin; optional customer_id or search, up to 50 individual policies |
 | GET / POST | `/agreements` | Admin / SuperAdmin |
 | POST | `/agreements/{id}/approve` | A different Admin / SuperAdmin |
 | GET / PUT | `/policies/{id}/assignments` | Admin / SuperAdmin |

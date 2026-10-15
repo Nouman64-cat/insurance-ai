@@ -2238,13 +2238,17 @@ class PolicyExitArgs(PolicyLookupArgs):
     reason: Optional[str] = None
     relationship: Optional[str] = None
     channel: Optional[str] = None
+    medical_exam_deduction: Optional[float] = Field(
+        default=None, description="Free-look only: PKR of medical examination expenses to deduct from the refund. Never guess it.")
+    medical_exam_note: Optional[str] = Field(default=None, description="Which examination / invoice the deduction is for.")
 
 
 @tool(args_schema=PolicyExitArgs)
 def submit_policy_exit_request(**kwargs) -> str:
     """End a policy on the customer's instruction: a free-look cancellation (cancels now; the
-    refund is settled separately) or a surrender request (opens the exit case; verification,
-    settlement and payout follow). Staff only."""
+    premium is refunded less any medical examination expenses, settled separately) or a
+    surrender request (savings products only — a pure term plan has no surrender value).
+    Staff only."""
     return "{}"
 
 
@@ -2705,6 +2709,20 @@ class ListAgreementsArgs(BaseModel):
     search: Optional[str] = Field(default=None, description="Code or name.")
 
 
+class CustomerCommissionSetupArgs(BaseModel):
+    customer_id: Optional[str] = Field(default=None, description="Customer UUID, never put it in a CNIC field.")
+    customer_name: Optional[str] = Field(default=None, description="Stored customer name; asks for selection if ambiguous.")
+
+
+@tool(args_schema=CustomerCommissionSetupArgs)
+def get_customer_commission_setup(**kwargs) -> str:
+    """Read assigned agent, acquisition source and policy commission readiness for an
+    individual customer, including quick leads without a CNIC. Use FIRST for customer
+    commission setup/assignment questions. Never update the customer to perform a read.
+    Returns missing approved agreements and producer splits; does not collect or pay."""
+    return "{}"
+
+
 @tool(args_schema=ListAgreementsArgs)
 def list_commission_agreements(**kwargs) -> str:
     """List contractual commission agreements (code, version, first-year and renewal %,
@@ -3001,6 +3019,7 @@ ALL_TOOLS = [
     reconcile_claim_settlement,
     close_claim_file,
     # commission administration
+    get_customer_commission_setup,
     list_commission_agreements,
     create_commission_agreement,
     approve_commission_agreement,

@@ -25,16 +25,44 @@ export default function EarningsPage() {
   const [policy, setPolicy] = useState('');
   const [receipt, setReceipt] = useState('');
   const [producers, setProducers] = useState<service.Producer[]>([blankProducer()]);
+  const [setup, setSetup] = useState<service.Setup | null>(null);
+  const [policySearch, setPolicySearch] = useState('');
+  const [policySearchInput, setPolicySearchInput] = useState('');
+  const [customerId, setCustomerId] = useState<string | undefined>();
+  const [actorId, setActorId] = useState('');
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setCustomerId(params.get('customer_id') || undefined);
+  }, []);
+  const selectedPolicy = setup?.policies.find(p => p.id === policy);
+  const splitTotal = producers.reduce((total, p) => total + Math.round(Number(p.split_pct) * 10000), 0);
+  const validSplit = splitTotal === 1000000 && producers.every(p => p.source_id && p.agreement_id && Number(p.split_pct) > 0)
+    && new Set(producers.map(p => p.source_id)).size === producers.length;
+  function choosePolicy(id: string, data = setup) {
+    setPolicy(id);
+    const chosen = data?.policies.find(p => p.id === id);
+    setProducers(chosen?.assignments.length ? chosen.assignments : [{...blankProducer(), source_id: chosen?.recommended_source_id || ''}]);
+  }
+  async function reviewException(exception: service.AccrualException) {
+    setBusy(true); setError('');
+    try {
+      const configuration = await service.loadSetup(exception.policy_id);
+      setCustomerId(undefined); setPolicySearch(exception.policy_id); setPolicySearchInput(exception.policy_id);
+      setSetup(configuration); choosePolicy(exception.policy_id, configuration); setReceipt(exception.receipt_id);
+      if (!configuration.policies.length) setNotice('This receipt’s policy is not an individual policy available for commission setup.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to load policy setup'); }
+    finally { setBusy(false); }
+  }
   const refresh = useCallback(async () => {
     const isAdmin = ['Admin', 'SuperAdmin'].includes(localStorage.getItem('user_role') || '');
     setAdmin(isAdmin);
     const [ledger, totals] = await Promise.all([service.loadEarnings(offset), service.loadSummary()]);
     setEntries(ledger.items); setTotal(ledger.total); setSummary(totals);
     if (isAdmin) {
-      const [a, p, e] = await Promise.all([service.loadAgreements(), service.loadPayees(), service.loadExceptions()]);
-      setAgreements(a); setPayees(p); setExceptions(e);
+      const [a, p, e, configuration] = await Promise.all([service.loadAgreements(), service.loadPayees(), service.loadExceptions(), service.loadSetup(policySearch, customerId)]);
+      setAgreements(a); setPayees(p); setExceptions(e); setSetup(configuration); setActorId(configuration.actor_id);
     }
-  }, [offset]);
+  }, [offset, policySearch, customerId]);
   useEffect(() => { setBusy(true); refresh().catch(e => setError(e.message)).finally(() => setBusy(false)); }, [refresh]);
   async function run(action: () => Promise<unknown>, message: string) {
     setBusy(true); setError(''); setNotice('');
@@ -76,6 +104,12 @@ export default function EarningsPage() {
       <div className="p-3 flex gap-4 items-center"><button disabled={busy || offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>{tx("Previous")}</button><span>{total ? offset + 1 : 0}–{Math.min(offset + entries.length, total)}{" "}{tx("of")}{" "}{total}</span><button disabled={busy || offset + 50 >= total} onClick={() => setOffset(offset + 50)}>{tx("Next")}</button></div>
     </section>
     {admin && <>
+      <section className="rounded-xl border border-indigo-200 bg-indigo-50 p-5 space-y-2">
+        <h2 className="font-semibold">Commission setup</h2>
+        <p className="text-sm">Assign the customer’s agent, approve a contractual agreement, then save the producer split on their policy. A collected premium creates the earning.</p>
+        <p className="text-sm font-medium">{setup?.approved_agreement_count ?? '—'} approved agreements effective today · {exceptions.length} receipt exceptions shown</p>
+        {setup?.customer && <p className="text-sm">{setup.customer.name} · Agent: {setup.customer.assigned_agent_name || 'Unassigned'} · Source: {setup.customer.acquisition_source_name || 'Unassigned'} <button className="underline ml-2" onClick={() => {setCustomerId(undefined); choosePolicy('');}}>Show all customers</button></p>}
+      </section>
       <section className="rounded-xl border bg-white p-5 space-y-4">
         <h2 className="font-semibold">{tx("1. Contractual agreements")}</h2>
         <p className="text-sm text-slate-500">{tx("Rates are explicit contractual inputs, not statutory defaults. Basis: receipt base including fees and duty, excluding surcharge. Approved versions cannot be edited.")}</p>
@@ -89,25 +123,32 @@ export default function EarningsPage() {
           <label className="text-sm">{tx("Effective to (optional)")}<input name="effective_to" type="date" className={field}/></label>
           <button disabled={busy} className={`${button} self-end`}>{tx("Save draft")}</button>
         </form>
-        {agreements.map(a => <div key={a.id} className="flex flex-wrap gap-3 justify-between border-t pt-3 text-sm"><span>{a.code} v{a.version} · {a.name} · {Number(a.first_year_pct)}% / {Number(a.renewal_pct)}% · {a.status}</span>{a.status === 'DRAFT' && <button disabled={busy} className={button} onClick={() => run(() => service.approveAgreement(a.id), 'Agreement approved')}>{tx("Approve")}</button>}</div>)}
+        {agreements.map(a => <div key={a.id} className="flex flex-wrap gap-3 justify-between border-t pt-3 text-sm"><span>{a.code} v{a.version} · {a.name} · {Number(a.first_year_pct)}% / {Number(a.renewal_pct)}% · {a.status}<span className="block text-xs text-slate-500">{a.effective_from} – {a.effective_to || 'Open ended'}</span></span>{a.status === 'DRAFT' && <button disabled={busy || a.created_by === actorId} title={a.created_by === actorId ? 'A different administrator must approve this draft' : undefined} className={button} onClick={() => run(() => service.approveAgreement(a.id), 'Agreement approved')}>{a.created_by === actorId ? 'Awaiting another administrator' : tx("Approve")}</button>}</div>)}
       </section>
       <section className="rounded-xl border bg-white p-5 space-y-4">
         <h2 className="font-semibold">{tx("2. Assign producers to an individual policy")}</h2>
-        <p className="text-sm text-slate-500">{tx("Use the policy ID from its record. Producer splits must total 100%. Assignments freeze after the first posting. Manage producers in")}{" "}<Link className="underline" href="/admin/acquisition-sources">{tx("Acquisition Sources")}</Link>.</p>
-        <div className="flex gap-3"><label className="grow text-sm">{tx("Policy ID")}<input aria-label={tx("Policy ID")} value={policy} onChange={e => setPolicy(e.target.value)} className={field}/></label><button disabled={busy || !policy} className={`${button} self-end`} onClick={() => run(async () => { const p = await service.loadAssignments(policy); setProducers(p.length ? p : [blankProducer()]); }, 'Assignments loaded')}>{tx("Load")}</button></div>
+        <p className="text-sm text-slate-500">Select an individual policy by customer, plan or policy number. The customer’s source is suggested; select an approved agreement and save to confirm it. Manage producers in <Link className="underline" href="/admin/acquisition-sources">Acquisition Sources</Link>.</p>
+        <form className="flex gap-3 items-end" onSubmit={e => {e.preventDefault(); choosePolicy(''); setPolicySearch(policySearchInput);}}><label className="grow text-sm">Search policies<input className={field} value={policySearchInput} onChange={e => setPolicySearchInput(e.target.value)} placeholder="Customer, plan or policy number" /></label><button disabled={busy} className={button}>Search</button></form>
+        <label className="block text-sm">Individual policy<select className={field} value={policy} disabled={busy} onChange={e => choosePolicy(e.target.value)}><option value="">Select a policy</option>{setup?.policies.map(p => <option key={p.id} value={p.id}>{p.customer_name} · {p.product_name} · {p.policy_number || 'Draft'} · {p.ready ? 'Configured' : 'Needs setup'}</option>)}</select></label>
+        {setup?.has_more && <p className="text-sm text-slate-500">Showing 50 policies. Search to narrow the results.</p>}
+        {setup && !setup.policies.length && <p className="text-sm text-slate-500">No individual policies found. Create a proposal for the customer first.</p>}
+        {selectedPolicy && <div className="rounded-lg bg-slate-50 border p-3 text-sm"><p className="font-medium">{selectedPolicy.customer_name} · {selectedPolicy.status}</p><p>{selectedPolicy.frozen ? 'Assignments are frozen because commission has already posted.' : selectedPolicy.ready ? 'Configured for receipts dated today. Collect a premium to accrue commission.' : selectedPolicy.blocking_reasons.join('. ')}</p><p className="text-xs text-slate-500 mt-1">Policy {selectedPolicy.id}. Receipt dates determine which agreements apply.</p></div>}
+        <fieldset disabled={busy || !selectedPolicy || selectedPolicy.frozen} className="space-y-3 disabled:opacity-60">
         {producers.map((p, i) => <div key={i} className="grid sm:grid-cols-4 gap-3">
           <select aria-label={tx("Producer {0}", { 0: i + 1 })} className={field} value={p.source_id} onChange={e => setProducers(producers.map((x, j) => j === i ? {...x, source_id: e.target.value} : x))}><option value="">{tx("Select producer")}</option>{payees.filter(x => x.active).map(x => <option key={x.id} value={x.id}>{x.name} ({x.code})</option>)}</select>
           <select aria-label={tx("Agreement {0}", { 0: i + 1 })} className={field} value={p.agreement_id} onChange={e => setProducers(producers.map((x, j) => j === i ? {...x, agreement_id: e.target.value} : x))}><option value="">{tx("Select approved agreement")}</option>{agreements.filter(x => x.status === 'APPROVED').map(x => <option key={x.id} value={x.id}>{x.code} v{x.version}</option>)}</select>
           <input aria-label={tx("Split percentage {0}", { 0: i + 1 })} className={field} type="number" min="0.0001" max="100" step="0.0001" value={p.split_pct} onChange={e => setProducers(producers.map((x, j) => j === i ? {...x, split_pct: e.target.value} : x))}/>
           <button disabled={busy || producers.length === 1} onClick={() => setProducers(producers.filter((_, j) => j !== i))}>{tx("Remove")}</button>
         </div>)}
-        <div className="flex gap-3"><button disabled={busy || producers.length >= 20} onClick={() => setProducers([...producers, {...blankProducer(), split_pct: ''}])}>{tx("Add producer")}</button><button disabled={busy || !policy} className={button} onClick={() => run(() => service.saveAssignments(policy, producers), 'Producer assignments saved')}>{tx("Save assignments")}</button></div>
+        <p className="text-sm">Total split: {Number.isFinite(splitTotal) ? splitTotal / 10000 : '—'}% · must equal 100%</p>
+        <div className="flex gap-3"><button disabled={producers.length >= 20} onClick={() => setProducers([...producers, {...blankProducer(), split_pct: ''}])}>{tx("Add producer")}</button><button disabled={!validSplit} className={button} onClick={() => run(() => service.saveAssignments(policy, producers), 'Producer assignments saved')}>{tx("Save assignments")}</button></div>
+        </fieldset>
       </section>
       <section className="rounded-xl border bg-white p-5 space-y-4">
         <h2 className="font-semibold">{tx("3. Reconcile receipts and resolve exceptions")}</h2>
         <p className="text-sm text-slate-500">{tx("Reconcile an existing receipt after configuration is corrected. Repeating a posted receipt does not create another earning. Showing up to 100 open exceptions.")}</p>
         <form className="flex gap-3" onSubmit={e => {e.preventDefault(); void run(async () => { const results = await service.reconcileReceipts([receipt]); const failed = results.find(x => x.status === 'EXCEPTION'); if (failed) throw new Error(failed.reason); }, 'Receipt reconciled');}}><input aria-label={tx("Receipt ID")} className={field} placeholder={tx("Receipt ID")} required value={receipt} onChange={e => setReceipt(e.target.value)}/><button disabled={busy} className={button}>{tx("Reconcile")}</button></form>
-        {exceptions.map(e => <div key={e.id} className="border-t pt-3 text-sm flex flex-wrap justify-between gap-3"><div>{e.reason}<div className="text-xs text-slate-500">{tx("Receipt")}{" "}{e.receipt_id}{" "}{tx("· Policy")}{" "}{e.policy_id}</div></div><button disabled={busy} onClick={() => {setReceipt(e.receipt_id); setPolicy(e.policy_id);}}>{tx("Use these IDs")}</button></div>)}
+        {exceptions.map(e => <div key={e.id} className="border-t pt-3 text-sm flex flex-wrap justify-between gap-3"><div>{e.reason}<div className="text-xs text-slate-500">{tx("Receipt")}{" "}{e.receipt_id}{" "}{tx("· Policy")}{" "}{e.policy_id}</div></div><button disabled={busy} onClick={() => void reviewException(e)}>Review setup</button></div>)}
       </section>
     </>}
   </div>;

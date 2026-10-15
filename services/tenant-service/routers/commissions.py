@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import func
+from sqlalchemy import func, or_, cast, String
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -14,7 +14,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from routers.auth import _get_current_user, _role_name, oauth2_scheme
 from services.commission_engine import accrue_receipt
-from shared.models.core import AcquisitionSource, Policy, PremiumReceipt
+from shared.models.core import AcquisitionSource, Customer, User, Policy, PremiumReceipt
 from shared.models.commission import CommissionAccrual, CommissionAgreement, CommissionAssignment, CommissionEarning
 
 router = APIRouter(prefix="/tenants/{tenant_id}/commissions", tags=["Commission earnings"])
@@ -71,6 +71,81 @@ class AssignmentsIn(BaseModel):
         if len({p.source_id for p in self.producers}) != len(self.producers):
             raise ValueError("Duplicate producer")
         return self
+
+
+@router.get("/setup")
+async def setup(tenant_id: UUID, customer_id: UUID | None = None,
+                search: str = Query("", max_length=200), user=Depends(admin),
+                session: AsyncSession = Depends(get_session)):
+    """Read-only configuration checklist; never infer a contract from ownership."""
+    customer = None
+    if customer_id:
+        customer = (await session.exec(select(Customer).where(
+            Customer.id == customer_id, Customer.tenant_id == tenant_id))).first()
+        if not customer:
+            raise HTTPException(404, "Customer not found in this tenant")
+    sources = {r.id: r for r in (await session.exec(select(AcquisitionSource).where(
+        AcquisitionSource.tenant_id == tenant_id))).all()}
+    agreements = {r.id: r for r in (await session.exec(select(CommissionAgreement).where(
+        CommissionAgreement.tenant_id == tenant_id))).all()}
+    q = select(Policy, Customer).join(Customer, Customer.id == Policy.customer_id).where(
+        Policy.tenant_id == tenant_id, Customer.tenant_id == tenant_id,
+        Policy.master_policy_id.is_(None), Policy.family_policy_id.is_(None))
+    if customer_id:
+        q = q.where(Policy.customer_id == customer_id)
+    if search.strip():
+        term = '%' + search.strip().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
+        q = q.where(or_(cast(Policy.id, String) == search.strip(), Customer.name.ilike(term, escape='\\'), Policy.product_name.ilike(term, escape='\\'),
+                        Policy.policy_number.ilike(term, escape='\\')))
+    rows = (await session.exec(q.order_by(Policy.created_at.desc(), Policy.id).limit(51))).all()
+    policy_ids = [p.id for p, _ in rows[:50]]
+    assignments = (await session.exec(select(CommissionAssignment).where(
+        CommissionAssignment.tenant_id == tenant_id, CommissionAssignment.policy_id.in_(policy_ids)))).all() if policy_ids else []
+    posted = set((await session.exec(select(CommissionAccrual.policy_id).where(
+        CommissionAccrual.tenant_id == tenant_id, CommissionAccrual.policy_id.in_(policy_ids),
+        CommissionAccrual.status == 'POSTED'))).all()) if policy_ids else set()
+    today = date.today()
+    def current(a):
+        return a.status == 'APPROVED' and a.effective_from <= today and (not a.effective_to or today <= a.effective_to)
+    def suggested(c):
+        source = sources.get(c.acquisition_source_id)
+        if source and source.is_active:
+            return source.id
+        linked = [s.id for s in sources.values() if s.is_active and c.assigned_agent_id and s.user_id == c.assigned_agent_id]
+        return linked[0] if len(linked) == 1 else None
+    result = []
+    for policy, owner in rows[:50]:
+        split = [a for a in assignments if a.policy_id == policy.id]
+        reasons = []
+        if not split:
+            reasons.append('No producer agreement assigned to this policy')
+        elif sum(a.split_pct for a in split) != Decimal(100) or any(a.split_pct <= 0 for a in split):
+            reasons.append('Producer splits must total 100%')
+        for allocation in split:
+            source, agreement = sources.get(allocation.source_id), agreements.get(allocation.agreement_id)
+            if not source or not source.is_active:
+                reasons.append('Producer is missing or inactive')
+            if not agreement or not current(agreement):
+                reasons.append('Agreement is not approved and effective today')
+            elif agreement.basis != 'RECEIPT_BASE':
+                reasons.append('Unsupported commission basis')
+        result.append({'id': policy.id, 'policy_number': policy.policy_number,
+            'customer_id': owner.id, 'customer_name': owner.name, 'product_name': policy.product_name,
+            'status': policy.status, 'recommended_source_id': suggested(owner),
+            'assignments': split, 'frozen': policy.id in posted,
+            'ready': not reasons, 'blocking_reasons': sorted(set(reasons))})
+    context = None
+    if customer:
+        agent = await session.get(User, customer.assigned_agent_id) if customer.assigned_agent_id else None
+        source = sources.get(customer.acquisition_source_id)
+        context = {'id': customer.id, 'name': customer.name, 'cnic': customer.cnic,
+            'assigned_agent_name': agent.full_name if agent and agent.tenant_id == tenant_id else None,
+            'acquisition_source_name': source.name if source else None,
+            'recommended_source_id': suggested(customer)}
+    return {'actor_id': user.id, 'customer': context, 'policies': result, 'has_more': len(rows) > 50,
+        'approved_agreement_count': sum(current(a) for a in agreements.values()),
+        'basis_description': 'Receipt base including fees/duty; excludes surcharge',
+        'settlement_enabled': False}
 
 
 @router.get("/payees")

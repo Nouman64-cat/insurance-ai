@@ -214,6 +214,7 @@ SAFE_TOOLS = {
     # Commission (read-only). The agreement/split/exception reads are Admin-only
     # through COMMISSION_ADMIN_TOOLS below; earnings are scoped by the API itself.
     "explain_commission_earning",
+    "get_customer_commission_setup",
     "list_commission_agreements",
     "get_policy_commission_split",
     "list_commission_exceptions",
@@ -486,6 +487,7 @@ STEP_LABELS: dict[str, str] = {
     "reconcile_claim_settlement": "Reconciling claim settlement",
     "close_claim_file": "Closing claim file",
     "list_commission_agreements": "Loading commission agreements",
+    "get_customer_commission_setup": "Checking customer commission setup",
     "create_commission_agreement": "Drafting commission agreement",
     "approve_commission_agreement": "Approving commission agreement",
     "get_policy_commission_split": "Loading producer split",
@@ -761,6 +763,7 @@ ADMIN_ONLY_TOOLS |= GROUP_TOOLS
 # the chat mirrors that — same pattern as GROUP_TOOLS, and for the same reason
 # (the reads sit in SAFE_TOOLS, which would otherwise hand them to Viewer).
 COMMISSION_ADMIN_TOOLS = {
+    "get_customer_commission_setup",
     "list_commission_agreements",
     "create_commission_agreement",
     "approve_commission_agreement",

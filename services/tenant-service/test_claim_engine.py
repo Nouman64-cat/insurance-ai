@@ -550,6 +550,68 @@ def test_override_of_an_ineligible_claim_lets_it_proceed():
     assert _labels(rows)["eligibility"] == "Overridden" and _states(rows)["documents"] == "action"
 
 
+
+# ── product wording: Adamjee Life Protection Plus (one-year term, max PKR 2.5M) ─
+
+LPP = cfg.claim_rules("Life Protection Plus")
+
+
+def _lpp_periods():
+    return [{"from": date(2026, 10, 13), "to": None, "started_by": "PaymentConfirmed", "ended_by": None}]
+
+
+def _lpp(**kw):
+    base = dict(periods=_lpp_periods(), event_date=date(2026, 10, 14), reported_date=date(2026, 10, 15), today=date(2026, 10, 15),
+                coverage_amount=2_500_000.0, riders=[], maturity_date=date(2027, 10, 13), product_rules=LPP)
+    base.update(kw)
+    return _elig(**base)
+
+
+def test_unknown_product_keeps_the_defaults():
+    rules = cfg.claim_rules("Some Other Plan")
+    assert rules["max_sum_assured"] is None and not rules["pre_existing_excluded"]
+    assert rules["intimation_days"] == cfg.CLAIM_LATE_REPORT_DAYS
+
+
+def test_sum_assured_above_the_plan_maximum_is_referred():
+    r = _lpp(coverage_amount=29_800_000.0)
+    assert "plan_limit" in _failed(r) and r["status"] == "Referred"
+    assert "PKR 2,500,000" in next(c["detail"] for c in r["checks"] if c["key"] == "plan_limit")
+    assert "plan_limit" not in _failed(_lpp())
+
+
+def test_early_death_from_illness_needs_the_pre_existing_check():
+    r = _lpp()
+    assert "pre_existing" in _failed(r)
+    flags = eng.investigation_flags(category="Death", eligibility=r, event_date=date(2026, 10, 14), reported_date=date(2026, 10, 15),
+                                    cover_start=date(2026, 10, 13), duplicate_flag=False, fraud_probability=0.02,
+                                    nominee_mismatch=False, claimed_amount=2_500_000.0)
+    assert any(f["code"] == "pre_existing" and f["severity"] == "high" for f in flags["flags"])
+    assert flags["requires_investigation"]
+    assert "pre_existing" not in _failed(_lpp(cause="Accident"))
+
+
+def test_suicide_is_excluded_for_the_whole_term_under_this_plan():
+    r = _lpp(cause="Suicide", event_date=date(2027, 9, 1), reported_date=date(2027, 9, 2), today=date(2027, 9, 2))
+    assert r["status"] == "Ineligible" and "exclusion" in {c["key"] for c in r["blockers"]}
+
+
+def test_plan_asks_for_intimation_within_30_days():
+    assert "late_report" in _failed(_lpp(event_date=date(2026, 10, 14), reported_date=date(2026, 11, 20), today=date(2026, 11, 20)))
+    assert "late_report" not in _failed(_lpp(event_date=date(2026, 10, 14), reported_date=date(2026, 11, 10), today=date(2026, 11, 10)))
+
+
+def test_plan_checklist_adds_its_own_documents_before_policy_and_bank():
+    illness = eng.build_checklist(category="Death", segment="Individual", cause="Natural / illness",
+                                  claimant_is_nominee=True, contestable=False, product_rules=LPP)
+    keys = [d["key"] for d in illness]
+    assert {"nominee_cnic", "medical_records", "prior_treatment"} <= set(keys)
+    assert keys[-2:] == ["policy_doc", "bank_details"] and len(keys) == len(set(keys))
+    accident = {d["key"] for d in eng.build_checklist(category="Death", segment="Individual", cause="Accident",
+                                                      claimant_is_nominee=True, contestable=False, product_rules=LPP)}
+    assert {"police_report", "postmortem", "rescue_report", "newspaper_cutting", "medical_records"} <= accident
+    assert "prior_treatment" not in accident
+
 if __name__ == "__main__":
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     failed = 0

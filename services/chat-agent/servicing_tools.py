@@ -687,14 +687,17 @@ async def _preview_policy_exit(args: dict, ctx: Ctx) -> dict:
     lines = [f"**Exit options — {p.get('policy_number')}** (estimates only; nothing has been requested)"]
     if fl.get("is_open"):
         lines.append(f"- **Free-look cancellation**: open until {fl.get('free_look_end_date')} ({fl.get('days_remaining')} "
-                     f"days left). Refund {_pkr(fl.get('refund_amount'))} of {_pkr(fl.get('premium_paid'))} paid; cover ends.")
+                     f"days left). Refund of the {_pkr(fl.get('premium_paid'))} paid, less any medical examination "
+                     "expenses incurred on issuing the policy; cover ends.")
     else:
         lines.append(f"- Free-look cancellation: closed{' (ended ' + str(fl.get('free_look_end_date')) + ')' if fl.get('free_look_end_date') else ''}.")
     if surrender.get("available"):
         lines.append(f"- **Surrender**: indicative value {_pkr(surrender.get('net') or surrender.get('value') or surrender.get('amount'))} "
                      "before loans and charges — the settlement is calculated only after a surrender is requested and verified.")
     else:
-        lines.append(f"- Surrender: not available — {(surrender.get('reason') or 'no surrender value').rstrip('.')}.")
+        lines.append(f"- Surrender: not available — {(surrender.get('reason') or 'no surrender value').rstrip('.')}."
+                     + (" Cancelling after the free-look period returns nothing; cover simply runs to the end of the "
+                        "paid term, and the customer can choose not to renew." if not fl.get("is_open") else ""))
     if natural:
         lines.append(f"- Natural end: {natural.get('label')} on {natural.get('term_ends')}.")
     lines.append("\nRequest → verification → settlement → payment are separate steps; an estimate is not an approval.")
@@ -717,19 +720,46 @@ async def _submit_policy_exit_request(args: dict, ctx: Ctx) -> dict:
             return {"success": True, "entity": _entity(p, ctx), "result": {"status": "skipped", "reason": "already_cancelled"},
                     "message": f"**{p.get('policy_number')}** was already cancelled in its free-look period — nothing changed."}
         if not fl.get("is_open"):
+            ex = await _get(ctx, p, "/exit")
+            surrender = ((ex if isinstance(ex, dict) else {}).get("indicative") or {}).get("surrender") or {}
+            if surrender.get("reason") and not surrender.get("available"):
+                route = (f"{surrender['reason'].rstrip('.')}, so ending it now returns nothing — cover runs to the end of "
+                         "the paid term and the customer can choose not to renew.")
+            else:
+                route = "a surrender is the route now."
             return {"success": False, "error_code": "window_closed", "retryable": False,
-                    "error": f"The free-look period ended {fl.get('free_look_end_date')} — a surrender is the route now."}
-        done = await _post(ctx, p, "/free-look/cancel", {"reason": args.get("reason")})
-        refund = (done.get("cancellation") or {}).get("refund_amount") or done.get("refund_amount") or fl.get("refund_amount")
-        return {"success": True, "entity": _entity(p, ctx), "result": {"status": "completed", "refund_amount": refund},
-                "message": f"**{p.get('policy_number')}** is cancelled under free-look. A refund of {_pkr(refund)} is due — "
-                           "the refund is settled separately and has not been paid yet.",
+                    "error": f"The free-look period ended {fl.get('free_look_end_date')} — {route}"}
+        body = {"reason": args.get("reason")}
+        if args.get("medical_exam_deduction"):
+            body.update(medical_exam_deduction=float(args["medical_exam_deduction"]), medical_exam_note=args.get("medical_exam_note"))
+        done = await _post(ctx, p, "/free-look/cancel", body)
+        refund = done.get("refund_amount") if done.get("refund_amount") is not None else fl.get("refund_amount")
+        deducted = float(done.get("medical_exam_deduction") or 0)
+        return {"success": True, "entity": _entity(p, ctx), "result": {"status": "completed", "refund_amount": refund,
+                                                                      "medical_exam_deduction": deducted},
+                "message": f"**{p.get('policy_number')}** is cancelled under free-look. A refund of {_pkr(refund)} is due"
+                           + (f" ({_pkr(done.get('premium_paid'))} paid less {_pkr(deducted)} medical examination expenses)" if deducted else "")
+                           + " — the refund is settled separately and has not been paid yet.",
                 "last_action": _action("submit_policy_exit_request", "policy", p["id"], f"post-issuance/{p['id']}",
                                        "Free-look cancellation")}
     if kind != "surrender":
         raise LookupError("exit_type must be free_look_cancellation or surrender. Maturity, expiry and death exits are "
                           "detected by the platform rather than requested.")
     ex = await _get(ctx, p, "/exit")
+    surrender = (ex.get("indicative") or {}).get("surrender") or {}
+    if ex.get("indicative") is not None and not surrender.get("available") and not (ex.get("case") or {}).get("is_open"):
+        # A pure protection plan (e.g. Life Protection Plus, one-year term) builds no cash value: opening a
+        # surrender case would only end in "no surrender value". Say so, and offer what the customer can do.
+        fl = await _get(ctx, p, "/free-look")
+        options = (f"It is still inside its free-look period (until {fl.get('free_look_end_date')}): cancelling under free-look "
+                   "refunds the premium paid, less any medical examination expenses." if fl.get("is_open") else
+                   "Cancelling now returns nothing; cover runs to the end of the paid term and the customer can choose not to renew.")
+        return {"success": False, "error_code": "no_surrender_value", "retryable": False, "entity": _entity(p, ctx),
+                "error": f"**{p.get('policy_number')}** cannot be surrendered for value — "
+                         f"{(surrender.get('reason') or 'it has no surrender value').rstrip('.')}. {options}",
+                "quick_actions": ([{"label": "Cancel under free-look", "actionType": "submit",
+                                    "payload": f"Cancel policy {p.get('policy_number')} under free-look"}] if fl.get("is_open") else [])
+                                 + [_open_action(p)]}
     if (ex.get("case") or {}).get("is_open"):
         case = ex["case"]
         return {"success": True, "entity": _entity(p, ctx), "result": {"status": "skipped", "reason": "already_open"},
