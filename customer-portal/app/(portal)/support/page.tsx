@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { SupportTickets } from "@/components/SupportTickets";
 import { Card, ErrorState, KeyValue, PageHeader, Skeleton } from "@/components/ui";
 import { useApi } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/I18nProvider";
@@ -15,6 +16,7 @@ export default function SupportPage() {
   return (
     <div className="space-y-5">
       <PageHeader title={t("support.title")} subtitle={t("support.subtitle")} />
+      <SupportTickets />
       <div className="grid lg:grid-cols-2 gap-5">
         <Card title={c?.name || t("support.insurer")}>
           {loading && !p ? <Skeleton className="h-24" /> : (

@@ -355,6 +355,8 @@ services:
       CM_MIGRATION_DATABASE_URL: postgresql+asyncpg://customer_management_owner:${CM_DB_OWNER_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
       TENANT_SERVICE_URL: http://tenant-service:8001
       CM_WALKIN_TENANT_CODE: ${CM_WALKIN_TENANT_CODE:-}
+      CS_PORTAL_KEY: ${CS_PORTAL_KEY:-}
+      CUSTOMER_SERVICE_URL: http://customer-service:8008
       CM_WALKIN_DEV_OTP: ${CM_WALKIN_DEV_OTP:-}   # development only; ignored when CM_ENV=production
     depends_on:
       tenant-service:
@@ -409,6 +411,10 @@ services:
       CS_DATABASE_URL: postgresql+asyncpg://customer_service_app:${CS_DB_APP_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
       CS_MIGRATION_DATABASE_URL: postgresql+asyncpg://customer_service_owner:${CS_DB_OWNER_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
       TENANT_SERVICE_URL: http://tenant-service:8001
+      CS_PORTAL_KEY: ${CS_PORTAL_KEY:-}
+      CS_OPEN_DESK: ${CS_OPEN_DESK:-}
+      CS_OPEN_DESK_TENANT_ID: ${CS_OPEN_DESK_TENANT_ID:-}
+      CS_ENV: ${CS_ENV:-development}
     depends_on:
       tenant-service:
         condition: service_started
@@ -456,6 +462,43 @@ services:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010}
       NEXT_PUBLIC_PORTAL_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000}
       NEXT_PUBLIC_CUSTOMER_SERVICE_URL: ${NEXT_PUBLIC_CUSTOMER_SERVICE_URL:-http://localhost:3008}
+      API_GATEWAY_INTERNAL_URL: http://api-gateway:8000
+      SSO_COOKIE_NAME: ${SSO_COOKIE_NAME:-insurance_sso}
+      SSO_COOKIE_DOMAIN: ${SSO_COOKIE_DOMAIN:-}
+      WATCHPACK_POLLING: "true"
+    depends_on: [api-gateway, customer-service]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3008/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+
+  # The same desk app as above, deployed WITHOUT a sign-in: http://localhost:3010. For the service team in development; it acts as one
+  # fixed tenant and the service refuses it when CS_ENV=production. Admins use the signed-in desk (3008) to view tickets.
+  customer-service-desk:
+    build:
+      context: .
+      dockerfile: customer-service-app/Dockerfile
+      target: dev
+    restart: unless-stopped
+    networks: [insurance-net]
+    ports:
+      - "3010:3008"
+    volumes:
+      - ./customer-service-app:/workspace/customer-service-app
+      - ./frontend/components:/workspace/frontend/components
+      - ./frontend/lib:/workspace/frontend/lib
+      - ./frontend/app/services:/workspace/frontend/app/services
+      - ./frontend/app/globals.css:/workspace/frontend/app/globals.css
+      - /workspace/customer-service-app/node_modules
+      - /workspace/customer-service-app/.next
+    environment:
+      ENV_VAR: ${ENV_VAR:-}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010}
+      NEXT_PUBLIC_PORTAL_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000}
+      NEXT_PUBLIC_CUSTOMER_SERVICE_URL: http://localhost:3010
+      NEXT_PUBLIC_OPEN_DESK: "true"
       API_GATEWAY_INTERNAL_URL: http://api-gateway:8000
       SSO_COOKIE_NAME: ${SSO_COOKIE_NAME:-insurance_sso}
       SSO_COOKIE_DOMAIN: ${SSO_COOKIE_DOMAIN:-}

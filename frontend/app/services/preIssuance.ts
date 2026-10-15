@@ -89,7 +89,7 @@ export interface Readiness {
   steps: {
     revised_terms: { status: string; offer: { id: string; offer_type: string; valid_until: string } | null };
     requirements: { status: string; total: number; cleared: number; outstanding: string[] };
-    premium: { status: string; total: number; paid: number };
+    premium: { status: string; total: number; paid: number; prepaid_amount?: number | null; prepaid_reference?: string | null };
     compliance: { status: string; checks: { id: string; check_type: string; status: string; score: number | null }[] };
     beneficiaries: { status: string; total_share: number; count: number };
     documents: { status: string; total: number; generated: number };

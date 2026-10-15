@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { tx } from "@/lib/i18n/tx";
-import { api, type Category, type Priority } from "@/lib/api";
+import { OPEN_DESK, api, type Category, type Priority } from "@/lib/api";
 import { CATEGORY_HINT, CATEGORY_ICON, CATEGORY_LABEL } from "@/lib/labels";
 import { Dialog, ErrorNote, PRIORITY_LABEL, inputClass, labelClass, primaryButton, secondaryButton } from "@/components/satellite/ui";
 import CustomerPicker, { type Picked } from "@/components/CustomerPicker";
@@ -107,11 +107,11 @@ export default function NewTicketDialog({ open, onClose, onCreated }: { open: bo
           </div>
         </Step>
 
-        <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+        {!OPEN_DESK && <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
           <p className="text-xs font-bold text-slate-800">{tx("Is it about a particular customer? (optional)")}</p>
           <p className="mb-2 text-[11px] text-slate-500">{tx("Linking the customer lets the team open their record straight from the ticket.")}</p>
           <CustomerPicker value={picked} onChange={setPicked} />
-        </div>
+        </div>}
         {error && <ErrorNote message={error} />}
       </div>
     </Dialog>

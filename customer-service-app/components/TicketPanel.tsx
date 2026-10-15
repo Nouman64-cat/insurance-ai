@@ -3,14 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { tx } from "@/lib/i18n/tx";
 import { portalUrl } from "@/lib/appLinks";
-import { api, type Me, type Status, type Ticket } from "@/lib/api";
-import { CATEGORY_ICON, CATEGORY_LABEL, STATUS_HELP, STATUS_LABEL, STATUS_TONE, STEPS, TRANSITIONS, parseStatusEvent, stepIndex } from "@/lib/labels";
+import { api, core, type LinkedCustomer, type LinkedPolicy, type Me, type Status, type Ticket } from "@/lib/api";
+import { CATEGORY_ICON, CATEGORY_LABEL, SLA_LABEL, SLA_TONE, STATUS_HELP, STATUS_LABEL, STATUS_TONE, STEPS, TRANSITIONS, isOpenStatus, parseStatusEvent, shortId, slaState, stepIndex } from "@/lib/labels";
 import {
   Avatar, Badge, DueLabel, ErrorNote, Field, Priority, Spinner, formatDate, inputClass, primaryButton, relativeTime, secondaryButton,
 } from "@/components/satellite/ui";
 
-// One ticket, for someone who has never used the desk: what it is, where it stands, the ONE thing to do next (in a plain
-// box at the top), the other things they may do, and the conversation. Only actions the service allows this user are offered;
+// One ticket as a workspace: its status, assignment and SLA (three separate things), the next step and other quick actions, the
+// conversation, internal notes and activity, and who and what it is about. Only actions the service allows this user are offered;
 // the service checks them again.
 
 type Kind = "assign" | "release" | "status";
@@ -30,15 +30,27 @@ function statusAction(from: Status, to: Status, staff: boolean): Action {
   }
 }
 
-export default function TicketPanel({ id, me, onChanged, onClose }: { id: string; me: Me; onChanged: () => void; onClose: () => void }) {
+type Tab = "conversation" | "notes" | "activity";
+const money = (n?: number | null) => (n == null ? "—" : `PKR ${Math.round(n).toLocaleString()}`);
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return <section className="border-b border-slate-100 px-4 py-3.5"><h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{title}</h3>{children}</section>;
+}
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div className="flex items-start justify-between gap-3 py-1 text-xs"><dt className="shrink-0 text-slate-500">{label}</dt><dd className="min-w-0 text-end font-medium text-slate-800">{children}</dd></div>;
+}
+
+export default function TicketPanel({ id, me, onChanged, onClose, notify }: { id: string; me: Me; onChanged: () => void; onClose: () => void; notify?: (tone: "ok" | "err", text: string) => void }) {
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<Action | null>(null);
   const [reason, setReason] = useState("");
   const [reply, setReply] = useState("");
-  const [internal, setInternal] = useState(false);
-  const replyBox = useRef<HTMLTextAreaElement>(null);
+  const [tab, setTab] = useState<Tab>("conversation");
+  const [customer, setCustomer] = useState<LinkedCustomer | null>(null);
+  const [policy, setPolicy] = useState<LinkedPolicy | null>(null);
+  const endRef = useRef<HTMLDivElement>(null);
 
   const load = async () => {
     try {
@@ -50,20 +62,32 @@ export default function TicketPanel({ id, me, onChanged, onClose }: { id: string
   };
 
   useEffect(() => {
-    setTicket(null); setPending(null); setReason(""); setReply(""); setInternal(false);
+    setTicket(null); setPending(null); setReason(""); setReply(""); setTab("conversation"); setCustomer(null); setPolicy(null);
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  const act = async (path: string, payload: unknown, after?: () => void) => {
+  // Linked records are read from tenant-service with the person's own token, so its access rules apply. If they can't be read,
+  // the section simply shows the link instead.
+  useEffect(() => {
+    if (!ticket || !me.staff || !me.tenant_id) return;
+    if (ticket.customer_id) core.get(`/tenants/${me.tenant_id}/customers/${ticket.customer_id}`).then((r) => setCustomer(r.data)).catch(() => undefined);
+    if (ticket.policy_id) core.get(`/tenants/${me.tenant_id}/policies/${ticket.policy_id}`).then((r) => setPolicy(r.data)).catch(() => undefined);
+  }, [ticket?.customer_id, ticket?.policy_id, me.staff, me.tenant_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { if (tab !== "activity") endRef.current?.scrollIntoView({ block: "end" }); }, [ticket?.events?.length, tab]);
+
+  const act = async (path: string, payload: unknown, after?: () => void, done?: string) => {
     setBusy(true); setError(null);
     try {
       await api.post(`/tickets/${id}/${path}`, payload);
       after?.();
       await load();
       onChanged();
+      if (done) notify?.("ok", done);
     } catch (e) {
       setError((e as Error).message);
+      notify?.("err", (e as Error).message);
       if ((e as Error & { status?: number }).status === 409) await load(); // changed by someone else: show the latest
     } finally {
       setBusy(false);
@@ -71,11 +95,17 @@ export default function TicketPanel({ id, me, onChanged, onClose }: { id: string
   };
 
   if (!ticket) {
-    return <div className="flex h-full items-center justify-center">{error ? <div className="p-6"><ErrorNote message={error} onRetry={load} /></div> : <Spinner />}</div>;
+    return (
+      <div className="flex h-full flex-col">
+        <div className="flex justify-end p-3"><button type="button" onClick={onClose} aria-label={tx("Close")} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">✕</button></div>
+        <div className="flex flex-1 items-center justify-center">{error ? <div className="p-6"><ErrorNote message={error} onRetry={load} /></div> : <Spinner />}</div>
+      </div>
+    );
   }
 
   const closed = ticket.status === "CLOSED" || ticket.status === "CANCELLED";
-  const isOpen = !["RESOLVED", "CLOSED", "CANCELLED"].includes(ticket.status);
+  const isOpen = isOpenStatus(ticket.status);
+  const sla = slaState(ticket);
   const mine = ticket.assignee_id === me.id || (!!ticket.assignee_name && ticket.assignee_name === (me.full_name || me.email));
   const admin = me.role_name === "Admin";
   const taken = !!ticket.assignee_name;
@@ -83,119 +113,105 @@ export default function TicketPanel({ id, me, onChanged, onClose }: { id: string
     ? TRANSITIONS[ticket.status]
     : TRANSITIONS[ticket.status].filter((s) => (s === "CANCELLED" && ticket.status === "OPEN") || (s === "IN_PROGRESS" && ["RESOLVED", "CLOSED"].includes(ticket.status)));
   // Staff can change a ticket only if it is theirs, or nobody's (an admin may take over from anyone).
-  const canWork = me.staff && !closed && (mine || !taken);
-  const take: Action = { kind: "assign", label: taken ? "Take over this ticket" : "Take this ticket", tone: "primary" };
-  const release: Action = { kind: "release", label: "Hand it back", tone: "plain" };
+  const viewOnly = me.staff && me.can_work === false;                 // an admin: sees everything, the service desk works the tickets
+  const canWork = me.staff && !viewOnly && !closed && (mine || !taken);
+  const take: Action = { kind: "assign", label: taken ? "Take over" : "Take this ticket", tone: "primary" };
+  const release: Action = { kind: "release", label: "Hand back", tone: "plain" };
 
-  // The one recommended step, and the plain-words box that explains it.
-  let guide: { icon: string; title: string; text: string; tone: string; primary?: Action };
-  if (me.staff) {
-    if (closed) guide = { icon: "✅", title: tx("This ticket is finished"), text: tx("There is nothing more to do. If the customer comes back, you can reopen it."), tone: "slate", primary: allowedStatuses.includes("IN_PROGRESS") ? statusAction(ticket.status, "IN_PROGRESS", true) : undefined };
-    else if (!taken) guide = { icon: "🙋", title: tx("Nobody is handling this yet"), text: tx("Press “Take this ticket” so your colleagues know it is yours. Then press “Start working” and reply to the customer."), tone: "amber", primary: take };
-    else if (!mine) guide = { icon: "👤", title: tx("{name} is handling this", { name: ticket.assignee_name! }), text: admin ? tx("You can read it and add notes. As an admin you can take it over if {name} is away.", { name: ticket.assignee_name! }) : tx("You can read it and add internal notes. Only {name} can change it.", { name: ticket.assignee_name! }), tone: "slate", primary: admin ? take : undefined };
-    else if (ticket.status === "OPEN") guide = { icon: "▶️", title: tx("You have this ticket"), text: tx("Press “Start working” when you begin. That tells everyone someone is on it."), tone: "blue", primary: statusAction("OPEN", "IN_PROGRESS", true) };
-    else if (ticket.status === "IN_PROGRESS") guide = { icon: "✍️", title: tx("Work on it and keep the customer updated"), text: tx("Write a reply in the box below. If you need something from the customer, choose “Wait for the customer”. When the problem is sorted, press “Mark solved”."), tone: "blue", primary: statusAction("IN_PROGRESS", "RESOLVED", true) };
-    else if (ticket.status === "WAITING_CUSTOMER") guide = { icon: "⏳", title: tx("Waiting for the customer"), text: tx("Nothing to do until they reply. When they do, press “Continue working”."), tone: "amber", primary: statusAction("WAITING_CUSTOMER", "IN_PROGRESS", true) };
-    else guide = { icon: "🎉", title: tx("This ticket is solved"), text: tx("Close it once the customer is happy. If they say it is not sorted, reopen it."), tone: "emerald", primary: statusAction("RESOLVED", "CLOSED", true) };
-  } else if (closed) guide = { icon: "✅", title: tx("This request is finished"), text: ticket.resolution ? tx("The outcome is shown below.") : tx("Nothing more to do."), tone: "slate" };
-  else if (ticket.status === "OPEN") guide = { icon: "📨", title: tx("We have received your request"), text: tx("Service staff will pick it up. You can add more details below at any time."), tone: "blue" };
-  else if (ticket.status === "IN_PROGRESS") guide = { icon: "🛠️", title: tx("Staff are working on it"), text: tx("You will see their replies below. You can add more details if you want."), tone: "blue" };
-  else if (ticket.status === "WAITING_CUSTOMER") guide = { icon: "💬", title: tx("We need an answer from you"), text: tx("Please read the latest message below and reply."), tone: "amber" };
-  else guide = { icon: "🎉", title: tx("Your request is solved"), text: tx("Read the outcome below. If it is not sorted, press “Reopen”."), tone: "emerald" };
+  // The one recommended next step, as a single line.
+  let next: { text: string; primary?: Action; tone: string };
+  if (viewOnly) next = { text: ticket.assignee_name ? tx("{name} is handling this. Admins can view tickets; the service desk works them.", { name: ticket.assignee_name }) : tx("Admins can view tickets. The service desk works them."), tone: "slate" };
+  else if (me.staff) {
+    if (closed) next = { text: tx("This ticket is finished. Reopen it if the customer comes back."), tone: "slate", primary: allowedStatuses.includes("IN_PROGRESS") ? statusAction(ticket.status, "IN_PROGRESS", true) : undefined };
+    else if (!taken) next = { text: tx("Nobody is handling this yet."), tone: "amber", primary: take };
+    else if (!mine) next = { text: admin ? tx("{name} is handling this. As an admin you can take it over.", { name: ticket.assignee_name! }) : tx("{name} is handling this. You can add internal notes.", { name: ticket.assignee_name! }), tone: "slate", primary: admin ? take : undefined };
+    else if (ticket.status === "OPEN") next = { text: tx("It is yours. Start working when you begin."), tone: "blue", primary: statusAction("OPEN", "IN_PROGRESS", true) };
+    else if (ticket.status === "IN_PROGRESS") next = { text: tx("Reply to the customer, then mark it solved."), tone: "blue", primary: statusAction("IN_PROGRESS", "RESOLVED", true) };
+    else if (ticket.status === "WAITING_CUSTOMER") next = { text: tx("Waiting for the customer to reply."), tone: "amber", primary: statusAction("WAITING_CUSTOMER", "IN_PROGRESS", true) };
+    else next = { text: tx("Solved. Close it once the customer is happy."), tone: "emerald", primary: statusAction("RESOLVED", "CLOSED", true) };
+  } else if (closed) next = { text: ticket.resolution ? tx("Finished. The outcome is shown below.") : tx("Finished."), tone: "slate" };
+  else if (ticket.status === "OPEN") next = { text: tx("We have your request. Service staff will pick it up."), tone: "blue" };
+  else if (ticket.status === "IN_PROGRESS") next = { text: tx("Staff are working on it."), tone: "blue" };
+  else if (ticket.status === "WAITING_CUSTOMER") next = { text: tx("We need an answer from you. Reply below."), tone: "amber" };
+  else next = { text: tx("Solved. If it is not sorted, reopen it."), tone: "emerald" };
 
   const others: Action[] = [
     ...(canWork && mine ? [release] : []),
     ...(canWork || !me.staff ? allowedStatuses.map((s) => statusAction(ticket.status, s, me.staff)) : []),
-  ].filter((a) => !(guide.primary && a.kind === "status" && guide.primary.kind === "status" && a.status === guide.primary.status));
+  ].filter((a) => !(next.primary && a.kind === "status" && next.primary.kind === "status" && a.status === next.primary.status));
 
   const start = (a: Action) => {
-    if (a.kind === "assign") return act("assignment", { version: ticket.version, user_id: me.id });
-    if (a.kind === "release") return act("assignment", { version: ticket.version, user_id: null });
-    if (a.reason) return setPending(a), setReason(a.reason);           // pre-filled: one more click to confirm, and it can be edited
-    setPending(a); setReason("");
+    if (a.kind === "assign") return act("assignment", { version: ticket.version, user_id: me.id }, undefined, tx("You took this ticket."));
+    if (a.kind === "release") return act("assignment", { version: ticket.version, user_id: null }, undefined, tx("Ticket handed back."));
+    setPending(a); setReason(a.reason ?? "");
   };
-  const confirm = () => pending && act("status", { version: ticket.version, status: pending.status, reason: reason.trim() }, () => { setPending(null); setReason(""); });
+  const confirm = () => pending && act("status", { version: ticket.version, status: pending.status, reason: reason.trim() }, () => { setPending(null); setReason(""); }, tx("Ticket updated."));
   const toneBox: Record<string, string> = { amber: "border-amber-200 bg-amber-50", blue: "border-blue-200 bg-blue-50", emerald: "border-emerald-200 bg-emerald-50", slate: "border-slate-200 bg-slate-50" };
   const btn = (a: Action, big = false) => (
     <button key={a.label} type="button" disabled={busy} onClick={() => start(a)}
-      className={a.tone === "primary" || (big && a.tone !== "danger" && a.tone !== "good") ? `${primaryButton} ${big ? "" : "!py-1.5 text-xs"}` :
-        a.tone === "good" ? `inline-flex items-center rounded-lg border border-emerald-300 bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50` :
+      className={a.tone === "primary" || (big && a.tone !== "danger" && a.tone !== "good") ? `${primaryButton} !py-1.5 text-xs` :
+        a.tone === "good" ? "inline-flex items-center rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50" :
         a.tone === "danger" ? "inline-flex items-center rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50" :
         `${secondaryButton} !py-1.5 text-xs`}>
       {tx(a.label)}
     </button>
   );
+
+  const events = ticket.events ?? [];
+  const isLog = (k: string) => k === "STATUS" || k === "ASSIGNMENT";
+  const messages = events.filter((e) => !isLog(e.kind) && !e.internal);
+  const notes = events.filter((e) => !isLog(e.kind) && e.internal);
+  const log = events.filter((e) => isLog(e.kind));
   const step = stepIndex(ticket.status);
-  const showReply = !closed;
-  const asNote = me.staff && internal;
+  const asNote = me.staff && tab === "notes";
+  const canWrite = !closed && !viewOnly && (tab === "conversation" || (tab === "notes" && me.staff));
+  const tabs: { v: Tab; label: string; n?: number }[] = [
+    { v: "conversation", label: tx("Conversation"), n: messages.length },
+    ...(me.staff ? [{ v: "notes" as Tab, label: tx("Internal notes"), n: notes.length }] : []),
+    { v: "activity", label: tx("Activity"), n: log.length },
+  ];
+
+  const bubble = (e: (typeof events)[number]) => (
+    <li key={e.id} className="flex items-start gap-2.5">
+      <Avatar name={e.actor_name} internal={e.internal} />
+      <div className={`min-w-0 flex-1 rounded-xl px-3.5 py-2.5 ${e.internal ? "border border-amber-200 bg-amber-50" : "bg-slate-100"}`}>
+        <p className="text-[11px] text-slate-500"><span className="font-semibold text-slate-700">{e.actor_name}</span>{e.kind === "CREATED" ? ` · ${tx("opened the ticket")}` : ""} · {formatDate(e.created_at, true)}</p>
+        <p className="mt-0.5 whitespace-pre-wrap text-sm text-slate-800">{e.body}</p>
+      </div>
+    </li>
+  );
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-slate-100 px-5 py-4">
+      <header className="border-b border-slate-200 px-5 py-3.5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge tone={STATUS_TONE[ticket.status]}>{tx(STATUS_LABEL[ticket.status])}</Badge>
+            <p className="font-mono text-[11px] font-semibold text-blue-700">{shortId(ticket.id)} · <span className="font-sans text-slate-500">{CATEGORY_ICON[ticket.category]} {tx(CATEGORY_LABEL[ticket.category] ?? ticket.category)}</span></p>
+            <h2 className="mt-0.5 text-lg font-bold leading-snug text-slate-900">{ticket.title}</h2>
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500">
+              <span className="flex items-center gap-1.5">{tx("Status")}<Badge tone={STATUS_TONE[ticket.status]}>{tx(STATUS_LABEL[ticket.status])}</Badge></span>
+              <span className="flex items-center gap-1.5">{tx("Assignment")}{taken ? <Badge tone="blue" dot={false}>{ticket.assignee_name}</Badge> : <Badge tone={isOpen ? "amber" : "slate"} dot={false}>{tx("Unassigned")}</Badge>}</span>
+              <span className="flex items-center gap-1.5">{tx("SLA")}<Badge tone={SLA_TONE[sla]} dot={false}>{tx(SLA_LABEL[sla])}</Badge></span>
               <Priority value={ticket.priority} />
-              <span className="text-[11px] text-slate-500">{CATEGORY_ICON[ticket.category]} {tx(CATEGORY_LABEL[ticket.category] ?? ticket.category)}</span>
             </div>
-            <h2 className="mt-2 text-lg font-bold leading-snug text-slate-900">{ticket.title}</h2>
           </div>
-          <button type="button" onClick={onClose} aria-label={tx("Close")} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+          <button type="button" onClick={onClose} aria-label={tx("Close")} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
             <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" /></svg>
           </button>
         </div>
 
-        {ticket.status === "CANCELLED" ? <p className="mt-3 text-xs font-semibold text-slate-500">{tx("This ticket was cancelled.")}</p> : (
-          <ol className="mt-3 flex items-center" aria-label={tx("Progress")}>
-            {STEPS.map((s, i) => (
-              <li key={s.status} className="flex flex-1 items-center last:flex-none">
-                <span className={`flex items-center gap-1.5 text-[11px] font-semibold ${i <= step ? "text-blue-700" : "text-slate-400"}`} aria-current={i === step ? "step" : undefined}>
-                  <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] ${i < step ? "bg-blue-600 text-white" : i === step ? "bg-blue-600 text-white ring-4 ring-blue-100" : "bg-slate-200 text-slate-500"}`}>{i < step ? "✓" : i + 1}</span>
-                  {tx(s.label)}
-                </span>
-                {i < STEPS.length - 1 && <span className={`mx-2 h-0.5 flex-1 rounded ${i < step ? "bg-blue-600" : "bg-slate-200"}`} />}
-              </li>
-            ))}
-          </ol>
-        )}
-        {ticket.status === "WAITING_CUSTOMER" && <p className="mt-1.5 text-[11px] text-amber-700">{tx(STATUS_HELP.WAITING_CUSTOMER)}</p>}
-
-        <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
-          <Field label={tx("Raised by")}>{ticket.requester_name}</Field>
-          <Field label={tx("Handled by")}>{ticket.assignee_name ?? <span className="text-amber-700">{tx("Nobody yet")}</span>}</Field>
-          <Field label={tx("Answer due")}><DueLabel due={ticket.due_at} open={isOpen} overdue={ticket.overdue} /></Field>
-          <Field label={tx("Opened")}>{ticket.created_at ? relativeTime(ticket.created_at) : "—"}</Field>
-        </dl>
-        {(ticket.customer_id || ticket.policy_id) && (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="text-[11px] text-slate-500">{tx("Related:")}</span>
-            {ticket.customer_id && (
-              <a href={portalUrl(`/admin/customers/${ticket.customer_id}/plans`)} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-200">{tx("Customer record")} ↗</a>
-            )}
-            {ticket.policy_id && (
-              <a href={portalUrl(`/post-issuance/${ticket.policy_id}`)} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-200">{tx("Policy servicing")} ↗</a>
+        <div className={`mt-3 rounded-lg border px-3 py-2.5 ${toneBox[next.tone]}`}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-medium text-slate-700"><span className="font-bold text-slate-900">{tx("Next")}:</span> {next.text}</p>
+            {!pending && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {next.primary && btn(next.primary, true)}
+                {others.map((a) => btn(a))}
+              </div>
             )}
           </div>
-        )}
-      </div>
-
-      <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
-        {error && <ErrorNote message={error} />}
-
-        <div className={`rounded-xl border p-4 ${toneBox[guide.tone]}`}>
-          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{tx("What to do now")}</p>
-          <div className="mt-1.5 flex items-start gap-3">
-            <span className="text-2xl leading-none" aria-hidden="true">{guide.icon}</span>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-bold text-slate-900">{guide.title}</p>
-              <p className="mt-0.5 text-xs leading-relaxed text-slate-600">{guide.text}</p>
-              {guide.primary && !pending && <div className="mt-3">{btn(guide.primary, true)}</div>}
-            </div>
-          </div>
-
           {pending && (
-            <div className="mt-3 space-y-2 rounded-lg bg-white p-3 ring-1 ring-slate-200">
+            <div className="mt-2.5 space-y-2 rounded-lg bg-white p-3 ring-1 ring-slate-200">
               <label className="block text-xs font-semibold text-slate-700" htmlFor="reason">{pending.ask ?? tx("Note for the history (you can change it)")}</label>
               <textarea id="reason" rows={2} maxLength={2000} className={inputClass} value={reason} autoFocus onChange={(e) => setReason(e.target.value)} />
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -207,84 +223,119 @@ export default function TicketPanel({ id, me, onChanged, onClose }: { id: string
               </div>
             </div>
           )}
-
-          {others.length > 0 && !pending && (
-            <details className="mt-3">
-              <summary className="cursor-pointer text-[11px] font-semibold text-slate-600">{tx("Other options")}</summary>
-              <div className="mt-2 flex flex-wrap gap-2">{others.map((a) => btn(a))}</div>
-            </details>
-          )}
         </div>
+      </header>
 
-        {ticket.resolution && (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">{tx("Outcome")}</p>
-            <p className="mt-1 whitespace-pre-wrap text-sm text-emerald-900">{ticket.resolution}</p>
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div role="tablist" aria-label={tx("Ticket sections")} className="flex gap-1 border-b border-slate-100 px-4">
+            {tabs.map((t) => (
+              <button key={t.v} type="button" role="tab" aria-selected={tab === t.v} onClick={() => setTab(t.v)}
+                className={`-mb-px border-b-2 px-3 py-2.5 text-xs font-semibold ${tab === t.v ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
+                {t.label}{t.n ? <span className="ms-1.5 rounded-full bg-slate-100 px-1.5 text-[10px] text-slate-600">{t.n}</span> : null}
+              </button>
+            ))}
           </div>
-        )}
 
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Messages and history")}</p>
-          <p className="mb-3 mt-0.5 text-[11px] text-slate-500">
-            {me.staff ? tx("Grey bubbles are shared with the customer. Yellow ones are internal notes only your team can see.") : tx("Everything said on this ticket, oldest first.")}
-          </p>
-          <ol className="space-y-3">
-            {(ticket.events ?? []).map((e) => {
-              if (e.kind === "STATUS" || e.kind === "ASSIGNMENT") {
-                const s = e.kind === "STATUS" ? parseStatusEvent(e.body) : null;
-                return (
-                  <li key={e.id} className="flex items-start gap-2 ps-10 text-xs text-slate-500">
-                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
-                    <span>
-                      <span className="font-semibold text-slate-700">{e.actor_name}</span>{" "}
-                      {s?.to ? tx("moved it to {status}", { status: tx(STATUS_LABEL[s.to] ?? s.to) }) : e.body === "Claimed" ? tx("took the ticket") : e.body === "Released" ? tx("handed the ticket back") : e.body}
-                      {s?.reason && s.to ? <span className="text-slate-600"> — “{s.reason}”</span> : null}
-                      <span className="ms-1 text-slate-400">· {formatDate(e.created_at, true)}</span>
-                    </span>
-                  </li>
-                );
-              }
-              return (
-                <li key={e.id} className="flex items-start gap-2">
-                  <Avatar name={e.actor_name} internal={e.internal} />
-                  <div className={`min-w-0 flex-1 rounded-lg px-3 py-2 ${e.internal ? "border border-amber-200 bg-amber-50" : "bg-slate-100"}`}>
-                    <p className="text-[11px] text-slate-500">
-                      <span className="font-semibold text-slate-700">{e.actor_name}</span>
-                      {e.kind === "CREATED" ? ` · ${tx("opened the ticket")}` : ""}
-                      {e.internal ? ` · ${tx("Internal note")}` : ""} · {formatDate(e.created_at, true)}
-                    </p>
-                    <p className="mt-0.5 whitespace-pre-wrap text-sm text-slate-800">{e.body}</p>
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-        </div>
-      </div>
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+            {error && <ErrorNote message={error} />}
+            {ticket.resolution && tab === "conversation" && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">{tx("Outcome")}</p>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-emerald-900">{ticket.resolution}</p>
+              </div>
+            )}
+            {tab === "conversation" && (messages.length ? <ol className="space-y-3">{messages.map(bubble)}</ol> : <p className="py-8 text-center text-xs text-slate-400">{tx("No messages yet.")}</p>)}
+            {tab === "notes" && (
+              <>
+                <p className="text-[11px] text-slate-500">{tx("Only your team can see these notes. The customer cannot.")}</p>
+                {notes.length ? <ol className="space-y-3">{notes.map(bubble)}</ol> : <p className="py-8 text-center text-xs text-slate-400">{tx("No internal notes yet.")}</p>}
+              </>
+            )}
+            {tab === "activity" && (
+              log.length ? (
+                <ol className="relative ms-2 space-y-4 border-s border-slate-200 ps-5">
+                  {log.map((e) => {
+                    const s = e.kind === "STATUS" ? parseStatusEvent(e.body) : null;
+                    return (
+                      <li key={e.id} className="relative text-xs text-slate-600">
+                        <span className="absolute -start-[1.6rem] top-1 h-2.5 w-2.5 rounded-full bg-blue-500 ring-4 ring-white" />
+                        <span className="font-semibold text-slate-800">{e.actor_name}</span>{" "}
+                        {s?.to ? tx("moved it to {status}", { status: tx(STATUS_LABEL[s.to] ?? s.to) }) : e.body === "Claimed" ? tx("took the ticket") : e.body === "Released" ? tx("handed the ticket back") : e.body}
+                        {s?.reason && s.to ? <span className="block text-slate-500">“{s.reason}”</span> : null}
+                        <span className="block text-[11px] text-slate-400">{formatDate(e.created_at, true)}</span>
+                      </li>
+                    );
+                  })}
+                </ol>
+              ) : <p className="py-8 text-center text-xs text-slate-400">{tx("No activity yet.")}</p>
+            )}
+            <div ref={endRef} />
+          </div>
 
-      {showReply ? (
-        <div className="border-t border-slate-100 bg-white px-5 py-3">
-          {me.staff && (
-            <div role="tablist" aria-label={tx("Message type")} className="mb-2 flex gap-1">
-              {[{ v: false, label: tx("Reply to customer") }, { v: true, label: tx("Internal note") }].map((o) => (
-                <button key={String(o.v)} type="button" role="tab" aria-selected={internal === o.v} onClick={() => setInternal(o.v)}
-                  className={`rounded-lg px-3 py-1 text-xs font-semibold ${internal === o.v ? (o.v ? "bg-amber-100 text-amber-900" : "bg-slate-900 text-white") : "text-slate-600 hover:bg-slate-100"}`}>{o.label}</button>
-              ))}
+          {canWrite ? (
+            <div className="border-t border-slate-100 bg-white px-5 py-3">
+              <textarea rows={2} maxLength={5000} className={`${inputClass} ${asNote ? "!border-amber-300 !bg-amber-50" : ""}`} value={reply} onChange={(e) => setReply(e.target.value)} aria-label={tx("Message")}
+                placeholder={asNote ? tx("A note for your team…") : me.staff ? tx("Write your reply to the customer…") : tx("Write a message to the service team…")}
+                onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && reply.trim() && !busy) act("comments", { body: reply.trim(), internal: asNote }, () => setReply(""), asNote ? tx("Note saved.") : tx("Reply sent.")); }} />
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <span className="text-[11px] text-slate-500">{asNote ? tx("Only your team can see this note.") : me.staff ? tx("The customer will see this reply.") : tx("The service team will see this.")}</span>
+                <button type="button" className={`${primaryButton} !py-1.5 text-xs`} disabled={busy || !reply.trim()}
+                  onClick={() => act("comments", { body: reply.trim(), internal: asNote }, () => setReply(""), asNote ? tx("Note saved.") : tx("Reply sent."))}>
+                  {busy ? tx("Saving…") : asNote ? tx("Save note") : tx("Send reply")}
+                </button>
+              </div>
             </div>
-          )}
-          <textarea ref={replyBox} rows={2} maxLength={5000} className={`${inputClass} ${asNote ? "!border-amber-300 !bg-amber-50" : ""}`} value={reply}
-            onChange={(e) => setReply(e.target.value)} placeholder={asNote ? tx("A note for your team. The customer will not see this…") : me.staff ? tx("Write your reply to the customer…") : tx("Write a message to the service team…")} aria-label={tx("Message")} />
-          <div className="mt-2 flex items-center justify-between gap-3">
-            <span className="text-[11px] text-slate-500">{asNote ? tx("Only your team can see this note.") : me.staff ? tx("The customer will see this reply.") : tx("The service team will see this.")}</span>
-            <button type="button" className={`${primaryButton} !py-1.5 text-xs`} disabled={busy || !reply.trim()}
-              onClick={() => act("comments", { body: reply.trim(), internal: asNote }, () => { setReply(""); })}>
-              {asNote ? tx("Save note") : tx("Send reply")}
-            </button>
-          </div>
+          ) : closed && tab !== "activity" ? (
+            <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">{tx("This ticket is finished, so replies are switched off. Reopen it to write again.")}</p>
+          ) : null}
         </div>
-      ) : (
-        <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">{tx("This ticket is finished, so replies are switched off. Reopen it to write again.")}</p>
-      )}
+
+        <aside className="max-h-72 shrink-0 overflow-y-auto border-t border-slate-200 bg-slate-50/60 lg:max-h-none lg:w-72 lg:border-s lg:border-t-0" aria-label={tx("Ticket details")}>
+          <Section title={tx("Progress")}>
+            {ticket.status === "CANCELLED" ? <p className="text-xs font-semibold text-slate-500">{tx("This ticket was cancelled.")}</p> : (
+              <ol className="space-y-1.5">
+                {STEPS.map((s, i) => (
+                  <li key={s.status} className={`flex items-center gap-2 text-xs font-medium ${i <= step ? "text-blue-700" : "text-slate-400"}`} aria-current={i === step ? "step" : undefined}>
+                    <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] ${i < step ? "bg-blue-600 text-white" : i === step ? "bg-blue-600 text-white ring-4 ring-blue-100" : "bg-slate-200 text-slate-500"}`}>{i < step ? "✓" : i + 1}</span>
+                    {tx(s.label)}
+                  </li>
+                ))}
+              </ol>
+            )}
+            {ticket.status === "WAITING_CUSTOMER" && <p className="mt-2 text-[11px] text-amber-700">{tx(STATUS_HELP.WAITING_CUSTOMER)}</p>}
+          </Section>
+          <Section title={tx("Details")}>
+            <dl>
+              <Row label={tx("Raised by")}>{ticket.requester_name}</Row>
+              <Row label={tx("Assigned to")}>{ticket.assignee_name ?? <span className="text-amber-700">{tx("Unassigned")}</span>}</Row>
+              <Row label={tx("Answer due")}><DueLabel due={ticket.due_at} open={isOpen} overdue={ticket.overdue} /></Row>
+              <Row label={tx("Opened")}>{ticket.created_at ? relativeTime(ticket.created_at) : "—"}</Row>
+              <Row label={tx("Updated")}>{ticket.updated_at ? relativeTime(ticket.updated_at) : "—"}</Row>
+            </dl>
+          </Section>
+          {(ticket.customer_id || ticket.policy_id) && (
+            <Section title={tx("Linked records")}>
+              {ticket.customer_id && (
+                <div className="mb-3 rounded-lg border border-slate-200 bg-white p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{tx("Customer")}</p>
+                  <p className="mt-0.5 text-sm font-semibold text-slate-900">{customer?.name ?? tx("Customer record")}</p>
+                  {customer && <p className="text-[11px] text-slate-500">{[customer.city, customer.details?.contact_email ?? customer.details?.contact?.email, customer.details?.contact_phone ?? customer.details?.contact?.mobile_number].filter(Boolean).join(" · ")}</p>}
+                  <a href={portalUrl(`/admin/customers/${ticket.customer_id}/plans`)} className="mt-1.5 inline-block text-[11px] font-semibold text-blue-600 hover:text-blue-800">{tx("Open customer record")} ↗</a>
+                </div>
+              )}
+              {ticket.policy_id && (
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{tx("Policy")}</p>
+                  <p className="mt-0.5 text-sm font-semibold text-slate-900">{policy ? `${policy.policy_number ?? tx("Number pending")} · ${policy.product_name}` : tx("Policy record")}</p>
+                  {policy && <p className="text-[11px] text-slate-500">{[policy.status, money(policy.coverage_amount), policy.term_years ? `${policy.term_years} ${tx("years")}` : null].filter(Boolean).join(" · ")}</p>}
+                  <a href={portalUrl(`/post-issuance/${ticket.policy_id}`)} className="mt-1.5 inline-block text-[11px] font-semibold text-blue-600 hover:text-blue-800">{tx("Open policy servicing")} ↗</a>
+                </div>
+              )}
+            </Section>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }

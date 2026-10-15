@@ -52,6 +52,10 @@ class Settings:
 
     env: str = field(default_factory=lambda: os.environ.get("CM_ENV", "development"))
 
+    # Support tickets are kept by the Customer Service service; this key signs our calls to it.
+    support_url: str = field(default_factory=lambda: os.environ.get("CUSTOMER_SERVICE_URL", "http://customer-service:8008").rstrip("/"))
+    support_key: str = field(default_factory=lambda: os.environ.get("CS_PORTAL_KEY", ""))
+
     # Walk-in (email one-time-code) access. The tenant is fixed by configuration, never taken from the browser.
     walkin_tenant_code: str = field(default_factory=lambda: os.environ.get("CM_WALKIN_TENANT_CODE", ""))
     walkin_otp_minutes: int = field(default_factory=lambda: _int("CM_WALKIN_OTP_MINUTES", 10))

@@ -386,3 +386,8 @@ export interface WalkInPayView {
   has_receipt?: boolean; proof_method?: string | null; proof_reference?: string | null;
   receipt?: { receipt_no: string; received_at: string; amount: number; method: string | null; reference: string | null; confirmed_by: string | null; customer_name: string | null; plan_label: string | null; insurer: { name: string | null } } | null;
 }
+
+// ── support tickets ───────────────────────────────────────────────────────────
+export type TicketStatus = "OPEN" | "IN_PROGRESS" | "WAITING_CUSTOMER" | "RESOLVED" | "CLOSED" | "CANCELLED";
+export interface SupportTicket { id: string; title: string; category: string; status: TicketStatus; created_at: string; updated_at: string; policy_id: string | null; overdue?: boolean }
+export interface SupportTicketDetail extends SupportTicket { description: string; resolution: string | null; version: number; events: { id: number; actor_name: string; kind: string; body: string; created_at: string }[] }

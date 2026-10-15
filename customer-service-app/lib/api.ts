@@ -8,7 +8,11 @@ export const api = axios.create({
   timeout: 15_000,
 });
 
+/** The separate open desk (no sign-in): a development portal that acts as one fixed tenant. The service refuses it in production. */
+export const OPEN_DESK = process.env.NEXT_PUBLIC_OPEN_DESK === "true";
+
 api.interceptors.request.use((config) => {
+  if (OPEN_DESK) { config.headers["x-open-desk"] = "1"; return config; }
   const token = typeof window !== "undefined" ? localStorage.getItem("jwt_token") : null;
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
@@ -31,7 +35,7 @@ function message(err: AxiosError<any>): string {
 api.interceptors.response.use(
   (res) => res,
   (err: AxiosError<any>) => {
-    if (err.response?.status === 401) sessionExpired();
+    if (err.response?.status === 401 && !OPEN_DESK) sessionExpired();
     const e = new Error(message(err)) as Error & { status?: number };
     e.status = err.response?.status;
     return Promise.reject(e);
@@ -51,7 +55,19 @@ export interface Ticket {
   created_at?: string; updated_at?: string; events?: TicketEvent[];
 }
 
-export interface Me { id: string; full_name: string | null; email: string; role_name: string; staff: boolean }
+export interface Me { id: string; full_name: string | null; email: string; role_name: string; staff: boolean; can_work?: boolean; tenant_id?: string }
 
 export type View = "" | "active" | "overdue" | "unassigned" | "mine" | "waiting" | "finished";
 export interface Summary { active: number; overdue: number; unassigned: number; mine: number; waiting: number; finished: number; total: number }
+
+// The records a ticket links to live in tenant-service; they are read through the gateway with the same token, so the
+// backend's own role and tenant checks decide what the person may see.
+export const core = axios.create({ baseURL: (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8010").replace(/\/+$/, ""), timeout: 15_000 });
+core.interceptors.request.use((config) => {
+  const token = typeof window !== "undefined" ? localStorage.getItem("jwt_token") : null;
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+export interface LinkedCustomer { id: string; name: string; city?: string | null; profile_status?: string; details?: Record<string, any> | null }
+export interface LinkedPolicy { id: string; policy_number?: string | null; product_name: string; status: string; coverage_amount?: number | null; term_years?: number | null }

@@ -71,3 +71,16 @@ export const STEPS: { status: Status; label: string }[] = [
   { status: "OPEN", label: "New" }, { status: "IN_PROGRESS", label: "Being worked on" }, { status: "RESOLVED", label: "Solved" }, { status: "CLOSED", label: "Closed" },
 ];
 export const stepIndex = (s: Status): number => (s === "WAITING_CUSTOMER" ? 1 : s === "CANCELLED" ? -1 : STEPS.findIndex((x) => x.status === s));
+
+export type SlaState = "met" | "breached" | "due_soon" | "on_track" | "none";
+/** SLA is the answer deadline, separate from the ticket's status and from who is assigned. */
+export function slaState(t: Ticket): SlaState {
+  if (!t.due_at) return "none";
+  if (CLOSED_STATUSES.includes(t.status)) return "met";
+  const left = new Date(t.due_at).getTime() - Date.now();
+  return t.overdue || left < 0 ? "breached" : left < 24 * 3_600_000 ? "due_soon" : "on_track";
+}
+export const SLA_LABEL: Record<SlaState, string> = { met: "Closed", breached: "Breached", due_soon: "Due soon", on_track: "On track", none: "—" };
+export const SLA_TONE: Record<SlaState, Tone> = { met: "slate", breached: "red", due_soon: "amber", on_track: "emerald", none: "slate" };
+export const shortId = (id: string) => `TKT-${id.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
+export const isOpenStatus = (s: Status) => !CLOSED_STATUSES.includes(s);

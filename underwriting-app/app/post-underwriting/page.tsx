@@ -160,6 +160,27 @@ const getApprovalAuthority = (absDev: number) => {
   };
 };
 
+// The post-underwriting queue as a table, like the pre-underwriting one: one row per policy, one column per verification gate.
+// "Open" shows that policy's steps (with their actions) right under its row.
+const POST_GATES = [
+  { key: "counter", short: "Counter-Offer", label: "Gate 1: Counter-Offer Sign-off" },
+  { key: "reins", short: "Reinsurance", label: "Gate 2: Facultative Reinsurance" },
+  { key: "cover", short: "Cover Check", label: "Gate 3: Industry Cover & HLV Check" },
+  { key: "courier", short: "Courier / POD", label: "Gate 4: Courier Dispatch & POD" },
+  { key: "welcome", short: "Welcome Call", label: "Gate 5: SECP Welcome Call" },
+] as const;
+const POST_TABLE_COLS = 4 + POST_GATES.length + 2;
+const POST_STAGE: Record<"completed" | "signoff" | "in_progress", { label: string; style: string }> = {
+  completed: { label: "Completed", style: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  signoff: { label: "Awaiting Sign-off", style: "bg-amber-50 text-amber-700 border-amber-200" },
+  in_progress: { label: "In Progress", style: "bg-blue-50 text-blue-700 border-blue-200" },
+};
+const PRE_GATE_STYLE_POST = {
+  done: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  pending: "bg-blue-50 text-blue-700 border-blue-200",
+  locked: "bg-transparent text-slate-400 border-transparent font-medium",
+};
+
 const PU_STORE = "postuw.v1";
 
 /**
@@ -381,6 +402,7 @@ export default function PostUnderwritingPage() {
   const [segment, setSegment] = useState<SegmentFilter>("all");
   const [showCompleted, setShowCompleted] = useState(false);
   const [filterGate, setFilterGate] = useState<string>("ALL");
+  const [openId, setOpenId] = useState<string | null>(null);   // the policy whose steps are shown under its row
 
   // Drawer / Modal states for active policy verification
   const [selectedPolicy, setSelectedPolicy] = useState<PolicyListItem | null>(null);
@@ -889,7 +911,7 @@ export default function PostUnderwritingPage() {
         </label>
       </div>
 
-      {/* Post-Underwriting Cases List (Card-based UI matching Pre-Underwriting) */}
+      {/* Post-Underwriting Cases: a table, like Pre-Underwriting */}
       <div className="space-y-4">
         {loading ? (
           <div className="py-16 bg-white rounded-xl border border-slate-200 text-center">
@@ -901,97 +923,106 @@ export default function PostUnderwritingPage() {
             <p className="text-xs text-slate-400 mt-1">{tx("Check \"Show fully-cleared post-underwriting cases\" or try another search.")}</p>
           </div>
         ) : (
-          pagedPolicies.map((p) => {
+          <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50 font-semibold uppercase tracking-wider text-[11px] text-slate-500">
+                  <th className="pl-5 pr-3 py-3 text-left">{tx("Policyholder")}</th>
+                  <th className="px-3 py-3 text-left">{tx("Type")}</th>
+                  <th className="px-3 py-3 text-left">{tx("Product")}</th>
+                  <th className="px-3 py-3 text-left">{tx("Status")}</th>
+                  {POST_GATES.map((g) => (
+                    <th key={g.key} className="px-2 py-3 text-center whitespace-nowrap">{tx(g.short)}</th>
+                  ))}
+                  <th className="px-3 py-3 text-left">{tx("Progress")}</th>
+                  <th className="px-4 py-3 text-right" />
+                </tr>
+              </thead>
+              <tbody>
+          {pagedPolicies.map((p) => {
             const gates = getPolicyGates(p);
             const courier = courierLogs[p.id];
             const call = welcomeCalls[p.id];
             const reinsurer = reinsuranceReferrals[p.id];
+            const isOpen = openId === p.id;
+            const done = [gates.isCounterAccepted, gates.isReinsured, gates.isHistoryClear, gates.isDispatched, gates.isWelcomeDone];
+            const next = done.findIndex((d) => !d);              // the gate waiting to be done; everything after it is locked
+            const stage = gates.isFullyCleared ? "completed" : !gates.isCounterAccepted ? "signoff" : "in_progress";
+            const toggle = () => setOpenId(isOpen ? null : p.id);
 
             return (
-              <div
-                key={p.id}
-                className={`bg-white rounded-2xl border transition-all duration-300 overflow-hidden ${
-                  gates.isFullyCleared
-                    ? "border-emerald-300/80 shadow-xs bg-gradient-to-b from-emerald-50/10 via-white to-white"
-                    : "border-slate-200/90 shadow-xs hover:shadow-md hover:border-blue-300"
-                }`}
-              >
-                {/* Policy Card Header */}
-                <div className="px-5 py-4 bg-slate-50/70 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="flex items-center gap-3.5">
-                    <div
-                      className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-xs tracking-wider shadow-xs ${
-                        gates.isFullyCleared
-                          ? "bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-emerald-500/20"
-                          : "bg-gradient-to-br from-blue-700 to-indigo-800 text-white shadow-blue-900/10"
-                      }`}
-                    >
-                      {p.customer_name?.slice(0, 2).toUpperCase() ?? tx("PO")}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-bold text-slate-900 text-sm tracking-tight hover:text-blue-600 cursor-pointer transition-colors">
-                          {p.customer_name}
-                        </h3>
-                        <span className="font-mono text-[10px] text-slate-600 bg-slate-200/70 px-2 py-0.5 rounded font-semibold border border-slate-300/50">
-                          {p.policy_number ?? tx("Drafting...")}
+              <React.Fragment key={p.id}>
+                <tr
+                  onClick={toggle}
+                  aria-expanded={isOpen}
+                  className={`border-b border-slate-100 cursor-pointer transition-colors ${gates.isFullyCleared ? "bg-emerald-50/30 hover:bg-emerald-50/60" : isOpen ? "bg-blue-50/40" : "hover:bg-slate-50"}`}
+                >
+                  <td className="pl-5 pr-3 py-3">
+                    <button onClick={(e) => { e.stopPropagation(); toggle(); }} className="font-semibold text-slate-900 hover:text-blue-600 transition-colors text-left">
+                      {p.customer_name}
+                    </button>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {tx("Policy:")} <span className="font-mono">{p.policy_number ?? tx("Drafting...")}</span>
+                    </p>
+                  </td>
+                  <td className="px-3 py-3">
+                    {p.segment ? (
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border ${SEGMENT_BADGE_STYLE[p.segment as keyof typeof SEGMENT_BADGE_STYLE] || "bg-slate-100 text-slate-600 border-slate-200"}`}>
+                        {SEGMENT_LABEL[p.segment as keyof typeof SEGMENT_LABEL] || p.segment}
+                      </span>
+                    ) : <span className="text-slate-400">—</span>}
+                  </td>
+                  <td className="px-3 py-3 text-slate-600">
+                    {p.product_name}
+                    <p className="text-xs text-slate-500 mt-0.5 font-mono">{fmtPKR(p.coverage_amount)}</p>
+                  </td>
+                  <td className="px-3 py-3">
+                    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap ${POST_STAGE[stage].style}`}>{tx(POST_STAGE[stage].label)}</span>
+                    {stage === "in_progress" && next >= 0 && <p className="text-[11px] text-slate-500 mt-0.5 whitespace-nowrap">{tx("Next:")} {tx(POST_GATES[next].label)}</p>}
+                  </td>
+                  {POST_GATES.map((g, i) => {
+                    const state: "done" | "pending" | "locked" = done[i] ? "done" : i === next ? "pending" : "locked";
+                    return (
+                      <td key={g.key} className="px-2 py-3 text-center">
+                        <span
+                          title={`${tx(g.label)}: ${state === "done" ? tx("Cleared") : state === "pending" ? tx("Waiting to be done") : tx("waiting on the previous gate")}`}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap ${PRE_GATE_STYLE_POST[state]}`}
+                        >
+                          {state === "done" ? (
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5L20 7" /></svg>
+                          ) : state === "pending" ? <span className="w-1.5 h-1.5 rounded-full bg-current" /> : null}
+                          {state === "done" ? tx("Cleared") : state === "pending" ? tx("Pending") : tx("Not yet")}
                         </span>
-                        {p.segment && (
-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider border ${SEGMENT_BADGE_STYLE[p.segment as keyof typeof SEGMENT_BADGE_STYLE] || "bg-slate-100 text-slate-600"}`}>
-                            {SEGMENT_LABEL[p.segment as keyof typeof SEGMENT_LABEL] || p.segment}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap">
-                        <span className="inline-flex items-center gap-1 text-[11px] text-slate-600">
-                          <span className="text-slate-400 font-medium">{tx("Product:")}</span> {p.product_name}
-                        </span>
-                        <span className="text-slate-300">•</span>
-                        <span className="inline-flex items-center gap-1 font-mono text-[11px]">
-                          <span className="text-slate-400 font-sans font-medium">{tx("Sum Assured:")}</span>{" "}
-                          <strong className="text-slate-900">{fmtPKR(p.coverage_amount)}</strong>
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Stepper Progress & Action */}
-                  <div className="flex items-center gap-4 border-t md:border-t-0 pt-3 md:pt-0 border-slate-200/60">
-                    <div className="flex flex-col items-end min-w-[130px]">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">{tx("Operational Gates")}</span>
-                        <span className={`text-xs font-black font-mono ${gates.isFullyCleared ? "text-emerald-700" : "text-blue-800"}`}>
-                          {gates.stepCount}/5
-                        </span>
-                      </div>
-                      {/* Segmented Progress Bar matching Pre-Underwriting */}
-                      <div className="flex gap-1 w-full max-w-[120px]">
+                      </td>
+                    );
+                  })}
+                  <td className="px-3 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="flex gap-0.5 w-16">
                         {[1, 2, 3, 4, 5].map((step) => (
-                          <div
-                            key={step}
-                            className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
-                              step <= gates.stepCount
-                                ? gates.isFullyCleared ? "bg-emerald-500" : "bg-blue-600"
-                                : "bg-slate-200"
-                            }`}
-                          />
+                          <div key={step} className={`h-1.5 flex-1 rounded-full ${step <= gates.stepCount ? (gates.isFullyCleared ? "bg-emerald-500" : "bg-blue-600") : "bg-slate-200"}`} />
                         ))}
                       </div>
+                      <span className={`text-xs font-bold font-mono ${gates.isFullyCleared ? "text-emerald-700" : "text-slate-700"}`}>{gates.stepCount}/5</span>
                     </div>
-
+                  </td>
+                  <td className="px-4 py-3 text-right">
                     <button
-                      onClick={() => handleInspectPolicy(p)}
-                      className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-xs hover:shadow transition-all flex items-center gap-1.5 active:scale-[0.98]"
+                      onClick={(e) => { e.stopPropagation(); toggle(); }}
+                      aria-label={isOpen ? tx("Hide steps") : tx("Open steps")}
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors bg-white hover:bg-slate-100 text-slate-700 border border-slate-200"
                     >
-                      <span>{tx("Verify Details")}</span>
-                      <svg className="w-3.5 h-3.5 text-blue-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M9 18l6-6-6-6" />
-                      </svg>
+                      {isOpen ? tx("Hide") : gates.isFullyCleared ? tx("View") : tx("Open")}
                     </button>
-                  </div>
+                  </td>
+                </tr>
+                {isOpen && (
+                  <tr className="border-b border-slate-200">
+                    <td colSpan={POST_TABLE_COLS} className="p-0 bg-slate-50/40">
+                <div className="px-6 pt-4 flex items-center justify-between gap-3 flex-wrap">
+                  <p className="text-xs text-slate-500">{tx("Sum assured")} <strong className="text-slate-900 font-mono">{fmtPKR(p.coverage_amount)}</strong>{" · "}{tx("Complete the steps in order: each unlocks the next.")}</p>
+                  <button onClick={() => handleInspectPolicy(p)} className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold">{tx("Verify Details")}</button>
                 </div>
-
-                {/* 5 Post-Underwriting Operational Verification Gates — Vertical Progress Lines */}
                 <div className="p-6">
                   <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
                     <div className="flex items-center gap-2">
@@ -1300,9 +1331,15 @@ export default function PostUnderwritingPage() {
                     );
                   })()}
                 </div>
-              </div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
             );
-          })
+          })}
+              </tbody>
+            </table>
+          </div>
         )}
         {!loading && <Pagination pagination={pagination} noun={tx("cases")} />}
       </div>
@@ -1377,176 +1414,131 @@ export default function PostUnderwritingPage() {
         };
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs px-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col">
+          <div
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/50 p-0 sm:p-4"
+            onClick={() => setActiveCounterPolicy(null)}
+            onKeyDown={(e) => { if (e.key === "Escape") setActiveCounterPolicy(null); }}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="counter-title"
+              tabIndex={-1}
+              ref={(el) => el?.focus()}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-4xl border border-slate-200 overflow-hidden max-h-[94vh] flex flex-col outline-none"
+            >
               {/* Header */}
-              <div className="bg-gradient-to-r from-sky-900 via-blue-900 to-slate-900 px-6 py-4 flex items-center justify-between text-white">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-base font-bold">{tx("Counter-Offer Sign-off & Renewal Pricing Engine")}</h2>
-                    <span className="px-2 py-0.5 rounded bg-white/20 text-white font-mono text-[10px] font-bold">
-                      {p.customer_name} ({p.policy_number ?? tx("Proposal")})
-                    </span>
-                  </div>
-                  <p className="text-xs text-sky-200 mt-0.5">
-                    {tx("Pakistani Contract Act Proposer Consent & Actuarial Renewal Calculation Formula")}
-                  </p>
+              <div className="px-6 py-4 border-b border-slate-200 flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Counter-Offer Sign-off & Renewal Pricing Engine")}</p>
+                  <h2 id="counter-title" className="mt-0.5 text-lg font-bold text-slate-900 truncate">
+                    {p.customer_name} <span className="font-mono text-sm font-semibold text-slate-500">({p.policy_number ?? tx("Proposal")})</span>
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">{tx("Pakistani Contract Act Proposer Consent & Actuarial Renewal Calculation Formula")}</p>
                 </div>
-                <button onClick={() => setActiveCounterPolicy(null)} className="text-white/60 hover:text-white text-xl">✕</button>
+                <button onClick={() => setActiveCounterPolicy(null)} aria-label={tx("Close")} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                  <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" /></svg>
+                </button>
               </div>
 
-              <div className="px-6 py-5 overflow-y-auto space-y-6 text-xs">
-                {/* 1. Workflow State Stepper */}
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                  <h3 className="font-extrabold text-slate-800 uppercase tracking-wider text-[11px] mb-3">
-                    {tx("Counter-Offer Lifecycle Stepper")}
-                  </h3>
-                  <div className="flex items-center justify-between gap-1 overflow-x-auto pb-1">
+              {/* The numbers that matter, always in view */}
+              <div className="grid grid-cols-3 divide-x divide-slate-200 border-b border-slate-200 bg-slate-50/70 text-center">
+                <div className="px-4 py-3"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Original Premium")}</p><p className="mt-0.5 font-mono text-base font-bold text-slate-900">{fmtPKR(coState.expiringPremium)}</p></div>
+                <div className="px-4 py-3"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Calculated Renewal Premium")}</p><p className="mt-0.5 font-mono text-base font-bold text-blue-700">{fmtPKR(coState.proposedPremium)}</p></div>
+                <div className="px-4 py-3"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Variance")}</p>
+                  <p className={`mt-0.5 font-mono text-base font-bold ${deviationPct > 25 ? "text-red-700" : deviationPct > 10 ? "text-amber-700" : "text-emerald-700"}`}>
+                    {deviationPct >= 0 ? "+" : ""}{deviationPct.toFixed(1)}%
+                  </p>
+                  <p className="font-mono text-[11px] text-slate-500">{deviationPct >= 0 ? "+" : ""}{fmtPKR(coState.proposedPremium - coState.expiringPremium)}</p></div>
+              </div>
+
+              <div className="px-6 py-5 overflow-y-auto space-y-5 text-sm flex-1 bg-slate-50/50">
+                {/* 1. Where the counter-offer stands */}
+                <section className="bg-white p-4 rounded-xl border border-slate-200">
+                  <h3 className="text-sm font-bold text-slate-900 mb-3">{tx("Counter-Offer Lifecycle Stepper")}</h3>
+                  <ol className="flex items-start overflow-x-auto pb-1">
                     {workflowSteps.map((step, idx) => {
                       const activeIdx = workflowSteps.findIndex((s) => s.id === coState.workflowState);
                       const isCurrent = step.id === coState.workflowState;
-                      const isDone = idx <= activeIdx;
+                      const isDone = idx < activeIdx || (idx === activeIdx && step.id === "POLICY_ISSUED");
                       return (
-                        <div key={step.id} className="flex flex-col items-center min-w-[90px] text-center">
-                          <div
-                            className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-[10px] mb-1.5 transition-all ${
-                              isCurrent
-                                ? "bg-sky-600 text-white ring-2 ring-sky-400 ring-offset-1"
-                                : isDone
-                                ? "bg-emerald-600 text-white"
-                                : "bg-slate-200 text-slate-500"
-                            }`}
-                          >
-                            {isDone ? "✓" : idx + 1}
+                        <li key={step.id} className="flex flex-1 items-start last:flex-none min-w-[88px]" aria-current={isCurrent ? "step" : undefined}>
+                          <div className="flex flex-col items-center text-center w-[88px]">
+                            <span className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold ${isCurrent ? "bg-blue-600 text-white ring-4 ring-blue-100" : isDone ? "bg-blue-600 text-white" : "bg-slate-200 text-slate-500"}`}>
+                              {isDone ? <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5L20 7" /></svg> : idx + 1}
+                            </span>
+                            <span className={`mt-1.5 text-[11px] leading-tight ${isCurrent ? "font-bold text-blue-700" : isDone ? "font-medium text-slate-700" : "text-slate-400"}`}>{tx(step.label)}</span>
                           </div>
-                          <span className={`text-[10px] font-semibold leading-tight ${isCurrent ? "text-sky-900 font-extrabold" : "text-slate-500"}`}>
-                            {tx(step.label)}
-                          </span>
+                          {idx < workflowSteps.length - 1 && <span className={`mt-3.5 h-0.5 flex-1 min-w-[12px] rounded ${isDone ? "bg-blue-600" : "bg-slate-200"}`} aria-hidden="true" />}
+                        </li>
+                      );
+                    })}
+                  </ol>
+                  {coState.workflowState === "APPROVED" && <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">{tx("This counter-offer has been signed off. The pricing below is now locked.")}</p>}
+                </section>
+
+                {/* 2. Pricing: adjust the factors */}
+                <section className="bg-white p-4 rounded-xl border border-slate-200">
+                  <div className="flex items-start justify-between gap-3 mb-1">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">{tx("Actuarial Renewal Premium Formula")}</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">{tx("Adjust each factor; the renewal premium above updates as you go.")}</p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={coState.workflowState === "APPROVED"}
+                      onClick={() => updateCounterState(p.id, (prev) => ({ ...prev, deltaDuration: 0, deltaExposure: 0, deltaCoverage: 0, deltaRate: 0, proposedPremium: prev.expiringPremium }))}
+                      className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      {tx("Reset factors")}
+                    </button>
+                  </div>
+                  <details className="mb-4 text-xs text-slate-500">
+                    <summary className="cursor-pointer font-semibold text-blue-700">{tx("Show the formula")}</summary>
+                    <p className="mt-1 rounded-lg bg-slate-50 px-3 py-2 font-mono text-[11px] text-slate-700 break-words">{tx("P_renewal = P_expiring × (1 + Δ_duration) × (1 + Δ_exposure) × (1 + Δ_coverage) × (1 + Δ_rate)")}</p>
+                  </details>
+
+                  <fieldset disabled={coState.workflowState === "APPROVED"} className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 disabled:opacity-60">
+                    <div>
+                      <label htmlFor="p-exp" className="text-xs font-semibold text-slate-700">{tx("Expiring Base Premium (P_exp)")}</label>
+                      <div className="relative mt-1.5">
+                        <span className="pointer-events-none absolute inset-y-0 start-3 flex items-center text-xs font-semibold text-slate-400">PKR</span>
+                        <input id="p-exp" type="number" min={0} value={coState.expiringPremium} onChange={(e) => handleFactorChange("expiringPremium", Number(e.target.value))}
+                          className="w-full rounded-lg border border-slate-200 bg-white py-2 ps-11 pe-3 font-mono text-sm text-slate-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                      </div>
+                    </div>
+                    {([
+                      ["deltaDuration", "Duration Factor (Δ_duration)", -0.10, 0.30],
+                      ["deltaExposure", "Exposure Factor (Δ_exposure)", -0.20, 0.50],
+                      ["deltaCoverage", "Coverage Factor (Δ_coverage)", -0.20, 0.30],
+                      ["deltaRate", "Base Rate & Claims Experience Adjustment (Δ_rate)", -0.20, 0.50],
+                    ] as const).map(([field, label, min, max]) => {
+                      const v = coState[field] as number;
+                      return (
+                        <div key={field} className={field === "deltaRate" ? "md:col-span-2" : ""}>
+                          <div className="flex items-center justify-between gap-2">
+                            <label htmlFor={`f-${field}`} className="text-xs font-semibold text-slate-700">{tx(label)}</label>
+                            <span className={`rounded-full px-2 py-0.5 font-mono text-[11px] font-bold ${v > 0 ? "bg-amber-50 text-amber-800" : v < 0 ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                              {v > 0 ? "+" : ""}{(v * 100).toFixed(1)}%
+                            </span>
+                          </div>
+                          <input id={`f-${field}`} type="range" min={min} max={max} step="0.01" value={v} onChange={(e) => handleFactorChange(field, parseFloat(e.target.value))} className="mt-2 w-full accent-blue-600" />
+                          <div className="flex justify-between font-mono text-[10px] text-slate-400"><span>{(min * 100).toFixed(0)}%</span><span>0</span><span>+{(max * 100).toFixed(0)}%</span></div>
                         </div>
                       );
                     })}
-                  </div>
-                </div>
+                  </fieldset>
+                </section>
 
-                {/* 2. Actuarial Renewal Premium Calculation Engine */}
-                <div className="bg-slate-900 text-white rounded-2xl p-5 shadow-md border border-slate-800">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
-                    <div>
-                      <h3 className="font-bold text-sm text-sky-200">{tx("Actuarial Renewal Premium Formula")}</h3>
-                      <p className="text-[11px] text-slate-400 mt-0.5 font-mono">
-                        {tx("P_renewal = P_expiring × (1 + Δ_duration) × (1 + Δ_exposure) × (1 + Δ_coverage) × (1 + Δ_rate)")}
-                      </p>
-                    </div>
-                    <span className="px-3 py-1 bg-sky-500/20 border border-sky-400/30 text-sky-200 rounded-full font-mono text-xs font-bold">
-                      {fmtPKR(coState.proposedPremium)}
-                    </span>
-                  </div>
-
-                  {/* Factor Modeler Sliders Grid */}
+                {/* 3. Reason & the customer's response */}
+                <section className="bg-white p-4 rounded-xl border border-slate-200 space-y-4">
+                  <h3 className="text-sm font-bold text-slate-900">{tx("Counter-Offer Terms & Proposer Response")}</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Expiring Base Premium */}
-                    <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
-                      <div className="flex justify-between text-[11px] mb-1">
-                        <span className="text-slate-300 font-medium">{tx("Expiring Base Premium (P_exp)")}</span>
-                        <span className="font-mono font-bold text-sky-300">{fmtPKR(coState.expiringPremium)}</span>
-                      </div>
-                      <input
-                        type="number"
-                        value={coState.expiringPremium}
-                        onChange={(e) => handleFactorChange("expiringPremium", Number(e.target.value))}
-                        className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white font-mono"
-                      />
-                    </div>
-
-                    {/* Duration Factor */}
-                    <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
-                      <div className="flex justify-between text-[11px] mb-1">
-                        <span className="text-slate-300 font-medium">{tx("Duration Factor (Δ_duration)")}</span>
-                        <span className="font-mono font-bold text-sky-300">{(coState.deltaDuration * 100).toFixed(1)}%</span>
-                      </div>
-                      <input
-                        type="range" min="-0.10" max="0.30" step="0.01"
-                        value={coState.deltaDuration}
-                        onChange={(e) => handleFactorChange("deltaDuration", parseFloat(e.target.value))}
-                        className="w-full accent-sky-500"
-                      />
-                    </div>
-
-                    {/* Exposure Factor */}
-                    <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
-                      <div className="flex justify-between text-[11px] mb-1">
-                        <span className="text-slate-300 font-medium">{tx("Exposure Factor (Δ_exposure)")}</span>
-                        <span className="font-mono font-bold text-sky-300">{(coState.deltaExposure * 100).toFixed(1)}%</span>
-                      </div>
-                      <input
-                        type="range" min="-0.20" max="0.50" step="0.01"
-                        value={coState.deltaExposure}
-                        onChange={(e) => handleFactorChange("deltaExposure", parseFloat(e.target.value))}
-                        className="w-full accent-sky-500"
-                      />
-                    </div>
-
-                    {/* Coverage Factor */}
-                    <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
-                      <div className="flex justify-between text-[11px] mb-1">
-                        <span className="text-slate-300 font-medium">{tx("Coverage Factor (Δ_coverage)")}</span>
-                        <span className="font-mono font-bold text-sky-300">{(coState.deltaCoverage * 100).toFixed(1)}%</span>
-                      </div>
-                      <input
-                        type="range" min="-0.20" max="0.30" step="0.01"
-                        value={coState.deltaCoverage}
-                        onChange={(e) => handleFactorChange("deltaCoverage", parseFloat(e.target.value))}
-                        className="w-full accent-sky-500"
-                      />
-                    </div>
-
-                    {/* Rate / Claims Adjustment */}
-                    <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60 md:col-span-2">
-                      <div className="flex justify-between text-[11px] mb-1">
-                        <span className="text-slate-300 font-medium">{tx("Base Rate & Claims Experience Adjustment (Δ_rate)")}</span>
-                        <span className="font-mono font-bold text-sky-300">{(coState.deltaRate * 100).toFixed(1)}%</span>
-                      </div>
-                      <input
-                        type="range" min="-0.20" max="0.50" step="0.01"
-                        value={coState.deltaRate}
-                        onChange={(e) => handleFactorChange("deltaRate", parseFloat(e.target.value))}
-                        className="w-full accent-sky-500"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Summary Variance Box */}
-                  <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-xs flex-wrap gap-2">
                     <div>
-                      <span className="text-slate-400 font-medium">{tx("Original Premium:")}{" "}</span>
-                      <span className="font-mono font-bold text-white">{fmtPKR(coState.expiringPremium)}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 font-medium">{tx("Calculated Renewal Premium:")}{" "}</span>
-                      <span className="font-mono font-bold text-emerald-400">{fmtPKR(coState.proposedPremium)}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 font-medium">{tx("Variance:")}{" "}</span>
-                      <span className={`font-mono font-bold ${deviationPct >= 0 ? "text-sky-300" : "text-emerald-300"}`}>
-                        {deviationPct >= 0 ? "+" : ""}{fmtPKR(coState.proposedPremium - coState.expiringPremium)} ({deviationPct >= 0 ? "+" : ""}{deviationPct.toFixed(1)}%)
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 3. Reason Code & Proposer Consent */}
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-                  <h3 className="font-bold text-slate-900 text-xs uppercase tracking-wider">
-                    {tx("Counter-Offer Terms & Proposer Response")}
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">{tx("Counter-Offer Reason Code")}</label>
-                      <select
-                        value={coState.reasonCode}
-                        onChange={(e) => updateCounterState(p.id, (prev) => ({ ...prev, reasonCode: e.target.value }))}
-                        className="w-full p-2 border border-slate-300 rounded-lg text-xs bg-white text-slate-800"
-                      >
+                      <label htmlFor="reason-code" className="block text-xs font-semibold text-slate-700 mb-1.5">{tx("Counter-Offer Reason Code")}</label>
+                      <select id="reason-code" value={coState.reasonCode} onChange={(e) => updateCounterState(p.id, (prev) => ({ ...prev, reasonCode: e.target.value }))}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
                         <option value="Price Objection">{tx("Price Objection & Broker Negotiation")}</option>
                         <option value="Renewal Rate & Risk Exposure Change">{tx("Renewal Rate & Exposure Adjustment")}</option>
                         <option value="Claims Experience Surcharge">{tx("Claims Experience Adverse Loading")}</option>
@@ -1554,114 +1546,75 @@ export default function PostUnderwritingPage() {
                         <option value="Coverage Limit Modification">{tx("Coverage Limit / Deductible Alteration")}</option>
                       </select>
                     </div>
-
                     <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">{tx("Customer / Proposer Decision")}</label>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleCustomerDecision("ACCEPTED")}
-                          className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
-                            coState.customerDecision === "ACCEPTED"
-                              ? "bg-emerald-600 text-white border-emerald-700"
-                              : "bg-white text-slate-700 border-slate-300 hover:bg-slate-100"
-                          }`}
-                        >
-                          {tx("✓ Accept Terms")}
-                        </button>
-                        <button
-                          onClick={() => handleCustomerDecision("RE_NEGOTIATE")}
-                          className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
-                            coState.customerDecision === "RE_NEGOTIATE"
-                              ? "bg-blue-700 text-white border-blue-800"
-                              : "bg-white text-slate-700 border-slate-300 hover:bg-slate-100"
-                          }`}
-                        >
-                          {tx("↻ Re-Negotiate")}
-                        </button>
-                        <button
-                          onClick={() => handleCustomerDecision("DECLINED")}
-                          className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
-                            coState.customerDecision === "DECLINED"
-                              ? "bg-slate-700 text-white border-slate-800"
-                              : "bg-white text-slate-700 border-slate-300 hover:bg-slate-100"
-                          }`}
-                        >
-                          {tx("✕ Decline Terms")}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 4. Multi-Tier Governance Sign-Off Matrix */}
-                <div className="bg-sky-50/70 p-4 rounded-xl border border-sky-200/80 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-bold text-sky-950 text-xs uppercase tracking-wider">
-                        {tx("Underwriting Authority Routing Matrix (Sign-Off Control)")}
-                      </h3>
-                      <p className="text-[11px] text-sky-800 mt-0.5">
-                        {tx(authority.description)}
-                      </p>
-                    </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-extrabold border ${authority.badgeClass}`}>
-                      {authority.level}: {authority.role}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 pt-2 border-t border-sky-200/60">
-                    <button
-                      onClick={() => handleSignOff("Junior Underwriter", "Level 1")}
-                      disabled={coState.workflowState === "APPROVED"}
-                      className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs disabled:opacity-50 transition-colors shadow-2xs"
-                    >
-                      {tx("Sign-off as Junior UW (≤ 10%)")}
-                    </button>
-                    <button
-                      onClick={() => handleSignOff("Senior Underwriter", "Level 2")}
-                      disabled={coState.workflowState === "APPROVED"}
-                      className="px-3.5 py-2 bg-sky-700 hover:bg-sky-800 text-white font-bold rounded-lg text-xs disabled:opacity-50 transition-colors shadow-2xs"
-                    >
-                      {tx("Sign-off as Senior UW (≤ 25%)")}
-                    </button>
-                    <button
-                      onClick={() => handleSignOff("Chief Underwriter & Pricing Committee", "Level 3")}
-                      disabled={coState.workflowState === "APPROVED"}
-                      className="px-3.5 py-2 bg-blue-900 hover:bg-blue-950 text-white font-bold rounded-lg text-xs disabled:opacity-50 transition-colors shadow-2xs"
-                    >
-                      {tx("Sign-off as Chief UW / Committee (> 25%)")}
-                    </button>
-                  </div>
-
-                  {/* Audit Trail Table */}
-                  {coState.signoffHistory.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-sky-200/60">
-                      <h4 className="text-[11px] font-bold text-slate-800 mb-2">{tx("Electronic Sign-Off Audit Trail")}</h4>
-                      <div className="space-y-1.5">
-                        {coState.signoffHistory.map((s, idx) => (
-                          <div key={idx} className="flex items-center justify-between bg-white p-2.5 rounded-lg border border-sky-200/80 text-[11px]">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-emerald-700">{tx("✓ Signed")}</span>
-                              <span className="font-semibold text-slate-800">{s.approvedBy}</span>
-                              <span className="text-slate-400">({s.level})</span>
-                            </div>
-                            <span className="font-mono text-slate-500 text-[10px]">{s.timestamp}</span>
-                          </div>
+                      <span id="decision-label" className="block text-xs font-semibold text-slate-700 mb-1.5">{tx("Customer / Proposer Decision")}</span>
+                      <div role="radiogroup" aria-labelledby="decision-label" className="grid grid-cols-3 gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1">
+                        {([
+                          ["ACCEPTED", "Accept Terms", "M5 13l4 4L19 7", "bg-emerald-600 text-white"],
+                          ["RE_NEGOTIATE", "Re-Negotiate", "M4 4v5h5M20 20v-5h-5M5.6 15A8 8 0 0 0 20 12M18.4 9A8 8 0 0 0 4 12", "bg-blue-600 text-white"],
+                          ["DECLINED", "Decline Terms", "M6 6l12 12M18 6L6 18", "bg-slate-700 text-white"],
+                        ] as const).map(([val, label, icon, on]) => (
+                          <button key={val} type="button" role="radio" aria-checked={coState.customerDecision === val} disabled={coState.workflowState === "APPROVED"} onClick={() => handleCustomerDecision(val)}
+                            className={`flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 ${coState.customerDecision === val ? on : "text-slate-600 hover:bg-white"}`}>
+                            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d={icon} /></svg>
+                            {tx(label)}
+                          </button>
                         ))}
                       </div>
+                      {coState.customerDecision === "PENDING" && <p className="mt-1.5 text-[11px] text-slate-500">{tx("No response recorded yet.")}</p>}
+                    </div>
+                  </div>
+                </section>
+
+                {/* 4. Sign-off: the level this variance needs */}
+                <section className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">{tx("Underwriting Authority Routing Matrix (Sign-Off Control)")}</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">{tx(authority.description)}</p>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold border ${authority.badgeClass}`}>{authority.level}: {authority.role}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 pt-3 border-t border-slate-100">
+                    {([
+                      ["Junior Underwriter", "Level 1", "Sign-off as Junior UW (≤ 10%)"],
+                      ["Senior Underwriter", "Level 2", "Sign-off as Senior UW (≤ 25%)"],
+                      ["Chief Underwriter & Pricing Committee", "Level 3", "Sign-off as Chief UW / Committee (> 25%)"],
+                    ] as const).map(([role, level, label]) => {
+                      const needed = authority.level === level;
+                      const below = Number(level.slice(-1)) < Number(String(authority.level).slice(-1));
+                      return (
+                        <button key={level} type="button" onClick={() => handleSignOff(role, level)} disabled={coState.workflowState === "APPROVED"}
+                          title={below ? tx("Below the authority this variance needs") : needed ? tx("The level this variance needs") : undefined}
+                          className={`px-3.5 py-2 rounded-lg text-xs font-semibold disabled:opacity-50 transition-colors ${needed ? "bg-blue-600 hover:bg-blue-700 text-white shadow-sm" : "bg-white hover:bg-slate-50 text-slate-700 border border-slate-300"}`}>
+                          {tx(label)}{needed && <span className="ms-1.5 rounded bg-white/20 px-1 text-[10px]">{tx("Required")}</span>}{below && <span className="ms-1.5 text-[10px] font-medium text-amber-700">{tx("Below required level")}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {coState.signoffHistory.length > 0 && (
+                    <div className="pt-3 border-t border-slate-100">
+                      <h4 className="text-xs font-semibold text-slate-700 mb-2">{tx("Electronic Sign-Off Audit Trail")}</h4>
+                      <ul className="space-y-1.5">
+                        {coState.signoffHistory.map((s, idx) => (
+                          <li key={idx} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+                            <span className="flex items-center gap-2 min-w-0">
+                              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5L20 7" /></svg></span>
+                              <span className="font-semibold text-slate-800 truncate">{s.approvedBy}</span><span className="text-slate-400">({s.level})</span>
+                            </span>
+                            <span className="font-mono text-[11px] text-slate-500 shrink-0">{s.timestamp}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   )}
-                </div>
+                </section>
               </div>
 
-              <div className="border-t border-slate-200 px-6 py-4 flex justify-between items-center bg-slate-50">
-                <span className="text-xs text-slate-500 font-mono">
-                  {tx("Pakistani Contract Act 1872 · Section 7 Counter-Offer Perfection")}
-                </span>
-                <button
-                  onClick={() => setActiveCounterPolicy(null)}
-                  className="px-5 py-2 bg-slate-900 text-white font-bold text-xs rounded-xl hover:bg-slate-800"
-                >
+              <div className="border-t border-slate-200 px-6 py-3.5 flex flex-wrap justify-between items-center gap-3 bg-white">
+                <span className="text-xs text-slate-500">{tx("Pakistani Contract Act 1872 · Section 7 Counter-Offer Perfection")}</span>
+                <button onClick={() => setActiveCounterPolicy(null)} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-lg shadow-sm">
                   {tx("Done / Close")}
                 </button>
               </div>
@@ -1713,158 +1666,145 @@ export default function PostUnderwritingPage() {
         };
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs px-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col">
-              {/* Modal Header */}
-              <div className="bg-gradient-to-r from-sky-900 via-blue-900 to-slate-900 px-6 py-4 flex items-center justify-between text-white">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-base font-bold">{tx("Reinsurance Placement & Cession Engine (Gate 2)")}</h2>
-                    <span className="px-2 py-0.5 rounded bg-white/20 text-white font-mono text-[10px] font-bold">
-                      {p.customer_name} ({p.policy_number ?? tx("Proposal")})
-                    </span>
-                  </div>
-                  <p className="text-xs text-sky-200 mt-0.5 font-mono">
-                    {tx("Company Retention Limit: PKR 10,000,000 · Treaty Quota Share & Facultative Placement")}
-                  </p>
+          <div
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/50 p-0 sm:p-4"
+            onClick={() => closeReinsuranceModal()}
+            onKeyDown={(e) => { if (e.key === "Escape") closeReinsuranceModal(); }}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="reins-title"
+              tabIndex={-1}
+              ref={(el) => el?.focus()}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-3xl border border-slate-200 overflow-hidden max-h-[94vh] flex flex-col outline-none"
+            >
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-slate-200 flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Reinsurance Placement & Cession Engine (Gate 2)")}</p>
+                  <h2 id="reins-title" className="mt-0.5 text-lg font-bold text-slate-900 truncate">
+                    {p.customer_name} <span className="font-mono text-sm font-semibold text-slate-500">({p.policy_number ?? tx("Proposal")})</span>
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">{tx("Company Retention Limit: PKR 10,000,000 · Treaty Quota Share & Facultative Placement")}</p>
                 </div>
-                <button onClick={() => closeReinsuranceModal()} className="text-white/60 hover:text-white text-xl">✕</button>
+                <button onClick={() => closeReinsuranceModal()} aria-label={tx("Close")} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                  <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" /></svg>
+                </button>
               </div>
 
-              <div className="px-6 py-5 overflow-y-auto space-y-5 text-xs">
-                {/* 1. Cession Retention Breakdown */}
-                <div className="bg-slate-900 text-white p-4 rounded-2xl border border-slate-800 shadow-md">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
-                    <h3 className="font-bold text-xs text-sky-200 uppercase tracking-wider">{tx("Actuarial Cession Breakdown")}</h3>
-                    <span className="px-2.5 py-0.5 rounded-full bg-sky-500/20 text-sky-200 border border-sky-400/30 text-[10px] font-bold font-mono">
-                      {tx("SECP Rule 24 / Treaty 2026")}
-                    </span>
+              <div className="px-6 py-5 overflow-y-auto space-y-5 text-sm flex-1 bg-slate-50/50">
+                {/* Whether this needs a reinsurer at all, said first */}
+                {activeReinsuranceView && !activeReinsuranceView.referral_required && (
+                  <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                    <span className="font-semibold">{tx("Fully retained")}</span> — {fmtPKR(sumAssured)} {tx("sits within the automatic capacity of")} {fmtPKR(activeReinsuranceView.cession.automatic_capacity)}. {tx("No facultative slip is needed.")}
                   </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                    <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
-                      <span className="text-[10px] text-slate-400">{tx("Total Sum Assured")}</span>
-                      <p className="font-mono font-bold text-white mt-0.5">{fmtPKR(sumAssured)}</p>
-                    </div>
-                    <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
-                      <span className="text-[10px] text-slate-400">{tx("Company Retention Cap")}</span>
-                      <p className="font-mono font-bold text-emerald-400 mt-0.5">{fmtPKR(retentionLimit)}</p>
-                    </div>
-                    <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
-                      <span className="text-[10px] text-slate-400">{tx("Excess Ceded Risk")}</span>
-                      <p className="font-mono font-bold text-sky-300 mt-0.5">
-                        {cededAmount > 0 ? fmtPKR(cededAmount) : tx("PKR 0 (Fully Retained)")}
-                      </p>
-                    </div>
-                    <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
-                      <span className="text-[10px] text-slate-400">{tx("Cession Share %")}</span>
-                      <p className="font-mono font-bold text-sky-300 mt-0.5">{cessionPct.toFixed(1)}%</p>
-                    </div>
+                )}
+                {activeReinsuranceView && activeReinsuranceView.referral_required && !activeReinsuranceView.can_refer && (
+                  <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    {tx("Cession is required, but a case at status")} <strong>{activeReinsuranceView.policy_status}</strong> {tx("cannot be referred yet — complete the underwriting view first.")}
                   </div>
-                </div>
+                )}
 
-                {/* 2. Ceding Premium Accounting Entry */}
-                <div className="bg-sky-50/70 p-4 rounded-xl border border-sky-200 space-y-2">
-                  <h3 className="font-bold text-sky-950 text-xs uppercase tracking-wider">
-                    {tx("Ceding Premium Accounting Entry (Double Entry Ledger)")}
-                  </h3>
-                  <div className="grid grid-cols-3 gap-3 bg-white p-3 rounded-lg border border-sky-200/80 font-mono">
-                    <div>
-                      <span className="text-[10px] text-slate-400">{tx("Ceded Gross Premium")}</span>
-                      <p className="font-bold text-slate-900 text-xs mt-0.5">{fmtPKR(cededPremium)}</p>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400">{tx("Ceding Commission (22.5%)")}</span>
-                      <p className="font-bold text-emerald-700 text-xs mt-0.5">-{fmtPKR(cedingCommission)}</p>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400">{tx("Net Reinsurer Payable")}</span>
-                      <p className="font-bold text-sky-800 text-xs mt-0.5">{fmtPKR(netPayable)}</p>
-                    </div>
+                {/* 1. How much is kept and how much is ceded */}
+                <section className="bg-white p-4 rounded-xl border border-slate-200">
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <h3 className="text-sm font-bold text-slate-900">{tx("Actuarial Cession Breakdown")}</h3>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-slate-600">{tx("SECP Rule 24 / Treaty 2026")}</span>
                   </div>
-                </div>
-
-                {/* 3. Panel Reinsurer Selection & Transmit Slip */}
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-                  <h3 className="font-bold text-slate-900 text-xs uppercase tracking-wider">
-                    {tx("Select Reinsurer & Transmit Facultative Slip")}
-                  </h3>
-
-                  {/* Say up front when the slip cannot be transmitted, rather than
-                      letting the underwriter fill it in and hit a 400/409. */}
-                  {activeReinsuranceView && !activeReinsuranceView.referral_required && (
-                    <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-lg px-3 py-2 text-[11px] font-semibold">
-                      {tx("✓ Fully retained —")}{" "}{fmtPKR(sumAssured)}{" "}{tx("sits within the automatic capacity of")}{" "}
-                      {fmtPKR(activeReinsuranceView.cession.automatic_capacity)}{tx(". No facultative slip is needed.")}
-                    </div>
-                  )}
-                  {activeReinsuranceView && activeReinsuranceView.referral_required && !activeReinsuranceView.can_refer && (
-                    <div className="bg-blue-50/80 border border-blue-200 text-blue-900 rounded-lg px-3 py-2 text-[11px] font-semibold">
-                      {tx("Cession is required, but a case at status")}{" "}{activeReinsuranceView.policy_status}{" "}{tx("cannot be referred yet — complete the underwriting view first.")}
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {panelOptions.map((r) => (
-                      <div
-                        key={r.id}
-                        onClick={() =>
-                          setReinsurancePlacements((prev) => ({
-                            ...prev,
-                            [p.id]: { ...currentPlacement, reinsurerId: r.id, reinsurerName: r.name },
-                          }))
-                        }
-                        className={`p-3 rounded-xl border cursor-pointer transition-all ${
-                          currentPlacement.reinsurerId === r.id
-                            ? "bg-sky-50 border-sky-600 ring-2 ring-sky-400/40"
-                            : "bg-white border-slate-200 hover:border-slate-300"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-slate-900">{r.name}</span>
-                          <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">
-                            {r.am_best_rating}
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-slate-500 mt-1">
-                          {tx("Capacity:")}{" "}{fmtPKR(r.facultative_capacity)}{" "}{tx("· Email:")}{" "}{r.contact_email}
-                        </p>
+                  <div className="flex h-2.5 overflow-hidden rounded-full bg-slate-200" role="img" aria-label={`${tx("Retained")} ${(100 - cessionPct).toFixed(1)}%, ${tx("Ceded")} ${cessionPct.toFixed(1)}%`}>
+                    <div className="bg-emerald-500" style={{ width: `${Math.max(0, 100 - cessionPct)}%` }} />
+                    <div className="bg-blue-600" style={{ width: `${Math.min(100, cessionPct)}%` }} />
+                  </div>
+                  <div className="mt-1.5 flex justify-between text-[11px] font-medium">
+                    <span className="text-emerald-700">● {tx("Retained")} {(100 - cessionPct).toFixed(1)}%</span>
+                    <span className="text-blue-700">● {tx("Ceded")} {cessionPct.toFixed(1)}%</span>
+                  </div>
+                  <dl className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {([
+                      [tx("Total Sum Assured"), fmtPKR(sumAssured), "text-slate-900"],
+                      [tx("Company Retention Cap"), fmtPKR(retentionLimit), "text-emerald-700"],
+                      [tx("Excess Ceded Risk"), cededAmount > 0 ? fmtPKR(cededAmount) : tx("PKR 0 (Fully Retained)"), "text-blue-700"],
+                      [tx("Cession Share %"), `${cessionPct.toFixed(1)}%`, "text-blue-700"],
+                    ] as const).map(([k, v, c]) => (
+                      <div key={k} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                        <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{k}</dt>
+                        <dd className={`mt-0.5 font-mono text-sm font-bold ${c}`}>{v}</dd>
                       </div>
                     ))}
-                  </div>
+                  </dl>
+                </section>
 
+                {/* 2. What it costs */}
+                <section className="bg-white p-4 rounded-xl border border-slate-200">
+                  <h3 className="text-sm font-bold text-slate-900 mb-3">{tx("Ceding Premium Accounting Entry (Double Entry Ledger)")}</h3>
+                  <dl className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="rounded-lg border border-slate-200 px-3 py-2.5"><dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Ceded Gross Premium")}</dt><dd className="mt-0.5 font-mono text-sm font-bold text-slate-900">{fmtPKR(cededPremium)}</dd></div>
+                    <div className="rounded-lg border border-slate-200 px-3 py-2.5"><dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Ceding Commission (22.5%)")}</dt><dd className="mt-0.5 font-mono text-sm font-bold text-emerald-700">−{fmtPKR(cedingCommission)}</dd></div>
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5"><dt className="text-[11px] font-semibold uppercase tracking-wide text-blue-700">{tx("Net Reinsurer Payable")}</dt><dd className="mt-0.5 font-mono text-sm font-bold text-blue-800">{fmtPKR(netPayable)}</dd></div>
+                  </dl>
+                </section>
+
+                {/* 3. Who takes it */}
+                <section className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">{tx("Underwriter Risk Package Notes")}</label>
-                    <textarea
-                      rows={2}
-                      value={currentPlacement.note}
-                      onChange={(e) =>
-                        setReinsurancePlacements((prev) => ({
-                          ...prev,
-                          [p.id]: { ...currentPlacement, note: e.target.value },
-                        }))
-                      }
-                      placeholder={tx("Enter specific exposure notes, medical loading details, or coverage conditions for reinsurer slip...")}
-                      className="w-full p-2 border border-slate-300 rounded-lg text-xs bg-white text-slate-800"
-                    />
+                    <h3 className="text-sm font-bold text-slate-900">{tx("Select Reinsurer & Transmit Facultative Slip")}</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">{tx("Choose one reinsurer. Those whose capacity is below the ceded amount are flagged.")}</p>
                   </div>
-                </div>
+                  <div role="radiogroup" aria-label={tx("Reinsurer")} className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {panelOptions.map((r) => {
+                      const on = currentPlacement.reinsurerId === r.id;
+                      const short = cededAmount > 0 && r.facultative_capacity < cededAmount;
+                      return (
+                        <button
+                          key={r.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={on}
+                          onClick={() => setReinsurancePlacements((prev) => ({ ...prev, [p.id]: { ...currentPlacement, reinsurerId: r.id, reinsurerName: r.name } }))}
+                          className={`text-start p-3.5 rounded-xl border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${on ? "bg-blue-50 border-blue-600 ring-1 ring-blue-600" : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50"}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="flex items-center gap-2 min-w-0">
+                              <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${on ? "border-blue-600 bg-blue-600" : "border-slate-300 bg-white"}`}>{on && <span className="h-1.5 w-1.5 rounded-full bg-white" />}</span>
+                              <span className="font-semibold text-slate-900 truncate">{r.name}</span>
+                            </span>
+                            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-700 ring-1 ring-inset ring-slate-200" title={tx("AM Best rating")}>{r.am_best_rating}</span>
+                          </div>
+                          <p className="mt-2 text-xs text-slate-600">{tx("Capacity:")} <span className="font-mono font-semibold text-slate-800">{fmtPKR(r.facultative_capacity)}</span></p>
+                          <p className="text-xs text-slate-500 truncate">{r.contact_email}</p>
+                          {short && <p className="mt-1.5 text-[11px] font-semibold text-amber-700">{tx("Capacity is below the ceded amount")}</p>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div>
+                    <label htmlFor="risk-notes" className="block text-xs font-semibold text-slate-700 mb-1.5">{tx("Underwriter Risk Package Notes")} <span className="font-normal text-slate-400">({tx("optional")})</span></label>
+                    <textarea
+                      id="risk-notes"
+                      rows={3}
+                      maxLength={1000}
+                      value={currentPlacement.note}
+                      onChange={(e) => setReinsurancePlacements((prev) => ({ ...prev, [p.id]: { ...currentPlacement, note: e.target.value } }))}
+                      placeholder={tx("Enter specific exposure notes, medical loading details, or coverage conditions for reinsurer slip...")}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                    <p className="mt-1 text-end text-[11px] text-slate-400">{currentPlacement.note.length}/1000</p>
+                  </div>
+                </section>
+              </div>
 
-                {/* Modal Footer Actions */}
-                <div className="pt-2 flex items-center justify-between border-t border-slate-200">
-                  <button
-                    onClick={() => closeReinsuranceModal()}
-                    className="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-lg hover:bg-slate-200"
-                  >
-                    {tx("Cancel")}
-                  </button>
-                  <button
-                    onClick={() => handleModalSubmit(selectedReinsurerName)}
-                    disabled={actionLoading || activeReinsuranceView?.referral_required === false}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {actionLoading ? tx("Transmitting…") : tx("✓ Transmit Slip & Bind ({0})", { 0: selectedReinsurerName })}
-                  </button>
-                </div>
+              {/* Footer: the decision */}
+              <div className="px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white">
+                <button onClick={() => closeReinsuranceModal()} className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50">{tx("Cancel")}</button>
+                <button
+                  onClick={() => handleModalSubmit(selectedReinsurerName)}
+                  disabled={actionLoading || activeReinsuranceView?.referral_required === false}
+                  className="inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {actionLoading ? tx("Transmitting…") : <><svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>{tx("Transmit Slip & Bind ({0})", { 0: selectedReinsurerName })}</>}
+                </button>
               </div>
             </div>
           </div>

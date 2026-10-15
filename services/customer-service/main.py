@@ -12,20 +12,36 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 import migrate
 
-STAFF=frozenset({'Admin','CustomerService','ClaimsManager'})
+# Who works tickets (reply, assign, change status) and who may only look. Admin sees every ticket but does not work them: the service
+# desk does. 'ServiceDesk' is the shared actor of the open desk (see below).
+WORKERS=frozenset({'CustomerService','ClaimsManager','ServiceDesk'})
+STAFF=WORKERS|{'Admin'}
+SUPERVISORS=frozenset({'ClaimsManager','ServiceDesk'})
 SUBMIT=frozenset({'Admin','CustomerService','ClaimsManager','ClaimsAdjuster','Underwriter','Agent','Broker'})
 TRANSITIONS={'OPEN':{'IN_PROGRESS','CANCELLED'},'IN_PROGRESS':{'WAITING_CUSTOMER','RESOLVED','CANCELLED'},'WAITING_CUSTOMER':{'IN_PROGRESS','RESOLVED','CANCELLED'},'RESOLVED':{'CLOSED','IN_PROGRESS'},'CLOSED':{'IN_PROGRESS'},'CANCELLED':set()}
 engine=None
 @asynccontextmanager
 async def lifespan(app):
     global engine
+    if OPEN_DESK and (os.environ.get('CS_ENV','').lower()=='production' or not OPEN_TENANT): raise RuntimeError('CS_OPEN_DESK needs CS_OPEN_DESK_TENANT_ID and is refused when CS_ENV=production')
     if os.environ.get('CS_RUN_MIGRATIONS','true')=='true' and os.environ.get('CS_MIGRATION_DATABASE_URL'): await migrate.run()
     engine=create_async_engine(os.environ['CS_DATABASE_URL'],pool_pre_ping=True)
     yield
     await engine.dispose()
 app=FastAPI(title='Customer Service',version='1.0.0',lifespan=lifespan)
 
+# The open desk: a separate portal with no sign-in, for development. Switched on with CS_OPEN_DESK=true, it acts as ONE fixed tenant
+# (CS_OPEN_DESK_TENANT_ID) and one shared 'Service Desk' actor, and only for requests that carry the x-open-desk header. It refuses to
+# start when CS_ENV=production. Anyone who can reach the service can use it, so never switch it on where real customers' data lives.
+OPEN_DESK=os.environ.get('CS_OPEN_DESK','').lower()=='true'
+OPEN_TENANT=os.environ.get('CS_OPEN_DESK_TENANT_ID','')
+OPEN_ACTOR=UUID('5e2f6f0e-0d1c-5b7e-9d3a-0c0de5d3c0de')
+def open_desk_user(req):
+    if not OPEN_DESK or req.headers.get('x-open-desk')!='1' or req.headers.get('authorization'): return None
+    return {'id':str(OPEN_ACTOR),'tenant_id':OPEN_TENANT,'full_name':'Service Desk','email':'service-desk@open','role_name':'ServiceDesk','is_active':True,'status':'ACTIVE','staff':True,'can_work':True,'token':''}
 async def identity(req: Request):
+    opened=open_desk_user(req)
+    if opened: return opened
     token=req.headers.get('authorization','')
     if not token.lower().startswith('bearer '): raise HTTPException(401,'Sign in through the portal')
     try:
@@ -38,7 +54,7 @@ async def identity(req: Request):
     if not u.get('is_active') or str(u.get('status','')).upper()!='ACTIVE' or not u.get('tenant_id'): raise HTTPException(403,'An active tenant account is required')
     if u.get('role_name') not in SUBMIT: raise HTTPException(403,'Your role cannot access Customer Service')
     if req.headers.get('x-tenant-id') and req.headers['x-tenant-id'].lower()!=str(u['tenant_id']).lower(): raise HTTPException(403,'Tenant mismatch')
-    return {**u,'token':token,'staff':u['role_name'] in STAFF}
+    return {**u,'token':token,'staff':u['role_name'] in STAFF,'can_work':u['role_name'] in WORKERS}
 
 class Strict(BaseModel):
     model_config=ConfigDict(extra='forbid',str_strip_whitespace=True)
@@ -69,7 +85,8 @@ async def event(c,id,u,kind,body,internal=False):
     await c.execute(text('INSERT INTO customer_service.events(ticket_id,actor_id,actor_name,kind,body,internal) VALUES (:id,:a,:n,:k,:b,:i)'),{'id':id,'a':UUID(u['id']),'n':u.get('full_name') or u['email'],'k':kind,'b':body,'i':internal})
 def authorize_change(u,row,new):
     if new not in TRANSITIONS[row['status']]: raise HTTPException(409,'Invalid ticket transition')
-    if not u['staff'] and not (str(row['requester_id'])==u['id'] and ((new=='CANCELLED' and row['status']=='OPEN') or (new=='IN_PROGRESS' and row['status'] in {'RESOLVED','CLOSED'}))): raise HTTPException(403,'Only service staff can perform this action')
+    own=str(row['requester_id'])==u['id'] and ((new=='CANCELLED' and row['status']=='OPEN') or (new=='IN_PROGRESS' and row['status'] in {'RESOLVED','CLOSED'}))
+    if not (u.get('can_work') or own): raise HTTPException(403,'Only the service desk can perform this action')
 
 @app.get('/v1/healthz')
 async def health():
@@ -130,6 +147,9 @@ async def create(body:Create,u=Depends(identity)):
                 except httpx.HTTPError: raise HTTPException(503,'Record validation unavailable')
                 if r.status_code!=200: raise HTTPException(422,'Linked record is unavailable or inaccessible')
                 if kind=='policies' and body.customer_id and str(r.json().get('customer_id'))!=str(body.customer_id): raise HTTPException(422,'Policy does not belong to the selected customer')
+    return await insert_ticket(body,u)
+async def insert_ticket(body,u):
+    """Create the ticket (idempotent on the key). Shared by staff/portal users and by customers signed in to the customer portal."""
     args=body.model_dump();args.update(id=uuid4(),t=UUID(u['tenant_id']),r=UUID(u['id']),n=u.get('full_name') or u['email'],due=datetime.now(timezone.utc)+timedelta(hours={'LOW':120,'NORMAL':72,'HIGH':24,'URGENT':4}[body.priority]))
     async with engine.begin() as c:
         row=(await c.execute(text("INSERT INTO customer_service.tickets(id,tenant_id,requester_id,requester_name,customer_id,policy_id,title,description,category,priority,idempotency_key,due_at) VALUES (:id,:t,:r,:n,:customer_id,:policy_id,:title,:description,:category,:priority,:idempotency_key,:due) ON CONFLICT(tenant_id,requester_id,idempotency_key) DO NOTHING RETURNING *"),args)).mappings().first()
@@ -138,6 +158,7 @@ async def create(body:Create,u=Depends(identity)):
             row=(await c.execute(text('SELECT * FROM customer_service.tickets WHERE tenant_id=:t AND requester_id=:r AND idempotency_key=:idempotency_key'),args)).mappings().one()
             if any(row[k]!=args[k] for k in ['title','description','category','priority','customer_id','policy_id']): raise HTTPException(409,'Idempotency key belongs to another submission')
     return dict(row)
+
 @app.get('/v1/tickets/{id}')
 async def detail(id:UUID,u=Depends(identity)):
     async with engine.connect() as c:
@@ -146,9 +167,10 @@ async def detail(id:UUID,u=Depends(identity)):
     return {**row,'events':[dict(r) for r in rows]}
 @app.post('/v1/tickets/{id}/comments')
 async def comment(id:UUID,body:Comment,u=Depends(identity)):
-    if body.internal and not u['staff']: raise HTTPException(403,'Internal notes are restricted')
+    if body.internal and not u.get('can_work'): raise HTTPException(403,'Internal notes are restricted')
     async with engine.begin() as c:
         row=await record(c,id,u,True)
+        if not u.get('can_work') and str(row['requester_id'])!=u['id']: raise HTTPException(403,'Only the service desk can reply to a customer')
         if row['status'] in {'CLOSED','CANCELLED'}: raise HTTPException(409,'Reopen the ticket before replying')
         await event(c,id,u,'NOTE' if body.internal else 'REPLY',body.body,body.internal)
     return {'ok':True}
@@ -163,13 +185,13 @@ async def change(id:UUID,body:Change,u=Depends(identity)):
     return {'ok':True}
 @app.post('/v1/tickets/{id}/assignment')
 async def assign(id:UUID,body:Assignment,u=Depends(identity)):
-    if not u['staff']: raise HTTPException(403,'Only service staff can assign tickets')
+    if not u.get('can_work'): raise HTTPException(403,'Only the service desk can assign tickets')
     if body.user_id and str(body.user_id)!=u['id']: raise HTTPException(403,'Claim the ticket yourself; arbitrary reassignment is not supported')
     async with engine.begin() as c:
         row=await record(c,id,u,True)
         if row['version']!=body.version: raise HTTPException(409,'Ticket changed. Refresh before continuing')
         if row['status'] in {'CLOSED','CANCELLED'}: raise HTTPException(409,'Ticket is closed')
-        if row['assignee_id'] and str(row['assignee_id'])!=u['id'] and u['role_name']!='Admin': raise HTTPException(403,'Ticket belongs to another staff member')
+        if row['assignee_id'] and str(row['assignee_id'])!=u['id'] and u['role_name'] not in SUPERVISORS: raise HTTPException(403,'Ticket belongs to another staff member')
         await c.execute(text('UPDATE customer_service.tickets SET assignee_id=:a,assignee_name=:n,version=version+1,updated_at=now() WHERE id=:id'),{'id':id,'a':body.user_id,'n':(u.get('full_name') or u['email']) if body.user_id else None})
         await event(c,id,u,'ASSIGNMENT','Claimed' if body.user_id else 'Released')
     return {'ok':True}
@@ -180,3 +202,59 @@ async def seed_demo(u=Depends(identity)):
     if u['role_name']!='Admin': raise HTTPException(403,'Only tenant administrators can populate demo tickets')
     from demo import seed
     return await seed(engine,u)
+
+
+# ── Customers of the customer portal ──────────────────────────────────────────────────────────────────
+# A policyholder is not a tenant user, so they never reach the routes above. Customer Management (which signs them in) calls these
+# with an HMAC signature made with CS_PORTAL_KEY and names the customer; they see and write only tickets they raised themselves,
+# can never write internal notes, and see no internal ones.
+import hmac, hashlib, time
+PORTAL_KEY_ENV='CS_PORTAL_KEY'
+async def portal_identity(req: Request):
+    key=os.environ.get(PORTAL_KEY_ENV,'')
+    ts=req.headers.get('x-service-timestamp',''); sig=req.headers.get('x-service-signature','')
+    path=req.url.path+('?'+req.url.query if req.url.query else '')
+    body=await req.body()
+    ok=bool(key) and req.headers.get('x-service-caller')=='customer-management' and ts.isdigit() and abs(time.time()-int(ts))<=300 and \
+        hmac.compare_digest(hmac.new(key.encode(),f"{ts}\n{req.method.upper()}\n{path}\n{hashlib.sha256(body).hexdigest()}".encode(),hashlib.sha256).hexdigest(),sig)
+    if not ok: raise HTTPException(401,'Invalid service signature')
+    try: t=UUID(req.headers['x-portal-tenant']); cid=UUID(req.headers['x-portal-customer'])
+    except (KeyError,ValueError): raise HTTPException(400,'Customer not named')
+    name=req.headers.get('x-portal-name','Customer')[:120] or 'Customer'
+    return {'id':str(cid),'tenant_id':str(t),'full_name':name,'email':name,'role_name':'Customer','staff':False,'token':''}
+class PortalCreate(Strict):
+    title:str=Field(min_length=3,max_length=200)
+    description:str=Field(min_length=10,max_length=5000)
+    category:Literal['GENERAL','POLICY_SERVICING','BILLING','CLAIM_ENQUIRY','COMPLAINT','DOCUMENTS']='GENERAL'
+    policy_id:UUID|None=None
+    idempotency_key:UUID
+class PortalReply(Strict):
+    body:str=Field(min_length=1,max_length=5000)
+@app.get('/internal/v1/portal/tickets')
+async def portal_list(u=Depends(portal_identity)):
+    args={}; where=scope(u,args)
+    async with engine.connect() as c:
+        rows=(await c.execute(text("SELECT id,title,category,status,priority,created_at,updated_at,policy_id,(due_at<now() AND status NOT IN ('RESOLVED','CLOSED','CANCELLED')) AS overdue FROM customer_service.tickets WHERE "+where+" ORDER BY updated_at DESC LIMIT 100"),args)).mappings().all()
+    return {'items':[dict(r) for r in rows]}
+@app.post('/internal/v1/portal/tickets')
+async def portal_create(body:PortalCreate,u=Depends(portal_identity)):
+    # priority and the customer link are decided here, not by the browser; the policy was checked by Customer Management
+    full=Create(title=body.title,description=body.description,category=body.category,priority='NORMAL',customer_id=UUID(u['id']),policy_id=body.policy_id,idempotency_key=body.idempotency_key)
+    return await insert_ticket(full,u)
+def portal_view(d):
+    keep=('id','title','description','category','status','resolution','created_at','updated_at','policy_id','version')
+    return {**{k:d.get(k) for k in keep},'events':[{k:e[k] for k in ('id','actor_name','kind','body','created_at')} for e in d.get('events',[]) if e['kind'] in ('CREATED','REPLY','STATUS')]}
+@app.get('/internal/v1/portal/tickets/{id}')
+async def portal_detail(id:UUID,u=Depends(portal_identity)):
+    return portal_view(await detail(id,u))
+@app.post('/internal/v1/portal/tickets/{id}/reply')
+async def portal_reply(id:UUID,body:PortalReply,u=Depends(portal_identity)):
+    return await comment(id,Comment(body=body.body,internal=False),u)
+@app.post('/internal/v1/portal/tickets/{id}/withdraw')
+async def portal_withdraw(id:UUID,u=Depends(portal_identity)):
+    async with engine.connect() as c: row=await record(c,id,u)
+    return await change(id,Change(version=row['version'],status='CANCELLED',reason='Withdrawn by the customer'),u)
+@app.post('/internal/v1/portal/tickets/{id}/reopen')
+async def portal_reopen(id:UUID,body:PortalReply,u=Depends(portal_identity)):
+    async with engine.connect() as c: row=await record(c,id,u)
+    return await change(id,Change(version=row['version'],status='IN_PROGRESS',reason=body.body if len(body.body)>=5 else 'Customer says it is not resolved'),u)

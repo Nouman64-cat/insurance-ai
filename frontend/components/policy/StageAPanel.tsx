@@ -222,7 +222,7 @@ export function StageAPanel({ policyId, onChanged }: StageAPanelProps) {
         ? "done"
         : "idle";
   const premState =
-    s.premium.status === "paid"
+    s.premium.status === "paid" || s.premium.status === "prepaid"
       ? "done"
       : s.premium.status === "pending"
         ? "current"
@@ -417,7 +417,13 @@ export function StageAPanel({ policyId, onChanged }: StageAPanelProps) {
           state={premState}
           hint={s.premium.status}
         >
-          <p className="text-xs text-slate-400 italic">
+          {s.premium.status === "prepaid" && (
+            <p className="text-xs text-slate-600">
+              {tx("Already received at the proposal stage")}{s.premium.prepaid_amount ? `: PKR ${Math.round(s.premium.prepaid_amount).toLocaleString()}` : ""}{s.premium.prepaid_reference ? ` (${s.premium.prepaid_reference})` : ""}.{" "}
+              {tx("It is credited when the policy is issued, so you are not asked to pay again. Only a balance, if the final premium is higher, would be collected.")}
+            </p>
+          )}
+          <p className={`text-xs text-slate-400 italic ${s.premium.status === "prepaid" ? "hidden" : ""}`}>
             {s.premium.status === "none"
               ? tx(
                   "Created when the policy is drafted; collected via Confirm Payment after issuance.",
