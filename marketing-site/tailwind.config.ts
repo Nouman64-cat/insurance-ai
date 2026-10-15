@@ -1,6 +1,6 @@
 import type { Config } from "tailwindcss";
 
-// White & blue theme. Colours are semantic (surface / text / line) so components
+// Dark & violet theme. Colours are semantic (surface / text / line) so components
 // never name a literal shade: change the palette here and the whole site follows.
 const config: Config = {
   content: [
@@ -15,32 +15,32 @@ const config: Config = {
         sans: ["var(--font-inter)", "system-ui", "sans-serif"],
       },
       colors: {
-        // Surfaces: white (canvas), stepping into pale blue. Never name a colour "base": text-base is also the font-size class.
-        canvas: "#ffffff",
-        alt: "#f3f7ff",
-        card: "#ffffff",
-        chip: "#e8f0fe",
+        // Surfaces: near-black canvas stepping up to translucent glass. Never name a colour "base": text-base is also the font-size class.
+        canvas: "#07070c",
+        alt: "#0d0d16",
+        card: "rgb(255 255 255 / 0.03)",
+        chip: "rgb(124 58 237 / 0.15)",
         // Hairlines
-        line: "#dce7f8",
-        "line-strong": "#b5caee",
-        // Text: deep navy for headings, blue-grey for body
-        ink: "#0b1b3f",
-        body: "#3a4a6b",
-        muted: "#586a8d",
-        faint: "#66789c",
-        // Blues
+        line: "rgb(255 255 255 / 0.08)",
+        "line-strong": "rgb(255 255 255 / 0.16)",
+        // Text: near-white headings, cool grey body
+        ink: "#f5f5fa",
+        body: "#b4b4c8",
+        muted: "#8a8aa3",
+        faint: "#7d7d98",
+        // Violets
         brand: {
-          DEFAULT: "#2563eb",
-          dark: "#1d4ed8",
-          deep: "#0a2370",
+          DEFAULT: "#7c3aed",
+          dark: "#6d28d9",
+          deep: "#4c1d95",
         },
-        accent: "#1d4ed8",
+        accent: "#a78bfa",
       },
       boxShadow: {
-        card: "0 1px 2px 0 rgb(15 35 90 / 0.05), 0 10px 28px -18px rgb(15 35 90 / 0.18)",
-        float: "0 0 0 1px rgb(37 99 235 / 0.08), 0 28px 60px -26px rgb(37 99 235 / 0.4)",
-        glow: "0 10px 28px -10px rgb(37 99 235 / 0.6)",
-        surface: "0 1px 2px 0 rgb(15 35 90 / 0.05), 0 40px 90px -40px rgb(37 99 235 / 0.35)",
+        card: "0 1px 2px 0 rgb(0 0 0 / 0.4), 0 12px 32px -18px rgb(0 0 0 / 0.7)",
+        float: "0 0 0 1px rgb(124 58 237 / 0.18), 0 28px 60px -26px rgb(124 58 237 / 0.45)",
+        glow: "0 0 40px -8px rgb(124 58 237 / 0.6)",
+        surface: "0 1px 2px 0 rgb(0 0 0 / 0.5), 0 40px 90px -40px rgb(124 58 237 / 0.4)",
       },
     },
   },

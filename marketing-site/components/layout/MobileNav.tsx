@@ -35,7 +35,7 @@ export function MobileNav() {
                   onClick={() => setOpen(false)}
                   aria-current={active ? "page" : undefined}
                   className={`rounded-lg px-3 py-2.5 text-sm font-medium ${
-                    active ? "bg-brand/10 text-brand" : "text-body hover:bg-alt"
+                    active ? "bg-brand/10 text-accent" : "text-body hover:bg-alt"
                   }`}
                 >
                   {item.label}

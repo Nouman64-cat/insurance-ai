@@ -13,7 +13,7 @@ const labels = ["Medical", "Financial", "Fraud"];
 
 export function HeroDecisionFeed({ className = "" }: Readonly<{ className?: string }>) {
   return (
-    <div className={`rounded-2xl bg-card/90 p-4 shadow-surface ring-1 ring-line ${className}`} role="img" aria-label="Live decision feed, demo data">
+    <div className={`glass rounded-2xl p-4 shadow-surface ${className}`} role="img" aria-label="Live decision feed, demo data">
       <div aria-hidden="true">
         <div className="flex flex-wrap items-center justify-between gap-1 text-xs">
           <span className="flex items-center gap-2 font-semibold uppercase tracking-wider text-muted">
@@ -31,7 +31,7 @@ export function HeroDecisionFeed({ className = "" }: Readonly<{ className?: stri
             <div key={c.kind} className="feed-item absolute inset-0 flex flex-col items-start justify-center gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-5" style={{ "--k": k } as CSSProperties}>
               <div className="min-w-0">
                 <p className="truncate text-xs text-muted">
-                  <span className="font-semibold uppercase tracking-wider text-brand">{c.kind}</span> · {c.who}
+                  <span className="font-semibold uppercase tracking-wider text-accent">{c.kind}</span> · {c.who}
                 </p>
                 <p className="mt-1 flex items-center gap-1.5 text-lg font-semibold tracking-tight text-ink">
                   <Icon name="check" className="h-[1.125rem] w-[1.125rem] shrink-0 text-emerald-600" />

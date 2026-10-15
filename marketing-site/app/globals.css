@@ -14,7 +14,7 @@
   }
 
   html {
-    color-scheme: light;
+    color-scheme: dark;
   }
 
   body {
@@ -26,12 +26,14 @@
   }
 
   ::selection {
-    @apply bg-brand/20 text-ink;
+    @apply bg-brand/40 text-ink;
   }
 
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-track { @apply bg-canvas; }
   ::-webkit-scrollbar-thumb { @apply rounded-full border-2 border-solid border-canvas bg-line-strong; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-brand/60; }
+  html { scrollbar-color: rgb(255 255 255 / 0.16) #07070c; }
 }
 
 /* ── Responsive scale ─────────────────────────────────────────────────────
@@ -251,11 +253,16 @@ html[data-splash="pending"]:not([data-logo-ready]) [data-logo-target] { opacity:
     transition: border-color 0.25s ease;
   }
   .card:hover {
-    border-color: rgb(37 99 235 / 0.4);
+    border-color: rgb(124 58 237 / 0.45);
   }
 
   .eyebrow {
     @apply text-xs font-semibold uppercase tracking-widest text-accent;
+  }
+
+  /* Frosted panel: translucent fill, blurred backdrop, hairline border */
+  .glass {
+    @apply border border-line bg-card backdrop-blur-xl;
   }
 
   .field {
@@ -265,7 +272,7 @@ html[data-splash="pending"]:not([data-logo-ready]) [data-logo-target] { opacity:
 
 
 /* ── Cursor effects (see components/effects) ─────────────────────────────── */
-/* Small deep-blue glow trailing the pointer, moved by transform only */
+/* Small violet glow trailing the pointer, moved by transform only */
 .cursor-glow {
   position: fixed;
   left: 0;
@@ -277,7 +284,7 @@ html[data-splash="pending"]:not([data-logo-ready]) [data-logo-target] { opacity:
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.5s ease;
-  background: radial-gradient(closest-side, rgb(30 64 175 / 0.32), rgb(30 64 175 / 0.14) 50%, transparent);
+  background: radial-gradient(closest-side, rgb(124 58 237 / 0.28), rgb(124 58 237 / 0.1) 50%, transparent);
   will-change: transform;
 }
 
@@ -291,7 +298,7 @@ html[data-splash="pending"]:not([data-logo-ready]) [data-logo-target] { opacity:
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.25s ease;
-  background: radial-gradient(20rem circle at var(--mx, 50%) var(--my, 50%), rgb(37 99 235 / 0.1), transparent 65%);
+  background: radial-gradient(20rem circle at var(--mx, 50%) var(--my, 50%), rgb(124 58 237 / 0.14), transparent 65%);
 }
 .card:hover::before, .glow:hover::before { opacity: 1; }
 
@@ -299,7 +306,7 @@ html[data-splash="pending"]:not([data-logo-ready]) [data-logo-target] { opacity:
   .cursor-glow, .card::before, .glow::before { display: none; }
 }
 
-/* Header: no divider line, no shadow edge, ever. Once scrolled it is solid white and its bottom
+/* Header: no divider line, no shadow edge, ever. Once scrolled it is solid canvas and its bottom
    edge dissolves into the page with a fade strip, so there is no line or colour step to see. */
 .site-header { background-color: transparent; transition: background-color 0.25s ease; }
 .site-header::after {
@@ -307,12 +314,12 @@ html[data-splash="pending"]:not([data-logo-ready]) [data-logo-target] { opacity:
   position: absolute;
   inset: 100% 0 auto 0;
   height: 2rem;
-  background: linear-gradient(to bottom, rgb(255 255 255 / 0.97), rgb(255 255 255 / 0));
+  background: linear-gradient(to bottom, rgb(7 7 12 / 0.97), rgb(7 7 12 / 0));
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.25s ease;
 }
-html[data-scrolled] .site-header { background-color: rgb(255 255 255 / 0.97); }
+html[data-scrolled] .site-header { background-color: rgb(7 7 12 / 0.97); }
 html[data-scrolled] .site-header::after { opacity: 1; }
 
 /* ── Click feedback (see components/effects/ClickRipple.tsx) ─────────────── */
@@ -331,10 +338,29 @@ html[data-scrolled] .site-header::after { opacity: 1; }
 .btn-pulse { animation: btn-pulse 0.7s ease-out; }
 .btn-pulse.btn-ring-light { animation-name: btn-pulse-light; }
 @keyframes btn-pulse {
-  0% { box-shadow: 0 0 0 0 rgb(37 99 235 / 0.55); }
-  100% { box-shadow: 0 0 0 0.9rem rgb(37 99 235 / 0); }
+  0% { box-shadow: 0 0 0 0 rgb(124 58 237 / 0.55); }
+  100% { box-shadow: 0 0 0 0.9rem rgb(124 58 237 / 0); }
 }
 @keyframes btn-pulse-light {
   0% { box-shadow: 0 0 0 0 rgb(255 255 255 / 0.6); }
   100% { box-shadow: 0 0 0 0.9rem rgb(255 255 255 / 0); }
+}
+
+/* ── Dark backdrop utilities ─────────────────────────────────────────────── */
+/* Faint 48px grid that fades out from the centre */
+.bg-grid {
+  background-image:
+    linear-gradient(to right, rgb(255 255 255 / 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(255 255 255 / 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 100%);
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 100%);
+}
+/* Violet horizon: a wide elliptical glow with a brighter core, meant to sit at the bottom of a hero */
+.glow-arc {
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 50% 100% at 50% 100%, rgb(167 139 250 / 0.35), transparent 70%),
+    radial-gradient(ellipse 70% 120% at 50% 100%, rgb(124 58 237 / 0.45), rgb(76 29 149 / 0.2) 45%, transparent 75%);
+  filter: blur(2px);
 }

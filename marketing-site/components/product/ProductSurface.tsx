@@ -40,8 +40,8 @@ const delay = (on: boolean, i: number): CSSProperties => ({ transitionDelay: on 
 
 function PanelHead({ title, tag, tone }: Readonly<{ title: string; tag: string; tone: "ai" | "rules" | "audit" }>) {
   const tones = {
-    ai: "bg-brand/10 text-brand",
-    rules: "bg-ink text-white",
+    ai: "bg-brand/10 text-accent",
+    rules: "bg-brand text-white",
     audit: "bg-chip text-muted",
   } as const;
   return (
@@ -122,7 +122,7 @@ export function ProductSurface({ stage, className = "" }: Readonly<{ stage: numb
             </div>
             <span
               className={`mt-3 inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[0.6875rem] font-semibold transition-colors duration-500 ${
-                s === 3 ? "bg-emerald-50 text-emerald-700" : "bg-chip text-brand"
+                s === 3 ? "bg-emerald-50 text-emerald-700" : "bg-chip text-accent"
               }`}
             >
               {status[s]}
@@ -152,7 +152,7 @@ export function ProductSurface({ stage, className = "" }: Readonly<{ stage: numb
             </ul>
 
             <div className={`mt-5 flex items-start gap-2.5 rounded-lg bg-card p-3 ${reveal(s >= 1)}`} style={delay(s >= 1, 4)}>
-              <Icon name="spark" className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
+              <Icon name="spark" className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
               <p className="text-xs leading-relaxed text-body">
                 <span className="font-semibold text-ink">AI insight.</span> Elevated BMI noted in the medical report. This is
                 advice for the rules, not a decision.
@@ -222,7 +222,7 @@ export function ProductSurface({ stage, className = "" }: Readonly<{ stage: numb
             Decision pending
           </div>
           <div
-            className={`absolute inset-0 flex items-center justify-between gap-3 rounded-xl bg-ink px-4 text-[0.8125rem] text-white transition duration-500 ${
+            className={`absolute inset-0 flex items-center justify-between gap-3 rounded-xl bg-brand px-4 text-[0.8125rem] text-white transition duration-500 ${
               s >= 3 ? "opacity-100" : "opacity-0"
             }`}
           >

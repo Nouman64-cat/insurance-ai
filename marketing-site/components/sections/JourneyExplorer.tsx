@@ -56,12 +56,12 @@ export function JourneyExplorer() {
               style={{ "--d": i * 110 } as React.CSSProperties}
             >
               <div className="flex items-center justify-between">
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-accent">
                   <Icon name={st.icon} />
                 </span>
                 <span className="text-xs font-semibold tabular-nums text-faint">0{i + 1}</span>
               </div>
-              <p className="mt-5 text-xs font-semibold uppercase tracking-wider text-brand">{st.label}</p>
+              <p className="mt-5 text-xs font-semibold uppercase tracking-wider text-accent">{st.label}</p>
               <h3 className="mt-1 text-[0.9375rem] font-semibold leading-snug text-ink 2xl:text-base">{st.title}</h3>
               <p className="mt-1.5 text-xs leading-relaxed text-muted">{st.caption}</p>
 

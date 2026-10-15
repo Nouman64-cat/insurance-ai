@@ -121,7 +121,7 @@ export function ProductStory() {
                       } ${active ? "ring-4 ring-brand/20" : ""}`}
                       aria-hidden="true"
                     />
-                    <p className={`text-xs font-semibold tabular-nums transition-colors duration-500 ${active ? "text-brand" : "text-faint"}`}>
+                    <p className={`text-xs font-semibold tabular-nums transition-colors duration-500 ${active ? "text-accent" : "text-faint"}`}>
                       0{i + 1}
                     </p>
                     <h3 className={`mt-0.5 text-lg font-semibold tracking-tight transition-colors duration-500 2xl:text-xl ${active ? "text-ink" : "text-muted"}`}>

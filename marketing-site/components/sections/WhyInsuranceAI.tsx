@@ -65,7 +65,7 @@ export function WhyInsuranceAI() {
                 <span className="flex h-[2.75rem] w-[2.75rem] items-center justify-center rounded-xl bg-brand text-white shadow-glow">
                   <Icon name={p.icon} />
                 </span>
-                <span className="rounded-full bg-card px-3 py-1 text-xs font-semibold text-brand">{p.role}</span>
+                <span className="rounded-full bg-card px-3 py-1 text-xs font-semibold text-accent">{p.role}</span>
               </div>
               <p className="mt-8 text-xs font-semibold tabular-nums text-faint">{p.n}</p>
               <h3 className="mt-1 text-xl font-semibold tracking-tight text-ink 2xl:text-2xl">{p.title}</h3>
