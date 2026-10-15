@@ -58,7 +58,11 @@ def hash_password(raw: str) -> str:
 
 
 def generate_temp_password(length: int = 10) -> str:
-    """A readable one-time password the ops user can dictate over the phone."""
+    """A readable one-time password the ops user can dictate over the phone. In demo mode (ENV_VAR=demo) it is the fixed 12345678, the
+    same as every other generated credential (provisioning.generate_password), so demo logins are easy to hand over."""
+    from services.env_mode import is_demo
+    if is_demo():
+        return "12345678"
     return "".join(secrets.choice(_PW_ALPHABET) for _ in range(length))
 
 

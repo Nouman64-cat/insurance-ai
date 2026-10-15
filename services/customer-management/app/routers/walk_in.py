@@ -92,7 +92,13 @@ class OtpRequest(Strict):
 
 class OtpVerify(Strict):
     email: str = Field(max_length=255)
-    code: str = Field(min_length=4, max_length=12)
+    code: Optional[str] = Field(default=None, min_length=4, max_length=12)     # not needed in demo mode
+
+
+@router.get("/config")
+async def walk_in_config():
+    """What the sign-up page needs to know before it asks for anything: in demo mode, no verification code is asked for."""
+    return {"demo": settings.demo}
 
 
 def _email(raw: str) -> str:
@@ -105,6 +111,8 @@ def _email(raw: str) -> str:
 @router.post("/otp/request")
 async def otp_request(body: OtpRequest, request: Request):
     email, tid, ip = _email(body.email), await tenant_id(), security.hash_ip(client_ip(request))
+    if settings.demo:                       # demo: nothing is emailed and nothing is checked; the page goes straight on
+        return {"sent": False, "demo": True, "expires_in": 0}
     async with db.transaction() as conn:
         by_email = (await conn.execute(text("SELECT count(*) FROM walk_in_otps WHERE tenant_id = :t AND email = :e AND created_at > now() - interval '15 minutes'"),
                                        {"t": tid, "e": email})).scalar_one()
@@ -142,20 +150,23 @@ async def otp_request(body: OtpRequest, request: Request):
 async def otp_verify(body: OtpVerify, request: Request):
     email, tid = _email(body.email), await tenant_id()
     bad = ApiError(400, "OTP_INVALID", "That code is not correct or has expired. Request a new one.")
+    if not settings.demo and not body.code:
+        raise bad
 
     async def attempt(conn):
-        row = (await conn.execute(text(
-            """SELECT id, code_hash, attempts FROM walk_in_otps WHERE tenant_id = :t AND email = :e AND consumed_at IS NULL AND expires_at > now()
-                ORDER BY created_at DESC LIMIT 1 FOR UPDATE"""), {"t": tid, "e": email})).mappings().first()
-        if row is None:
-            raise bad
-        if row["attempts"] >= settings.walkin_otp_attempts:
+        if not settings.demo:               # demo mode signs the email in without a code
+            row = (await conn.execute(text(
+                """SELECT id, code_hash, attempts FROM walk_in_otps WHERE tenant_id = :t AND email = :e AND consumed_at IS NULL AND expires_at > now()
+                    ORDER BY created_at DESC LIMIT 1 FOR UPDATE"""), {"t": tid, "e": email})).mappings().first()
+            if row is None:
+                raise bad
+            if row["attempts"] >= settings.walkin_otp_attempts:
+                await conn.execute(text("UPDATE walk_in_otps SET consumed_at = now() WHERE id = :id"), {"id": row["id"]})
+                raise ApiError(400, "OTP_LOCKED", "Too many incorrect attempts. Request a new code.")
+            await conn.execute(text("UPDATE walk_in_otps SET attempts = attempts + 1 WHERE id = :id"), {"id": row["id"]})
+            if not secrets.compare_digest(row["code_hash"], security.otp_hash(email, body.code.strip())):
+                raise bad
             await conn.execute(text("UPDATE walk_in_otps SET consumed_at = now() WHERE id = :id"), {"id": row["id"]})
-            raise ApiError(400, "OTP_LOCKED", "Too many incorrect attempts. Request a new code.")
-        await conn.execute(text("UPDATE walk_in_otps SET attempts = attempts + 1 WHERE id = :id"), {"id": row["id"]})
-        if not secrets.compare_digest(row["code_hash"], security.otp_hash(email, body.code.strip())):
-            raise bad
-        await conn.execute(text("UPDATE walk_in_otps SET consumed_at = now() WHERE id = :id"), {"id": row["id"]})
         ident = (await conn.execute(text(
             """INSERT INTO walk_in_identities (id, tenant_id, email, last_login_at) VALUES (:id, :t, :e, now())
                ON CONFLICT (tenant_id, email) DO UPDATE SET last_login_at = now() RETURNING id, display_name, language"""),

@@ -64,6 +64,8 @@ class Settings:
     walkin_otp_per_ip: int = field(default_factory=lambda: _int("CM_WALKIN_OTP_PER_IP", 20))
     walkin_session_minutes: int = field(default_factory=lambda: _int("CM_WALKIN_SESSION_MINUTES", 120))
     # Development only: when the mail provider cannot deliver, accept this fixed code instead. Ignored when CM_ENV=production.
+    # Demo mode (ENV_VAR=demo, never in production): a walk-in only enters an email; no one-time code is asked for.
+    demo: bool = field(default_factory=lambda: os.environ.get("ENV_VAR", "").strip().lower() == "demo" and os.environ.get("CM_ENV", "development") != "production")
     walkin_dev_otp: str = field(default_factory=lambda: os.environ.get("CM_WALKIN_DEV_OTP", ""))
 
 

@@ -136,6 +136,14 @@ async def login(conn: AsyncConnection, *, username: str, password: str, tenant_c
         await _attempt(conn, key, ip_hash, account["id"], "SUSPENDED")
         await audit(conn, "LOGIN_BLOCKED", account_id=account["id"], tenant_id=account["tenant_id"], ip_hash=ip_hash, state=account["state"])
         raise ApiError(403, "ACCOUNT_SUSPENDED", "Your online access is suspended. Please contact your insurer.")
+    if settings.demo and account["must_change_password"]:
+        # Demo mode: the temporary password is the password. The account is activated on its first sign-in, so the "set your own
+        # password" screen never appears. (Production keeps the forced change.)
+        await conn.execute(text("""UPDATE accounts SET must_change_password = FALSE, state = 'ACTIVE', credential_expires_at = NULL,
+                                   activated_at = COALESCE(activated_at, now()), password_changed_at = COALESCE(password_changed_at, now()),
+                                   version = version + 1, updated_at = now() WHERE id = :id"""), {"id": account["id"]})
+        account = {**dict(account), "must_change_password": False, "state": "ACTIVE", "credential_expires_at": None}
+        await audit(conn, "DEMO_ACTIVATED", account_id=account["id"], tenant_id=account["tenant_id"], ip_hash=ip_hash)
     if account["must_change_password"] and account["credential_expires_at"] and account["credential_expires_at"] < now():
         await _attempt(conn, key, ip_hash, account["id"], "EXPIRED")
         raise ApiError(401, "CREDENTIAL_EXPIRED", "Your temporary password has expired. Please ask your insurer for new sign-in details.")

@@ -12,6 +12,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app import db, migrate, provision, security, tenant_client
+from app.config import settings
 from app.errors import ApiError
 from app.main import app
 
@@ -68,6 +69,7 @@ class Base(unittest.IsolatedAsyncioTestCase):
         owner = base.set(database=self.dbname, username="customer_management_owner", password=os.environ["CM_DB_OWNER_PASSWORD"]).render_as_string(hide_password=False)
         await migrate.run(owner)
         db.configure(base.set(database=self.dbname).render_as_string(hide_password=False))
+        object.__setattr__(settings, "demo", False)       # these tests are the production behaviour; demo has its own test
         self.fake = FakeTenant()
         tenant_client.set_client(self.fake)
         self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")

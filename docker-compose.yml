@@ -357,6 +357,7 @@ services:
       CM_WALKIN_TENANT_CODE: ${CM_WALKIN_TENANT_CODE:-}
       CS_PORTAL_KEY: ${CS_PORTAL_KEY:-}
       CUSTOMER_SERVICE_URL: http://customer-service:8008
+      ENV_VAR: ${ENV_VAR:-}   # demo: walk-ins skip the email code
       CM_WALKIN_DEV_OTP: ${CM_WALKIN_DEV_OTP:-}   # development only; ignored when CM_ENV=production
     depends_on:
       tenant-service:

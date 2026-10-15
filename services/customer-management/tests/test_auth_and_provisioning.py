@@ -246,3 +246,22 @@ class LegacyImport(Base):
 
 async def _async(value):
     return value
+
+    async def test_demo_mode_goes_straight_in_with_the_temporary_password(self):
+        from app.config import settings
+        await self.provision_account()
+        object.__setattr__(settings, "demo", True)
+        try:
+            r = await self.login()
+            self.assertEqual(r.status_code, 200, r.text)
+            body = r.json()
+            self.assertEqual((body["scope"], body["must_change_password"]), ("full", False))                 # no "set your own password" step
+            ok = await self.client.get("/v1/dashboard", headers=self.bearer(body["access_token"]))
+            self.assertNotIn(ok.status_code, (401, 403))                                                       # a full session
+        finally:
+            object.__setattr__(settings, "demo", False)
+        # the account stays activated, and production behaviour is untouched for a fresh account
+        await self.provision_account(username="PH-2026-000002", customer_id=__import__("uuid").uuid4())
+        r2 = await self.login(username="PH-2026-000002")
+        self.assertEqual((r2.json()["scope"], r2.json()["must_change_password"]), ("pwd_change", True))
+

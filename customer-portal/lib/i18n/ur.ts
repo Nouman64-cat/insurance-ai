@@ -623,7 +623,10 @@ const ur: Record<keyof typeof en, string> = {
   "ticket.reopenHint": "پہلے لکھیں کہ کیا مسئلہ باقی ہے (کم از کم 5 حرف)۔",
   "ticket.reopened": "درخواست دوبارہ کھول دی گئی۔",
   "ticket.finished": "یہ درخواست مکمل ہو چکی ہے۔",
-  "error.SUPPORT_UNAVAILABLE": "سپورٹ درخواستیں اس وقت دستیاب نہیں۔"
+  "error.SUPPORT_UNAVAILABLE": "سپورٹ درخواستیں اس وقت دستیاب نہیں۔",
+  "walkin.start.continue": "جاری رکھیں",
+  "walkin.start.continuing": "آپ کو سائن اِن کیا جا رہا ہے…",
+  "walkin.start.emailHintDemo": "ڈیمو موڈ: صرف اپنا ای میل درج کریں۔ تصدیقی کوڈ درکار نہیں۔"
 };
 
 export default ur;

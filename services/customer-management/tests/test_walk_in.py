@@ -18,6 +18,7 @@ class WalkIn(Base):
         walk_in._tenant_cache.clear()
         object.__setattr__(settings, "walkin_tenant_code", "PAG34")
         object.__setattr__(settings, "walkin_dev_otp", "")
+        object.__setattr__(settings, "demo", False)
         self.sent = []
 
         def mail(payload):
@@ -208,3 +209,19 @@ class WalkIn(Base):
         self.fake.routes[f"/pay/{self.PAY}/proof"] = lambda payload: {"state": "ProofSubmitted", "echo": payload}
         r = await self.client.post(f"/v1/walk-in/pay/{self.PAY}/proof", files={"file": ("p.png", b"\x89PNG", "image/png")}, data={"method": "Easypaisa", "reference": "R9"})
         self.assertEqual((r.json()["echo"]["method"], r.json()["echo"]["reference"]), ("Easypaisa", "R9"))
+
+    async def test_demo_mode_signs_an_email_in_without_a_code(self):
+        object.__setattr__(settings, "demo", True)
+        try:
+            self.assertTrue((await self.client.get("/v1/walk-in/config")).json()["demo"])
+            r = await self.client.post("/v1/walk-in/otp/request", json={"email": "Demo@Example.com"})
+            self.assertEqual((r.status_code, r.json()["demo"], self.sent), (200, True, []))          # nothing was emailed
+            v = await self.client.post("/v1/walk-in/otp/verify", json={"email": "demo@example.com"})   # no code
+            self.assertEqual(v.status_code, 200, v.text)
+            me = await self.client.get("/v1/walk-in/me", headers=self.bearer(v.json()["access_token"]))
+            self.assertEqual(me.json()["email"], "demo@example.com")
+        finally:
+            object.__setattr__(settings, "demo", False)
+        self.assertFalse((await self.client.get("/v1/walk-in/config")).json()["demo"])
+        self.assertEqual((await self.client.post("/v1/walk-in/otp/verify", json={"email": "demo@example.com"})).status_code, 400)   # outside demo a code is required
+

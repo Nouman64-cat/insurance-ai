@@ -621,7 +621,10 @@ const en = {
   "ticket.reopenHint": "Write what is still wrong first (at least 5 characters).",
   "ticket.reopened": "Request reopened.",
   "ticket.finished": "This request is finished.",
-  "error.SUPPORT_UNAVAILABLE": "Support requests are not available right now."
+  "error.SUPPORT_UNAVAILABLE": "Support requests are not available right now.",
+  "walkin.start.continue": "Continue",
+  "walkin.start.continuing": "Signing you in…",
+  "walkin.start.emailHintDemo": "Demo mode: just enter your email. No verification code is needed."
 } as const;
 
 export default en;

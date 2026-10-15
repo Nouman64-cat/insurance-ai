@@ -17,6 +17,8 @@ function Start() {
   const [error, setError] = useState<ApiError | null>(null);
   const [devMode, setDevMode] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  const [demo, setDemo] = useState(false);          // demo mode: just the email, no verification code
+  useEffect(() => { fetch("/api/portal/public/config", { cache: "no-store" }).then((r) => r.json()).then((c) => setDemo(!!c.demo)).catch(() => undefined); }, []);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -28,7 +30,12 @@ function Start() {
     e?.preventDefault();
     setBusy(true); setError(null);
     try {
-      const r = await authPost<{ sent: boolean; dev_mode?: boolean }>("walk-in/request-otp", { email: email.trim() });
+      const r = await authPost<{ sent: boolean; dev_mode?: boolean; demo?: boolean }>("walk-in/request-otp", { email: email.trim() });
+      if (r.demo) {                                    // demo: no code is sent or asked for, so sign straight in
+        await authPost("walk-in/verify", { email: email.trim() });
+        window.location.assign("/walk-in/apply");
+        return;
+      }
       setDevMode(!!r.dev_mode); setStep("code"); setCode(""); setCooldown(30);
     } catch (err) { setError(err as ApiError); }
     finally { setBusy(false); }
@@ -58,10 +65,10 @@ function Start() {
             {error && <Banner tone="danger" title={errorText(t, error)} />}
             {step === "email" ? (
               <form onSubmit={sendCode} className="space-y-4">
-                <Field label={t("walkin.start.email")} htmlFor="email" hint={t("walkin.start.emailHint")}>
+                <Field label={t("walkin.start.email")} htmlFor="email" hint={demo ? t("walkin.start.emailHintDemo") : t("walkin.start.emailHint")}>
                   <input id="email" type="email" className="input" dir="ltr" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required maxLength={255} autoFocus />
                 </Field>
-                <button type="submit" disabled={busy || !email.trim()} className="btn-primary w-full">{busy ? <><Spinner />{t("walkin.start.sending")}</> : t("walkin.start.sendCode")}</button>
+                <button type="submit" disabled={busy || !email.trim()} className="btn-primary w-full">{busy ? <><Spinner />{demo ? t("walkin.start.continuing") : t("walkin.start.sending")}</> : demo ? t("walkin.start.continue") : t("walkin.start.sendCode")}</button>
               </form>
             ) : (
               <form onSubmit={verify} className="space-y-4">
