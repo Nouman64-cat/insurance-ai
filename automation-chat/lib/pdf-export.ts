@@ -76,7 +76,7 @@ export async function generateAssessmentReport(entries: ReportEntry[], opts: Rep
 
   const logoImg = await new Promise<HTMLImageElement | null>((resolve) => {
     const img = new Image();
-    img.src = "/rizvi.png";
+    img.src = "/logo-horizontal.png";
     img.onload = () => resolve(img);
     img.onerror = () => resolve(null);
   });
@@ -121,7 +121,10 @@ export async function generateAssessmentReport(entries: ReportEntry[], opts: Rep
 
   // Logo on Top Left (vertically centered in 28px header)
   if (logoImg) {
-    doc.addImage(logoImg, "PNG", mg, 7.5, 36.2, 13);
+    // Keep the logo's own proportions (the horizontal lockup is wider than the old mark was).
+    const logoH = 11;
+    const logoW = logoH * (logoImg.naturalWidth / logoImg.naturalHeight);
+    doc.addImage(logoImg, "PNG", mg, 8.5, logoW, logoH);
   }
 
   // Titles on Top Right

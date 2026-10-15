@@ -5332,17 +5332,9 @@ export function CopilotInterface() {
           className={`w-[272px] flex-shrink-0 flex-col hidden ${sidebarOpen ? "md:flex" : ""} relative overflow-hidden`}
         >
           <div className="px-5 pt-5 pb-4 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-xl bg-gradient-to-br from-blue-300 via-blue-400 to-sky-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.5),0_6px_14px_-4px_rgba(37,99,235,0.35)]">
-                <img
-                  src="/rizvi.png"
-                  alt="GetInsuredAI"
-                  className="w-5 h-5 object-contain brightness-0 invert"
-                />
-              </div>
-              <span className="text-[19px] font-semibold tracking-tight text-zinc-900 truncate">
-                GetInsured<span className="text-blue-500">AI</span>
-              </span>
+            {/* The product logo, as supplied. `logo-plate` gives it a white backing in dark mode, where the navy wordmark would vanish. */}
+            <div className="logo-plate flex items-center min-w-0">
+              <img src="/logo-full.png" alt="GetInsuredAI, powered by Rizviz" className="w-[176px] max-w-full h-auto object-contain" />
             </div>
             <button
               type="button"
@@ -6110,8 +6102,8 @@ export function CopilotInterface() {
                   messages[0].role === "assistant" ? (
                     <div className="flex flex-col items-center justify-center min-h-full px-4 sm:px-6 pt-6 pb-10">
                       <div className="w-full max-w-[860px] flex flex-col items-center">
-                        <div className="relative flex items-center justify-center w-48 h-48 mb-4">
-                          <span className="copilot-orb copilot-orb-float w-32 h-32" />
+                        <div className="logo-plate flex items-center justify-center mb-8 mt-2">
+                          <img src="/logo-full.png" alt="GetInsuredAI, powered by Rizviz" className="w-[min(420px,82vw)] h-auto object-contain" />
                         </div>
                         <p
                           dir="auto"
@@ -6189,8 +6181,8 @@ export function CopilotInterface() {
                               <div className="flex-shrink-0 mt-1">
                                 <div className="copilot-orb w-8 h-8 flex items-center justify-center p-2">
                                   <img
-                                    src="/rizvi.png"
-                                    alt="Agent"
+                                    src="/logo-mark.png"
+                                    alt="GetInsuredAI"
                                     className="relative z-10 w-full h-full object-contain brightness-0 invert opacity-90"
                                   />
                                 </div>
@@ -6821,8 +6813,8 @@ export function CopilotInterface() {
                             <div className="flex-shrink-0 mt-1">
                               <div className="copilot-orb w-8 h-8 flex items-center justify-center p-2">
                                 <img
-                                  src="/rizvi.png"
-                                  alt="Agent"
+                                  src="/logo-mark.png"
+                                  alt="GetInsuredAI"
                                   className="relative z-10 w-full h-full object-contain brightness-0 invert opacity-90"
                                 />
                               </div>
@@ -7040,8 +7032,8 @@ export function CopilotInterface() {
                 <div className="relative">
                   <div className="w-10 h-10 rounded-full bg-white logo-white flex items-center justify-center shadow-md overflow-hidden ring-2 ring-white/40">
                     <img
-                      src="/rizvi.png"
-                      alt="Rizviz"
+                      src="/logo-mark.png"
+                      alt="GetInsuredAI"
                       className="w-7 h-7 object-contain"
                     />
                   </div>
@@ -7066,9 +7058,9 @@ export function CopilotInterface() {
             >
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.04] z-0">
                 <img
-                  src="/rizvi.png"
+                  src="/logo-full.png"
                   alt=""
-                  className="w-1/2 max-w-[200px] object-contain"
+                  className="w-1/2 max-w-[240px] object-contain"
                 />
               </div>
               <div className="relative z-10 space-y-4 pb-2">
@@ -7080,8 +7072,8 @@ export function CopilotInterface() {
                     {msg.role === "assistant" && (
                       <div className="w-7 h-7 rounded-full bg-white logo-white border border-blue-100 shadow-sm flex flex-shrink-0 items-center justify-center overflow-hidden">
                         <img
-                          src="/rizvi.png"
-                          alt="Agent"
+                          src="/logo-mark.png"
+                          alt="GetInsuredAI"
                           className="w-5 h-5 object-contain"
                         />
                       </div>
@@ -7696,8 +7688,8 @@ export function CopilotInterface() {
                   <div className="flex justify-start items-start gap-2">
                     <div className="w-7 h-7 rounded-full bg-white logo-white border border-blue-100 shadow-sm flex flex-shrink-0 items-center justify-center overflow-hidden">
                       <img
-                        src="/rizvi.png"
-                        alt="Agent"
+                        src="/logo-mark.png"
+                        alt="GetInsuredAI"
                         className="w-5 h-5 object-contain"
                       />
                     </div>
@@ -7718,8 +7710,8 @@ export function CopilotInterface() {
                   <div className="flex justify-start items-end gap-2">
                     <div className="w-7 h-7 rounded-full bg-white logo-white border border-blue-100 shadow-sm flex flex-shrink-0 items-center justify-center overflow-hidden">
                       <img
-                        src="/rizvi.png"
-                        alt="Agent"
+                        src="/logo-mark.png"
+                        alt="GetInsuredAI"
                         className="w-5 h-5 object-contain"
                       />
                     </div>

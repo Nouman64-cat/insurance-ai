@@ -717,3 +717,10 @@ html.dark .to-indigo-50 {
 html.dark .to-fuchsia-50 {
   --tw-gradient-to: rgba(217, 70, 239, 0.12) var(--tw-gradient-to-position) !important;
 }
+
+/* The product logo has a navy wordmark: in dark mode it sits on a white plate so it stays readable. */
+html.dark .logo-plate {
+  background-color: #ffffff;
+  border-radius: 12px;
+  padding: 4px 10px;
+}
