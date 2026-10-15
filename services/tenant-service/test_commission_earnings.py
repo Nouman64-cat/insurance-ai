@@ -22,11 +22,14 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from routers.auth import create_access_token
 from routers.commissions import router
+from routers.commission_disbursements import router as disbursements_router
 from services.commission_engine import accrue_receipt, record_binding_receipt
 from shared.commissions.calculator import allocate, policy_year
 from shared.models.core import (Tenant, Role, User, Customer, Policy, InsuranceTypeEnum,
-    AcquisitionSource, AcquisitionSourceType, PremiumReceipt, PremiumSchedule, PremiumScheduleStatusEnum)
-from shared.models.commission import CommissionAgreement, CommissionAssignment, CommissionAccrual, CommissionEarning
+    AcquisitionSource, AcquisitionSourceType, PremiumReceipt, PremiumSchedule, PremiumScheduleStatusEnum,
+    InsurancePlan, PolicyStatusEnum)
+from shared.models.commission import (CommissionAgreement, CommissionAssignment, CommissionAccrual,
+    CommissionEarning, CommissionPlanRule, CommissionDisbursementItem)
 
 factory = None
 
@@ -60,7 +63,7 @@ class CommissionTests(unittest.IsolatedAsyncioTestCase):
                 receipt_no=uuid4().hex, base_amount=1000, surcharge_amount=100, total_amount=1100,
                 created_at=datetime(2025, 1, 15))
             s.add_all([self.assignment, self.receipt]); await s.commit()
-        self.app = FastAPI(); self.app.include_router(router)
+        self.app = FastAPI(); self.app.include_router(router); self.app.include_router(disbursements_router)
         async def session_dependency():
             async with factory() as s:
                 yield s
@@ -375,6 +378,233 @@ class CommissionTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(data['customer']['cnic'])
             self.assertEqual(data['customer']['assigned_agent_name'], 'User 2')
             self.assertEqual(data['policies'], [])
+
+    async def configure_automatic(self):
+        async with factory() as s:
+            await s.delete(await s.get(CommissionAssignment, self.assignment.id))
+            customer = await s.get(Customer, self.customer.id)
+            customer.assigned_agent_id = self.users[2].id
+            customer.acquisition_source_id = self.source.id
+            s.add(customer)
+            plan = InsurancePlan(tenant_id=self.tenant.id, code='TEST_TERM', label='Test term',
+                insurance_type=InsuranceTypeEnum.TERM_LIFE, entry_age_min=18, entry_age_max=65,
+                term_min_years=5, term_max_years=30, max_maturity_age=80, max_income_multiple=20)
+            s.add(plan); await s.commit()
+        async with await self.client() as c:
+            response = await c.post(self.url('plan-rules'), json={'plan_id': str(plan.id), 'agreement_id': str(self.agreement.id)})
+            self.assertEqual(response.status_code, 201, response.text)
+        return plan
+
+    async def payable_earning(self):
+        from datetime import timedelta
+        await self.post_receipt()
+        async with factory() as s:
+            policy = await s.get(Policy, self.policy.id)
+            policy.status = PolicyStatusEnum.ACTIVE
+            policy.free_look_end_date = date.today() - timedelta(days=1)
+            s.add(policy); await s.commit()
+            return (await s.exec(select(CommissionEarning).where(CommissionEarning.policy_id == policy.id))).one()
+
+    async def test_automatic_plan_rate_agent_and_receipt_are_idempotent(self):
+        plan = await self.configure_automatic()
+        async with await self.client() as c:
+            before = (await c.get(self.url('setup'))).json()['policies'][0]
+            self.assertTrue(before['ready'])
+            self.assertEqual(before['automatic']['source_id'], str(self.source.id))
+            self.assertEqual(before['assignments'], [])  # preview never writes
+        await asyncio.gather(*(self.post_receipt() for _ in range(5)))
+        async with factory() as s:
+            entry = (await s.exec(select(CommissionEarning).where(CommissionEarning.policy_id == self.policy.id))).one()
+            self.assertEqual(entry.gross_amount, Decimal('100.00'))
+            self.assertEqual(entry.snapshot['allocation_method'], 'AUTO_PLAN')
+            self.assertEqual(entry.snapshot['plan_id'], str(plan.id))
+            self.assertEqual(len((await s.exec(select(CommissionAssignment).where(CommissionAssignment.policy_id == self.policy.id))).all()), 1)
+            customer = await s.get(Customer, self.customer.id)
+            customer.assigned_agent_id = self.users[1].id
+            s.add(customer)
+            schedule = await s.get(PremiumSchedule, self.schedule.id)
+            schedule.due_date = date(2026,1,1)
+            renewal = PremiumReceipt(tenant_id=self.tenant.id, policy_id=self.policy.id, schedule_id=schedule.id,
+                receipt_no=uuid4().hex, base_amount=1000, total_amount=1000, created_at=datetime(2026,1,15))
+            s.add_all([schedule, renewal]); await s.flush()
+            await accrue_receipt(s, renewal); await s.commit()
+            entries = (await s.exec(select(CommissionEarning).where(CommissionEarning.policy_id == self.policy.id))).all()
+            self.assertEqual(sorted(e.gross_amount for e in entries), [Decimal('50.00'),Decimal('100.00')])
+            self.assertTrue(all(e.source_id == self.source.id for e in entries))
+
+    async def test_automatic_missing_agent_or_plan_rate_writes_no_assignment(self):
+        await self.configure_automatic()
+        async with factory() as s:
+            customer = await s.get(Customer, self.customer.id); customer.assigned_agent_id = None
+            s.add(customer); await s.commit()
+        self.assertEqual((await self.post_receipt()).status, 'EXCEPTION')
+        async with factory() as s:
+            self.assertEqual((await s.exec(select(CommissionAssignment).where(CommissionAssignment.policy_id == self.policy.id))).all(), [])
+            customer = await s.get(Customer, self.customer.id); customer.assigned_agent_id = self.users[2].id
+            policy = await s.get(Policy, self.policy.id); policy.product_name = 'Missing plan'
+            s.add_all([customer,policy]); await s.commit()
+        self.assertIn('catalog plan', (await self.post_receipt()).reason)
+
+    async def test_plan_rule_scope_approval_and_version_selection(self):
+        plan = await self.configure_automatic()
+        async with factory() as s:
+            newer = CommissionAgreement(tenant_id=self.tenant.id, code='NEW_RATE', version=1,
+                name='New rate', first_year_pct=20, renewal_pct=7, effective_from=date(2025,1,1),
+                effective_to=date(2025,12,31), status='DRAFT', created_by=self.users[0].id)
+            s.add(newer); await s.commit()
+        payload = {'plan_id': str(plan.id), 'agreement_id': str(newer.id)}
+        async with await self.client() as c:
+            self.assertEqual((await c.post(self.url('plan-rules'), json=payload)).status_code,422)
+        async with await self.client(1) as c:
+            self.assertEqual((await c.post(self.url(f'agreements/{newer.id}/approve'))).status_code,200)
+            self.assertEqual((await c.post(self.url('plan-rules'), json=payload)).status_code,201)
+        self.assertEqual((await self.post_receipt()).status,'POSTED')
+        async with factory() as s:
+            entry = (await s.exec(select(CommissionEarning).where(CommissionEarning.policy_id == self.policy.id))).one()
+            self.assertEqual(entry.gross_amount, Decimal('200.00'))
+        async with await self.client(2,'Agent') as c:
+            self.assertEqual((await c.get(self.url('plan-rules'))).status_code,403)
+            self.assertEqual((await c.post(self.url('plan-rules'),json=payload)).status_code,403)
+
+    async def test_expired_latest_plan_rate_never_falls_back(self):
+        plan = await self.configure_automatic()
+        async with factory() as s:
+            newer = CommissionAgreement(tenant_id=self.tenant.id,code='EXPIRED',version=1,name='Expired',
+                first_year_pct=20,renewal_pct=7,effective_from=date(2024,6,1),effective_to=date(2024,12,31),
+                status='APPROVED',created_by=self.users[0].id,approved_by=self.users[1].id)
+            s.add(newer); await s.flush()
+            s.add(CommissionPlanRule(tenant_id=self.tenant.id,plan_id=plan.id,agreement_id=newer.id,created_by=self.users[0].id)); await s.commit()
+        self.assertIn('expired', (await self.post_receipt()).reason)
+
+    async def test_disbursement_approval_recording_and_no_double_payment(self):
+        earning = await self.payable_earning()
+        async with await self.client() as c:
+            created = await c.post(self.url('disbursements'),json={'earning_ids':[str(earning.id)]})
+            self.assertEqual(created.status_code,201,created.text)
+            batch = created.json()['id']; route=self.url('disbursements/'+batch)
+            self.assertEqual((await c.post(self.url('disbursements'),json={'earning_ids':[str(earning.id)]})).status_code,409)
+            self.assertEqual((await c.post(route+'/record-payment',json={'payment_reference':'QA-ONLY','confirmed':True})).status_code,409)
+            self.assertEqual((await c.post(route+'/submit')).status_code,200)
+            self.assertEqual((await c.post(route+'/approve')).status_code,403)
+        async with await self.client(1) as c:
+            approved = await c.post(route+'/approve'); self.assertEqual(approved.status_code,200,approved.text)
+            self.assertEqual((await c.post(route+'/record-payment',json={'payment_reference':'QA-ONLY'})).status_code,422)
+            for _ in range(2):
+                paid = await c.post(route+'/record-payment',json={'payment_reference':'QA-ONLY','confirmed':True})
+                self.assertEqual(paid.status_code,200,paid.text)
+            self.assertEqual((await c.post(route+'/reject',json={'reason':'too late'})).status_code,409)
+            self.assertEqual((await c.get(self.url('summary'))).json()['paid_gross'],'100.00')
+            self.assertEqual((await c.get(self.url('earnings'))).json()['items'][0]['disbursement_status'],'PAID')
+            self.assertEqual([e['action'] for e in (await c.get(route)).json()['events']],['CREATED','SUBMITTED','APPROVED','PAID'])
+
+    async def test_rejected_batch_releases_earnings_but_keeps_audit(self):
+        earning=await self.payable_earning()
+        async with await self.client() as c:
+            batch=(await c.post(self.url('disbursements'),json={'earning_ids':[str(earning.id)]})).json()['id']
+            route=self.url('disbursements/'+batch)
+            await c.post(route+'/submit')
+        async with await self.client(1) as c:
+            rejected=await c.post(route+'/reject',json={'reason':'Wrong batch period'})
+            self.assertEqual(rejected.status_code,200,rejected.text)
+            detail=(await c.get(route)).json()
+            self.assertEqual(len(detail['earnings']),1)
+            self.assertEqual(detail['events'][-1]['detail'],'Wrong batch period')
+            self.assertEqual((await c.post(self.url('disbursements'),json={'earning_ids':[str(earning.id)]})).status_code,201)
+
+    async def test_disbursement_hold_and_cross_tenant_agent_isolation(self):
+        from datetime import timedelta
+        earning=await self.payable_earning()
+        async with factory() as s:
+            policy=await s.get(Policy,self.policy.id);policy.free_look_end_date=date.today()+timedelta(days=1)
+            s.add(policy);await s.commit()
+        async with await self.client() as c:
+            candidates=(await c.get(self.url('disbursements/eligible'))).json()
+            self.assertIn('free-look',candidates['items'][0]['hold_reason'])
+            self.assertEqual((await c.post(self.url('disbursements'),json={'earning_ids':[str(earning.id)]})).status_code,409)
+            self.assertEqual((await c.post(self.url('disbursements'),json={'earning_ids':[str(uuid4())]})).status_code,404)
+        async with await self.client(2,'Agent') as c:
+            self.assertEqual((await c.get(self.url('disbursements'))).status_code,403)
+            self.assertEqual((await c.post(self.url('disbursements'),json={'earning_ids':[str(earning.id)]})).status_code,403)
+        async with await self.client() as c:
+            self.assertEqual((await c.get(f'/tenants/{uuid4()}/commissions/disbursements')).status_code,403)
+
+    async def test_policy_cancellation_blocks_payment_after_approval(self):
+        earning=await self.payable_earning()
+        async with await self.client() as c:
+            batch=(await c.post(self.url('disbursements'),json={'earning_ids':[str(earning.id)]})).json()['id']
+            route=self.url('disbursements/'+batch); await c.post(route+'/submit')
+        async with await self.client(1) as c:
+            self.assertEqual((await c.post(route+'/approve')).status_code,200)
+        async with factory() as s:
+            policy=await s.get(Policy,self.policy.id);policy.status=PolicyStatusEnum.CANCELLED
+            s.add(policy);await s.commit()
+        async with await self.client(1) as c:
+            response=await c.post(route+'/record-payment',json={'payment_reference':'SHOULD-NOT-POST','confirmed':True})
+            self.assertEqual(response.status_code,409,response.text)
+            self.assertEqual((await c.get(route)).json()['batch']['status'],'APPROVED')
+
+    async def test_concurrent_batches_reserve_an_earning_once(self):
+        earning=await self.payable_earning()
+        async with await self.client() as c:
+            responses=await asyncio.gather(*(c.post(self.url('disbursements'),json={'earning_ids':[str(earning.id)]}) for _ in range(4)))
+            self.assertEqual(sorted(r.status_code for r in responses),[201,409,409,409])
+
+    async def test_first_premium_automatically_posts_without_policy_setup(self):
+        from routers.policies import confirm_payment, PaymentConfirmRequest
+        await self.configure_automatic()
+        async with factory() as s:
+            policy=await s.get(Policy,self.policy.id)
+            policy.status=PolicyStatusEnum.PENDING_PAYMENT
+            policy.effective_date=date(date.today().year,1,1)
+            schedule=await s.get(PremiumSchedule,self.schedule.id)
+            schedule.due_date=date.today();schedule.amount_due=12000;schedule.amount_paid=0
+            schedule.status=PremiumScheduleStatusEnum.PENDING
+            s.add_all([policy,schedule]);await s.commit()
+            with patch('routers.policies.generate_and_store_documents',new=AsyncMock()):
+                result=await confirm_payment(self.tenant.id,policy.id,None,
+                    PaymentConfirmRequest(amount=12000,reference='QA-AUTO-FIRST',method='BankTransfer'),s)
+            self.assertEqual(result['status'],'Active')
+        async with factory() as s:
+            rows=(await s.exec(select(CommissionEarning).where(CommissionEarning.policy_id==self.policy.id))).all()
+            self.assertEqual(len(rows),1)
+            self.assertEqual(rows[0].gross_amount,Decimal('1200.00'))
+            self.assertEqual(rows[0].snapshot['allocation_method'],'AUTO_PLAN')
+
+    async def test_plan_binding_refuses_duplicate_start_dates_and_foreign_ids(self):
+        plan=await self.configure_automatic()
+        async with factory() as s:
+            other=CommissionAgreement(tenant_id=self.tenant.id,code='SAME_START',version=1,name='Same date',
+                first_year_pct=30,renewal_pct=5,effective_from=self.agreement.effective_from,status='APPROVED',
+                created_by=self.users[0].id,approved_by=self.users[1].id)
+            s.add(other);await s.commit()
+        async with await self.client() as c:
+            self.assertEqual((await c.post(self.url('plan-rules'),json={'plan_id':str(plan.id),'agreement_id':str(other.id)})).status_code,409)
+            self.assertEqual((await c.post(self.url('plan-rules'),json={'plan_id':str(uuid4()),'agreement_id':str(other.id)})).status_code,422)
+
+    async def test_duplicate_external_reference_rolls_back_payment_and_event(self):
+        earning=await self.payable_earning()
+        async with await self.client() as maker:
+            batch=(await maker.post(self.url('disbursements'),json={'earning_ids':[str(earning.id)]})).json()['id']
+            await maker.post(self.url('disbursements/'+batch+'/submit'))
+        async with await self.client(1) as checker:
+            await checker.post(self.url('disbursements/'+batch+'/approve'))
+            paid=await checker.post(self.url('disbursements/'+batch+'/record-payment'),json={'payment_reference':'UNIQUE-REF','confirmed':True})
+            self.assertEqual(paid.status_code,200,paid.text)
+        async with factory() as s:
+            receipt=PremiumReceipt(tenant_id=self.tenant.id,policy_id=self.policy.id,schedule_id=self.schedule.id,
+                receipt_no=uuid4().hex,base_amount=500,total_amount=500,created_at=datetime(2025,2,1))
+            s.add(receipt);await s.flush();await accrue_receipt(s,receipt);await s.commit()
+            second=(await s.exec(select(CommissionEarning).where(CommissionEarning.receipt_id==receipt.id))).one()
+        async with await self.client() as maker:
+            second_batch=(await maker.post(self.url('disbursements'),json={'earning_ids':[str(second.id)]})).json()['id']
+            route=self.url('disbursements/'+second_batch);await maker.post(route+'/submit')
+        async with await self.client(1) as checker:
+            await checker.post(route+'/approve')
+            duplicate=await checker.post(route+'/record-payment',json={'payment_reference':'UNIQUE-REF','confirmed':True})
+            self.assertEqual(duplicate.status_code,409,duplicate.text)
+            detail=(await checker.get(route)).json()
+            self.assertEqual(detail['batch']['status'],'APPROVED')
+            self.assertNotIn('PAID',[e['action'] for e in detail['events']])
 
 
 if __name__ == '__main__':

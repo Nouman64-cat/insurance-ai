@@ -1142,14 +1142,17 @@ class RegisterClaimArgs(BaseModel):
     claim_type: Optional[str] = Field(default=None, description="Hospitalization, Surgery, Death Claim or Reimbursement.")
     submitted_amount: Optional[float] = Field(default=None, description="Amount claimed, in PKR.")
     incident_date: Optional[str] = Field(default=None, description="YYYY-MM-DD. Defaults to today.")
+    cause: Optional[Literal["Natural / illness", "Accident", "Suicide", "Other unnatural"]] = Field(
+        default=None, description="Death claims: the cause of death. Leave unset to get buttons.")
     notes: Optional[str] = None
 
 
 @tool(args_schema=RegisterClaimArgs)
 def register_claim(**kwargs) -> str:
     """Register a First Notice of Loss (FNOL) — opens a claim against an active
-    policy, auto-generates the claim number, runs duplicate detection and opens
-    the linked SLA case. Call it with whatever you have; the platform presents
+    policy, auto-generates the claim number, runs duplicate detection, opens
+    the linked SLA case and puts it straight into the claims workflow
+    (eligibility, plan exclusions, document checklist). Call it with whatever you have; the platform presents
     a policy picker and claim-type buttons for anything missing."""
     return "{}"
 
@@ -1272,6 +1275,8 @@ class StartClaimJourneyArgs(BaseModel):
     claim_type: Optional[str] = None
     submitted_amount: Optional[float] = None
     incident_date: Optional[str] = None
+    cause: Optional[Literal["Natural / illness", "Accident", "Suicide", "Other unnatural"]] = Field(
+        default=None, description="Death claims: the cause of death.")
 
 
 @tool(args_schema=StartClaimJourneyArgs)
@@ -1717,14 +1722,15 @@ def calculate_commission(**kwargs) -> str:
 class LedgerArgs(BaseModel):
     payee_name: Optional[str] = Field(default=None, description="Restrict to one payee.")
     status: Optional[
-        Literal["ACCRUED", "PAYABLE", "IN_RUN", "PARTIALLY_RELEASED", "DISBURSED", "CLAWED_BACK", "HELD"]
+        Literal["ACCRUED", "DRAFT", "SUBMITTED", "APPROVED", "PAID"]
     ] = None
     limit: int = Field(default=20)
 
 
 @tool(args_schema=LedgerArgs)
 def get_commission_ledger(**kwargs) -> str:
-    """List persisted accrued gross earnings. Release and settlement are not enabled."""
+    """List persisted gross earnings, optionally filtered by disbursement state.
+    PAID means external payment was manually confirmed, not a bank transfer by the app."""
     return "{}"
 
 

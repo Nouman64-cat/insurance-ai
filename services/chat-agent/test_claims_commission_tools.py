@@ -314,8 +314,9 @@ def _fnol_routes(overview=DEATH_ONLY):
 
 def test_death_only_policy_is_not_offered_hospital_claim_types():
     out = _call("register_claim", {"policy_number": "PL-2026-0001"}, FakeClient(_fnol_routes()), role="ClaimsAdjuster")
-    # The one covered type is picked, so the next question is the amount — never Hospitalization/Surgery.
-    assert "How much is being claimed" in out["error"]
+    # The one covered type is picked, so the next question is the cause of death — never Hospitalization/Surgery.
+    assert "cause of death" in out["error"]
+    assert [a["label"] for a in out["quick_actions"]] == ["Natural / illness", "Accident", "Suicide", "Other unnatural"]
     assert all("Death Claim" in a["payload"] for a in out["quick_actions"])
 
 
@@ -343,9 +344,15 @@ def test_fnol_on_term_plan_warns_about_plan_maximum_and_pre_existing_exclusion()
     overview = {**DEATH_ONLY, "rules": {"product": LPP_RULES}}
     client = FakeClient({("GET", "/policies"): [policy], ("GET", "/policies/p-1/claims-management"): overview,
                          ("POST", "/claims"): {"id": "c-4", "claim_number": "CLM-2026-0004", "status": "New",
-                                               "is_contestable": True, "ai_recommendation": "REFER_TO_ADJUSTER"}})
+                                               "is_contestable": True, "ai_recommendation": "REFER_TO_ADJUSTER"},
+                         ("POST", "/policies/p-1/claims-management/c-4/adopt"): _workspace(
+                             claim={"id": "c-4", "claim_number": "CLM-2026-0004", "status": "Pending Documents"},
+                             eligibility={"status": "Referred"}, can={"decide": False})})
     out = _call("register_claim", {"policy_number": "PL-2026-0001", "submitted_amount": 29800000,
-                                    "incident_date": "2026-10-14"}, client, role="ClaimsAdjuster")
+                                    "incident_date": "2026-10-14", "cause": "Natural / illness"}, client, role="ClaimsAdjuster")
+    adopt = next(w for w in client.writes() if w["path"].endswith("/adopt"))
+    assert adopt["body"] == {"category": "Death", "covered_person_relationship": "Self", "cause": "Natural / illness"}
+    assert "Eligibility: **Referred**" in out["message"] and out["claim_workflow"]
     assert "Above the plan's maximum" in out["message"] and "PKR 2,500,000" in out["message"]
     assert "Early death claim" in out["message"] and "pre-existing" in out["message"]
     assert "suicide at any time" in out["message"]
@@ -389,3 +396,54 @@ def test_free_look_refund_passes_the_medical_exam_deduction_and_reports_it():
     assert client.writes()[0]["body"] == {"reason": None, "medical_exam_deduction": 2500.0, "medical_exam_note": "Lab invoice 4471"}
     assert "PKR 15,500" in out["message"] and "less PKR 2,500 medical examination" in out["message"]
     assert "has not been paid yet" in out["message"]
+
+
+def test_register_only_death_claim_asks_only_the_cause_to_adopt():
+    death = {**CLAIM, "claim_type": "Death Claim"}
+    client = FakeClient(_claim_routes(extra={("GET", "/claims"): [death], ("GET", "/claims/c-1"): death,
+                                             ("GET", WS_PATH): (409, {"detail": "no workflow record"})}))
+    out = _call("get_claim_workflow", {"claim_number": "CLM-2026-0001"}, client)
+    assert [a["label"] for a in out["quick_actions"]] == ["Natural / illness", "Accident", "Suicide", "Other unnatural"]
+    assert all("as Death, cause:" in a["payload"] for a in out["quick_actions"])
+
+
+def test_adopt_infers_the_benefit_from_the_register_type():
+    death = {**CLAIM, "claim_type": "Death Claim"}
+    client = FakeClient(_claim_routes(extra={("GET", "/claims"): [death], ("GET", "/claims/c-1"): death,
+                                             ("GET", WS_PATH): (409, {"detail": "no workflow record"}),
+                                             ("POST", WS_PATH + "/adopt"): _workspace()}))
+    _call("adopt_claim_into_workflow", {"claim_number": "CLM-2026-0001", "cause": "Accident"}, client)
+    assert client.writes()[0]["body"]["category"] == "Death"
+
+
+def test_outstanding_documents_become_upload_buttons_bound_to_the_checklist_item():
+    import json as _json
+    ws = _workspace(can={"edit_documents": True})
+    out = _call("get_claim_workflow", {"claim_number": "CLM-2026-0001"}, FakeClient(_claim_routes(ws)))
+    upload = out["quick_actions"][0]
+    assert upload["actionType"] == "upload" and upload["label"] == "Upload Death certificate"
+    assert _json.loads(upload["payload"]) == {"document_type": "Death certificate", "checklist_key": "death_cert",
+                                              "claim_id": "c-1", "claim_number": "CLM-2026-0001", "policy_id": "p-1"}
+
+
+def test_a_claim_with_a_checklist_offers_document_management():
+    import json as _json
+    out = _call("get_claim_workflow", {"claim_number": "CLM-2026-0001"}, FakeClient(_claim_routes(_workspace(can={"edit_documents": True}))))
+    manage = next(a for a in out["quick_actions"] if a["actionType"] == "claim_documents")
+    assert _json.loads(manage["payload"]) == {"claim_id": "c-1", "claim_number": "CLM-2026-0001", "policy_id": "p-1"}
+
+
+def test_missing_documents_come_from_the_workflow_checklist_not_the_register_list():
+    ws = _workspace(claim={"status": "Under Investigation"},
+                    documents={"items": [
+                        {"key": "death_cert", "label": "Death certificate", "required": True, "status": "Received"},
+                        {"key": "claim_form", "label": "Death Claim Form", "required": True, "status": "Waived", "note": "Branch form lost"}],
+                        "progress": {"required": 2, "received": 2}},
+                    stages=[{"n": 4, "key": "assessment", "title": "Investigation & assessment", "state": "action",
+                             "label": "Investigation required", "detail": ""}])
+    death = {**CLAIM, "claim_type": "Death Claim", "artifacts": []}
+    out = _call("get_claim_document_checklist", {"claim_number": "CLM-2026-0001"},
+                FakeClient(_claim_routes(ws, {("GET", "/claims"): [death], ("GET", "/claims/c-1"): death})))
+    assert out["missing"] == [] and "document file is complete" in out["message"]
+    assert "Hospital" not in out["message"] and "waived: Branch form lost" in out["message"]
+    assert "Next: **Investigation & assessment — Investigation required**" in out["message"]

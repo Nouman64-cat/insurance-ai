@@ -28,6 +28,7 @@ Registered by being imported at the foot of tool_executor.py.
 
 from __future__ import annotations
 
+import json
 from typing import Any, Optional
 
 import httpx
@@ -75,20 +76,36 @@ async def _claim_and_workspace(args: dict, ctx: Ctx) -> tuple[dict, Optional[dic
     return claim, res.json()
 
 
+_CAUSES = ("Natural / illness", "Accident", "Suicide", "Other unnatural")
+# Register claim types → the workflow benefit they are. The register type was already checked
+# against the policy's cover when the claim was registered, so it is not asked again.
+_REGISTER_TO_CATEGORY = {"death claim": "Death", "accidental death claim": "AccidentalDeath",
+                         "disability claim": "Disability", "hospitalization": "Hospitalization",
+                         "surgery": "Hospitalization", "reimbursement": "Hospitalization"}
+
+
+def category_for(claim: dict) -> Optional[str]:
+    return _REGISTER_TO_CATEGORY.get((claim.get("claim_type") or "").strip().lower())
+
+
 def _not_in_workflow(claim: dict) -> dict:
     ref = claim.get("claim_number") or claim.get("claimant_name")
-    return {
-        "success": False,
-        "error": f"Claim {ref} is on the claims register but not in the claims workflow yet, so it has no "
-                 "eligibility check, checklist or assessment. Bring it in first — pick the benefit it is for.",
-        "error_code": "not_in_workflow",
-        "needs_user_input": True,
-        "quick_actions": [
-            _chip(f"Adopt as {label}", f"Adopt claim {ref} into the workflow as {cat}")
-            for cat, label in (("Death", "death claim"), ("AccidentalDeath", "accidental death"),
-                               ("Disability", "disability"), ("Hospitalization", "hospitalisation"))
-        ],
-    }
+    category = category_for(claim)
+    if category in _DEATH:
+        question = (f"{ref} is a {claim.get('claim_type')} that isn't in the claims workflow yet. "
+                    "What was the cause of death? It decides which documents are needed.")
+        chips = [_chip(c, f"Adopt claim {ref} into the workflow as {category}, cause: {c}") for c in _CAUSES]
+    elif category:
+        question = f"{ref} isn't in the claims workflow yet — bring it in to run eligibility, the checklist and assessment."
+        chips = [_chip("Bring into workflow", f"Adopt claim {ref} into the workflow as {category}")]
+    else:
+        question = (f"{ref} isn't in the claims workflow yet, and its type ({claim.get('claim_type') or 'unknown'}) "
+                    "doesn't say which benefit it is — pick one.")
+        chips = [_chip(f"Adopt as {label}", f"Adopt claim {ref} into the workflow as {cat}")
+                 for cat, label in (("Death", "death claim"), ("AccidentalDeath", "accidental death"),
+                                    ("Disability", "disability"), ("Hospitalization", "hospitalisation"))]
+    return {"success": False, "error": question, "error_code": "not_in_workflow", "needs_user_input": True,
+            "quick_actions": chips}
 
 
 async def _post(ctx: Ctx, claim: dict, path: str, body: Optional[dict] = None) -> dict:
@@ -177,12 +194,23 @@ def _actions(ws: dict, policy_id: str) -> list[dict]:
     payable = ((ws.get("assessment") or {}).get("result") or {}).get("payable")
     approved = ws["claim"].get("approved_amount")
     out: list[dict] = []
+    if can.get("edit_documents"):
+        # Upload straight against the checklist item: the browser holds the file, and this
+        # payload tells it exactly which claim, policy and item the file is for.
+        outstanding = [d for d in (ws.get("documents") or {}).get("items") or []
+                       if d.get("required") and d.get("status") not in ("Received", "Waived")]
+        for d in outstanding[:2]:
+            out.append({"label": f"Upload {d['label'].split(' (')[0]}", "actionType": "upload",
+                        "payload": json.dumps({"document_type": d["label"], "checklist_key": d["key"],
+                                               "claim_id": ws["claim"]["id"], "claim_number": ref, "policy_id": policy_id})})
     if elig.get("status") == "Ineligible" and not elig.get("override_by") and can.get("verify"):
         out.append(_chip("Re-run eligibility", f"Re-verify eligibility on claim {ref}"))
         out.append(_chip("Override (manager)", f"Override eligibility on claim {ref}"))
     if can.get("investigate") and inv.get("requires_investigation") and not inv.get("completed_at"):
-        out.append(_chip("Record a finding", f"Record an investigation finding on claim {ref}"))
-        out.append(_chip("Complete investigation", f"Complete the investigation on claim {ref}"))
+        # The claim card has the investigation form (red flags, findings, outcome) — open it
+        # rather than asking the user to type a finding into the chat.
+        out.append({"label": "Investigate red flags", "actionType": "claim_documents",
+                    "payload": json.dumps({"claim_id": ws["claim"]["id"], "claim_number": ref, "policy_id": policy_id})})
     if can.get("assess"):
         out.append(_chip("Assess the benefit", f"Assess the benefit on claim {ref}"))
     if can.get("decide"):
@@ -201,8 +229,13 @@ def _actions(ws: dict, policy_id: str) -> list[dict]:
         out.append(_chip("Reconcile payment", f"Reconcile the settlement on claim {ref}"))
     if can.get("close"):
         out.append(_chip("Close & send letter", f"Close claim file {ref} and send the letter"))
-    out.append(_open_policy(policy_id))
-    return out[:6]
+    tail = []
+    if (ws.get("documents") or {}).get("items"):
+        # Opens the checklist card in the chat: view, replace, send back, request more.
+        tail.append({"label": "Manage documents", "actionType": "claim_documents",
+                     "payload": json.dumps({"claim_id": ws["claim"]["id"], "claim_number": ref, "policy_id": policy_id})})
+    tail.append(_open_policy(policy_id))
+    return out[:6 - len(tail)] + tail
 
 
 def _result(ws: dict, policy_id: str, headline: str, tool: str) -> dict:
@@ -364,13 +397,9 @@ async def _adopt_claim_into_workflow(args: dict, ctx: Ctx) -> dict:
     ref = claim.get("claim_number")
     if ws is not None:
         return _result(ws, str(claim["policy_id"]), f"{ref} is already in the claims workflow.", "adopt_claim_into_workflow")
-    category = args.get("category")
-    if category not in _CATEGORIES:
+    category = args.get("category") if args.get("category") in _CATEGORIES else category_for(claim)
+    if category not in _CATEGORIES or (category in _DEATH and not args.get("cause")):
         return _not_in_workflow(claim)
-    if category in _DEATH and not args.get("cause"):
-        raise ChoiceNeeded("What was the cause of death? It decides which documents are needed.",
-                           [_chip(c, f"Adopt claim {ref} into the workflow as {category}, cause: {c}")
-                            for c in ("Natural / illness", "Accident", "Suicide", "Other unnatural")])
     body = {"category": category, "cause": args.get("cause"),
             "covered_person_relationship": args.get("covered_person_relationship") or "Self"}
     ws = await _post(ctx, claim, "/adopt", {k: v for k, v in body.items() if v is not None})

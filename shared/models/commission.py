@@ -71,3 +71,53 @@ class CommissionEarning(SQLModel, table=True):
     policy_year: int
     snapshot: dict = Field(sa_column=Column(JSON, nullable=False))
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
+class CommissionPlanRule(SQLModel, table=True):
+    """One approved contract per plan/effective period. Immutable once linked."""
+    __tablename__ = 'commission_plan_rules'
+    __table_args__ = (UniqueConstraint('tenant_id', 'plan_id', 'agreement_id', name='uq_comm_plan_agreement'),)
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key='tenants.id', index=True)
+    plan_id: UUID = Field(foreign_key='insurance_plans.id', index=True)
+    agreement_id: UUID = Field(foreign_key='commission_agreements.id')
+    created_by: UUID = Field(foreign_key='users.id')
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class CommissionDisbursement(SQLModel, table=True):
+    __tablename__ = 'commission_disbursements'
+    __table_args__ = (UniqueConstraint('tenant_id', 'payment_reference', name='uq_comm_payment_reference'),)
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key='tenants.id', index=True)
+    status: str = Field(default='DRAFT', max_length=20, index=True)
+    gross_amount: Decimal = Field(sa_column=Column(Numeric(18, 2), nullable=False))
+    created_by: UUID = Field(foreign_key='users.id')
+    approved_by: Optional[UUID] = Field(default=None, foreign_key='users.id')
+    paid_by: Optional[UUID] = Field(default=None, foreign_key='users.id')
+    payment_reference: Optional[str] = Field(default=None, max_length=150)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    submitted_at: Optional[datetime] = None
+    approved_at: Optional[datetime] = None
+    paid_at: Optional[datetime] = None
+
+
+class CommissionDisbursementItem(SQLModel, table=True):
+    __tablename__ = 'commission_disbursement_items'
+    __table_args__ = (UniqueConstraint('batch_id', 'earning_id', name='uq_comm_batch_earning'),)
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    batch_id: UUID = Field(foreign_key='commission_disbursements.id', index=True)
+    earning_id: UUID = Field(foreign_key='commission_earnings.id', index=True)
+    # Released on rejection/cancellation; history keeps the original earning_id.
+    reserved_earning_id: Optional[UUID] = Field(default=None, foreign_key='commission_earnings.id', unique=True)
+    gross_amount: Decimal = Field(sa_column=Column(Numeric(18, 2), nullable=False))
+
+
+class CommissionDisbursementEvent(SQLModel, table=True):
+    __tablename__ = 'commission_disbursement_events'
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    batch_id: UUID = Field(foreign_key='commission_disbursements.id', index=True)
+    actor_id: UUID = Field(foreign_key='users.id')
+    action: str = Field(max_length=30)
+    detail: Optional[str] = Field(default=None, max_length=500)
+    created_at: datetime = Field(default_factory=datetime.utcnow)

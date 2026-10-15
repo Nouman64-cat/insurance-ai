@@ -212,6 +212,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       TENANT_SERVICE_URL: http://tenant-service:8001
       API_GATEWAY_URL: http://api-gateway:8000
+      COMMISSION_SPECIALIST_ENABLED: ${COMMISSION_SPECIALIST_ENABLED:-true}
       # LLM provider keys/models come from the SuperAdmin config in
       # tenant-service (Platform → LLM Configuration), not env vars.
     healthcheck:

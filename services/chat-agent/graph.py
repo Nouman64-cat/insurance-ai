@@ -1,9 +1,11 @@
 """The conversational agent graph.
 
-    START -> agent -> (tool call?) -> permission_gate -> [interrupt() if needed] -> agent
-                    -> (no tool call) -> END
+    START -> coordinator (agent) -> general_agent | commission_agent
+          -> (tool call?) -> permission_gate -> [interrupt() if needed] -> coordinator
+          -> (no tool call) -> END
 
-`agent` is a single Gemini call bound to the 12 tools (tools.py). Whenever it
+The deterministic coordinator selects the main planner or commission specialist.
+Both use the configured provider and shared execution/permission gate. When either
 proposes a tool call, `permission_gate` decides whether it's safe to run
 immediately, needs a clarifying question (missing/ambiguous required args), or
 needs clarification for missing information — using
@@ -20,6 +22,7 @@ import logging
 import os
 import re
 import uuid
+import time
 from urllib.parse import quote
 from typing import Any, Optional
 
@@ -60,6 +63,7 @@ from group_journey import register_group_journey
 from journey import register_journey
 from operations import OPERATION_TOOLS, operation_status_result, plan_resume
 from toolsets import CORE_TOOLS, domains_used, fit_to_cap, matched_domains, select_domains, tool_names_for
+from commission_specialist import coordinator_node, route_coordinator, commission_agent_node
 
 # OpenAI's hard limit on tools per request (Gemini has none, but the fallback must fit too).
 MAX_BOUND_TOOLS = 128
@@ -434,8 +438,11 @@ The commission backend posts accrued gross earnings from recorded premium receip
 and approved contractual producer agreements. The portal is /commissions.
 Use **list_commission_payees**, **get_commission_ledger**, **get_agent_statement**
 and **get_commission_summary** for persisted data. Statements use posting dates.
-Never infer payment from policy status. Tax, release eligibility, payouts,
-clawbacks, incentives and group/family allocation are not enabled yet.
+Never infer payment from policy status. Premium receipts automatically allocate
+to the assigned agent when an approved plan rate applies; explicit policy splits
+take priority. Disbursement batches in /commissions need independent approval and
+an external payment confirmation. Only PAID means payment has been recorded.
+Bank transfers, tax, clawbacks, incentives and group/family allocation are not automated.
 **get_commission_rate_card** explains agreement configuration; rates are not
 statutory defaults. One administrator drafts an agreement; a different
 administrator approves it. Do not use underwriting rule tools to alter these
@@ -478,8 +485,10 @@ For an individual customer's assigned agent, source, or commission readiness, st
 with **get_customer_commission_setup** using customer_name or customer_id. A customer
 UUID is never a CNIC. Quick leads may have no CNIC; do not request one for this read.
 Commission posts per premium RECEIPT: receipt base × agreement rate (first-year or
-renewal) × producer split. A receipt posts only when the policy has producers assigned
-under an APPROVED agreement in date; otherwise it becomes an exception.
+renewal) × producer split. A receipt uses an explicit policy allocation, or automatically
+assigns the customer's agent at 100% under the latest approved rate linked to its
+catalog plan. Missing/ambiguous agents or rates become exceptions. Plan rates are
+configured once in /commissions. Posted policy allocations remain frozen.
 - **list_commission_agreements**, **create_commission_agreement** (DRAFT; never assume
   a rate), **approve_commission_agreement** (a DIFFERENT admin; approved = immutable —
   change terms with a new version).
@@ -487,7 +496,8 @@ under an APPROVED agreement in date; otherwise it becomes an exception.
   frozen after the first posting; group and family policies are not supported yet).
 - **list_commission_exceptions** → fix the cause → **reconcile_commission_receipts**.
 - **explain_commission_earning** — how one earning was calculated (agents: own only).
-Everything is accrued gross — never say commission was paid."""
+Disbursement approval/payment recording is available in /commissions. Do not claim
+money moved: PAID is manual external-payment confirmation, not a bank integration."""
 
 DOMAIN_PROMPTS["documents"] = """
 
@@ -633,7 +643,7 @@ def _reset_cache_if_stale(version: str) -> None:
 
 
 def _llm(cfg: dict, role: str = "Admin", platform: str = "web",
-         domains: frozenset[str] | None = None):
+         domains: frozenset[str] | None = None, *, tool_scope: frozenset[str] | None = None):
     """The tool-bound model for this turn's scope.
 
     `cfg` comes from providers.resolve(): primary + optional fallback provider,
@@ -641,12 +651,14 @@ def _llm(cfg: dict, role: str = "Admin", platform: str = "web",
     and, on any error, fails over to the fallback (LangChain .with_fallbacks).
     """
     _reset_cache_if_stale(cfg["version"])
-    key = (role, platform, domains)
+    key = (role, platform, domains, tool_scope)
     cached = _LLM_CACHE.get(key)
     if cached is not None:
         return cached
 
     allowed = get_tools_for_role(role, platform)
+    if tool_scope is not None:
+        allowed = [t for t in allowed if t.name in tool_scope]
     if domains is not None:
         in_scope = tool_names_for(domains)
         allowed = [t for t in allowed if t.name in in_scope]
@@ -778,12 +790,12 @@ _EMPTY_FALLBACK = (
 )
 
 
-async def _retry_empty(llm, messages, state, thread_id) -> AIMessage:
+async def _retry_empty(llm, messages, state, thread_id, service_name=usage.SERVICE_CHAT_AGENT) -> AIMessage:
     """One nudged retry, then a plain-English fallback so the turn always says
     something. Only fires on the degenerate path, so it costs nothing in the
     normal case."""
     retried = await llm.ainvoke([*messages, SystemMessage(content=_EMPTY_NUDGE)])
-    usage.record(retried, tenant_id=state.get("tenant_id"), thread_id=thread_id)
+    usage.record(retried, tenant_id=state.get("tenant_id"), thread_id=thread_id, service_name=service_name)
     if not _is_empty(retried):
         return retried
     return AIMessage(content=_EMPTY_FALLBACK)
@@ -842,7 +854,7 @@ def _draft_request(messages: list) -> bool:
     return bool(re.search(r"\b(?:send|move)\b.{0,80}\b(?:draft|proposals?)\b", text, re.I))
 
 
-async def agent_node(state: ChatState, config: RunnableConfig | None = None) -> dict:
+async def agent_node(state: ChatState, config: RunnableConfig = None) -> dict:
     # Explicit named-customer list requests must query this turn, not replay history.
     if state["messages"] and isinstance(state["messages"][-1], HumanMessage):
         text = str(state["messages"][-1].content).strip()
@@ -889,6 +901,12 @@ async def agent_node(state: ChatState, config: RunnableConfig | None = None) -> 
     llm = _llm(cfg, user_role, platform, domains)
     thread_id = ((config or {}).get("configurable") or {}).get("thread_id")
 
+    return await _complete_agent_turn(llm, messages, state, thread_id, next_sticky)
+
+
+async def _complete_agent_turn(llm, messages, state, thread_id, next_sticky, *,
+                               allowed_names=None, service_name=usage.SERVICE_CHAT_AGENT):
+    started = time.monotonic()
     # The primary model intermittently 429s/503s (and right now: 403s on a
     # billing block) — one failed call must not kill a live conversation turn.
     # `_llm()` already fails each call over to the configured fallback provider;
@@ -914,11 +932,12 @@ async def agent_node(state: ChatState, config: RunnableConfig | None = None) -> 
                 response = response.model_copy(update={"tool_calls": calls})
             usage.record(
                 response,
+                service_name=service_name,
                 tenant_id=state.get("tenant_id"),
                 thread_id=thread_id,
             )
             if _is_empty(response):
-                response = await _retry_empty(llm, messages, state, thread_id)
+                response = await _retry_empty(llm, messages, state, thread_id, service_name)
             if isinstance(response, AIMessage) and len(response.tool_calls) > 1:
                 # permission_gate only ever dispatches tool_calls[0] (it must —
                 # a confirm/clarify interrupt suspends the node mid-dispatch with
@@ -938,7 +957,13 @@ async def agent_node(state: ChatState, config: RunnableConfig | None = None) -> 
                     "tool_calls": response.tool_calls[:1],
                     "invalid_tool_calls": [],
                 })
+            if allowed_names is not None and any(tc['name'] not in allowed_names for tc in response.tool_calls):
+                logger.warning('specialist rejected an out-of-scope tool call')
+                response = AIMessage(content="I cannot perform that action within the commission workflow or your current permissions. Please state the customer, underwriting or claims task separately if you want to switch workflows.")
             used_now = domains_used(tc["name"] for tc in (getattr(response, "tool_calls", None) or []))
+            logging.getLogger('uvicorn.error').info('chat_planner service=%s tools=%s elapsed_ms=%.1f',
+                service_name, len(allowed_names) if allowed_names is not None else 'domain',
+                (time.monotonic()-started)*1000)
             return {"messages": [response], "active_domains": sorted(set(next_sticky) | set(used_now))}
         except Exception as exc:  # noqa: BLE001 — SDK raises provider-specific types
             last_exc = exc
@@ -2849,11 +2874,15 @@ async def client_executor_node(state: ChatState) -> Command:
 
 
 _graph_builder = StateGraph(ChatState)
-_graph_builder.add_node("agent", agent_node)
+_graph_builder.add_node("agent", coordinator_node)
+_graph_builder.add_node("general_agent", agent_node)
+_graph_builder.add_node("commission_agent", commission_agent_node)
 _graph_builder.add_node("permission_gate", permission_gate)
 _graph_builder.add_node("client_executor", client_executor_node)
 _graph_builder.add_edge(START, "agent")
-_graph_builder.add_conditional_edges("agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
+_graph_builder.add_conditional_edges("agent", route_coordinator, {"general_agent": "general_agent", "commission_agent": "commission_agent"})
+_graph_builder.add_conditional_edges("general_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
+_graph_builder.add_conditional_edges("commission_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
 # permission_gate routes itself via Command (agent | j_intake | j_resume) —
 # no static outgoing edge, so Command is the single source of truth.
 register_journey(_graph_builder)

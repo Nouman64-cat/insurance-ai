@@ -93,6 +93,7 @@ from routers.demo import router as demo_router
 from routers.rules import router as rules_router
 from routers.search import router as search_router
 from routers.commissions import router as commissions_router
+from routers.commission_disbursements import router as commission_disbursements_router
 from routers.request_management_internal import router as request_management_internal_router
 from routers.customer_portal_internal import router as customer_portal_internal_router
 from routers.customer_portal_family import router as customer_portal_family_router
@@ -277,6 +278,7 @@ app.include_router(demo_router)
 app.include_router(rules_router)
 app.include_router(search_router)
 app.include_router(commissions_router)
+app.include_router(commission_disbursements_router)
 app.include_router(request_management_internal_router)
 app.include_router(customer_portal_internal_router)
 app.include_router(customer_portal_family_router)

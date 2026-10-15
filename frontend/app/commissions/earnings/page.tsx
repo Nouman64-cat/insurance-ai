@@ -4,6 +4,8 @@ import { FormEvent, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import * as service from '@/app/services/commissionEarnings';
 import { tx } from "@/lib/i18n/tx";
+import PlanCommissionRules from '@/components/commissions/PlanCommissionRules';
+import CommissionDisbursements from '@/components/commissions/CommissionDisbursements';
 
 const money = (value: string | number) => new Intl.NumberFormat('en-PK', {style: 'currency', currency: 'PKR'}).format(Number(value));
 const field = 'border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white w-full';
@@ -41,7 +43,7 @@ export default function EarningsPage() {
   function choosePolicy(id: string, data = setup) {
     setPolicy(id);
     const chosen = data?.policies.find(p => p.id === id);
-    setProducers(chosen?.assignments.length ? chosen.assignments : [{...blankProducer(), source_id: chosen?.recommended_source_id || ''}]);
+    setProducers(chosen?.assignments.length ? chosen.assignments : [{...blankProducer(), source_id: chosen?.automatic?.source_id || chosen?.recommended_source_id || '', agreement_id: chosen?.automatic?.agreement_id || ''}]);
   }
   async function reviewException(exception: service.AccrualException) {
     setBusy(true); setError('');
@@ -82,13 +84,13 @@ export default function EarningsPage() {
       <div><h1 className="text-2xl font-bold">{tx("Commission earnings")}</h1><p className="text-sm text-slate-500 mt-1">{tx("Recorded premium receipts and approved producer agreements.")}</p></div>
       <button className={button} disabled={busy} onClick={() => run(async () => {}, 'Refreshed')}>{tx("Refresh")}</button>
     </div>
-    <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm">{tx("Accrued gross earnings only. Tax, release eligibility, payouts, and group/family allocations are not enabled in this release.")}{" "}<Link className="underline" href="/commissions/preview">{tx("View illustrative dashboard")}</Link></div>
+    <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm">Commission accrues automatically from premium receipts and approved plan rates. Disbursement requires independent approval and external payment confirmation. Tax calculation, bank transfers and group/family allocation are not enabled.</div>
     {error && <p role="alert" className="bg-red-50 text-red-800 p-4 rounded-lg">{error}</p>}
     {notice && <p role="status" className="bg-emerald-50 text-emerald-800 p-4 rounded-lg">{notice}</p>}
     <div className="grid sm:grid-cols-3 gap-4">
       <div className="border rounded-xl bg-white p-5"><p className="text-sm text-slate-500">{tx("Accrued gross · all entries")}</p><p className="text-2xl font-semibold">{summary ? money(summary.accrued_gross) : '—'}</p></div>
       <div className="border rounded-xl bg-white p-5"><p className="text-sm text-slate-500">{tx("Posted allocations")}</p><p className="text-2xl font-semibold">{summary?.entries ?? '—'}</p></div>
-      <div className="border rounded-xl bg-white p-5"><p className="text-sm text-slate-500">{tx("Settlement")}</p><p className="text-xl font-semibold">{tx("Not enabled")}</p></div>
+      <div className="border rounded-xl bg-white p-5"><p className="text-sm text-slate-500">External payments recorded · gross</p><p className="text-2xl font-semibold">{summary ? money(summary.paid_gross || '0') : '—'}</p></div>
     </div>
     <section className="rounded-xl border bg-white overflow-hidden">
       <h2 className="font-semibold p-4 border-b">{tx("Earnings ledger")}</h2>
@@ -98,18 +100,19 @@ export default function EarningsPage() {
         <td className="p-3">{e.snapshot.payee_name}<div className="text-xs text-slate-500">{e.snapshot.customer_name}</div></td>
         <td className="p-3" title={e.snapshot.basis_description}>{money(e.basis_amount)}</td>
         <td className="p-3">{Number(e.rate_pct)}% / {Number(e.split_pct)}%<div className="text-xs">{tx("Policy year")}{" "}{e.policy_year}</div></td>
-        <td className="p-3 font-semibold">{money(e.gross_amount)}</td><td className="p-3">{e.snapshot.agreement_code} v{e.snapshot.agreement_version}</td>
+        <td className="p-3 font-semibold">{money(e.gross_amount)}<div className="text-xs font-normal text-slate-500">{e.disbursement_status || 'ACCRUED'}</div></td><td className="p-3">{e.snapshot.agreement_code} v{e.snapshot.agreement_version}</td>
       </tr>)}</tbody></table></div>
-      {!entries.length && <p className="p-8 text-center text-slate-500">{busy ? tx("Loading…") : tx("No posted earnings. Configure an agreement and producer assignment, then collect a premium or reconcile an existing receipt.")}</p>}
+      {!entries.length && <p className="p-8 text-center text-slate-500">{busy ? tx("Loading…") : 'No posted earnings. Link an approved agreement to the plan and assign the customer’s agent, then collect a premium or reconcile a receipt.'}</p>}
       <div className="p-3 flex gap-4 items-center"><button disabled={busy || offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>{tx("Previous")}</button><span>{total ? offset + 1 : 0}–{Math.min(offset + entries.length, total)}{" "}{tx("of")}{" "}{total}</span><button disabled={busy || offset + 50 >= total} onClick={() => setOffset(offset + 50)}>{tx("Next")}</button></div>
     </section>
     {admin && <>
       <section className="rounded-xl border border-indigo-200 bg-indigo-50 p-5 space-y-2">
         <h2 className="font-semibold">Commission setup</h2>
-        <p className="text-sm">Assign the customer’s agent, approve a contractual agreement, then save the producer split on their policy. A collected premium creates the earning.</p>
+        <p className="text-sm">Assign the customer’s agent and link an approved agreement to the plan once. Premium receipts then create earnings automatically. Policy-specific splits below are optional overrides.</p>
         <p className="text-sm font-medium">{setup?.approved_agreement_count ?? '—'} approved agreements effective today · {exceptions.length} receipt exceptions shown</p>
         {setup?.customer && <p className="text-sm">{setup.customer.name} · Agent: {setup.customer.assigned_agent_name || 'Unassigned'} · Source: {setup.customer.acquisition_source_name || 'Unassigned'} <button className="underline ml-2" onClick={() => {setCustomerId(undefined); choosePolicy('');}}>Show all customers</button></p>}
       </section>
+      <PlanCommissionRules agreements={agreements} onChange={refresh}/>
       <section className="rounded-xl border bg-white p-5 space-y-4">
         <h2 className="font-semibold">{tx("1. Contractual agreements")}</h2>
         <p className="text-sm text-slate-500">{tx("Rates are explicit contractual inputs, not statutory defaults. Basis: receipt base including fees and duty, excluding surcharge. Approved versions cannot be edited.")}</p>
@@ -126,13 +129,13 @@ export default function EarningsPage() {
         {agreements.map(a => <div key={a.id} className="flex flex-wrap gap-3 justify-between border-t pt-3 text-sm"><span>{a.code} v{a.version} · {a.name} · {Number(a.first_year_pct)}% / {Number(a.renewal_pct)}% · {a.status}<span className="block text-xs text-slate-500">{a.effective_from} – {a.effective_to || 'Open ended'}</span></span>{a.status === 'DRAFT' && <button disabled={busy || a.created_by === actorId} title={a.created_by === actorId ? 'A different administrator must approve this draft' : undefined} className={button} onClick={() => run(() => service.approveAgreement(a.id), 'Agreement approved')}>{a.created_by === actorId ? 'Awaiting another administrator' : tx("Approve")}</button>}</div>)}
       </section>
       <section className="rounded-xl border bg-white p-5 space-y-4">
-        <h2 className="font-semibold">{tx("2. Assign producers to an individual policy")}</h2>
+        <h2 className="font-semibold">Optional: override producers on an individual policy</h2>
         <p className="text-sm text-slate-500">Select an individual policy by customer, plan or policy number. The customer’s source is suggested; select an approved agreement and save to confirm it. Manage producers in <Link className="underline" href="/admin/acquisition-sources">Acquisition Sources</Link>.</p>
         <form className="flex gap-3 items-end" onSubmit={e => {e.preventDefault(); choosePolicy(''); setPolicySearch(policySearchInput);}}><label className="grow text-sm">Search policies<input className={field} value={policySearchInput} onChange={e => setPolicySearchInput(e.target.value)} placeholder="Customer, plan or policy number" /></label><button disabled={busy} className={button}>Search</button></form>
         <label className="block text-sm">Individual policy<select className={field} value={policy} disabled={busy} onChange={e => choosePolicy(e.target.value)}><option value="">Select a policy</option>{setup?.policies.map(p => <option key={p.id} value={p.id}>{p.customer_name} · {p.product_name} · {p.policy_number || 'Draft'} · {p.ready ? 'Configured' : 'Needs setup'}</option>)}</select></label>
         {setup?.has_more && <p className="text-sm text-slate-500">Showing 50 policies. Search to narrow the results.</p>}
         {setup && !setup.policies.length && <p className="text-sm text-slate-500">No individual policies found. Create a proposal for the customer first.</p>}
-        {selectedPolicy && <div className="rounded-lg bg-slate-50 border p-3 text-sm"><p className="font-medium">{selectedPolicy.customer_name} · {selectedPolicy.status}</p><p>{selectedPolicy.frozen ? 'Assignments are frozen because commission has already posted.' : selectedPolicy.ready ? 'Configured for receipts dated today. Collect a premium to accrue commission.' : selectedPolicy.blocking_reasons.join('. ')}</p><p className="text-xs text-slate-500 mt-1">Policy {selectedPolicy.id}. Receipt dates determine which agreements apply.</p></div>}
+        {selectedPolicy && <div className="rounded-lg bg-slate-50 border p-3 text-sm"><p className="font-medium">{selectedPolicy.customer_name} · {selectedPolicy.status}</p><p>{selectedPolicy.frozen ? 'Assignments are frozen because commission has already posted.' : selectedPolicy.automatic ? 'Automatic plan allocation is ready. No policy setup is required; the next premium receipt creates the assignment and earning.' : selectedPolicy.ready ? 'Configured for receipts dated today. Collect a premium to accrue commission.' : selectedPolicy.blocking_reasons.join('. ')}</p><p className="text-xs text-slate-500 mt-1">Policy {selectedPolicy.id}. Receipt dates determine which agreements apply.</p></div>}
         <fieldset disabled={busy || !selectedPolicy || selectedPolicy.frozen} className="space-y-3 disabled:opacity-60">
         {producers.map((p, i) => <div key={i} className="grid sm:grid-cols-4 gap-3">
           <select aria-label={tx("Producer {0}", { 0: i + 1 })} className={field} value={p.source_id} onChange={e => setProducers(producers.map((x, j) => j === i ? {...x, source_id: e.target.value} : x))}><option value="">{tx("Select producer")}</option>{payees.filter(x => x.active).map(x => <option key={x.id} value={x.id}>{x.name} ({x.code})</option>)}</select>
@@ -150,6 +153,7 @@ export default function EarningsPage() {
         <form className="flex gap-3" onSubmit={e => {e.preventDefault(); void run(async () => { const results = await service.reconcileReceipts([receipt]); const failed = results.find(x => x.status === 'EXCEPTION'); if (failed) throw new Error(failed.reason); }, 'Receipt reconciled');}}><input aria-label={tx("Receipt ID")} className={field} placeholder={tx("Receipt ID")} required value={receipt} onChange={e => setReceipt(e.target.value)}/><button disabled={busy} className={button}>{tx("Reconcile")}</button></form>
         {exceptions.map(e => <div key={e.id} className="border-t pt-3 text-sm flex flex-wrap justify-between gap-3"><div>{e.reason}<div className="text-xs text-slate-500">{tx("Receipt")}{" "}{e.receipt_id}{" "}{tx("· Policy")}{" "}{e.policy_id}</div></div><button disabled={busy} onClick={() => void reviewException(e)}>Review setup</button></div>)}
       </section>
+      <CommissionDisbursements actorId={actorId} onChange={refresh}/>
     </>}
   </div>;
 }

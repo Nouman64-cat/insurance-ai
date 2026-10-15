@@ -5031,7 +5031,7 @@ def _commission_client_call(name: str, args: dict) -> dict:
 
 @handles("get_commission_rate_card")
 async def _get_commission_rate_card(args: dict, ctx: Ctx) -> dict:
-    return {"success": True, "message": "Earnings use the approved contractual agreement assigned to each producer and policy. There is no automatic statutory default rate. Administrators can inspect and approve agreements in Commission earnings.",
+    return {"success": True, "message": "Approved rate agreements are linked to catalog plans once. A premium receipt automatically allocates 100% to the customer's assigned agent unless an explicit policy split exists. Rates are contractual inputs, never statutory defaults. Configure plan rates and independently approve disbursement batches in Commission earnings.",
             "quick_actions": [{"label": "Open agreements", "actionType": "navigate", "payload": "commissions"}]}
 
 
@@ -5089,13 +5089,17 @@ async def _calculate_commission(args: dict, ctx: Ctx) -> dict:
 
 @handles("get_commission_ledger")
 async def _get_commission_ledger(args: dict, ctx: Ctx) -> dict:
-    if args.get("status") and args["status"] != "ACCRUED":
-        return {"success": False, "message": "Only accrued gross earnings are available. Release and settlement are not enabled."}
     params = await _commission_filters(args, ctx)
+    if args.get('status'):
+        if args['status'] not in {'ACCRUED','DRAFT','SUBMITTED','APPROVED','PAID'}:
+            return {'success': False, 'message': 'Choose ACCRUED, DRAFT, SUBMITTED, APPROVED or PAID. Tax and clawback states are not automated.'}
+        params['disbursement_status'] = args['status']
     params["limit"] = min(100, max(1, int(args.get("limit") or 20)))
     res = await ctx.client.get(ctx.tsvc("/commissions/earnings"), params=params)
     res.raise_for_status()
-    return {"success": True, **res.json(), "message": "Persisted accrued gross earnings (first 100). No tax or payment settlement is implied.",
+    data = res.json()
+    lines = [f"{e.get('snapshot', {}).get('payee_name', 'Producer')} · {e.get('snapshot', {}).get('receipt_no', e.get('receipt_id'))}: PKR {e.get('gross_amount')} · {e.get('disbursement_status', 'ACCRUED')}" for e in data.get('items', [])]
+    return {"success": True, **data, "message": 'Persisted gross commission entries:\n' + ('\n'.join(lines) or 'No matching entries.') + '\nPAID means external payment confirmation was recorded. No tax or bank transfer is implied.',
             "quick_actions": [{"label": "Open earnings", "actionType": "navigate", "payload": "commissions"}]}
 
 
@@ -5108,24 +5112,27 @@ async def _get_agent_statement(args: dict, ctx: Ctx) -> dict:
     res = await ctx.client.get(ctx.tsvc("/commissions/summary"), params=params)
     res.raise_for_status()
     return {"success": True, **res.json(), "period": params,
-            "message": "Accrued gross statement by posting date. Tax, deductions and settlement are not enabled."}
+            "message": "Gross commission statement by posting date, including externally confirmed paid gross. Tax deductions and bank transfers are not automated."}
 
 
 @handles("get_commission_summary")
 async def _get_commission_summary(args: dict, ctx: Ctx) -> dict:
     res = await ctx.client.get(f"{TENANT_SERVICE_URL}/tenants/{ctx.tenant_id}/commissions/summary")
     res.raise_for_status()
-    return {"success": True, **res.json(), "message": "Persisted commission earnings. Settlement is not enabled."}
+    data = res.json()
+    return {"success": True, **data, "message": f"Persisted accrued gross: PKR {data.get('accrued_gross', '0')}; externally confirmed paid gross: PKR {data.get('paid_gross', '0')}. Disbursements require separate approval and payment confirmation in Commission earnings; no bank transfer is performed."}
 
 
 @handles("create_payout_run")
 async def _create_payout_run(args: dict, ctx: Ctx) -> dict:
-    return _commission_client_call("create_payout_run", args)
+    return {'success': False, 'message': 'Create a draft disbursement batch from eligible earnings in Commission earnings, then submit it for independent approval. This chat action has not created a financial record.',
+            'quick_actions': [{'label': 'Open disbursement approval', 'actionType': 'navigate', 'payload': 'commissions'}]}
 
 
 @handles("approve_payout_run")
 async def _approve_payout_run(args: dict, ctx: Ctx) -> dict:
-    return _commission_client_call("approve_payout_run", args)
+    return {'success': False, 'message': 'Review the submitted disbursement batch in Commission earnings. A different administrator must approve it; payment is recorded separately after external confirmation. Nothing has been approved by this chat action.',
+            'quick_actions': [{'label': 'Review disbursements', 'actionType': 'navigate', 'payload': 'commissions'}]}
 
 
 @handles("list_commission_rules")
@@ -5699,6 +5706,19 @@ async def _get_claim_details(args: dict, ctx: Ctx) -> dict:
     if claim.get("underwriting_decision_notes"):
         lines.append(f"**Underwriting note:** {claim['underwriting_decision_notes']}")
 
+    ws = await _claim_workspace(ctx, claim)
+    if ws:
+        # In the claims workflow: its stage, checklist and next legal steps are the truth,
+        # not the register's generic document list.
+        from claim_workflow_tools import _actions as workflow_actions, _summary as workflow_summary
+        lines = [lines[0].split("\nDocuments on file:")[0]] + lines[1:]
+        return {
+            "success": True,
+            "message": "\n".join(lines) + "\n\n" + workflow_summary(ws),
+            "claim": claim,
+            "claim_workflow": ws,
+            "quick_actions": workflow_actions(ws, str(claim["policy_id"])),
+        }
     return {
         "success": True,
         "message": "\n".join(lines),
@@ -5775,9 +5795,53 @@ async def _get_claims_dashboard(args: dict, ctx: Ctx) -> dict:
     }
 
 
+async def _claim_workspace(ctx: Ctx, claim: dict) -> Optional[dict]:
+    """The claim's claims-management workspace, or None when it is register-only."""
+    if not claim.get("policy_id") or not claim.get("id"):
+        return None
+    try:
+        res = await ctx.client.get(ctx.tsvc(f"/policies/{claim['policy_id']}/claims-management/{claim['id']}"))
+        if res.status_code != 200:
+            return None
+        ws = res.json()
+        return ws if isinstance(ws, dict) and ws.get("claim") else None
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
+def _workflow_document_answer(claim: dict, ws: dict) -> dict:
+    """The checklist the claims workflow actually holds — category- and plan-specific — rather
+    than the register's generic per-type list."""
+    from claim_workflow_tools import _actions as workflow_actions, _current_stage
+    items = (ws.get("documents") or {}).get("items") or []
+    prog = (ws.get("documents") or {}).get("progress") or {}
+    outstanding = [d for d in items if d.get("required") and d.get("status") not in ("Received", "Waived")]
+    waived = [d for d in items if d.get("status") == "Waived"]
+    ref = ws["claim"]["claim_number"]
+    lines = [f"Document file for **{ref}** — {prog.get('received', 0)} of {prog.get('required', 0)} required in"
+             + (f" ({len(waived)} waived)" if waived else "") + ":"]
+    icon = {"Received": "✅", "Waived": "➖"}
+    for d in items:
+        lines.append(f"- {icon.get(d.get('status'), '⬜')} {d['label']}"
+                     + (" _(optional)_" if not d.get("required") else "")
+                     + (f" — waived: {d['note']}" if d.get("status") == "Waived" and d.get("note") else ""))
+    if outstanding:
+        lines.append(f"\nStill needed: {', '.join(d['label'] for d in outstanding)}.")
+    else:
+        stage = _current_stage(ws)
+        lines.append("\n**The document file is complete** — nothing is missing."
+                     + (f" Next: **{stage['title']} — {stage['label']}**." if stage else ""))
+    return {"success": True, "message": "\n".join(lines), "claim": claim, "claim_workflow": ws,
+            "missing": [d["label"] for d in outstanding],
+            "quick_actions": workflow_actions(ws, str(claim["policy_id"]))}
+
+
 @handles("get_claim_document_checklist")
 async def _get_claim_document_checklist(args: dict, ctx: Ctx) -> dict:
     claim = await _resolve_claim(args, ctx)
+    ws = await _claim_workspace(ctx, claim)
+    if ws:
+        return _workflow_document_answer(claim, ws)
     expected = CLAIM_DOCUMENTS.get(claim.get("claim_type") or "", CLAIM_DOCUMENT_FALLBACK)
     on_file = [(a.get("document_type") or "?") for a in (claim.get("artifacts") or [])]
     missing = _claim_docs_missing(claim)
@@ -5918,6 +5982,28 @@ async def _covered_claim_types(policy: dict, ctx: Ctx) -> tuple[tuple[str, ...],
     return tuple(t for t in CLAIM_TYPES if t in covered), {t: r for t, r in reasons.items() if t not in covered}, product_rules
 
 
+_DEATH_CAUSES = ("Natural / illness", "Accident", "Suicide", "Other unnatural")
+_WORKFLOW_CATEGORY = {"Death Claim": "Death", "Hospitalization": "Hospitalization", "Surgery": "Hospitalization",
+                      "Reimbursement": "Hospitalization"}
+
+
+async def _adopt_new_claim(ctx: Ctx, policy: dict, claim: dict, claim_type: str, cause: Optional[str]) -> Optional[dict]:
+    category = _WORKFLOW_CATEGORY.get(claim_type)
+    if not category or not claim.get("id"):
+        return None
+    body = {"category": category, "covered_person_relationship": "Self"}
+    if cause:
+        body["cause"] = cause
+    try:
+        res = await ctx.client.post(
+            ctx.tsvc(f"/policies/{policy['id']}/claims-management/{claim['id']}/adopt"), json=body)
+        res.raise_for_status()
+        ws = res.json()
+        return ws if isinstance(ws, dict) and ws.get("claim") else None
+    except httpx.HTTPError:
+        return None
+
+
 def _plan_rule_warnings(product_rules: dict, policy: dict, claim_type: str, amount: float,
                         incident_date: Optional[str]) -> list[str]:
     """What the product's own wording says about this claim — said at FNOL, not discovered at payment."""
@@ -5992,6 +6078,21 @@ async def _register_claim(args: dict, ctx: Ctx) -> dict:
             "quick_actions": chips,
         }
 
+    # A death claim's checklist depends on the cause (illness vs accident / unnatural), so
+    # ask it now rather than registering a claim the workflow can't build a checklist for.
+    cause = args.get("cause")
+    if matched_type == "Death Claim" and cause not in _DEATH_CAUSES:
+        amount_part = f" for {float(args['submitted_amount']):.0f}" if args.get("submitted_amount") else ""
+        return {
+            "success": False,
+            "error": f"What was the cause of death on {number}? It decides which documents are needed.",
+            "quick_actions": [
+                {"label": c, "actionType": "submit",
+                 "payload": f"Register a Death Claim claim on policy {number}{amount_part}, cause: {c}"}
+                for c in _DEATH_CAUSES
+            ],
+        }
+
     amount = _as_float(args.get("submitted_amount"))
     if not amount or amount <= 0:
         cover = float(policy.get("coverage_amount") or 0)
@@ -6002,7 +6103,8 @@ async def _register_claim(args: dict, ctx: Ctx) -> dict:
                      f"(cover PKR {cover:,.0f})?",
             "quick_actions": [
                 {"label": f"PKR {a:,.0f}", "actionType": "submit",
-                 "payload": f"Register a {matched_type} claim on policy {policy.get('policy_number')} for {a:.0f}"}
+                 "payload": f"Register a {matched_type} claim on policy {policy.get('policy_number')} for {a:.0f}"
+                            + (f", cause: {cause}" if cause else "")}
                 for a in dict.fromkeys(suggestions)
             ][:4],
         }
@@ -6021,6 +6123,11 @@ async def _register_claim(args: dict, ctx: Ctx) -> dict:
     res.raise_for_status()
     claim = res.json()
 
+    # Put the claim straight into the claims workflow: eligibility on the event date, the
+    # product's own exclusions and the document checklist run now — never a separate
+    # "adopt" step for the user. If that fails the claim stays registered and can be adopted.
+    workspace = await _adopt_new_claim(ctx, policy, claim, matched_type, cause)
+
     warn = _plan_rule_warnings(product_rules, policy, matched_type, float(amount), body.get("incident_date"))
     if claim.get("duplicate_flag"):
         warn.append("⚠️ **Duplicate suspected** — a claim of the same type and amount already exists on this policy. "
@@ -6038,6 +6145,18 @@ async def _register_claim(args: dict, ctx: Ctx) -> dict:
     )
     if warn:
         message += "\n\n" + "\n".join(warn)
+    if workspace:
+        from claim_workflow_tools import _actions as workflow_actions, _summary as workflow_summary
+        message += "\n\n" + workflow_summary(workspace)
+        return {
+            "success": True,
+            "message": message,
+            "claim": claim,
+            "claim_workflow": workspace,
+            "last_action": _action("register_claim", "claim", str(claim.get("id", "")),
+                                   f"post-issuance/{policy['id']}", f"Claim {claim.get('claim_number')} registered"),
+            "quick_actions": workflow_actions(workspace, str(policy["id"])),
+        }
     message += "\n\nNothing can be approved or settled until at least one document is on file."
 
     return {

@@ -17,6 +17,8 @@ class ChatState(TypedDict, total=False):
     # forward so a multi-step flow keeps its tools once the triggering keyword
     # has scrolled out of the matching window.
     active_domains: list[str]
+    active_specialist: Optional[str]
+    specialist_handoff: Optional[dict[str, Any]]
     # Agent picked at the very start of customer intake (resolve_customer_type),
     # applied to the create call that follows and then cleared. Only ever set
     # for non-Agent roles — an Agent is auto-assigned as their own lead's owner.

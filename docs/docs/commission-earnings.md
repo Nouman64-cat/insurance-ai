@@ -3,22 +3,26 @@ id: commission-earnings
 title: Commission Earnings
 ---
 
-# Commission earnings — first milestone
+# Automatic commission and disbursement approval
 
 The portal at `/commissions` now reads persisted **accrued gross earnings** from the tenant service. The mobile commission screen and copilot ledger, summary, payee and statement tools use that same backend. A policy's status never implies a commission payment.
 
-## Set up a policy
+## One-time plan setup
 
 1. Create the real producer in **Acquisition Sources**. Link its login account for the agent to see its own earnings.
 2. In **Commission earnings**, create an agreement with an explicit code/version, first-year and renewal rates, and effective dates. No statutory or tax rate is seeded or selected automatically.
 3. A **different administrator** approves the draft. Approved agreements have no edit/delete endpoint; create a new version for new assignments.
-4. Search by customer, plan or policy number in **Commission earnings** and select the individual policy. The customer's active acquisition source (or a unique source linked to their assigned agent) is suggested. Select an approved agreement and explicitly save the producer split. Positive splits must total exactly 100%. Assignments freeze after the first successful posting.
+4. In **Automatic commission by plan**, link the approved agreement to the catalog plan. Each receipt then automatically allocates 100% to the customer's assigned agent through their active AGENT acquisition source. There is no per-customer approval or manual split requirement.
 5. Collect a premium through the existing payment flow. The receipt, accrual and earnings are written in the **same database transaction**. Missing/expired configuration creates an exception without inventing an amount.
 6. After correcting configuration, reconcile the receipt by ID. Previously posted receipts return their existing accrual without creating new earnings.
 
-The setup checklist shows missing producer configuration and whether the assigned agreement is approved and effective today. Receipt dates still determine actual eligibility, including reconciliation of older receipts. **Review setup** on an exception selects that receipt and policy, including policies outside the first search page. Draft creators see **Awaiting another administrator** instead of an enabled self-approval action.
+The plan is resolved by an exact catalog label or code and insurance type in the same tenant. Missing or ambiguous plan/agent/source/rates create exceptions. If several approved rate versions start on different dates, the latest starting on or before the receipt date applies. Equal start dates are rejected; an expired latest version never falls back to an older rate. Plan rules and approved rates are immutable.
 
-In Automation Chat, ask “Check commission setup for [customer name]”. The read-only `get_customer_commission_setup` tool identifies the agent and acquisition source, lists individual policy readiness, and links to the customer's commission setup. Quick leads without a CNIC are supported using customer UUIDs; names shared by several customers require selection. These setup details require Admin/SuperAdmin access. Customer ownership never substitutes for a policy producer assignment.
+An explicit policy split overrides automatic allocation. Shared production can still be configured on individual policies, with positive splits totaling 100%. The first successful posting persists and freezes the producer and agreement; subsequent agent or plan-rate changes do not rewrite that policy's allocation or historical earnings. New rate versions apply to newly allocated policies. Expired contracts on existing assignments remain exceptions for contractual review.
+
+The setup checklist previews automatic allocation without saving it. Receipt dates determine actual eligibility, including reconciliation of older receipts. **Review setup** on an exception selects that receipt and policy. Draft creators see **Awaiting another administrator** instead of an enabled self-approval action.
+
+In Automation Chat, ask “Check commission setup for [customer name]”. The read-only tool identifies the agent/source, previews policy readiness and links to setup. Quick leads without a CNIC are supported using customer UUIDs; names shared by several customers require selection. Setup details require Admin/SuperAdmin. Ledger reads support accrued and disbursement states; summary includes externally confirmed paid gross. Batch creation, approval and payment recording are performed in the portal.
 
 The first-premium path creates a stable receipt when cover binds, including a credited initial premium payment. A top-up requests and accepts only the unpaid balance. Later full or partial collections each retain their own receipt. Historical Active policies are not automatically backfilled from their status; only existing receipt records can be reconciled.
 
@@ -36,9 +40,22 @@ The first-premium path creates a stable receipt when cover binds, including a cr
 
 The new `commission_agreements`, `commission_assignments`, `commission_accruals` and `commission_earnings` tables register through `shared/models/core.py`. Existing startup `create_all` creates missing tables; legacy commission rows and browser-generated balances are not migrated.
 
+Automatic plan configuration and disbursement add `commission_plan_rules`, `commission_disbursements`, `commission_disbursement_items` and `commission_disbursement_events`. These are additive tables; no existing-column migration or financial seed is needed. Deploy the updated services with `docker compose up -d --build`; tenant-service startup creates the missing tables. Do not invent live contract rates when installing.
+
 The service locks the policy before checking/posting an accrual. Uniqueness constraints enforce one accrual per tenant/receipt and one allocation per accrual/producer. Assignment changes take the same lock. Calculation/configuration exceptions have no partial earnings. Receipt and commission writes roll back together on database failure.
 
 This milestone uses local transactions instead of an asynchronous Kafka consumer. An outbox is needed before moving commission posting across service boundaries. Existing best-effort policy event publication is not used as the commission source of truth.
+
+## Disbursement
+
+1. Select eligible unreserved earnings and create a draft batch (up to 100 entries).
+2. The creator submits it. A different administrator approves it.
+3. After external payment completes, record its reference and explicitly confirm completion. This marks the batch PAID; the application does not transfer money.
+4. Rejection/cancellation releases earnings for a new batch while retaining the original items and audit events. Paid batches cannot be reopened or rejected.
+
+Eligibility is rechecked at submission, approval and payment recording. Policies must be Active/GracePeriod, past a known free-look end date, and have an active producer and positive earning. Cancelled, surrendered, lapsed or otherwise exited policies are held. Policy locks serialize the final check with policy transitions. One earning can be reserved/paid in only one active batch. A tenant payment reference cannot be reused in another batch. Replaying an identical payment confirmation returns the existing batch without another event.
+
+Every transition records its authenticated actor and time. Amounts come from immutable earnings, never from client-supplied totals. Paid totals remain historical if a policy is cancelled later; automatic clawback and tax/net calculation require a subsequent implementation.
 
 ## API
 
@@ -55,14 +72,22 @@ All routes are under `/tenants/{tenant_id}/commissions` and require a valid bear
 | GET | `/summary` | Same scope as earnings |
 | GET | `/exceptions` | Admin / SuperAdmin |
 | POST | `/reconcile` | Admin / SuperAdmin; explicit receipt IDs |
+| GET / POST | `/plan-rules` | Admin / SuperAdmin; approved agreement linked once per plan/rate version |
+| GET | `/disbursements/eligible` | Admin / SuperAdmin; unreserved entries with hold reasons |
+| GET / POST | `/disbursements` | Admin / SuperAdmin; list/create batches |
+| GET | `/disbursements/{id}` | Admin / SuperAdmin; entries and audit events |
+| POST | `/disbursements/{id}/submit` | Draft creator |
+| POST | `/disbursements/{id}/approve` | A different Admin / SuperAdmin |
+| POST | `/disbursements/{id}/reject` | Admin; different from creator after submission |
+| POST | `/disbursements/{id}/record-payment` | Admin / SuperAdmin; approved batch, reference and explicit confirmation |
 
-Earnings accept `offset`, `limit`, `source_id`, `date_from`, and `date_to`; summary accepts the same source/date filters. Reconciliation accepts up to 100 receipt IDs. Exceptions support pagination; the current portal shows the first 100.
+Earnings accept `offset`, `limit`, `source_id`, `date_from`, `date_to`, and `disbursement_status` (ACCRUED, DRAFT, SUBMITTED, APPROVED, PAID). Summary uses source/date filters on original earning posting dates. Reconciliation accepts up to 100 receipt IDs. Exceptions support pagination; the portal shows the first 100. Candidates and batches are paginated.
 
 ## Deliberate limits
 
 - Only individual policies are allocated. Group and family policies produce exceptions to avoid multiplying one collected premium across certificates.
-- No payable/net balance, tax computation, release stages, actual payout, clawback, incentive or settlement is implemented yet.
-- Agreements and assignments are explicit; automatic product/channel matching and prospective reassignment after posting are future work.
+- No net balance, tax computation, bank transfer, automatic clawback or incentive settlement is implemented. Payment recording is gross and manual.
+- Automatic matching is for individual agents and exact catalog plans; other distribution channels and shared splits require explicit policy configuration.
 - Collection still uses the application's existing manual/mock payment gateway. A persisted receipt is not independent confirmation from a live bank integration.
 - The old commission dashboard is at `/commissions/preview`. Legacy commission subpages are marked illustrative. Their browser state is not imported into the ledger. Copilot prototype mutations are disabled.
 
@@ -84,4 +109,4 @@ docker compose exec -T \
 docker stop insurance-commission-tests
 ```
 
-Coverage includes concurrent duplicate delivery, persisted snapshots, first-premium short-payment rejection and top-ups, partial/final collections, renewal selection, rounding, retryable exceptions, transaction rollback, maker–checker approval, frozen assignments, and tenant/agent isolation.
+Coverage includes concurrent duplicate receipt/batch delivery, automatic first-premium posting, frozen producer/rate snapshots, renewal selection, rounding, version expiry, short payments/top-ups, missing configuration, rejection/retry, cancellation holds, duplicate external references, maker–checker approval, rollback, and tenant/agent isolation.

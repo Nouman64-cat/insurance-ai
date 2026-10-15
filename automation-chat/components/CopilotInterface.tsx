@@ -56,6 +56,7 @@ import type {
   ChecklistItem,
 } from "@/lib/agent/types";
 import { RequirementsCard } from "./agent/RequirementsCard";
+import { ClaimDocumentsCard } from "./agent/ClaimDocumentsCard";
 
 import { useCopilot } from "./CopilotContext";
 import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
@@ -391,6 +392,11 @@ function getRecommendedActions(
     text.includes("adjudicat") ||
     text.includes("claimant");
 
+  // A reply that says something CANNOT happen yet must never be followed by a
+  // button that does it ("cannot be approved" → "Disburse the payout").
+  const refused =
+    /\b(?:cannot|can't|can not|not yet|unable to|is blocked|must be (?:uploaded|approved|adjudicated))\b/.test(text);
+
   // ── Claims: blocked on documents ────────────────────────────────────────
   // The single most common dead end in the claims flow: the API refuses every
   // approval and payout without a document, so lead with the upload buttons.
@@ -401,7 +407,7 @@ function getRecommendedActions(
     (text.includes("no documents") ||
       text.includes("document gate") ||
       text.includes("nothing on file") ||
-      text.includes("upload required documents") ||
+      (text.includes("upload") && text.includes("document")) ||
       text.includes("at least one required document"))
   ) {
     return [
@@ -467,6 +473,7 @@ function getRecommendedActions(
   // ── Claims: settled / closed ────────────────────────────────────────────
   if (
     looksLikeClaim &&
+    !refused &&
     (text.includes("settled") ||
       text.includes("disbursed") ||
       text.includes("payout of"))
@@ -498,6 +505,7 @@ function getRecommendedActions(
   // ── Claims: approved, awaiting disbursement ─────────────────────────────
   if (
     looksLikeClaim &&
+    !refused &&
     (text.includes("approved") || text.includes("partial approval"))
   ) {
     return [
@@ -566,6 +574,7 @@ function getRecommendedActions(
   // ── Claims: needs a manager ─────────────────────────────────────────────
   if (
     looksLikeClaim &&
+    !refused &&
     (text.includes("referred to manager") ||
       text.includes("manager gate") ||
       text.includes("claimsmanager"))
@@ -2177,10 +2186,15 @@ export function CopilotInterface() {
   // suggestion, which already knows document_type + cnic precisely) — as
   // opposed to an agent-initiated upload_document tool call, which arrives via
   // pendingInterrupt.kind === "client_execute" instead.
+  // Which upload chip opened the file picker — that chip shows the spinner.
+  const pendingUploadLabelRef = useRef<string | null>(null);
+  const [uploadingLabel, setUploadingLabel] = useState<string | null>(null);
   const pendingUploadRef = useRef<{
     document_type: string;
     claim_id?: string;
     claim_number?: string;
+    policy_id?: string;
+    checklist_key?: string;
   } & UploadTarget | null>(null);
 
   // ── Underwriting requirements, shown from the chat ────────────────────────
@@ -2472,6 +2486,8 @@ export function CopilotInterface() {
         applicant_name?: string;
         claim_id?: string;
         claim_number?: string;
+        policy_id?: string;
+        checklist_key?: string;
         case_number?: string;
         case_id?: string;
       },
@@ -2479,10 +2495,93 @@ export function CopilotInterface() {
     ) => {
       const tenantId = localStorage.getItem("tenant_id") || DEFAULT_TENANT_ID;
 
-      // Claim documents hang off the claim, not the case — different endpoint,
-      // different route to send the user to afterwards. The agent resolves the
-      // claim server-side and hands the id down, so there is nothing to look up.
+      // A claim upload may name the claim only by number (a suggestion chip) —
+      // resolve it to the record, never fall through to the application upload.
+      if (!args.claim_id && args.claim_number) {
+        const found = await api.get(`/tenants/${tenantId}/claims`, {
+          params: { search: args.claim_number },
+        });
+        const match = (found.data || []).find(
+          (c: any) =>
+            String(c.claim_number || "").toUpperCase() ===
+            String(args.claim_number).toUpperCase(),
+        );
+        if (!match)
+          throw new Error(`Claim ${args.claim_number} could not be found.`);
+        args = { ...args, claim_id: String(match.id), policy_id: args.policy_id || String(match.policy_id || "") };
+      }
+
+      // A claim in the claims workflow takes the file against its checklist item,
+      // which also stores it as a claim artifact — so the checklist ticks AND the
+      // register's document gate sees it.
       if (args.claim_id) {
+        let policyId = args.policy_id;
+        if (!policyId) {
+          const detail = await api.get(`/tenants/${tenantId}/claims/${args.claim_id}`);
+          policyId = String(detail.data?.policy_id || "");
+        }
+        const base = `/tenants/${tenantId}/policies/${policyId}/claims-management/${args.claim_id}`;
+        const ws = policyId ? await api.get(base).catch(() => null) : null;
+        const items: any[] = ws?.data?.documents?.items || [];
+        const wanted = args.document_type.trim().toLowerCase();
+        const item =
+          items.find((d) => d.key === args.checklist_key) ||
+          items.find((d) => String(d.label).toLowerCase() === wanted) ||
+          items.find(
+            (d) =>
+              d.status !== "Received" &&
+              (String(d.label).toLowerCase().includes(wanted) ||
+                wanted.includes(String(d.label).toLowerCase().split(" (")[0])),
+          );
+        if (ws && item) {
+          const form = new FormData();
+          form.append("file", file);
+          const res = await api.post(`${base}/documents/${item.key}`, form, {
+            headers: { "Content-Type": "multipart/form-data" },
+          });
+          const prog = res.data?.documents?.progress || {};
+          const ref = args.claim_number || res.data?.claim?.claim_number || args.claim_id;
+          const outstanding: any[] = (res.data?.documents?.items || []).filter(
+            (d: any) => d.required && !["Received", "Waived"].includes(d.status),
+          );
+          return {
+            success: true,
+            message:
+              `${item.label} (${file.name}) received on claim ${ref}. ` +
+              (prog.required
+                ? `${prog.received}/${prog.required} required documents in` +
+                  (outstanding.length
+                    ? ` — still needed: ${outstanding.slice(0, 4).map((d) => d.label).join(", ")}.`
+                    : " — the file is complete.")
+                : ""),
+            claim_documents: { claim_id: String(args.claim_id), claim_number: ref, policy_id: String(policyId) },
+            last_action: {
+              tool_name: "upload_claim_document",
+              entity_type: "claim",
+              entity_id: args.claim_id,
+              route: `post-issuance/${policyId}`,
+              label: `${item.label} received`,
+            },
+            quick_actions: [
+              ...outstanding.slice(0, 2).map((d: any) => ({
+                label: `Upload ${d.label.split(" (")[0]}`,
+                actionType: "upload",
+                payload: JSON.stringify({
+                  document_type: d.label,
+                  checklist_key: d.key,
+                  claim_id: args.claim_id,
+                  claim_number: ref,
+                  policy_id: policyId,
+                }),
+              })),
+              {
+                label: "Claim workflow",
+                actionType: "submit",
+                payload: `Show the claim workflow for ${ref}`,
+              },
+            ],
+          };
+        }
         const claimForm = new FormData();
         claimForm.append("document_type", args.document_type);
         claimForm.append("file", file);
@@ -2494,6 +2593,7 @@ export function CopilotInterface() {
           },
         );
         const claimRoute = `claims/${args.claim_id}`;
+        // (Register-only claim: no workflow checklist to tick.)
         const ref = args.claim_number || args.claim_id;
         return {
           success: true,
@@ -3569,6 +3669,12 @@ export function CopilotInterface() {
       } else if (action.actionType === "uw_requirements") {
         const { caseId, caseNo } = JSON.parse(action.payload);
         showUnderwritingRequirements(caseId, caseNo);
+      } else if (action.actionType === "claim_documents") {
+        const ref = JSON.parse(action.payload);
+        addAssistantMessage(`Documents for claim ${ref.claim_number || ""}`.trim() + ".", undefined, {
+          claimDocuments: ref,
+          clientSide: true,
+        });
       } else if (action.actionType === "family_assess") {
         runFamilyAssessments();
       } else if (action.actionType === "family_decision") {
@@ -3609,6 +3715,7 @@ export function CopilotInterface() {
           return;
         }
         pendingUploadRef.current = data;
+        pendingUploadLabelRef.current = action.label;
         fileInputRef.current?.click();
       } else if (action.actionType === "confirm") {
         resolveInterrupt(action.payload === "Yes");
@@ -3627,6 +3734,7 @@ export function CopilotInterface() {
       runFamilyAssessments,
       runFamilyDecision,
       downloadFamilyReport,
+      addAssistantMessage,
     ],
   );
 
@@ -5176,14 +5284,24 @@ export function CopilotInterface() {
               } else if (pendingUploadRef.current) {
                 const args = pendingUploadRef.current;
                 pendingUploadRef.current = null;
+                setUploadingLabel(pendingUploadLabelRef.current);
+                pendingUploadLabelRef.current = null;
                 try {
-                  const result = await uploadDocument(args, file);
+                  const result: any = await uploadDocument(args, file);
                   notify(`✅ ${result.message}`, true);
                   setUploadedDocs((prev) => [...prev, args.document_type]);
+                  // A claim upload opens the claim's checklist so the rest can be managed in place.
+                  if (result.claim_documents) {
+                    addAssistantMessage(result.message, undefined, {
+                      claimDocuments: result.claim_documents,
+                      clientSide: true,
+                    });
+                  }
                 } catch (err: any) {
-                  notify(`⚠️ ${err.message || "Upload failed."}`, false);
+                  notify(`⚠️ ${err?.response?.data?.detail || err.message || "Upload failed."}`, false);
                 } finally {
                   setIsUploading(false);
+                  setUploadingLabel(null);
                 }
               } else if (autoSubmitPrompt) {
                 // To attach and immediately submit, we do set the file briefly
@@ -6198,6 +6316,14 @@ export function CopilotInterface() {
                                       </div>
                                     )}
 
+                                    {msg.claimDocuments && (
+                                      <ClaimDocumentsCard
+                                        claim={msg.claimDocuments}
+                                        onChanged={(summary) => notify(`✅ ${summary}`, true)}
+                                        onRunPrompt={(text) => handleSubmit(undefined, text)}
+                                      />
+                                    )}
+
                                     {msg.familyMembers &&
                                       msg.familyMembers.length > 0 && (
                                         <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm max-w-3xl">
@@ -6580,6 +6706,7 @@ export function CopilotInterface() {
                                         action,
                                         uploadedDocs,
                                       );
+                                      const isUploadingThis = isUploading && uploadingLabel === action.label;
                                       const usedIdx = usedActions[msg.id];
                                       const isChosen = usedIdx === idx;
                                       const isLocked =
@@ -6637,7 +6764,7 @@ export function CopilotInterface() {
                                               <path d="M5 12h14" />
                                               <path d="m12 5 7 7-7 7" />
                                             </svg>
-                                          ) : action.actionType === "upload" ? (
+                                          ) : action.actionType === "upload" && !isUploadingThis ? (
                                             <svg
                                               xmlns="http://www.w3.org/2000/svg"
                                               viewBox="0 0 24 24"
@@ -6658,7 +6785,7 @@ export function CopilotInterface() {
                                               />
                                             </svg>
                                           ) : null}
-                                          {isUploaded
+                                          {isUploadingThis ? (<><svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" className="opacity-25" /><path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>Uploading…</>) : isUploaded
                                             ? `Uploaded ${action.label.replace(/^Upload\s+/i, "")}`
                                             : action.label}
                                         </button>
@@ -7405,6 +7532,15 @@ export function CopilotInterface() {
                             })()}
                         </div>
                       )}
+                      {msg.claimDocuments && (
+                        <div className="mt-2 w-full">
+                          <ClaimDocumentsCard
+                            claim={msg.claimDocuments}
+                            onChanged={(summary) => notify(`✅ ${summary}`, true)}
+                                        onRunPrompt={(text) => handleSubmit(undefined, text)}
+                          />
+                        </div>
+                      )}
                       {(() => {
                         const lowerText = (msg.text || "").toLowerCase();
                         const looksLikeMissingDocs =
@@ -7447,6 +7583,7 @@ export function CopilotInterface() {
                                 action,
                                 uploadedDocs,
                               );
+                              const isUploadingThis = isUploading && uploadingLabel === action.label;
                               const usedIdx = usedActions[msg.id];
                               const isChosen = usedIdx === idx;
                               const isLocked =
@@ -7509,7 +7646,7 @@ export function CopilotInterface() {
                                       <path d="M5 12h14" />
                                       <path d="m12 5 7 7-7 7" />
                                     </svg>
-                                  ) : action.actionType === "upload" ? (
+                                  ) : action.actionType === "upload" && !isUploadingThis ? (
                                     <svg
                                       xmlns="http://www.w3.org/2000/svg"
                                       viewBox="0 0 24 24"
@@ -7539,7 +7676,7 @@ export function CopilotInterface() {
                                       <path d="M12 8v8" />
                                     </svg>
                                   )}
-                                  {isUploaded
+                                  {isUploadingThis ? (<><svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" className="opacity-25" /><path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>Uploading…</>) : isUploaded
                                     ? `Uploaded ${action.label.replace(/^Upload\s+/i, "")}`
                                     : action.label}
                                 </button>
@@ -7852,6 +7989,7 @@ export function CopilotInterface() {
                   .slice(0, 3)
                   .map((action, idx) => {
                     const isUploaded = checkIsUploaded(action, uploadedDocs);
+                    const isUploadingThis = isUploading && uploadingLabel === action.label;
                     return (
                       <button
                         key={idx}
@@ -7871,7 +8009,7 @@ export function CopilotInterface() {
                                 : "text-blue-600 hover:text-white hover:bg-blue-600 border-blue-200"
                         }`}
                       >
-                        {isUploaded
+                        {isUploadingThis ? (<span className="inline-flex items-center gap-1.5"><svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" className="opacity-25" /><path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>Uploading…</span>) : isUploaded
                           ? `✓ Uploaded ${action.label.replace(/^Upload\s+/i, "")}`
                           : action.label}
                       </button>

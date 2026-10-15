@@ -8,8 +8,61 @@ from uuid import NAMESPACE_URL, uuid5
 
 from sqlmodel import select
 from shared.commissions.calculator import allocate, money, policy_year
-from shared.models.core import AcquisitionSource, Customer, Policy, PremiumReceipt, PremiumSchedule
-from shared.models.commission import CommissionAccrual, CommissionAgreement, CommissionAssignment, CommissionEarning
+from shared.models.core import AcquisitionSource, Customer, User, InsurancePlan, Policy, PremiumReceipt, PremiumSchedule
+from shared.models.commission import CommissionAccrual, CommissionAgreement, CommissionAssignment, CommissionEarning, CommissionPlanRule
+
+
+async def automatic_assignment(session, policy, on_date, configuration=None):
+    """Resolve an exact plan and assigned agent. Return an unsaved allocation.
+
+    Never guess between namesakes, producers or overlapping contracts. The caller
+    holds the policy lock and only persists after successful calculation.
+    """
+    customer = configuration['customers'].get(policy.customer_id) if configuration else await session.get(Customer, policy.customer_id)
+    if not customer or customer.tenant_id != policy.tenant_id or not customer.assigned_agent_id:
+        raise ValueError('Customer needs an assigned agent for automatic commission')
+    agent = configuration['users'].get(customer.assigned_agent_id) if configuration else await session.get(User, customer.assigned_agent_id)
+    if not agent or agent.tenant_id != policy.tenant_id or not agent.is_active or str(getattr(agent.status, 'value', agent.status)) != 'ACTIVE':
+        raise ValueError('Assigned agent is missing or inactive')
+    sources = [s for s in configuration['sources'].values() if s.user_id == agent.id and s.is_active
+        and str(getattr(s.source_type, 'value', s.source_type)) == 'AGENT'] if configuration else (await session.exec(select(AcquisitionSource).where(
+        AcquisitionSource.tenant_id == policy.tenant_id,
+        AcquisitionSource.user_id == agent.id, AcquisitionSource.is_active == True,
+        AcquisitionSource.source_type == 'AGENT'))).all()
+    preferred = [s for s in sources if s.id == customer.acquisition_source_id]
+    if len(preferred or sources) != 1:
+        raise ValueError('Assigned agent needs one unambiguous active AGENT acquisition source')
+    source = (preferred or sources)[0]
+    plans = [p for p in configuration['plans'] if p.insurance_type == policy.insurance_type
+        and str(getattr(p.category, 'value', p.category)) == 'Individual'] if configuration else (await session.exec(select(InsurancePlan).where(
+        InsurancePlan.tenant_id == policy.tenant_id,
+        InsurancePlan.insurance_type == policy.insurance_type,
+        InsurancePlan.category == 'Individual'))).all()
+    name = policy.product_name.strip().casefold()
+    matches = [p for p in plans if name in (p.label.strip().casefold(), p.code.strip().casefold())]
+    if len(matches) != 1:
+        raise ValueError('Policy needs an unambiguous catalog plan for automatic commission')
+    plan = matches[0]
+    contracts = [configuration['agreements'][r.agreement_id] for r in configuration['rules']
+        if r.plan_id == plan.id and r.agreement_id in configuration['agreements']
+        and configuration['agreements'][r.agreement_id].status == 'APPROVED'
+        and configuration['agreements'][r.agreement_id].effective_from <= on_date] if configuration else (await session.exec(select(CommissionAgreement).join(
+        CommissionPlanRule, CommissionPlanRule.agreement_id == CommissionAgreement.id).where(
+            CommissionPlanRule.tenant_id == policy.tenant_id, CommissionPlanRule.plan_id == plan.id,
+            CommissionAgreement.tenant_id == policy.tenant_id,
+            CommissionAgreement.status == 'APPROVED', CommissionAgreement.effective_from <= on_date))).all()
+    latest = max((a.effective_from for a in contracts), default=None)
+    eligible = [a for a in contracts if a.effective_from == latest]
+    if len(eligible) != 1:
+        raise ValueError('No unique approved plan commission agreement applies on the receipt date')
+    agreement = eligible[0]
+    if agreement.effective_to and on_date > agreement.effective_to:
+        raise ValueError('Latest plan commission agreement has expired; no fallback rate applied')
+    if agreement.basis != 'RECEIPT_BASE':
+        raise ValueError('Unsupported commission basis')
+    return CommissionAssignment(tenant_id=policy.tenant_id, policy_id=policy.id,
+        source_id=source.id, agreement_id=agreement.id, split_pct=100,
+        created_by=agreement.created_by), plan
 
 
 async def accrue_receipt(session, receipt):
@@ -41,8 +94,10 @@ async def accrue_receipt(session, receipt):
             CommissionAssignment.tenant_id == receipt.tenant_id,
             CommissionAssignment.policy_id == policy.id,
         ))).all())
+        automatic_plan = None
         if not assignments:
-            raise ValueError("No producer agreement assigned to this policy")
+            allocation, automatic_plan = await automatic_assignment(session, policy, receipt.created_at.date())
+            assignments = [allocation]
         inputs = []
         resolved = []
         for assignment in assignments:
@@ -68,6 +123,8 @@ async def accrue_receipt(session, receipt):
         return accrual
 
     customer = await session.get(Customer, policy.customer_id)
+    if automatic_plan:
+        session.add_all(assignments)
     for assignment, agreement, source, rate in resolved:
         session.add(CommissionEarning(
             tenant_id=receipt.tenant_id, accrual_id=accrual.id, policy_id=policy.id,
@@ -84,6 +141,8 @@ async def accrue_receipt(session, receipt):
                 "receipt_no": receipt.receipt_no, "receipt_date": receipt.created_at.isoformat(),
                 "schedule_id": str(schedule.id), "due_date": schedule.due_date.isoformat(),
                 "approved_by": str(agreement.approved_by),
+                "allocation_method": 'AUTO_PLAN' if automatic_plan else 'POLICY_ASSIGNMENT',
+                "plan_id": str(automatic_plan.id) if automatic_plan else None,
             },
         ))
     # Compatibility for receipt consumers: retain the actual posted gross total,

@@ -159,6 +159,7 @@ async def c_intake(state: ChatState) -> dict:
             "claim_type": args.get("claim_type"),
             "submitted_amount": args.get("submitted_amount"),
             "incident_date": args.get("incident_date"),
+            "cause": args.get("cause"),
         },
         ctx,
     )
@@ -173,6 +174,11 @@ async def c_intake(state: ChatState) -> dict:
         }
 
     claim = res.get("claim") or {}
+    # register_claim also brings the claim into the claims workflow, whose eligibility check
+    # already triages it — carry that status so triage isn't attempted twice.
+    workflow_status = ((res.get("claim_workflow") or {}).get("claim") or {}).get("status")
+    if workflow_status:
+        claim = {**claim, "status": workflow_status}
     return {
         "claim_stage": "claim_triage",
         "claim_outcome": None,

@@ -1,9 +1,9 @@
 """Commission administration on the persistent commission engine
 (tenant-service routers/commissions.py, services/commission_engine.py).
 
-The engine posts an earning only when a premium RECEIPT lands on a policy whose
-producers are assigned under an APPROVED agreement. Everything else becomes an
-accrual EXCEPTION with a reason. So the work an administrator actually does is:
+The engine posts against explicit policy producers or automatically allocates the
+assigned agent under an approved plan agreement. Missing configuration becomes a
+durable exception. The administration tools support:
 
   agreements    list_commission_agreements, create_commission_agreement,
                 approve_commission_agreement   (maker-checker: a different admin approves)
@@ -11,8 +11,8 @@ accrual EXCEPTION with a reason. So the work an administrator actually does is:
   exceptions    list_commission_exceptions, reconcile_commission_receipts
   explanation   explain_commission_earning     (agents see only their own)
 
-Nothing here pays anyone: settlement, tax and clawback are not built, and the
-results say "accrued gross", never "paid".
+Disbursement batch approval and manual external-payment recording live in the
+portal. These chat tools do not transfer money. Tax and clawback are not automated.
 
 Registered by being imported at the foot of tool_executor.py.
 """
@@ -133,7 +133,7 @@ async def _get_customer_commission_setup(args: dict, ctx: Ctx) -> dict:
                      ('; producer assignment frozen after posting' if p['frozen'] else ''))
     if data['has_more']:
         lines.append('Only the first 50 policies are shown; narrow the selection in Commission earnings.')
-    lines.append('An approved agreement and explicit policy producer split are required before a premium receipt can accrue earnings. Payouts are not enabled.')
+    lines.append('Link an approved agreement to the plan once: the next premium receipt allocates 100% to the assigned agent automatically. Explicit policy splits override plan allocation. Disbursement batches require independent approval and recorded external payment confirmation; bank transfers and tax calculations are not automated.')
     return {'success': True, 'message': '\n\n'.join(lines), 'setup': data,
             'quick_actions': [{'label': 'Configure commissions', 'actionType': 'navigate',
                                'payload': f"commissions?customer_id={customer['id']}"}]}
@@ -224,7 +224,7 @@ async def _split_view(ctx: Ctx, policy: dict) -> tuple[list[dict], str]:
     res.raise_for_status()
     rows = res.json()
     if not rows:
-        return rows, f"No producers are assigned on {policy.get('policy_number')} — its premium receipts will post as exceptions."
+        return rows, f"No explicit producers are assigned on {policy.get('policy_number')}. Approved plan rates can automatically allocate to the customer's assigned agent on the next premium receipt. Check customer commission setup to verify readiness."
     payees = {str(p["id"]): p for p in await _payees(ctx)}
     agreements = {str(a["id"]): a for a in await _agreements(ctx)}
     lines = [f"Producer split on **{policy.get('policy_number')}**:"]

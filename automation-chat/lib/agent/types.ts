@@ -18,7 +18,7 @@ export interface QuickAction {
   // form — everywhere else in the app still opens a normal new tab via "navigate".
   // "proposal_step" is handled in the browser, not sent to the model: it moves a
   // proposal one status forward (payload is JSON, see CopilotInterface).
-  actionType: "navigate" | "submit" | "upload" | "confirm" | "select" | "download" | "embed" | "proposal_step" | "uw_requirements" | "family_assess" | "family_decision" | "family_report";
+  actionType: "navigate" | "submit" | "upload" | "confirm" | "select" | "download" | "embed" | "proposal_step" | "uw_requirements" | "family_assess" | "family_decision" | "family_report" | "claim_documents";
   payload: string;
   // "select" only.
   options?: { label: string; value: string }[];
@@ -132,6 +132,8 @@ export interface AgentMessage {
   actionResult?: ActionResult;
   /** When set the message is drawn as the requirements card; `text` is a short plain summary of it. */
   checklist?: RequirementsChecklist;
+  /** When set, the claim's document checklist is drawn under the text, managed in place. */
+  claimDocuments?: { claim_id: string; claim_number?: string; policy_id: string };
   steps?: ProcessStep[];
   assessment?: AssessmentScores;
   familyMembers?: FamilyMember[];

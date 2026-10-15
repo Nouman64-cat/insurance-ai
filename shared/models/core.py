@@ -3779,6 +3779,7 @@ class RuleEvaluationLog(SQLModel, table=True):
 # Register the additive commission earnings tables for every create_all caller.
 from shared.models.commission import (  # noqa: E402,F401
     CommissionAgreement, CommissionAssignment, CommissionAccrual, CommissionEarning,
+    CommissionPlanRule, CommissionDisbursement, CommissionDisbursementItem, CommissionDisbursementEvent,
 )
 
 # Register tenant-service's Request Management integration table (see request_integration.py).

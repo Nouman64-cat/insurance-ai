@@ -1,7 +1,7 @@
 """Tenant-scoped commission earnings API. No synthetic balances or payouts."""
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,9 +13,10 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 from routers.auth import _get_current_user, _role_name, oauth2_scheme
-from services.commission_engine import accrue_receipt
-from shared.models.core import AcquisitionSource, Customer, User, Policy, PremiumReceipt
-from shared.models.commission import CommissionAccrual, CommissionAgreement, CommissionAssignment, CommissionEarning
+from services.commission_engine import accrue_receipt, automatic_assignment
+from shared.models.core import AcquisitionSource, Customer, User, InsurancePlan, Policy, PremiumReceipt
+from shared.models.commission import (CommissionAccrual, CommissionAgreement, CommissionAssignment,
+    CommissionEarning, CommissionPlanRule, CommissionDisbursement, CommissionDisbursementItem)
 
 router = APIRouter(prefix="/tenants/{tenant_id}/commissions", tags=["Commission earnings"])
 Pct = Annotated[Decimal, Field(ge=0, le=100, max_digits=7, decimal_places=4, allow_inf_nan=False)]
@@ -73,6 +74,40 @@ class AssignmentsIn(BaseModel):
         return self
 
 
+class PlanRuleIn(BaseModel):
+    plan_id: UUID
+    agreement_id: UUID
+
+
+@router.get('/plan-rules')
+async def plan_rules(tenant_id: UUID, user=Depends(admin), session: AsyncSession = Depends(get_session)):
+    plans = (await session.exec(select(InsurancePlan).where(
+        InsurancePlan.tenant_id == tenant_id, InsurancePlan.category == 'Individual').order_by(InsurancePlan.label))).all()
+    rules = (await session.exec(select(CommissionPlanRule).where(CommissionPlanRule.tenant_id == tenant_id))).all()
+    return {'plans': [{'id': p.id, 'label': p.label, 'code': p.code} for p in plans], 'rules': rules}
+
+
+@router.post('/plan-rules', status_code=201)
+async def create_plan_rule(tenant_id: UUID, body: PlanRuleIn, user=Depends(admin), session: AsyncSession = Depends(get_session)):
+    plan = (await session.exec(select(InsurancePlan).where(
+        InsurancePlan.id == body.plan_id, InsurancePlan.tenant_id == tenant_id).with_for_update())).first()
+    agreement = await session.get(CommissionAgreement, body.agreement_id)
+    if not plan or str(getattr(plan.category, 'value', plan.category)) != 'Individual':
+        raise HTTPException(422, 'Select an individual plan in this tenant')
+    if not agreement or agreement.tenant_id != tenant_id or agreement.status != 'APPROVED':
+        raise HTTPException(422, 'Select an approved agreement in this tenant')
+    existing = (await session.exec(select(CommissionAgreement).join(
+        CommissionPlanRule, CommissionPlanRule.agreement_id == CommissionAgreement.id).where(
+            CommissionPlanRule.tenant_id == tenant_id, CommissionPlanRule.plan_id == plan.id))).all()
+    if any(a.id == agreement.id for a in existing):
+        raise HTTPException(409, 'This agreement is already linked to the plan')
+    if any(a.effective_from == agreement.effective_from for a in existing):
+        raise HTTPException(409, 'A plan rate version already starts on this date')
+    row = CommissionPlanRule(tenant_id=tenant_id, plan_id=plan.id, agreement_id=agreement.id, created_by=user.id)
+    session.add(row); await session.commit()
+    return row
+
+
 @router.get("/setup")
 async def setup(tenant_id: UUID, customer_id: UUID | None = None,
                 search: str = Query("", max_length=200), user=Depends(admin),
@@ -105,6 +140,13 @@ async def setup(tenant_id: UUID, customer_id: UUID | None = None,
         CommissionAccrual.tenant_id == tenant_id, CommissionAccrual.policy_id.in_(policy_ids),
         CommissionAccrual.status == 'POSTED'))).all()) if policy_ids else set()
     today = date.today()
+    owners = {c.id: c for _, c in rows[:50]}
+    agent_ids = [c.assigned_agent_id for c in owners.values() if c.assigned_agent_id]
+    users = (await session.exec(select(User).where(User.tenant_id == tenant_id, User.id.in_(agent_ids)))).all() if agent_ids else []
+    configuration = {'customers': owners, 'users': {u.id: u for u in users}, 'sources': sources,
+        'agreements': agreements,
+        'plans': (await session.exec(select(InsurancePlan).where(InsurancePlan.tenant_id == tenant_id))).all(),
+        'rules': (await session.exec(select(CommissionPlanRule).where(CommissionPlanRule.tenant_id == tenant_id))).all()}
     def current(a):
         return a.status == 'APPROVED' and a.effective_from <= today and (not a.effective_to or today <= a.effective_to)
     def suggested(c):
@@ -117,8 +159,14 @@ async def setup(tenant_id: UUID, customer_id: UUID | None = None,
     for policy, owner in rows[:50]:
         split = [a for a in assignments if a.policy_id == policy.id]
         reasons = []
+        automatic = None
         if not split:
-            reasons.append('No producer agreement assigned to this policy')
+            try:
+                candidate, plan = await automatic_assignment(session, policy, today, configuration)
+                automatic = {'source_id': candidate.source_id, 'agreement_id': candidate.agreement_id,
+                             'plan_id': plan.id, 'split_pct': '100'}
+            except ValueError as exc:
+                reasons.append(str(exc))
         elif sum(a.split_pct for a in split) != Decimal(100) or any(a.split_pct <= 0 for a in split):
             reasons.append('Producer splits must total 100%')
         for allocation in split:
@@ -133,7 +181,7 @@ async def setup(tenant_id: UUID, customer_id: UUID | None = None,
             'customer_id': owner.id, 'customer_name': owner.name, 'product_name': policy.product_name,
             'status': policy.status, 'recommended_source_id': suggested(owner),
             'assignments': split, 'frozen': policy.id in posted,
-            'ready': not reasons, 'blocking_reasons': sorted(set(reasons))})
+            'ready': not reasons, 'automatic': automatic, 'blocking_reasons': sorted(set(reasons))})
     context = None
     if customer:
         agent = await session.get(User, customer.assigned_agent_id) if customer.assigned_agent_id else None
@@ -250,11 +298,25 @@ def scoped_earnings(tenant_id, identity, source_id=None, date_from=None, date_to
 @router.get("/earnings")
 async def earnings(tenant_id: UUID, offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=500),
                    source_id: UUID | None = None, date_from: date | None = None, date_to: date | None = None,
+                   disbursement_status: Literal['ACCRUED','DRAFT','SUBMITTED','APPROVED','PAID'] | None = None,
                    identity=Depends(caller), session: AsyncSession = Depends(get_session)):
     query = scoped_earnings(tenant_id, identity, source_id, date_from, date_to)
+    reserved_ids = select(CommissionDisbursementItem.reserved_earning_id).join(
+        CommissionDisbursement, CommissionDisbursement.id == CommissionDisbursementItem.batch_id).where(
+            CommissionDisbursement.tenant_id == tenant_id, CommissionDisbursementItem.reserved_earning_id.is_not(None))
+    if disbursement_status == 'ACCRUED':
+        query = query.where(CommissionEarning.id.not_in(reserved_ids))
+    elif disbursement_status:
+        query = query.where(CommissionEarning.id.in_(reserved_ids.where(CommissionDisbursement.status == disbursement_status)))
     total = (await session.execute(select(func.count()).select_from(query.subquery()))).scalar_one()
     rows = (await session.exec(query.order_by(CommissionEarning.created_at.desc(), CommissionEarning.id).offset(offset).limit(limit))).all()
-    return {"items": rows, "total": total, "offset": offset, "limit": limit}
+    states = (await session.exec(select(CommissionDisbursementItem.reserved_earning_id, CommissionDisbursement.status).join(
+        CommissionDisbursement, CommissionDisbursement.id == CommissionDisbursementItem.batch_id).where(
+            CommissionDisbursement.tenant_id == tenant_id,
+            CommissionDisbursementItem.reserved_earning_id.in_([e.id for e in rows])))).all() if rows else []
+    by_id = dict(states)
+    return {"items": [{**e.model_dump(), 'disbursement_status': by_id.get(e.id, 'ACCRUED')} for e in rows],
+            "total": total, "offset": offset, "limit": limit}
 
 
 @router.get("/earnings/{earning_id}")
@@ -271,7 +333,13 @@ async def earning(tenant_id: UUID, earning_id: UUID, identity=Depends(caller), s
 async def summary(tenant_id: UUID, source_id: UUID | None = None, date_from: date | None = None, date_to: date | None = None, identity=Depends(caller), session: AsyncSession = Depends(get_session)):
     sub = scoped_earnings(tenant_id, identity, source_id, date_from, date_to).subquery()
     count, gross = (await session.execute(select(func.count(), func.coalesce(func.sum(sub.c.gross_amount), 0)).select_from(sub))).one()
-    return {"entries": count, "accrued_gross": str(gross), "currency": "PKR", "settlement_enabled": False}
+    paid = (await session.execute(select(func.coalesce(func.sum(sub.c.gross_amount), 0)).select_from(sub).join(
+        CommissionDisbursementItem, CommissionDisbursementItem.reserved_earning_id == sub.c.id).join(
+            CommissionDisbursement, CommissionDisbursement.id == CommissionDisbursementItem.batch_id).where(
+                CommissionDisbursement.tenant_id == tenant_id, CommissionDisbursement.status == 'PAID'))).scalar_one()
+    return {"entries": count, "accrued_gross": str(gross), 'paid_gross': str(paid),
+            "currency": "PKR", "settlement_enabled": False, 'disbursement_enabled': True,
+            'payment_mode': 'MANUAL_CONFIRMATION'}
 
 
 @router.get("/exceptions")

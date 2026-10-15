@@ -25,6 +25,7 @@ from tool_executor import ExecCtx, execute_tool
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 _SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"}
+_PLANNER_NODES = {'agent', 'general_agent', 'commission_agent'}
 
 
 def _event(payload: dict) -> str:
@@ -75,7 +76,7 @@ async def _consume(graph, config, input_):
             if mode == "messages":
                 chunk, metadata = update
                 # Internal model calls (titles, plan advice) stay out of chat.
-                if metadata.get("langgraph_node") != "agent":
+                if metadata.get("langgraph_node") not in _PLANNER_NODES:
                     continue
                 text = _as_text(chunk.content) if chunk.content else ""
                 message_id = chunk.id
@@ -88,8 +89,9 @@ async def _consume(graph, config, input_):
                 continue
 
             # Drop any abandoned partial response from a failed/retried call.
-            if "agent" in update:
-                final_ids = {m.id for m in update["agent"].get("messages", []) if isinstance(m, AIMessage)}
+            planner_update = next((update[n] for n in _PLANNER_NODES if n in update and 'messages' in update[n]), None)
+            if planner_update is not None:
+                final_ids = {m.id for m in planner_update.get("messages", []) if isinstance(m, AIMessage)}
                 for abandoned in streamed_ids - final_ids:
                     yield _event({"type": "message_discard", "message_id": abandoned})
                 streamed_ids.clear()
@@ -107,6 +109,10 @@ async def _consume(graph, config, input_):
             for node_data in update.values():
                 if not isinstance(node_data, dict):
                     continue
+                handoff = node_data.get('specialist_handoff')
+                if handoff:
+                    yield step('specialist:' + handoff['agent'],
+                               'Commission specialist selected' if handoff['agent'] == 'commission' else 'Main assistant selected', 'done')
 
                 # Autonomous journey stages narrate themselves: each pipeline
                 # node reports its own completion (journey_done) and what runs
