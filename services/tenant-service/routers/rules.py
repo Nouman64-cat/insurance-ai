@@ -132,6 +132,9 @@ def _map_outcome_to_impact(action_outcome: str, outcome_payload: dict):
         "exclusion_riders": outcome_payload.get("exclusion_riders") or [],
         "is_terminal": bool(outcome_payload.get("terminal")),
         "reason": outcome_payload.get("reason"),
+        # Profile risk screening (RS-RISK-001): which factor the rule scores and how adverse it is (0–1).
+        "risk_factor": outcome_payload.get("risk_factor"),
+        "risk_level": outcome_payload.get("risk_level"),
         "commission_pct": outcome_payload.get("commission_pct"),
         "withholding_tax_pct": outcome_payload.get("withholding_tax_pct"),
     }
@@ -1044,6 +1047,19 @@ async def ensure_knockout_rule_set(session: AsyncSession) -> None:
     await _create_rule_set_from_seed(session, _KNOCKOUT_RULE_SET, sub.id, None)
 
 
+async def ensure_profile_risk_rule_set(session: AsyncSession) -> None:
+    """Idempotent startup seed of RS-RISK-001, the rules that decide what counts as a risk in a
+    lead's profile Risk Assessment and why. Edited afterwards in the rule-engine admin."""
+    from services.profile_risk import RISK_RULE_SET
+    await seed_rules_if_empty(session)
+    existing = (await session.exec(select(RuleSet).where(RuleSet.rule_code == RISK_RULE_SET["code"]))).first()
+    if existing is not None:
+        return
+    category = await _get_or_create_category(session, RISK_RULE_SET["category_code"], RISK_RULE_SET["category_name"])
+    sub = await _get_or_create_subcategory(session, category.id, RISK_RULE_SET["sub_code"], RISK_RULE_SET["sub_name"])
+    await _create_rule_set_from_seed(session, RISK_RULE_SET, sub.id, None)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Request / Response Schemas
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1114,6 +1130,9 @@ class ActuarialImpactDetailIn(BaseModel):
     is_terminal: bool = False
     commission_pct: Optional[float] = None
     withholding_tax_pct: Optional[float] = None
+    reason: Optional[str] = None
+    risk_factor: Optional[str] = None
+    risk_level: Optional[float] = PydanticField(default=None, ge=0, le=1)
 
 
 class RuleCriteriaCreate(BaseModel):

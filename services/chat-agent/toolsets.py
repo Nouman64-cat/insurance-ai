@@ -284,6 +284,10 @@ DOMAIN_TOOLS: dict[str, set[str]] = {
         "reconcile_commission_receipts",
         "explain_commission_earning",
     },
+    # Pre-proposal profile screening (profile_risk_tools.py). Keyword-only, like the packs above.
+    "profile_risk": {
+        "assess_customer_risk_profile",
+    },
 }
 
 # Bound when no keyword matches and nothing is sticky. Must fit the provider cap
@@ -393,6 +397,10 @@ DOMAIN_KEYWORDS["claims_workflow"] = DOMAIN_KEYWORDS["claims"] + (
     "intimat", "eligib", "in force on", "was the policy in force", "covered on", "nominee", "payee", "iban",
     "assess the benefit", "benefit payable", "closure letter", "close the claim", "reconcile the settlement",
     "death benefit", "disability", "accidental death", "hospital", "ex-gratia", "ex gratia",
+)
+DOMAIN_KEYWORDS["profile_risk"] = (
+    "risk profile", "profile risk", "risk assessment", "assess risk", "assess the risk", "risk factors",
+    "how risky", "risky", "safe factors", "risk score", "risk band",
 )
 DOMAIN_KEYWORDS["commission_admin"] = DOMAIN_KEYWORDS["commission"] + (
     "agreement", "producer split", "split", "commission exception", "did not post", "didn't post",

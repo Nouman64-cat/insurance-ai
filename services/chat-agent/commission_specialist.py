@@ -27,7 +27,7 @@ COMMISSION_TOOLS = frozenset({
 _EXPLICIT = re.compile(r'\b(?:commissions?|brokerage|rate\s+cards?|producer\s+splits?|agent.?s?\s+(?:earnings?|statement|pay)|my\s+earnings|earnings?\s+ledger|(?:get|list|create|approve|reconcile|explain)_[a-z_]*commission[a-z_]*)\b|کمیشن', re.I)
 _OTHER_ACTION = re.compile(r'\b(?:create|register|add|list|issue|approve|reject|settle|close|submit|cancel|collect|upload|run)\s+(?:(?:a|an|the|new|all|individual|family|corporate|this|that)\s+){0,3}(?:customers?|leads?|proposals?|claims?|polic(?:y|ies)|underwriting|premiums?|documents?|risk assessment|users?|agents?|organizations?|families|plans?|cases?)\b', re.I)
 _OTHER_TOPIC = re.compile(r'\b(?:customers?|leads?|proposals?|underwriting|claims?|fnol|documents?|risk|surrender|medical|weather|rule\s+engine|group\s+scheme)\b', re.I)
-_FOLLOWUP = re.compile(r'^(?:yes|no|ok(?:ay)?|thanks?|go ahead|continue|cancel|approve (?:it|that|this)|use .+|v?\d+(?:\.\d+)?%?|[A-Z](?=[A-Z0-9_-]*[0-9_-])[A-Z0-9_-]{2,}(?:\s+v?\d+)?|جی|ہاں|نہیں)\s*[.!?]*$', re.I)
+_FOLLOWUP = re.compile(r'^(?:yes|no|ok(?:ay)?|thanks?|go ahead|continue|cancel|(?:pay|disburse|settle|approve) (?:it|that|this)|use .+|v?\d+(?:\.\d+)?%?|[A-Z](?=[A-Z0-9_-]*[0-9_-])[A-Z0-9_-]{2,}(?:\s+v?\d+)?|جی|ہاں|نہیں)\s*[.!?]*$', re.I)
 _FINANCE = re.compile(r'\b(?:agreements?|splits?|renewal rates?|first.year rates?|producers?|payees?|ledger|earnings?|payouts?|disbursements?|reconcile|receipts?|versions?)\b', re.I)
 
 
@@ -57,14 +57,14 @@ def select_specialist(state):
 
 
 def coordinator_node(state):
-    selected = select_specialist(state)
-    changed = selected != state.get('active_specialist')
-    return {'active_specialist': selected, 'specialist_handoff':
-        {'agent': selected or 'general', 'reason': 'Commission domain handoff' if selected else 'Main assistant handoff'} if changed else None}
+    # Compatibility for callers of the original pilot module.
+    from specialist_router import coordinator_node as coordinate
+    return coordinate(state)
 
 
 def route_coordinator(state):
-    return 'commission_agent' if state.get('active_specialist') == 'commission' else 'general_agent'
+    from specialist_router import route_coordinator as route
+    return route(state)
 
 
 def specialist_prompt(role, platform, locale):

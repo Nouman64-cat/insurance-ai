@@ -128,6 +128,11 @@ async def lifespan(app: FastAPI):
             await ensure_knockout_rule_set(session)
         except Exception:
             logging.getLogger(__name__).exception("Could not seed the early-knockout rule set")
+        try:
+            from routers.rules import ensure_profile_risk_rule_set
+            await ensure_profile_risk_rule_set(session)
+        except Exception:
+            logging.getLogger(__name__).exception("Could not seed the profile risk screening rule set")
 
     # Kafka producer — shared across all request handlers via app.state
     producer = AIOKafkaProducer(

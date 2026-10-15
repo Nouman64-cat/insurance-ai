@@ -12,6 +12,134 @@ import { tx } from "@/lib/i18n/tx";
 
 type EntityType = "INDIVIDUAL" | "FAMILY" | "CORPORATE";
 
+interface RiskRule { code: string; name: string; reason?: string | null; impact_type?: string; risk_level?: number; }
+interface RiskFactor { key: string; label: string; detail: string; contribution_pct: number; risk_level: number; category: string; rules?: RiskRule[]; }
+interface RiskCategory {
+  key: string; label: string; share_pct: number; safe_pct: number; risk_pct: number; risk_within_pct: number;
+  band: string; safe_factors: RiskFactor[]; risk_factors: RiskFactor[]; missing: string[];
+}
+interface RiskProfile {
+  safe_pct: number; risk_pct: number; band: string; completeness_pct: number; summary: string;
+  categories: RiskCategory[]; safe_factors: RiskFactor[]; risk_factors: RiskFactor[]; missing: string[];
+  cover_considered?: number | null; plan_considered?: string | null;
+  rule_set?: { code: string; version?: string | null; source?: string } | null;
+  underwriting?: { medical_tests: string[]; extra_mortality_pct: number; referral: boolean };
+}
+
+function ageFrom(dob?: string | null): number | null {
+  if (!dob) return null;
+  const d = new Date(dob), now = new Date();
+  if (isNaN(d.getTime())) return null;
+  return now.getFullYear() - d.getFullYear() - (now < new Date(now.getFullYear(), d.getMonth(), d.getDate()) ? 1 : 0);
+}
+
+/** Compact facts shown under the name in the header: [label, value, monospace]. */
+function headerInfo(entityType: EntityType, data: any): [string, string | null, boolean?][] {
+  if (entityType === "INDIVIDUAL") {
+    const dob = data.dob || data.date_of_birth;
+    const age = ageFrom(dob);
+    return [
+      ["CNIC", data.cnic, true],
+      ["Phone", data.details?.contact?.mobile_number || data.details?.contact?.phone_number || data.details?.phone || null],
+      ["Email", data.details?.contact?.email || data.details?.email || null],
+      ["Date of Birth", dob ? `${displayDate(dob)}${age !== null ? ` · ${age} yrs` : ""}` : null],
+      ["Created", data.created_at ? displayDateTime(data.created_at) : null],
+    ];
+  }
+  if (entityType === "FAMILY") {
+    return [
+      ["Primary Contact Phone", data.contact_phone || null],
+      ["Primary Contact Email", data.contact_email || null],
+      ["Head of Family ID", data.head_of_family_customer_id || null, true],
+      ["Created", data.created_at ? displayDateTime(data.created_at) : null],
+    ];
+  }
+  return [
+    ["Registration Number", data.registration_number || null, true],
+    ["Industry", data.industry_type || null],
+    ["Contact Phone", data.contact_phone || null],
+    ["Address", data.address || null],
+    ["Created", data.created_at ? displayDateTime(data.created_at) : null],
+  ];
+}
+
+const BAND_STYLE: Record<string, string> = {
+  Low: "bg-emerald-50/70 text-emerald-700 border-emerald-100",
+  Moderate: "bg-amber-50 text-amber-700 border-amber-200",
+  Elevated: "bg-orange-50 text-orange-700 border-orange-200",
+  High: "bg-rose-50 text-rose-700 border-rose-200",
+};
+
+const CATEGORY_ICON: Record<string, React.ReactNode> = {
+  medical: <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>,
+  occupational: <><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></>,
+  financial: <><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></>,
+  avocational: <><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/></>,
+};
+
+function CategoryCard({ cat }: { cat: RiskCategory }) {
+  // One row per factor; a partly adverse factor carries both a safe and a risk share.
+  const rows = new Map<string, { label: string; detail: string; safe: number; risk: number; rules: RiskRule[] }>();
+  for (const f of cat.safe_factors) rows.set(f.key, { label: f.label, detail: f.detail, safe: f.contribution_pct, risk: 0, rules: [] });
+  for (const f of cat.risk_factors) {
+    const row = rows.get(f.key) ?? { label: f.label, detail: f.detail, safe: 0, risk: 0, rules: [] };
+    rows.set(f.key, { ...row, risk: f.contribution_pct, rules: f.rules ?? [] });
+  }
+  const recorded = cat.share_pct > 0;
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-4 flex flex-col">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-600">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4" aria-hidden="true">{CATEGORY_ICON[cat.key]}</svg>
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-slate-800 leading-tight">{tx(cat.label)}</p>
+            <p className="text-[11px] text-slate-500">{recorded ? tx("{0}% of the profile", { 0: cat.share_pct }) : tx("Not recorded")}</p>
+          </div>
+        </div>
+        {recorded && <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border ${BAND_STYLE[cat.band] ?? "bg-slate-50 text-slate-600 border-slate-200"}`}>{tx(cat.band)}</span>}
+      </div>
+      {recorded ? (
+        <>
+          <div className="mt-3 flex h-2 rounded-full overflow-hidden bg-slate-100" role="img" aria-label={tx("Safe {0}%, risk {1}%", { 0: cat.safe_pct, 1: cat.risk_pct })}>
+            <div className="bg-emerald-300" style={{ width: `${100 - cat.risk_within_pct}%` }} />
+            <div className="bg-rose-300" style={{ width: `${cat.risk_within_pct}%` }} />
+          </div>
+          <div className="mt-1 flex justify-between text-[11px] font-semibold">
+            <span className="text-emerald-600">{tx("Safe")} {cat.safe_pct}%</span>
+            <span className="text-rose-700">{tx("Risk")} {cat.risk_pct}%</span>
+          </div>
+          <ul className="mt-3 space-y-2">
+            {Array.from(rows.entries()).map(([key, f]) => (
+              <li key={key} className="text-xs">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-semibold text-slate-700">{tx(f.label)}</span>
+                  <span className="shrink-0 tabular-nums">
+                    {f.safe > 0 && <span className="font-bold text-emerald-600">{f.safe.toFixed(1)}%</span>}
+                    {f.safe > 0 && f.risk > 0 && <span className="text-slate-300"> · </span>}
+                    {f.risk > 0 && <span className="font-bold text-rose-700">{f.risk.toFixed(1)}%</span>}
+                  </span>
+                </div>
+                <p className={`text-[11px] ${f.risk > 0 ? "text-rose-600" : "text-slate-500"}`}>{f.detail}</p>
+                {f.rules.map((r) => r.reason && (
+                  <p key={r.code} className="mt-1 rounded-md bg-rose-50/70 border border-rose-100 px-2 py-1 text-[11px] text-slate-600">
+                    <span className="font-semibold text-rose-700">{tx("Why")}: </span>{r.reason}
+                    <span className="ml-1 font-mono text-[10px] text-slate-400" title={r.name}>{r.code}</span>
+                  </p>
+                ))}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      {cat.missing.length > 0 && (
+        <p className="mt-3 text-[11px] text-amber-700">{tx("Not recorded: {0}", { 0: cat.missing.join(", ") })}</p>
+      )}
+    </div>
+  );
+}
+
 interface UnifiedDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -29,9 +157,29 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
   const [error, setError] = useState(initialError ?? "");
   const [keepInitial, setKeepInitial] = useState(!!initialError);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [risk, setRisk] = useState<RiskProfile | null>(null);
+  const [riskLoading, setRiskLoading] = useState(false);
+  const [riskError, setRiskError] = useState("");
+
+  const runRiskAssessment = async () => {
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId) return;
+    setRiskLoading(true);
+    setRiskError("");
+    try {
+      const res = await api.get(`/tenants/${tenantId}/customers/${entityId}/risk-profile`);
+      setRisk(res.data);
+    } catch (err: any) {
+      setRiskError(err.response?.data?.detail ?? err.message ?? tx("Risk assessment failed."));
+    } finally {
+      setRiskLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen && entityId) {
+      setRisk(null);
+      setRiskError("");
       fetchDetails();
     }
   }, [isOpen, entityId]);
@@ -92,87 +240,95 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
       <div className="bg-white w-full max-w-5xl max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-300">
         
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-          <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-xl ${
-              entityType === 'INDIVIDUAL' ? 'bg-blue-100 text-blue-600' :
-              entityType === 'FAMILY' ? 'bg-blue-100 text-blue-600' :
-              'bg-blue-100 text-blue-600'
-            }`}>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
-                {entityType === 'INDIVIDUAL' ? <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></> : null}
-                {entityType === 'FAMILY' ? <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></> : null}
-                {entityType === 'CORPORATE' ? <><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><path d="M9 9h6"/><path d="M9 13h6"/><path d="M9 17h6"/></> : null}
-              </svg>
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-slate-800 tracking-tight">
-                {loading ? tx("Loading...") : data?.name || tx("Unknown Profile")}
-              </h2>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                  entityType === 'INDIVIDUAL' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                  entityType === 'FAMILY' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                  'bg-blue-50 text-blue-700 border-blue-200'
-                }`}>
-                  {entityType}
-                </span>
-                {!loading && data?.profile_status && (
-                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
-                    {data.profile_status.replace('_', ' ')}
+        <div className="px-6 pt-4 pb-3 border-b border-slate-100 bg-slate-50/50">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2 rounded-xl bg-blue-100 text-blue-600 shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+                  {entityType === 'INDIVIDUAL' ? <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></> : null}
+                  {entityType === 'FAMILY' ? <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></> : null}
+                  {entityType === 'CORPORATE' ? <><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><path d="M9 9h6"/><path d="M9 13h6"/><path d="M9 17h6"/></> : null}
+                </svg>
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-xl font-bold text-slate-800 tracking-tight truncate">
+                  {loading && !data ? tx("Loading...") : data?.name || tx("Unknown Profile")}
+                </h2>
+                <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border bg-blue-50 text-blue-700 border-blue-200">
+                    {entityType}
                   </span>
-                )}
+                  {data?.profile_status && (
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                      {data.profile_status.replace('_', ' ')}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {entityType === "FAMILY" && (
+                <button 
+                  onClick={() => window.location.href = `/admin/families/${entityId}`}
+                  className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors shadow-sm"
+                >
+                  {tx("Manage Family & Roster")}
+                </button>
+              )}
+              {entityType === "CORPORATE" && (
+                <button 
+                  onClick={() => window.location.href = `/admin/organizations/${entityId}`}
+                  className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors shadow-sm"
+                >
+                  {tx("Manage Corporate & Census")}
+                </button>
+              )}
+              {entityType === "INDIVIDUAL" && data && (
+                <button
+                  onClick={runRiskAssessment}
+                  disabled={riskLoading}
+                  title={tx("AI feature: rule-engine risk screening of this profile")}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 px-4 py-2 rounded-lg transition-colors shadow-sm disabled:opacity-60"
+                >
+                  {riskLoading ? <span className="w-4 h-4 rounded-full border-2 border-blue-200 border-t-blue-600 animate-spin" /> : <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>}
+                  {tx("Risk Assessment")}
+                </button>
+              )}
+              {data && data.profile_status !== "DRAFT" && (
+                <button 
+                  onClick={() => handleSendToDraft()}
+                  title={tx("AI feature: turns the selected plan into a proposal")}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-fuchsia-700 bg-fuchsia-50 border border-fuchsia-200 hover:bg-fuchsia-100 px-4 py-2 rounded-lg transition-colors shadow-sm"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
+                  {tx("Create Proposal")}
+                </button>
+              )}
+              <button 
+                onClick={() => setShowEditModal(true)}
+                className="text-xs font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 px-4 py-2 rounded-lg transition-colors shadow-sm"
+              >
+                {tx("Open Full Details Form")}
+              </button>
+              <button 
+                onClick={onClose}
+                aria-label={tx("Close")}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            {entityType === "INDIVIDUAL" && (
-              <button 
-                onClick={() => window.location.href = `/admin/customers/${entityId}/plans`}
-                className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors shadow-sm"
-              >
-                {tx("Manage Policies & Plans")}
-              </button>
-            )}
-            {entityType === "FAMILY" && (
-              <button 
-                onClick={() => window.location.href = `/admin/families/${entityId}`}
-                className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors shadow-sm"
-              >
-                {tx("Manage Family & Roster")}
-              </button>
-            )}
-            {entityType === "CORPORATE" && (
-              <button 
-                onClick={() => window.location.href = `/admin/organizations/${entityId}`}
-                className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors shadow-sm"
-              >
-                {tx("Manage Corporate & Census")}
-              </button>
-            )}
-
-            {data?.profile_status !== "DRAFT" && (
-              <button 
-                onClick={() => handleSendToDraft()}
-                className="text-xs font-semibold text-fuchsia-700 bg-fuchsia-50 border border-fuchsia-200 hover:bg-fuchsia-100 px-4 py-2 rounded-lg transition-colors shadow-sm"
-              >
-                {tx("Send to Draft")}
-              </button>
-            )}
-            <button 
-              onClick={() => setShowEditModal(true)}
-
-              className="text-xs font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 px-4 py-2 rounded-lg transition-colors shadow-sm"
-            >
-              {tx("Open Full Details Form")}
-            </button>
-            <button 
-              onClick={onClose}
-              className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-          </div>
+          {data && (
+            <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-xs">
+              {headerInfo(entityType, data).map(([label, value, mono]) => (
+                <div key={label} className="min-w-0">
+                  <dt className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{tx(label)}</dt>
+                  <dd className={`mt-0.5 font-medium text-slate-800 truncate max-w-[16rem] ${mono ? "font-mono" : ""}`}>{value || <span className="text-slate-400">{tx("Not provided")}</span>}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
         </div>
 
         {/* Content Body */}
@@ -201,99 +357,63 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              
-              {/* Left Column: Essential Info */}
-              <div className="lg:col-span-1 space-y-6">
-                
-                {/* Profile Card */}
-                <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
-                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">{tx("Contact & Identification")}</h3>
-                  
-                  <div className="space-y-4">
-                    {entityType === 'INDIVIDUAL' && (
-                      <>
-                        <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("CNIC")}</p>
-                          <p className="text-sm font-medium text-slate-800 font-mono mt-0.5">{data.cnic || tx("Not provided")}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("Phone")}</p>
-                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.details?.phone || tx("Not provided")}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("Email")}</p>
-                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.details?.email || tx("Not provided")}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("Date of Birth")}</p>
-                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.date_of_birth ? displayDate(data.date_of_birth) : tx("Not provided")}</p>
-                        </div>
-                      </>
-                    )}
-
-                    {entityType === 'FAMILY' && (
-                      <>
-                        <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("Primary Contact Phone")}</p>
-                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.contact_phone || tx("Not provided")}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("Primary Contact Email")}</p>
-                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.contact_email || tx("Not provided")}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("Head of Family ID")}</p>
-                          <p className="text-sm font-medium text-slate-800 font-mono mt-0.5">{data.head_of_family_customer_id || tx("None assigned")}</p>
-                        </div>
-                      </>
-                    )}
-
-                    {entityType === 'CORPORATE' && (
-                      <>
-                        <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("Registration Number")}</p>
-                          <p className="text-sm font-medium text-slate-800 font-mono mt-0.5">{data.registration_number || tx("Not provided")}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("Industry")}</p>
-                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.industry_type || tx("Not specified")}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("Contact Phone")}</p>
-                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.contact_phone || tx("Not provided")}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">{tx("Address")}</p>
-                          <p className="text-sm font-medium text-slate-800 mt-0.5">{data.address || tx("Not provided")}</p>
-                        </div>
-                      </>
-                    )}
-                    
-                    <div className="pt-4 border-t border-slate-100">
-                      <p className="text-[10px] text-slate-400 font-medium">{tx("Created:")}{" "}{displayDateTime(data.created_at)}</p>
+            <div className="space-y-6">
+                {entityType === 'INDIVIDUAL' && (risk || riskError) && (
+                  <div className="bg-white p-5 rounded-2xl shadow-sm border border-blue-100">
+                    <div className="flex items-start justify-between gap-3 mb-4">
+                      <div>
+                        <h3 className="flex items-center gap-1.5 text-xs font-bold text-blue-800 uppercase tracking-wider">
+                          {tx("Risk Assessment")}
+                          <span className="rounded-full bg-blue-50 border border-blue-200 px-1.5 py-0.5 text-[9px] text-blue-700">AI</span>
+                        </h3>
+                        {risk?.cover_considered ? (
+                          <p className="text-xs text-slate-500 mt-1">
+                            {tx("For a sum assured of PKR {0}", { 0: Number(risk.cover_considered).toLocaleString() })}
+                            {risk.plan_considered ? ` · ${risk.plan_considered}` : ""}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {risk && <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${BAND_STYLE[risk.band] ?? "bg-slate-50 text-slate-600 border-slate-200"}`}>{tx("{0} risk", { 0: tx(risk.band) })}</span>}
+                        <button onClick={() => { setRisk(null); setRiskError(""); }} className="p-1 text-slate-400 hover:text-slate-600" aria-label={tx("Close")}>
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      </div>
                     </div>
+                    {riskError ? (
+                      <p className="text-sm text-red-600">{riskError}</p>
+                    ) : risk && (
+                      <>
+                        <div className="flex h-3 rounded-full overflow-hidden bg-slate-100" role="img" aria-label={tx("Safe {0}%, risk {1}%", { 0: risk.safe_pct, 1: risk.risk_pct })}>
+                          <div className="bg-emerald-300" style={{ width: `${risk.safe_pct}%` }} />
+                          <div className="bg-rose-300" style={{ width: `${risk.risk_pct}%` }} />
+                        </div>
+                        <div className="mt-1.5 flex justify-between text-xs font-semibold">
+                          <span className="text-emerald-600">{tx("Safe")} {risk.safe_pct}%</span>
+                          <span className="text-rose-700">{tx("Risk")} {risk.risk_pct}%</span>
+                        </div>
+                        {risk.underwriting && (risk.underwriting.referral || risk.underwriting.medical_tests.length > 0 || risk.underwriting.extra_mortality_pct > 0) && (
+                          <div className="mt-4 flex flex-wrap gap-2 text-[11px]">
+                            {risk.underwriting.referral && <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 font-semibold text-amber-800">{tx("Refer to underwriter")}</span>}
+                            {risk.underwriting.extra_mortality_pct > 0 && <span className="rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 font-semibold text-orange-800">{tx("Expected loading +{0}%", { 0: risk.underwriting.extra_mortality_pct })}</span>}
+                            {risk.underwriting.medical_tests.length > 0 && <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 font-semibold text-blue-800">{tx("Tests: {0}", { 0: risk.underwriting.medical_tests.join(", ") })}</span>}
+                          </div>
+                        )}
+                        <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {(risk.categories ?? []).map((cat) => <CategoryCard key={cat.key} cat={cat} />)}
+                        </div>
+                        {risk.missing.length > 0 && (
+                          <p className="mt-4 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                            {tx("Missing details are left out; {0}% of the profile was answered.", { 0: risk.completeness_pct })}
+                          </p>
+                        )}
+                        <p className="mt-4 text-[11px] text-slate-400">{tx("Green is the safe share and red the risk share of each factor; all four sections together make 100%.")}{" "}
+                          {risk.rule_set && tx("Risks are decided by rule set {0} v{1} in the Rule Engine.", { 0: risk.rule_set.code, 1: risk.rule_set.version ?? "" })}{" "}
+                          {tx("Screening view only; the underwriting decision is made on the proposal.")}</p>
+                      </>
+                    )}
                   </div>
-                </div>
-
-                {/* Automation Quick Actions */}
-                <div className="bg-gradient-to-br from-blue-50 to-blue-50 p-5 rounded-2xl border border-blue-100 shadow-sm">
-                  <h3 className="text-xs font-bold text-blue-800 uppercase tracking-wider mb-3">{tx("AI Quick Actions")}</h3>
-                  <div className="space-y-2">
-                    <button className="w-full flex items-center justify-between p-3 bg-white hover:bg-blue-50 rounded-xl border border-blue-200 text-sm font-semibold text-blue-700 transition-colors shadow-sm">
-                      <span>{tx("Analyze Risk Profile")}</span>
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
-                    </button>
-                    <button className="w-full flex items-center justify-between p-3 bg-white hover:bg-blue-50 rounded-xl border border-blue-200 text-sm font-semibold text-blue-700 transition-colors shadow-sm">
-                      <span>{tx("Generate Proposal")}</span>
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Column: Policies & Members */}
-              <div className="lg:col-span-2 space-y-6">
+                )}
                 
                 {/* Risk Overview (If Applicable) */}
                 {entityType === 'INDIVIDUAL' && data.underwriting_score !== undefined && data.underwriting_score !== null && (
@@ -314,30 +434,37 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                 {/* Relationship / Roster Data */}
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 min-h-[300px]">
                   <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">
-                    {entityType === 'INDIVIDUAL' ? tx("Policy Portfolio") : entityType === 'FAMILY' ? tx("Family Roster & Coverage") : tx("Employee Census")}
+                    {entityType === 'INDIVIDUAL' ? tx("Insurance Plan") : entityType === 'FAMILY' ? tx("Family Roster & Coverage") : tx("Employee Census")}
                   </h3>
                   
+                  {entityType === 'INDIVIDUAL' && data.details?.pending_plan && (
+                    <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50/60 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-bold text-slate-800">{data.details.pending_plan.product_name}</p>
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mt-0.5">{tx("Selected plan · not yet a proposal")}</p>
+                        </div>
+                        {data.details.pending_plan.term_years && <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-blue-700">{data.details.pending_plan.term_years} {tx("yr")}</span>}
+                      </div>
+                      {data.details.pending_plan.coverage_amount && <p className="mt-2 text-xs text-slate-600">{tx("Sum Assured")}: <span className="font-bold text-slate-800">{tx("PKR")} {Number(data.details.pending_plan.coverage_amount).toLocaleString()}</span></p>}
+                      <p className="mt-2 text-xs text-slate-500">{tx("Create Proposal turns this plan into a proposal.")}</p>
+                    </div>
+                  )}
+                  {entityType === 'INDIVIDUAL' && !data.details?.pending_plan && (
+                    <p className="text-sm text-slate-400 italic py-6 text-center">{tx("No plan selected yet. Choose one in Open Full Details Form → Insurance Plans.")}</p>
+                  )}
+                  {entityType !== 'INDIVIDUAL' && (
                   <div className="flex flex-col items-center justify-center h-48 text-center bg-slate-50/50 rounded-xl border border-slate-100 border-dashed p-4">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-12 h-12 text-slate-300 mb-3">
                       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                     </svg>
                     <p className="text-sm font-semibold text-slate-700">{tx("Detailed View Protected")}</p>
                     <p className="text-xs text-slate-500 mt-1 mb-4 max-w-sm">
-                      {entityType === 'INDIVIDUAL' 
-                        ? tx("To view and manage this customer's policies, coverage options, and plan evaluations, go to the plan details page.")
-                        : entityType === 'FAMILY'
+                      {entityType === 'FAMILY'
                         ? tx("To view and manage this family's roster, members, relationships, and health floaters, go to the family management page.")
                         : tx("To view and manage this organization's employee census, departments, and master policy, go to the organization management page.")
                       }
                     </p>
-                    {entityType === "INDIVIDUAL" && (
-                      <button 
-                        onClick={() => window.location.href = `/admin/customers/${entityId}/plans`}
-                        className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm"
-                      >
-                        {tx("Manage Policies & Plans →")}
-                      </button>
-                    )}
                     {entityType === "FAMILY" && (
                       <button 
                         onClick={() => window.location.href = `/admin/families/${entityId}`}
@@ -355,9 +482,9 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                       </button>
                     )}
                   </div>
+                  )}
                 </div>
 
-              </div>
             </div>
           )}
         </div>

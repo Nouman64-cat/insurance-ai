@@ -399,9 +399,13 @@ async def evaluate_rule_set(
         accumulator.accumulate(rule.impact_data or {})
         matched_rule_codes.append(rule.rule_code)
         impact_label = rule.impact_type.value if hasattr(rule.impact_type, "value") else str(rule.impact_type)
+        data = rule.impact_data or {}
         matched_impacts.append({
             "rule_code": rule.rule_code, "name": rule.name, "impact_type": impact_label,
-            "reason": (rule.impact_data or {}).get("reason"),
+            "reason": data.get("reason"),
+            "risk_factor": data.get("risk_factor"), "risk_level": data.get("risk_level"),
+            "medical_profile_codes": data.get("medical_profile_codes") or [],
+            "extra_mortality_pct": data.get("extra_mortality_pct") or 0,
         })
         reasons.append(f"Rule '{rule.name}' matched ({impact_label} — {rule.action_outcome})")
 

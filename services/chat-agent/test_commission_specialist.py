@@ -84,7 +84,7 @@ def test_specialist_uses_shared_executor_and_returns_to_main_on_topic_change():
             assert binding.call_args.kwargs['tool_scope'] <= COMMISSION_TOOLS
             assert all(c.kwargs['service_name'] == usage.SERVICE_COMMISSION_SPECIALIST for c in meter.call_args_list)
             assert all(c.kwargs['thread_id'] == 'specialist' for c in meter.call_args_list)
-            switched = await app.ainvoke({'messages': [HumanMessage('Register an FNOL claim')]}, config)
+            switched = await app.ainvoke({'messages': [HumanMessage('List customers')]}, config)
             assert switched['active_specialist'] is None
             assert binding.call_args.kwargs == {}  # original main model binding
             assert switched['messages'][-1].content == 'Main assistant reply'

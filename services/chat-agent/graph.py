@@ -1,10 +1,10 @@
 """The conversational agent graph.
 
-    START -> coordinator (agent) -> general_agent | commission_agent
+    START -> coordinator (agent) -> general_agent | commission_agent | claims_agent | underwriting_agent | servicing_agent
           -> (tool call?) -> permission_gate -> [interrupt() if needed] -> coordinator
           -> (no tool call) -> END
 
-The deterministic coordinator selects the main planner or commission specialist.
+The deterministic coordinator selects the main planner, commission, claims, underwriting, or policy servicing specialist.
 Both use the configured provider and shared execution/permission gate. When either
 proposes a tool call, `permission_gate` decides whether it's safe to run
 immediately, needs a clarifying question (missing/ambiguous required args), or
@@ -63,7 +63,11 @@ from group_journey import register_group_journey
 from journey import register_journey
 from operations import OPERATION_TOOLS, operation_status_result, plan_resume
 from toolsets import CORE_TOOLS, domains_used, fit_to_cap, matched_domains, select_domains, tool_names_for
-from commission_specialist import coordinator_node, route_coordinator, commission_agent_node
+from commission_specialist import commission_agent_node
+from claims_specialist import claims_agent_node
+from underwriting_specialist import underwriting_agent_node
+from servicing_specialist import servicing_agent_node
+from specialist_router import coordinator_node, route_coordinator
 
 # OpenAI's hard limit on tools per request (Gemini has none, but the fallback must fit too).
 MAX_BOUND_TOOLS = 128
@@ -73,6 +77,7 @@ from permission import (
     CLIENT_EXECUTED_TOOLS,
     GROUP_TOOLS,
     MOBILE_PORTAL_ONLY_TOOLS,
+    MUTATING_TOOLS,
     get_tools_for_role,
     is_destructive,
     is_role_allowed,
@@ -499,6 +504,17 @@ configured once in /commissions. Posted policy allocations remain frozen.
 Disbursement approval/payment recording is available in /commissions. Do not claim
 money moved: PAID is manual external-payment confirmation, not a bank integration."""
 
+DOMAIN_PROMPTS["profile_risk"] = """
+
+## PROFILE RISK SCREENING
+
+- "Risk assessment / risk profile / how risky is this customer or lead?" with no proposal yet →
+  **assess_customer_risk_profile** (name, CNIC or customer_id). Show its safe and risk tables as
+  returned; the percentages total 100% — never recompute or round them differently.
+- It is a screening view, not an underwriting decision. Once a case exists, the decision comes
+  from run_risk_assessment / get_risk_assessment.
+"""
+
 DOMAIN_PROMPTS["documents"] = """
 
 ## EVIDENCE & MEDICAL REVIEW
@@ -905,7 +921,7 @@ async def agent_node(state: ChatState, config: RunnableConfig = None) -> dict:
 
 
 async def _complete_agent_turn(llm, messages, state, thread_id, next_sticky, *,
-                               allowed_names=None, service_name=usage.SERVICE_CHAT_AGENT):
+                               allowed_names=None, service_name=usage.SERVICE_CHAT_AGENT, scope_label='commission'):
     started = time.monotonic()
     # The primary model intermittently 429s/503s (and right now: 403s on a
     # billing block) — one failed call must not kill a live conversation turn.
@@ -959,7 +975,12 @@ async def _complete_agent_turn(llm, messages, state, thread_id, next_sticky, *,
                 })
             if allowed_names is not None and any(tc['name'] not in allowed_names for tc in response.tool_calls):
                 logger.warning('specialist rejected an out-of-scope tool call')
-                response = AIMessage(content="I cannot perform that action within the commission workflow or your current permissions. Please state the customer, underwriting or claims task separately if you want to switch workflows.")
+                response = AIMessage(content=f"I cannot perform that action within the {scope_label} workflow or your current permissions. Please state the other workflow separately if you want to switch tasks.")
+            if allowed_names is not None and response.tool_calls:
+                latest_user = next((m for m in reversed(state['messages']) if isinstance(m, HumanMessage)), None)
+                request_text = str(latest_user.content) if latest_user else ''
+                if re.search(r'\bread[ -]?only\b|\b(?:do not|don\x27t) (?:make (?:any )?changes|change|modify|mutate)|\bno changes\b', request_text, re.I) and any(tc['name'] in (MUTATING_TOOLS | {'continue_underwriting_journey', 'continue_claim_journey', 'continue_group_journey'}) for tc in response.tool_calls):
+                    response = AIMessage(content='This request is read-only, so I have not executed the proposed change. Ask explicitly for the action if you want to change the record.')
             used_now = domains_used(tc["name"] for tc in (getattr(response, "tool_calls", None) or []))
             logging.getLogger('uvicorn.error').info('chat_planner service=%s tools=%s elapsed_ms=%.1f',
                 service_name, len(allowed_names) if allowed_names is not None else 'domain',
@@ -2877,12 +2898,18 @@ _graph_builder = StateGraph(ChatState)
 _graph_builder.add_node("agent", coordinator_node)
 _graph_builder.add_node("general_agent", agent_node)
 _graph_builder.add_node("commission_agent", commission_agent_node)
+_graph_builder.add_node("claims_agent", claims_agent_node)
+_graph_builder.add_node("underwriting_agent", underwriting_agent_node)
+_graph_builder.add_node("servicing_agent", servicing_agent_node)
 _graph_builder.add_node("permission_gate", permission_gate)
 _graph_builder.add_node("client_executor", client_executor_node)
 _graph_builder.add_edge(START, "agent")
-_graph_builder.add_conditional_edges("agent", route_coordinator, {"general_agent": "general_agent", "commission_agent": "commission_agent"})
+_graph_builder.add_conditional_edges("agent", route_coordinator, {"general_agent": "general_agent", "commission_agent": "commission_agent", "claims_agent": "claims_agent", "underwriting_agent": "underwriting_agent", "servicing_agent": "servicing_agent"})
 _graph_builder.add_conditional_edges("general_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
 _graph_builder.add_conditional_edges("commission_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
+_graph_builder.add_conditional_edges("claims_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
+_graph_builder.add_conditional_edges("underwriting_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
+_graph_builder.add_conditional_edges("servicing_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
 # permission_gate routes itself via Command (agent | j_intake | j_resume) —
 # no static outgoing edge, so Command is the single source of truth.
 register_journey(_graph_builder)

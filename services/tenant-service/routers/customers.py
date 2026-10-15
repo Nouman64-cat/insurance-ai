@@ -401,6 +401,58 @@ async def get_customer(
         )
     return customer
 
+
+@router.get(
+    "/{tenant_id}/customers/{customer_id}/risk-profile",
+    dependencies=[Depends(verify_admin)],
+)
+async def get_customer_risk_profile(
+    tenant_id: UUID,
+    customer_id: UUID,
+    coverage: Optional[float] = Query(default=None, gt=0),
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    """Explainable pre-proposal risk view: safe and adverse factors whose shares total 100%."""
+    from services.profile_risk import assess_profile
+
+    customer = await session.get(Customer, customer_id)
+    scope = await source_scope(token, session)
+    if not customer or customer.tenant_id != tenant_id or (scope is not None and customer.acquisition_source_id not in scope):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+    details = customer.details or {}
+    plan_name = None
+    if coverage is None and (details.get("pending_plan") or {}).get("coverage_amount"):
+        coverage = float(details["pending_plan"]["coverage_amount"])
+        plan_name = details["pending_plan"].get("product_name")
+    if coverage is None:
+        latest = (await session.exec(
+            select(Policy).where(Policy.customer_id == customer_id).order_by(Policy.created_at.desc())
+        )).first()
+        if latest:
+            coverage, plan_name = latest.coverage_amount, latest.product_name
+    profile = {
+        "dob": customer.dob, "is_smoker": customer.is_smoker,
+        "declared_income": customer.declared_income, "occupation": customer.occupation,
+        "details": details,
+    }
+    # The rule engine decides what is a risk and why (RS-RISK-001, editable in the rule-engine admin);
+    # every run is written to the rule evaluation log. The built-in baseline only covers an undeployed set.
+    from rule_evaluator import evaluate_rule_set
+    from services.profile_risk import RISK_RULE_SET_CODE, profile_facts
+    facts, _ = profile_facts(profile, coverage)
+    evaluation = await evaluate_rule_set(
+        session=session, rule_set_code=RISK_RULE_SET_CODE,
+        context={**facts, "customer_cnic": customer.cnic}, tenant_id=tenant_id, actor="Profile Risk Assessment",
+    )
+    if evaluation.get("status") in ("SUCCESS", "NO_MATCH"):
+        result = assess_profile(profile, cover=coverage, matched_rules=evaluation.get("matched_impacts") or [],
+                                rule_set={"code": RISK_RULE_SET_CODE, "version": evaluation.get("version_number"),
+                                          "source": "rule engine"})
+    else:
+        result = assess_profile(profile, cover=coverage)
+    return {"customer_id": str(customer.id), "name": customer.name, "plan_considered": plan_name, **result}
+
 @router.get(
     "/{tenant_id}/customers/{customer_id}/policies",
     response_model=list[PolicyRead],

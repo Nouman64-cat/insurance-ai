@@ -275,6 +275,9 @@ export default function CustomerFormModal({
   const [editPolicyDependentName, setEditPolicyDependentName] = useState("");
   const [editPolicyDependentDob, setEditPolicyDependentDob] = useState("");
   const [editAddingPolicy, setEditAddingPolicy] = useState(false);
+  // A lead created outside the Copilot keeps its chosen plan in details.pending_plan
+  // until Send to Draft turns it into a proposal; it has no policy row yet.
+  const pendingPlan = (details as any)?.pending_plan ?? null;
   const [editPolicyLoading, setEditPolicyLoading] = useState(false);
 
   // Assignment/location — real top-level columns (Customer.city/province/branch_id/assigned_agent_id),
@@ -1251,6 +1254,28 @@ export default function CustomerFormModal({
         }
       }
 
+      let editPlanPayload: any = null;
+      if (planId && coverage && term) {
+        const plan = availablePlans.find((p) => p.id === planId);
+        if (plan) {
+          editPlanPayload = {
+            plan_id: planId,
+            product_name: plan.label,
+            insurance_type: plan.insurance_type,
+            coverage_amount: parseFloat(String(coverage)),
+            term_years: parseInt(String(term)),
+          };
+          if (plan.insurance_type === "CHILD_EDUCATION_MARRIAGE") {
+            editPlanPayload.dependent_name = depName || null;
+            editPlanPayload.dependent_dob = depDob || null;
+          }
+        }
+      }
+      // A lead still holding its selected plan swaps that plan; Send to Draft makes the proposal.
+      const replacePending =
+        !!editPlanPayload && !!pendingPlan && customerPolicies.length === 0;
+      if (replacePending) (payloadDetails as any).pending_plan = editPlanPayload;
+
       await api.put(`/tenants/${tenantId}/customers/${customer.id}`, {
         cnic: cnicVal,
         first_name: data.firstName,
@@ -1272,25 +1297,11 @@ export default function CustomerFormModal({
         details: payloadDetails,
       });
 
-      if (planId && coverage && term) {
-        const plan = availablePlans.find((p) => p.id === planId);
-        if (plan) {
-          const policyPayload: any = {
-            plan_id: planId,
-            product_name: plan.label,
-            insurance_type: plan.insurance_type,
-            coverage_amount: parseFloat(String(coverage)),
-            term_years: parseInt(String(term)),
-          };
-          if (plan.insurance_type === "CHILD_EDUCATION_MARRIAGE") {
-            policyPayload.dependent_name = depName || null;
-            policyPayload.dependent_dob = depDob || null;
-          }
-          await api.post(
-            `/tenants/${tenantId}/customers/${customer.id}/policies`,
-            policyPayload,
-          );
-        }
+      if (editPlanPayload && !replacePending) {
+        await api.post(
+          `/tenants/${tenantId}/customers/${customer.id}/policies`,
+          editPlanPayload,
+        );
       }
 
       onSaved("Customer profile updated successfully!");
@@ -2997,7 +3008,7 @@ export default function CustomerFormModal({
                 </h4>
                 <p className="text-xs text-slate-400 mb-5">
                   {tx(
-                    "Existing policies for this customer. You can assign an additional plan below.",
+                    "Plans assigned to this customer. A lead's selected plan becomes a proposal when it is sent to draft.",
                   )}
                 </p>
 
@@ -3008,9 +3019,45 @@ export default function CustomerFormModal({
                       {tx("Loading policies...")}
                     </span>
                   </div>
+                ) : customerPolicies.length === 0 && pendingPlan ? (
+                  <div className="border-l-4 rounded-xl p-4 mb-6 border-blue-300 bg-blue-50/60 relative">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!confirm(tx("Remove the selected plan from this lead?"))) return;
+                        setDetails((prev: any) => {
+                          const { pending_plan, ...rest } = prev;
+                          return rest;
+                        });
+                        setSuccess(tx("Selected plan removed. Click Update Profile to save."));
+                      }}
+                      className="absolute -top-1.5 -right-1.5 flex items-center justify-center w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white text-[10px] font-bold shadow-md transition-colors z-20 cursor-pointer"
+                      title={tx("Remove selected plan")}
+                    >
+                      ✕
+                    </button>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-bold text-slate-800">{pendingPlan.product_name}</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5 font-semibold uppercase tracking-wider">
+                          {tx(INSURANCE_TYPE_LABELS[pendingPlan.insurance_type] ?? pendingPlan.insurance_type ?? "")}
+                          {" · "}{tx("Selected · not yet a proposal")}
+                        </p>
+                      </div>
+                      {pendingPlan.term_years && (
+                        <span className="shrink-0 text-xs font-bold px-2.5 py-1 rounded-full text-blue-700 bg-white/70">
+                          {pendingPlan.term_years} {tx("yr")}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-3 text-xs">
+                      <span className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">{tx("Sum Assured")}</span>
+                      <span className="font-bold text-slate-800">{tx("PKR")} {Number(pendingPlan.coverage_amount ?? 0).toLocaleString()}</span>
+                    </div>
+                  </div>
                 ) : customerPolicies.length === 0 ? (
                   <div className="text-center py-8 text-sm text-slate-400 italic">
-                    {tx("No policies assigned yet.")}
+                    {tx("No plan selected yet.")}
                   </div>
                 ) : (
                   <div className="space-y-3 mb-6">
@@ -3117,7 +3164,9 @@ export default function CustomerFormModal({
                     onClick={() => setEditAddingPolicy(true)}
                     className="w-full py-3 border-2 border-dashed border-slate-200 rounded-xl text-xs font-semibold text-slate-500 hover:border-blue-300 hover:text-blue-600 transition-colors"
                   >
-                    {tx("+ Assign New Insurance Plan")}
+                    {customerPolicies.length === 0 && pendingPlan
+                      ? tx("Change selected plan")
+                      : tx("+ Assign New Insurance Plan")}
                   </button>
                 ) : (
                   <div className="border border-slate-200 rounded-xl p-5 space-y-5 bg-slate-50">

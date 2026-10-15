@@ -2705,6 +2705,28 @@ def close_claim_file(**kwargs) -> str:
     return "{}"
 
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Pre-proposal profile risk screening (profile_risk_tools.py)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class CustomerRiskProfileArgs(BaseModel):
+    cnic: Optional[str] = Field(default=None, description="Customer CNIC, if known.")
+    customer_id: Optional[str] = Field(default=None, description="Customer UUID, never put it in the CNIC field.")
+    customer_name: Optional[str] = Field(default=None, description="Stored customer name; asks for selection if ambiguous.")
+    coverage_amount: Optional[float] = Field(default=None, gt=0, description="Sum assured to test. Defaults to the customer's selected plan or latest proposal.")
+
+
+@tool(args_schema=CustomerRiskProfileArgs)
+def assess_customer_risk_profile(**kwargs) -> str:
+    """Screen an individual customer's or lead's profile for risk BEFORE or without a
+    proposal: lists the safe and the risk factors (age, BMI, smoking, medical and family
+    history, occupation, hazardous activities, conduct, cover vs income, credit) with each
+    factor's percentage contribution — safe and risk together total 100% — plus the risk
+    band and any missing information. Read-only. For a case's underwriting decision use
+    get_risk_assessment / run_risk_assessment instead."""
+    return "{}"
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Commission administration — agreements, producer splits, exceptions
 # (commission_tools.py)
@@ -3024,6 +3046,8 @@ ALL_TOOLS = [
     disburse_claim_settlement,
     reconcile_claim_settlement,
     close_claim_file,
+    # pre-proposal profile screening
+    assess_customer_risk_profile,
     # commission administration
     get_customer_commission_setup,
     list_commission_agreements,

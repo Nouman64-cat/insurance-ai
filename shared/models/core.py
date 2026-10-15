@@ -3617,6 +3617,9 @@ class ActuarialImpactDetail(SQLModel):
     is_terminal: bool = False                                 # short-circuits execution on true
     commission_pct: Optional[float] = None                    # extension beyond spec: SECP commission rate
     withholding_tax_pct: Optional[float] = None               # extension beyond spec: s.233 WHT rate
+    reason: Optional[str] = None                              # why the rule matters, shown to users
+    risk_factor: Optional[str] = None                         # profile risk screening (RS-RISK-001) factor key
+    risk_level: Optional[float] = None                        # 0 (safe) – 1 (fully adverse) for that factor
 
 
 # ── Hierarchy: Category -> SubCategory -> EligibilityProfile ──────────────────

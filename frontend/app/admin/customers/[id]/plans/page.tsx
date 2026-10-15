@@ -14,6 +14,7 @@ interface Customer {
   gender: string;
   occupation: string;
   declared_income: number;
+  details?: { pending_plan?: { product_name: string; insurance_type?: string; coverage_amount?: number; term_years?: number } };
 }
 
 interface Policy {
@@ -183,6 +184,19 @@ export default function CustomerPlansPage() {
         <div className="py-20 flex flex-col items-center justify-center gap-2">
           <div className="animate-spin h-7 w-7 text-blue-500 rounded-full border-2 border-slate-100 border-t-blue-500" />
           <span className="text-xs text-slate-400">{tx("Loading plan details...")}</span>
+        </div>
+      ) : policies.length === 0 && customer?.details?.pending_plan ? (
+        <div className="bg-white rounded-xl border border-blue-200 shadow-sm overflow-hidden max-w-xl">
+          <div className="px-5 py-3 border-b border-slate-100 bg-blue-50/60 flex items-center justify-between">
+            <p className="text-sm font-semibold text-slate-700">{customer.details.pending_plan.product_name}</p>
+            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white text-blue-700 border border-blue-200">{tx("Selected · not yet a proposal")}</span>
+          </div>
+          <div className="p-5 grid grid-cols-2 gap-4 text-sm">
+            <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">{tx("Plan type")}</p><p className="font-medium text-slate-800">{tx(INSURANCE_TYPE_LABELS[customer.details.pending_plan.insurance_type ?? ""] ?? customer.details.pending_plan.insurance_type ?? "—")}</p></div>
+            <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">{tx("Term")}</p><p className="font-medium text-slate-800">{customer.details.pending_plan.term_years ?? "—"} {tx("yr")}</p></div>
+            <div className="col-span-2"><p className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">{tx("Sum Assured")}</p><p className="font-bold text-slate-800">{tx("PKR")} {Number(customer.details.pending_plan.coverage_amount ?? 0).toLocaleString()}</p></div>
+            <p className="col-span-2 text-xs text-slate-500">{tx("Create Proposal on the customer's profile turns this plan into a proposal for underwriting.")}</p>
+          </div>
         </div>
       ) : policies.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm py-20 text-center text-slate-400">
