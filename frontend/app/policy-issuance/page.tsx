@@ -11,6 +11,9 @@ import {
   getIssuancePreview,
   initiatePayment,
   confirmPayment,
+  getPrepaid,
+  applyPrepaid,
+  type PrepaidStatus,
   listPolicyDocuments,
   downloadDocument,
   PolicyListItem,
@@ -45,10 +48,12 @@ const STATUS_BADGE: Record<string, string> = {
 // ── Shared issuance stepper ──────────────────────────────────────────────────
 const ISSUE_STEPS = ["Review", "Bind & Pay", "Policy Pack"] as const;
 
-function IssueStepper({ current }: Readonly<{ current: number }>) {
+function IssueStepper({ current, prepaid = false }: Readonly<{ current: number; prepaid?: boolean }>) {
   return (
     <div className="flex items-center gap-2">
-      {ISSUE_STEPS.map((s, i) => {
+      {ISSUE_STEPS.map((step, i) => {
+        // The first premium is collected at the proposal, so there is nothing to "pay" in this flow.
+        const s = prepaid && step === "Bind & Pay" ? "Bind" : step;
         const done = i < current,
           active = i === current;
         return (
@@ -108,9 +113,11 @@ function IssuanceModal({
   const [loadingPreview, setLoadingPreview] = useState(true);
   const [issuing, setIssuing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [prepaid, setPrepaid] = useState<PrepaidStatus | null>(null);   // the initial premium collected at the proposal, if any
 
   useEffect(() => {
     let alive = true;
+    getPrepaid(policy.id).then((r) => { if (alive && r.received) setPrepaid(r); }).catch(() => undefined);
     (async () => {
       try {
         const p = await getIssuancePreview(policy.id);
@@ -159,7 +166,7 @@ function IssuanceModal({
               {tx("Issue Policy")}
             </h2>
             <div className="mt-2">
-              <IssueStepper current={0} />
+              <IssueStepper current={0} prepaid={!!prepaid} />
             </div>
           </div>
           <button
@@ -326,13 +333,22 @@ function IssuanceModal({
                 )}
               </div>
 
-              <p className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                {tx(
-                  "Issuing mints the policy number and drafts the contract, then moves to",
-                )}{" "}
-                <b>{tx("Pending Payment")}</b>
-                {tx(". Cover activates once the first premium is confirmed.")}
-              </p>
+              {prepaid ? (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs text-emerald-900 space-y-1">
+                  <p className="font-semibold">{tx("Payment received")} · {fmtPKR(prepaid.amount ?? 0)}</p>
+                  <p>
+                    {tx("The first premium was collected at the proposal stage")}
+                    {prepaid.method ? ` (${prepaid.method}${prepaid.reference ? `, ${prepaid.reference}` : ""})` : ""}.{" "}
+                    {tx("Issuing starts cover straight away with this payment. You will not be asked to pay again.")}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                  {tx("Issuing mints the policy number and drafts the contract, then moves to")}{" "}
+                  <b>{tx("Pending Payment")}</b>
+                  {tx(". Cover activates once the first premium is confirmed.")}
+                </p>
+              )}
             </>
           )}
 
@@ -367,7 +383,7 @@ function IssuanceModal({
             }
             className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-600 rounded-xl hover:from-blue-700 hover:to-blue-700 disabled:opacity-50 transition-all shadow-sm"
           >
-            {issuing ? tx("Binding…") : tx("Issue & bind →")}
+            {issuing ? tx("Binding…") : prepaid ? tx("Issue & activate →") : tx("Issue & bind →")}
           </button>
         </div>
       </div>
@@ -390,7 +406,7 @@ function SuccessModal({ result, policyName, onClose }: SuccessModalProps) {
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden">
         <div className="px-6 py-5 bg-gradient-to-r from-blue-600 to-blue-600">
           <div className="flex justify-center mb-3">
-            <IssueStepper current={1} />
+            <IssueStepper current={1} prepaid={((result as any).initial_premium_credited ?? 0) > 0} />
           </div>
           <div className="text-center">
             <h2 className="text-white text-xl font-bold">
@@ -467,6 +483,8 @@ interface PaymentModalProps {
   userRole?: string | null;
 }
 
+const isPendingPayment = (status: string | null | undefined) => (status || "").toUpperCase().replace(/[^A-Z]/g, "") === "PENDINGPAYMENT";
+
 function PaymentModal({
   policy,
   onClose,
@@ -484,11 +502,22 @@ function PaymentModal({
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [premiumNoticeId, setPremiumNoticeId] = useState<string | null>(null);
+  // The first premium is collected once, at the proposal. When it has been received this window only reports it.
+  const [prepaid, setPrepaid] = useState<PrepaidStatus | null>(null);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
+        const pre = await getPrepaid(policy.id).catch(() => ({ received: false }) as PrepaidStatus);
+        if (!alive) return;
+        if (pre.received) {
+          setPrepaid(pre);
+          const docs = await listPolicyDocuments(policy.id).catch(() => []);
+          const notice = docs.find((d) => d.document_type === "PremiumNotice");
+          if (notice && alive) setPremiumNoticeId(notice.id);
+          return;
+        }
         const [res, docs] = await Promise.all([
           initiatePayment(policy.id),
           listPolicyDocuments(policy.id),
@@ -525,10 +554,9 @@ function PaymentModal({
     setConfirming(true);
     setError(null);
     try {
-      const result = await confirmPayment(policy.id, {
-        method: selected,
-        reference,
-      });
+      const result = prepaid
+        ? await applyPrepaid(policy.id)
+        : await confirmPayment(policy.id, { method: selected, reference });
       notify(tx("Payment confirmed successfully!"), true);
       onConfirmed(result, policy.id);
     } catch (e: any) {
@@ -562,10 +590,10 @@ function PaymentModal({
           <div className="flex items-center justify-between">
             <div>
               <p className="text-blue-100 text-xs font-medium uppercase tracking-widest">
-                {tx("First Premium Collection")}
+                {tx("First Premium")}
               </p>
               <h2 className="text-white text-lg font-bold mt-0.5">
-                {tx("Confirm Payment")}
+                {prepaid ? tx("Payment already received") : tx("Confirm Payment")}
               </h2>
             </div>
             <button
@@ -589,7 +617,7 @@ function PaymentModal({
         <div className="px-6 py-5 space-y-5">
           <div className="bg-slate-50 rounded-xl p-4 space-y-1.5">
             <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">
-              {tx("Policy Awaiting Payment")}
+              {prepaid ? tx("Policy awaiting activation") : tx("Policy Awaiting Payment")}
             </p>
             <p className="text-sm font-bold text-slate-900">
               {policy.customer_name}
@@ -599,6 +627,22 @@ function PaymentModal({
             </p>
           </div>
 
+          {prepaid ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-800">
+                <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
+                {tx("Collected at the proposal stage. Nothing more to pay.")}
+              </div>
+              <dl className="divide-y divide-slate-100 text-sm">
+                <div className="flex justify-between py-2"><dt className="text-slate-500">{tx("Amount collected")}</dt><dd className="font-bold text-blue-700">{fmtPKR(prepaid.amount ?? 0)}</dd></div>
+                {prepaid.method && <div className="flex justify-between py-2"><dt className="text-slate-500">{tx("Paid by")}</dt><dd className="font-medium text-slate-800">{prepaid.method}</dd></div>}
+                {prepaid.reference && <div className="flex justify-between py-2"><dt className="text-slate-500">{tx("Reference")}</dt><dd className="font-mono text-xs text-slate-800">{prepaid.reference}</dd></div>}
+                {prepaid.received_at && <div className="flex justify-between py-2"><dt className="text-slate-500">{tx("Received")}</dt><dd className="text-slate-800">{new Date(prepaid.received_at).toLocaleDateString()}</dd></div>}
+              </dl>
+              <p className="text-xs text-slate-500">{tx("Press “Activate cover” to bind the policy with this payment.")}</p>
+            </div>
+          ) : (
+          <>
           <div className="flex items-center justify-between border-y border-slate-100 py-3">
             <p className="text-sm font-semibold text-slate-700">
               {tx("Amount Due")}
@@ -650,6 +694,9 @@ function PaymentModal({
             </p>
           </div>
 
+          </>
+          )}
+
           {error && (
             <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
               {error}
@@ -689,7 +736,7 @@ function PaymentModal({
             <button
               onClick={handleConfirm}
               disabled={
-                loading || confirming || !selected || userRole === "Agent"
+                loading || confirming || (!prepaid && !selected) || userRole === "Agent"
               }
               title={
                 userRole === "Agent"
@@ -700,7 +747,7 @@ function PaymentModal({
               }
               className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 transition-all shadow-sm"
             >
-              {confirming ? tx("Confirming…") : tx("Confirm & Activate")}
+              {confirming ? tx("Confirming…") : prepaid ? tx("Activate cover") : tx("Confirm & Activate")}
             </button>
           </div>
         </div>
@@ -982,7 +1029,7 @@ function PolicyIssuanceContent() {
           {
             title: "Pending Payment",
             value: loading ? "—" : pendingPaymentCount,
-            sub: "awaiting first premium",
+            sub: "awaiting payment or activation",
             color: "blue" as const,
           },
           {
@@ -1170,14 +1217,26 @@ function PolicyIssuanceContent() {
                         {fmtCoverage(p.coverage_amount)}
                       </td>
                       <td className="px-5 py-3">
-                        <span
-                          className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border ${STATUS_BADGE[(p.status || "").toUpperCase()] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}
-                        >
-                          {p.status === "Approved" ||
-                          p.status === "AcceptedWithLoadings"
-                            ? tx("Pending Issuance")
-                            : p.status}
-                        </span>
+                        {(() => {
+                          // Money in, cover not yet bound: say so, instead of "pending payment".
+                          const paidAwaitingActivation = isPendingPayment(p.status) && (p.initial_premium_received ?? 0) > 0;
+                          return (
+                            <>
+                              <span
+                                className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border ${paidAwaitingActivation ? "bg-emerald-50 text-emerald-700 border-emerald-200" : (STATUS_BADGE[(p.status || "").toUpperCase()] ?? "bg-slate-100 text-slate-600 border-slate-200")}`}
+                              >
+                                {paidAwaitingActivation
+                                  ? tx("Payment received")
+                                  : p.status === "Approved" || p.status === "AcceptedWithLoadings"
+                                    ? tx("Pending Issuance")
+                                    : isPendingPayment(p.status) ? tx("Pending Payment") : p.status}
+                              </span>
+                              {paidAwaitingActivation && (
+                                <p className="mt-0.5 text-[10px] text-slate-500">{tx("{0} collected · ready to activate", { 0: fmtPKR(p.initial_premium_received ?? 0) })}</p>
+                              )}
+                            </>
+                          );
+                        })()}
                       </td>
                       {tab === "queue" && (
                         <td className="px-5 py-3">
@@ -1232,7 +1291,7 @@ function PolicyIssuanceContent() {
                                 />
                                 <line x1="1" y1="10" x2="23" y2="10" />
                               </svg>
-                              {tx("Confirm Payment")}
+                              {(p.initial_premium_received ?? 0) > 0 ? tx("Activate Cover") : tx("Confirm Payment")}
                             </button>
                           ) : (
                             <button
@@ -1339,7 +1398,7 @@ function PolicyIssuanceContent() {
                 : undefined;
             if (st === "PENDINGPAYMENT")
               return {
-                label: tx("Confirm Payment"),
+                label: (viewPolicy.initial_premium_received ?? 0) > 0 ? tx("Activate Cover") : tx("Confirm Payment"),
                 disabled: userRole === "Agent",
                 title: noAccess,
                 onClick: () => {
