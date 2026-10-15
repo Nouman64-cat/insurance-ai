@@ -364,7 +364,7 @@ _INSTALLMENTS_PER_YEAR = {
 def _build_premium_schedule(
     policy_id: UUID, version_id: UUID, total_annual_premium: float,
     effective: date, billing_frequency: BillingFrequencyEnum, first_reference: Optional[str],
-    prepaid_amount: float = 0.0, prepaid_at: Optional[datetime] = None,
+    prepaid_amount: float = 0.0, prepaid_at: Optional[datetime] = None, settle_with_prepaid: bool = False,
 ) -> list[PremiumSchedule]:
     """Build the first policy-year installment ledger for a billing frequency.
 
@@ -385,7 +385,9 @@ def _build_premium_schedule(
         # Absorb rounding drift into the first installment so the year still sums.
         amount = round(total_annual_premium - per * (n - 1), 2) if i == 0 else per
         credit = round(min(prepaid_amount, amount), 2) if i == 0 else 0.0
-        settled = i == 0 and credit >= amount - 0.01
+        # An initial premium that was received settles the first premium whatever the final figure came to; what was actually
+        # collected stays on the row, so any difference is visible rather than collected a second time.
+        settled = i == 0 and (credit >= amount - 0.01 or (settle_with_prepaid and credit > 0))
         rows.append(PremiumSchedule(
             policy_id=policy_id,
             policy_version_id=version_id,
@@ -597,6 +599,13 @@ async def list_policies(
         b.id: b for b in (await session.exec(select(Branch).where(Branch.tenant_id == tenant_id))).all()
     }
 
+    # What was collected at the proposal, per policy: a policy still "pending payment" with this set is only waiting to be activated.
+    received = {
+        r.policy_id: round(float(r.amount or 0), 2)
+        for r in (await session.exec(select(InitialPremiumPayment).where(
+            InitialPremiumPayment.tenant_id == tenant_id, InitialPremiumPayment.status == IPPStatusEnum.REALIZED))).all()
+    }
+
     out = []
     for p in policies:
         cust = await session.get(Customer, p.customer_id)
@@ -630,6 +639,7 @@ async def list_policies(
             "segment": segment,
             "case_number": case_number,
             "case_status": case_status,
+            "initial_premium_received": received.get(p.id),
             "effective_date": p.effective_date.isoformat() if p.effective_date else None,
             "expiry_date": p.expiry_date.isoformat() if p.expiry_date else None,
             "created_at": p.created_at.isoformat(),
@@ -841,8 +851,11 @@ async def issue_policy(
     # underwritten premium came out higher) can still be owed.
     ipp = await _realized_ipp(session, policy)
     prepaid = float(ipp.amount or 0) if ipp else 0.0
-    balance_due = round(max(0.0, breakdown.total_premium - prepaid), 2)
-    fully_prepaid = balance_due <= 0.01
+    # The first premium is collected ONCE, at the proposal. Having been received, it settles the first premium: the contract is not
+    # billed a second time, and any difference from the final premium is recorded (premium_difference), not asked for again.
+    fully_prepaid = ipp is not None and prepaid > 0
+    premium_difference = round(breakdown.total_premium - prepaid, 2) if fully_prepaid else 0.0
+    balance_due = 0.0 if fully_prepaid else round(max(0.0, breakdown.total_premium - prepaid), 2)
 
     # Payment intent for whatever is still outstanding. Nothing to raise when the
     # initial premium already covered the contract.
@@ -893,6 +906,7 @@ async def issue_policy(
             intent.reference if intent else (ipp.reference if ipp else None),
             prepaid_amount=prepaid,
             prepaid_at=ipp.realized_at if ipp else None,
+            settle_with_prepaid=fully_prepaid,
         ):
             session.add(schedule)
 
@@ -922,6 +936,7 @@ async def issue_policy(
                 "loading_pct": loading_pct,
                 "loading_basis": loading_basis,
                 "initial_premium_credited": round(prepaid, 2),
+                "premium_difference": premium_difference,
                 "balance_due": balance_due,
                 "payment_reference": intent.reference if intent else None,
                 "version": "1.0",
@@ -941,6 +956,8 @@ async def issue_policy(
                     "amount": round(prepaid, 2),
                     "method": ipp.method if ipp else None,
                     "source": "InitialPremiumPayment",
+                    "final_premium": round(breakdown.total_premium, 2),
+                    "premium_difference": premium_difference,
                 },
             ))
             documents_generated += 3
@@ -978,6 +995,7 @@ async def issue_policy(
         "grace_period_days": GRACE_PERIOD_DAYS,
         "total_premium": round(breakdown.total_premium, 2),
         "initial_premium_credited": round(prepaid, 2),
+        "premium_difference": premium_difference,
         "amount_due": balance_due,
         "payment": intent.to_dict() if intent else None,
         "available_payment_methods": payment_gateway.available_methods(),
@@ -1025,6 +1043,73 @@ async def initiate_payment(
         "payment": intent.to_dict(),
         "available_payment_methods": payment_gateway.available_methods(),
     }
+
+
+# ── Initial premium already received at the proposal ──────────────────────────
+# A policy drafted before its initial premium was recognised (or one whose premium came out different from the quote) can sit in
+# PENDING_PAYMENT although the money is in. These two calls let the issuance screen show that payment and activate cover from it,
+# instead of asking for the premium a second time.
+
+async def _received_initial_premium(session: AsyncSession, policy_id: UUID) -> Optional[InitialPremiumPayment]:
+    return (await session.exec(select(InitialPremiumPayment).where(
+        InitialPremiumPayment.policy_id == policy_id, InitialPremiumPayment.status == IPPStatusEnum.REALIZED))).first()
+
+
+@router.get("/tenants/{tenant_id}/policies/{policy_id}/payments/prepaid", dependencies=[Depends(_policy_in_scope)])
+async def prepaid_status(tenant_id: UUID, policy_id: UUID, session: AsyncSession = Depends(get_session)):
+    """The initial premium collected at the proposal, if any: what was received, how, when, and against which premium."""
+    policy = await _get_policy(session, tenant_id, policy_id)
+    ipp = await _received_initial_premium(session, policy_id)
+    if ipp is None:
+        return {"received": False}
+    schedule = (await session.exec(select(PremiumSchedule).where(PremiumSchedule.policy_id == policy_id)
+                                   .order_by(PremiumSchedule.installment_no))).first()  # type: ignore[arg-type]
+    return {
+        "received": True, "amount": round(float(ipp.amount or 0), 2), "method": ipp.method, "reference": ipp.reference,
+        "received_at": ipp.realized_at.isoformat() if ipp.realized_at else None,
+        "premium": round(float(schedule.amount_due), 2) if schedule else None,
+        "settled": bool(schedule and schedule.status == PremiumScheduleStatusEnum.PAID),
+        "awaiting_activation": _st(policy) == PolicyStatusEnum.PENDING_PAYMENT.value,
+    }
+
+
+@router.post("/tenants/{tenant_id}/policies/{policy_id}/payments/apply-prepaid", dependencies=[Depends(_policy_in_scope)])
+async def apply_prepaid(tenant_id: UUID, policy_id: UUID, request: Request, session: AsyncSession = Depends(get_session)):
+    """Settle the first premium with the initial premium already received, and bind cover. No second payment."""
+    policy = await _get_policy(session, tenant_id, policy_id)
+    await session.refresh(policy, with_for_update=True)
+    if _st(policy) != PolicyStatusEnum.PENDING_PAYMENT.value:
+        raise HTTPException(400, f"Policy is not awaiting payment (current: {_st(policy)})")
+    ipp = await _received_initial_premium(session, policy_id)
+    if ipp is None or not (ipp.amount or 0) > 0:
+        raise HTTPException(409, "No initial premium has been received for this policy.")
+    schedule = await _pending_schedule(session, policy_id)
+    if schedule is None:
+        raise HTTPException(400, "No pending premium installment found for this policy")
+    try:
+        difference = round(float(schedule.amount_due) - float(ipp.amount), 2)
+        schedule.amount_paid = min(float(ipp.amount), float(schedule.amount_due))
+        schedule.status = PremiumScheduleStatusEnum.PAID
+        schedule.paid_at = ipp.realized_at or datetime.utcnow()
+        schedule.payment_reference = ipp.reference
+        session.add(schedule)
+        event = await _bind_cover(session, policy, actor="system", detail={
+            "payment_reference": ipp.reference, "amount": round(float(ipp.amount), 2), "method": ipp.method,
+            "source": "InitialPremiumPayment", "schedule_id": str(schedule.id), "final_premium": round(float(schedule.amount_due), 2),
+            "premium_difference": difference})
+        await session.commit()
+    except IllegalStateTransition as exc:
+        await session.rollback()
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        await session.rollback()
+        log.exception("Applying the initial premium failed for policy %s — rolled back", policy_id)
+        raise HTTPException(500, f"Activation failed and was rolled back: {exc}") from exc
+    await _publish_policy_event(request, policy, event)
+    return {"policy_id": str(policy_id), "policy_number": policy.policy_number, "status": "Active",
+            "effective_date": policy.effective_date.isoformat() if policy.effective_date else None,
+            "free_look_end_date": policy.free_look_end_date.isoformat() if policy.free_look_end_date else None,
+            "payment": {"reference": ipp.reference, "method": ipp.method, "amount": round(float(ipp.amount), 2)}}
 
 
 # ── POST /payments/confirm ────────────────────────────────────────────────────

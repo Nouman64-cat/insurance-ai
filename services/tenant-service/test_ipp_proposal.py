@@ -5,7 +5,7 @@ Run with: docker compose exec tenant-service python test_ipp_proposal.py   (need
 """
 
 import asyncio
-from datetime import date
+from datetime import date, datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -279,6 +279,42 @@ async def test_every_way_a_payment_can_arrive():
             await _cleanup(s, tenant_id)
 
 
+async def test_received_payment_activates_cover_without_a_second_payment():
+    """A policy sitting in PENDING_PAYMENT whose initial premium was received is activated from that payment: no gateway, no new amount."""
+    from datetime import timedelta
+    import routers.policies as pol
+    from shared.models.core import PremiumSchedule, PremiumScheduleStatusEnum
+    async with _session_factory() as s:
+        tenant_id, customer_id, policy_id = await _fixture(s, PolicyStatusEnum.PENDING_PAYMENT)
+        p = await s.get(Policy, policy_id); p.policy_number = "POLICY-T-1"; p.effective_date = date.today(); s.add(p)
+        s.add(InitialPremiumPayment(tenant_id=tenant_id, policy_id=policy_id, amount=400_000.0, status=IPPStatusEnum.REALIZED, method="Cash", reference="RCPT-9", realized_at=datetime.utcnow()))
+        s.add(PremiumSchedule(policy_id=policy_id, billing_frequency="Annual", due_date=date.today() + timedelta(days=1), amount_due=900_000.0, installment_no=1, status="Pending"))
+        await s.commit()
+    try:
+        async with _session_factory() as s:
+            st = await pol.prepaid_status(tenant_id, policy_id, session=s)
+            assert (st["received"], st["amount"], st["premium"], st["settled"], st["awaiting_activation"]) == (True, 400000.0, 900000.0, False, True)
+        async with _session_factory() as s:
+            req = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(kafka_producer=None)))
+            out = await pol.apply_prepaid(tenant_id, policy_id, req, session=s)
+            assert out["status"] == "Active" and out["payment"]["amount"] == 400000.0
+        async with _session_factory() as s:
+            row = (await s.exec(select(PremiumSchedule).where(PremiumSchedule.policy_id == policy_id))).one()
+            assert row.status == PremiumScheduleStatusEnum.PAID and row.amount_paid == 400000.0 and row.payment_reference == "RCPT-9"
+            await expect(400, pol.apply_prepaid(tenant_id, policy_id, req, session=s))      # already active: cannot be applied twice
+        print("PASS test_received_payment_activates_cover_without_a_second_payment")
+    finally:
+        async with _session_factory() as s:
+            from sqlalchemy import delete
+            from sqlalchemy import text
+            # binding cover wrote documents, events and so on against the policy: clear everything that points at it
+            await s.execute(text("delete from commission_accruals where receipt_id in (select id from premium_receipts where policy_id = :p)"), {"p": policy_id})
+            for (tbl,) in (await s.execute(text("select table_name from information_schema.columns where column_name='policy_id' and table_schema=current_schema() and table_name<>'policies'"))).all():
+                await s.execute(text(f'delete from "{tbl}" where policy_id = :p'), {"p": policy_id})
+            await s.commit()
+            await _cleanup(s, tenant_id)
+
+
 async def test_other_tenants_proposal_is_not_found():
     async with _session_factory() as s:
         tenant_id, _, policy_id = await _fixture(s)
@@ -298,6 +334,7 @@ async def main():
     await test_payment_after_review_then_case_opens()
     await test_customer_pays_by_link_and_staff_confirm()
     await test_every_way_a_payment_can_arrive()
+    await test_received_payment_activates_cover_without_a_second_payment()
     await test_other_tenants_proposal_is_not_found()
 
 
