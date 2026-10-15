@@ -1,4 +1,4 @@
-import { CM_BASE } from '../config';
+import { getCmBase } from '../lib/server';
 
 /** One frame from /v1/events (policyholder) or /v1/walk-in/events (prospect). `data:` JSON, e.g. {"type":"refresh"}. */
 export interface StreamEvent { type: 'ready' | 'refresh' | 'end'; reason?: string }
@@ -54,7 +54,7 @@ export function openStream(path: string, token: string, onEvent: (e: StreamEvent
     }
   };
 
-  xhr.open('GET', `${CM_BASE}${path}`);
+  xhr.open('GET', `${getCmBase()}${path}`);
   xhr.setRequestHeader('Accept', 'text/event-stream');
   xhr.setRequestHeader('Cache-Control', 'no-cache');
   xhr.setRequestHeader('Authorization', `Bearer ${token}`);

@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import { Text } from '../../components/ui';
 import Screen from '../../components/ui/Screen';
 import Logo from '../../components/Logo';
+import ConnectionCheck from '../../components/ConnectionCheck';
 import { useResponsive } from '../../hooks/useResponsive';
 
 /** Shared frame for the signed-out screens: the logo, then a title and subtitle, then the form. */
@@ -16,6 +17,7 @@ export default function AuthLayout({ title, subtitle, children }: { title: strin
         {subtitle ? <Text variant="callout" color="muted" align="center">{subtitle}</Text> : null}
       </View>
       {children}
+      <ConnectionCheck />
     </Screen>
   );
 }

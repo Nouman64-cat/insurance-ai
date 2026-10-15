@@ -28,7 +28,7 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import String, cast, func
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -127,9 +127,13 @@ async def eligible_agents(session: AsyncSession, tenant_id: UUID, city: Optional
     ids = [u.id for u in users]
     branches = {b.id: b for b in (await session.exec(select(Branch).where(Branch.tenant_id == tenant_id))).all()}
     workload: dict[UUID, int] = {}
+    # customers.profile_status is a Postgres enum but family_groups.profile_status is VARCHAR(50), while the model declares both as the
+    # enum. Comparing the text of the column works for either; the enum comparison fails on family_groups ("operator does not exist:
+    # character varying = profilestatusenum") and made every walk-in application fail.
+    open_statuses = [s.value for s in OPEN_STATUSES]
     for model in (Customer, FamilyGroup):                 # a family lead is as much work as an individual one
         for agent_id, n in (await session.exec(select(model.assigned_agent_id, func.count()).where(
-                model.tenant_id == tenant_id, model.assigned_agent_id.in_(ids), model.profile_status.in_(OPEN_STATUSES))
+                model.tenant_id == tenant_id, model.assigned_agent_id.in_(ids), cast(model.profile_status, String).in_(open_statuses))
                 .group_by(model.assigned_agent_id))).all():
             workload[agent_id] = workload.get(agent_id, 0) + int(n)
     experience: dict[UUID, int] = {}

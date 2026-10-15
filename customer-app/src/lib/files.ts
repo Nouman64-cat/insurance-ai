@@ -3,7 +3,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import { CM_BASE } from '../config';
+import { getCmBase } from './server';
 import { currentSession, loadSession } from './tokens';
 import { ApiError } from '../api/client';
 
@@ -45,7 +45,7 @@ export async function downloadDocument(handle: string, fallbackName: string): Pr
   if (!s) throw new ApiError(401, 'SESSION_EXPIRED', 'Please sign in again.');
   const safe = fallbackName.replace(/[^A-Za-z0-9._-]+/g, '_') || 'document.pdf';
   const target = `${FileSystem.cacheDirectory}${Date.now()}-${safe}`;
-  const res = await FileSystem.downloadAsync(`${CM_BASE}/documents/download?handle=${encodeURIComponent(handle)}`, target, {
+  const res = await FileSystem.downloadAsync(`${getCmBase()}/documents/download?handle=${encodeURIComponent(handle)}`, target, {
     headers: { Authorization: `Bearer ${s.accessToken}` },
   });
   if (res.status === 401) throw new ApiError(401, 'SESSION_EXPIRED', 'Please sign in again.');

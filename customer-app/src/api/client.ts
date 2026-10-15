@@ -1,5 +1,5 @@
 import axios, { AxiosError, AxiosRequestConfig } from 'axios';
-import { CM_BASE } from '../config';
+import { getCmBase, loadServerOverride } from '../lib/server';
 import { clearSession, currentSession, loadSession, saveSession, Scope } from '../lib/tokens';
 
 /** Customer Management answers every failure as {"error": {"code", "message", "details"}}. */
@@ -15,7 +15,7 @@ export class ApiError extends Error {
   }
 }
 
-const http = axios.create({ baseURL: CM_BASE, timeout: 20000, headers: { 'Content-Type': 'application/json' } });
+const http = axios.create({ baseURL: getCmBase(), timeout: 20000, headers: { 'Content-Type': 'application/json' } });
 
 /** Fires when the session can no longer be used (expired, revoked, refresh refused), so the UI returns to sign-in. */
 const signedOutHandlers = new Set<() => void>();
@@ -25,6 +25,8 @@ export const onSignedOut = (h: () => void) => {
 };
 
 http.interceptors.request.use(async (config) => {
+  await loadServerOverride();
+  config.baseURL = getCmBase(); // follows the development server-address override, if one is set
   const s = (await loadSession()) ?? null;
   if (s && config.headers && !(config as any).skipAuth) config.headers.Authorization = `Bearer ${s.accessToken}`;
   return config;
@@ -37,7 +39,7 @@ async function refreshSession(): Promise<boolean> {
   const s = currentSession();
   if (!s?.refreshToken || s.scope === 'walk_in') return false;
   try {
-    const { data } = await axios.post(`${CM_BASE}/auth/refresh`, { refresh_token: s.refreshToken }, { timeout: 20000 });
+    const { data } = await axios.post(`${getCmBase()}/auth/refresh`, { refresh_token: s.refreshToken }, { timeout: 20000 });
     await saveSession({ accessToken: data.access_token, refreshToken: data.refresh_token, scope: data.scope as Scope });
     return true;
   } catch {
