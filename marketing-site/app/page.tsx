@@ -31,7 +31,7 @@ export default function HomePage() {
         <div aria-hidden="true" className="pointer-events-none absolute inset-0">
           <div className="bg-grid absolute inset-0" />
           <div className="glow-arc absolute inset-x-[-20%] bottom-0 h-[26rem]" />
-          <div className="absolute left-1/2 top-[calc(100%-7rem)] h-[60rem] w-[200%] -translate-x-1/2 rounded-[50%] border-t border-accent/50 bg-canvas shadow-[0_-24px_90px_-30px_rgb(167_139_250/0.7)] sm:w-[160%]" />
+          <div className="absolute left-1/2 top-[calc(100%-7rem)] h-[60rem] w-[200%] -translate-x-1/2 rounded-[50%] border-t border-accent/50 bg-canvas shadow-[0_-24px_90px_-30px_rgb(103_212_240/0.6)] sm:w-[160%]" />
         </div>
 
         <Container className="relative pb-36 pt-[calc(4rem+3rem)] text-center sm:pb-44 sm:pt-[calc(4rem+4.5rem)] 2xl:pt-[calc(4rem+6rem)]">
@@ -43,7 +43,7 @@ export default function HomePage() {
               <span style={stagger(0)}>From lead to claim.</span>
             </span>
             <span className="hero-line">
-              <span style={stagger(1)}>Every decision, explained.</span>
+              <span style={stagger(1)}>Every decision, <span className="text-brand-gradient">explained.</span></span>
             </span>
           </h1>
 

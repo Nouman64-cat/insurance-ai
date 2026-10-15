@@ -6,8 +6,8 @@ const base =
   "btn group inline-flex items-center justify-center gap-2 text-sm font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
 
 const variants = {
-  // Solid blue: the committing action
-  primary: "bg-brand text-white shadow-glow hover:bg-brand-dark",
+  // Brand gradient: the committing action
+  primary: "bg-brand-gradient-strong text-white shadow-glow hover:brightness-90",
   brand: "bg-brand text-white hover:bg-brand-dark",
   // Outlined: secondary / reversible
   ghost: "border border-line-strong bg-transparent text-ink hover:border-accent/60 hover:bg-chip",
