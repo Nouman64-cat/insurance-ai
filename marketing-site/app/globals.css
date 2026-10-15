@@ -83,17 +83,10 @@ html[data-splash="pending"] { --intro-delay: 2s; }
   0%, 100% { opacity: 0.55; }
   50% { opacity: 1; }
 }
-@keyframes draw {
-  to { stroke-dashoffset: 0; }
-}
 @keyframes logo-pop {
   0% { opacity: 0; transform: scale(0.55) rotate(-8deg); }
   70% { transform: scale(1.06) rotate(0); }
   100% { opacity: 1; transform: none; }
-}
-@keyframes letter-rise {
-  from { opacity: 0; transform: translateY(0.6em); }
-  to { opacity: 1; transform: none; }
 }
 @keyframes sc-in {
   from { opacity: 0; transform: translateY(0.6rem); }
@@ -227,14 +220,9 @@ html[data-splash="pending"] .intro-drop {
    the failsafes hide them and show the header logo even if JavaScript never runs. */
 .splash-layer { display: none; }
 html[data-splash="pending"] .splash-layer { display: block; animation: splash-failsafe 0.01s linear 6s forwards; }
-html[data-splash="pending"] .splash-fly { display: flex; }
-html[data-splash="pending"] .splash-tag { animation: fade-in 0.8s ease both 1.5s, splash-failsafe 0.01s linear 6s forwards; }
 html[data-splash="pending"]:not([data-logo-ready]) [data-logo-target] { opacity: 0; animation: logo-failsafe 0.01s linear 6s forwards; }
 .splash-mark { animation: logo-pop 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.1) 0.1s both; }
-.logo-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 0.8s ease forwards 0.45s; }
-.logo-draw-2 { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 0.5s ease forwards 1.05s; }
-.splash-letter { display: inline-block; animation: letter-rise 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(0.85s + var(--i, 0) * 45ms); }
-.splash-tag { animation: fade-in 0.8s ease both 1.5s; }
+.splash-tag { animation: fade-in 0.8s ease both 0.5s; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

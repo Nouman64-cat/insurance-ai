@@ -65,7 +65,7 @@ export function ProductSurface({ stage, className = "" }: Readonly<{ stage: numb
         {/* Window bar */}
         <div className="flex items-center justify-between gap-3 border-b border-line bg-alt/60 px-4 py-3 sm:px-5">
           <div className="flex min-w-0 items-center gap-2.5">
-            <LogoMark className="h-6 w-6 shrink-0 rounded-md" />
+            <LogoMark className="h-6 w-auto shrink-0" />
             <span className="flex min-w-0 flex-col sm:flex-row sm:items-baseline sm:gap-2">
               <span className="truncate text-sm font-semibold text-ink">Underwriting workbench</span>
               <span className="truncate text-xs text-faint">/ CASE-2026-A3F9C1</span>
