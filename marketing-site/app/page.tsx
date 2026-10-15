@@ -34,7 +34,6 @@ export default function HomePage() {
         </div>
 
         <Container className="relative pb-16 pt-[calc(4rem+3.5rem)] sm:pt-[calc(4rem+5rem)] lg:pb-20 2xl:pb-28 2xl:pt-[calc(4rem+7rem)]">
-          <HeroDecisionFeed className="intro-right absolute right-10 top-[calc(4rem+5rem)] hidden w-[38%] max-w-[38rem] min-[1400px]:block 2xl:right-16 2xl:top-[calc(4rem+7rem)]" />
           <p className="eyebrow fade-up-intro" style={stagger(0)}>
             AI-powered insurance intelligence
           </p>
@@ -63,20 +62,25 @@ export default function HomePage() {
               </div>
             </div>
 
-            <ul className="fade-up-intro grid gap-4 sm:grid-cols-3 lg:col-span-6 lg:col-start-7 xl:col-span-6 xl:col-start-7" style={stagger(5)}>
-              {cues.map((c) => (
-                <li key={c.title} className="border-t-2 border-brand pt-3">
-                  <p className="flex items-center gap-2 text-sm font-semibold text-ink">
-                    <Icon name={c.icon} className="h-4 w-4 text-brand" />
-                    {c.title}
-                  </p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted">{c.body}</p>
-                </li>
-              ))}
-            </ul>
+            <div className="flex flex-col gap-8 lg:col-span-6 lg:col-start-7">
+              <div className="fade-up-intro" style={stagger(5)}>
+                <HeroDecisionFeed className="w-full" />
+              </div>
+              <ul className="fade-up-intro grid gap-4 sm:grid-cols-3" style={stagger(6)}>
+                {cues.map((c) => (
+                  <li key={c.title} className="border-t-2 border-brand pt-3">
+                    <p className="flex items-center gap-2 text-sm font-semibold text-ink">
+                      <Icon name={c.icon} className="h-4 w-4 text-brand" />
+                      {c.title}
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted">{c.body}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
 
-          <div className="fade-up-intro mt-12 lg:mt-16 2xl:mt-20" style={stagger(6)}>
+          <div className="fade-up-intro mt-12 lg:mt-16 2xl:mt-20" style={stagger(7, 7)}>
             <ProductSurface stage={3} />
           </div>
 

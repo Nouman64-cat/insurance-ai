@@ -1,9 +1,9 @@
 import type { CSSProperties } from "react";
 import { Icon } from "@/components/ui/Icon";
 
-// A compact "live decision" card for the top-right of the hero. Three demo cases take turns
-// (one every 4 s, CSS only): each shows who it is for, the verdict the rules reached, and the
-// three scores the AI contributed. It fills the space beside the first headline line.
+// A compact "live decision" card for the hero. Three demo cases take turns (one every 4 s,
+// CSS only): each shows who it is for, the verdict the rules reached, and the three scores the
+// AI contributed. It sits under the CTAs on small screens and above the cues from lg up.
 const cases = [
   { kind: "Individual", who: "Term Life · PKR 5,000,000", verdict: "Auto Approve", scores: [38, 22, 6] },
   { kind: "Family", who: "Khan family · 5 members", verdict: "Approve with Loading", scores: [52, 30, 9] },
@@ -15,7 +15,7 @@ export function HeroDecisionFeed({ className = "" }: Readonly<{ className?: stri
   return (
     <div className={`rounded-2xl bg-card/90 p-4 shadow-surface ring-1 ring-line ${className}`} role="img" aria-label="Live decision feed, demo data">
       <div aria-hidden="true">
-        <div className="flex items-center justify-between text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-1 text-xs">
           <span className="flex items-center gap-2 font-semibold uppercase tracking-wider text-muted">
             <span className="relative flex h-2 w-2">
               <span className="node-ping absolute inset-0 rounded-full bg-emerald-500/50" />
@@ -26,9 +26,9 @@ export function HeroDecisionFeed({ className = "" }: Readonly<{ className?: stri
           <span className="text-[0.6875rem] text-faint">AI scores · rules decide · demo data</span>
         </div>
 
-        <div className="relative mt-3 h-[3.5rem]">
+        <div className="relative mt-3 h-[6.5rem] sm:h-[3.5rem]">
           {cases.map((c, k) => (
-            <div key={c.kind} className="feed-item absolute inset-0 flex items-center justify-between gap-5" style={{ "--k": k } as CSSProperties}>
+            <div key={c.kind} className="feed-item absolute inset-0 flex flex-col items-start justify-center gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-5" style={{ "--k": k } as CSSProperties}>
               <div className="min-w-0">
                 <p className="truncate text-xs text-muted">
                   <span className="font-semibold uppercase tracking-wider text-brand">{c.kind}</span> · {c.who}
@@ -38,7 +38,7 @@ export function HeroDecisionFeed({ className = "" }: Readonly<{ className?: stri
                   <span className="truncate">{c.verdict}</span>
                 </p>
               </div>
-              <ul className="grid w-[46%] shrink-0 grid-cols-3 gap-3">
+              <ul className="grid w-full shrink-0 sm:w-[46%] grid-cols-3 gap-3">
                 {c.scores.map((s, i) => (
                   <li key={labels[i]}>
                     <div className="flex items-baseline justify-between text-[0.6875rem] text-muted">
