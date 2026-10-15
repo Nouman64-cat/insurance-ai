@@ -71,6 +71,14 @@ def _is(field: str, value: Any = True) -> list[dict]:
     return [{"field": field, "operator": "eq", "value": value}]
 
 
+# Starting list for RSK-OCC-02; admins replace it in the rule editor (or generate one from a prompt).
+HIGH_RISK_OCCUPATIONS: list[str] = [
+    "miner", "mining", "quarry", "explosive", "blasting", "demolition", "scaffold", "steeplejack",
+    "construction labour", "welder", "electric lineman", "high voltage", "oil rig", "offshore",
+    "deep sea", "diver", "fisherman", "pilot", "aircrew", "stunt", "security guard", "bodyguard",
+    "firefighter", "truck driver", "tanker driver", "heavy vehicle", "chemical plant", "firework",
+]
+
 _RULES: list[dict] = [
     # Medical history
     _rule("RSK-MED-01", "Declared heart disease", "medical", 1.0,
@@ -130,7 +138,9 @@ _RULES: list[dict] = [
           "APPLY_LOADING", extra_mortality_pct=25),
     _rule("RSK-OCC-02", "High-hazard occupation", "occupation", 1.0,
           "High-hazard work (e.g. heights, mining, explosives) sharply increases accidental death risk.",
-          [{"field": "occupation_hazard", "operator": "in", "value": ["high", "veryhigh"]}]),
+          [{"field": "occupation_hazard", "operator": "in", "value": ["high", "veryhigh"]},
+           {"field": "occupation", "operator": "contains_any", "value": HIGH_RISK_OCCUPATIONS}],
+          operator="ANY"),
     # Cover vs income (financial justification)
     _rule("RSK-FIN-01", "Cover 10–15× income", "cover_income", 0.2,
           "Cover is above the usual 10× income guideline; income should be confirmed.",
@@ -313,11 +323,16 @@ def profile_facts(customer: dict, cover: Optional[float] = None, today: Optional
 
     occ = d.get("occupation_details") or {}
     level = _text(occ.get("occupation_hazard_level") or life.get("occupation_hazard_level"))
-    if level:
-        facts["occupation_hazard"] = level
-        facts["occupation"] = occ.get("job_title") or occ.get("industry") or customer.get("occupation") or ""
-        job = facts["occupation"] or "Occupation"
-        findings["occupation"] = f"{job} — {occ.get('occupation_hazard_level') or level} hazard"
+    # Everything the profile says about the job, so a keyword rule ("miner", "pilot") can match any of it.
+    occupation_text = " · ".join(dict.fromkeys(
+        str(v).strip() for v in (occ.get("job_title"), customer.get("occupation"), occ.get("industry"), occ.get("employer_name"))
+        if v and str(v).strip()))
+    if level or occupation_text:
+        if level:
+            facts["occupation_hazard"] = level
+        facts["occupation"] = occupation_text
+        job = occ.get("job_title") or customer.get("occupation") or occ.get("industry") or "Occupation"
+        findings["occupation"] = f"{job} — {occ.get('occupation_hazard_level') or level} hazard" if level else str(job)
 
     if habit is not None or "has_hazardous_hobby" in life:
         h = habit or {}

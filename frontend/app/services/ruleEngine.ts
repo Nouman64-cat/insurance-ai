@@ -64,7 +64,7 @@ export type ImpactType =
   | "DECLINE";
 
 export type ComparisonOperator =
-  | "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "between" | "in_set" | "contains" | "field_gt" | "field_gte";
+  | "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "between" | "in_set" | "contains" | "contains_any" | "field_gt" | "field_gte";
 
 export interface RuleSetSummary {
   id: string;
@@ -314,5 +314,14 @@ export interface RuleEvaluationLog {
 
 export async function listEvaluationLogs(tenantId: string, limit = 50): Promise<RuleEvaluationLog[]> {
   const res = await api.get(`/tenants/${tenantId}/rules/logs?limit=${limit}`);
+  return res.data;
+}
+
+/** AI: turn a plain-language request into keywords for a "contains any of" condition. */
+export async function suggestRuleValues(
+  tenantId: string,
+  body: { field: string; field_label?: string; prompt: string; existing?: string[] }
+): Promise<{ values: string[]; note: string; provider: string }> {
+  const res = await api.post(`/tenants/${tenantId}/rules/suggest-values`, body);
   return res.data;
 }

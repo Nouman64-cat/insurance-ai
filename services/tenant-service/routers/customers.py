@@ -402,20 +402,14 @@ async def get_customer(
     return customer
 
 
-@router.get(
-    "/{tenant_id}/customers/{customer_id}/risk-profile",
-    dependencies=[Depends(verify_admin)],
-)
-async def get_customer_risk_profile(
-    tenant_id: UUID,
-    customer_id: UUID,
-    coverage: Optional[float] = Query(default=None, gt=0),
-    session: AsyncSession = Depends(get_session),
-    token: Optional[str] = Depends(optional_oauth2_scheme),
-):
-    """Explainable pre-proposal risk view: safe and adverse factors whose shares total 100%."""
-    from services.profile_risk import assess_profile
+def _facts_signature(facts: dict) -> str:
+    import hashlib, json as _json
+    return hashlib.sha256(_json.dumps(facts, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
+
+async def _risk_profile_inputs(session: AsyncSession, tenant_id: UUID, customer_id: UUID, token: Optional[str],
+                               coverage: Optional[float]):
+    """(customer, profile dict for services.profile_risk, cover considered, plan name)."""
     customer = await session.get(Customer, customer_id)
     scope = await source_scope(token, session)
     if not customer or customer.tenant_id != tenant_id or (scope is not None and customer.acquisition_source_id not in scope):
@@ -436,10 +430,17 @@ async def get_customer_risk_profile(
         "declared_income": customer.declared_income, "occupation": customer.occupation,
         "details": details,
     }
+    return customer, profile, coverage, plan_name
+
+
+async def _run_risk_profile(session: AsyncSession, tenant_id: UUID, customer_id: UUID, token: Optional[str],
+                            coverage: Optional[float]) -> tuple[Customer, dict]:
+    from rule_evaluator import evaluate_rule_set
+    from services.profile_risk import RISK_RULE_SET_CODE, assess_profile, profile_facts
+
+    customer, profile, coverage, plan_name = await _risk_profile_inputs(session, tenant_id, customer_id, token, coverage)
     # The rule engine decides what is a risk and why (RS-RISK-001, editable in the rule-engine admin);
     # every run is written to the rule evaluation log. The built-in baseline only covers an undeployed set.
-    from rule_evaluator import evaluate_rule_set
-    from services.profile_risk import RISK_RULE_SET_CODE, profile_facts
     facts, _ = profile_facts(profile, coverage)
     evaluation = await evaluate_rule_set(
         session=session, rule_set_code=RISK_RULE_SET_CODE,
@@ -451,7 +452,86 @@ async def get_customer_risk_profile(
                                           "source": "rule engine"})
     else:
         result = assess_profile(profile, cover=coverage)
-    return {"customer_id": str(customer.id), "name": customer.name, "plan_considered": plan_name, **result}
+    return customer, {"customer_id": str(customer.id), "name": customer.name, "plan_considered": plan_name,
+                      "facts_signature": _facts_signature(result.get("facts") or {}), **result}
+
+
+@router.get(
+    "/{tenant_id}/customers/{customer_id}/risk-profile",
+    dependencies=[Depends(verify_admin)],
+)
+async def get_customer_risk_profile(
+    tenant_id: UUID,
+    customer_id: UUID,
+    coverage: Optional[float] = Query(default=None, gt=0),
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    """Explainable pre-proposal risk view: safe and adverse factors whose shares total 100%. Not saved."""
+    _, result = await _run_risk_profile(session, tenant_id, customer_id, token, coverage)
+    return result
+
+
+@router.post(
+    "/{tenant_id}/customers/{customer_id}/risk-profile",
+    dependencies=[Depends(verify_admin)],
+)
+async def run_customer_risk_profile(
+    tenant_id: UUID,
+    customer_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    """Run the risk assessment and keep it on the customer as the latest result."""
+    from sqlalchemy.orm.attributes import flag_modified
+
+    customer, result = await _run_risk_profile(session, tenant_id, customer_id, token, None)
+    actor = None
+    if token:
+        try:
+            from routers.auth import decode_access_token
+            actor = decode_access_token(token).get("email")
+        except Exception:
+            actor = None
+    saved = {**result, "assessed_at": datetime.utcnow().isoformat() + "Z", "assessed_by": actor}
+    customer.details = {**(customer.details or {}), "risk_assessment": saved}
+    flag_modified(customer, "details")
+    session.add(customer)
+    await session.commit()
+    return {**saved, "stale": False}
+
+
+@router.get(
+    "/{tenant_id}/customers/{customer_id}/risk-profile/latest",
+    dependencies=[Depends(verify_admin)],
+)
+async def latest_customer_risk_profile(
+    tenant_id: UUID,
+    customer_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    """The last saved assessment (or null), flagged `stale` when the profile, cover or live rule
+    version has changed since it was run."""
+    from services.profile_risk import RISK_RULE_SET_CODE, profile_facts
+    from shared.models.core import RuleSet, RuleVersion, RuleVersionStatusEnum
+
+    customer, profile, coverage, _ = await _risk_profile_inputs(session, tenant_id, customer_id, token, None)
+    saved = (customer.details or {}).get("risk_assessment")
+    if not saved:
+        return {"assessment": None}
+    facts, _ = profile_facts(profile, coverage)
+    stale_reasons = []
+    if saved.get("facts_signature") != _facts_signature(facts):
+        stale_reasons.append("The profile or cover has changed since this assessment.")
+    live = (await session.exec(
+        select(RuleVersion.version_number).join(RuleSet, RuleSet.id == RuleVersion.rule_set_id)
+        .where(RuleSet.rule_code == RISK_RULE_SET_CODE, RuleVersion.status == RuleVersionStatusEnum.ACTIVE)
+    )).first()
+    if live and (saved.get("rule_set") or {}).get("source") == "rule engine" and (saved.get("rule_set") or {}).get("version") != live:
+        stale_reasons.append(f"The risk rules have been updated (now version {live}).")
+    return {"assessment": {**saved, "stale": bool(stale_reasons), "stale_reasons": stale_reasons}}
+
 
 @router.get(
     "/{tenant_id}/customers/{customer_id}/policies",

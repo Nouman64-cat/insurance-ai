@@ -1487,6 +1487,7 @@ MIGRATIONS: list[tuple[str, str]] = [
     ("v63b — initial_premium_payments.proof_reference", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS proof_reference VARCHAR(100)"),
     ("v63c — initial_premium_payments.reminder_count", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS reminder_count INTEGER NOT NULL DEFAULT 0"),
     ("v63d — initial_premium_payments.last_reminded_at", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS last_reminded_at TIMESTAMP WITHOUT TIME ZONE"),
+    ("v64a-enum — comparisonoperatorenum contains_any (keyword lists, e.g. high-risk occupations)", "ALTER TYPE comparisonoperatorenum ADD VALUE IF NOT EXISTS 'contains_any'"),
 ]
 
 

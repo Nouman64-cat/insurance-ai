@@ -15,6 +15,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
+from routers.users import verify_admin
 from rule_evaluator import ContextDerivationService, evaluate_rule_set, evaluate_scope
 from services.underwriting_limits import (
     age_from_dob,
@@ -82,6 +83,9 @@ def _map_condition_operator(op: str, value: Any):
     if op in ("in", "is_one_of", "not_in", "is_not_one_of"):
         items = value if isinstance(value, list) else [value]
         return "in_set", {"value_list": items}
+    if op in ("contains_any", "contains_one_of"):
+        items = value if isinstance(value, list) else [value]
+        return "contains_any", {"value_list": items}
     if op in ("contains", "has"):
         return "contains", {"value_string": str(value)}
     if op in ("between", "range"):
@@ -1662,6 +1666,23 @@ async def _resolve_context(tenant_id: UUID, session: AsyncSession, body) -> Dict
         exclude_policy_id=body.exclude_policy_id,
         extra_context=body.context,
     )
+
+
+class SuggestValuesRequest(BaseModel):
+    field: str = PydanticField(min_length=1, max_length=100)
+    field_label: Optional[str] = PydanticField(default=None, max_length=120)
+    prompt: str = PydanticField(min_length=3, max_length=1000)
+    existing: List[str] = PydanticField(default_factory=list, max_length=300)
+
+
+@router.post("/suggest-values", summary="AI: turn a plain-language prompt into a keyword list for a rule condition")
+async def suggest_values_endpoint(tenant_id: UUID, body: SuggestValuesRequest, session: AsyncSession = Depends(get_session),
+                                  _admin=Depends(verify_admin)):
+    from services.rule_assist import suggest_values
+    try:
+        return await suggest_values(session, body.field_label or body.field.replace("_", " "), body.prompt, body.existing)
+    except RuntimeError as err:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(err))
 
 
 @router.post("/evaluate", summary="Evaluate a single rule set (by code) against input context")

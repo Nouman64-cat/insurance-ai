@@ -3,6 +3,7 @@
 import { RuleCriteriaDraft, ComparisonOperator } from "@/app/services/ruleEngine";
 import { BOOLEAN_FIELDS, FRIENDLY_OPERATORS, OPTION_FIELDS } from "./constants";
 import FieldSearchSelect from "./FieldSearchSelect";
+import KeywordListEditor from "./KeywordListEditor";
 import { tx } from "@/lib/i18n/tx";
 
 interface Props {
@@ -25,11 +26,15 @@ const EMPTY_CRITERION = (groupId: number): RuleCriteriaDraft => ({
 
 const control = "rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100";
 
+/** Free-text facts where a keyword list is the natural way to write a rule. */
+const TEXT_FIELDS = new Set(["occupation"]);
+
 /** Operators that make sense for a field: yes/no and option facts only compare for equality. */
 function operatorsFor(field: string) {
   if (BOOLEAN_FIELDS.has(field)) return FRIENDLY_OPERATORS.filter((o) => o.value === "eq");
   if (OPTION_FIELDS[field]) return FRIENDLY_OPERATORS.filter((o) => ["eq", "neq", "in_set"].includes(o.value));
-  return FRIENDLY_OPERATORS;
+  if (TEXT_FIELDS.has(field)) return FRIENDLY_OPERATORS.filter((o) => ["contains_any", "contains", "eq", "neq"].includes(o.value));
+  return FRIENDLY_OPERATORS.filter((o) => o.value !== "contains_any");
 }
 
 export default function CriteriaGroupBuilder({ criteria, onChange }: Props) {
@@ -48,6 +53,7 @@ export default function CriteriaGroupBuilder({ criteria, onChange }: Props) {
     // Reset the comparison to one that suits the new field.
     if (BOOLEAN_FIELDS.has(field)) return update(index, { field_name: field, operator: "eq", value_string: "true", value_numeric: null });
     if (OPTION_FIELDS[field]) return update(index, { field_name: field, operator: "eq", value_string: OPTION_FIELDS[field][0].value, value_numeric: null });
+    if (TEXT_FIELDS.has(field)) return update(index, { field_name: field, operator: "contains_any", value_list: [], value_string: "", value_numeric: null });
     const current = criteria[index];
     const keepOp = FRIENDLY_OPERATORS.some((o) => o.value === current.operator) ? current.operator : "gte";
     update(index, { field_name: field, operator: keepOp, value_string: "", value_numeric: null });
@@ -70,6 +76,9 @@ export default function CriteriaGroupBuilder({ criteria, onChange }: Props) {
         </select>
       );
     }
+    if (item.operator === "contains_any") {
+      return <KeywordListEditor field={f} values={item.value_list ?? []} onChange={(v) => update(idx, { value_list: v })} />;
+    }
     if (item.operator === "between") {
       return (
         <div className="flex items-center gap-1.5">
@@ -80,6 +89,23 @@ export default function CriteriaGroupBuilder({ criteria, onChange }: Props) {
           <input type="number" placeholder={tx("to")} value={item.value_range_max ?? ""}
             onChange={(e) => update(idx, { value_range_max: e.target.value === "" ? null : parseFloat(e.target.value) })}
             className={`${control} w-24`} />
+        </div>
+      );
+    }
+    if (item.operator === "in_set" && OPTION_FIELDS[f]) {
+      const chosen = (item.value_list ?? []).map((v) => String(v).toLowerCase());
+      return (
+        <div className="flex flex-wrap gap-1.5">
+          {OPTION_FIELDS[f].map((o) => {
+            const on = chosen.includes(o.value);
+            return (
+              <button key={o.value} type="button"
+                onClick={() => update(idx, { value_list: on ? chosen.filter((v) => v !== o.value) : [...chosen, o.value] })}
+                className={`rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition ${on ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-600 ring-slate-200 hover:ring-slate-300"}`}>
+                {tx(o.label)}
+              </button>
+            );
+          })}
         </div>
       );
     }
@@ -126,8 +152,27 @@ export default function CriteriaGroupBuilder({ criteria, onChange }: Props) {
     );
   }
 
+  const usesHazardLevel = criteria.some((c) => c.field_name === "occupation_hazard");
+  const hasOccupationList = criteria.some((c) => c.field_name === "occupation");
+  const addOccupationList = () => {
+    const nextGroup = groupIds.length ? Math.max(...groupIds) + 1 : 1;
+    onChange([...criteria, { ...EMPTY_CRITERION(nextGroup), field_name: "occupation", operator: "contains_any", value_list: [], value_string: "" }]);
+  };
+
   return (
     <div className="space-y-3">
+      {usesHazardLevel && !hasOccupationList && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-fuchsia-50/60 px-4 py-3 ring-1 ring-fuchsia-100">
+          <p className="text-xs text-slate-700">
+            <span className="font-semibold">{tx("Want to name the occupations yourself?")}</span>{" "}
+            {tx("Add a list of jobs (e.g. miner, pilot, security guard) — type it or generate it with AI from a description.")}
+          </p>
+          <button type="button" onClick={addOccupationList}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-fuchsia-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-fuchsia-700">
+            {tx("+ Add an occupation list")}
+          </button>
+        </div>
+      )}
       {groupIds.map((groupId, gIdx) => {
         const indices = criteria.map((c, i) => (c.group_id === groupId ? i : -1)).filter((i) => i !== -1);
         return (
@@ -164,10 +209,11 @@ export default function CriteriaGroupBuilder({ criteria, onChange }: Props) {
                       >
                         {operatorsFor(item.field_name).map((op) => <option key={op.value} value={op.value}>{tx(op.label)}</option>)}
                       </select>
-                      {valueInput(item, critIdx)}
+                      {item.operator !== "contains_any" && valueInput(item, critIdx)}
                       <button type="button" onClick={() => remove(critIdx)} className="ml-auto rounded-lg p-1.5 text-slate-300 hover:bg-red-50 hover:text-red-600" aria-label={tx("Remove condition")}>
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                       </button>
+                      {item.operator === "contains_any" && <div className="basis-full">{valueInput(item, critIdx)}</div>}
                     </div>
                   );
                 })}

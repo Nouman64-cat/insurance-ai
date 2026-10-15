@@ -3594,6 +3594,7 @@ class ComparisonOperatorEnum(str, Enum):
     in_set = "in_set"
     contains = "contains"       # substring match — not in the original spec's 10, needed for
                                  # real seeded occupational-hazard rules (free-text `occupation`)
+    contains_any = "contains_any"  # any keyword in value_list is a substring (e.g. a high-risk occupation list)
     field_gt = "field_gt"       # field_name > target_field_name * multiplier
     field_gte = "field_gte"
 

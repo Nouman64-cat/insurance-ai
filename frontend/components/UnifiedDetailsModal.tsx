@@ -23,6 +23,10 @@ interface RiskProfile {
   categories: RiskCategory[]; safe_factors: RiskFactor[]; risk_factors: RiskFactor[]; missing: string[];
   cover_considered?: number | null; plan_considered?: string | null;
   rule_set?: { code: string; version?: string | null; source?: string } | null;
+  assessed_at?: string | null;
+  assessed_by?: string | null;
+  stale?: boolean;
+  stale_reasons?: string[];
   underwriting?: { medical_tests: string[]; extra_mortality_pct: number; referral: boolean };
 }
 
@@ -160,14 +164,28 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
   const [risk, setRisk] = useState<RiskProfile | null>(null);
   const [riskLoading, setRiskLoading] = useState(false);
   const [riskError, setRiskError] = useState("");
+  const [riskHidden, setRiskHidden] = useState(false);
+
+  // The last saved assessment comes back when the profile is reopened.
+  const loadSavedRisk = async () => {
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId || entityType !== "INDIVIDUAL") return;
+    try {
+      const res = await api.get(`/tenants/${tenantId}/customers/${entityId}/risk-profile/latest`);
+      setRisk(res.data?.assessment ?? null);
+    } catch {
+      /* no saved assessment is fine — the button runs one */
+    }
+  };
 
   const runRiskAssessment = async () => {
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId) return;
     setRiskLoading(true);
     setRiskError("");
+    setRiskHidden(false);
     try {
-      const res = await api.get(`/tenants/${tenantId}/customers/${entityId}/risk-profile`);
+      const res = await api.post(`/tenants/${tenantId}/customers/${entityId}/risk-profile`);
       setRisk(res.data);
     } catch (err: any) {
       setRiskError(err.response?.data?.detail ?? err.message ?? tx("Risk assessment failed."));
@@ -180,7 +198,9 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
     if (isOpen && entityId) {
       setRisk(null);
       setRiskError("");
+      setRiskHidden(false);
       fetchDetails();
+      loadSavedRisk();
     }
   }, [isOpen, entityId]);
 
@@ -285,7 +305,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
               )}
               {entityType === "INDIVIDUAL" && data && (
                 <button
-                  onClick={runRiskAssessment}
+                  onClick={() => (risk && riskHidden ? setRiskHidden(false) : runRiskAssessment())}
                   disabled={riskLoading}
                   title={tx("AI feature: rule-engine risk screening of this profile")}
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 px-4 py-2 rounded-lg transition-colors shadow-sm disabled:opacity-60"
@@ -358,7 +378,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
             </div>
           ) : (
             <div className="space-y-6">
-                {entityType === 'INDIVIDUAL' && (risk || riskError) && (
+                {entityType === 'INDIVIDUAL' && (risk || riskError) && !riskHidden && (
                   <div className="bg-white p-5 rounded-2xl shadow-sm border border-blue-100">
                     <div className="flex items-start justify-between gap-3 mb-4">
                       <div>
@@ -372,14 +392,39 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                             {risk.plan_considered ? ` · ${risk.plan_considered}` : ""}
                           </p>
                         ) : null}
+                        {risk?.assessed_at && (
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            {tx("Assessed {0}", { 0: displayDateTime(risk.assessed_at) })}
+                            {risk.assessed_by ? ` · ${risk.assessed_by}` : ""}
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         {risk && <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${BAND_STYLE[risk.band] ?? "bg-slate-50 text-slate-600 border-slate-200"}`}>{tx("{0} risk", { 0: tx(risk.band) })}</span>}
-                        <button onClick={() => { setRisk(null); setRiskError(""); }} className="p-1 text-slate-400 hover:text-slate-600" aria-label={tx("Close")}>
+                        <button
+                          onClick={runRiskAssessment}
+                          disabled={riskLoading}
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          {riskLoading ? <span className="w-3 h-3 rounded-full border-2 border-slate-200 border-t-slate-600 animate-spin" /> : <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>}
+                          {tx("Re-run")}
+                        </button>
+                        <button onClick={() => { setRiskHidden(true); setRiskError(""); }} className="p-1 text-slate-400 hover:text-slate-600" aria-label={tx("Hide")} title={tx("Hide — the result stays saved")}>
                           <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                         </button>
                       </div>
                     </div>
+                    {risk?.stale && !riskError && (
+                      <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                        <p className="text-xs text-amber-800">
+                          <span className="font-semibold">{tx("Out of date.")}</span>{" "}
+                          {(risk.stale_reasons ?? []).join(" ")}
+                        </p>
+                        <button onClick={runRiskAssessment} disabled={riskLoading} className="rounded-lg bg-amber-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-amber-700 disabled:opacity-50">
+                          {tx("Re-run now")}
+                        </button>
+                      </div>
+                    )}
                     {riskError ? (
                       <p className="text-sm text-red-600">{riskError}</p>
                     ) : risk && (

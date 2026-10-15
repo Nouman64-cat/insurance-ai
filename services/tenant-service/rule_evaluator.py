@@ -210,6 +210,10 @@ def _resolve_criterion_value(field_value: Any, criterion: RuleCriteria, context:
             target = criterion.value_string or ""
             return target.lower() in str(field_value).lower()
 
+        if op == "contains_any":
+            text_value = str(field_value).lower()
+            return any(str(k).strip().lower() in text_value for k in (criterion.value_list or []) if str(k).strip())
+
     except (TypeError, ValueError) as e:
         logger.warning("Error evaluating criterion (%s %s): %s", field_value, op, e)
         return False

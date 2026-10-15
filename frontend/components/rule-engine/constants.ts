@@ -201,6 +201,7 @@ export const OPERATOR_TEXT: Record<ComparisonOperator, string> = {
   between: "between",
   in_set: "in",
   contains: "contains",
+  contains_any: "contains any of",
   field_gt: ">",
   field_gte: "≥",
 };
@@ -418,6 +419,7 @@ export const FRIENDLY_OPERATORS: { value: ComparisonOperator; label: string }[] 
   { value: "between", label: "is between" },
   { value: "in_set", label: "is one of" },
   { value: "contains", label: "contains" },
+  { value: "contains_any", label: "contains any of" },
   { value: "field_gt", label: "is more than another field ×" },
   { value: "field_gte", label: "is at least another field ×" },
 ];
@@ -447,6 +449,11 @@ export function criterionParts(c: {
   }
   if (c.operator === "in_set") {
     return { field, verb, value: (c.value_list ?? []).map((x) => plainValue(c.field_name, x)).join(", ") };
+  }
+  if (c.operator === "contains_any") {
+    const list = c.value_list ?? [];
+    const head = list.slice(0, 6).join(", ");
+    return { field, verb, value: list.length > 6 ? `${head} +${list.length - 6} more` : head || "—" };
   }
   if (c.operator === "field_gt" || c.operator === "field_gte") {
     const mult = c.target_multiplier && c.target_multiplier !== 1 ? ` × ${c.target_multiplier}` : "";

@@ -108,3 +108,19 @@ def test_seed_rules_cover_every_factor():
     from services.profile_risk import RISK_RULE_SET
     assert {r["outcome_payload"]["risk_factor"] for r in RISK_RULE_SET["rules"]} == {k for k, _, _ in FACTORS}
     assert all(r["outcome_payload"]["reason"] for r in RISK_RULE_SET["rules"])
+
+
+def test_named_high_risk_occupation_is_caught_by_keyword_list():
+    p = {**HEALTHY, "occupation": "Coal Miner",
+         "details": {**HEALTHY["details"], "occupation_details": {"job_title": "Coal Miner", "occupation_hazard_level": "Low"}}}
+    r = assess_profile(p, cover=23_900_000, today=TODAY)
+    occ = next(f for f in r["risk_factors"] if f["key"] == "occupation")
+    assert occ["risk_level"] == 1.0 and occ["rules"][0]["code"] == "RSK-OCC-02"
+
+
+def test_contains_any_operator():
+    from rule_evaluator import _resolve_criterion_value
+    from shared.models.core import RuleCriteria
+    c = RuleCriteria(rule_id=None, group_id=1, field_name="occupation", operator="contains_any", value_list=["pilot", "miner"])
+    assert _resolve_criterion_value("Commercial Pilot · Aviation", c, {}) is True
+    assert _resolve_criterion_value("Bank officer", c, {}) is False
