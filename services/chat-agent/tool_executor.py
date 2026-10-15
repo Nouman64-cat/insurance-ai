@@ -24,6 +24,7 @@ frontend rather than the LLM:
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import os
 import random
@@ -177,6 +178,32 @@ def handles(name: str):
         _HANDLERS[name] = fn
         return fn
     return register
+
+
+# 403s that only say "wrong role" — execute_tool's generic "no access" line is right for those.
+_ROLE_DENIALS = ("This action requires one of", "Commission access denied", "Tenant access denied",
+                 "Commission administration requires Admin", "Account is inactive")
+
+
+def relay_forbidden(fn: Handler) -> Handler:
+    """execute_tool turns every 403 into "no access, ask your manager". Some 403s are
+    business rules the user can act on instead — "a different administrator must
+    approve", "above PKR 500,000 needs a claims manager — use Refer" — so relay those."""
+    @functools.wraps(fn)
+    async def wrapper(args: dict[str, Any], ctx: Ctx) -> dict[str, Any]:
+        try:
+            return await fn(args, ctx)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 403:
+                raise
+            try:
+                detail = exc.response.json().get("detail")
+            except ValueError:
+                detail = None
+            if not isinstance(detail, str) or detail.startswith(_ROLE_DENIALS):
+                raise
+            return {"success": False, "error": detail, "error_code": "forbidden", "retryable": False}
+    return wrapper
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -6335,3 +6362,5 @@ import support_tools  # noqa: E402,F401
 import servicing_tools  # noqa: E402,F401
 import service_desk_tools  # noqa: E402,F401
 import workflow_tools  # noqa: E402,F401
+import claim_workflow_tools  # noqa: E402,F401
+import commission_tools  # noqa: E402,F401

@@ -1729,7 +1729,7 @@ def get_commission_ledger(**kwargs) -> str:
 
 
 class StatementArgs(BaseModel):
-    payee_name: str = Field(description="Agent or payee name.")
+    payee_name: Optional[str] = Field(default=None, description="Agent or payee name. Leave unset for an agent's own statement.")
     period: Optional[str] = Field(default=None, description="YYYY-MM. Defaults to the current month.")
 
 
@@ -2479,6 +2479,320 @@ def get_workflow_timeline(**kwargs) -> str:
     return "{}"
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Claims workflow — the 7-step claims-management process (claim_workflow_tools.py)
+#
+# Drives the same Claim record as the register tools above, through eligibility
+# on the event date, a category checklist, investigation, benefit assessment,
+# payee verification and a reconciled settlement. Claims are named by claim
+# number or claimant; policies by number, CNIC or policyholder name.
+# ═══════════════════════════════════════════════════════════════════════════
+
+ClaimCategory = Literal["Death", "AccidentalDeath", "Disability", "Hospitalization"]
+
+
+class PolicyClaimLookupArgs(BaseModel):
+    policy_number: Optional[str] = Field(default=None, description="e.g. PL-2026-0001.")
+    policyholder_name: Optional[str] = None
+    cnic: Optional[str] = None
+
+
+@tool(args_schema=PolicyClaimLookupArgs)
+def get_policy_claim_options(**kwargs) -> str:
+    """What a policy can claim: its cover periods (was it in force on a date?), each
+    benefit and its amount, the claims already on it with their workflow stage and
+    SLA, and the nominee on record. Use for "can Ahmed's family claim?", "was the
+    policy in force on 3 March?", "what claims are on PL-2026-0001?"."""
+    return "{}"
+
+
+@tool(args_schema=ClaimLookupArgs)
+def get_claim_workflow(**kwargs) -> str:
+    """Where one claim stands in the 7-step workflow — eligibility verdict, documents
+    outstanding, investigation red flags, assessed benefit, decision, SLA clock,
+    payees and settlement — with the next legal steps as buttons."""
+    return "{}"
+
+
+class IntimateClaimArgs(PolicyClaimLookupArgs):
+    category: Optional[ClaimCategory] = Field(default=None, description="The benefit being claimed. Leave unset to get choices.")
+    event_date: Optional[str] = Field(default=None, description="YYYY-MM-DD the death/accident/admission happened.")
+    event_end_date: Optional[str] = Field(default=None, description="Discharge date for a hospitalisation.")
+    cause: Optional[Literal["Natural / illness", "Accident", "Suicide", "Other unnatural"]] = Field(
+        default=None, description="Required for death claims — decides the documents.")
+    claimed_amount: Optional[float] = Field(default=None, description="PKR claimed.")
+    claimant_name: Optional[str] = Field(default=None, description="Who is claiming. Required for death claims (nominee / heir).")
+    claimant_relationship: Optional[str] = Field(default=None, description="Self, Spouse, Child, Parent, Sibling, Legal heir, Employer or Representative.")
+    claimant_cnic: Optional[str] = None
+    claimant_phone: Optional[str] = None
+    claimant_email: Optional[str] = Field(default=None, description="Where the closure letter will be emailed.")
+    covered_person_name: Optional[str] = Field(default=None, description="Only when the insured event happened to a covered dependant.")
+    covered_person_relationship: Optional[str] = Field(default=None, description="Self, Spouse, Child or Parent. Defaults to Self.")
+    event_place: Optional[str] = None
+    event_description: Optional[str] = None
+    hospital_name: Optional[str] = None
+    diagnosis: Optional[str] = None
+    channel: Optional[str] = Field(default=None, description="Branch, Phone, Email, Portal or Agent. Defaults to Branch.")
+    notes: Optional[str] = None
+
+
+@tool(args_schema=IntimateClaimArgs)
+def intimate_claim(**kwargs) -> str:
+    """Intimate (register) a claim into the claims workflow. Checks cover on the EVENT
+    date — a policy lapsed today can still owe a claim — builds the document checklist
+    and starts triage. Call with what you have; a missing benefit or cause comes back
+    as buttons. Prefer this over register_claim for new claims."""
+    return "{}"
+
+
+class AdoptClaimArgs(ClaimLookupArgs):
+    category: Optional[ClaimCategory] = None
+    cause: Optional[Literal["Natural / illness", "Accident", "Suicide", "Other unnatural"]] = None
+    covered_person_relationship: Optional[str] = None
+
+
+@tool(args_schema=AdoptClaimArgs)
+def adopt_claim_into_workflow(**kwargs) -> str:
+    """Bring a claim registered on the claims register (register_claim / FNOL) into the
+    workflow, so it gets an eligibility check, checklist and assessment."""
+    return "{}"
+
+
+@tool(args_schema=ClaimLookupArgs)
+def verify_claim_eligibility(**kwargs) -> str:
+    """Re-run the eligibility check on a claim (e.g. after a rider or cover record was corrected)."""
+    return "{}"
+
+
+class OverrideEligibilityArgs(ClaimLookupArgs):
+    note: Optional[str] = Field(default=None, description="Why the ineligible claim may proceed (15+ characters). Permanent.")
+
+
+@tool(args_schema=OverrideEligibilityArgs)
+def override_claim_eligibility(**kwargs) -> str:
+    """Claims manager only: let an INELIGIBLE claim proceed (ex-gratia or contested cover)."""
+    return "{}"
+
+
+class ClaimDocumentArgs(ClaimLookupArgs):
+    action: Literal["request", "waive", "reject"] = Field(
+        description="request = add a document to the checklist; waive = manager excuses a required one; "
+        "reject = send a received one back to the claimant.")
+    document: Optional[str] = Field(default=None, description="Checklist item label, e.g. 'Death certificate'.")
+    reason: Optional[str] = Field(default=None, description="Required for waive and reject.")
+    required: Optional[bool] = Field(default=True, description="For request: does the decision wait on it?")
+
+
+@tool(args_schema=ClaimDocumentArgs)
+def update_claim_document(**kwargs) -> str:
+    """Change a claim's document checklist: request an extra document, waive a required
+    one (manager), or reject a received one. Files themselves are uploaded in the claims workflow screen."""
+    return "{}"
+
+
+class ClaimInvestigationArgs(ClaimLookupArgs):
+    action: Literal["finding", "complete"] = Field(description="finding = record one; complete = close the investigation.")
+    note: Optional[str] = Field(default=None, description="What was found / the closing summary.")
+    finding_kind: Optional[Literal["Verified", "Adverse", "Neutral"]] = None
+    source: Optional[str] = Field(default=None, description="Hospital records, NADRA, field visit, police report…")
+    outcome: Optional[Literal["Verified", "Adverse", "Inconclusive"]] = Field(default=None, description="For complete.")
+
+
+@tool(args_schema=ClaimInvestigationArgs)
+def record_claim_investigation(**kwargs) -> str:
+    """Record an investigation finding on a red-flagged claim (contestable, early death,
+    duplicate, fraud score, nominee mismatch) or complete the investigation. A claim
+    with high flags cannot be assessed until it is complete."""
+    return "{}"
+
+
+class AssessClaimArgs(ClaimLookupArgs):
+    disability_pct: Optional[float] = Field(default=None, description="Assessed disability % — required for disability claims.")
+    copay_pct: Optional[float] = Field(default=None, description="Hospitalisation co-payment %.")
+    deductions_json: Optional[str] = Field(
+        default=None, description='Inadmissible items as JSON, e.g. [{"label": "Room upgrade", "amount": 15000}].')
+    notes: Optional[str] = None
+
+
+@tool(args_schema=AssessClaimArgs)
+def assess_claim_benefit(**kwargs) -> str:
+    """Calculate the contractual benefit payable — sum assured or rider, less premium
+    arrears, inadmissible items and co-pay, capped at the amount claimed. Needs a
+    complete document file and, if flagged, a completed investigation."""
+    return "{}"
+
+
+class DecideClaimArgs(ClaimLookupArgs):
+    decision: Optional[Literal["Approve", "PartialApprove", "Reject", "RequestInfo", "Refer"]] = None
+    amount: Optional[float] = Field(default=None, description="PartialApprove only: PKR below the assessed benefit.")
+    reason: Optional[str] = Field(default=None, description="Required to reject, partly approve or refer; 15+ chars to approve a duplicate-flagged claim.")
+    information_needed: Optional[list[str]] = Field(default=None, description="RequestInfo: what the claimant must provide.")
+
+
+@tool(args_schema=DecideClaimArgs)
+def decide_claim(**kwargs) -> str:
+    """Decide an assessed claim: approve the assessed benefit, partially approve, reject,
+    request more information, or refer to a claims manager. Above PKR 500,000 a
+    manager decides. Approval derives the payees (nominees by share for death)."""
+    return "{}"
+
+
+class VerifyPayeeArgs(ClaimLookupArgs):
+    payee_name: Optional[str] = Field(default=None, description="Which payee, when there are several nominees.")
+    cnic: Optional[str] = None
+    bank_name: Optional[str] = None
+    account_title: Optional[str] = None
+    iban: Optional[str] = Field(default=None, description="24-character Pakistani IBAN.")
+    identity_verified_by: Optional[str] = Field(default=None, description="How identity was checked, e.g. 'Original CNIC seen, NADRA Verisys'.")
+    note: Optional[str] = Field(default=None, description="Needed when the account title doesn't match the payee.")
+    verify: Optional[bool] = Field(default=True, description="False to only save the details.")
+
+
+@tool(args_schema=VerifyPayeeArgs)
+def verify_claim_payees(**kwargs) -> str:
+    """Record and verify one payee's identity and bank details on an approved claim
+    (CNIC vs nominee on record, IBAN format, account title match). Every payee must be
+    verified before disbursement can be authorised."""
+    return "{}"
+
+
+@tool(args_schema=ClaimLookupArgs)
+def authorize_claim_disbursement(**kwargs) -> str:
+    """Authorise payment of an approved claim once every payee is verified and the payee
+    amounts equal the approved amount. Does NOT pay — disburse_claim_settlement does."""
+    return "{}"
+
+
+class DisburseClaimArgs(ClaimLookupArgs):
+    method: Optional[Literal["Bank Transfer", "Pay Order", "JazzCash", "Easypaisa"]] = None
+
+
+@tool(args_schema=DisburseClaimArgs)
+def disburse_claim_settlement(**kwargs) -> str:
+    """Pay an authorised claim to every verified payee and settle it. THIS MOVES MONEY:
+    state the claim number and amount before calling."""
+    return "{}"
+
+
+class ReconcileClaimArgs(ClaimLookupArgs):
+    note: Optional[str] = None
+
+
+@tool(args_schema=ReconcileClaimArgs)
+def reconcile_claim_settlement(**kwargs) -> str:
+    """Reconcile a settled claim's payouts against the approved amount and each payee's share."""
+    return "{}"
+
+
+class CloseClaimFileArgs(ClaimLookupArgs):
+    send_letter: Optional[bool] = Field(default=True, description="Email the closure letter to the claimant.")
+
+
+@tool(args_schema=CloseClaimFileArgs)
+def close_claim_file(**kwargs) -> str:
+    """Close a reconciled settled claim or a rejected one, generate the closure letter
+    and (by default) email it to the claimant. Death settlement also ends the cover."""
+    return "{}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Commission administration — agreements, producer splits, exceptions
+# (commission_tools.py)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class ListAgreementsArgs(BaseModel):
+    status: Optional[Literal["DRAFT", "APPROVED"]] = None
+    search: Optional[str] = Field(default=None, description="Code or name.")
+
+
+@tool(args_schema=ListAgreementsArgs)
+def list_commission_agreements(**kwargs) -> str:
+    """List contractual commission agreements (code, version, first-year and renewal %,
+    effective dates, DRAFT/APPROVED). These are the only source of commission rates."""
+    return "{}"
+
+
+class CreateAgreementArgs(BaseModel):
+    code: Optional[str] = Field(default=None, description="Letters, digits, - and _, e.g. AGENCY-STD.")
+    name: Optional[str] = None
+    first_year_pct: Optional[float] = Field(default=None, description="% of first-year receipts. Never assume a default.")
+    renewal_pct: Optional[float] = Field(default=None, description="% of renewal-year receipts.")
+    effective_from: Optional[str] = Field(default=None, description="YYYY-MM-DD. Defaults to today.")
+    effective_to: Optional[str] = None
+    version: Optional[int] = Field(default=None, description="Defaults to the next version of this code.")
+
+
+@tool(args_schema=CreateAgreementArgs)
+def create_commission_agreement(**kwargs) -> str:
+    """Draft a commission agreement (or a new version of one). It stays DRAFT until a
+    DIFFERENT administrator approves it."""
+    return "{}"
+
+
+class ApproveAgreementArgs(BaseModel):
+    code: Optional[str] = None
+    version: Optional[int] = None
+
+
+@tool(args_schema=ApproveAgreementArgs)
+def approve_commission_agreement(**kwargs) -> str:
+    """Approve a draft commission agreement (checker half of maker-checker — the admin
+    who drafted it cannot approve it). Approved agreements are immutable."""
+    return "{}"
+
+
+@tool(args_schema=PolicyClaimLookupArgs)
+def get_policy_commission_split(**kwargs) -> str:
+    """Which producers earn on a policy, their split %, and under which agreement."""
+    return "{}"
+
+
+class AssignProducersArgs(PolicyClaimLookupArgs):
+    payee_name: Optional[str] = Field(default=None, description="Single producer taking 100% (name or code).")
+    agreement_code: Optional[str] = Field(default=None, description="Approved agreement for that single producer.")
+    producers_json: Optional[str] = Field(
+        default=None,
+        description='Shared production, e.g. [{"payee": "AG-001", "agreement_code": "AGENCY-STD", "split_pct": 60}, ...]. Must total 100.')
+
+
+@tool(args_schema=AssignProducersArgs)
+def assign_policy_producers(**kwargs) -> str:
+    """Set who earns commission on an individual policy and in what split, under approved
+    agreements. Replaces the current split; frozen once any commission has posted."""
+    return "{}"
+
+
+@tool(args_schema=EmptyArgs)
+def list_commission_exceptions() -> str:
+    """Premium receipts that did not post commission, grouped by reason (no producer
+    assigned, agreement not approved or out of date range, group/family policy)."""
+    return "{}"
+
+
+class ReconcileCommissionArgs(PolicyClaimLookupArgs):
+    pass
+
+
+@tool(args_schema=ReconcileCommissionArgs)
+def reconcile_commission_receipts(**kwargs) -> str:
+    """Re-run commission accrual for receipts in exception — for one policy, or all —
+    after the cause (e.g. a missing producer assignment) was fixed."""
+    return "{}"
+
+
+class ExplainEarningArgs(BaseModel):
+    policy_number: Optional[str] = None
+    earning_id: Optional[str] = None
+
+
+@tool(args_schema=ExplainEarningArgs)
+def explain_commission_earning(**kwargs) -> str:
+    """Show how a commission earning was calculated: receipt base × agreement rate ×
+    producer split, policy year and agreement version. Agents see only their own.
+    Use for "why did I get this commission on PL-2026-0001?"."""
+    return "{}"
+
+
 ALL_TOOLS = [
     # navigation & discovery
     navigate_to_page,
@@ -2670,5 +2984,30 @@ ALL_TOOLS = [
     get_claim_blockers,
     get_work_queue,
     get_workflow_timeline,
+    # claims workflow (7 steps)
+    get_policy_claim_options,
+    get_claim_workflow,
+    intimate_claim,
+    adopt_claim_into_workflow,
+    verify_claim_eligibility,
+    override_claim_eligibility,
+    update_claim_document,
+    record_claim_investigation,
+    assess_claim_benefit,
+    decide_claim,
+    verify_claim_payees,
+    authorize_claim_disbursement,
+    disburse_claim_settlement,
+    reconcile_claim_settlement,
+    close_claim_file,
+    # commission administration
+    list_commission_agreements,
+    create_commission_agreement,
+    approve_commission_agreement,
+    get_policy_commission_split,
+    assign_policy_producers,
+    list_commission_exceptions,
+    reconcile_commission_receipts,
+    explain_commission_earning,
 ]
 

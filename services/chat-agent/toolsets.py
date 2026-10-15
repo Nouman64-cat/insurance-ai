@@ -252,6 +252,37 @@ DOMAIN_TOOLS: dict[str, set[str]] = {
         "get_work_queue",
         "get_workflow_timeline",
     },
+    # The 7-step claims-management workflow (claim_workflow_tools.py). Keyword-only:
+    # the fallback set is at the provider cap, and every claims keyword binds it.
+    "claims_workflow": {
+        "get_policy_claim_options",
+        "get_claim_workflow",
+        "intimate_claim",
+        "adopt_claim_into_workflow",
+        "verify_claim_eligibility",
+        "override_claim_eligibility",
+        "update_claim_document",
+        "record_claim_investigation",
+        "assess_claim_benefit",
+        "decide_claim",
+        "verify_claim_payees",
+        "authorize_claim_disbursement",
+        "disburse_claim_settlement",
+        "reconcile_claim_settlement",
+        "close_claim_file",
+    },
+    # Commission agreements, producer splits and accrual exceptions (commission_tools.py).
+    # Keyword-only for the same reason; every commission keyword binds it.
+    "commission_admin": {
+        "list_commission_agreements",
+        "create_commission_agreement",
+        "approve_commission_agreement",
+        "get_policy_commission_split",
+        "assign_policy_producers",
+        "list_commission_exceptions",
+        "reconcile_commission_receipts",
+        "explain_commission_earning",
+    },
 }
 
 # Bound when no keyword matches and nothing is sticky. Must fit the provider cap
@@ -357,6 +388,15 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "timeline", "history", "audit trail", "who did", "payouts",
     ),
 }
+DOMAIN_KEYWORDS["claims_workflow"] = DOMAIN_KEYWORDS["claims"] + (
+    "intimat", "eligib", "in force on", "was the policy in force", "covered on", "nominee", "payee", "iban",
+    "assess the benefit", "benefit payable", "closure letter", "close the claim", "reconcile the settlement",
+    "death benefit", "disability", "accidental death", "hospital", "ex-gratia", "ex gratia",
+)
+DOMAIN_KEYWORDS["commission_admin"] = DOMAIN_KEYWORDS["commission"] + (
+    "agreement", "producer split", "split", "commission exception", "did not post", "didn't post",
+    "reconcile commission", "why did i get", "how was my commission", "my commission", "maker-checker",
+)
 
 
 

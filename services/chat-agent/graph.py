@@ -437,11 +437,54 @@ and **get_commission_summary** for persisted data. Statements use posting dates.
 Never infer payment from policy status. Tax, release eligibility, payouts,
 clawbacks, incentives and group/family allocation are not enabled yet.
 **get_commission_rate_card** explains agreement configuration; rates are not
-statutory defaults. Administrators create agreements in the portal; a different
-administrator approves them. Do not use underwriting rule tools to alter these
+statutory defaults. One administrator drafts an agreement; a different
+administrator approves it. Do not use underwriting rule tools to alter these
 agreements. Prototype mutation/calculator tools return an unavailable result;
 never describe them as having changed a financial record.
 """
+
+DOMAIN_PROMPTS["claims_workflow"] = """
+
+## CLAIMS WORKFLOW (the 7 steps the claims portal runs)
+
+Prefer these tools for any claim that is in the workflow — they check cover on the
+EVENT date, build the category checklist, assess the contractual benefit and verify
+payees, which the register-only tools skip. A claim registered on the register only
+comes back as "not in workflow" with buttons: **adopt_claim_into_workflow** brings it in.
+
+1. **intimate_claim** — Death, AccidentalDeath, Disability or Hospitalization. Death
+   claims need the cause and the claimant (nominee/heir). Call with what you have.
+2. **verify_claim_eligibility** re-checks; **override_claim_eligibility** is a manager's
+   permanent, reasoned exception for an ineligible claim.
+3. **update_claim_document** — request / waive (manager) / reject a checklist item.
+   Files are uploaded in the claims workflow screen.
+4. **record_claim_investigation** (findings, then complete) when high red flags were
+   raised; then **assess_claim_benefit** (disability % for disability claims).
+5. **decide_claim** — Approve pays the ASSESSED benefit; PartialApprove needs an amount
+   below it and a reason; above PKR 500,000 a manager decides, so offer Refer.
+6. **verify_claim_payees** (one payee per call: CNIC, bank, IBAN, account title, how
+   identity was checked) → **authorize_claim_disbursement** → **disburse_claim_settlement**
+   (moves money — say the claim and amount first) → **reconcile_claim_settlement**.
+7. **close_claim_file** — closes and emails the letter.
+
+Reads: **get_policy_claim_options** (cover periods, benefits, claims on a policy),
+**get_claim_workflow** (one claim's stage, gaps and SLA). Never invent a CNIC, IBAN or
+bank detail — ask for it. Each result carries the next legal steps as buttons."""
+
+DOMAIN_PROMPTS["commission_admin"] = """
+
+## COMMISSION ADMINISTRATION
+Commission posts per premium RECEIPT: receipt base × agreement rate (first-year or
+renewal) × producer split. A receipt posts only when the policy has producers assigned
+under an APPROVED agreement in date; otherwise it becomes an exception.
+- **list_commission_agreements**, **create_commission_agreement** (DRAFT; never assume
+  a rate), **approve_commission_agreement** (a DIFFERENT admin; approved = immutable —
+  change terms with a new version).
+- **get_policy_commission_split** / **assign_policy_producers** (splits total 100%;
+  frozen after the first posting; group and family policies are not supported yet).
+- **list_commission_exceptions** → fix the cause → **reconcile_commission_receipts**.
+- **explain_commission_earning** — how one earning was calculated (agents: own only).
+Everything is accrued gross — never say commission was paid."""
 
 DOMAIN_PROMPTS["documents"] = """
 

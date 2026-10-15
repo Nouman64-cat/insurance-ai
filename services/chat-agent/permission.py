@@ -95,6 +95,25 @@ MUTATING_TOOLS = {
     "register_group_claim",
     "pay_group_claim",
     "add_group_class_coverage",
+    # Claims workflow — each step writes the claim file; disbursement moves money.
+    "intimate_claim",
+    "adopt_claim_into_workflow",
+    "verify_claim_eligibility",
+    "override_claim_eligibility",
+    "update_claim_document",
+    "record_claim_investigation",
+    "assess_claim_benefit",
+    "decide_claim",
+    "verify_claim_payees",
+    "authorize_claim_disbursement",
+    "disburse_claim_settlement",
+    "reconcile_claim_settlement",
+    "close_claim_file",
+    # Commission administration — agreements set rates, assignments decide who earns.
+    "create_commission_agreement",
+    "approve_commission_agreement",
+    "assign_policy_producers",
+    "reconcile_commission_receipts",
     # Commission — payout runs move money; rules & schemes govern payout structure.
     "create_payout_run",
     "approve_payout_run",
@@ -175,6 +194,8 @@ SAFE_TOOLS = {
     "evaluate_rule_scope",
     "get_rule_evaluation_logs",
     # Claims (read-only)
+    "get_policy_claim_options",
+    "get_claim_workflow",
     "list_claims",
     "get_claim_details",
     "get_claims_dashboard",
@@ -190,7 +211,12 @@ SAFE_TOOLS = {
     "get_group_renewal",
     "list_group_claims",
     "preview_group_claim_payout",
-    # Commission (read-only)
+    # Commission (read-only). The agreement/split/exception reads are Admin-only
+    # through COMMISSION_ADMIN_TOOLS below; earnings are scoped by the API itself.
+    "explain_commission_earning",
+    "list_commission_agreements",
+    "get_policy_commission_split",
+    "list_commission_exceptions",
     "list_commission_payees",
     "get_commission_rate_card",
     "calculate_commission",
@@ -444,6 +470,29 @@ STEP_LABELS: dict[str, str] = {
     "get_member_workflow_matrix": "Building member matrix",
     "resume_member_workflow": "Resuming member workflow",
     "get_claim_blockers": "Checking claim blockers",
+    "get_policy_claim_options": "Checking cover and claimable benefits",
+    "get_claim_workflow": "Loading claim workflow",
+    "intimate_claim": "Intimating claim",
+    "adopt_claim_into_workflow": "Bringing claim into the workflow",
+    "verify_claim_eligibility": "Verifying cover on the event date",
+    "override_claim_eligibility": "Overriding claim eligibility",
+    "update_claim_document": "Updating claim checklist",
+    "record_claim_investigation": "Recording claim investigation",
+    "assess_claim_benefit": "Assessing benefit payable",
+    "decide_claim": "Recording claim decision",
+    "verify_claim_payees": "Verifying payee",
+    "authorize_claim_disbursement": "Authorising disbursement",
+    "disburse_claim_settlement": "Disbursing claim settlement",
+    "reconcile_claim_settlement": "Reconciling claim settlement",
+    "close_claim_file": "Closing claim file",
+    "list_commission_agreements": "Loading commission agreements",
+    "create_commission_agreement": "Drafting commission agreement",
+    "approve_commission_agreement": "Approving commission agreement",
+    "get_policy_commission_split": "Loading producer split",
+    "assign_policy_producers": "Assigning producers",
+    "list_commission_exceptions": "Loading commission exceptions",
+    "reconcile_commission_receipts": "Reconciling commission receipts",
+    "explain_commission_earning": "Explaining commission earning",
     "get_work_queue": "Loading work queue",
     "get_workflow_timeline": "Loading timeline",
     "assess_medical_examination": "Assessing medical examination requirements",
@@ -549,6 +598,11 @@ def is_destructive(tool_name: str) -> bool:
 
 
 AGENT_ALLOWED_TOOLS = {
+    # Their own commission. The earnings API scopes an Agent to their own
+    # acquisition source, so these can never show another producer's money.
+    "get_agent_statement",
+    "get_commission_ledger",
+    "explain_commission_earning",
     # Lead Generation & Customer Intake
     "resolve_customer_type",
     "add_customer",
@@ -674,6 +728,9 @@ MOBILE_PORTAL_ONLY_TOOLS = {
     "continue_claim_journey",
     "create_payout_run",
     "approve_payout_run",
+    "decide_claim",
+    "authorize_claim_disbursement",
+    "disburse_claim_settlement",
     *AGENT_WEB_ONLY_TOOLS,
 }
 
@@ -699,6 +756,22 @@ ADMIN_ONLY_TOOLS = {
 
 ADMIN_ONLY_TOOLS |= GROUP_TOOLS
 
+# Commission administration, read-only ones included: tenant-service gates
+# /commissions/agreements, /assignments, /exceptions and /reconcile on Admin, so
+# the chat mirrors that — same pattern as GROUP_TOOLS, and for the same reason
+# (the reads sit in SAFE_TOOLS, which would otherwise hand them to Viewer).
+COMMISSION_ADMIN_TOOLS = {
+    "list_commission_agreements",
+    "create_commission_agreement",
+    "approve_commission_agreement",
+    "get_policy_commission_split",
+    "assign_policy_producers",
+    "list_commission_exceptions",
+    "reconcile_commission_receipts",
+}
+
+ADMIN_ONLY_TOOLS |= COMMISSION_ADMIN_TOOLS
+
 # ── Claims roles ────────────────────────────────────────────────────────────
 #
 # tenant-service/routers/claims.py gates every claims endpoint on
@@ -708,6 +781,8 @@ ADMIN_ONLY_TOOLS |= GROUP_TOOLS
 # gate instead of a raw 403 out of the API — same defence, two layers.
 
 CLAIMS_READ_TOOLS = {
+    "get_policy_claim_options",
+    "get_claim_workflow",
     "list_claims",
     "get_claim_details",
     "get_claims_dashboard",
@@ -719,6 +794,12 @@ CLAIMS_READ_TOOLS = {
 CLAIMS_MANAGER_ONLY_TOOLS = {
     "issue_claim_payout",
     "refer_claim_to_reinsurance",
+    # Workflow equivalents: releasing and paying the settlement, and letting an
+    # ineligible claim through. (The API lets an adjuster authorise up to the
+    # manager limit; the chat keeps money release with managers, as above.)
+    "authorize_claim_disbursement",
+    "disburse_claim_settlement",
+    "override_claim_eligibility",
 }
 
 CLAIMS_ADJUSTER_ALLOWED_TOOLS = CLAIMS_READ_TOOLS | {
@@ -729,6 +810,17 @@ CLAIMS_ADJUSTER_ALLOWED_TOOLS = CLAIMS_READ_TOOLS | {
     "upload_claim_document",
     "start_claim_journey",
     "continue_claim_journey",
+    # The 7-step workflow, up to (not including) releasing the money.
+    "intimate_claim",
+    "adopt_claim_into_workflow",
+    "verify_claim_eligibility",
+    "update_claim_document",
+    "record_claim_investigation",
+    "assess_claim_benefit",
+    "decide_claim",
+    "verify_claim_payees",
+    "reconcile_claim_settlement",
+    "close_claim_file",
     # Enough of the platform to do the job around a claim: find the customer,
     # read the case and policy it hangs off, and navigate to any of it.
     "navigate_to_page",
@@ -865,7 +957,7 @@ def is_role_allowed(tool_name: str, role: str, platform: str = "web") -> bool:
     """
     if role in ADMIN_ROLES:
         return True
-    if tool_name in GROUP_TOOLS:
+    if tool_name in GROUP_TOOLS or tool_name in COMMISSION_ADMIN_TOOLS:
         return False
     if role == "Agent":
         if platform == "mobile":
