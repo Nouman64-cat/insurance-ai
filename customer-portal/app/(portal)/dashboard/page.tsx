@@ -1,40 +1,67 @@
 "use client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Banner, Card, EmptyState, ErrorState, Icon, Skeleton } from "@/components/ui";
-import { ClaimStatus } from "@/components/ui";
-import { MetricCard } from "@/components/MetricCard";
-import { PolicyCardItem } from "@/components/PolicyCardItem";
+import { ActionCenter, ClaimLine, FamilyOverviewCard, PolicyTile, StatTile, actionItems } from "@/components/DashboardParts";
 import { useApi } from "@/lib/api";
 import { compactMoney, date, daysUntil, money } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { Dashboard } from "@/lib/types";
-import { NoticeRow } from "@/components/NoticeRow";
+import { initials } from "@/lib/format";
+
+// The customer's home. Top to bottom: who they are and where they stand, the four figures that matter, what needs doing, their family
+// (if they have one), their policies and their claims. Figures for individual policies and for a family are kept apart and labelled.
 
 export default function DashboardPage() {
   const { t, locale } = useI18n();
   const { data, error, loading, reload } = useApi<Dashboard>("dashboard");
-  const router = useRouter();
 
   if (error && !data) return <div className="card"><ErrorState error={error} onRetry={reload} /></div>;
+  const wait = loading && !data;
   const s = data?.summary;
   const polDown = !!data && !data.sections.policies;
   const clmDown = !!data && !data.sections.claims;
-  const nextExpiry = s?.upcoming_expiry?.[0];
   const next = s?.next_premium;
   const nextDays = daysUntil(next?.date);
+  const hasFamily = !!data?.family && data.family.length > 0;
+  const actions = actionItems(data?.notices ?? []);
+  const outstanding = s?.outstanding_amount ?? 0;
+  const inForce = s?.in_force_policies ?? 0;
+  const openClaims = s?.open_claims ?? 0;
+  const firstName = (data?.customer.name || "").split(/\s+/)[0];
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          {loading && !data ? <Skeleton className="h-7 w-64" /> : <h2 className="text-xl font-bold tracking-tight text-slate-900">{t("dashboard.welcome", { name: data?.customer.name || "" })}</h2>}
-          <p className="text-sm text-slate-500 mt-0.5">
-            {t("dashboard.policyholderId")}: <span className="font-semibold text-slate-700 ltr-num">{data?.customer.policyholder_id || "…"}</span>
-            {data?.customer.company && <> · <bdi>{data.customer.company}</bdi></>}
-          </p>
+      {/* Welcome */}
+      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-700 via-blue-600 to-blue-500 p-5 text-white shadow-[0_10px_30px_rgb(37,99,235,0.25)] sm:p-6" aria-label={t("dashboard.welcomeRegion")}>
+        <div className="pointer-events-none absolute -end-10 -top-16 h-56 w-56 rounded-full bg-white/10 blur-2xl" aria-hidden="true" />
+        <div className="pointer-events-none absolute -bottom-20 start-1/3 h-48 w-48 rounded-full bg-sky-300/20 blur-3xl" aria-hidden="true" />
+        <div className="relative flex flex-wrap items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-4">
+            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-lg font-bold ring-1 ring-white/25 backdrop-blur" aria-hidden="true">{wait ? "…" : initials(data?.customer.name)}</span>
+            <div className="min-w-0">
+              {wait ? <Skeleton className="h-7 w-56 !bg-white/20" /> : <h2 className="truncate text-xl font-bold tracking-tight sm:text-2xl">{t("dashboard.welcome", { name: firstName || data?.customer.name || "" })}</h2>}
+              <p className="mt-0.5 truncate text-sm text-blue-100">
+                {t("dashboard.policyholderId")}: <span className="font-semibold text-white ltr-num">{data?.customer.policyholder_id || "…"}</span>
+                {data?.customer.company && <> · <bdi>{data.customer.company}</bdi></>}
+              </p>
+              {!wait && (
+                <div className="mt-2.5 flex flex-wrap gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-xs font-semibold ring-1 ring-white/20"><span className={`h-1.5 w-1.5 rounded-full ${inForce > 0 ? "bg-emerald-300" : "bg-slate-300"}`} />{inForce > 0 ? t("dashboard.statusProtected", { count: inForce }) : t("dashboard.statusNoCover")}</span>
+                  {actions.length > 0 && <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-400/90 px-2.5 py-1 text-xs font-bold text-amber-950"><Icon name="alert" className="h-3.5 w-3.5" />{t("dashboard.needsAttention", { count: actions.length })}</span>}
+                  {data && data.unread_notices > 0 && <Link href="/notifications" className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-xs font-semibold ring-1 ring-white/20 hover:bg-white/25"><Icon name="bell" className="h-3.5 w-3.5" />{t("dashboard.unreadCount", { count: data.unread_notices })}</Link>}
+                </div>
+              )}
+            </div>
+          </div>
+          {next && !polDown && (
+            <Link href="/payments" className="group rounded-xl bg-white/95 px-4 py-3 text-slate-900 shadow-sm transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{t("dashboard.nextPremium")}</p>
+              <p className="text-lg font-bold leading-tight text-blue-700">{money(next.amount)}</p>
+              <p className="text-xs text-slate-500">{date(next.date, locale)}{nextDays != null && nextDays >= 0 && nextDays <= 14 ? ` · ${t("dashboard.inDays", { count: nextDays })}` : ""}</p>
+            </Link>
+          )}
         </div>
-      </div>
+      </section>
 
       {(polDown || clmDown) && (
         <Banner tone="warning" title={t("dashboard.partial")} action={<button type="button" onClick={reload} className="btn-secondary">{t("common.retry")}</button>}>
@@ -42,85 +69,48 @@ export default function DashboardPage() {
         </Banner>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard title={t("dashboard.totalPolicies")} value={s?.total_policies ?? 0} accent="blue" loading={loading && !data} unavailable={polDown} icon={<Icon name="policies" />}
-          subtitle={t("dashboard.activeCount", { count: s?.active_policies ?? 0 })} />
-        <MetricCard title={t("dashboard.coverage")} value={compactMoney(s?.coverage_total)} accent="emerald" loading={loading && !data} unavailable={polDown} icon={<Icon name="shield" />}
-          subtitle={t("dashboard.coverageNote")} />
-        <MetricCard title={t("dashboard.nextPremium")} value={next ? money(next.amount) : t("dashboard.none")} accent={next && (nextDays ?? 99) <= 7 ? "amber" : "sky"} loading={loading && !data} unavailable={polDown} icon={<Icon name="calendar" />}
-          subtitle={next ? `${date(next.date, locale)} · ${next.policy_number}` : t("dashboard.noUpcoming")} />
-        <MetricCard title={t("dashboard.outstanding")} value={money(s?.outstanding_amount ?? 0)} accent={(s?.outstanding_amount ?? 0) > 0 ? "red" : "slate"} loading={loading && !data} unavailable={polDown} icon={<Icon name="money" />}
-          subtitle={(s?.outstanding_amount ?? 0) > 0 ? t("dashboard.outstandingDue") : t("dashboard.nothingDue")} />
-        <MetricCard title={t("dashboard.openClaims")} value={s?.open_claims ?? 0} accent="slate" loading={loading && !data} unavailable={clmDown && s?.open_claims == null} icon={<Icon name="claims" />}
-          subtitle={t("dashboard.openClaimsNote")} />
-        <MetricCard title={t("dashboard.expiry")} value={nextExpiry ? date(nextExpiry.date, locale) : t("dashboard.none")} accent={nextExpiry ? "amber" : "slate"} loading={loading && !data} unavailable={polDown} icon={<Icon name="calendar" />}
-          subtitle={nextExpiry ? nextExpiry.policy_number : t("dashboard.noExpiry")} />
-        <MetricCard title={t("dashboard.remaining")} value={money(s?.remaining_amount ?? 0)} accent="slate" loading={loading && !data} unavailable={polDown} icon={<Icon name="payments" />}
-          subtitle={t("dashboard.remainingNote")} />
-        <MetricCard title={t("dashboard.inForce")} value={s?.in_force_policies ?? 0} accent="emerald" loading={loading && !data} unavailable={polDown} icon={<Icon name="check" />}
-          subtitle={t("dashboard.inForceNote")} />
-      </div>
+      {/* The four figures that matter */}
+      <section aria-label={t("dashboard.headline")}>
+        {hasFamily && <p className="section-label mb-2">{t("dashboard.individualScope")}</p>}
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+          <StatTile label={t("dashboard.activePolicies")} value={inForce} note={t("dashboard.ofTotal", { count: s?.total_policies ?? 0 })} icon="policies" tone={inForce > 0 ? "blue" : "muted"} href="/policies" loading={wait} unavailable={polDown} />
+          <StatTile label={t("dashboard.coverage")} value={compactMoney(s?.coverage_total)} note={t("dashboard.coverageNote")} icon="shield" tone={(s?.coverage_total ?? 0) > 0 ? "emerald" : "muted"} href="/policies" loading={wait} unavailable={polDown} />
+          <StatTile label={t("dashboard.nextPremium")} value={next ? money(next.amount) : t("dashboard.none")} note={next ? `${date(next.date, locale)} · ${next.policy_number}` : t("dashboard.noUpcoming")} icon="calendar"
+            tone={!next ? "muted" : outstanding > 0 ? "red" : (nextDays ?? 99) <= 7 ? "amber" : "blue"} href="/payments" loading={wait} unavailable={polDown} />
+          <StatTile label={t("dashboard.activeClaims")} value={openClaims > 0 ? openClaims : t("dashboard.noneOpen")} note={openClaims > 0 ? t("dashboard.openClaimsNote") : t("dashboard.noClaimsNote")} icon="claims" tone={openClaims > 0 ? "blue" : "muted"} href="/claims" loading={wait} unavailable={clmDown && s?.open_claims == null} />
+        </div>
+      </section>
 
+      {/* What needs doing */}
+      <ActionCenter items={actions} outstanding={outstanding} loading={wait} />
+
+      {/* Family */}
       {data && !data.sections.family && <Banner tone="warning" title={t("dashboard.partialFamily")} />}
-      {data?.family && data.family.length > 0 && (
+      {hasFamily && (
         <section aria-label={t("dashboard.family")} className="space-y-3">
-          <div className="flex items-center justify-between"><p className="section-label">{t("dashboard.family")}</p><Link href="/family" className="text-xs font-semibold text-blue-600 hover:text-blue-700">{t("common.viewAll")}</Link></div>
-          {data.family.map((g) => (
-            <Link key={g.id} href={`/family/${g.id}`} className="card block p-5 hover:shadow-md transition-shadow">
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-                <div><p className="text-base font-bold text-slate-900">{g.name}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{g.plan_types.map((p) => t(`plan.${p}`)).join(" · ")} · {t(`family.role.${g.role}`)}</p></div>
-                <span className="text-xs font-semibold text-blue-600">{t("family.open")} →</span>
-              </div>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <MetricCard title={t("family.members")} value={g.members.listed} accent="blue" icon={<Icon name="family" />} subtitle={t("family.insuredCount", { count: g.members.insured })} />
-                <MetricCard title={t("family.coverage")} value={compactMoney(g.totals.coverage)} accent="emerald" icon={<Icon name="shield" />} subtitle={t("family.coverageNote")} />
-                <MetricCard title={t("dashboard.nextPremium")} value={g.totals.next_premium ? money(g.totals.next_premium.amount) : t("dashboard.none")} accent="sky" icon={<Icon name="calendar" />}
-                  subtitle={g.totals.next_premium ? `${date(g.totals.next_premium.date, locale)} · ${g.totals.next_premium.policy_number}` : t("dashboard.noUpcoming")} />
-                <MetricCard title={t("dashboard.outstanding")} value={money(g.totals.outstanding)} accent={g.totals.outstanding > 0 ? "red" : "slate"} icon={<Icon name="money" />}
-                  subtitle={t("family.openClaimsLine", { count: g.totals.open_claims })} />
-              </div>
-              {g.totals.renewals_soon.length > 0 && <p className="mt-3 text-xs text-amber-800 bg-amber-50 rounded-lg px-3 py-2">{t("family.renewalSoon", { policy: g.totals.renewals_soon[0].policy_number, date: date(g.totals.renewals_soon[0].date, locale) })}</p>}
-            </Link>))}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div><p className="text-sm font-bold text-slate-900">{t("dashboard.family")}</p><p className="text-xs text-slate-500">{t("dashboard.familyScope")}</p></div>
+            <Link href="/family" className="text-xs font-semibold text-blue-600 hover:text-blue-700">{t("common.viewAll")}</Link>
+          </div>
+          <div className="space-y-3">{data!.family!.map((g) => <FamilyOverviewCard key={g.id} g={g} />)}</div>
         </section>
       )}
 
-      <div>
-        <p className="section-label mb-2">{t("dashboard.quickActions")}</p>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {[{ href: "/policies", k: "viewPolicies", i: "policies" }, { href: "/payments", k: "viewPayments", i: "payments" }, { href: "/claims", k: "viewClaims", i: "claims" }, { href: "/documents", k: "downloadDocuments", i: "download" }].map((a) => (
-            <Link key={a.href} href={a.href} className="card min-w-0 px-4 py-3.5 flex items-center gap-3 hover:bg-blue-50/40 hover:border-blue-200 transition-colors">
-              <span className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center"><Icon name={a.i} className="w-5 h-5" /></span>
-              <span className="text-sm font-semibold text-slate-800 min-w-0">{t(`dashboard.action.${a.k}`)}</span>
-            </Link>
-          ))}
-        </div>
-      </div>
+      {/* Policies and claims */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        <section className="space-y-3 lg:col-span-2" aria-label={t("dashboard.yourPolicies")}>
+          <div className="flex items-center justify-between"><p className="text-sm font-bold text-slate-900">{t("dashboard.yourPolicies")}</p><Link href="/policies" className="text-xs font-semibold text-blue-600 hover:text-blue-700">{t("common.viewAll")}</Link></div>
+          {wait ? <div className="grid gap-4 sm:grid-cols-2"><Skeleton className="h-44" /><Skeleton className="h-44" /></div>
+            : polDown ? <p className="text-sm text-slate-500">{t("dashboard.partialPolicies")}</p>
+            : data && data.policies.length === 0 ? <div className="card"><EmptyState title={t("dashboard.noPolicies")} text={t("dashboard.noPoliciesText")} /></div>
+            : <div className="grid gap-4 sm:grid-cols-2">{data?.policies.slice(0, 4).map((p) => <PolicyTile key={p.id} p={p} />)}</div>}
+        </section>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          <Card title={t("dashboard.yourPolicies")} action={<Link href="/policies" className="text-xs font-semibold text-blue-600 hover:text-blue-700">{t("common.viewAll")}</Link>}>
-            {loading && !data ? <div className="grid sm:grid-cols-2 gap-4"><Skeleton className="h-40" /><Skeleton className="h-40" /></div>
-              : polDown ? <p className="text-sm text-slate-500">{t("dashboard.partialPolicies")}</p>
-              : data && data.policies.length === 0 ? <EmptyState title={t("dashboard.noPolicies")} text={t("dashboard.noPoliciesText")} />
-              : <div className="grid sm:grid-cols-2 gap-4">{data?.policies.slice(0, 4).map((p) => <PolicyCardItem key={p.id} p={p} />)}</div>}
-          </Card>
-
-          <Card title={t("dashboard.recentClaims")} action={<Link href="/claims" className="text-xs font-semibold text-blue-600 hover:text-blue-700">{t("common.viewAll")}</Link>}>
-            {loading && !data ? <Skeleton className="h-16" />
-              : clmDown ? <p className="text-sm text-slate-500">{t("dashboard.partialClaims")}</p>
-              : data && data.claims.length === 0 ? <EmptyState title={t("claims.none")} text={t("claims.noneText")} />
-              : <ul className="divide-y divide-slate-100">{data?.claims.map((c) => (
-                  <li key={c.id}><button type="button" onClick={() => router.push(`/claims/${c.id}`)} className="w-full flex items-center justify-between gap-3 py-3 text-start hover:bg-slate-50 rounded-lg px-2 -mx-2">
-                    <span className="min-w-0"><span className="block text-sm font-semibold text-slate-800 ltr-num">{c.claim_number}</span><span className="block text-xs text-slate-400 truncate"><bdi>{c.category ? t(`claimType.${c.category}`) : c.claim_type}</bdi> · <bdi>{date(c.reported_date, locale)}</bdi></span></span>
-                    <ClaimStatus statusKey={c.status_key} /></button></li>))}</ul>}
-          </Card>
-        </div>
-
-        <Card title={t("dashboard.notices")} action={<Link href="/notifications" className="text-xs font-semibold text-blue-600 hover:text-blue-700">{t("common.viewAll")}</Link>}>
-          {loading && !data ? <Skeleton className="h-24" />
-            : !data || data.notices.length === 0 ? <EmptyState title={t("notifications.none")} text={t("notifications.noneText")} icon={<Icon name="bell" className="w-6 h-6" />} />
-            : <ul className="space-y-3">{data.notices.map((n) => <NoticeRow key={n.key} n={n} compact />)}</ul>}
+        <Card title={t("dashboard.recentClaims")} action={<Link href="/claims" className="text-xs font-semibold text-blue-600 hover:text-blue-700">{t("common.viewAll")}</Link>}>
+          {wait ? <Skeleton className="h-20" />
+            : clmDown ? <p className="text-sm text-slate-500">{t("dashboard.partialClaims")}</p>
+            : data && data.claims.length === 0 ? <EmptyState title={t("claims.none")} text={t("claims.noneText")} action={<Link href="/claims/new" className="btn-secondary">{t("claims.new")}</Link>} />
+            : <ul className="-my-1 divide-y divide-slate-100">{data?.claims.slice(0, 4).map((c) => <ClaimLine key={c.id} c={c} />)}</ul>}
         </Card>
       </div>
     </div>

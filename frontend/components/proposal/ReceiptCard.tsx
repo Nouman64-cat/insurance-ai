@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { displayDate } from "../../lib/dateDisplay";
 import { getPolicyReceipt, type PaymentReceipt } from "@/app/services/initialPremiumPayment";
 import { tx } from "@/lib/i18n/tx";
+import { BreakdownTable } from "./BreakdownTable";
 
 const pkr = (n: number) => `PKR ${Math.round(n).toLocaleString()}`;
 const esc = (v: unknown) => String(v ?? "—").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -24,7 +25,12 @@ function printReceipt(r: PaymentReceipt) {
       <tr><td>${esc(tx("Reference"))}</td><td>${esc(r.reference)}</td></tr>
       <tr><td>${esc(tx("Confirmed by"))}</td><td>${esc(r.confirmed_by)}</td></tr>
       <tr class="t"><td>${esc(tx("Amount received"))}</td><td>${esc(pkr(r.amount))}</td></tr>
-    </table><script>window.onload=()=>window.print()</script>`);
+    </table>${r.breakdown ? `<p class="s" style="margin-top:18px">${esc(tx("How the amount is made up"))}</p><table>
+      <tr><td>${esc(tx("Base premium"))}</td><td>${esc(pkr(r.breakdown.base_premium))}</td></tr>
+      <tr><td>${esc(tx("Loading"))}</td><td>${esc(pkr(r.breakdown.loading_amount))}</td></tr>
+      <tr><td>${esc(tx("Policy fee"))}</td><td>${esc(pkr(r.breakdown.policy_fee))}</td></tr>
+      <tr><td>${esc(tx("Stamp duty"))}</td><td>${esc(pkr(r.breakdown.stamp_duty_amount))}</td></tr>
+      <tr><td>${esc(tx("Sales tax"))}</td><td>${esc(pkr(r.breakdown.tax_amount))}</td></tr></table>` : ""}<script>window.onload=()=>window.print()</script>`);
   w.document.close();
 }
 
@@ -32,6 +38,7 @@ function printReceipt(r: PaymentReceipt) {
 export function ReceiptCard({ policyId }: { policyId: string }) {
   const [r, setR] = useState<PaymentReceipt | null>(null);
   const [failed, setFailed] = useState(false);
+  const [open, setOpen] = useState(false);
   useEffect(() => { getPolicyReceipt(policyId).then(setR).catch(() => setFailed(true)); }, [policyId]);
   if (failed) return null;
   if (!r) return <div className="h-24 rounded-lg border border-slate-200 bg-white animate-pulse" />;
@@ -40,18 +47,59 @@ export function ReceiptCard({ policyId }: { policyId: string }) {
     [tx("Paid by"), r.method ?? "—"], [tx("Reference"), r.reference ?? "—"], [tx("Confirmed by"), r.confirmed_by ?? "—"],
   ];
   return (
-    <div className="rounded-lg border border-emerald-200 bg-white text-xs text-slate-600">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 border-b border-emerald-100 bg-emerald-50/60 rounded-t-lg">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">{tx("Payment receipt")}</p>
-          <p className="text-sm font-bold text-slate-900 font-mono">{r.receipt_no}</p>
+    <div className="overflow-hidden rounded-2xl border border-emerald-200/80 bg-white text-sm text-slate-600 shadow-sm shadow-emerald-900/5">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 to-white px-5 py-4">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><polyline points="20 6 9 17 4 12" /></svg>
+          </span>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">{tx("Payment receipt")}</p>
+            <p className="font-mono text-base font-bold tracking-tight text-slate-900">{r.receipt_no}</p>
+          </div>
         </div>
-        <button type="button" onClick={() => printReceipt(r)} className="px-3 py-1.5 text-[11px] font-semibold rounded-md bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50">{tx("Print / save PDF")}</button>
+        <button type="button" onClick={() => printReceipt(r)} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3.5 py-2 text-xs font-semibold text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></svg>
+          {tx("Print / save PDF")}
+        </button>
       </div>
-      <dl className="px-3.5 py-2.5 divide-y divide-slate-100">
-        {rows.map(([k, v]) => <div key={k} className="flex justify-between gap-4 py-1.5"><dt className="text-slate-400">{k}</dt><dd className="font-medium text-slate-800 text-end">{v}</dd></div>)}
-        <div className="flex justify-between gap-4 pt-2"><dt className="font-semibold text-slate-700">{tx("Amount received")}</dt><dd className="text-sm font-bold text-emerald-700">{pkr(r.amount)}</dd></div>
+
+      <div className="flex items-center justify-between gap-4 bg-emerald-600/5 px-5 py-4">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{tx("Amount received")}</span>
+        <span className="text-2xl font-extrabold tracking-tight text-emerald-700">{pkr(r.amount)}</span>
+      </div>
+
+      {r.breakdown?.split && r.breakdown.split.remaining_amount > 0 && (
+        <p className="mx-5 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+          {tx("{0}% of the premium has been paid. The remaining {1}% (PKR {2}) is paid at policy issuance.", { 0: r.breakdown.split.upfront_pct, 1: r.breakdown.split.remaining_pct, 2: Math.round(r.breakdown.split.remaining_amount).toLocaleString() })}
+        </p>
+      )}
+      <dl className="grid gap-x-8 px-5 py-3 sm:grid-cols-2">
+        {rows.map(([k, v]) => (
+          <div key={k} className="flex items-baseline justify-between gap-4 border-b border-slate-100 py-2.5 last:border-0 sm:[&:nth-last-child(2):nth-child(odd)]:border-0">
+            <dt className="text-xs text-slate-400">{k}</dt>
+            <dd className="text-end text-[13px] font-semibold text-slate-800">{v}</dd>
+          </div>
+        ))}
       </dl>
+
+      {r.breakdown && (
+        <div className="border-t border-slate-100 px-5 py-3">
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            aria-expanded={open}
+            aria-controls="receipt-breakdown"
+            className="flex w-full items-center justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50/60 px-3.5 py-2.5 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          >
+            <span>{open ? tx("Hide payment breakdown") : tx("View payment breakdown")}</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`h-4 w-4 transition-transform duration-300 ${open ? "rotate-180" : ""}`}><polyline points="6 9 12 15 18 9" /></svg>
+          </button>
+          <div id="receipt-breakdown" className={`grid transition-all duration-300 ease-out ${open ? "mt-3 grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`} aria-hidden={!open}>
+            <div className="overflow-hidden"><BreakdownTable b={r.breakdown} compact /></div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

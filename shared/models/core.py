@@ -2156,6 +2156,8 @@ class InitialPremiumPayment(SQLModel, table=True):
     proof_review_note: Optional[str] = Field(default=None, max_length=500, nullable=True)
     proof_reviewed_at: Optional[datetime] = Field(default=None, nullable=True)
     proof_reviewed_by: Optional[str] = Field(default=None, max_length=255, nullable=True)
+    # The premium breakdown the amount was worked out from (base, loading, fee, stamp duty, tax, total): the same calculation issuance uses.
+    breakdown_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     proof_method: Optional[str] = Field(default=None, max_length=50, nullable=True)       # how the customer says they paid
     proof_reference: Optional[str] = Field(default=None, max_length=100, nullable=True)   # the transaction id they quote
     reminder_count: int = Field(default=0, nullable=False)
@@ -3621,6 +3623,7 @@ class ActuarialImpactDetail(SQLModel):
     reason: Optional[str] = None                              # why the rule matters, shown to users
     risk_factor: Optional[str] = None                         # profile risk screening (RS-RISK-001) factor key
     risk_level: Optional[float] = None                        # 0 (safe) – 1 (fully adverse) for that factor
+    upfront_payment_pct: Optional[float] = None               # initial-premium split (RS-PAY-001): % of the premium collected before underwriting
 
 
 # ── Hierarchy: Category -> SubCategory -> EligibilityProfile ──────────────────

@@ -144,6 +144,126 @@ function CategoryCard({ cat }: { cat: RiskCategory }) {
   );
 }
 
+const money = (n?: number | null) => (n == null ? null : `PKR ${Math.round(Number(n)).toLocaleString()}`);
+
+function CopyValue({ value }: { value: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button type="button" title={tx("Copy")} aria-label={tx("Copy")}
+      onClick={(e) => { e.stopPropagation(); try { void navigator.clipboard.writeText(value); setDone(true); window.setTimeout(() => setDone(false), 1400); } catch { /* clipboard unavailable */ } }}
+      className="ml-1.5 inline-flex h-5 w-5 items-center justify-center rounded text-slate-300 opacity-0 transition hover:bg-slate-100 hover:text-slate-600 focus:opacity-100 group-hover:opacity-100">
+      {done
+        ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3 text-emerald-600"><polyline points="20 6 9 17 4 12" /></svg>
+        : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>}
+    </button>
+  );
+}
+
+function InfoGrid({ rows }: { rows: [string, string | null | undefined][] }) {
+  return (
+    <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {rows.map(([k, v]) => (
+        <div key={k} className="group min-w-0 rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3 transition hover:border-blue-200 hover:bg-white hover:shadow-sm">
+          <dt className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{tx(k)}</dt>
+          <dd className="mt-1 flex items-start text-sm font-semibold text-slate-800 break-words">
+            {v ? <><span className="min-w-0">{v}</span><CopyValue value={v} /></> : <span className="text-slate-300">—</span>}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+const EXIT_TONE: Record<string, { ring: string; chip: string; bar: string; text: string }> = {
+  Surrendered: { ring: "border-amber-200 from-amber-50", chip: "bg-amber-100 text-amber-800 border-amber-200", bar: "bg-amber-400", text: "text-amber-700" },
+  Matured: { ring: "border-emerald-200 from-emerald-50", chip: "bg-emerald-100 text-emerald-800 border-emerald-200", bar: "bg-emerald-500", text: "text-emerald-700" },
+  Expired: { ring: "border-slate-300 from-slate-100", chip: "bg-slate-200 text-slate-700 border-slate-300", bar: "bg-slate-400", text: "text-slate-600" },
+};
+
+/** Read-only profile for a customer whose policy has ended: the policy they held at a glance, then who they are. */
+function ExitedProfile({ data, policy }: { data: any; policy: any }) {
+  const [tab, setTab] = useState<"policy" | "personal" | "contact">("policy");
+  const c = data.details?.contact ?? {};
+  const addr = data.details?.address;
+  const dob = data.dob || data.date_of_birth;
+  const label = (v: any) => (v == null ? null : String(v).replace(/_/g, " "));
+  const tone = EXIT_TONE[policy.status] ?? EXIT_TONE.Expired;
+  const addressText = typeof addr === "string" ? addr : addr && typeof addr === "object"
+    ? Object.values(addr).filter((v) => v && typeof v !== "boolean").join(", ") : null;
+
+  // How far through its term the policy got before it ended.
+  const t0 = policy.effective_date ? new Date(policy.effective_date).getTime() : null;
+  const t1 = policy.maturity_date ? new Date(policy.maturity_date).getTime() : null;
+  const te = policy.ended_on ? new Date(policy.ended_on).getTime() : null;
+  const pct = t0 && t1 && te && t1 > t0 ? Math.max(4, Math.min(100, Math.round(((te - t0) / (t1 - t0)) * 100))) : null;
+
+  const tabs: [typeof tab, string][] = [["policy", tx("Policy")], ["personal", tx("Personal details")], ["contact", tx("Contact")]];
+  return (
+    <div className="space-y-5">
+      <div className={`rounded-2xl border bg-gradient-to-br ${tone.ring} to-white p-5 shadow-sm`}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{tx("Policy")}</p>
+            <h3 className="mt-0.5 text-lg font-bold text-slate-900">{policy.product_name}</h3>
+            <p className="mt-0.5 font-mono text-xs text-slate-500">{policy.policy_number}</p>
+          </div>
+          <span className={`rounded-full border px-3 py-1 text-xs font-bold ${tone.chip}`}>{tx(policy.status)}</span>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {([[tx("Sum Assured"), money(policy.sum_assured)], [tx("Duration held"), policy.held_years != null ? `${policy.held_years} ${tx("years")}` : null],
+             [tx("Original term"), policy.term_years != null ? `${policy.term_years} ${tx("years")}` : null], [tx("Paid out"), money(policy.net_paid_out)]] as [string, string | null][]).map(([k, v]) => (
+            <div key={k} className="rounded-xl border border-white bg-white/80 px-4 py-3 shadow-sm">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{k}</p>
+              <p className={`mt-1 text-base font-extrabold tabular-nums ${k === tx("Paid out") ? tone.text : "text-slate-900"}`}>{v ?? "—"}</p>
+            </div>
+          ))}
+        </div>
+        {pct != null && (
+          <div className="mt-5">
+            <div className="flex justify-between text-[11px] font-semibold text-slate-500">
+              <span>{tx("Started")} · {displayDate(policy.effective_date)}</span>
+              <span>{tx("Maturity date")} · {displayDate(policy.maturity_date)}</span>
+            </div>
+            <div className="relative mt-2 h-2.5 rounded-full bg-slate-200/80" role="img" aria-label={tx("{0}% of the term completed", { 0: pct })}>
+              <div className={`h-full rounded-full ${tone.bar} transition-all duration-700`} style={{ width: `${pct}%` }} />
+              <span className={`absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow ${tone.bar}`} style={{ left: `${pct}%` }} />
+            </div>
+            <p className="mt-2 text-xs text-slate-500">{tx(policy.status)} {policy.ended_on ? `${tx("on")} ${displayDate(policy.ended_on)}` : ""} — {pct}% {tx("of the term completed")}</p>
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-slate-100 bg-white p-2 shadow-sm">
+        <div role="tablist" className="flex gap-1 rounded-xl bg-slate-100/80 p-1">
+          {tabs.map(([k, l]) => (
+            <button key={k} role="tab" aria-selected={tab === k} type="button" onClick={() => setTab(k)}
+              className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${tab === k ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>{l}</button>
+          ))}
+        </div>
+        <div className="p-3 animate-in fade-in duration-200" key={tab}>
+          {tab === "policy" && <InfoGrid rows={[
+            [tx("Plan"), policy.product_name], [tx("Policy No."), policy.policy_number], [tx("Status"), tx(policy.status)],
+            [tx("Sum Assured"), money(policy.sum_assured)], [tx("Started"), policy.effective_date ? displayDate(policy.effective_date) : null],
+            [tx("Ended"), policy.ended_on ? displayDate(policy.ended_on) : null], [tx("Duration held"), policy.held_years != null ? `${policy.held_years} ${tx("years")}` : null],
+            [tx("Original term"), policy.term_years != null ? `${policy.term_years} ${tx("years")}` : null],
+            [tx("Maturity date"), policy.maturity_date ? displayDate(policy.maturity_date) : null], [tx("Paid out"), money(policy.net_paid_out)],
+          ]} />}
+          {tab === "personal" && <InfoGrid rows={[
+            [tx("Full name"), data.name], ["CNIC", data.cnic], [tx("Date of Birth"), dob ? `${displayDate(dob)}${ageFrom(dob) !== null ? ` · ${ageFrom(dob)} yrs` : ""}` : null],
+            [tx("Gender"), label(data.gender)], [tx("Marital status"), label(data.marital_status)], [tx("Occupation"), data.occupation],
+            [tx("Declared income"), money(data.declared_income)], [tx("Height / weight"), data.height_cm && data.weight_kg ? `${data.height_cm} cm · ${data.weight_kg} kg` : null],
+            [tx("Smoker"), data.is_smoker == null ? null : data.is_smoker ? tx("Yes") : tx("No")],
+          ]} />}
+          {tab === "contact" && <InfoGrid rows={[
+            [tx("Phone"), c.mobile_number || c.phone_number || data.details?.phone], [tx("Email"), c.email || data.details?.email],
+            [tx("Address"), addressText], [tx("City"), data.city], [tx("Province"), data.province],
+          ]} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface UnifiedDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -254,6 +374,8 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
   };
 
   if (!isOpen) return null;
+  // Someone whose policy has left (surrendered / matured / expired): a read-only profile — no underwriting actions.
+  const exited = entityType === "INDIVIDUAL" ? data?.exited_policy ?? null : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
@@ -278,6 +400,9 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                   <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border bg-blue-50 text-blue-700 border-blue-200">
                     {entityType}
                   </span>
+                  {exited && (
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 border border-slate-300">{tx(exited.status)}</span>
+                  )}
                   {data?.profile_status && (
                     <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
                       {data.profile_status.replace('_', ' ')}
@@ -303,7 +428,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                   {tx("Manage Corporate & Census")}
                 </button>
               )}
-              {entityType === "INDIVIDUAL" && data && (
+              {entityType === "INDIVIDUAL" && data && !exited && (
                 <button
                   onClick={() => (risk && riskHidden ? setRiskHidden(false) : runRiskAssessment())}
                   disabled={riskLoading}
@@ -314,7 +439,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                   {tx("Risk Assessment")}
                 </button>
               )}
-              {data && data.profile_status !== "DRAFT" && (
+              {data && !exited && data.profile_status !== "DRAFT" && (
                 <button 
                   onClick={() => handleSendToDraft()}
                   title={tx("AI feature: turns the selected plan into a proposal")}
@@ -324,12 +449,12 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                   {tx("Create Proposal")}
                 </button>
               )}
-              <button 
+              {!exited && <button 
                 onClick={() => setShowEditModal(true)}
                 className="text-xs font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 px-4 py-2 rounded-lg transition-colors shadow-sm"
               >
                 {tx("Open Full Details Form")}
-              </button>
+              </button>}
               <button 
                 onClick={onClose}
                 aria-label={tx("Close")}
@@ -378,7 +503,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
             </div>
           ) : (
             <div className="space-y-6">
-                {entityType === 'INDIVIDUAL' && (risk || riskError) && !riskHidden && (
+                {entityType === 'INDIVIDUAL' && !exited && (risk || riskError) && !riskHidden && (
                   <div className="bg-white p-5 rounded-2xl shadow-sm border border-blue-100">
                     <div className="flex items-start justify-between gap-3 mb-4">
                       <div>
@@ -461,7 +586,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                 )}
                 
                 {/* Risk Overview (If Applicable) */}
-                {entityType === 'INDIVIDUAL' && data.underwriting_score !== undefined && data.underwriting_score !== null && (
+                {entityType === 'INDIVIDUAL' && !exited && data.underwriting_score !== undefined && data.underwriting_score !== null && (
                   <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
                     <div>
                       <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{tx("Underwriting AI Score")}</h3>
@@ -476,8 +601,10 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                   </div>
                 )}
 
+                {exited && <ExitedProfile data={data} policy={exited} />}
+
                 {/* Relationship / Roster Data */}
-                <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 min-h-[300px]">
+                {!exited && <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 min-h-[300px]">
                   <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">
                     {entityType === 'INDIVIDUAL' ? tx("Insurance Plan") : entityType === 'FAMILY' ? tx("Family Roster & Coverage") : tx("Employee Census")}
                   </h3>
@@ -528,7 +655,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                     )}
                   </div>
                   )}
-                </div>
+                </div>}
 
             </div>
           )}

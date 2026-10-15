@@ -2416,9 +2416,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const [acrWaiving, setAcrWaiving] = useState(false);
   const [waiveModal, setWaiveModal] = useState<"waive" | "undo" | null>(null);
   const [waiveError, setWaiveError] = useState<string | null>(null);
+  // One click: the backend still records who waived and when; no reason prompt.
   const handleWaiveAcr = () => {
-    setWaiveError(null);
-    setWaiveModal("waive");
+    void confirmWaiveAcr("Waived by underwriter");
   };
   const handleReinstateAcr = () => {
     setWaiveError(null);
@@ -2434,9 +2434,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
       window.setTimeout(() => setSuccessMessage(null), 4000);
       await fetchDetail();
     } catch (e: any) {
-      setWaiveError(
-        e?.response?.data?.detail ?? e?.message ?? "Couldn't waive the ACR.",
-      );
+      const msg = e?.response?.data?.detail ?? e?.message ?? "Couldn't waive the ACR.";
+      setWaiveError(msg);
+      window.alert(msg);
     } finally {
       setAcrWaiving(false);
     }
@@ -2676,6 +2676,23 @@ export default function CasePage({ params }: { params: { id: string } }) {
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, [requestCaseRefresh]);
+
+  // A run that stopped because requirements were still open starts itself once the last one is
+  // satisfied or waived (the live case events refresh `requirements`), so nobody has to come back
+  // and press Run. Armed only by such a stop; anything else still needs an explicit click.
+  const runAfterRequirementsRef = useRef<(() => void) | null>(null);
+  const autoRunArmed = useRef(false);
+  useEffect(() => {
+    if (/requirements are not/i.test(`${trace.error ?? ""} ${streamError ?? ""}`)) autoRunArmed.current = true;
+  }, [trace.error, streamError]);
+  const noOpenRequirements =
+    requirements.length > 0 && !requirements.some((r) => r.required && r.status !== "Satisfied" && r.status !== "Waived");
+  useEffect(() => {
+    if (!autoRunArmed.current || !noOpenRequirements || detail?.latest_assessment) return;
+    autoRunArmed.current = false;
+    setStreamError(null);
+    runAfterRequirementsRef.current?.();
+  }, [noOpenRequirements, detail?.latest_assessment]);
 
   // Poll every 3s while any artifact is still being OCR'd, so status/ocr_result
   // update without a manual refresh — same pattern as the /cases explorer.
@@ -3621,6 +3638,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const effStreamError = isGroup ? (groupErrors[caseId] ?? null) : streamError;
   const handleRun = () =>
     isGroup ? runGroupCase(caseId, true) : runUnderwriting();
+  runAfterRequirementsRef.current = handleRun;
 
   // Prefer the live (just-streamed) result for this session; fall back to the
   // last persisted assessment. Live gives per-category reasons; persisted only

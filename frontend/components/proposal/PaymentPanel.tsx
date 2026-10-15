@@ -7,6 +7,7 @@ import {
 } from "@/app/services/initialPremiumPayment";
 import { tx } from "@/lib/i18n/tx";
 import { ReceiptCard } from "./ReceiptCard";
+import { BreakdownTable } from "./BreakdownTable";
 
 // The initial premium of an application under review, from the staff side. The customer is asked to pay (a secure link, by email and in
 // their walk-in portal), reminded if they do not, and the payment is cleared when they send a receipt / say they have paid and staff
@@ -81,6 +82,15 @@ export function PaymentPanel({ policyId, ipp, canAct, onChange, onCleared }: {
       </div>
 
       <div className="px-3.5 py-3 space-y-3">
+        {(ipp?.breakdown ?? ipp?.breakdown_due)?.split?.message_upfront && (
+          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">{(ipp?.breakdown ?? ipp?.breakdown_due)!.split!.message_upfront}</p>
+        )}
+        {(ipp?.breakdown ?? ipp?.breakdown_due) && (
+          <details open className="group">
+            <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-600">{tx("How this amount is made up")}</summary>
+            <div className="mt-2 max-w-sm"><BreakdownTable b={(ipp?.breakdown ?? ipp?.breakdown_due)!} compact /></div>
+          </details>
+        )}
         {!requested && <p>{tx("Ask the customer to pay. They get a secure link by email and in their portal, and can upload a receipt or tell us they have paid. Or record the payment yourself if you have already received it.")}</p>}
 
         {requested && (

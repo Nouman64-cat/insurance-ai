@@ -5,6 +5,7 @@ import { useNotify } from "@/components/NotificationContext";
 import { RULE_CODE_REGEX } from "./constants";
 import HierarchyTree from "./HierarchyTree";
 import RuleSetList from "./RuleSetList";
+import ScrollChips from "./ScrollChips";
 import RuleSetDrawer from "./RuleSetDrawer";
 import { useRuleSets } from "./useRuleSets";
 import { tx } from "@/lib/i18n/tx";
@@ -172,7 +173,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
             {tx("New rule set")}
           </button>
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
+        <ScrollChips>
           <button
             type="button"
             onClick={() => setCategoryFilter(null)}
@@ -190,7 +191,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
               {c.name} <span className={categoryFilter === c.code ? "text-slate-300" : "text-slate-400"}>{c.count}</span>
             </button>
           ))}
-        </div>
+        </ScrollChips>
       </div>
 
       <RuleSetList

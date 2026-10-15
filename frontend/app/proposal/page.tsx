@@ -1552,10 +1552,10 @@ function ActionDropdown({
       <button
         onClick={handleApply}
         disabled={disabled || applying || optionDisabled}
-        className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-colors disabled:opacity-50 ${
+        className={`inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg text-sm font-bold shadow-sm transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
           selectedOption?.tier === "decision"
-            ? "bg-rose-600 text-white hover:bg-rose-700"
-            : "bg-blue-600 text-white hover:bg-blue-700"
+            ? "bg-rose-600 text-white hover:bg-rose-700 shadow-rose-600/20 focus-visible:ring-rose-500"
+            : "bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/25 focus-visible:ring-blue-500"
         }`}
       >
         {applying ? (
@@ -1595,32 +1595,10 @@ function BatchActionBar({
   canDecide: boolean;
 }) {
   const { tx } = useI18n();
+  // Selection and batch actions were removed from the list; the bar is just the folder's count.
   return (
-    <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap border-b border-slate-200 bg-slate-50/50">
-      <div className="flex items-center gap-3">
-        <input
-          type="checkbox"
-          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-          checked={allSelected}
-          onChange={onToggleAll}
-        />
-        <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
-          {selectedCount > 0 && (
-            <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-blue-600 text-white text-[10px] font-bold">
-              {selectedCount}
-            </span>
-          )}
-          {selectedCount > 0 ? tx("of {count} plan(s) selected", { count: totalCount }) : tx("{count} plan(s) in this folder", { count: totalCount })}
-        </p>
-      </div>
-      <ActionDropdown
-        options={options}
-        onApply={onApply}
-        getConfirmMessage={getConfirmMessage}
-        disabled={disabled}
-        canAct={canAct}
-        canDecide={canDecide}
-      />
+    <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/50">
+      <p className="text-xs font-semibold text-slate-500">{tx("{count} plan(s) in this folder", { count: totalCount })}</p>
     </div>
   );
 }
@@ -1691,92 +1669,78 @@ function ProposalsTable({
   if (quotes.length === 0) return null;
   const allSelected = quotes.length > 0 && quotes.every(q => selectedQuoteIds.has(q.quote_id));
 
+  const TYPE_LABEL = { individual: "Individual", family: "Family", organization: "Corporate" } as const;
+  const TYPE_STYLE = { individual: "bg-blue-50 text-blue-700 border-blue-200", family: "bg-violet-50 text-violet-700 border-violet-200", organization: "bg-amber-50 text-amber-700 border-amber-200" } as const;
+  const th = "px-3 py-3 whitespace-nowrap";
+
   return (
     <div className="overflow-x-auto bg-white w-full border-t border-slate-100">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-400">
-            <th className="px-5 py-3 text-start w-12">
-              <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
-                <input
-                  type="checkbox"
-                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                  checked={allSelected}
-                  onChange={() => toggleAllInFolder(quotes.map(q => q.quote_id))}
-                />
-              </div>
-            </th>
-            <th className="px-5 py-3 text-start">{tx("Customer")}</th>
-            <th className="px-2 py-3 text-start">{tx("Plan")}</th>
-            <th className="px-5 py-3 text-start">{tx("Status")}</th>
-            <th className="px-5 py-3 text-end">{tx("Coverage")}</th>
-            <th className="px-5 py-3 text-center">{tx("Term")}</th>
-            <th className="px-5 py-3 text-end">{tx("Premium")}</th>
-            <th className="px-5 py-3 text-end">{tx("Risk")}</th>
-            <th className="px-5 py-3 text-end">{tx("Total")}</th>
-            <th className="px-5 py-3 text-start">{tx("Underwriter")}</th>
-            <th className="px-5 py-3 text-start">{tx("Generated")}</th>
+          <tr className="border-b border-slate-100 bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            <th className={`${th} pl-5 text-start`}>{tx("Applicant")}</th>
+            <th className={`${th} text-start`}>{tx("Type")}</th>
+            <th className={`${th} text-start`}>{tx("Plan")}</th>
+            <th className={`${th} text-start`}>{tx("Status")}</th>
+            <th className={`${th} text-end`}>{tx("Coverage")}</th>
+            <th className={`${th} text-center`}>{tx("Term")}</th>
+            <th className={`${th} text-end`}>{tx("Premium")}</th>
+            <th className={`${th} text-end`}>{tx("Risk")}</th>
+            <th className={`${th} text-end`}>{tx("Total")}</th>
+            <th className={`${th} text-start`}>{tx("Underwriter")}</th>
+            <th className={`${th} text-start`}>{tx("Generated")}</th>
+            <th className="px-4 py-3" />
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
-          {quotes.map((row) => (
-            <tr
-              key={row.quote_id}
-              onClick={() => openQuote(row.quote_id)}
-              className={`transition-colors cursor-pointer ${selectedQuoteIds.has(row.quote_id) ? "bg-blue-50/40" : "hover:bg-slate-50"}`}
-            >
-              <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                    checked={selectedQuoteIds.has(row.quote_id)}
-                    onChange={() => toggleSelection(row.quote_id)}
-                  />
-                </div>
-              </td>
-              <td className="px-5 py-3.5">
-                <p className="text-slate-900 font-bold truncate max-w-[150px]" title={row.customer_name}>{row.customer_name}</p>
-                <p className="text-slate-500 text-[10px] font-mono">{row.customer_cnic}</p>
-                <p className="text-[11px] font-medium text-slate-500 mt-1">
-                  {tx("Lead ID:")} {formatLeadDisplayId(row.customer_id, row.created_at, quoteSegment(row))}
-                </p>
-                {row.acquisition_source_name && (
-                  // Labelled with what the source is (Agent, Broker, Bancassurance…), so a name never stands alone.
-                  <p
-                    className="text-[11px] font-medium text-slate-500 mt-0.5 truncate max-w-[180px]"
-                    title={`${tx(SOURCE_TYPE_LABELS[row.acquisition_source_type ?? ""] ?? "Source")}: ${row.acquisition_source_name}`}
-                  >
-                    {tx(SOURCE_TYPE_LABELS[row.acquisition_source_type ?? ""] ?? "Source")}:{" "}
-                    <span className="text-slate-700">{row.acquisition_source_name}</span>
+        <tbody>
+          {quotes.map((row) => {
+            const seg = quoteSegment(row);
+            const selected = selectedQuoteIds.has(row.quote_id);
+            const source = row.acquisition_source_name
+              ? `${tx(SOURCE_TYPE_LABELS[row.acquisition_source_type ?? ""] ?? "Source")}: ${row.acquisition_source_name}` : null;
+            return (
+              <tr
+                key={row.quote_id}
+                onClick={() => openQuote(row.quote_id)}
+                className={`border-b border-slate-100 last:border-0 transition-colors cursor-pointer ${selected ? "bg-blue-50/50" : "hover:bg-slate-50"}`}
+              >
+                <td className="pl-5 pr-3 py-3">
+                  <p className="font-semibold text-slate-900 truncate max-w-[180px]" title={row.customer_name}>{row.customer_name}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{tx("CNIC:")} <span className="font-mono">{row.customer_cnic ?? "—"}</span></p>
+                  <p className="text-[11px] text-slate-400 mt-0.5 truncate max-w-[220px]" title={source ?? undefined}>
+                    {formatLeadDisplayId(row.customer_id, row.created_at, seg)}{source ? ` · ${source}` : ""}
                   </p>
-                )}
-              </td>
-              <td className="px-2 py-3.5">
-                <p className="text-slate-700 font-medium">{row.plan_label}</p>
-                <span className="inline-flex mt-0.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">
-                  {tx(INSURANCE_TYPE_LABELS[row.insurance_type] ?? row.insurance_type)}
-                </span>
-              </td>
-              <td className="px-5 py-3.5">
-                <StatusBadge status={row.status} />
-              </td>
-              <td className="px-5 py-3.5 text-end font-medium text-slate-700">{formatPKR(row.coverage_amount)}</td>
-              <td className="px-5 py-3.5 text-center text-slate-600">{tx("{years}y", { years: row.term_years })}</td>
-              <td className="px-5 py-3.5 text-end text-slate-600">{formatPKR(row.base_premium)}</td>
-              <td className="px-5 py-3.5 text-end text-slate-600">{formatPKR(row.loading_applied)}</td>
-              <td className="px-5 py-3.5 text-end font-bold text-slate-900">{formatPKR(row.total_premium)}</td>
-              <td className="px-5 py-3.5">
-                <UnderwriterAvatar name={row.assigned_underwriter_name} />
-                <div className="mt-1">
-                  <SlaHint status={row.sla_status} daysRemaining={row.sla_days_remaining} />
-                </div>
-              </td>
-              <td className="px-5 py-3.5 text-slate-500 text-xs whitespace-nowrap">
-                {displayDate(row.created_at)}
-              </td>
-            </tr>
-          ))}
+                </td>
+                <td className="px-3 py-3">
+                  <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border ${TYPE_STYLE[seg]}`}>{tx(TYPE_LABEL[seg])}</span>
+                </td>
+                <td className="px-3 py-3">
+                  <p className="text-slate-700 font-medium">{row.plan_label}</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">{tx(INSURANCE_TYPE_LABELS[row.insurance_type] ?? row.insurance_type)}</p>
+                </td>
+                <td className="px-3 py-3"><StatusBadge status={row.status} /></td>
+                <td className="px-3 py-3 text-end font-medium text-slate-700 tabular-nums whitespace-nowrap">{formatPKR(row.coverage_amount)}</td>
+                <td className="px-3 py-3 text-center text-slate-600">{tx("{years}y", { years: row.term_years })}</td>
+                <td className="px-3 py-3 text-end text-slate-600 tabular-nums whitespace-nowrap">{formatPKR(row.base_premium)}</td>
+                <td className="px-3 py-3 text-end text-slate-600 tabular-nums whitespace-nowrap">{formatPKR(row.loading_applied)}</td>
+                <td className="px-3 py-3 text-end font-bold text-slate-900 tabular-nums whitespace-nowrap">{formatPKR(row.total_premium)}</td>
+                <td className="px-3 py-3">
+                  <UnderwriterAvatar name={row.assigned_underwriter_name} />
+                  <div className="mt-1"><SlaHint status={row.sla_status} daysRemaining={row.sla_days_remaining} /></div>
+                </td>
+                <td className="px-3 py-3 text-slate-500 text-xs whitespace-nowrap">{displayDate(row.created_at)}</td>
+                <td className="px-4 py-3 text-right">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); openQuote(row.quote_id); }}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:border-blue-300 hover:text-blue-700"
+                  >
+                    {tx("Open")}
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -1806,16 +1770,7 @@ function ProposalsGrid({
           onClick={() => openQuote(row.quote_id)}
           className={`relative border rounded-xl p-4 flex flex-col gap-3 cursor-pointer transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg bg-white ${selectedQuoteIds.has(row.quote_id) ? "border-blue-300 ring-1 ring-blue-400/20 shadow-md" : "border-slate-200 shadow-sm"}`}
         >
-          <div className="absolute top-3 end-3 z-10" onClick={(e) => e.stopPropagation()}>
-            <input
-              type="checkbox"
-              className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-              checked={selectedQuoteIds.has(row.quote_id)}
-              onChange={() => toggleSelection(row.quote_id)}
-            />
-          </div>
-
-          <div className="pe-6">
+          <div>
             <h4 className="font-bold text-slate-900 truncate">{row.customer_name}</h4>
             <p className="text-xs text-slate-500 font-mono mt-0.5">{row.customer_cnic}</p>
             <p className="text-[11px] font-medium text-slate-500 mt-1">

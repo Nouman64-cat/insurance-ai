@@ -1483,6 +1483,7 @@ MIGRATIONS: list[tuple[str, str]] = [
     ("v62u — walk_in_leads.applicant_type", "ALTER TABLE walk_in_leads ADD COLUMN IF NOT EXISTS applicant_type VARCHAR(10) NOT NULL DEFAULT 'Self'"),
     ("v62v — walk_in_leads.family_group_id", "ALTER TABLE walk_in_leads ADD COLUMN IF NOT EXISTS family_group_id UUID REFERENCES family_groups(id)"),
     ("v62w — walk_in_leads.household_json", "ALTER TABLE walk_in_leads ADD COLUMN IF NOT EXISTS household_json JSON"),
+    ("v63e — initial_premium_payments.breakdown_json", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS breakdown_json JSON"),
     ("v63a — initial_premium_payments.proof_method", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS proof_method VARCHAR(50)"),
     ("v63b — initial_premium_payments.proof_reference", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS proof_reference VARCHAR(100)"),
     ("v63c — initial_premium_payments.reminder_count", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS reminder_count INTEGER NOT NULL DEFAULT 0"),

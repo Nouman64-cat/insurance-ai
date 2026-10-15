@@ -992,6 +992,13 @@ export interface ExitCaseView {
   timeline: ReinstatementTimelineItem[];
 }
 
+export interface ExitOutlook {
+  profile: string; premiums_paid: number; premiums_scheduled: number; term_years: number | null; projection_basis: string;
+  no_claim: { benefit: number; fund?: number; growth?: number; note: string };
+  surrender: { benefit: number | null; note: string };
+  schedule: { year: number; date: string; premiums_paid: number; fund: number; factor: number | null; value: number; reached: boolean }[];
+}
+
 export interface ExitOverview {
   policy: { id: string; policy_number: string | null; status: string; product_name: string; insurance_type: string; sum_assured: number;
     customer_name: string | null; customer_cnic: string | null; effective_date: string | null; maturity_date: string | null;
@@ -1002,6 +1009,7 @@ export interface ExitOverview {
   natural: { exit_type: ExitType; label: string; term_ends: string | null;
     timing: { state: "Upcoming" | "InWindow" | "Reached" | "Unknown"; days_until: number | null; window_opens_on: string | null };
     eligibility: { status: string; message: string; checks: ReinstatementCheck[]; blockers: ReinstatementCheck[] }; can_open: boolean } | null;
+  outlook: ExitOutlook | null;
   indicative: { maturity: ExitSettlement | null; surrender: { available: boolean; reason: string | null; settlement?: ExitSettlement } } | null;
   loans: ExitLoan[];
   claim_closure: { claim_no: string | null; at: string | null; benefit_paid: number | null; category: string | null } | null;

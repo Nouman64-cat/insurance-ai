@@ -390,6 +390,7 @@ services:
       - /workspace/customer-portal/node_modules
       - /workspace/customer-portal/.next
     environment:
+      CM_STREAM_URL: http://customer-management:8009   # live updates connect straight to Customer Management (the gateway buffers responses)
       CM_API_URL: http://api-gateway:8000/customer-management
       COOKIE_SECURE: ${PORTAL_COOKIE_SECURE:-false} # set to true behind HTTPS
       WATCHPACK_POLLING: "true"

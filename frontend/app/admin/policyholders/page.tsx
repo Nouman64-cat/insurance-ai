@@ -27,6 +27,7 @@ interface UnifiedPolicyholder {
   created_at: string;
   primaryIdentifier?: string; // CNIC or Registration No
   policy_number?: string;
+  policy_status?: string;
 }
 
 type FilterType = "ALL" | "INDIVIDUAL" | "FAMILY" | "CORPORATE";
@@ -152,6 +153,7 @@ export default function PolicyholdersPage() {
           created_at: c.created_at,
           primaryIdentifier: c.cnic,
           policy_number: c.active_policy_number,
+          policy_status: c.policy_status,
         });
       });
 
@@ -454,6 +456,7 @@ export default function PolicyholdersPage() {
                     <th className="px-6 py-4">{tx("Contact")}</th>
                     <th className="px-6 py-4">{tx("CNIC")}</th>
                     <th className="px-6 py-4">{tx("Policy No.")}</th>
+                    <th className="px-6 py-4">{tx("Status")}</th>
                     <th className="px-6 py-4">{tx("Enrolled Date")}</th>
                     <th className="px-6 py-4 text-right">{tx("Action")}</th>
                   </tr>
@@ -493,6 +496,15 @@ export default function PolicyholdersPage() {
                         <td className="px-6 py-4 text-slate-600">{p.contact_info}</td>
                         <td className="px-6 py-4 text-slate-500 font-mono text-xs">{p.primaryIdentifier || "-"}</td>
                         <td className="px-6 py-4 text-blue-700 font-mono font-semibold text-xs">{p.policy_number || "-"}</td>
+                        <td className="px-6 py-4">
+                          {p.policy_status ? (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border ${
+                              p.policy_status === "Active" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                              p.policy_status === "Matured" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                              "bg-slate-100 text-slate-600 border-slate-300"
+                            }`}>{tx(p.policy_status)}</span>
+                          ) : <span className="text-slate-300">-</span>}
+                        </td>
                         <td className="px-6 py-4 text-slate-500">{displayDate(p.created_at)}</td>
                         <td className="px-6 py-4 text-right space-x-3">
                           <button 
@@ -513,7 +525,7 @@ export default function PolicyholdersPage() {
                       
                       {p.type === "FAMILY" && expandedFamilies[p.id] && (
                         <tr className="bg-slate-50/40 border-b border-slate-100 shadow-inner">
-                          <td colSpan={7} className="px-14 py-4">
+                          <td colSpan={8} className="px-14 py-4">
                             {loadingMembers[p.id] ? (
                               <div className="flex items-center py-4 text-slate-400 text-sm">
                                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-3"></div>
@@ -560,7 +572,7 @@ export default function PolicyholdersPage() {
                                       ))}
                                       {(!familyMembersCache[p.id] || familyMembersCache[p.id].length === 0) && (
                                         <tr>
-                                          <td colSpan={7} className="px-4 py-6 text-center text-slate-400">{tx("No enrolled members found for this family.")}</td>
+                                          <td colSpan={8} className="px-4 py-6 text-center text-slate-400">{tx("No enrolled members found for this family.")}</td>
                                         </tr>
                                       )}
                                     </tbody>

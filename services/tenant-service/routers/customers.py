@@ -16,7 +16,7 @@ from shared.events.kafka_events import CUSTOMER_CREATED_TOPIC, CustomerCreatedEv
 from shared.models.core import (
     AcquisitionSource, Beneficiary, Case, ComplianceCheck, CounterOffer,
     Customer, DocumentRequest, Policy, PolicyDocument, PolicyEvent, PolicyRequirement,
-    PolicyVersion, PremiumQuote, PremiumSchedule, Tenant,
+    PolicyExit, PolicyVersion, PremiumQuote, PremiumSchedule, Tenant,
     ProfileStatusEnum, PolicyStatusEnum, InsurancePlan,
 )
 from services import document_requests as docreq
@@ -29,6 +29,9 @@ from routers.users import verify_admin   # reuse existing Admin guard
 # i.e. still sitting in the Policy Issuance queue. Including it caused customers to appear
 # in the Policyholders page before they had any real coverage.
 ACTIVE_POLICY_STATUSES = (PolicyStatusEnum.ACTIVE,)
+# A customer whose policy has since left (matured, surrendered, expired) stays on the Policyholders page, shown with that
+# status, rather than vanishing as if they had never held a policy.
+POLICYHOLDER_STATUSES = ACTIVE_POLICY_STATUSES + (PolicyStatusEnum.MATURED, PolicyStatusEnum.SURRENDERED, PolicyStatusEnum.EXPIRED)
 
 CustomerCategory = Literal["active", "full_details", "quick_lead", "not_interested"]
 
@@ -39,7 +42,7 @@ def _active_policy_exists(tenant_id: UUID):
         .where(
             Policy.tenant_id == tenant_id,
             Policy.customer_id == Customer.id,
-            func.upper(cast(Policy.status, String)).in_([status.value.upper() for status in ACTIVE_POLICY_STATUSES]),
+            func.upper(cast(Policy.status, String)).in_([status.value.upper() for status in POLICYHOLDER_STATUSES]),
         )
         .exists()
     )
@@ -321,18 +324,24 @@ async def list_customers(
         policy_res = await session.exec(
             select(Policy)
             .where(Policy.customer_id.in_(c_ids))
-            .where(func.upper(cast(Policy.status, String)).in_([s.value.upper() for s in ACTIVE_POLICY_STATUSES]))
+            .where(func.upper(cast(Policy.status, String)).in_([s.value.upper() for s in POLICYHOLDER_STATUSES]))
             .order_by(Policy.created_at.desc())
         )
-        policy_map = {}
+        active_val = PolicyStatusEnum.ACTIVE.value.upper()
+        policy_map: dict = {}
         for p in policy_res.all():
-            if p.policy_number and p.customer_id not in policy_map:
-                policy_map[p.customer_id] = p.policy_number
-                
+            if not p.policy_number:
+                continue
+            st = (p.status.value if hasattr(p.status, "value") else str(p.status))
+            cur = policy_map.get(p.customer_id)
+            # a live policy is what the row shows; otherwise the most recent one that ended
+            if cur is None or (st.upper() == active_val and cur[1].upper() != active_val):
+                policy_map[p.customer_id] = (p.policy_number, st)
+
         out = []
         for c in customers:
             dto = CustomerRead.model_validate(c)
-            dto.active_policy_number = policy_map.get(c.id)
+            dto.active_policy_number, dto.policy_status = policy_map.get(c.id, (None, None))
             out.append(dto)
         return out
 
@@ -399,7 +408,37 @@ async def get_customer(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Customer not found"
         )
-    return customer
+    return await _with_exited_policy(session, customer)
+
+
+async def _with_exited_policy(session: AsyncSession, customer: Customer):
+    """A customer whose policy has left (surrendered / matured / expired) and who has nothing in force gets that policy's
+    details attached, so the profile can show what they held instead of an underwriting workspace."""
+    from schemas import CustomerRead
+    dto = CustomerRead.model_validate(customer)
+    rows = (await session.exec(select(Policy).where(Policy.customer_id == customer.id).order_by(Policy.created_at.desc()))).all()
+    stat = lambda p: (p.status.value if hasattr(p.status, "value") else str(p.status))
+    if any(stat(p) == PolicyStatusEnum.ACTIVE.value for p in rows):
+        return dto
+    left = next((p for p in rows if stat(p) in (PolicyStatusEnum.SURRENDERED.value, PolicyStatusEnum.MATURED.value, PolicyStatusEnum.EXPIRED.value)), None)
+    if left is None:
+        return dto
+    ex = (await session.exec(select(PolicyExit).where(PolicyExit.policy_id == left.id, PolicyExit.status == "Completed")
+                             .order_by(PolicyExit.created_at.desc()))).first()
+    ended = (ex.closed_at.date() if ex and ex.closed_at else None)
+    start, end = left.effective_date, left.maturity_date
+    held_years = None
+    if start:
+        until = ended or date.today()
+        held_years = round((until - start).days / 365.25, 1)
+    dto.exited_policy = {
+        "policy_number": left.policy_number, "product_name": left.product_name, "status": stat(left),
+        "sum_assured": left.coverage_amount, "effective_date": start.isoformat() if start else None,
+        "maturity_date": end.isoformat() if end else None, "ended_on": ended.isoformat() if ended else None,
+        "term_years": round((end - start).days / 365.25) if start and end else None, "held_years": held_years,
+        "net_paid_out": ex.net_payable if ex else None,
+    }
+    return dto
 
 
 def _facts_signature(facts: dict) -> str:

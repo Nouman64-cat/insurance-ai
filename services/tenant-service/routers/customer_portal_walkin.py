@@ -408,7 +408,7 @@ async def _pay_view(session: AsyncSession, ipp: InitialPremiumPayment, policy: P
     paid = _pay_state(ipp) == "Paid"
     return {
         "receipt": await payment_requests.build_receipt(session, ipp) if paid else None,
-        "state": _pay_state(ipp), "customer_name": customer.name, "plan_label": policy.product_name, "amount": ipp.amount, "reference": ipp.reference,
+        "state": _pay_state(ipp), "breakdown": ipp.breakdown_json, "customer_name": customer.name, "plan_label": policy.product_name, "amount": ipp.amount, "reference": ipp.reference,
         "channels": [m["label"] if isinstance(m, dict) else str(m) for m in payment_gateway.available_methods()],
         "insurer": {"name": tenant.name if tenant else None, "phone": getattr(tenant, "contact_phone", None), "email": getattr(tenant, "contact_email", None)},
         "expires_at": ipp.request_expires_at.isoformat() if ipp.request_expires_at else None,

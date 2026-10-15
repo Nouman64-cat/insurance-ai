@@ -352,7 +352,7 @@ export default function AssessmentHistoryPage() {
     { title: "Declined", value: stats?.by_decision["Decline"] ?? "—", subtitle: "declined", accent: "blue" as const },
   ];
 
-  const visible = assessments.filter((a) => {
+  const visible = [...assessments].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).filter((a) => {
     if (filter !== "All" && a.ai_decision !== (filter as AIDecision)) return false;
     if (search) {
       const q = search.toLowerCase();

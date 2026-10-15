@@ -137,6 +137,7 @@ def _map_outcome_to_impact(action_outcome: str, outcome_payload: dict):
         "is_terminal": bool(outcome_payload.get("terminal")),
         "reason": outcome_payload.get("reason"),
         # Profile risk screening (RS-RISK-001): which factor the rule scores and how adverse it is (0–1).
+        "upfront_payment_pct": outcome_payload.get("upfront_payment_pct"),
         "risk_factor": outcome_payload.get("risk_factor"),
         "risk_level": outcome_payload.get("risk_level"),
         "commission_pct": outcome_payload.get("commission_pct"),
@@ -1071,6 +1072,17 @@ async def ensure_profile_risk_rule_set(session: AsyncSession) -> None:
     await _create_rule_set_from_seed(session, RISK_RULE_SET, sub.id, None)
 
 
+async def ensure_payment_split_rule_set(session: AsyncSession) -> None:
+    """Idempotent startup seed of RS-PAY-001, the initial-premium split. Edited afterwards in the rule-engine admin."""
+    from services.payment_split import PAYMENT_SPLIT_RULE_SET as RS
+    await seed_rules_if_empty(session)
+    if (await session.exec(select(RuleSet).where(RuleSet.rule_code == RS["code"]))).first() is not None:
+        return
+    category = await _get_or_create_category(session, RS["category_code"], RS["category_name"])
+    sub = await _get_or_create_subcategory(session, category.id, RS["sub_code"], RS["sub_name"])
+    await _create_rule_set_from_seed(session, RS, sub.id, None)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Request / Response Schemas
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1144,6 +1156,7 @@ class ActuarialImpactDetailIn(BaseModel):
     reason: Optional[str] = None
     risk_factor: Optional[str] = None
     risk_level: Optional[float] = PydanticField(default=None, ge=0, le=1)
+    upfront_payment_pct: Optional[float] = PydanticField(default=None, ge=1, le=100)
 
 
 class RuleCriteriaCreate(BaseModel):
@@ -1313,6 +1326,7 @@ async def _rule_set_hierarchy_labels(session: AsyncSession, rule_set: RuleSet):
 CONNECTED_RULE_SETS: Dict[str, str] = {
     "RS-ELG-002": "Lead capture & plan selection — early knockout",
     "RS-RISK-001": "Lead Risk Assessment on the customer profile",
+    "RS-PAY-001": "Initial premium — how much is paid at the proposal and how much at policy issuance",
 }
 
 

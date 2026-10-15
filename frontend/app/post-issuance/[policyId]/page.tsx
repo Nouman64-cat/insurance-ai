@@ -2683,7 +2683,7 @@ export default function PostIssuancePage() {
                 />
               )}
               {active === "claims" && (
-                <ClaimsPanel policyId={policyId} onChanged={load} />
+                <ClaimsPanel policyId={policyId} onChanged={load} onOpenExit={() => setActive("exit")} />
               )}
               {active === "exit" && (
                 <ExitPanel

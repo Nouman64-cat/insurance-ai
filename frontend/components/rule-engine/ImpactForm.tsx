@@ -55,6 +55,13 @@ const ALL_NUMBER_FIELDS: { key: keyof ActuarialImpactDetail; label: string; step
     forTypes: ["AUTO_APPROVE", "REFER_TO_UNDERWRITER"],
   },
   {
+    key: "upfront_payment_pct",
+    label: "Upfront payment (%) — the rest is paid at issuance",
+    step: "1",
+    icon: "M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z",
+    forTypes: ["AUTO_APPROVE"],
+  },
+  {
     key: "withholding_tax_pct",
     label: "Withholding tax (%)",
     step: "0.1",

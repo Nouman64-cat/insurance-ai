@@ -48,6 +48,38 @@ const STATUS_BADGE: Record<string, string> = {
 // ── Shared issuance stepper ──────────────────────────────────────────────────
 const ISSUE_STEPS = ["Review", "Bind & Pay", "Policy Pack"] as const;
 
+/** How the balance is worked out when only part of the premium was paid at the proposal: the final premium, less what was paid,
+ *  with the part of the balance that is new (loading and other changes made in underwriting) named separately. */
+function PartPaymentSummary({ paid, pct, quotedTotal, plannedRemaining, finalTotal }: Readonly<{
+  paid: number; pct?: number | null; quotedTotal: number; plannedRemaining: number; finalTotal: number;
+}>) {
+  const balance = Math.max(finalTotal - paid, 0);
+  const added = Math.round((balance - plannedRemaining) * 100) / 100;
+  const Row = ({ k, v, strong, tone }: { k: React.ReactNode; v: string; strong?: boolean; tone?: string }) => (
+    <div className={`flex items-start justify-between gap-4 py-1.5 ${strong ? "font-bold text-slate-900" : "text-slate-600"}`}>
+      <dt>{k}</dt><dd className={`tabular-nums whitespace-nowrap ${tone ?? ""}`}>{v}</dd>
+    </div>
+  );
+  return (
+    <div className="overflow-hidden rounded-xl border border-amber-200 bg-white text-xs">
+      <div className="bg-amber-50 px-3.5 py-2 font-semibold uppercase tracking-wide text-[10px] text-amber-800">{tx("What you pay now")}</div>
+      <dl className="divide-y divide-slate-100 px-3.5 py-1">
+        <Row k={tx("Final annual premium (after underwriting)")} v={fmtPKR(finalTotal)} strong />
+        <Row k={<>{tx("Already paid before underwriting")}{pct ? <span className="text-slate-400"> ({pct}% {tx("of")} {fmtPKR(quotedTotal)})</span> : null}</>} v={`− ${fmtPKR(paid)}`} tone="text-emerald-700" />
+        <Row k={tx("Balance to pay now")} v={fmtPKR(balance)} strong tone="text-blue-700" />
+      </dl>
+      <div className="space-y-1 border-t border-slate-100 bg-slate-50/70 px-3.5 py-2.5 text-slate-600">
+        <p>{tx("This balance is made up of:")}</p>
+        <ul className="list-disc space-y-0.5 ps-5">
+          <li>{tx("the remaining part of your quoted premium")} — <b>{fmtPKR(plannedRemaining)}</b></li>
+          <li>{tx("the loading charged by underwriting, added now")} — <b className={added > 0.5 ? "text-amber-700" : ""}>{fmtPKR(Math.max(added, 0))}</b></li>
+        </ul>
+        <p className="pt-1 text-[11px] text-slate-500">{tx("Only the loading is added at issuance. The policy fee, stamp duty and sales tax were already included in the premium quoted at the proposal.")}</p>
+      </div>
+    </div>
+  );
+}
+
 function IssueStepper({ current, prepaid = false }: Readonly<{ current: number; prepaid?: boolean }>) {
   return (
     <div className="flex items-center gap-2">
@@ -114,6 +146,9 @@ function IssuanceModal({
   const [issuing, setIssuing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [prepaid, setPrepaid] = useState<PrepaidStatus | null>(null);   // the initial premium collected at the proposal, if any
+  // Only part may have been paid at the proposal (the split rule): then the rest is collected after issuing.
+  const partialPrepaid = !!prepaid && (prepaid.remaining_due ?? 0) > 0;
+  const fullyPrepaid = !!prepaid && !partialPrepaid;
 
   useEffect(() => {
     let alive = true;
@@ -166,7 +201,7 @@ function IssuanceModal({
               {tx("Issue Policy")}
             </h2>
             <div className="mt-2">
-              <IssueStepper current={0} prepaid={!!prepaid} />
+              <IssueStepper current={0} prepaid={fullyPrepaid} />
             </div>
           </div>
           <button
@@ -271,25 +306,34 @@ function IssuanceModal({
                 </div>
               </div>
 
-              {/* Premium breakdown */}
-              {pb && (
+              {/* Premium breakdown: only when nothing has been collected yet. A premium already received (before underwriting) is
+                  shown in the payment box below, with its breakdown on the receipt, so it is not repeated here. */}
+              {pb && !fullyPrepaid && (
                 <div>
                   <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">
                     {tx("Premium breakdown")}
                   </p>
                   <div className="rounded-xl border border-slate-200 divide-y divide-slate-50">
-                    {[
-                      ["Base premium", pb.base_premium],
-                      ["Loading", pb.loading_amount],
-                      ["Policy fee", pb.policy_fee],
-                      ["Stamp duty", pb.stamp_duty_amount ?? 0],
-                      ["Sales tax", pb.tax_amount],
-                    ].map(([l, v]) => (
+                    {(preview!.split_pricing
+                      // Part was paid at the proposal: policy fee, stamp duty and sales tax are already inside the quoted premium,
+                      // so issuing shows that premium and the loading added now — nothing is charged twice.
+                      ? [
+                          ["Premium quoted at the proposal (policy fee, stamp duty and sales tax included)", preview!.split_pricing.quoted_total],
+                          ["Loading added by underwriting", preview!.split_pricing.loading],
+                        ]
+                      : [
+                          ["Base premium", pb.base_premium],
+                          ["Loading", pb.loading_amount],
+                          ["Policy fee", pb.policy_fee],
+                          ["Stamp duty", pb.stamp_duty_amount ?? 0],
+                          ["Sales tax", pb.tax_amount],
+                        ]
+                    ).map(([l, v]) => (
                       <div
                         key={l as string}
                         className="flex justify-between px-4 py-2"
                       >
-                        <span className="text-xs text-slate-600">{l}</span>
+                        <span className="text-xs text-slate-600">{tx(l as string)}</span>
                         <span className="text-xs font-semibold text-slate-800">
                           {fmtPKR(v as number)}
                         </span>
@@ -333,7 +377,17 @@ function IssuanceModal({
                 )}
               </div>
 
-              {prepaid ? (
+              {partialPrepaid ? (
+                <div className="space-y-3">
+                  <PartPaymentSummary paid={prepaid!.amount ?? 0} pct={prepaid!.split?.upfront_pct} quotedTotal={prepaid!.split?.total ?? 0}
+                    plannedRemaining={prepaid!.split?.remaining_amount ?? 0} finalTotal={pb?.total_premium ?? ((prepaid!.amount ?? 0) + (prepaid!.remaining_due ?? 0))} />
+                  <ol className="list-decimal space-y-0.5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 ps-8 text-xs text-slate-600">
+                    <li>{tx("Press “Issue & bind” — the policy number is created.")}</li>
+                    <li>{tx("Pay the balance shown above.")}</li>
+                    <li>{tx("Cover starts as soon as the balance is paid.")}</li>
+                  </ol>
+                </div>
+              ) : prepaid ? (
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs text-emerald-900 space-y-1">
                   <p className="font-semibold">{tx("Payment received")} · {fmtPKR(prepaid.amount ?? 0)}</p>
                   <p>
@@ -383,7 +437,7 @@ function IssuanceModal({
             }
             className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-600 rounded-xl hover:from-blue-700 hover:to-blue-700 disabled:opacity-50 transition-all shadow-sm"
           >
-            {issuing ? tx("Binding…") : prepaid ? tx("Issue & activate →") : tx("Issue & bind →")}
+            {issuing ? tx("Binding…") : fullyPrepaid ? tx("Issue & activate →") : tx("Issue & bind →")}
           </button>
         </div>
       </div>
@@ -406,7 +460,7 @@ function SuccessModal({ result, policyName, onClose }: SuccessModalProps) {
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden">
         <div className="px-6 py-5 bg-gradient-to-r from-blue-600 to-blue-600">
           <div className="flex justify-center mb-3">
-            <IssueStepper current={1} prepaid={((result as any).initial_premium_credited ?? 0) > 0} />
+            <IssueStepper current={1} prepaid={((result as any).initial_premium_credited ?? 0) > 0 && !((result as any).amount_due > 0)} />
           </div>
           <div className="text-center">
             <h2 className="text-white text-xl font-bold">
@@ -504,6 +558,8 @@ function PaymentModal({
   const [premiumNoticeId, setPremiumNoticeId] = useState<string | null>(null);
   // The first premium is collected once, at the proposal. When it has been received this window only reports it.
   const [prepaid, setPrepaid] = useState<PrepaidStatus | null>(null);
+  // Part of the premium was paid at the proposal (split rule): this window collects the rest.
+  const [paidBefore, setPaidBefore] = useState<PrepaidStatus | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -511,7 +567,8 @@ function PaymentModal({
       try {
         const pre = await getPrepaid(policy.id).catch(() => ({ received: false }) as PrepaidStatus);
         if (!alive) return;
-        if (pre.received) {
+        if (pre.received && (pre.remaining_due ?? 0) > 0) setPaidBefore(pre);
+        if (pre.received && !((pre.remaining_due ?? 0) > 0)) {
           setPrepaid(pre);
           const docs = await listPolicyDocuments(policy.id).catch(() => []);
           const notice = docs.find((d) => d.document_type === "PremiumNotice");
@@ -643,9 +700,13 @@ function PaymentModal({
             </div>
           ) : (
           <>
+          {paidBefore && (
+            <PartPaymentSummary paid={paidBefore.amount ?? 0} pct={paidBefore.split?.upfront_pct} quotedTotal={paidBefore.split?.total ?? 0}
+              plannedRemaining={paidBefore.split?.remaining_amount ?? 0} finalTotal={(paidBefore.amount ?? 0) + (paidBefore.remaining_due ?? 0)} />
+          )}
           <div className="flex items-center justify-between border-y border-slate-100 py-3">
             <p className="text-sm font-semibold text-slate-700">
-              {tx("Amount Due")}
+              {paidBefore ? tx("Remaining balance due now") : tx("Amount Due")}
             </p>
             <p className="text-lg font-bold text-blue-700">
               {loading ? "…" : amountDue != null ? fmtPKR(amountDue) : "—"}
@@ -891,7 +952,10 @@ function PolicyIssuanceContent() {
   }
 
   const filtered = useMemo(() => {
-    let list = tab === "queue" ? queue : active;
+    // Newest first, in both the pre- and post-issuance queues, so a freshly added entry lands at the top.
+    let list = [...(tab === "queue" ? queue : active)].sort(
+      (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime(),
+    );
 
     // Segment filter
     if (segment !== "all") {
@@ -1219,7 +1283,7 @@ function PolicyIssuanceContent() {
                       <td className="px-5 py-3">
                         {(() => {
                           // Money in, cover not yet bound: say so, instead of "pending payment".
-                          const paidAwaitingActivation = isPendingPayment(p.status) && (p.initial_premium_received ?? 0) > 0;
+                          const paidAwaitingActivation = isPendingPayment(p.status) && (p.initial_premium_received ?? 0) > 0 && !((p.initial_premium_balance ?? 0) > 0);
                           return (
                             <>
                               <span
@@ -1231,6 +1295,9 @@ function PolicyIssuanceContent() {
                                     ? tx("Pending Issuance")
                                     : isPendingPayment(p.status) ? tx("Pending Payment") : p.status}
                               </span>
+                              {isPendingPayment(p.status) && (p.initial_premium_balance ?? 0) > 0 && (
+                                <p className="mt-0.5 text-[10px] text-amber-700">{tx("{0} paid · {1} balance due", { 0: fmtPKR(p.initial_premium_received ?? 0), 1: fmtPKR(p.initial_premium_balance ?? 0) })}</p>
+                              )}
                               {paidAwaitingActivation && (
                                 <p className="mt-0.5 text-[10px] text-slate-500">{tx("{0} collected · ready to activate", { 0: fmtPKR(p.initial_premium_received ?? 0) })}</p>
                               )}
@@ -1291,7 +1358,7 @@ function PolicyIssuanceContent() {
                                 />
                                 <line x1="1" y1="10" x2="23" y2="10" />
                               </svg>
-                              {(p.initial_premium_received ?? 0) > 0 ? tx("Activate Cover") : tx("Confirm Payment")}
+                              {(p.initial_premium_received ?? 0) > 0 && !((p.initial_premium_balance ?? 0) > 0) ? tx("Activate Cover") : tx("Confirm Payment")}
                             </button>
                           ) : (
                             <button
@@ -1398,7 +1465,7 @@ function PolicyIssuanceContent() {
                 : undefined;
             if (st === "PENDINGPAYMENT")
               return {
-                label: (viewPolicy.initial_premium_received ?? 0) > 0 ? tx("Activate Cover") : tx("Confirm Payment"),
+                label: (viewPolicy.initial_premium_received ?? 0) > 0 && !((viewPolicy.initial_premium_balance ?? 0) > 0) ? tx("Activate Cover") : tx("Confirm Payment"),
                 disabled: userRole === "Agent",
                 title: noAccess,
                 onClick: () => {

@@ -576,7 +576,8 @@ export default function PostUnderwritingPage() {
 
   // Filtered Policies matching search, segment, and cleared toggle
   const filtered = useMemo(() => {
-    let list = policies;
+    // Newest first, so a freshly added entry lands at the top.
+    let list = [...policies].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
     if (segment !== "all") list = list.filter((p) => (p.segment ?? "individual") === segment);
 

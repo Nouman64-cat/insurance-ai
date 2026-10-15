@@ -152,7 +152,7 @@ async def build_receipt(session: AsyncSession, ipp: InitialPremiumPayment) -> di
     received = ipp.realized_at or ipp.updated_at
     return {
         "receipt_no": f"RCT-{received.year}-{ipp.id.hex[:6].upper()}", "received_at": received.isoformat(), "amount": round(ipp.amount or 0, 2),
-        "method": ipp.method, "reference": ipp.reference or ipp.proof_reference, "confirmed_by": ipp.proof_reviewed_by,
+        "method": ipp.method, "reference": ipp.reference or ipp.proof_reference, "confirmed_by": ipp.proof_reviewed_by, "breakdown": ipp.breakdown_json,
         "customer_name": customer.name if customer else None, "plan_label": policy.product_name if policy else None,
         "insurer": {"name": tenant.name if tenant else None, "phone": getattr(tenant, "contact_phone", None), "email": getattr(tenant, "contact_email", None)},
     }
