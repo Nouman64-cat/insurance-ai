@@ -10,10 +10,11 @@ LOCKED_ROLE_NAME = "SuperAdmin"
 
 SEED_ROLES = [
     ("SuperAdmin",  "Platform-level access — create tenants and bootstrap their first Admin."),
-    ("Admin",       "Full tenant access — manage that tenant's users and all resources."),
+    ("Admin",       "Full tenant access — manage that tenant's users and configuration. Claims: configuration and oversight only, no claim decisions or payments."),
     ("Underwriter", "Evaluate proposals, review risk assessments, and make decisions."),
     ("ClaimsAdjuster", "Triage claims, verify documentation, evaluate benefit eligibility and issue payouts."),
-    ("ClaimsManager",  "Oversee claims department, approve high-value claims, manage adjusters and fraud reviews."),
+    ("ClaimsManager",  "Run the claims department: register and assign claims, approve and authorise settlements within delegated authority, manage referrals."),
+    ("Finance",     "Verify payment details and execute approved claim payments. Cannot approve claims."),
     ("Agent",       "Submit proposals and track their status."),
     ("Viewer",      "Read-only access to dashboards and reports."),
 ]

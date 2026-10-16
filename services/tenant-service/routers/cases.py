@@ -240,6 +240,17 @@ async def list_cases(
     with just the *latest* assessment's headline numbers for at-a-glance
     triage.
     """
+    if case_type == CaseTypeEnum.UNDERWRITING:
+        # Claims referred before Claim UW cases existed get theirs now, so every referred claim is in this queue.
+        from routers.claims import open_claim_uw_case
+        from shared.models.core import Claim, ClaimStatusEnum
+        referred = (await session.execute(select(Claim).where(
+            Claim.tenant_id == tenant_id, Claim.status == ClaimStatusEnum.REUNDERWRITING_REQUIRED))).scalars().all()
+        for referred_claim in referred:
+            await open_claim_uw_case(session, referred_claim)
+        if referred:
+            await session.commit()
+
     stmt = select(Case).where(Case.tenant_id == tenant_id)
     scope = await source_scope(token, session)
     if scope is not None:
@@ -301,6 +312,13 @@ async def list_cases(
     latest_by_case: dict = {}
     for a in (await session.execute(assessments_stmt)).scalars().all():
         latest_by_case.setdefault(a.case_id, a)
+
+    # "Claim UW": underwriting cases opened by a claim referral carry the claim's number and type.
+    from shared.models.core import Claim
+    claim_ids = [c.claim_id for c in cases if c.claim_id]
+    claims_by_id = {}
+    if claim_ids:
+        claims_by_id = {cl.id: cl for cl in (await session.execute(select(Claim).where(Claim.id.in_(claim_ids)))).scalars().all()}
 
     # Pre-Underwriting status — E-Application / Agent's Confidential Report / Compliance Screening /
     # IPP / Insurance History / Panel Medical, bulk-fetched by case_id like everything else above
@@ -387,6 +405,10 @@ async def list_cases(
         policy = policies.get(c.policy_id) if c.policy_id else None
         latest = latest_by_case.get(c.caseld)
         row = CaseRead.model_validate(c).model_dump()
+        claim = claims_by_id.get(c.claim_id) if c.claim_id else None
+        if claim:
+            row["claim_number"] = claim.claim_number or f"CLM-{claim.created_at.year}-{str(claim.id)[:6].upper()}"
+            row["claim_type"] = claim.claim_type
         row["customer_name"] = customer.name if customer else None
         row["customer_cnic"] = customer.cnic if customer else None
         if customer and customer.organization_id:

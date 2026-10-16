@@ -31,8 +31,9 @@ const TONES: Record<UnderwritingReviewStatus, string> = { PENDING: "bg-slate-100
 type Requirement = { key: string; label: string; status: string; section: CaseTab; detail?: string };
 type RequiredDocument = { type: string; received: boolean };
 type Outstanding = { code: string; reason: string; document_type: string | null; owner: "medical" | "financial" | null; can_upload: boolean; covered_by_exam?: boolean };
-type ReviewRow = { id: string; reference: string; customer_name: string; product_name: string | null; coverage_amount: number | null; on_hold: boolean; hold_reason: string | null; created_at?: string; case_status?: string; closed?: boolean; review: UnderwritingReview };
-type Workspace = ReviewRow & { read_only: boolean; policy_linked: boolean; case_status: string; created_at: string; customer_cnic: string | null; coverage_amount: number | null; term_years: number | null; requirements: Requirement[]; required_documents: RequiredDocument[]; application_outstanding: Outstanding[]; ai_underwriting: FinancialAI | null; documents: { id: string; name: string; type: string; status: string; scope: string; ocr_text: string | null; extracted: unknown; quality_score: number; tampered: boolean }[]; track: string; evidence: Record<string, unknown>; assessment: { results: unknown; score: number; reasons: unknown[]; created_at: string } | null };
+type ReviewRow = { id: string; claim_id?: string | null; reference: string; customer_name: string; product_name: string | null; coverage_amount: number | null; on_hold: boolean; hold_reason: string | null; created_at?: string; case_status?: string; closed?: boolean; review: UnderwritingReview };
+type ClaimInfo = { id: string; claim_number: string | null; claim_type: string; submitted_amount: number; incident_date: string | null; referral_reason: string | null; referral_notes: string | null; ready: boolean; reviews: Record<string, { status: string; note: string | null }> };
+type Workspace = ReviewRow & { claim?: ClaimInfo | null; read_only: boolean; policy_linked: boolean; case_status: string; created_at: string; customer_cnic: string | null; coverage_amount: number | null; term_years: number | null; requirements: Requirement[]; required_documents: RequiredDocument[]; application_outstanding: Outstanding[]; ai_underwriting: FinancialAI | null; documents: { id: string; name: string; type: string; status: string; scope: string; ocr_text: string | null; extracted: unknown; quality_score: number; tampered: boolean }[]; track: string; evidence: Record<string, unknown>; assessment: { results: unknown; score: number; reasons: unknown[]; created_at: string } | null };
 function valueText(value: unknown): string {
   if (value === null || value === undefined || value === "") return tx("Not provided");
   if (typeof value === "boolean") return tx(value ? "Yes" : "No");
@@ -40,6 +41,45 @@ function valueText(value: unknown): string {
   if (typeof value === "object") return Object.entries(value as Record<string, unknown>).map(([key, v]) => `${key.replace(/_/g, " ")}: ${valueText(v)}`).join("\n");
   return String(value);
 }
+const CLAIM_DECISIONS = [
+  { value: "APPROVE_CONTINUE", label: "Cover confirmed: continue the claim" },
+  { value: "APPROVE_WITH_EXCLUSION", label: "Continue, with an exclusion applied" },
+  { value: "APPROVE_WITH_LOADING", label: "Continue, with a premium loading" },
+  { value: "DECLINE_NON_DISCLOSURE", label: "Decline: non-disclosure at application" },
+];
+
+/** The last step of a Claim UW case: once both reviews are in, record the decision and the claim goes back to Claims. */
+function ClaimDecisionPanel({ tenantId, claim, disabled, onDone }: { tenantId: string; claim: ClaimInfo; disabled: boolean; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [decision, setDecision] = useState(CLAIM_DECISIONS[0].value);
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const submit = async () => {
+    setSaving(true);
+    try {
+      await api.post(`/tenants/${tenantId}/claims/${claim.id}/resolve-underwriting`, { decision, decision_notes: notes.trim() });
+      notify("success", tx("Decision recorded"), tx("The claim is back with Claims, with the review results."));
+      setOpen(false);
+      onDone();
+    } catch (err: any) { notify("error", tx("Could not record the decision."), err?.response?.data?.detail); }
+    finally { setSaving(false); }
+  };
+  return <section className="space-y-3 rounded-2xl border border-blue-200 bg-blue-50/60 p-5">
+    <div className="flex items-center gap-2"><span className="rounded-md border border-blue-200 bg-white px-1.5 py-0.5 text-[10px] font-bold uppercase text-blue-700">{tx("Claim UW")}</span><h3 className="text-sm font-bold text-slate-900">{claim.claim_number} · {claim.claim_type}</h3></div>
+    <p className="text-xs text-slate-600">{tx("Claimed")} {fmtCoverage(claim.submitted_amount)}{claim.incident_date ? ` · ${tx("Incident")} ${claim.incident_date}` : ""}</p>
+    {claim.referral_reason && <p className="text-xs text-slate-600"><span className="font-semibold">{tx("Why Claims referred it")}:</span> {claim.referral_reason}</p>}
+    <ul className="space-y-1 text-xs text-slate-600">{Object.entries(claim.reviews).map(([t, r]) => <li key={t}>{tx(t === "medical" ? "Medical review" : "Financial review")}: <span className="font-semibold">{tx(LABELS[r.status as UnderwritingReviewStatus] ?? r.status)}</span></li>)}</ul>
+    <button type="button" disabled={disabled || !claim.ready} onClick={() => setOpen(true)} className="w-full rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">{tx("Record final decision")}</button>
+    {!claim.ready && <p className="text-[11px] text-slate-500">{tx("Available once both the medical and the financial review are completed.")}</p>}
+    {open && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" role="dialog" aria-modal="true"><div className="w-full max-w-lg space-y-4 rounded-2xl bg-white p-6 shadow-xl">
+      <h2 className="text-base font-bold text-slate-900">{tx("Final decision")} · {claim.claim_number}</h2>
+      <label className="block text-xs font-semibold text-slate-600">{tx("Decision")}<select value={decision} onChange={(e) => setDecision(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">{CLAIM_DECISIONS.map((d) => <option key={d.value} value={d.value}>{tx(d.label)}</option>)}</select></label>
+      <label className="block text-xs font-semibold text-slate-600">{tx("Notes for Claims")}<textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" /></label>
+      <div className="flex justify-end gap-2"><button type="button" onClick={() => setOpen(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">{tx("Cancel")}</button><button type="button" disabled={saving || !notes.trim()} onClick={() => void submit()} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{tx("Send back to Claims")}</button></div>
+    </div></div>}
+  </section>;
+}
+
 function Badge({ status }: { status: UnderwritingReviewStatus }) {
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${TONES[status]}`}>{tx(LABELS[status])}</span>;
 }
@@ -227,6 +267,7 @@ export function SpecialistCaseWorkspace({ track }: { track: "medical" | "financi
             onSend={() => void sendEApplication()} sending={saving} canSend={!workspace.read_only && workspace.review.assigned_user_id === user.id} onViewAnswers={() => setCaseTab("applicant")} />
         </div>
         <aside className="space-y-5 xl:col-span-4">
+          {workspace.claim && <ClaimDecisionPanel tenantId={user.tenant_id!} claim={workspace.claim} disabled={workspace.read_only} onDone={() => { void load(true); }} />}
           <ReviewPanel key={workspace.review.updated_at ?? "new"} track={track} workspace={workspace} decision={decision} setDecision={setDecision} note={note} setNote={setNote} saving={saving} onSave={() => void save()} />
           <RequirementChecklist requirements={workspace.requirements} onOpen={setCaseTab} />
           <RiskEvidence assessment={workspace.assessment} />
@@ -258,8 +299,8 @@ export function SpecialistCaseWorkspace({ track }: { track: "medical" | "financi
         </div>
         <div className="flex flex-wrap gap-1.5 border-b border-slate-100 px-4 py-3">{["ALL", ...Object.keys(LABELS), "CLOSED"].map((key) => { const count = scoped.filter((r) => key === "ALL" || (key === "CLOSED" ? r.closed : r.review.status === key)).length; return <button key={key} onClick={() => setFilter(key)} aria-pressed={filter === key} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition ${filter === key ? "bg-slate-900 text-white" : count ? "text-slate-600 hover:bg-slate-100" : "text-slate-400 hover:bg-slate-50"}`}>{tx(key === "ALL" ? "All statuses" : key === "CLOSED" ? "Closed applications" : LABELS[key as UnderwritingReviewStatus])}<span className={`rounded-full px-1.5 text-[11px] ${filter === key ? "bg-white/20" : "bg-slate-100"}`}>{count}</span></button>; })}</div>
         {filtered.length ? <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-slate-50/70 text-[11px] font-semibold uppercase tracking-wide text-slate-500"><tr>{["Applicant", "Plan & cover", "Opened", "Your review", ""].map((h, i) => <th key={i} className="whitespace-nowrap px-5 py-2.5">{h && tx(h)}</th>)}</tr></thead>
-          <tbody className="divide-y divide-slate-100">{pageItems.map((row) => { const days = row.created_at ? Math.max(0, Math.floor((Date.now() - new Date(row.created_at).getTime()) / 86400000)) : null; return <tr key={row.id} className={`group cursor-pointer transition hover:bg-blue-50/40 ${row.closed ? "bg-slate-50/50" : ""} ${arrivals.newIds.has(row.id) ? NEW_ARRIVAL_CLASS : ""}`} onClick={() => { arrivals.markSeen(row.id); router.push(`/case/${row.id}`); }}>
-            <td className="px-5 py-3.5"><div className="flex items-center gap-3"><span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-xs font-bold text-white">{initials(row.customer_name)}</span><div className="min-w-0"><p className="truncate font-semibold text-slate-900">{row.customer_name}</p><p className="font-mono text-[11px] text-slate-400">{row.reference.replace(/^CASE-/, "APP-")}</p></div>{row.closed && <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${row.case_status === "Approved" ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : row.case_status === "Rejected" ? "bg-rose-50 text-rose-700 ring-rose-200" : "bg-slate-100 text-slate-600 ring-slate-200"}`}>{tx(row.case_status === "Approved" ? "Application approved" : row.case_status === "Rejected" ? "Application rejected" : "Application closed")}</span>}{row.on_hold && <span title={row.hold_reason ?? undefined} className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-200">{tx("On hold")}</span>}</div></td>
+          <tbody className="divide-y divide-slate-100">{pageItems.map((row) => { const days = row.created_at ? Math.max(0, Math.floor((Date.now() - new Date(row.created_at).getTime()) / 86400000)) : null; return <tr key={row.id} className={`group cursor-pointer transition hover:bg-blue-50/40 ${row.closed ? "bg-slate-50/50" : ""}`} onClick={() => router.push(`/case/${row.id}`)}>
+            <td className="px-5 py-3.5"><div className="flex items-center gap-3"><span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-xs font-bold text-white">{initials(row.customer_name)}</span><div className="min-w-0"><p className="truncate font-semibold text-slate-900">{row.customer_name}</p><p className="font-mono text-[11px] text-slate-400">{row.claim_id && <span className="me-1.5 rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 font-sans text-[10px] font-bold uppercase text-blue-700">{tx("Claim UW")}</span>}{row.reference.replace(/^CASE-/, "APP-")}</p></div>{row.closed && <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${row.case_status === "Approved" ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : row.case_status === "Rejected" ? "bg-rose-50 text-rose-700 ring-rose-200" : "bg-slate-100 text-slate-600 ring-slate-200"}`}>{tx(row.case_status === "Approved" ? "Application approved" : row.case_status === "Rejected" ? "Application rejected" : "Application closed")}</span>}{row.on_hold && <span title={row.hold_reason ?? undefined} className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-200">{tx("On hold")}</span>}</div></td>
             <td className="px-5 py-3.5"><p className="text-slate-800">{row.product_name ?? <span className="text-slate-400">{tx("No plan linked")}</span>}</p>{row.coverage_amount != null && <p className="text-xs text-slate-500">{fmtCoverage(row.coverage_amount)}</p>}</td>
             <td className="whitespace-nowrap px-5 py-3.5"><p className="text-slate-700">{row.created_at ? displayDate(row.created_at) : "—"}</p>{days != null && <p className={`text-xs ${days > 7 ? "text-amber-700" : "text-slate-400"}`}>{days === 0 ? tx("Today") : `${days} ${tx(days === 1 ? "day ago" : "days ago")}`}</p>}</td>
             <td className="px-5 py-3.5"><Badge status={row.review.status} /></td>

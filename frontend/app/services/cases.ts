@@ -8,6 +8,9 @@ export interface CaseQueueItem {
   customer_id: string;
   policy_id: string | null;
   caseType: string;
+  claim_id?: string | null;     // set on a "Claim UW" case: the claim it reviews
+  claim_number?: string | null;
+  claim_type?: string | null;
   caseStatus: string;
   priorityLevel: string;
   sourceChannel: string;

@@ -468,7 +468,11 @@ export default function AdminUnderwritingPage() {
                                 )}
                               </div>
                               <div className="text-[11px] text-slate-400 mt-0.5">
-                                <span className="font-mono">{c.caseNumber}</span>
+                                {c.claim_id && (
+                                  <span className="me-1.5 rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold uppercase text-blue-700">{tx("Claim UW")}</span>
+                                )}
+                                <span className="font-mono">{c.claim_id ? (c.claim_number ?? c.caseNumber) : c.caseNumber}</span>
+                                {c.claim_id && c.claim_type ? <> · {c.claim_type}</> : null}
                                 {" · "}
                                 {c.customer_segment === "organization" ? tx("Corporate") : c.customer_segment === "family" ? (c.family_group_name ?? tx("Family")) : tx("Individual")}
                               </div>
@@ -479,7 +483,7 @@ export default function AdminUnderwritingPage() {
                           <div className="text-[13px] text-slate-700">{c.product_name ?? "—"}</div>
                           <div className="text-[11px] text-slate-400 mt-0.5 tabular-nums">{c.coverage_amount != null ? fmtCoverage(c.coverage_amount) : "—"}</div>
                         </td>
-                        <td className="px-4 py-3.5"><GatesCell c={c} /></td>
+                        <td className="px-4 py-3.5">{c.claim_id ? <span className="text-xs text-slate-400">{tx("Claim review")}</span> : <GatesCell c={c} />}</td>
                         <td className="px-4 py-3.5"><ReviewCell review={medical(c)} /></td>
                         <td className="px-4 py-3.5"><ReviewCell review={financial(c)} /></td>
                         <td className="px-4 py-3.5">

@@ -40,15 +40,7 @@ export default function LoginPage() {
 
       const { access_token, first_login } = response.data as { access_token: string; first_login?: boolean };
 
-      // Save token in localStorage
-      localStorage.setItem("jwt_token", access_token);
-      // Single sign-on: also publish it for the Automation Chat app, so opening that app needs no second sign-in.
-      await startSso(access_token);
-
-      // Set the default authorization header for subsequent API calls
-      api.defaults.headers.common["Authorization"] = `Bearer ${access_token}`;
-
-      // Retrieve and save the user profile details to get their tenant_id and role
+      // Retrieve user profile details to verify role before modifying portal session
       const profileResponse = await api.get<{
         email: string;
         full_name: string;
@@ -61,6 +53,14 @@ export default function LoginPage() {
           Authorization: `Bearer ${access_token}`,
         },
       });
+
+      // Save token in localStorage
+      localStorage.setItem("jwt_token", access_token);
+      // Single sign-on: also publish it for the Automation Chat app, so opening that app needs no second sign-in.
+      await startSso(access_token);
+
+      // Set the default authorization header for subsequent API calls
+      api.defaults.headers.common["Authorization"] = `Bearer ${access_token}`;
 
       // null for SuperAdmins — they sit above tenants.
       const userTenantId = profileResponse.data.tenant_id;
@@ -95,13 +95,16 @@ export default function LoginPage() {
       // A validated ?next= (SSO / Automation Chat return) wins; otherwise only Admin
       // lands on the executive dashboard ("/") and other roles go to their work consoles.
       const back = safeNext(new URLSearchParams(window.location.search).get("next"));
-      const userRoleName = profileResponse.data.role_name;
+      const userRoleName: string = String(profileResponse.data.role_name ?? "").replace(/\s+/g, "") === "ClaimsManager" ? "ClaimsManager" : profileResponse.data.role_name;
       let targetPath = "/";
       if (userRoleName === "SuperAdmin") {
         targetPath = "/super-admin/tenants";
       } else if (userRoleName === "Agent" || userRoleName === "Broker") {
         targetPath = "/proposal";
-      } else if (userRoleName === "ClaimsAdjuster" || userRoleName === "ClaimsManager") {
+      } else if (userRoleName === "ClaimsManager") {
+        // Claims managers work in their own portal.
+        targetPath = (process.env.NEXT_PUBLIC_CLAIMS_URL || "http://localhost:3011") + "/claims/dashboard";
+      } else if (userRoleName === "ClaimsAdjuster") {
         targetPath = "/claims";
       } else if (["Medical Underwriter", "Financial Underwriter"].includes(userRoleName)) {
         targetPath = (process.env.NEXT_PUBLIC_UNDERWRITING_URL || "http://localhost:3005") + "/underwriting";

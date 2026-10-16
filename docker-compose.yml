@@ -647,6 +647,53 @@ services:
       retries: 5
       start_period: 90s # first compile in dev
 
+  # Claims Manager portal (Next.js) — approvals, workload, risk flags and settlement oversight for claims managers,
+  # http://localhost:3011. Signs in from the portal's session (single sign-on cookie), like the Underwriting Workbench.
+  # Start it with:   docker compose up -d --build claims-manager-app
+  # ───────────────────────────────────────────────────────────────────────────
+  claims-manager-app:
+    build:
+      context: . # repository root: the image also needs the portal code it shares (frontend/app/services, components, lib)
+      dockerfile: claims-manager-app/Dockerfile
+      target: dev
+    container_name: insurance-claims-manager-app
+    restart: unless-stopped
+    networks:
+      - insurance-net
+    ports:
+      - "3011:3011"
+    volumes:
+      - ./claims-manager-app:/repo/claims-manager-app # hot-reload source files
+      - /repo/claims-manager-app/node_modules # keep the container's node_modules
+      - /repo/claims-manager-app/.next # preserve the build cache between restarts
+      - ./frontend/app/services:/repo/frontend/app/services:ro
+      - ./frontend/app/claims:/repo/frontend/app/claims:ro # the claims pages, shared with the main portal
+      - ./frontend/app/globals.css:/repo/frontend/app/globals.css:ro
+      - ./frontend/components:/repo/frontend/components:ro
+      - ./frontend/lib:/repo/frontend/lib:ro
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010} # browser-side API gateway
+      NEXT_PUBLIC_PORTAL_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000} # sign-in, "Back to the portal"
+      NEXT_PUBLIC_CLAIMS_URL: ${NEXT_PUBLIC_CLAIMS_URL:-http://localhost:3011} # this app's own public URL
+      NEXT_PUBLIC_UNDERWRITING_URL: ${NEXT_PUBLIC_UNDERWRITING_URL:-http://localhost:3005}
+      NEXT_PUBLIC_AUTOMATION_URL: ${NEXT_PUBLIC_AUTOMATION_URL:-http://localhost:3004}
+      API_GATEWAY_INTERNAL_URL: http://api-gateway:8000 # server-side: the session check
+      SSO_COOKIE_NAME: ${SSO_COOKIE_NAME:-insurance_sso}
+      CLAIMS_COOKIE_NAME: ${CLAIMS_COOKIE_NAME:-claims_manager_session}
+      SSO_COOKIE_DOMAIN: ${SSO_COOKIE_DOMAIN:-}
+      ENV_VAR: ${ENV_VAR:-}
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    depends_on:
+      - api-gateway
+      - tenant-service
+    healthcheck:
+      test: [ "CMD", "node", "-e", "fetch('http://localhost:3011/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s # first compile in dev
+
   # Production build of the workbench, for measuring real speed (the dev service compiles pages on first visit and
   # runs unminified React). Runs beside the dev service:
   #   docker compose --profile prod up --build -d underwriting-app-prod   ->  http://localhost:3006

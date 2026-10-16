@@ -15,6 +15,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from routers.auth import _get_current_user, _role_name, oauth2_scheme
 from shared.models.core import (
+    ClaimAuthorityLimit,
     Artifact,
     Branch,
     Case,
@@ -38,7 +39,12 @@ from shared.models.core import (
 
 router = APIRouter(prefix="/tenants/{tenant_id}/claims", tags=["Claims"])
 
-_CLAIMS_ROLES = {"ClaimsAdjuster", "ClaimsManager", "Admin", "SuperAdmin", "Underwriter"}
+# Roles and limits: services/claim_authority.py. Admin configures and oversees; it does not work claims.
+from services import claim_authority as ca
+
+_CLAIMS_ROLES = set(ca.PROCESS_ROLES)
+# Who works the claim-underwriting queue in the Underwriting Workbench.
+UNDERWRITING_REVIEW_ROLES = ("Underwriter", "Medical Underwriter", "Financial Underwriter")
 
 
 async def _assert_claims_role(token: str, session: AsyncSession) -> User:
@@ -50,6 +56,19 @@ async def _assert_claims_role(token: str, session: AsyncSession) -> User:
             detail=f"Claims actions require one of: {', '.join(sorted(_CLAIMS_ROLES))} (you are {role}).",
         )
     return user
+
+
+async def _assert_role(token: str, session: AsyncSession, allowed, what: str) -> User:
+    user = await _get_current_user(token, session)
+    role = await _role_name(user, session)
+    if role not in allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"{what} requires one of: {', '.join(allowed)} (you are {role}).")
+    return user
+
+
+# Reading claims: the claims staff, Finance (to pay) and, for oversight, Admin. Admin's view is trimmed of personal and
+# medical data (see the redaction step), not given the working rights.
+_VIEW_ROLES = tuple(ca.PROCESS_ROLES) + ("Finance", "Admin", "SuperAdmin")
 
 
 async def _generate_claim_number(session: AsyncSession, tenant_id: UUID) -> str:
@@ -357,6 +376,59 @@ async def open_claim(
     return claim, policy, customer
 
 
+class AuthorityLimitIn(BaseModel):
+    role_name: str
+    approve_limit: Optional[float] = None      # None = no ceiling
+    authorize_limit: Optional[float] = None
+
+
+async def _authority_view(session: AsyncSession, tenant_id: UUID) -> dict:
+    rows = []
+    for role in ca.ROLES_WITH_LIMITS:
+        approve, authorize = await ca.limits_for(session, tenant_id, role)
+        row = (await session.exec(select(ClaimAuthorityLimit).where(
+            ClaimAuthorityLimit.tenant_id == tenant_id, ClaimAuthorityLimit.role_name == role))).first()
+        rows.append({
+            "role_name": role, "approve_limit": approve, "authorize_limit": authorize,
+            "is_default": row is None,
+            "updated_by": row.updated_by if row else None,
+            "updated_at": row.updated_at.isoformat() if row else None,
+        })
+    return {"limits": rows, "payment_execution_role": ca.DISBURSE_ROLES[0]}
+
+
+@router.get("/authority", summary="The delegated authority matrix")
+async def get_claim_authority(
+    tenant_id: UUID, token: str = Depends(oauth2_scheme), session: AsyncSession = Depends(get_session),
+):
+    """How much each role may approve and authorise. Limits only: no claim or customer data."""
+    await _assert_role(token, session, ca.VIEW_AUTHORITY_ROLES, "Viewing the approval limits")
+    return await _authority_view(session, tenant_id)
+
+
+@router.put("/authority", summary="Change a role's delegated authority (Admin)")
+async def set_claim_authority(
+    tenant_id: UUID, body: AuthorityLimitIn,
+    token: str = Depends(oauth2_scheme), session: AsyncSession = Depends(get_session),
+):
+    """Admin only: the configuration, not the decisions. Changes are recorded with who made them."""
+    user = await _assert_role(token, session, ca.ADMIN_ROLES, "Changing the approval limits")
+    if body.role_name not in ca.ROLES_WITH_LIMITS:
+        raise HTTPException(400, f"Limits are set for: {', '.join(ca.ROLES_WITH_LIMITS)}.")
+    for v in (body.approve_limit, body.authorize_limit):
+        if v is not None and v < 0:
+            raise HTTPException(400, "A limit cannot be negative.")
+    row = (await session.exec(select(ClaimAuthorityLimit).where(
+        ClaimAuthorityLimit.tenant_id == tenant_id, ClaimAuthorityLimit.role_name == body.role_name))).first()
+    if row is None:
+        row = ClaimAuthorityLimit(tenant_id=tenant_id, role_name=body.role_name)
+    row.approve_limit, row.authorize_limit = body.approve_limit, body.authorize_limit
+    row.updated_by, row.updated_at = user.email, datetime.utcnow()
+    session.add(row)
+    await session.commit()
+    return await _authority_view(session, tenant_id)
+
+
 @router.post("", status_code=201, summary="Create FNOL Claim")
 async def create_claim(
     tenant_id: UUID,
@@ -364,7 +436,7 @@ async def create_claim(
     token: str = Depends(oauth2_scheme),
     session: AsyncSession = Depends(get_session),
 ):
-    current_user = await _assert_claims_role(token, session)
+    current_user = await _assert_role(token, session, ca.REGISTER_ROLES, "Registering a claim")
     claim, policy, customer = await open_claim(session, tenant_id, current_user, body)
     return _claim_dict(claim, policy, customer, current_user, 0)
 
@@ -386,7 +458,7 @@ async def list_claims(
     token: str = Depends(oauth2_scheme),
     session: AsyncSession = Depends(get_session),
 ):
-    await _assert_claims_role(token, session)
+    await _assert_role(token, session, _VIEW_ROLES, "Viewing claims")
 
     stmt = select(Claim).where(Claim.tenant_id == tenant_id).order_by(Claim.created_at.desc())
     
@@ -465,7 +537,7 @@ async def get_claim_detail(
     token: str = Depends(oauth2_scheme),
     session: AsyncSession = Depends(get_session),
 ):
-    await _assert_claims_role(token, session)
+    await _assert_role(token, session, _VIEW_ROLES, "Viewing a claim")
 
     claim = await session.get(Claim, claim_id)
     if claim is None or claim.tenant_id != tenant_id:
@@ -639,14 +711,9 @@ async def update_claim_status(
             )
 
     # 4. Manager Escalation Gate (> 500k or REFERRED_TO_MANAGER)
-    if body.status in (ClaimStatusEnum.APPROVED, ClaimStatusEnum.PARTIAL_APPROVAL) or old_status_enum == ClaimStatusEnum.REFERRED_TO_MANAGER:
-        if old_status_enum == ClaimStatusEnum.REFERRED_TO_MANAGER or claim.submitted_amount > 500000:
-            r_name = await _role_name(current_user, session)
-            if r_name not in ("ClaimsManager", "Admin", "SuperAdmin"):
-                raise HTTPException(
-                    status_code=403,
-                    detail=f"Manager Gate Error: Approving or settling high-value (> PKR 500,000) or manager-referred claims requires a ClaimsManager role (your role is {r_name}).",
-                )
+    if body.status in (ClaimStatusEnum.APPROVED, ClaimStatusEnum.PARTIAL_APPROVAL, ClaimStatusEnum.DECLINED) or old_status_enum == ClaimStatusEnum.REFERRED_TO_MANAGER:
+        await ca.assert_can_decide(session, tenant_id, await _role_name(current_user, session), claim.submitted_amount,
+                                   referred_up=old_status_enum == ClaimStatusEnum.REFERRED_TO_MANAGER)
 
     claim.status = body.status
 
@@ -714,13 +781,10 @@ async def adjudicate_claim(
             )
 
     # Manager Escalation Gate for High Value / Referred
-    if decision in ("APPROVED", "PARTIAL_APPROVAL") and (claim.submitted_amount > 500000 or claim.status == ClaimStatusEnum.REFERRED_TO_MANAGER):
-        r_name = await _role_name(current_user, session)
-        if r_name not in ("ClaimsManager", "Admin", "SuperAdmin"):
-            raise HTTPException(
-                status_code=403,
-                detail=f"Manager Gate Error: Approving claims exceeding PKR 500,000 or referred to manager requires a ClaimsManager role (your role is {r_name}).",
-            )
+    # Delegated authority: may this role decide a claim of this size? (services/claim_authority.py)
+    if decision in ("APPROVED", "PARTIAL_APPROVAL", "DECLINED"):
+        await ca.assert_can_decide(session, tenant_id, await _role_name(current_user, session), claim.submitted_amount,
+                                   referred_up=claim.status == ClaimStatusEnum.REFERRED_TO_MANAGER)
 
     if decision in ("APPROVED", "PARTIAL_APPROVAL"):
         app_amt = body.approved_amount if body.approved_amount else claim.submitted_amount
@@ -871,7 +935,7 @@ async def create_claim_payout(
     token: str = Depends(oauth2_scheme),
     session: AsyncSession = Depends(get_session),
 ):
-    current_user = await _assert_claims_role(token, session)
+    current_user = await _assert_role(token, session, ca.DISBURSE_ROLES, "Executing a claim payment")
 
     claim = await session.get(Claim, claim_id)
     if claim is None or claim.tenant_id != tenant_id:
@@ -966,6 +1030,27 @@ class ClaimUnderwritingResolveRequest(BaseModel):
     decision_notes: str
 
 
+async def open_claim_uw_case(session: AsyncSession, claim: Claim) -> None:
+    """The referral becomes an underwriting case ("Claim UW") in the same queue as applications: the Admin assigns its
+    medical and financial reviewers and they work it in the Workbench. A claim keeps one open case (idempotent)."""
+    policy = await session.get(Policy, claim.policy_id)
+    open_uw = (await session.exec(select(Case).where(
+        Case.claim_id == claim.id, Case.caseType == CaseTypeEnum.UNDERWRITING,
+        Case.caseStatus.in_([CaseStatusEnum.NEW, CaseStatusEnum.IN_PROGRESS, CaseStatusEnum.UNDER_REVIEW])))).first()
+    if open_uw is None and policy is not None:
+        session.add(Case(
+            tenant_id=claim.tenant_id,
+            customer_id=policy.customer_id,
+            policy_id=policy.id,
+            caseNumber=f"UW-{(claim.claim_number or str(claim.id)[:6]).upper()}-{uuid4().hex[:4].upper()}",
+            caseType=CaseTypeEnum.UNDERWRITING,
+            caseStatus=CaseStatusEnum.NEW,
+            priorityLevel=CasePriorityEnum.HIGH if claim.submitted_amount > 500000 else CasePriorityEnum.NORMAL,
+            sourceChannel=SourceChannelEnum.PORTAL,
+            claim_id=claim.id,
+        ))
+
+
 @router.post("/{claim_id}/re-underwrite", summary="Refer Claim to Underwriting")
 async def refer_claim_to_underwriting(
     tenant_id: UUID,
@@ -985,6 +1070,8 @@ async def refer_claim_to_underwriting(
     if body.notes:
         claim.underwriting_decision_notes = f"Referral Note ({datetime.utcnow().strftime('%Y-%m-%d')}): {body.notes}"
     session.add(claim)
+
+    await open_claim_uw_case(session, claim)
 
     history = ClaimStatusHistory(
         tenant_id=tenant_id,
@@ -1013,10 +1100,23 @@ async def resolve_claim_underwriting(
     token: str = Depends(oauth2_scheme),
     session: AsyncSession = Depends(get_session),
 ):
-    current_user = await _assert_claims_role(token, session)
+    # The review is done by the Underwriting department (Workbench > Claim Underwriting), not by the claims staff
+    # who referred it; the claim then returns to Claims for the next steps.
+    current_user = await _assert_role(token, session, UNDERWRITING_REVIEW_ROLES, "Resolving a claim underwriting review")
     claim = await session.get(Claim, claim_id)
     if claim is None or claim.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Claim not found")
+    if _to_claim_status_enum(claim.status) != ClaimStatusEnum.REUNDERWRITING_REQUIRED:
+        raise HTTPException(status_code=400, detail="This claim is not waiting for an underwriting review.")
+
+    # With a Claim UW case, the final decision waits for both reviews (medical and financial).
+    from shared.models.core import CaseUnderwritingTrack
+    uw_case_ids = [c.caseld for c in (await session.exec(select(Case).where(Case.claim_id == claim.id, Case.caseType == CaseTypeEnum.UNDERWRITING))).all()]
+    if uw_case_ids:
+        done = {t.track for t in (await session.exec(select(CaseUnderwritingTrack).where(
+            CaseUnderwritingTrack.case_id.in_(uw_case_ids), CaseUnderwritingTrack.status.in_(["CLEARED", "REFERRED", "DECLINED"])))).all()}
+        if not {"MEDICAL", "FINANCIAL"} <= done:
+            raise HTTPException(status_code=400, detail="Both the medical and the financial review must be completed first.")
 
     old_status = claim.status.value if hasattr(claim.status, "value") else str(claim.status)
     
@@ -1027,8 +1127,22 @@ async def resolve_claim_underwriting(
         claim.status = ClaimStatusEnum.UNDER_INVESTIGATION
 
     timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M')
-    claim.underwriting_decision_notes = f"Underwriting Resolution [{body.decision}] ({timestamp}): {body.decision_notes}"
+    # The reviewers' findings travel back to Claims with the decision.
+    from shared.models.core import CaseUnderwritingTrack
+    findings = []
+    for uw_case in (await session.exec(select(Case).where(Case.claim_id == claim.id, Case.caseType == CaseTypeEnum.UNDERWRITING))).all():
+        for t in (await session.exec(select(CaseUnderwritingTrack).where(CaseUnderwritingTrack.case_id == uw_case.caseld))).all():
+            findings.append(f"{t.track.title()} review {t.status}" + (f" - {t.note}" if t.note else ""))
+    results = f" Reviews: {'; '.join(findings)}." if findings else ""
+    claim.underwriting_decision_notes = f"Underwriting Resolution [{body.decision}] ({timestamp}): {body.decision_notes}.{results}"
     session.add(claim)
+    # Close the Claim UW case so it leaves the underwriting queue as decided.
+    for uw_case in (await session.exec(select(Case).where(
+            Case.claim_id == claim.id, Case.caseType == CaseTypeEnum.UNDERWRITING,
+            Case.caseStatus.not_in([CaseStatusEnum.APPROVED, CaseStatusEnum.REJECTED, CaseStatusEnum.CLOSED])))).all():
+        uw_case.caseStatus = CaseStatusEnum.REJECTED if body.decision == "DECLINE_NON_DISCLOSURE" else CaseStatusEnum.APPROVED
+        uw_case.updatedAt = datetime.utcnow()
+        session.add(uw_case)
 
     history = ClaimStatusHistory(
         tenant_id=tenant_id,
@@ -1036,7 +1150,7 @@ async def resolve_claim_underwriting(
         from_status=old_status,
         to_status=claim.status.value,
         actor_id=current_user.id,
-        notes=f"Underwriting Review Completed [{body.decision}]: {body.decision_notes}",
+        notes=f"Underwriting Review Completed [{body.decision}]: {body.decision_notes}.{results}",
     )
     session.add(history)
     await session.commit()

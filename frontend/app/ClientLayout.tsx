@@ -34,6 +34,19 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   // the whole app (sidebar, top bar) appeared nested inside the chat panel.
   const [isFramed, setIsFramed] = useState(false);
   useEffect(() => { setIsFramed(window.parent !== window); }, []);
+
+  // One browser holds one signed-in user. Signing in as someone else in another tab of this app replaces the stored
+  // session for every tab of it, so say so instead of letting this tab change who it is on the next refresh.
+  const [sessionChangedTo, setSessionChangedTo] = useState<string | null>(null);
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "jwt_token" && e.newValue && e.oldValue && e.newValue !== e.oldValue) {
+        setSessionChangedTo(localStorage.getItem("user_role") || "another user");
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
   const isPortalEmbed = searchParams?.get("_portal") === "1" || isFramed;
   const isLoginPage = pathname === "/login";
   // Public, unauthenticated pages meant to be opened by someone outside the
@@ -96,6 +109,11 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
       api.defaults.headers.common["X-Tenant-Id"] = tenantId;
     }
     const isSuperAdmin = localStorage.getItem("user_role") === "SuperAdmin";
+    // A claims manager works in their own portal. The main portal (Admin, adjusters, agents...) is not theirs, so
+    // anything here except the profile page sends them there.
+    // Spaces are ignored: a role that was renamed to "Claims Manager" in an old session still counts.
+    const isClaimsManager = (localStorage.getItem("user_role") ?? "").replace(/\s+/g, "") === "ClaimsManager";
+    const claimsHome = (process.env.NEXT_PUBLIC_CLAIMS_URL || "http://localhost:3011").replace(/\/+$/, "") + "/claims/dashboard";
 
     if (isPublicStandalonePage) {
       setAuthChecked(true);
@@ -117,8 +135,11 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
         }
         // Another app is only reachable with the shared cookie set; without it, stay in the portal.
         if (back && result === "ok") window.location.assign(back);
+        else if (isClaimsManager) window.location.assign(claimsHome);
         else router.push(isSuperAdmin ? "/super-admin/tenants" : "/");
       });
+    } else if (token && isClaimsManager && !isLoginPage && !isFramed && pathname !== "/profile") {
+      window.location.replace(claimsHome);
     } else if (token && isSuperAdmin && pathname === "/") {
       router.push("/super-admin/tenants");
     } else {
@@ -285,6 +306,20 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   return (
     <body className={bypassAuthShell ? (isLoginPage ? "bg-slate-950" : "bg-slate-50") : "dashboard-shell bg-slate-50"}>
       <NavigationProgress />
+      {sessionChangedTo && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm" role="alertdialog" aria-modal="true">
+          <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="bg-blue-600 px-6 py-4"><h2 className="text-lg font-bold text-white">Your session changed</h2></div>
+            <p className="px-6 py-5 text-sm leading-relaxed text-slate-700">
+              Someone signed in as <strong>{sessionChangedTo}</strong> in another tab of this browser. A browser holds one signed-in user at a time,
+              so this tab now belongs to that user. To use two roles at once, sign in to the second one in a private window.
+            </p>
+            <div className="flex justify-end border-t border-slate-100 px-6 py-4">
+              <button type="button" onClick={() => window.location.reload()} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700">Continue as {sessionChangedTo}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {bypassAuthShell ? (
         children
       ) : (

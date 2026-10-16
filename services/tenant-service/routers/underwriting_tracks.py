@@ -237,13 +237,36 @@ async def specialist_queue(tenant_id: UUID, session: AsyncSession = Depends(get_
         Case.caseType == CaseTypeEnum.UNDERWRITING).order_by(Case.createdAt.desc()))).all()
     reviews = await reviews_by_case(session, [c.caseld for c, _, _ in rows])
     resolved = {c.caseld: policy or await resolve_review_policy(session, c) for c, _, policy in rows}
-    return [{"id": str(c.caseld), "reference": c.caseNumber, "customer_name": customer.name, "customer_cnic": customer.cnic,
+    return [{"id": str(c.caseld), "claim_id": str(c.claim_id) if c.claim_id else None, "reference": c.caseNumber, "customer_name": customer.name, "customer_cnic": customer.cnic,
              "product_name": policy.product_name if policy else None,
              "coverage_amount": policy.coverage_amount if policy else None,
              "case_status": c.caseStatus, "on_hold": c.on_hold, "hold_reason": c.hold_reason,
              "created_at": c.createdAt, "review": reviews[c.caseld][track],
              "closed": str(getattr(c.caseStatus, "value", c.caseStatus)) in {"Approved", "Closed", "Rejected"}}
             for c, customer, _ in rows for policy in [resolved[c.caseld]] if reviews[c.caseld][track]["assigned_user_id"] == str(user.id)]
+
+
+@router.get("/underwriting/claim-referrals")
+async def claim_underwriting_queue(tenant_id: UUID, session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme)):
+    """Claims the Claims department has referred to underwriting ("Claim Underwriting"), oldest first. Resolving one
+    (POST /claims/{id}/resolve-underwriting) sends it back to Claims."""
+    from shared.models.core import Claim, ClaimStatusEnum, Customer, Policy
+    user = await _get_current_user(token, session)
+    role = await _role_name(user, session)
+    if user.tenant_id != tenant_id or role not in (set(TRACK_ROLE.values()) | GENERAL_ROLES | ADMIN_ROLES):
+        raise HTTPException(403, "The claim underwriting queue is for underwriters and admins in their own organization.")
+    rows = (await session.exec(select(Claim, Policy, Customer).join(Policy, Policy.id == Claim.policy_id)
+        .join(Customer, Customer.id == Policy.customer_id)
+        .where(Claim.tenant_id == tenant_id, Claim.status == ClaimStatusEnum.REUNDERWRITING_REQUIRED)
+        .order_by(Claim.created_at))).all()
+    return [{"id": str(c.id), "claim_number": c.claim_number or f"CLM-{c.created_at.year}-{str(c.id)[:6].upper()}",
+             "claim_type": c.claim_type, "submitted_amount": c.submitted_amount,
+             "customer_name": customer.name, "policy_number": policy.policy_number, "product_name": policy.product_name,
+             "coverage_amount": policy.coverage_amount, "policy_start_date": (lambda d: (d.date() if hasattr(d, "date") else d).isoformat() if d else None)(policy.issued_at or policy.effective_date),
+             "incident_date": c.incident_date.isoformat() if c.incident_date else None,
+             "is_contestable": c.is_contestable, "referral_reason": c.underwriting_referral_reason,
+             "referral_notes": c.underwriting_decision_notes, "created_at": c.created_at.isoformat()}
+            for c, policy, customer in rows]
 
 
 @router.get("/underwriting/reviews/{case_id}")
@@ -350,7 +373,7 @@ async def specialist_workspace(tenant_id: UUID, case_id: UUID, session: AsyncSes
     exam_tests = {t.get("code") for t in (ordered.required_tests or [])} if ordered else set()
     covered = {code.value for code, tests in _EXAM_TESTS_FOR_REQUIREMENT.items() if tests & exam_tests}
     application_outstanding = []
-    for spec in (await outstanding_requirements(session, tenant_id, case) if policy else []):
+    for spec in (await outstanding_requirements(session, tenant_id, case) if policy and not case.claim_id else []):
         document_type, owner = APPLICATION_DOCUMENTS.get(spec.code, (None, None))
         by_exam = spec.code in covered
         application_outstanding.append({"code": spec.code, "reason": spec.reason, "document_type": document_type,
@@ -362,7 +385,20 @@ async def specialist_workspace(tenant_id: UUID, case_id: UUID, session: AsyncSes
     if outstanding_documents:
         requirements.append({"key": "application_documents", "label": "Application documents", "status": "Outstanding", "section": "documents",
                              "detail": f"{len(outstanding_documents)} still needed for the application"})
-    return {"id": str(case_id), "reference": case.caseNumber, "customer_name": customer.name,
+    # A Claim UW case reviews a claim, not an application: no application requirements, and the claim travels with it.
+    claim_info = None
+    if case.claim_id:
+        from shared.models.core import Claim
+        requirements, application_outstanding = [], []
+        claim = await session.get(Claim, case.claim_id)
+        both = (await reviews_by_case(session, [case_id]))[case_id]
+        if claim:
+            claim_info = {"id": str(claim.id), "claim_number": claim.claim_number, "claim_type": claim.claim_type,
+                          "submitted_amount": claim.submitted_amount, "incident_date": claim.incident_date.isoformat() if claim.incident_date else None,
+                          "referral_reason": claim.underwriting_referral_reason, "referral_notes": claim.underwriting_decision_notes,
+                          "reviews": {t.lower(): {"status": r["status"], "note": r["note"]} for t, r in both.items()},
+                          "ready": all(r["status"] in ("CLEARED", "REFERRED", "DECLINED") for r in both.values())}
+    return {"id": str(case_id), "claim": claim_info, "reference": case.caseNumber, "customer_name": customer.name,
         "product_name": policy.product_name if policy else None, "track": track.lower(), "review": review,
         "case_status": case.caseStatus, "created_at": case.createdAt, "customer_cnic": customer.cnic,
         "coverage_amount": policy.coverage_amount if policy else None, "term_years": policy.term_years if policy else None,

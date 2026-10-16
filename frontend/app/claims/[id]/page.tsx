@@ -11,6 +11,7 @@ import {
   Claim, ClaimStatus,
 } from "@/app/services/claims";
 import { tx } from "@/lib/i18n/tx";
+import ClaimWorkspaceHeader from "@/components/claims/ClaimWorkspaceHeader";
 import { ClaimJourneyTimeline } from "@/components/claims/ClaimJourneyTimeline";
 
 const VALID_NEXT: Record<string, ClaimStatus[]> = {
@@ -65,7 +66,7 @@ function getNextStep(
       }
       return { title: "Make a decision", body: "Review the documents and the risk analysis, then approve, partially approve or decline the claim.", cta: { label: "Make a decision", kind: "decide" } };
     case "Re-Underwriting Required":
-      return { title: "Underwriting review in progress", body: "Adjudication is paused until underwriting resolves the review. Once it is resolved you can continue the claim.", cta: { label: "Resolve review", kind: "resolve_uw" } };
+      return { title: "With Claim Underwriting", body: "The Underwriting department is reviewing this claim. It comes back here when they record a decision, and you can then continue." };
     case "Reinsurance Referred":
       return { title: "With the reinsurance team", body: "Nothing to do until they respond. You can still add notes or documents." };
     case "Approved":
@@ -100,8 +101,10 @@ const MOVE_INFO: Record<string, { title: string; desc: string; next?: string }> 
 const NOTE_REQUIRED: ClaimStatus[] = ["Declined", "Pending Documents", "Referred to Manager"];
 const OWN_SCREEN: ClaimStatus[] = ["Approved", "Partial Approval", "Settled", "Re-Underwriting Required"];
 
+const humanize = (v: string) => v.replace(/_/g, " ").toLowerCase().replace(/^./, (c) => c.toUpperCase());
+
 function StatusBadge({ status }: { status: string }) {
-  // Blue and white only: finished = solid, in progress = light, waiting = outlined, ended without payment = dark.
+  // Blue and white only: finished = solid, in progress = light, waiting = outlined, ended without payment = quiet grey.
   const done = ["Approved", "Partial Approval", "Settled", "Active", "Uploaded", "Paid"].includes(status);
   const ended = ["Declined", "Rejected", "Closed", "Voided"].includes(status);
   const waiting = ["Referred to Manager", "Reinsurance Referred", "Re-Underwriting Required", "Pending Documents"].includes(status);
@@ -109,7 +112,7 @@ function StatusBadge({ status }: { status: string }) {
   const colorClass = done
     ? "bg-blue-600 text-white border-blue-600 font-semibold"
     : ended
-      ? "bg-slate-700 text-white border-slate-700 font-semibold"
+      ? "bg-slate-100 text-slate-600 border-slate-300 font-semibold"
       : waiting
         ? "bg-white text-blue-700 border-blue-300 font-semibold"
         : "bg-blue-50 text-blue-700 border-blue-200 font-semibold";
@@ -130,6 +133,13 @@ export default function ClaimDetailPage() {
   const [toast, setToast] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const [tab, setTab] = useState("overview");
+  // Admin oversees claims: it sees everything and works nothing. Claims staff (and the claims manager) act.
+  const [canAct, setCanAct] = useState(false);
+  useEffect(() => {
+    const role = localStorage.getItem("user_role") ?? "";
+    setCanAct(!["Admin", "SuperAdmin"].includes(role));
+  }, []);
   const [modal, setModal] = useState<"adj" | "payout" | "doc" | "reunderwrite" | "resolve_uw" | "decide" | null>(null);
   const [modalError, setModalError] = useState<string | null>(null);
   const [uwReasons, setUwReasons] = useState<string[]>([]);
@@ -394,6 +404,7 @@ export default function ClaimDetailPage() {
   const stepIdx = displaySteps.indexOf(currentStepName as any);
   const nextOpts = VALID_NEXT[claim.status] || [];
   const hasDocs = (claim.artifacts?.length ?? 0) > 0;
+  const daysOpen = Math.max(0, Math.floor((Date.now() - new Date(claim.reported_date).getTime()) / 86_400_000));
   const fraudPct = Math.round((claim.fraud_probability ?? 0) * 100);
   const canPayout = ["Approved", "Partial Approval"].includes(claim.status) && !["Paid", "Settled"].includes(claim.status);
   const hasUnresolvedFlags = (!claim.underwriting_decision_notes) && (
@@ -414,11 +425,14 @@ export default function ClaimDetailPage() {
     if (cta.kind === "docs") return openModal("doc");
     if (cta.kind === "resolve_uw") return openModal("resolve_uw");
     if (cta.kind === "refer_uw") return openModal("reunderwrite");
+    // Routine moves (triage, start or resume the investigation) just happen on the click; only real decisions
+    // (approve, decline, refer...) ask for a choice and a note.
+    if (cta.target === "Triaged" || cta.target === "Under Investigation") return handleStatus(cta.target, "");
     return openDecision(cta.target ?? null);
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 p-6 space-y-6">
+    <div className="min-h-screen bg-slate-50 p-6 pt-0 text-slate-900 space-y-5">
       {/* Toast Alert */}
       {toast && (
         <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl shadow-2xl text-xs font-semibold flex items-center gap-3 max-w-lg border transition-all animate-in fade-in slide-in-from-top-4 ${toast.type === "err"
@@ -442,169 +456,48 @@ export default function ClaimDetailPage() {
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
-        <div>
-          <Link
-            href="/claims"
-            className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 transition-colors mb-3 bg-blue-50/60 hover:bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100/50"
-          >
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-            </svg>
-            {tx("Back to Claims Register")}
-          </Link>
-          <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
-            <Link href="/claims" className="hover:underline">{tx("Claims")}</Link>
-            <span>/</span>
-            <span className="font-mono text-slate-700">{claim.claim_number}</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900">{claim.claim_number}</h1>
-            <StatusBadge status={claim.status} />
-            {claim.duplicate_flag && (
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-200 text-slate-800">
-                {tx("Duplicate")}
-              </span>
+      <ClaimWorkspaceHeader
+        name={claim.claimant_name || claim.customer_name || tx("Claim")}
+        reference={claim.claim_number}
+        status={<StatusBadge status={claim.status} />}
+        fields={[
+          { label: tx("Policy"), value: claim.policy_number ? <span className="font-mono">{claim.policy_number}</span> : null },
+          { label: tx("Type"), value: claim.claim_type },
+          { label: tx("Claimed"), value: `${tx("PKR")} ${claim.submitted_amount.toLocaleString()}` },
+          { label: tx("Cover"), value: (claim.coverage_amount ?? 0) > 0 ? `${tx("PKR")} ${(claim.coverage_amount ?? 0).toLocaleString()}` : null },
+          { label: tx("Reported"), value: `${displayDate(claim.reported_date)}${isClosedStatus ? "" : ` · ${tx("{n} days open", { n: daysOpen })}`}` },
+        ]}
+        tabs={[
+          { id: "overview", label: tx("Overview") },
+          { id: "documents", label: tx("Documents"), count: claim.artifacts?.length ?? 0 },
+          { id: "audit", label: tx("Risk & audit") },
+          { id: "history", label: tx("History"), count: claim.status_history?.length ?? 0 },
+        ]}
+        tab={tab}
+        onTab={setTab}
+        actions={
+          <>
+            {!isClosedStatus && claim.status !== "Re-Underwriting Required" && (
+              canAct && (<button type="button" onClick={() => openModal("reunderwrite")}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
+                {tx("Refer to underwriting")}
+              </button>)
             )}
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            {tx("Claimant:")}{" "}<span className="font-medium text-slate-800">{claim.claimant_name}</span>{" "}{tx("· Adjuster:")}{" "}<span className="font-medium text-slate-800">{claim.assigned_adjuster_name ?? tx("Unassigned")}</span>{" "}{tx("· Reported")}{" "}{displayDate(claim.reported_date)}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2.5 flex-wrap">
-          {!isClosedStatus && claim.status !== "Re-Underwriting Required" && (
-            <button
-              onClick={() => openModal("reunderwrite")}
-              className="text-xs font-semibold px-3.5 py-2 bg-white border border-blue-300/80 hover:bg-blue-50/50 text-blue-900 shadow-2xs active:scale-[0.98] transition-all flex items-center gap-1.5"
-            >
-              <svg className="w-3.5 h-3.5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <span>{tx("Refer Underwriting")}</span>
-            </button>
-          )}
-
-          {canPayout && (
-            <button
-              onClick={() => setModal("payout")}
-              className="text-xs font-semibold px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-md shadow-blue-500/20 active:scale-[0.98] transition-all flex items-center gap-1.5"
-            >
-              <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span>{tx("Issue Payout")}</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Where the claim stands in its lifecycle */}
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-6 py-4">
-          <div>
-            <h2 className="text-sm font-bold text-slate-900">{tx("Claim lifecycle")}</h2>
-            <p className="text-xs text-slate-500">{tx("Where the claim stands right now.")}</p>
-          </div>
-        </div>
-        <div className="px-6 py-5">
-          <ol className="flex">
-            {displaySteps.map((step, i) => {
-              const isDone = i < stepIdx;
-              const isCurrent = i === stepIdx;
-              const isUwStep = step === "Re-Underwriting Review";
-              return (
-                <li key={step} className="relative flex flex-1 flex-col items-center text-center">
-                  {i > 0 && (
-                    <span
-                      aria-hidden="true"
-                      className={`absolute right-1/2 top-3.5 h-0.5 w-full -translate-y-1/2 ${i <= stepIdx ? "bg-blue-500" : "bg-slate-200"}`}
-                    />
-                  )}
-                  <span
-                    aria-current={isCurrent ? "step" : undefined}
-                    className={`relative z-10 flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-all ${isCurrent && isUwStep
-                      ? "bg-blue-600 text-white shadow-md shadow-blue-200 ring-4 ring-blue-50"
-                      : isCurrent
-                        ? "bg-blue-600 text-white shadow-md shadow-blue-200 ring-4 ring-blue-100"
-                        : isDone
-                          ? "bg-blue-600 text-white"
-                          : "border-2 border-slate-300 bg-white text-slate-400"
-                      }`}
-                  >
-                    {isDone ? "✓" : isUwStep ? "!" : i + 1}
-                  </span>
-                  <span
-                    className={`mt-2 px-1 text-xs ${isCurrent && isUwStep
-                      ? "font-bold text-blue-700"
-                      : isCurrent
-                        ? "font-bold text-blue-700"
-                        : isDone
-                          ? "font-semibold text-slate-700"
-                          : "font-medium text-slate-400"
-                      }`}
-                  >
-                    {step}
-                  </span>
-                </li>
-              );
-            })}
-          </ol>
-          {stepIdx < 0 && (
-            <p className="mt-4 flex items-center gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500">
-              {tx("Current status:")} <StatusBadge status={claim.status} />
-              <span>{tx("— outside the standard path.")}</span>
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* What to do now */}
-      <div className={`rounded-xl border shadow-sm ${guide.done ? "border-slate-200 bg-slate-50" : "border-blue-200 bg-blue-50/60"}`}>
-        <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3.5">
-            <span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white ${guide.done ? "bg-slate-400" : "bg-blue-600"}`}>
-              {guide.done ? (
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-              ) : (
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                </svg>
-              )}
-            </span>
-            <div>
-              <p className={`text-[11px] font-bold uppercase tracking-wider ${guide.done ? "text-slate-500" : "text-blue-600"}`}>
-                {guide.done ? tx("All done") : tx("Next step")}
-              </p>
-              <h2 className="text-base font-bold text-slate-900">{tx(guide.title)}</h2>
-              <p className="mt-0.5 max-w-2xl text-sm text-slate-600">{tx(guide.body)}</p>
-            </div>
-          </div>
-          <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+            {canPayout && (
+              canAct && (<button type="button" onClick={() => setModal("payout")}
+                className="rounded-lg border border-blue-600 px-3 py-2 text-sm font-medium text-blue-600 transition-colors hover:bg-blue-50">
+                {tx("Issue payout")}
+              </button>)
+            )}
             {guide.cta && (
-              <button
-                type="button"
-                onClick={() => runNextStep(guide.cta!)}
-                className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-2xs transition-colors hover:bg-blue-700"
-              >
-                {tx(guide.cta.label)} →
-              </button>
+              canAct && (<button type="button" onClick={() => runNextStep(guide.cta!)}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700">
+                {tx(guide.cta.label)}
+              </button>)
             )}
-            {nextOpts.length > 0 && !(guide.cta?.kind === "decide" && !guide.cta.target) && (
-              <button
-                type="button"
-                onClick={() => openDecision(null)}
-                className="text-xs font-semibold text-blue-700 hover:underline"
-              >
-                {tx("See all options")}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {/* Mandatory Document Gate Notice */}
       {!hasDocs && claim.status !== "Closed" && claim.status !== "Declined" && guide.cta?.kind !== "docs" && (
@@ -625,7 +518,7 @@ export default function ClaimDetailPage() {
               </p>
             </div>
           </div>
-          <button
+          {canAct && (<button
             onClick={() => openModal("doc")}
             className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs shadow-2xs active:scale-[0.98] transition-all flex items-center gap-1.5 shrink-0"
           >
@@ -633,7 +526,7 @@ export default function ClaimDetailPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
             </svg>
             <span>{tx("Upload Document")}</span>
-          </button>
+          </button>)}
         </div>
       )}
 
@@ -650,7 +543,7 @@ export default function ClaimDetailPage() {
             <div className="space-y-1.5">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-bold text-blue-950 text-xs uppercase tracking-wider">
-                  {tx("Underwriting Re-Assessment Active")}
+                  {tx("Claim Underwriting")}
                 </span>
                 <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-200/70 border border-blue-300/80 text-blue-900">
                   {tx("Paused Adjudication")}
@@ -681,171 +574,130 @@ export default function ClaimDetailPage() {
             </div>
           </div>
 
-          <button
-            onClick={() => openModal("resolve_uw")}
-            className="px-4 py-2 bg-blue-900 hover:bg-blue-800 text-white font-semibold rounded-lg text-xs shadow-2xs active:scale-[0.98] transition-all flex items-center gap-1.5 shrink-0 self-stretch md:self-auto justify-center"
-          >
-            <svg className="w-4 h-4 text-blue-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span>{tx("Resolve Review")}</span>
-          </button>
+          <span className="shrink-0 self-stretch rounded-lg border border-blue-200 bg-white px-4 py-2 text-center text-xs font-semibold text-blue-900 md:self-auto">
+            {tx("With the Underwriting department")}
+          </span>
         </div>
       )}
 
-      {/* Main content */}
-      <div className="space-y-6">
-        <div className="grid items-start gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            {/* Policy & Claimant Info */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                <h2 className="text-sm font-bold text-slate-800">{tx("Policy & Claimant Overview")}</h2>
-                {claim.claimant_type && claim.claimant_type !== "SELF" ? (
-                  <span className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-blue-100/80 text-blue-900 border border-blue-200 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                    {tx("Beneficiary / Representative Claim (")}{claim.claimant_relationship || tx("Nominee")})
-                  </span>
-                ) : (
-                  <span className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                    {tx("Insured Self Claim")}
-                  </span>
-                )}
-              </div>
-              <div className="p-5 space-y-5 text-sm">
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-5">
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{tx("Claimant Name")}</div>
-                    <div className="font-semibold text-slate-900 mt-0.5 flex flex-col items-start gap-1">
-                      <span>{claim.claimant_name || tx("Self")}</span>
-                      {claim.claimant_type && claim.claimant_type !== "SELF" && (
-                        claim.nominee_match ? (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200/50 uppercase tracking-wide">
-                            {tx("✓ Verified Nominee")}
+      {/* Main content: the sections are tabs, as in the Underwriting Workbench */}
+      <div className="space-y-5">
+        {tab === "overview" && (
+          <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-3">
+            <div className="space-y-5 lg:col-span-2">
+              <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div className="border-b border-slate-100 px-5 py-3.5"><h2 className="text-sm font-bold text-slate-900">{tx("Where this claim stands")}</h2></div>
+                <div className="px-5 py-5">
+                  <ol className="flex" aria-label={tx("Claim progress")}>
+                    {displaySteps.map((step, i) => {
+                      const isDone = i < stepIdx;
+                      const isCurrent = i === stepIdx;
+                      return (
+                        <li key={step} className="relative flex flex-1 flex-col items-center text-center">
+                          {i > 0 && <span aria-hidden="true" className={`absolute right-1/2 top-3 h-0.5 w-full -translate-y-1/2 ${i <= stepIdx ? "bg-blue-500" : "bg-slate-200"}`} />}
+                          <span aria-current={isCurrent ? "step" : undefined}
+                            className={`relative z-10 flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold ${isCurrent ? "bg-blue-600 text-white ring-4 ring-blue-100" : isDone ? "bg-blue-600 text-white" : "border-2 border-slate-300 bg-white text-slate-400"}`}>
+                            {isDone ? "✓" : i + 1}
                           </span>
-                        ) : (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-50 text-slate-700 border border-slate-200/50 uppercase tracking-wide">
-                            {tx("Mismatch")}
-                          </span>
-                        )
-                      )}
+                          <span className={`mt-1.5 px-1 text-[11px] ${isCurrent ? "font-bold text-blue-700" : isDone ? "font-semibold text-slate-700" : "font-medium text-slate-400"}`}>{step}</span>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                  {stepIdx < 0 && <p className="mt-3 text-xs text-slate-500">{tx("This claim is outside the standard path.")}</p>}
+                  <div className={`mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3 ${guide.done ? "bg-slate-50" : "bg-blue-50"}`}>
+                    <div className="min-w-0">
+                      <p className={`text-[11px] font-bold uppercase tracking-wider ${guide.done ? "text-slate-500" : "text-blue-600"}`}>{guide.done ? tx("All done") : tx("Next step")}</p>
+                      <p className="text-sm font-semibold text-slate-900">{tx(guide.title)}</p>
+                      <p className="text-xs text-slate-600">{tx(guide.body)}</p>
                     </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{tx("Policy Holder")}</div>
-                    <div className="font-semibold text-slate-900 mt-0.5">{claim.customer_name || tx("Policyholder")}</div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{tx("Policy Ref & Plan")}</div>
-                    <div className="font-mono font-semibold text-slate-900 mt-0.5">{claim.policy_number ?? "—"}</div>
-                    <div className="text-xs text-slate-500 font-medium">{claim.policy_type ?? "—"}</div>
-                  </div>
-                  {claim.claimant_type && claim.claimant_type !== "SELF" && (
-                    <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{tx("Claimant Contact")}</div>
-                      <div className="mt-0.5 space-y-0.5 font-semibold text-slate-900">
-                        <div className="font-mono text-[13px]">{tx("ID:")}{" "}{claim.claimant_cnic || "—"}</div>
-                        <div className="text-xs font-medium text-slate-500">{tx("Ph:")}{" "}{claim.claimant_phone || "—"}</div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Beneficiary / Nominee Mismatch Banner */}
-                {claim.claimant_type && claim.claimant_type !== "SELF" && !claim.nominee_match && (
-                  <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1.5 text-xs">
-                    <div className="flex items-center gap-2 text-slate-800 font-bold text-[11.5px] uppercase tracking-wider">
-                      <svg className="w-4 h-4 text-slate-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                      </svg>
-                      <span>{tx("Nominee Mismatch Warning")}</span>
-                    </div>
-                    <div className="text-slate-900 leading-relaxed text-[11px]">
-                      {tx("The policy record designates")}{" "}<strong className="text-slate-950">{claim.nominee_name || tx("No nominee")}</strong> ({claim.nominee_relationship || tx("Nominee")}{tx(") as the authorized beneficiary. However, this claim was filed by")}{" "}<strong className="text-slate-950">{claim.claimant_name || tx("Unknown")}</strong>.
-                    </div>
-                  </div>
-                )}
-
-                {/* Money at a glance */}
-                <div className="border-t border-slate-100 pt-5">
-                  <div className={`grid gap-3 ${claim.approved_amount > 0 ? "grid-cols-3" : "grid-cols-2"}`}>
-                    <div className="rounded-lg bg-slate-50 px-4 py-3">
-                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{tx("Claimed")}</div>
-                      <div className="mt-0.5 text-base font-bold text-slate-900">{tx("PKR")}{" "}{claim.submitted_amount.toLocaleString()}</div>
-                    </div>
-                    <div className="rounded-lg bg-slate-50 px-4 py-3">
-                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{tx("Coverage Limit")}</div>
-                      <div className="mt-0.5 text-base font-bold text-slate-900">{tx("PKR")}{" "}{(claim.coverage_amount ?? 0).toLocaleString()}</div>
-                    </div>
-                    {claim.approved_amount > 0 && (
-                      <div className="rounded-lg bg-blue-50 px-4 py-3">
-                        <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-600">{tx("Approved Settlement")}</div>
-                        <div className="mt-0.5 text-base font-bold text-blue-900">{tx("PKR")}{" "}{claim.approved_amount.toLocaleString()}</div>
-                      </div>
+                    {nextOpts.length > 0 && !(guide.cta?.kind === "decide" && !guide.cta.target) && (
+                      canAct && (<button type="button" onClick={() => openDecision(null)} className="text-xs font-semibold text-blue-700 hover:underline">{tx("All options")}</button>)
                     )}
                   </div>
-                  {(claim.coverage_amount ?? 0) > 0 && (
-                    <div className="mt-4">
-                      <div className="mb-1 flex justify-between text-xs text-slate-500">
-                        <span>{tx("Share of coverage claimed")}</span>
-                        <span className="font-semibold text-slate-700">{Math.round((claim.submitted_amount / (claim.coverage_amount ?? 1)) * 100)}%</span>
-                      </div>
-                      <div className="h-1.5 rounded-full bg-slate-100">
-                        <div className="h-1.5 rounded-full bg-blue-600" style={{ width: `${Math.min(100, (claim.submitted_amount / (claim.coverage_amount ?? 1)) * 100)}%` }} />
-                      </div>
-                    </div>
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+                  <h2 className="text-sm font-bold text-slate-900">{tx("Claim details")}</h2>
+                  {claim.claimant_type && claim.claimant_type !== "SELF" ? (
+                    <span className="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-800">{tx("Claim by {who}", { who: claim.claimant_relationship || tx("nominee") })}</span>
+                  ) : (
+                    <span className="rounded-md border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{tx("Insured self claim")}</span>
                   )}
                 </div>
-              </div>
+                <dl className="grid grid-cols-2 gap-x-6 gap-y-4 px-5 py-4 sm:grid-cols-3">
+                  <div>
+                    <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Claimant")}</dt>
+                    <dd className="mt-0.5 text-sm font-semibold text-slate-900">{claim.claimant_name || tx("Self")}</dd>
+                    {claim.claimant_type && claim.claimant_type !== "SELF" && (
+                      <span className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[11px] font-semibold ${claim.nominee_match ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-700"}`}>
+                        {claim.nominee_match ? tx("Verified nominee") : tx("Not the listed nominee")}
+                      </span>
+                    )}
+                  </div>
+                  <div><dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Policyholder")}</dt><dd className="mt-0.5 text-sm font-semibold text-slate-900">{claim.customer_name || tx("Policyholder")}</dd></div>
+                  <div><dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Adjuster")}</dt><dd className="mt-0.5 text-sm font-semibold text-slate-900">{claim.assigned_adjuster_name || tx("Unassigned")}</dd></div>
+                  {claim.claimant_cnic && (<div><dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Claimant CNIC")}</dt><dd className="mt-0.5 font-mono text-sm font-semibold text-slate-900">{claim.claimant_cnic}</dd></div>)}
+                  {claim.claimant_phone && (<div><dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Phone")}</dt><dd className="mt-0.5 text-sm font-semibold text-slate-900">{claim.claimant_phone}</dd></div>)}
+                  {claim.policy_type && (<div><dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Plan")}</dt><dd className="mt-0.5 text-sm font-semibold text-slate-900">{claim.policy_type}</dd></div>)}
+                </dl>
+                {claim.claimant_type && claim.claimant_type !== "SELF" && !claim.nominee_match && (
+                  <p className="mx-5 mb-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                    {tx("The policy names")} <strong>{claim.nominee_name || tx("no nominee")}</strong> ({claim.nominee_relationship || tx("nominee")}) {tx("as nominee. Check the claimant's identity and relationship before paying.")}
+                  </p>
+                )}
+              </section>
+            </div>
+
+            <div className="space-y-5">
+              <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div className="border-b border-slate-100 px-5 py-3.5"><h2 className="text-sm font-bold text-slate-900">{tx("Key figures")}</h2></div>
+                <dl className="divide-y divide-slate-100 text-sm">
+                  <div className="flex items-baseline justify-between px-5 py-3"><dt className="text-slate-500">{tx("Claimed")}</dt><dd className="font-bold text-slate-900">{tx("PKR")} {claim.submitted_amount.toLocaleString()}</dd></div>
+                  {(claim.coverage_amount ?? 0) > 0 && (
+                    <div className="px-5 py-3">
+                      <div className="flex items-baseline justify-between"><dt className="text-slate-500">{tx("Cover")}</dt><dd className="font-bold text-slate-900">{tx("PKR")} {(claim.coverage_amount ?? 0).toLocaleString()}</dd></div>
+                      <div className="mt-2 h-1.5 rounded-full bg-slate-100"><div className="h-1.5 rounded-full bg-blue-600" style={{ width: `${Math.max(1, Math.min(100, (claim.submitted_amount / (claim.coverage_amount ?? 1)) * 100))}%` }} /></div>
+                      <p className="mt-1 text-xs text-slate-500">{tx("{pct} of cover claimed", { pct: `${((claim.submitted_amount / (claim.coverage_amount ?? 1)) * 100).toFixed(1)}%` })}</p>
+                    </div>
+                  )}
+                  <div className="flex items-baseline justify-between px-5 py-3"><dt className="text-slate-500">{tx("Approved")}</dt><dd className={`font-bold ${claim.approved_amount > 0 ? "text-blue-700" : "text-slate-400"}`}>{claim.approved_amount > 0 ? `${tx("PKR")} ${claim.approved_amount.toLocaleString()}` : "—"}</dd></div>
+                  <div className="px-5 py-3">
+                    <div className="flex items-baseline justify-between"><dt className="text-slate-500">{tx("Fraud risk")}</dt><dd className="font-bold text-slate-900">{fraudPct}%</dd></div>
+                    <div className="mt-2 h-1.5 rounded-full bg-slate-100" role="progressbar" aria-valuenow={fraudPct} aria-valuemin={0} aria-valuemax={100}><div className="h-1.5 rounded-full bg-blue-600" style={{ width: `${Math.max(2, Math.min(100, fraudPct))}%` }} /></div>
+                  </div>
+                  <div className="flex items-center justify-between px-5 py-3"><dt className="text-slate-500">{tx("Duplicate check")}</dt>
+                    <dd className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${claim.duplicate_flag ? "border-slate-300 bg-slate-100 text-slate-700" : "border-blue-200 bg-blue-50 text-blue-700"}`}>{claim.duplicate_flag ? tx("Flagged") : tx("Clear")}</dd></div>
+                  {claim.ai_recommendation && (
+                    <div className="flex items-baseline justify-between px-5 py-3"><dt className="text-slate-500">{tx("Rule recommendation")}</dt><dd className="font-semibold text-slate-900">{humanize(claim.ai_recommendation)}</dd></div>
+                  )}
+                </dl>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div className="border-b border-slate-100 px-5 py-3.5"><h2 className="text-sm font-bold text-slate-900">{tx("Payouts")}</h2></div>
+                <div className="px-5 py-4">
+                  {(!claim.payouts || claim.payouts.length === 0) ? (
+                    <p className="text-sm text-slate-500">{tx("No payout recorded yet.")}</p>
+                  ) : (
+                    <ul className="space-y-3">
+                      {claim.payouts.map((p) => (
+                        <li key={p.id} className="text-sm">
+                          <div className="flex items-center justify-between gap-3"><span className="font-bold text-slate-900">{tx("PKR")} {p.amount.toLocaleString()}</span><span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700">{p.status}</span></div>
+                          <p className="mt-0.5 text-xs text-slate-500">{p.method} · {displayDate(p.initiated_at)}</p>
+                          {p.reference_number && <p className="font-mono text-xs text-slate-500">{tx("Ref:")} {p.reference_number}</p>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </section>
             </div>
           </div>
-          {/* Risk checks and payouts — the numbers and results, beside the overview */}
-          <div className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <section className="space-y-3 px-5 py-4">
-              <h2 className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{tx("Risk analysis")}</h2>
-              <div>
-                <div className="flex items-baseline justify-between text-sm">
-                  <span className="text-slate-600">{tx("Fraud risk score")}</span>
-                  <span className="font-bold text-slate-900">{fraudPct}%</span>
-                </div>
-                <div className="mt-1.5 h-1.5 rounded-full bg-slate-100" role="progressbar" aria-valuenow={fraudPct} aria-valuemin={0} aria-valuemax={100}>
-                  <div className="h-1.5 rounded-full bg-blue-600" style={{ width: `${Math.max(2, Math.min(100, fraudPct))}%` }} />
-                </div>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-600">{tx("Duplicate check")}</span>
-                <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${claim.duplicate_flag ? "border-slate-700 bg-slate-700 text-white" : "border-blue-200 bg-blue-50 text-blue-700"}`}>
-                  {claim.duplicate_flag ? tx("Flagged") : tx("Clear")}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-600">{tx("Rule recommendation")}</span>
-                <span className="font-semibold text-slate-900">{claim.ai_recommendation ?? "—"}</span>
-              </div>
-            </section>
-
-            <section className="space-y-3 px-5 py-4">
-              <h2 className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{tx("Payouts")}</h2>
-              {(!claim.payouts || claim.payouts.length === 0) ? (
-                <p className="text-sm text-slate-500">{tx("No payout recorded yet.")}</p>
-              ) : (
-                <ul className="space-y-3">
-                  {claim.payouts.map((p) => (
-                    <li key={p.id} className="text-sm">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="font-bold text-slate-900">{tx("PKR")}{" "}{p.amount.toLocaleString()}</span>
-                        <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700">{p.status}</span>
-                      </div>
-                      <p className="mt-0.5 text-xs text-slate-500">{p.method} · {displayDate(p.initiated_at)}</p>
-                      {p.reference_number && <p className="font-mono text-xs text-slate-500">{tx("Ref:")}{" "}{p.reference_number}</p>}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          </div>
-        </div>
-
+        )}
+        {tab === "documents" && (<>
         {/* Verification Documents Card */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
@@ -873,7 +725,7 @@ export default function ClaimDetailPage() {
                 </span>
               )}
               {!isClosedStatus && (
-                <button
+                canAct && (<button
                   onClick={() => openModal("doc")}
                   className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs shadow-2xs active:scale-[0.98] transition-all flex items-center gap-1.5"
                 >
@@ -881,31 +733,18 @@ export default function ClaimDetailPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                   </svg>
                   <span>{tx("Upload")}</span>
-                </button>
+                </button>)
               )}
             </div>
           </div>
 
           <div className="p-5">
             {!hasDocs ? (
-              <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center bg-slate-50/40 space-y-2">
-                <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center">
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-slate-700">{tx("No documents uploaded yet")}</p>
-                  <p className="text-[11px] text-slate-400 max-w-xs mx-auto mt-0.5">
-                    {tx("Upload hospital bill, CNIC, or medical reports to pass the Document Gate prerequisite.")}
-                  </p>
-                </div>
-                <button
-                  onClick={() => openModal("doc")}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs shadow-2xs transition-all"
-                >
-                  {tx("Select File to Upload")}
-                </button>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3">
+                <p className="text-sm text-slate-600">{tx("No documents yet. Upload the hospital bill, CNIC or medical reports.")}</p>
+                {canAct && (<button onClick={() => openModal("doc")} className="rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700">
+                  {tx("Upload document")}
+                </button>)}
               </div>
             ) : (
               <div className="space-y-3">
@@ -983,6 +822,8 @@ export default function ClaimDetailPage() {
           </div>
         </div>
 
+        </>)}
+        {tab === "audit" && (<>
         {/* Underwriting Risk Audit & Triggers Card */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
           <div className="flex items-center justify-between">
@@ -995,7 +836,7 @@ export default function ClaimDetailPage() {
               <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">{tx("Underwriting Audit")}</h3>
             </div>
             {!isClosedStatus && (
-              <button
+              canAct && (<button
                 onClick={() => openModal("reunderwrite")}
                 className="text-[11px] font-semibold text-blue-700 hover:text-blue-800 bg-blue-50 hover:bg-blue-100/80 px-2.5 py-1 rounded-md border border-blue-200/60 transition-all flex items-center gap-1"
               >
@@ -1003,7 +844,7 @@ export default function ClaimDetailPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                 </svg>
                 <span>{tx("Trigger Underwriting Audit")}</span>
-              </button>
+              </button>)
             )}
           </div>
 
@@ -1177,6 +1018,8 @@ export default function ClaimDetailPage() {
           )}
         </div>
 
+        </>)}
+        {tab === "history" && (<>
         {/* History — every status change, at the end of the page */}
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-6 py-4">
@@ -1187,6 +1030,7 @@ export default function ClaimDetailPage() {
             <ClaimJourneyTimeline events={claim.status_history ?? []} />
           </div>
         </div>
+        </>)}
       </div>
 
       {/* Make a decision — the one place a claim is moved forward */}
@@ -1308,13 +1152,13 @@ export default function ClaimDetailPage() {
                 )}
 
                 {!hasDocs && nextOpts.some((st) => blockedReason(st)) && (
-                  <button
+                  canAct && (<button
                     type="button"
                     onClick={() => openModal("doc")}
                     className="text-sm font-semibold text-blue-700 hover:underline"
                   >
                     {tx("Upload a document")} →
-                  </button>
+                  </button>)
                 )}
               </div>
 
