@@ -1070,6 +1070,7 @@ export interface CommissionLedgerEntry {
   customerName: string;
   segment: PolicySegment;
   productName: string;
+  branch?: string;
 
   premiumType: PremiumType;
   policyYear: number;

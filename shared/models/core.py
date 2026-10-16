@@ -1719,6 +1719,9 @@ class Case(SQLModel, table=True):
     slaDeadline: Optional[datetime] = Field(default=None, nullable=True)
     escalationLevel: int = Field(default=0)
     parentCaseld: Optional[UUID] = Field(default=None, foreign_key="cases.caseld", nullable=True)
+    # Set on an UNDERWRITING case opened by a claim referral ("Claim UW"): the claim it reviews. No FK (claims.case_id
+    # already points the other way).
+    claim_id: Optional[UUID] = Field(default=None, index=True, nullable=True)
 
     # Underwriting HOLD. While on_hold the whole process is frozen exactly where it stands: caseStatus and every step already
     # done are kept (so releasing resumes from the same point), and every write to the case is refused (see main.py).
@@ -3947,3 +3950,23 @@ class UnderwritingQuestionnaire(SQLModel, table=True):
     sent_by: UUID = Field(foreign_key="users.id")
     submitted_at: Optional[datetime] = None
     answers: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+
+
+class ClaimAuthorityLimit(SQLModel, table=True):
+    """The Delegated Authority Matrix: how much each role may approve and authorise on a claim.
+
+    A row per (tenant, role). `approve_limit` is the largest claim a role may approve or decline on its own;
+    `authorize_limit` the largest settlement it may authorise for payment. NULL means no limit; no row means the
+    platform default (see services/claim_authority.py). Only an Admin changes these (the configuration, not the
+    claim decisions), and every change records who made it.
+    """
+    __tablename__ = "claim_authority_limits"
+    __table_args__ = (UniqueConstraint("tenant_id", "role_name", name="uq_claim_authority_role"),)
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    role_name: str = Field(max_length=100, nullable=False)
+    approve_limit: Optional[float] = Field(default=None, ge=0, nullable=True)
+    authorize_limit: Optional[float] = Field(default=None, ge=0, nullable=True)
+    updated_by: Optional[str] = Field(default=None, max_length=255)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)

@@ -513,7 +513,7 @@ export default function ClaimsDashboardPage() {
                         <span className="font-extrabold text-slate-900 shrink-0">{count}{" "}{tx("claims")}</span>
                       </div>
                       <div className="h-1 w-full bg-slate-200 rounded-full overflow-hidden">
-                        <div className="h-full bg-slate-900 rounded-full" style={{ width: `${pct}%` }}></div>
+                        <div className="h-full bg-blue-600 rounded-full" style={{ width: `${pct}%` }}></div>
                       </div>
                     </div>
                   );

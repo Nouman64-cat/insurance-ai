@@ -1189,11 +1189,14 @@ class CaseRead(BaseModel):
     slaDeadline:      Optional[datetime] = None
     escalationLevel:  int
     parentCaseld:     Optional[UUID] = None
+    claim_id:         Optional[UUID] = None   # "Claim UW": the claim this underwriting case reviews
     on_hold:          bool = False
     hold_reason:      Optional[str] = None
     held_at:          Optional[datetime] = None
     held_by:          Optional[str] = None
     held_from_status: Optional[str] = None
+    claim_number:     Optional[str] = None
+    claim_type:       Optional[str] = None
 
     # Enrichment — only populated by GET /cases (the Underwriting queue);
     # None on create/update/get-single responses, which return the bare Case row.

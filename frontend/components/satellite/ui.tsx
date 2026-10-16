@@ -207,7 +207,7 @@ export function Segmented<T extends string>({ value, onChange, options, label }:
       {options.map((o) => (
         <button key={o.value} type="button" role="tab" aria-selected={value === o.value} onClick={() => onChange(o.value)}
           className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-            value === o.value ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>
+            value === o.value ? "bg-blue-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"}`}>
           {o.label}
           {o.count !== undefined && o.count > 0 && (
             <span className={`rounded-full px-1.5 text-[10px] ${value === o.value ? "bg-white/20" : "bg-slate-200 text-slate-700"}`}>{o.count}</span>

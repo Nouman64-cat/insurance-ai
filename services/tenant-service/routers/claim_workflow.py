@@ -48,7 +48,7 @@ from routers.claims import (
 )
 from routers.policies import _get_policy, _publish_policy_event, _st
 from services import claim_engine as eng
-from services import document_generator, insurer_config as cfg
+from services import claim_authority as ca, document_generator, insurer_config as cfg
 from services import renewal_engine
 from services.email_templates import claim_closure_email
 from shared.models.core import (
@@ -73,9 +73,11 @@ from shared.services.policy_state_machine import IllegalStateTransition, apply_t
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["Stage B — Claims Management"])
 
-_CLAIMS_ROLES = ("ClaimsAdjuster", "ClaimsManager", "Admin", "SuperAdmin", "Underwriter")
-_DECIDERS = ("ClaimsAdjuster", "ClaimsManager", "Admin", "SuperAdmin")
-_MANAGERS = ("ClaimsManager", "Admin", "SuperAdmin")
+# Who may do what is decided in services/claim_authority.py (roles and the delegated authority matrix). Admin is not
+# among them: Admin configures and oversees, claims staff decide, Finance pays.
+_CLAIMS_ROLES = ca.PROCESS_ROLES
+_DECIDERS = ca.DECIDE_ROLES
+_MANAGERS = ca.MANAGER_ROLES
 _ALLOWED_EXT = {"pdf": "application/pdf", "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "tiff": "image/tiff"}
 _MAX_BYTES = 15 * 1024 * 1024
 _DECIDED = (ClaimStatusEnum.APPROVED, ClaimStatusEnum.PARTIAL_APPROVAL, ClaimStatusEnum.DECLINED,
@@ -1042,8 +1044,8 @@ async def decide_claim(
             raise HTTPException(409, "Complete the investigation before approving.")
         if proc.eligibility_status == "Ineligible" and not proc.eligibility_override_by:
             raise HTTPException(409, "The claim is not eligible — reject it, or ask a manager to override.")
-        if needs_manager and not manager:
-            raise HTTPException(403, f"Approving a claim above PKR {cfg.CLAIM_MANAGER_LIMIT:,.0f} (or one already referred) needs a claims manager — use 'Refer to manager'.")
+        await ca.assert_can_decide(session, tenant_id, await _role_name(user, session), claim.submitted_amount,
+                                   referred_up=cur == ClaimStatusEnum.REFERRED_TO_MANAGER)
         if claim.duplicate_flag and len(reason) < 15:
             raise HTTPException(400, "This claim is flagged as a possible duplicate — record your rationale (at least 15 characters).")
         if a.get("payable", 0) <= 0:
@@ -1068,8 +1070,8 @@ async def decide_claim(
     elif body.decision == "Reject":
         if not reason:
             raise HTTPException(400, "A reason is required to reject a claim.")
-        if needs_manager and not manager:
-            raise HTTPException(403, "Rejecting a high-value or manager-referred claim needs a claims manager — use 'Refer to manager'.")
+        await ca.assert_can_decide(session, tenant_id, await _role_name(user, session), claim.submitted_amount,
+                                   referred_up=cur == ClaimStatusEnum.REFERRED_TO_MANAGER)
         note = f"Rejected: {reason}"
         await _move(session, claim, ClaimStatusEnum.DECLINED, user, note)
         claim.approved_amount = 0.0
@@ -1179,11 +1181,11 @@ async def verify_payees(
 async def authorize_disbursement(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID,
     request: Request,
-    user=Depends(require_roles(*_DECIDERS)),
+    user=Depends(require_roles(*ca.AUTHORIZE_ROLES)),
     session: AsyncSession = Depends(get_session),
 ):
-    """Authorise the disbursement of the approved amount to the verified payees. Above the
-    manager limit only a claims manager may authorise."""
+    """Authorise the disbursement of the approved amount to the verified payees: the settlement approval, within the
+    manager's delegated authorisation limit. Finance then executes the payment."""
     policy = await _get_policy(session, tenant_id, policy_id)
     claim, proc = await _get_claim(session, policy_id, claim_id)
     if _cstatus(claim) not in (ClaimStatusEnum.APPROVED, ClaimStatusEnum.PARTIAL_APPROVAL):
@@ -1192,8 +1194,7 @@ async def authorize_disbursement(
         raise HTTPException(409, "Verify every payee before authorising the disbursement.")
     if proc.authorized_at:
         raise HTTPException(409, "Disbursement is already authorised.")
-    if claim.approved_amount > cfg.CLAIM_MANAGER_LIMIT and not await _is_manager(session, user):
-        raise HTTPException(403, f"Authorising more than PKR {cfg.CLAIM_MANAGER_LIMIT:,.0f} needs a claims manager.")
+    await ca.assert_can_authorize(session, tenant_id, await _role_name(user, session), claim.approved_amount)
     total = round(sum(p["amount"] for p in (proc.payees_json or [])), 2)
     if abs(total - claim.approved_amount) >= 0.01:
         raise HTTPException(409, f"The payee amounts (PKR {total:,.2f}) do not add up to the approved amount (PKR {claim.approved_amount:,.2f}).")
@@ -1210,10 +1211,11 @@ async def disburse_claim(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID,
     body: DisburseBody,
     request: Request,
-    user=Depends(require_roles(*_DECIDERS)),
+    user=Depends(require_roles(*ca.DISBURSE_ROLES)),
     session: AsyncSession = Depends(get_session),
 ):
-    """Pay the authorised amount — one payout per payee, through the register's own
+    """Execute the payment of the authorised amount. Finance only: the person who approved the claim does not also
+    release the money. Pay the authorised amount — one payout per payee, through the register's own
     settlement routine, which marks the claim Settled."""
     policy = await _get_policy(session, tenant_id, policy_id)
     claim, proc = await _get_claim(session, policy_id, claim_id)
@@ -1243,7 +1245,7 @@ async def reconcile_settlement(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID,
     body: ReconcileBody,
     request: Request,
-    user=Depends(require_roles(*_CLAIMS_ROLES)),
+    user=Depends(require_roles(*ca.RECONCILE_ROLES)),
     session: AsyncSession = Depends(get_session),
 ):
     """Reconcile what was disbursed against what was approved and owed. A failed blocking

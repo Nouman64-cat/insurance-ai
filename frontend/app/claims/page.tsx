@@ -1,8 +1,9 @@
 "use client";
 
-import { displayDate } from '../../lib/dateDisplay';
+import { displayDate } from "@/lib/dateDisplay";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { listClaims, createClaim, Claim, CreateClaimRequest } from "@/app/services/claims";
 import { listPolicies, getPolicyDetail, PolicyListItem, PolicyDetail } from "@/app/services/policies";
 import { formatCnic } from "@/lib/cnic";
@@ -127,6 +128,7 @@ function RiskBadge({ prob, flag }: { prob: number; flag: boolean }) {
 }
 
 export default function ClaimsPage() {
+  const router = useRouter();
   const [claims, setClaims] = useState<Claim[]>([]);
   const [policies, setPolicies] = useState<PolicyListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -313,38 +315,19 @@ export default function ClaimsPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 space-y-6">
-      {/* Top Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      {/* Header */}
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold text-blue-600 uppercase tracking-wider mb-1">
-            <span>{tx("Insurance Operations")}</span>
-            <span>/</span>
-            <span>{tx("Claims Management")}</span>
-          </div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-900">{tx("Claims Register & Triage Workbench")}</h1>
-          {/* <p className="text-xs text-slate-500 mt-1">
-            Search, filter, and triage claim intake records, rules-engine adjudications, and payout statuses.
-          </p> */}
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">{tx("Claims Register")}</h1>
+          <p className="mt-1 text-sm text-slate-500">{tx("Every claim in one place. Open a claim to work it.")}</p>
         </div>
-        <div className="flex items-center gap-3">
-          <Link
-            href="/claims/dashboard"
-            className="text-xs font-semibold px-4 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs flex items-center gap-1.5"
-          >
-            <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-            <span>{tx("Claims Dashboard")}</span>
+        <div className="flex items-center gap-2">
+          <Link href="/claims/dashboard" className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
+            {tx("Dashboard")}
           </Link>
-
-          <button
-            onClick={openModal}
-            className="text-xs font-semibold px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-xs transition-colors flex items-center gap-1.5"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            <span>{tx("File New Claim")}</span>
+          <button onClick={openModal} className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700">
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+            {tx("File new claim")}
           </button>
         </div>
       </div>
@@ -524,98 +507,54 @@ export default function ClaimsPage() {
         </div>
 
         <div className="overflow-x-auto rounded-b-xl">
-          <table className="w-full text-left text-sm whitespace-nowrap">
-            <thead className="bg-slate-50 text-slate-500 border-b border-slate-100 text-xs">
-              <tr>
-                <th className="px-5 py-3 font-semibold">{tx("Claim Ref")}</th>
-                <th className="px-5 py-3 font-semibold">{tx("Policyholder")}</th>
-                <th className="px-5 py-3 font-semibold text-center">{tx("Claimant")}</th>
-                <th className="px-5 py-3 font-semibold">{tx("Policy #")}</th>
-                <th className="px-5 py-3 font-semibold">{tx("Type")}</th>
-                <th className="px-5 py-3 font-semibold">{tx("Incident Date")}</th>
-                <th className="px-5 py-3 font-semibold text-right">{tx("Claimed")}</th>
-                <th className="px-5 py-3 font-semibold text-right">{tx("Approved")}</th>
-                <th className="px-5 py-3 font-semibold">{tx("Risk Flag")}</th>
-                <th className="px-5 py-3 font-semibold">{tx("Status")}</th>
-                <th className="px-5 py-3 font-semibold text-center">{tx("Action")}</th>
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                <th className="py-3 pl-5 pr-3">{tx("Claim")}</th>
+                <th className="px-3 py-3">{tx("Policyholder")}</th>
+                <th className="px-3 py-3">{tx("Policy")}</th>
+                <th className="px-3 py-3">{tx("Incident")}</th>
+                <th className="px-3 py-3 text-right">{tx("Claimed")}</th>
+                <th className="px-3 py-3 text-right">{tx("Approved")}</th>
+                <th className="px-3 py-3">{tx("Risk")}</th>
+                <th className="py-3 pl-3 pr-5">{tx("Status")}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
+            <tbody>
               {loading ? (
-                <tr>
-                  <td colSpan={11} className="px-5 py-8 text-center text-slate-400 text-xs">
-                    {tx("Loading claims register...")}
-                  </td>
-                </tr>
+                <tr><td colSpan={8} className="px-5 py-12 text-center text-sm text-slate-400">{tx("Loading claims…")}</td></tr>
               ) : claims.length === 0 ? (
-                <tr>
-                  <td colSpan={11} className="px-5 py-8 text-center text-slate-400 text-xs">
-                    {tx("No claims found matching applied filters.")}
-                  </td>
-                </tr>
+                <tr><td colSpan={8} className="px-5 py-12 text-center">
+                  <p className="text-sm font-semibold text-slate-700">{tx("No claims match.")}</p>
+                  <p className="mt-1 text-xs text-slate-400">{tx("Try another filter or search.")}</p>
+                </td></tr>
               ) : (
-                pagedClaims.map(c => (
-                  <tr
-                    key={c.id}
-                    className={`transition-colors duration-1000 ${highlightId === c.id || highlightId === c.claim_number
-                        ? "bg-blue-100/90 font-semibold text-blue-950 shadow-inner"
-                        : "hover:bg-slate-50/50"
-                      }`}
-                  >
-                    <td className="px-5 py-3">
-                      <div className="font-medium text-slate-900">{c.claim_number}</div>
-                    </td>
-                    <td className="px-5 py-3">
-                      <div className="font-bold text-slate-900">{c.customer_name || "—"}</div>
-                    </td>
-                    <td className="px-5 py-3 text-center">
-                      <div className="flex flex-col items-center justify-center gap-1">
-                        {c.claimant_name && c.customer_name && c.claimant_name !== c.customer_name ? (
-                          <>
-                            <span className="text-xs font-medium text-slate-800">
-                              {c.claimant_name}
-                            </span>
-                            {c.claimant_relationship && (
-                              <span className="text-[9.5px] font-bold text-slate-500 bg-slate-100 border border-slate-200/50 px-1.5 py-0.5 rounded tracking-wide uppercase">
-                                {c.claimant_relationship}
-                              </span>
-                            )}
-                          </>
-                        ) : (
-                          <span className="text-xs text-slate-400">
-                            {tx("Self")}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-5 py-3 text-xs font-mono text-slate-500">{c.policy_number ?? "—"}</td>
-                    <td className="px-5 py-3 text-xs text-slate-600">{c.claim_type}</td>
-                    <td className="px-5 py-3 text-xs text-slate-600 font-mono">{displayDate(c.incident_date ?? "—")}</td>
-                    <td className="px-5 py-3 text-right font-medium text-slate-900">
-                      {tx("PKR")}{" "}{c.submitted_amount.toLocaleString()}
-                    </td>
-                    <td className="px-5 py-3 text-right font-semibold text-slate-900">
-                      {c.approved_amount ? tx("PKR {0}", { 0: c.approved_amount.toLocaleString() }) : "—"}
-                    </td>
-                    <td className="px-5 py-3">
-                      <RiskBadge prob={c.fraud_probability} flag={c.duplicate_flag} />
-                    </td>
-                    <td className="px-5 py-3">
-                      <StatusBadge status={c.status} />
-                    </td>
-                    <td className="px-5 py-3 text-center">
-                      <Link
-                        href={`/claims/${c.id}`}
-                        className="text-[11.5px] font-bold text-blue-600 hover:text-blue-800 underline flex items-center justify-center gap-1"
-                      >
-                        {tx("Review")}
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                        </svg>
-                      </Link>
-                    </td>
-                  </tr>
-                ))
+                pagedClaims.map((c) => {
+                  const others = c.claimant_name && c.customer_name && c.claimant_name !== c.customer_name;
+                  return (
+                    <tr
+                      key={c.id}
+                      onClick={() => router.push(`/claims/${c.id}`)}
+                      className={`cursor-pointer border-b border-slate-100 transition-colors duration-1000 ${
+                        highlightId === c.id || highlightId === c.claim_number ? "bg-blue-100/80" : "hover:bg-slate-50"}`}
+                    >
+                      <td className="py-3 pl-5 pr-3">
+                        <p className="font-semibold text-slate-900">{c.claim_number}</p>
+                        <p className="text-xs text-slate-500">{c.claim_type}</p>
+                      </td>
+                      <td className="px-3 py-3">
+                        <p className="font-medium text-slate-900">{c.customer_name || "—"}</p>
+                        {others && <p className="text-xs text-slate-500">{tx("Claimant")}: {c.claimant_name}{c.claimant_relationship ? ` (${c.claimant_relationship})` : ""}</p>}
+                      </td>
+                      <td className="px-3 py-3 font-mono text-xs text-slate-500">{c.policy_number ?? "—"}</td>
+                      <td className="px-3 py-3 text-xs text-slate-600">{c.incident_date ? displayDate(c.incident_date) : "—"}</td>
+                      <td className="px-3 py-3 text-right font-medium text-slate-900">{tx("PKR")} {c.submitted_amount.toLocaleString()}</td>
+                      <td className="px-3 py-3 text-right font-semibold text-slate-900">{c.approved_amount ? `${tx("PKR")} ${c.approved_amount.toLocaleString()}` : <span className="text-slate-300">—</span>}</td>
+                      <td className="px-3 py-3"><RiskBadge prob={c.fraud_probability} flag={c.duplicate_flag} /></td>
+                      <td className="py-3 pl-3 pr-5"><StatusBadge status={c.status} /></td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

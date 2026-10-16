@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import api from "@/app/services/api";
 import { Pagination, usePagination } from "@/components/Pagination";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import DemoFillButton from "@/components/DemoFillButton";
 import { demoRole } from "@/lib/demoData";
 import { tx } from "@/lib/i18n/tx";
@@ -42,6 +43,10 @@ export default function RoleManagementPage() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // A pending confirmation (rename or delete of a built-in role), shown as an in-app dialog.
+  const [confirmAsk, setConfirmAsk] = useState<{
+    title: string; message: string; confirmLabel: string; run: () => void;
+  } | null>(null);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "system" | "custom">("all");
 
@@ -81,7 +86,7 @@ export default function RoleManagementPage() {
     setShowModal(true);
   };
 
-  const handleSave = async (e: React.FormEvent) => {
+  const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     setFormError("");
     if (!form.name.trim()) {
@@ -89,12 +94,19 @@ export default function RoleManagementPage() {
       return;
     }
     // Access across the platform is tied to built-in role names — renaming one strips it.
-    if (
-      editing?.is_system &&
-      form.name.trim() !== editing.name &&
-      !confirm(tx("\"{0}\" is a built-in role. The platform grants access by this exact name, so after renaming it the {1} user(s) holding it will lose that access. Rename anyway?", { 0: editing.name, 1: editing.user_count }))
-    )
+    if (editing?.is_system && !editing.is_locked && form.name.trim() !== editing.name) {
+      setConfirmAsk({
+        title: tx("Rename built-in role?"),
+        message: tx("\"{0}\" is a built-in role. The platform grants access by this exact name, so after renaming it to \"{2}\" the {1} user(s) holding it will lose that access.", { 0: editing.name, 1: editing.user_count, 2: form.name.trim() }),
+        confirmLabel: tx("Rename role"),
+        run: () => void saveRole(),
+      });
       return;
+    }
+    void saveRole();
+  };
+
+  const saveRole = async () => {
     setSaving(true);
     try {
       if (editing) {
@@ -124,10 +136,17 @@ export default function RoleManagementPage() {
       setError(tx("\"{0}\" is still assigned to {1} user(s) — move them to another role before deleting it.", { 0: role.name, 1: role.user_count }));
       return;
     }
-    const prompt = role.is_system
-      ? tx("\"{0}\" is a built-in role that platform features depend on. Deleting it is permanent — it won't be recreated. Delete anyway?", { 0: role.name })
-      : tx("Delete the role \"{0}\"? This can't be undone.", { 0: role.name });
-    if (!confirm(prompt)) return;
+    setConfirmAsk({
+      title: tx("Delete role?"),
+      message: role.is_system
+        ? tx("\"{0}\" is a built-in role that platform features depend on. Deleting it is permanent — it won't be recreated.", { 0: role.name })
+        : tx("Delete the role \"{0}\"? This can't be undone.", { 0: role.name }),
+      confirmLabel: tx("Delete role"),
+      run: () => void deleteRole(role),
+    });
+  };
+
+  const deleteRole = async (role: Role) => {
     setDeletingId(role.id);
     try {
       await api.delete(`/roles/${role.id}`);
@@ -441,6 +460,21 @@ export default function RoleManagementPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {confirmAsk && (
+        <ConfirmDialog
+          title={confirmAsk.title}
+          confirmLabel={confirmAsk.confirmLabel}
+          onCancel={() => setConfirmAsk(null)}
+          onConfirm={() => {
+            const run = confirmAsk.run;
+            setConfirmAsk(null);
+            run();
+          }}
+        >
+          {confirmAsk.message}
+        </ConfirmDialog>
       )}
     </div>
   );

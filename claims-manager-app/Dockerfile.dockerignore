@@ -1,0 +1,12 @@
+# Build context is the repository root (see Dockerfile). Send only this app and the portal folders it shares.
+*
+!claims-manager-app
+!frontend/app/services
+!frontend/app/claims
+!frontend/app/globals.css
+!frontend/components
+!frontend/lib
+claims-manager-app/node_modules
+claims-manager-app/.next
+claims-manager-app/tsconfig.tsbuildinfo
+claims-manager-app/.env*

@@ -173,6 +173,7 @@ interface CaseData {
   customer_id: string;
   policy_id: string | null;
   caseType: string;
+  claim_id?: string | null; // set on a Claim UW case: a claim referred by Claims (no ACR / PEP gates)
   caseStatus: string;
   priorityLevel: string;
   sourceChannel: string;
@@ -3418,7 +3419,8 @@ function GeneralCasePage({ params }: { params: { id: string } }) {
   const missingPreChecks: string[] = [];
   if (!tracks?.medical.submitted) missingPreChecks.push("Medical underwriting review");
   if (!tracks?.financial.submitted) missingPreChecks.push("Financial underwriting review");
-  if (!isACRCleared(acr))
+  // A Claim UW case has no agent report or sanctions screening: the policy was already issued.
+  if (!c.claim_id && !isACRCleared(acr))
     missingPreChecks.push("Agent's Confidential Report");
 
   const medicalDone =
@@ -3436,7 +3438,7 @@ function GeneralCasePage({ params }: { params: { id: string } }) {
   const pepDone =
     checks.length > 0 && checks.every((ck) => ck.status === "Passed");
 
-  if (!pepDone) missingPreChecks.push("PEP & Sanctions Screening");
+  if (!c.claim_id && !pepDone) missingPreChecks.push("PEP & Sanctions Screening");
 
   const reviewStep = (track: "medical" | "financial"): PrereqStep => {
     const r = tracks?.[track];
@@ -3649,7 +3651,7 @@ function GeneralCasePage({ params }: { params: { id: string } }) {
   const prereqSteps: PrereqStep[] = [
     reviewStep("medical"),
     reviewStep("financial"),
-    ...allPrereqSteps.filter((step) => step.id === "acr" || step.id === "pep"),
+    ...allPrereqSteps.filter((step) => !c.claim_id && (step.id === "acr" || step.id === "pep")),
   ];
 
   const requiredDocsMissing = missingPreChecks.length > 0;
@@ -3812,7 +3814,8 @@ function GeneralCasePage({ params }: { params: { id: string } }) {
       </button>
     </div>
   ) :
-    c.caseStatus !== "Approved" && c.caseStatus !== "Rejected" ? (
+    // A Claim UW case is decided by the underwriters in their review workspace (it goes back to Claims), not here.
+    c.caseStatus !== "Approved" && c.caseStatus !== "Rejected" && !c.claim_id ? (
       <div className="flex flex-wrap items-center justify-end gap-2">
         <button
           onClick={() => { setHoldError(null); setHoldModal(true); }}
