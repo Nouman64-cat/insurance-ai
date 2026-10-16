@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import colors from "tailwindcss/colors";
 
 const config: Config = {
   darkMode: "class",
@@ -13,10 +14,12 @@ const config: Config = {
         sans: ["var(--font-inter)", "system-ui", "sans-serif"],
       },
       colors: {
+        // Match Copilot’s neutral surfaces and text instead of blue-grey slate.
+        slate: colors.zinc,
         brand: {
-          DEFAULT: "#1D4ED8",
-          dark: "#1E3A8A",
-          light: "#DBEAFE",
+          DEFAULT: "#2563EB",
+          dark: "#1D4ED8",
+          light: "#EFF6FF",
         },
       },
       // Pages use `max-w-screen-2xl` as their content width. It used to stop at 1536px, which left wide

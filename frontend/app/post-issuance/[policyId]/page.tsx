@@ -551,7 +551,7 @@ function CustomPaymentModal({
             <button
               type="submit"
               disabled={isBusy || !amountStr || parseFloat(amountStr) <= 0}
-              className="px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-600 hover:from-blue-700 hover:to-blue-700 shadow-sm transition-all disabled:opacity-50 flex items-center gap-2"
+              className="px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-sm transition-all disabled:opacity-50 flex items-center gap-2"
             >
               {isBusy && (
                 <svg
@@ -1048,7 +1048,7 @@ function PremiumCollectionPanel({
                       }, "Demo receipt downloaded.");
                     }
                   }}
-                  className="mt-1 inline-flex items-center justify-center gap-1.5 px-3 py-1 text-[11px] font-bold text-white bg-gradient-to-r from-blue-600 to-blue-600 rounded-md transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="mt-1 inline-flex items-center justify-center gap-1.5 px-3 py-1 text-[11px] font-bold text-white bg-blue-600 rounded-md transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <svg
                     viewBox="0 0 24 24"
@@ -1532,7 +1532,7 @@ function PremiumCollectionPanel({
                 <button
                   disabled={locked}
                   onClick={() => setIsBulkModalOpen(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-blue-600 hover:from-blue-700 hover:to-blue-700 shadow-sm transition-all disabled:opacity-40"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-sm transition-all disabled:opacity-40"
                 >
                   <svg
                     viewBox="0 0 24 24"
@@ -3051,7 +3051,7 @@ function AccordionCard({
       >
         <div className="flex items-center gap-3">
           <span
-            className={`flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-bold shadow-sm ${done ? "bg-gradient-to-r from-blue-500 to-blue-500 text-white shadow-blue-200" : "bg-slate-100 text-slate-500"}`}
+            className={`flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-bold shadow-sm ${done ? "bg-blue-600 text-white shadow-blue-200" : "bg-slate-100 text-slate-500"}`}
           >
             {done ? (
               <svg
@@ -3119,7 +3119,7 @@ function OnboardingBtn({
   const tones = {
     slate: "bg-slate-800 hover:bg-slate-900 text-white shadow-sm hover:shadow",
     emerald:
-      "bg-gradient-to-r from-blue-600 to-blue-600 hover:from-blue-700 hover:to-blue-700 text-white shadow-md shadow-blue-200 hover:shadow-blue-300",
+      "bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-200 hover:shadow-blue-300",
   };
   return (
     <button

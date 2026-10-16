@@ -151,7 +151,7 @@ export function ReinsurancePanel({ policyId, onChanged }: ReinsurancePanelProps)
   const slices = [
     { key: "retained", label: tx("Retained"), amount: cession.retained_amount, note: tx("Limit {0}", { 0: fmtShort(cession.retention_limit) }), bar: "bg-slate-400", dot: "bg-slate-400" },
     { key: "treaty", label: tx("Treaty"), amount: cession.treaty_ceded_amount, note: tx("Cap {0}", { 0: fmtShort(cession.treaty_capacity) }), bar: "bg-blue-500", dot: "bg-blue-500" },
-    { key: "fac", label: tx("Facultative"), amount: cession.facultative_ceded_amount, note: tx("{0}% of cover", { 0: cession.cession_pct }), bar: "bg-indigo-600", dot: "bg-indigo-600" },
+    { key: "fac", label: tx("Facultative"), amount: cession.facultative_ceded_amount, note: tx("{0}% of cover", { 0: cession.cession_pct }), bar: "bg-blue-600", dot: "bg-blue-600" },
   ];
   const statusTone =
     refStatus === "Accepted" ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
@@ -184,11 +184,11 @@ export function ReinsurancePanel({ policyId, onChanged }: ReinsurancePanelProps)
         </div>
         <dl className="mt-3 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))" }}>
           {slices.map((sl) => (
-            <div key={sl.key} className={`rounded-xl px-3 py-2 ${sl.key === "fac" && sl.amount > 0 ? "bg-indigo-50 ring-1 ring-indigo-100" : "bg-slate-50"}`}>
+            <div key={sl.key} className={`rounded-xl px-3 py-2 ${sl.key === "fac" && sl.amount > 0 ? "bg-blue-50 ring-1 ring-blue-100" : "bg-slate-50"}`}>
               <dt className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500">
                 <span className={`h-2 w-2 rounded-full ${sl.dot}`} />{sl.label}
               </dt>
-              <dd className={`mt-0.5 text-sm font-bold ${sl.key === "fac" && sl.amount > 0 ? "text-indigo-900" : "text-slate-800"}`} title={fmtPKR(sl.amount)}>
+              <dd className={`mt-0.5 text-sm font-bold ${sl.key === "fac" && sl.amount > 0 ? "text-blue-900" : "text-slate-800"}`} title={fmtPKR(sl.amount)}>
                 {fmtShort(sl.amount)}
               </dd>
               <dd className="text-[10px] text-slate-400">{sl.note}</dd>
@@ -199,12 +199,12 @@ export function ReinsurancePanel({ policyId, onChanged }: ReinsurancePanelProps)
 
       {/* What the AI expects the reinsurer to come back with */}
       {expected_terms && expected_terms.drivers && expected_terms.drivers.length > 0 && (
-        <section className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-4">
+        <section className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="flex items-center gap-1.5 text-sm font-bold text-violet-900">
+            <p className="flex items-center gap-1.5 text-sm font-bold text-blue-900">
               <span aria-hidden>✨</span>{tx("AI reinsurance guidance")}
             </p>
-            <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-violet-800 ring-1 ring-violet-200">
+            <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-blue-800 ring-1 ring-blue-200">
               {tx("Expected:")} {expected_terms.expected_decision.replace(/([a-z])([A-Z])/g, "$1 $2")}
               {expected_terms.expected_extra_mortality_pct ? ` · +${expected_terms.expected_extra_mortality_pct}% EMR` : ""}
             </span>
@@ -212,12 +212,12 @@ export function ReinsurancePanel({ policyId, onChanged }: ReinsurancePanelProps)
           <ul className="mt-3 space-y-1.5">
             {expected_terms.drivers.map((d, i) => (
               <li key={i} className="flex gap-2 text-xs text-slate-700">
-                <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-violet-400" />{d}
+                <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-blue-400" />{d}
               </li>
             ))}
           </ul>
           {expected_terms.basis && (
-            <p className="mt-3 border-t border-violet-100 pt-2 text-[11px] leading-relaxed text-slate-500">{expected_terms.basis}</p>
+            <p className="mt-3 border-t border-blue-100 pt-2 text-[11px] leading-relaxed text-slate-500">{expected_terms.basis}</p>
           )}
         </section>
       )}
@@ -301,7 +301,7 @@ export function ReinsurancePanel({ policyId, onChanged }: ReinsurancePanelProps)
                       {r.code} · {tx("Rating")} {r.am_best_rating ?? "—"}
                     </span>
                     {r.is_lead && (
-                      <span className="mt-1.5 self-start rounded-full bg-indigo-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-700">
+                      <span className="mt-1.5 self-start rounded-full bg-blue-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-blue-700">
                         {tx("Lead treaty")}
                       </span>
                     )}

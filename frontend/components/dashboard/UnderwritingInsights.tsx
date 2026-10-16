@@ -88,9 +88,9 @@ export function UnderwritingInsights({ policyStats, issuanceVelocity }: Underwri
     <PillarCard
       icon={<SparkleIcon />}
       title={tx("AI Underwriting Insights")}
-      barClass="bg-violet-500"
-      iconBg="bg-violet-50"
-      iconColor="text-violet-600"
+      barClass="bg-blue-500"
+      iconBg="bg-blue-50"
+      iconColor="text-blue-600"
     >
       <div className="space-y-2">
         {insights.slice(0, 4).map((insight) => {

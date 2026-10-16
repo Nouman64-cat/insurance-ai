@@ -15,9 +15,9 @@ export interface LineOfBusiness {
 
 export const LINES_OF_BUSINESS: LineOfBusiness[] = [
   { name: "Individual Life & Health", shortName: "Ind. Life", weight: 0.45, lossRatio: 36.2, color: "bg-blue-600" },
-  { name: "Group Life & Protection", shortName: "Group Life", weight: 0.30, lossRatio: 42.8, color: "bg-indigo-600" },
+  { name: "Group Life & Protection", shortName: "Group Life", weight: 0.30, lossRatio: 42.8, color: "bg-blue-600" },
   { name: "Bancassurance Portfolio", shortName: "Bancas.", weight: 0.15, lossRatio: 29.5, color: "bg-emerald-600" },
-  { name: "Corporate Micro-Takaful", shortName: "Takaful", weight: 0.10, lossRatio: 51.0, color: "bg-purple-600" },
+  { name: "Corporate Micro-Takaful", shortName: "Takaful", weight: 0.10, lossRatio: 51.0, color: "bg-blue-600" },
 ];
 
 /** The line of business with the highest loss ratio — the one worth flagging for pricing review. */

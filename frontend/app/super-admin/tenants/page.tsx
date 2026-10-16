@@ -444,10 +444,10 @@ export default function TenantManagementPage() {
                             onClick={() => handleSeedPlans(tenant)}
                             disabled={seedingId === tenant.id}
                             title={tx("{0} insurance plans — add the default catalog (demo only)", { 0: setupStatus[tenant.id]?.plan_count ?? 0 })}
-                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-violet-700 bg-violet-50 border border-dashed border-violet-300 rounded-md hover:bg-violet-100 transition-colors whitespace-nowrap disabled:opacity-60"
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 border border-dashed border-blue-300 rounded-md hover:bg-blue-100 transition-colors whitespace-nowrap disabled:opacity-60"
                           >
                             {seedingId === tenant.id ? tx("Seeding…") : tx("Seed plans")}
-                            <span className="text-violet-500/80">· {setupStatus[tenant.id]?.plan_count ?? 0}</span>
+                            <span className="text-blue-500/80">· {setupStatus[tenant.id]?.plan_count ?? 0}</span>
                           </button>
                         )}
                         <button

@@ -592,7 +592,7 @@ function EntryActions({
           </button>
         </>
       )}
-      {entry.inRunNet > 0 && <span className="text-[10px] font-bold text-indigo-700 whitespace-nowrap">{tx("In Run")}</span>}
+      {entry.inRunNet > 0 && <span className="text-[10px] font-bold text-blue-700 whitespace-nowrap">{tx("In Run")}</span>}
       {entry.status !== "CLAWED_BACK" && (
         <button
           onClick={() => onClawback(entry)}

@@ -85,19 +85,19 @@ const BranchIcon = (
 const CHANNEL_CONFIG: Record<string, { icon: React.ReactNode; iconBg: string; iconColor: string; barColor: string }> = {
   DIRECT_AGENCY: { icon: AgentIcon, iconBg: "bg-sky-50", iconColor: "text-sky-600", barColor: "bg-sky-500" },
   BANCASSURANCE: { icon: BankIcon, iconBg: "bg-emerald-50", iconColor: "text-emerald-600", barColor: "bg-emerald-500" },
-  BROKER: { icon: BrokerIcon, iconBg: "bg-purple-50", iconColor: "text-purple-600", barColor: "bg-purple-500" },
+  BROKER: { icon: BrokerIcon, iconBg: "bg-blue-50", iconColor: "text-blue-600", barColor: "bg-blue-500" },
   CORPORATE_AGENT: { icon: CorporateIcon, iconBg: "bg-amber-50", iconColor: "text-amber-600", barColor: "bg-amber-500" },
-  REFERRAL: { icon: ReferralIcon, iconBg: "bg-indigo-50", iconColor: "text-indigo-600", barColor: "bg-indigo-500" },
+  REFERRAL: { icon: ReferralIcon, iconBg: "bg-blue-50", iconColor: "text-blue-600", barColor: "bg-blue-500" },
   DIGITAL_DIRECT: { icon: DigitalIcon, iconBg: "bg-teal-50", iconColor: "text-teal-600", barColor: "bg-teal-500" },
 };
 
 const PAYEE_CONFIG: Record<string, { icon: React.ReactNode; iconBg: string; iconColor: string; barColor: string }> = {
-  AGENT: { icon: AgentIcon, iconBg: "bg-indigo-50", iconColor: "text-indigo-600", barColor: "bg-indigo-500" },
-  SALES_MANAGER: { icon: ManagerIcon, iconBg: "bg-violet-50", iconColor: "text-violet-600", barColor: "bg-violet-500" },
+  AGENT: { icon: AgentIcon, iconBg: "bg-blue-50", iconColor: "text-blue-600", barColor: "bg-blue-500" },
+  SALES_MANAGER: { icon: ManagerIcon, iconBg: "bg-blue-50", iconColor: "text-blue-600", barColor: "bg-blue-500" },
   BRANCH_MANAGER: { icon: BranchIcon, iconBg: "bg-sky-50", iconColor: "text-sky-600", barColor: "bg-sky-500" },
   BANK_PARTNER: { icon: BankIcon, iconBg: "bg-emerald-50", iconColor: "text-emerald-600", barColor: "bg-emerald-500" },
   BROKER: { icon: BrokerIcon, iconBg: "bg-amber-50", iconColor: "text-amber-600", barColor: "bg-amber-500" },
-  CORPORATE_AGENT: { icon: CorporateIcon, iconBg: "bg-purple-50", iconColor: "text-purple-600", barColor: "bg-purple-500" },
+  CORPORATE_AGENT: { icon: CorporateIcon, iconBg: "bg-blue-50", iconColor: "text-blue-600", barColor: "bg-blue-500" },
 };
 
 export default function CommissionsPage() {
@@ -266,7 +266,7 @@ export default function CommissionsPage() {
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
                   {tx("Commission Breakdown")}
                 </h3>
-                <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
+                <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
                   {filteredStats.byPayeeType.length}{" "}{tx("Roles")}
                 </span>
               </div>
@@ -274,7 +274,7 @@ export default function CommissionsPage() {
               <div className="space-y-2 text-xs flex-1 flex flex-col justify-center">
                 {filteredStats.byPayeeType.map((t) => {
                   const pct = payeeTotalNet > 0 ? Math.round((t.net / payeeTotalNet) * 100) : 0;
-                  const cfg = PAYEE_CONFIG[t.payeeType] || { icon: AgentIcon, iconBg: "bg-slate-50", iconColor: "text-slate-600", barColor: "bg-purple-500" };
+                  const cfg = PAYEE_CONFIG[t.payeeType] || { icon: AgentIcon, iconBg: "bg-slate-50", iconColor: "text-slate-600", barColor: "bg-blue-500" };
                   return (
                     <div key={t.payeeType} className="p-2 bg-slate-50/90 border border-slate-100 rounded-xl space-y-1">
                       <div className="flex justify-between items-center text-[11px]">
@@ -404,10 +404,10 @@ export default function CommissionsPage() {
                   <div className="text-[9px] text-amber-600">{tx("Tax withheld for FBR")}</div>
                 </div>
 
-                <div className="p-3 bg-purple-50/60 border border-purple-100 rounded-xl space-y-0.5">
-                  <div className="text-[10px] font-bold text-purple-900 uppercase tracking-wide">{tx("Team Overrides")}</div>
-                  <div className="text-sm font-extrabold text-purple-800 font-mono">{fmtPKRCompact(filteredStats.overrideTotal)}</div>
-                  <div className="text-[9px] text-purple-600">{tx("Manager overrides")}</div>
+                <div className="p-3 bg-blue-50/60 border border-blue-100 rounded-xl space-y-0.5">
+                  <div className="text-[10px] font-bold text-blue-900 uppercase tracking-wide">{tx("Team Overrides")}</div>
+                  <div className="text-sm font-extrabold text-blue-800 font-mono">{fmtPKRCompact(filteredStats.overrideTotal)}</div>
+                  <div className="text-[9px] text-blue-600">{tx("Manager overrides")}</div>
                 </div>
 
                 <div className="p-3 bg-rose-50/60 border border-rose-100 rounded-xl space-y-0.5">

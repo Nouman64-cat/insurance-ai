@@ -4,7 +4,7 @@ import {useCallback, useEffect, useRef, useState} from 'react';
 import * as service from '@/app/services/commissionEarnings';
 
 const money = (v: string | number) => new Intl.NumberFormat('en-PK', {style:'currency', currency:'PKR'}).format(Number(v));
-const button = 'rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm disabled:opacity-50';
+const button = 'rounded-lg bg-blue-600 text-white px-4 py-2 text-sm disabled:opacity-50';
 
 export default function CommissionDisbursements({actorId, onChange}: {actorId: string; onChange: () => Promise<void>}) {
   const [candidates, setCandidates] = useState<service.DisbursementCandidates | null>(null);
@@ -47,10 +47,10 @@ export default function CommissionDisbursements({actorId, onChange}: {actorId: s
     {!candidates?.items.length && <p className="text-sm text-slate-500">No unreserved earnings on this page.</p>}
     <div className="flex flex-wrap gap-3 items-center"><button className={button} disabled={busy || !chosen.length} onClick={() => void run(async () => {const row = await service.createDisbursement(chosen); setSelected(row.id); setChosen([]);}, 'Draft batch created; submit it for independent approval.')}>Create draft batch ({chosen.length})</button><button disabled={busy || offset === 0} onClick={() => {setChosen([]);setOffset(Math.max(0,offset-100));}}>Previous earnings</button><button disabled={busy || !candidates?.has_more} onClick={() => {setChosen([]);setOffset(offset+100);}}>Next earnings</button></div>
     <h3 className="font-medium pt-3 border-t">Batches</h3>
-    <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead className="bg-slate-50"><tr><th className="p-3">Batch</th><th className="p-3">Status</th><th className="p-3">Gross total</th><th className="p-3">Payment reference</th><th className="p-3">Review</th></tr></thead><tbody>{batches.map(b => <tr key={b.id} className="border-t"><td className="p-3 font-mono text-xs">{b.id.slice(0,8)}</td><td className="p-3">{b.status}</td><td className="p-3">{money(b.gross_amount)}</td><td className="p-3">{b.payment_reference || '—'}</td><td className="p-3"><button disabled={busy} className="text-indigo-700 underline" onClick={() => {setDetail(null);setSelected(b.id);}}>View batch</button></td></tr>)}</tbody></table></div>
+    <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead className="bg-slate-50"><tr><th className="p-3">Batch</th><th className="p-3">Status</th><th className="p-3">Gross total</th><th className="p-3">Payment reference</th><th className="p-3">Review</th></tr></thead><tbody>{batches.map(b => <tr key={b.id} className="border-t"><td className="p-3 font-mono text-xs">{b.id.slice(0,8)}</td><td className="p-3">{b.status}</td><td className="p-3">{money(b.gross_amount)}</td><td className="p-3">{b.payment_reference || '—'}</td><td className="p-3"><button disabled={busy} className="text-blue-700 underline" onClick={() => {setDetail(null);setSelected(b.id);}}>View batch</button></td></tr>)}</tbody></table></div>
     {!batches.length && <p className="text-sm text-slate-500">No disbursement batches on this page.</p>}
     <div className="flex gap-3 text-sm"><button disabled={busy || batchOffset === 0} onClick={() => setBatchOffset(Math.max(0,batchOffset-50))}>Previous batches</button><button disabled={busy || batches.length < 50} onClick={() => setBatchOffset(batchOffset+50)}>Next batches</button></div>
-    {detail && batch && batch.id === selected && <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-4 space-y-3">
+    {detail && batch && batch.id === selected && <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-4 space-y-3">
       <h3 className="font-semibold">Batch {batch.id.slice(0,8)} · {batch.status} · {money(batch.gross_amount)}</h3>
       <p className="text-xs text-slate-500 font-mono break-all">{batch.id}</p>
       {detail.earnings.map(e => <p className="text-sm" key={e.id}>{e.snapshot.payee_name} · {e.snapshot.receipt_no} · {money(e.gross_amount)}</p>)}

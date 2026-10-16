@@ -188,9 +188,9 @@ export default function ProfilePage() {
 
         {/* ── Identity sidebar ── */}
         <aside className="lg:col-span-4 xl:col-span-3 lg:sticky lg:top-5 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="h-16 bg-gradient-to-r from-blue-600 to-blue-800" />
+          <div className="h-16 bg-blue-600" />
           <div className="px-5 pb-5 -mt-8">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 ring-4 ring-white flex items-center justify-center shadow-md">
+            <div className="w-16 h-16 rounded-full bg-blue-600 ring-4 ring-white flex items-center justify-center shadow-md">
               <span className="text-xl font-bold text-white">{initials}</span>
             </div>
             <h1 className="text-lg font-bold text-slate-900 tracking-tight mt-3 truncate">{me?.full_name}</h1>

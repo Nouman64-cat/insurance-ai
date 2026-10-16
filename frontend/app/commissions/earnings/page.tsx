@@ -9,7 +9,7 @@ import CommissionDisbursements from '@/components/commissions/CommissionDisburse
 
 const money = (value: string | number) => new Intl.NumberFormat('en-PK', {style: 'currency', currency: 'PKR'}).format(Number(value));
 const field = 'border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white w-full';
-const button = 'rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50';
+const button = 'rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50';
 const blankProducer = (): service.Producer => ({source_id: '', agreement_id: '', split_pct: '100'});
 
 export default function EarningsPage() {
@@ -106,7 +106,7 @@ export default function EarningsPage() {
       <div className="p-3 flex gap-4 items-center"><button disabled={busy || offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>{tx("Previous")}</button><span>{total ? offset + 1 : 0}–{Math.min(offset + entries.length, total)}{" "}{tx("of")}{" "}{total}</span><button disabled={busy || offset + 50 >= total} onClick={() => setOffset(offset + 50)}>{tx("Next")}</button></div>
     </section>
     {admin && <>
-      <section className="rounded-xl border border-indigo-200 bg-indigo-50 p-5 space-y-2">
+      <section className="rounded-xl border border-blue-200 bg-blue-50 p-5 space-y-2">
         <h2 className="font-semibold">Commission setup</h2>
         <p className="text-sm">Assign the customer’s agent and link an approved agreement to the plan once. Premium receipts then create earnings automatically. Policy-specific splits below are optional overrides.</p>
         <p className="text-sm font-medium">{setup?.approved_agreement_count ?? '—'} approved agreements effective today · {exceptions.length} receipt exceptions shown</p>

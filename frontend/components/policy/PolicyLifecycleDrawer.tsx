@@ -193,10 +193,10 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose, primary
       >
         {/* Header */}
         <div className="relative border-b border-slate-200/80 bg-white px-6 pb-4 pt-5">
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500" />
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-blue-600" />
           <div className="flex items-start justify-between gap-4">
             <div className="flex min-w-0 items-center gap-3.5">
-              <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-base font-bold text-white shadow-sm">
+              <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-base font-bold text-white shadow-sm">
                 {(detail?.customer_name ?? fallbackName ?? "P").trim().charAt(0).toUpperCase()}
               </div>
               <div className="min-w-0">
@@ -427,7 +427,7 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose, primary
               <Link
                 href={`/post-issuance/${policyId}`}
                 title={tx("Free-look, servicing, renewals & claims.")}
-                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:from-blue-700 hover:to-indigo-700 active:scale-[0.98]"
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-[0.98]"
               >
                 {tx("Manage Policy")}
                 <span aria-hidden>→</span>
@@ -438,7 +438,7 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose, primary
                 onClick={primaryAction.onClick}
                 disabled={primaryAction.disabled || loading}
                 title={primaryAction.title}
-                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:from-blue-700 hover:to-indigo-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {primaryAction.icon}
                 {primaryAction.label}

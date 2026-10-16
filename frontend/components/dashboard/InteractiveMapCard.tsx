@@ -55,10 +55,10 @@ export const PROVINCE_COLOR_MAP: Record<
     rgb: [217, 119, 6],
   },
   "Khyber Pakhtunkhwa": {
-    base: "#7c3aed", // Violet / Purple
-    lightBg: "bg-violet-50/90 border-violet-300 text-violet-900",
-    border: "#6d28d9",
-    text: "text-violet-700",
+    base: "#2563eb", // Copilot blue
+    lightBg: "bg-blue-50/90 border-blue-300 text-blue-900",
+    border: "#1d4ed8",
+    text: "text-blue-700",
     rgb: [124, 58, 237],
   },
   "Gilgit-Baltistan": {

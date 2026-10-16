@@ -192,7 +192,7 @@ function IssuanceModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col">
         {/* Header + stepper */}
-        <div className="bg-gradient-to-r from-blue-600 to-blue-600 px-6 py-4 flex items-center justify-between">
+        <div className="bg-blue-600 px-6 py-4 flex items-center justify-between">
           <div>
             <h2 className="text-white text-lg font-bold">
               {tx("Issue Policy")}
@@ -432,7 +432,7 @@ function IssuanceModal({
                   ? tx("Clear the blocking gates first")
                   : undefined
             }
-            className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-600 rounded-xl hover:from-blue-700 hover:to-blue-700 disabled:opacity-50 transition-all shadow-sm"
+            className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm"
           >
             {issuing ? tx("Binding…") : fullyPrepaid ? tx("Issue & activate →") : tx("Issue & bind →")}
           </button>
@@ -455,7 +455,7 @@ function SuccessModal({ result, policyName, onClose }: SuccessModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden">
-        <div className="px-6 py-5 bg-gradient-to-r from-blue-600 to-blue-600">
+        <div className="px-6 py-5 bg-blue-600">
           <div className="flex justify-center mb-3">
             <IssueStepper current={1} prepaid={((result as any).initial_premium_credited ?? 0) > 0 && !((result as any).amount_due > 0)} />
           </div>
@@ -516,7 +516,7 @@ function SuccessModal({ result, policyName, onClose }: SuccessModalProps) {
           </div>
           <button
             onClick={onClose}
-            className="w-full mt-1 px-4 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-600 rounded-xl hover:from-blue-700 hover:to-blue-700 transition-all shadow-sm"
+            className="w-full mt-1 px-4 py-2.5 text-sm font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-all shadow-sm"
           >
             {isPending ? tx("Continue to payment →") : tx("Done")}
           </button>
@@ -678,7 +678,7 @@ function PaymentModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden">
-        <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-5">
+        <div className="bg-blue-600 px-6 py-5">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-blue-100 text-xs font-medium uppercase tracking-widest">
@@ -841,7 +841,7 @@ function PaymentModal({
                     )
                   : undefined
               }
-              className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 transition-all shadow-sm"
+              className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm"
             >
               {confirming ? tx("Confirming…") : prepaid ? tx("Activate cover") : tx("Confirm & Activate")}
             </button>

@@ -43,7 +43,7 @@ function ProfileMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
         title={user.name || t("sidebar.profile")}
-        className={`flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white shadow-sm ring-2 transition-all ${open ? "ring-blue-200" : "ring-white hover:ring-blue-100"}`}
+        className={`flex h-9 w-9 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700 shadow-sm ring-2 transition-all ${open ? "ring-blue-200" : "ring-white hover:ring-blue-100"}`}
       >
         {initials}
       </button>

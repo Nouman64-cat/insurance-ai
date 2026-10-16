@@ -52,7 +52,7 @@ export function ArtifactCard({ claims, className = "" }: { claims: Claim[]; clas
       <div className="flex-1 flex flex-col justify-between space-y-1">
         {/* Coverage ring + key rates */}
         <div className="flex items-center gap-2.5">
-          <RingGauge value={coveragePct} max={100} strokeHex="#4f46e5" label={tx("Coverage")} valueLabel={`${coveragePct}%`} size={44} strokeW={5} />
+          <RingGauge value={coveragePct} max={100} strokeHex="#2563eb" label={tx("Coverage")} valueLabel={`${coveragePct}%`} size={44} strokeW={5} />
           <div className="flex-1 space-y-0.5 min-w-0">
             <Bar label={tx("Clean-Claim Docs")}   pct={cleanRatePct}   color="bg-blue-500" badge={`${cleanRatePct.toFixed(0)}%`} />
             <Bar label={tx("Flagged-Claim Docs")} pct={flaggedRatePct} color="bg-red-500"  badge={`${flaggedRatePct.toFixed(0)}%`} />

@@ -35,14 +35,14 @@ export default function SettlementPage() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight text-slate-900">{tx("Payment Settlement")}</h1>
-            {/* <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">Disbursement & Treasury</span> */}
+            {/* <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">Disbursement & Treasury</span> */}
           </div>
           {/* <p className="text-xs text-slate-500 mt-1">
             Reconcile cleared funds and execution receipts from the banking gateway.
           </p> */}
         </div>
         <div className="flex items-center gap-2">
-          <button className="text-xs font-semibold px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 shadow-sm transition-colors flex items-center gap-1.5">
+          <button className="text-xs font-semibold px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-sm transition-colors flex items-center gap-1.5">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
             </svg>
@@ -100,7 +100,7 @@ export default function SettlementPage() {
                         <div>
                           <div className="text-xs font-bold text-rose-700">{r.returnReasonCode}</div>
                           <div className="text-[10px] text-slate-500">{r.returnReasonDescription}</div>
-                          <button className="mt-1 text-[10px] font-semibold text-purple-600 hover:text-purple-800 underline">{tx("Rollback to Unpaid")}</button>
+                          <button className="mt-1 text-[10px] font-semibold text-blue-600 hover:text-blue-800 underline">{tx("Rollback to Unpaid")}</button>
                         </div>
                       ) : (
                         <span className="text-xs text-slate-400">{tx("None")}</span>

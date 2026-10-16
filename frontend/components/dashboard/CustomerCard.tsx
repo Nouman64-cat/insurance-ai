@@ -64,7 +64,7 @@ export function CustomerCard({ policyStats, policies, payees, className = "" }: 
       <div className="flex-1 flex flex-col justify-between space-y-1">
         {/* Persistency ring + segments */}
         <div className="flex items-center gap-2.5">
-          <RingGauge value={avgPersistency} max={100} strokeHex="#7c3aed" label={tx("Persistency")} valueLabel={`${avgPersistency}%`} size={44} strokeW={5} />
+          <RingGauge value={avgPersistency} max={100} strokeHex="#2563eb" label={tx("Persistency")} valueLabel={`${avgPersistency}%`} size={44} strokeW={5} />
           <div className="flex-1 space-y-0.5 min-w-0">
             <p className="text-[8px] font-bold uppercase tracking-wider text-slate-400">{tx("Segments")}</p>
             {SEGMENTS.length === 0 ? (

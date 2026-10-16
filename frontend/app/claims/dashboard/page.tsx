@@ -23,7 +23,7 @@ import { PolicyPicker, usePolicyFilters } from "@/components/claims/PolicyPicker
 function RiskBadge({ prob, flag }: { prob: number; flag: boolean }) {
   if (flag) {
     return (
-      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
+      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200">
         {tx("DUPLICATE")}
       </span>
     );
@@ -58,7 +58,7 @@ function StatusBadge({ status }: { status: string }) {
     Approved: "bg-emerald-50 text-emerald-700 border-emerald-200",
     "Partial Approval": "bg-teal-50 text-teal-700 border-teal-200",
     Declined: "bg-rose-50 text-rose-700 border-rose-200",
-    "Referred to Manager": "bg-purple-50 text-purple-700 border-purple-200",
+    "Referred to Manager": "bg-blue-50 text-blue-700 border-blue-200",
     Settled: "bg-emerald-100 text-emerald-800 border-emerald-300",
     Closed: "bg-slate-200 text-slate-600 border-slate-300",
   };
@@ -442,14 +442,14 @@ export default function ClaimsDashboardPage() {
                   </div>
                 </div>
 
-                <div className="p-2.5 bg-purple-50/40 border border-purple-100 rounded-xl space-y-1">
+                <div className="p-2.5 bg-blue-50/40 border border-blue-100 rounded-xl space-y-1">
                   <div className="flex justify-between font-bold text-xs text-slate-800">
                     <span>{tx("Reinsurance Treaty Flag Rate")}</span>
-                    <span className="text-purple-700">{reinsuranceFlagRate !== null ? `${reinsuranceFlagRate.toFixed(1)}%` : "—"}</span>
+                    <span className="text-blue-700">{reinsuranceFlagRate !== null ? `${reinsuranceFlagRate.toFixed(1)}%` : "—"}</span>
                   </div>
                   <div className="text-[10px] text-slate-500">{tx("Reinsurance desk referral rate")}</div>
-                  <div className="h-1.5 w-full bg-purple-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-purple-600 rounded-full" style={{ width: `${reinsuranceFlagRate ?? 0}%` }}></div>
+                  <div className="h-1.5 w-full bg-blue-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-blue-600 rounded-full" style={{ width: `${reinsuranceFlagRate ?? 0}%` }}></div>
                   </div>
                 </div>
               </div>

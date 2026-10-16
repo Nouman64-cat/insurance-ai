@@ -24,7 +24,7 @@ export default function RuleCard({ rule, allRules, isLocked = false, onEdit, onD
 
   const chips: { label: string; tone: string }[] = [];
   if (factor) chips.push({ label: tx("{0}: {1}% risk", { 0: tx(factor.label), 1: Math.round((data.risk_level ?? 0) * 100) }), tone: "bg-rose-50 text-rose-700 ring-rose-100" });
-  if (data.extra_mortality_pct) chips.push({ label: tx("Loading +{0}%", { 0: data.extra_mortality_pct }), tone: "bg-indigo-50 text-indigo-700 ring-indigo-100" });
+  if (data.extra_mortality_pct) chips.push({ label: tx("Loading +{0}%", { 0: data.extra_mortality_pct }), tone: "bg-blue-50 text-blue-700 ring-blue-100" });
   if (data.medical_profile_codes?.length) chips.push({ label: tx("Tests: {0}", { 0: data.medical_profile_codes.join(", ") }), tone: "bg-blue-50 text-blue-700 ring-blue-100" });
   if (data.exclusion_riders?.length) chips.push({ label: tx("Excludes: {0}", { 0: data.exclusion_riders.join(", ").replace(/_/g, " ") }), tone: "bg-amber-50 text-amber-700 ring-amber-100" });
   if (data.hlv_max_multiple) chips.push({ label: tx("Max {0}× income", { 0: data.hlv_max_multiple }), tone: "bg-slate-100 text-slate-600 ring-slate-200" });

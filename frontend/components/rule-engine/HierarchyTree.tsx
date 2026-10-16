@@ -316,7 +316,7 @@ export default function HierarchyTree({
                       }}
                       className={`group flex-1 flex items-center gap-2.5 pl-9 pr-3 py-2 text-left transition-colors cursor-pointer ${
                         isSubSelected && !selectedRuleSetId
-                          ? "bg-indigo-50/90 border-l-2 border-l-indigo-600 pl-[34px]"
+                          ? "bg-blue-50/90 border-l-2 border-l-indigo-600 pl-[34px]"
                           : "hover:bg-slate-100/60"
                       }`}
                     >
@@ -326,12 +326,12 @@ export default function HierarchyTree({
                         <IconChevron open={isSubOpen} />
                       </span>
 
-                      <span className={isSubSelected && !selectedRuleSetId ? "text-indigo-600" : "text-slate-500"}>
+                      <span className={isSubSelected && !selectedRuleSetId ? "text-blue-600" : "text-slate-500"}>
                         <IconSubcategory open={isSubOpen} />
                       </span>
 
                       <span className={`flex-1 text-xs font-semibold leading-tight truncate min-w-0 ${
-                        isSubSelected && !selectedRuleSetId ? "text-indigo-900" : "text-slate-700"
+                        isSubSelected && !selectedRuleSetId ? "text-blue-900" : "text-slate-700"
                       }`}>
                         {sub.name}
                       </span>

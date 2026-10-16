@@ -109,7 +109,7 @@ export default function QuestionnairePage() {
       {!form && !error && <p className="mt-6">Loading…</p>}
       {form?.submitted ? <p role="status" className="mt-6">Thank you. Your answers have been submitted to your reviewer.</p> : form && <form onSubmit={submit} className="mt-6 space-y-6">
         <p className="text-sm text-slate-600">Select all answers that apply and add details where relevant. Select “None of these” when appropriate.</p>
-        {demoFilled && <p role="status" className="rounded-lg bg-violet-50 p-3 text-sm text-violet-800">Demo answers filled. Review them and confirm the declaration before submitting.</p>}
+        {demoFilled && <p role="status" className="rounded-lg bg-blue-50 p-3 text-sm text-blue-800">Demo answers filled. Review them and confirm the declaration before submitting.</p>}
         {Object.entries(form.questions).map(([key, label], index) => {
           const options = CHOICES[form.track]?.[key];
           const values = selected[key] ?? [];

@@ -892,7 +892,7 @@ function caseFolderColor(status: string): { color: string; accent: string } {
     case "Under Review":
     case "InProgress": return { color: "#60A5FA", accent: "#2563EB" };
     case "Closed": return { color: "#94A3B8", accent: "#64748B" };
-    default: return { color: "#A5B4FC", accent: "#6366F1" };
+    default: return { color: "#bfdbfe", accent: "#2563eb" };
   }
 }
 

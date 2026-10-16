@@ -47,8 +47,8 @@ const CONFIG: Record<
   },
   "Fraud Investigation": {
     label: "Fraud Investigation",
-    classes: "bg-purple-50 text-purple-800 border border-purple-200",
-    dot: "bg-purple-500",
+    classes: "bg-blue-50 text-blue-800 border border-blue-200",
+    dot: "bg-blue-500",
     icon: "⚠",
   },
 };
@@ -118,10 +118,10 @@ export function DecisionBanner({ decision, variant = "default" }: { decision: AI
       icon: "✎",
     },
     "Fraud Investigation": {
-      bg: "bg-purple-50",
-      border: "border-purple-300",
-      text: "text-purple-800",
-      sub: "text-purple-600",
+      bg: "bg-blue-50",
+      border: "border-blue-300",
+      text: "text-blue-800",
+      sub: "text-blue-600",
       icon: "⚠",
     },
   };

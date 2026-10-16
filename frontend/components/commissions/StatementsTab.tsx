@@ -141,7 +141,7 @@ export default function StatementsTab({
   return (
     <div className="space-y-4">
       {/* Informational Guidance Banner */}
-      {/* <div className="bg-gradient-to-r from-blue-50/90 to-indigo-50/70 border border-blue-200/80 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs">
+      {/* <div className="bg-gradient-to-r from-blue-50/90 to-blue-50/70 border border-blue-200/80 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs">
         <div className="flex items-start gap-2.5">
           <span className="text-blue-600 font-extrabold text-sm shrink-0 mt-0.5">📄</span>
           <div>
@@ -477,7 +477,7 @@ function StatBox({
 }) {
   const toneClasses = {
     blue: "bg-blue-50/50 border-blue-200/80 text-blue-900",
-    indigo: "bg-indigo-50/50 border-indigo-200/80 text-indigo-900",
+    indigo: "bg-blue-50/50 border-blue-200/80 text-blue-900",
     emerald: "bg-emerald-50/50 border-emerald-200/80 text-emerald-900",
     rose: "bg-rose-50/50 border-rose-200/80 text-rose-900",
   }[tone];

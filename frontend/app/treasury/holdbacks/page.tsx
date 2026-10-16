@@ -34,14 +34,14 @@ export default function HoldbacksPage() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight text-slate-900">{tx("Holdbacks & Lien")}</h1>
-            {/* <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">Disbursement & Treasury</span> */}
+            {/* <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">Disbursement & Treasury</span> */}
           </div>
           {/* <p className="text-xs text-slate-500 mt-1">
             Manage administrative holds and statutory liens on payee payouts.
           </p> */}
         </div>
         <div className="flex items-center gap-2">
-          <button className="text-xs font-semibold px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 shadow-sm transition-colors flex items-center gap-1.5">
+          <button className="text-xs font-semibold px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-sm transition-colors flex items-center gap-1.5">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
             </svg>

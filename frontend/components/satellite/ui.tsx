@@ -40,16 +40,16 @@ export type Tone = "slate" | "blue" | "indigo" | "amber" | "emerald" | "red" | "
 const TONES: Record<Tone, string> = {
   slate: "bg-slate-100 text-slate-600 ring-slate-200",
   blue: "bg-blue-50 text-blue-700 ring-blue-200",
-  indigo: "bg-indigo-50 text-indigo-700 ring-indigo-200",
+  indigo: "bg-blue-50 text-blue-700 ring-blue-200",
   amber: "bg-amber-50 text-amber-800 ring-amber-200",
   emerald: "bg-emerald-50 text-emerald-700 ring-emerald-200",
   red: "bg-red-50 text-red-700 ring-red-200",
   sky: "bg-sky-50 text-sky-700 ring-sky-200",
-  violet: "bg-violet-50 text-violet-700 ring-violet-200",
+  violet: "bg-blue-50 text-blue-700 ring-blue-200",
 };
 const DOTS: Record<Tone, string> = {
-  slate: "bg-slate-400", blue: "bg-blue-500", indigo: "bg-indigo-500", amber: "bg-amber-500",
-  emerald: "bg-emerald-500", red: "bg-red-500", sky: "bg-sky-500", violet: "bg-violet-500",
+  slate: "bg-slate-400", blue: "bg-blue-500", indigo: "bg-blue-500", amber: "bg-amber-500",
+  emerald: "bg-emerald-500", red: "bg-red-500", sky: "bg-sky-500", violet: "bg-blue-500",
 };
 
 /** A status pill. */

@@ -318,7 +318,7 @@ export function TimeTrendChartCard({ policies, claims, ledger, title }: TimeTren
                     <span className="w-3 h-1 rounded-full bg-blue-500 inline-block shadow-xs"></span>{" "}{tx("Policies Issued")}
                   </span>
                   <span className="flex items-center gap-1.5 font-bold text-slate-700">
-                    <span className="w-3 h-1 rounded-full bg-purple-500 inline-block shadow-xs"></span>{" "}{tx("Claims Filed")}
+                    <span className="w-3 h-1 rounded-full bg-blue-500 inline-block shadow-xs"></span>{" "}{tx("Claims Filed")}
                   </span>
                 </>
               )}

@@ -114,7 +114,7 @@ function AgentCell({ lead, compact = false }: { lead: UnifiedLead; compact?: boo
 
 const TYPE_BADGES: Record<UnifiedLead["type"], { label: string; className: string }> = {
   INDIVIDUAL: { label: "Individual", className: "bg-blue-50 text-blue-700 ring-blue-600/15" },
-  FAMILY: { label: "Family", className: "bg-violet-50 text-violet-700 ring-violet-600/15" },
+  FAMILY: { label: "Family", className: "bg-blue-50 text-blue-700 ring-blue-600/15" },
   CORPORATE: { label: "Corporate", className: "bg-amber-50 text-amber-800 ring-amber-600/20" },
 };
 

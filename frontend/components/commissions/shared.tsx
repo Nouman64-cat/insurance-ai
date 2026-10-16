@@ -335,7 +335,7 @@ const STAGE_STATUS_STYLES: Record<StageStatus, { pill: string; dot: string; labe
   PENDING: { pill: "bg-slate-100 text-slate-600 border-slate-200", dot: "bg-slate-300", label: "Not yet due" },
   BLOCKED: { pill: "bg-amber-50 text-amber-800 border-amber-200", dot: "bg-amber-400", label: "Blocked" },
   DUE: { pill: "bg-blue-50 text-blue-700 border-blue-200", dot: "bg-blue-500", label: "Due now" },
-  IN_RUN: { pill: "bg-indigo-50 text-indigo-700 border-indigo-200", dot: "bg-indigo-500", label: "In payout run" },
+  IN_RUN: { pill: "bg-blue-50 text-blue-700 border-blue-200", dot: "bg-blue-500", label: "In payout run" },
   RELEASED: { pill: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-500", label: "Released" },
   REVERSED: { pill: "bg-rose-50 text-rose-700 border-rose-200", dot: "bg-rose-400", label: "Reversed" },
 };
@@ -526,7 +526,7 @@ export function DueBreakdown({
   return (
     <div className="leading-tight text-right">
       {dueNet > 0 && <p className="font-semibold tabular-nums text-blue-700">{fmtPKR(dueNet)}{" "}{tx("ready")}</p>}
-      {inRunNet > 0 && <p className="font-mono text-[10px] text-indigo-600">{fmtPKR(inRunNet)}{" "}{tx("processing")}</p>}
+      {inRunNet > 0 && <p className="font-mono text-[10px] text-blue-600">{fmtPKR(inRunNet)}{" "}{tx("processing")}</p>}
       {releasedNet > 0 && <p className="font-mono text-[10px] text-emerald-600">{fmtPKR(releasedNet)}{" "}{tx("paid")}</p>}
       {pendingNet > 0 && <p className="font-mono text-[10px] text-slate-400">{fmtPKR(pendingNet)}{" "}{tx("upcoming")}</p>}
       {dueNet === 0 && inRunNet === 0 && releasedNet === 0 && pendingNet === 0 && (

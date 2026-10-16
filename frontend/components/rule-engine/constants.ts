@@ -257,8 +257,8 @@ export const IMPACT_TYPE_CONFIG: Record<ImpactType, ImpactTypeConfig> = {
   APPLY_LOADING: {
     label: "Apply Premium Loading",
     description: "Add an extra mortality or flat-rate loading to the base premium.",
-    badge: "bg-indigo-50 text-indigo-700 border-indigo-200",
-    cardColor: "bg-indigo-50 border-indigo-200 text-indigo-800",
+    badge: "bg-blue-50 text-blue-700 border-blue-200",
+    cardColor: "bg-blue-50 border-blue-200 text-blue-800",
     // trending up
     iconPath: "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6",
   },
@@ -281,16 +281,16 @@ export const IMPACT_TYPE_CONFIG: Record<ImpactType, ImpactTypeConfig> = {
   REFER_TO_UNDERWRITER: {
     label: "Refer to Senior Underwriter",
     description: "Escalate case for manual review by a senior underwriting officer.",
-    badge: "bg-violet-50 text-violet-700 border-violet-200",
-    cardColor: "bg-violet-50 border-violet-200 text-violet-800",
+    badge: "bg-blue-50 text-blue-700 border-blue-200",
+    cardColor: "bg-blue-50 border-blue-200 text-blue-800",
     // user-check
     iconPath: "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z",
   },
   REINSURANCE_FACULTATIVE: {
     label: "Facultative Reinsurance",
     description: "Route case to reinsurer for individual facultative treaty assessment.",
-    badge: "bg-purple-50 text-purple-700 border-purple-200",
-    cardColor: "bg-purple-50 border-purple-200 text-purple-800",
+    badge: "bg-blue-50 text-blue-700 border-blue-200",
+    cardColor: "bg-blue-50 border-blue-200 text-blue-800",
     // arrows exchange / flow
     iconPath: "M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4",
   },
@@ -464,10 +464,10 @@ export function criterionParts(c: {
 }
 
 const CATEGORY_TONES = [
-  "bg-blue-50 text-blue-600 ring-blue-100", "bg-violet-50 text-violet-600 ring-violet-100",
+  "bg-blue-50 text-blue-600 ring-blue-100", "bg-blue-50 text-blue-600 ring-blue-100",
   "bg-emerald-50 text-emerald-600 ring-emerald-100", "bg-amber-50 text-amber-600 ring-amber-100",
   "bg-rose-50 text-rose-600 ring-rose-100", "bg-cyan-50 text-cyan-600 ring-cyan-100",
-  "bg-indigo-50 text-indigo-600 ring-indigo-100", "bg-orange-50 text-orange-600 ring-orange-100",
+  "bg-blue-50 text-blue-600 ring-blue-100", "bg-orange-50 text-orange-600 ring-orange-100",
 ];
 
 /** A stable soft colour per category, so each area is recognisable at a glance. */

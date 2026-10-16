@@ -52,7 +52,7 @@ const SOURCE_TYPE_LABELS: Record<SourceType, string> = {
 // One hue per type, so a mixed list reads at a glance (badge = ring style, as on Leads).
 const SOURCE_TYPE_STYLE: Record<SourceType, string> = {
   AGENT: "bg-blue-50 text-blue-700 ring-blue-600/15",
-  BROKER: "bg-violet-50 text-violet-700 ring-violet-600/15",
+  BROKER: "bg-blue-50 text-blue-700 ring-blue-600/15",
   BANCASSURANCE: "bg-teal-50 text-teal-700 ring-teal-600/15",
   CORPORATE_AGENT: "bg-amber-50 text-amber-800 ring-amber-600/20",
   DIRECT: "bg-slate-50 text-slate-600 ring-slate-500/15",
@@ -61,7 +61,7 @@ const SOURCE_TYPE_STYLE: Record<SourceType, string> = {
 
 const SOURCE_TYPE_DOT: Record<SourceType, string> = {
   AGENT: "bg-blue-500",
-  BROKER: "bg-violet-500",
+  BROKER: "bg-blue-500",
   BANCASSURANCE: "bg-teal-500",
   CORPORATE_AGENT: "bg-amber-500",
   DIRECT: "bg-slate-400",
@@ -741,7 +741,7 @@ export default function AcquisitionSourcesPage() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-600 rounded-xl shadow-sm hover:from-blue-700 hover:to-blue-700 disabled:opacity-50 transition-all active:scale-95"
+                className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white bg-blue-600 rounded-xl shadow-sm hover:bg-blue-700 disabled:opacity-50 transition-all active:scale-95"
               >
                 {saving && <span className="animate-spin h-4 w-4 rounded-full border-2 border-white/30 border-t-white" />}
                 {saving ? tx("Saving…") : editingId ? tx("Save Changes") : tx("Create Source")}

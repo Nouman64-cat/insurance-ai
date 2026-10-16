@@ -117,7 +117,7 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved, default
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
       <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-100 transform transition-all">
-        <div className="px-6 py-5 bg-gradient-to-r from-blue-600 to-blue-700 text-white flex items-center justify-between">
+        <div className="px-6 py-5 bg-blue-600 text-white flex items-center justify-between">
           <div>
             <h3 className="text-base font-bold flex items-center gap-2">
               <span>🚀</span>{" "}{tx("Quick Lead Entry")}

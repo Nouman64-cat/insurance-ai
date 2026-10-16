@@ -1278,7 +1278,7 @@ export default function QuotePage() {
                         onClick={() => toggleFamily(family.family_group_id)}
                       >
                         <div className="flex items-center gap-3">
-                           <div className="flex items-center justify-center w-8 h-8 rounded-md bg-violet-50 text-violet-600 border border-violet-100/50 shadow-sm">
+                           <div className="flex items-center justify-center w-8 h-8 rounded-md bg-blue-50 text-blue-600 border border-blue-100/50 shadow-sm">
                              <FamilyIcon className="w-4 h-4" />
                            </div>
                            <div>
@@ -1689,7 +1689,7 @@ function ProposalsTable({
   const allSelected = quotes.length > 0 && quotes.every(q => selectedQuoteIds.has(q.quote_id));
 
   const TYPE_LABEL = { individual: "Individual", family: "Family", organization: "Corporate" } as const;
-  const TYPE_STYLE = { individual: "bg-blue-50 text-blue-700 ring-blue-600/15", family: "bg-violet-50 text-violet-700 ring-violet-600/15", organization: "bg-amber-50 text-amber-800 ring-amber-600/20" } as const;
+  const TYPE_STYLE = { individual: "bg-blue-50 text-blue-700 ring-blue-600/15", family: "bg-blue-50 text-blue-700 ring-blue-600/15", organization: "bg-amber-50 text-amber-800 ring-amber-600/20" } as const;
   const th = "px-3 py-3 whitespace-nowrap";
   const initials = (name: string) =>
     name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]?.toUpperCase()).join("") || "?";

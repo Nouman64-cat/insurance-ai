@@ -473,7 +473,7 @@ export function Density3DMapCardImpl({
                   <span className="text-slate-400">{tx("Policyholders")}</span>
                   <span className="font-mono font-bold text-right text-sky-400">{hoveredCity.policiesCount}</span>
                   <span className="text-slate-400">{tx("Premiums")}</span>
-                  <span className="font-mono font-bold text-right text-violet-400">{fmtCompact(hoveredCity.premiumTotal)}</span>
+                  <span className="font-mono font-bold text-right text-blue-400">{fmtCompact(hoveredCity.premiumTotal)}</span>
                   <span className="text-slate-400">{tx("Claims")}</span>
                   <span className="font-mono font-bold text-right text-amber-400">{fmtCompact(hoveredCity.claimsPaid)}</span>
                 </div>

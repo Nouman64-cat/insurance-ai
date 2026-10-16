@@ -36,9 +36,9 @@ export function PortfolioHealthCard({
   // Line of Business breakdown simulation / calculation
   const linesOfBusiness = [
     { name: "Individual Life & Health", weight: 0.45, lossRatio: 36.2, color: "bg-blue-500" },
-    { name: "Group Life & Protection", weight: 0.30, lossRatio: 42.8, color: "bg-indigo-500" },
+    { name: "Group Life & Protection", weight: 0.30, lossRatio: 42.8, color: "bg-blue-500" },
     { name: "Bancassurance Portfolio", weight: 0.15, lossRatio: 29.5, color: "bg-emerald-500" },
-    { name: "Corporate Micro-Takaful", weight: 0.10, lossRatio: 51.0, color: "bg-purple-500" },
+    { name: "Corporate Micro-Takaful", weight: 0.10, lossRatio: 51.0, color: "bg-blue-500" },
   ];
 
   return (

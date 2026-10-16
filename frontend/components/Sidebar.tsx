@@ -137,21 +137,7 @@ const NAV_ITEMS = [
         adminOnly: true,
         agentToo: true,   // an Agent (or Broker) adds leads here too, and takes them as far as a submitted proposal
       },
-      {
-        href: "/plans",
-        label: "Insurance Plans",
-        icon: (
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="9" y1="13" x2="15" y2="13" />
-            <line x1="9" y1="17" x2="13" y2="17" />
-          </svg>
-        ),
-        badge: null,
-        adminOnly: true,
-        agentToo: true,   // the same people who could open it from the Leads page: Admin, Agent and Broker
-      },
+
       {
         href: "/proposal",
         label: "Proposal",
@@ -187,6 +173,29 @@ const NAV_ITEMS = [
         ),
         badge: null,
       },
+
+    ],
+  },
+
+  // ── 3. OPERATIONS ─────────────────────────────────────────────────────────
+  {
+    group: "Operations",
+    links: [
+      {
+        href: "/plans",
+        label: "Insurance Plans",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="9" y1="13" x2="15" y2="13" />
+            <line x1="9" y1="17" x2="13" y2="17" />
+          </svg>
+        ),
+        badge: null,
+        adminOnly: true,
+        agentToo: true,   // the same people who could open it from the Leads page: Admin, Agent and Broker
+      },
       {
         href: "/admin/acquisition-sources",
         label: "Acquisition Sources",
@@ -202,13 +211,6 @@ const NAV_ITEMS = [
         badge: null,
         adminOnly: true,
       },
-    ],
-  },
-
-  // ── 3. OPERATIONS ─────────────────────────────────────────────────────────
-  {
-    group: "Operations",
-    links: [
       // Customer Service and Request Management open from the profile menu at the foot of the sidebar, not the list.
       { href: "/customer-service", label: "Customer Service", icon: <ShieldIcon />, badge: null, inProfileMenu: true },
       { href: "/acr", label: "Confidential Reports (ACR)", icon: <ShieldIcon />, badge: null, hideForAdmin: true },
@@ -855,7 +857,7 @@ export function Sidebar() {
                           sidebar-link flex items-center transition-all duration-150 text-[13px]
                           ${collapsed ? "w-11 h-11 justify-center rounded-xl mx-auto p-0" : "gap-2.5 px-3 py-2.5 rounded-xl mx-2"}
                           ${isActive
-                            ? "bg-blue-50 text-blue-700 font-bold shadow-sm ring-1 ring-blue-100/50"
+                            ? "bg-blue-50 text-slate-600 font-bold shadow-sm ring-1 ring-blue-100/50"
                             : "text-slate-600 font-medium hover:text-slate-900 hover:bg-slate-50"
                           }
                         `}
@@ -868,7 +870,7 @@ export function Sidebar() {
                             </svg>
                           </div>
                         )}
-                        <span className={`flex-shrink-0 transition-colors ${isActive ? "text-blue-600" : "text-slate-400 group-hover:text-slate-600"} ${isDragEnabled && !collapsed ? "" : ""}`}>
+                        <span className={`flex-shrink-0 transition-colors ${isActive ? "text-slate-500" : "text-slate-400 group-hover:text-slate-600"} ${isDragEnabled && !collapsed ? "" : ""}`}>
                           {link.icon}
                         </span>
                         {!collapsed && (
@@ -911,7 +913,7 @@ export function Sidebar() {
                                 className={`
                                   group relative flex items-center ps-7 pe-3 py-1.5 text-[12px] rounded-lg transition-all duration-200
                                   ${isSubActive
-                                    ? "text-blue-700 font-bold bg-blue-50/50 ring-1 ring-blue-100/50 shadow-sm"
+                                    ? "text-slate-600 font-bold bg-blue-50/50 ring-1 ring-blue-100/50 shadow-sm"
                                     : "text-slate-500 font-medium hover:text-slate-900 hover:bg-slate-50"}
                                 `}
                               >
@@ -1006,7 +1008,7 @@ export function Sidebar() {
           title={t("sidebar.profile")}
           className={`flex w-full items-center rounded-xl p-2 text-left transition-colors ${profileMenuOpen ? "bg-white shadow-sm" : "hover:bg-white"} ${collapsed ? "justify-center" : "gap-3"}`}
         >
-          <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-sm flex-shrink-0 ring-2 ring-white">
+          <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm shadow-sm flex-shrink-0 ring-2 ring-white">
             {userName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || tx("SR")}
           </div>
           {!collapsed && (

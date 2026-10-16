@@ -98,7 +98,7 @@ const STATUS_STYLE: Record<string, string> = {
   "Approved": "bg-emerald-50 text-emerald-800",
   "Partial Approval": "bg-teal-50 text-teal-800",
   "Declined": "bg-rose-50 text-rose-800",
-  "Referred to Manager": "bg-purple-50 text-purple-800",
+  "Referred to Manager": "bg-blue-50 text-blue-800",
   "Settled": "bg-slate-100 text-slate-800",
   "Closed": "bg-slate-100 text-slate-500",
 };
@@ -485,9 +485,9 @@ export default function ClaimsPage() {
                   </span>
                 )}
                 {typeFilter !== "ALL" && (
-                  <span className="px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 font-medium flex items-center gap-1.5 border border-purple-200/80 text-[11px] shadow-2xs">
+                  <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium flex items-center gap-1.5 border border-blue-200/80 text-[11px] shadow-2xs">
                     {tx("Type:")}{" "}{typeFilter}
-                    <button onClick={() => setTypeFilter("ALL")} className="text-purple-400 hover:text-purple-700 font-bold">{tx("×")}</button>
+                    <button onClick={() => setTypeFilter("ALL")} className="text-blue-400 hover:text-blue-700 font-bold">{tx("×")}</button>
                   </span>
                 )}
                 {riskFilter !== "ALL" && (
@@ -503,9 +503,9 @@ export default function ClaimsPage() {
                   </span>
                 )}
                 {(dateRange.from || dateRange.to) && (
-                  <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-medium flex items-center gap-1.5 border border-indigo-200/80 text-[11px] shadow-2xs">
+                  <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium flex items-center gap-1.5 border border-blue-200/80 text-[11px] shadow-2xs">
                     {tx("Incident Date:")}{" "}{dateRange.from ? displayDate(dateRange.from) : tx("Start")}{" "}{tx("to")}{" "}{dateRange.to ? displayDate(dateRange.to) : tx("Today")}
-                    <button onClick={() => { setDatePreset("all"); setDateRange(resolvePreset("all")); }} className="text-indigo-400 hover:text-indigo-700 font-bold">{tx("×")}</button>
+                    <button onClick={() => { setDatePreset("all"); setDateRange(resolvePreset("all")); }} className="text-blue-400 hover:text-blue-700 font-bold">{tx("×")}</button>
                   </span>
                 )}
               </div>
