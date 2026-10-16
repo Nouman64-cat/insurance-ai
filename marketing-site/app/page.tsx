@@ -1,7 +1,8 @@
 import { ButtonLink } from "@/components/ui/Button";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Container, Section, SectionHeader } from "@/components/ui/Section";
-import { ProductSurface } from "@/components/product/ProductSurface";
+import { Tilt } from "@/components/effects/Tilt";
+import { HeroSurface } from "@/components/sections/HeroSurface";
 import { ProductStory } from "@/components/sections/ProductStory";
 import { HeroDecisionFeed } from "@/components/sections/HeroDecisionFeed";
 import { ScrollCue } from "@/components/sections/ScrollCue";
@@ -61,7 +62,9 @@ export default function HomePage() {
           </div>
 
           <div className="fade-up-intro mx-auto mt-14 max-w-[40rem] text-left" style={stagger(5)}>
-            <HeroDecisionFeed className="w-full" />
+            <Tilt className="rounded-2xl">
+              <HeroDecisionFeed className="w-full" />
+            </Tilt>
           </div>
 
           <ul className="fade-up-intro mx-auto mt-12 grid max-w-[56rem] gap-8 md:grid-cols-3 md:gap-6" style={stagger(6)}>
@@ -80,7 +83,7 @@ export default function HomePage() {
 
       <Container className="pb-16 lg:pb-20 2xl:pb-28">
         <div className="fade-up-intro" style={stagger(7, 7)}>
-          <ProductSurface stage={3} />
+          <HeroSurface />
         </div>
 
         <ScrollCue />
