@@ -47,6 +47,7 @@ const icons: Record<string, ReactNode> = {
   alert: <path d="M12 4l9 16H3L12 4zM12 10v4M12 17v.5" />,
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   close: <path d="M6 6l12 12M18 6L6 18" />,
+  chevron: <path d="M6 9l6 6 6-6" />,
 };
 
 export type IconName = keyof typeof icons;

@@ -6,19 +6,27 @@ import { stagger } from "@/lib/utils";
 
 type Card = { href: string; name: string; tagline: string; icon: IconName; bullets?: string[] };
 
-function CardGrid({ cards, cols }: Readonly<{ cards: Card[]; cols: string }>) {
+// Card widths per breakpoint. A centred flex-wrap (not a grid) so a short last row sits in the middle
+// instead of leaving an orphan card hanging on the left.
+const widths = {
+  three: "md:w-[calc((100%-1rem)/2)] lg:w-[calc((100%-2rem)/3)] 2xl:w-[calc((100%-3rem)/3)]",
+  five: "md:w-[calc((100%-1rem)/2)] lg:w-[calc((100%-2rem)/3)] 2xl:w-[calc((100%-6rem)/5)]",
+} as const;
+
+function CardGrid({ cards, cols }: Readonly<{ cards: Card[]; cols: keyof typeof widths }>) {
   return (
-    <div className={`grid gap-4 2xl:gap-6 ${cols}`}>
+    <div className="flex flex-wrap justify-center gap-4 2xl:gap-6">
       {cards.map((c, i) => (
-        <div key={c.href} data-reveal style={stagger(i)} className="flex">
+        <div key={c.href} data-reveal style={stagger(i)} className={`flex w-full ${widths[cols]}`}>
           <Link
             href={c.href}
-            className="card group flex w-full flex-col p-6 transition-[transform,border-color,box-shadow] duration-300 hover:-translate-y-1 hover:border-line-strong hover:shadow-float"
+            className="glass glass-hover glow group flex w-full flex-col rounded-2xl p-6 transition-transform duration-300 hover:-translate-y-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 2xl:p-7"
           >
-            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand/15 text-accent transition-colors duration-300 group-hover:bg-brand group-hover:text-white">
+            {/* Strong gradient: the white icon keeps 3:1+ against the cyan end */}
+            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-gradient-strong text-white shadow-glow">
               <Icon name={c.icon} />
             </span>
-            <h3 className="mt-4 text-base font-semibold text-ink">{c.name}</h3>
+            <h3 className="mt-5 text-base font-semibold text-ink 2xl:text-lg">{c.name}</h3>
             <p className="mt-2 text-sm leading-relaxed text-body">{c.tagline}</p>
             {c.bullets && (
               <ul className="mt-4 flex-1 space-y-2 border-t border-line pt-4">
@@ -31,7 +39,7 @@ function CardGrid({ cards, cols }: Readonly<{ cards: Card[]; cols: string }>) {
               </ul>
             )}
             {!c.bullets && <div className="flex-1" />}
-            <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-accent">
+            <span className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-accent">
               Learn more
               <Icon name="arrow" className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
             </span>
@@ -45,7 +53,7 @@ function CardGrid({ cards, cols }: Readonly<{ cards: Card[]; cols: string }>) {
 export function ProductCards() {
   return (
     <CardGrid
-      cols="md:grid-cols-3"
+      cols="three"
       cards={products.map((p) => ({
         href: `/products/${p.slug}`,
         name: p.name,
@@ -60,7 +68,7 @@ export function ProductCards() {
 export function PlatformCards() {
   return (
     <CardGrid
-      cols="md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5"
+      cols="five"
       cards={platformFeatures.map((f) => ({
         href: `/platform/${f.slug}`,
         name: f.name,

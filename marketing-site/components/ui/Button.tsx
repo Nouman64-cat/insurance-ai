@@ -3,17 +3,20 @@ import type { ReactNode } from "react";
 import { Icon } from "@/components/ui/Icon";
 
 const base =
-  "btn group inline-flex items-center justify-center gap-2 text-sm font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
+  "btn group inline-flex items-center justify-center gap-2 text-sm font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2";
 
 const variants = {
   // Brand gradient: the committing action
-  primary: "bg-brand-gradient-strong text-white shadow-glow hover:brightness-90",
-  brand: "bg-brand text-white hover:bg-brand-dark",
+  primary: "bg-brand-gradient-strong text-white shadow-glow hover:brightness-90 focus-visible:ring-accent/60",
+  brand: "bg-brand text-white hover:bg-brand-dark focus-visible:ring-accent/60",
   // Outlined: secondary / reversible
-  ghost: "border border-line-strong bg-transparent text-ink hover:border-accent/60 hover:bg-chip",
-  // On the blue CTA panel
-  onDark: "btn-ring-light bg-white text-brand-deep hover:bg-blue-50",
-  ghostOnDark: "btn-ring-light border border-white/40 text-white hover:bg-white/10",
+  ghost: "border border-line-strong bg-transparent text-ink hover:border-accent/60 hover:bg-chip focus-visible:ring-accent/60",
+  // On the brand gradient band. The focus ring is white with a see-through gap so it shows on every part of the gradient.
+  onDark:
+    "btn-ring-light bg-white text-brand-deep shadow-card hover:bg-alt focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
+  // Fills white on hover (not white/10, which would drop white text under 4.5:1 at the cyan end)
+  ghostOnDark:
+    "btn-ring-light border border-white text-white hover:bg-white hover:text-brand-deep focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
 } as const;
 
 const sizes = {

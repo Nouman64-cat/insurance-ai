@@ -32,21 +32,21 @@ export function TrustSection() {
           </p>
 
           {/* A decision record, the thing an auditor would ask to see */}
-          <div className="mt-10 max-w-md rounded-2xl bg-alt p-5 shadow-card 2xl:max-w-lg 2xl:p-6" role="img" aria-label="Example decision record, demo data">
+          <div className="glass mt-10 max-w-md rounded-2xl p-5 2xl:max-w-lg 2xl:p-6" role="img" aria-label="Example decision record, demo data">
             <div aria-hidden="true">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted">Decision record</p>
-                <span className="rounded-full bg-card px-2.5 py-1 text-[0.6875rem] font-semibold text-accent">Immutable</span>
+                <span className="rounded-full bg-chip px-2.5 py-1 text-[0.6875rem] font-semibold text-accent">Immutable</span>
               </div>
-              <dl className="mt-4 space-y-2.5 text-[0.8125rem]">
+              <dl className="mt-4 divide-y divide-line text-[0.8125rem]">
                 {record.map(([k, v]) => (
-                  <div key={k} className="flex items-baseline justify-between gap-4">
+                  <div key={k} className="flex items-baseline justify-between gap-4 py-2">
                     <dt className="text-muted">{k}</dt>
                     <dd className="text-right font-medium tabular-nums text-ink">{v}</dd>
                   </div>
                 ))}
               </dl>
-              <p className="mt-4 flex items-center gap-2 text-xs font-semibold text-emerald-700">
+              <p className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
                 <Icon name="check" className="h-4 w-4" />
                 Replayable step by step
               </p>
@@ -54,9 +54,9 @@ export function TrustSection() {
           </div>
         </div>
 
-        <ul className="grid gap-x-10 gap-y-8 sm:grid-cols-2">
+        <ul className="grid gap-4 sm:grid-cols-2 2xl:gap-6">
           {principles.map((p, i) => (
-            <li key={p.title} data-reveal style={stagger(i)} className={i === principles.length - 1 ? "sm:col-span-2" : ""}>
+            <li key={p.title} data-reveal style={stagger(i)} className={`glass glass-hover glow rounded-2xl p-6 2xl:p-7 ${i === principles.length - 1 ? "sm:col-span-2" : ""}`}>
               <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-chip text-accent">
                 <Icon name={p.icon} />
               </span>

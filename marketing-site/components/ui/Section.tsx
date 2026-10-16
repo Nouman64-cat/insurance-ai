@@ -23,7 +23,8 @@ export function Section({
   const tones = {
     white: "bg-canvas",
     muted: "bg-alt",
-    dark: "bg-gradient-to-r from-brand-deep via-brand-dark to-brand text-white",
+    // Brand band (cyan → blue → violet). The strong variant keeps white text at 4.5:1+ across the whole gradient.
+    dark: "bg-brand-gradient-strong text-white",
   } as const;
   return (
     <section id={id} className={`cv-auto py-16 sm:py-20 2xl:py-24 ${tones[tone]}`}>
@@ -47,10 +48,10 @@ export function SectionHeader({
 }>) {
   return (
     <div data-reveal className={`max-w-2xl 2xl:max-w-3xl ${align === "center" ? "mx-auto text-center" : ""}`}>
-      {eyebrow && <p className={dark ? "text-xs font-semibold uppercase tracking-widest text-blue-300" : "eyebrow"}>{eyebrow}</p>}
-      <h2 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">{title}</h2>
+      {eyebrow && <p className={dark ? "text-xs font-semibold uppercase tracking-widest text-white" : "eyebrow"}>{eyebrow}</p>}
+      <h2 className={`mt-2 text-3xl font-semibold tracking-tight sm:text-4xl ${dark ? "text-white" : ""}`}>{title}</h2>
       {description && (
-        <p className={`mt-4 text-base leading-relaxed ${dark ? "text-blue-100" : "text-body"}`}>{description}</p>
+        <p className={`mt-4 text-base leading-relaxed ${dark ? "text-white" : "text-body"}`}>{description}</p>
       )}
     </div>
   );

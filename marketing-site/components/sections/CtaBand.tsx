@@ -13,9 +13,9 @@ export function CtaBand({
       <div data-reveal className="flex flex-col items-start justify-between gap-6 md:flex-row md:items-center">
         <div className="max-w-3xl">
           <h2 className="text-3xl font-semibold leading-[1.06] tracking-[-0.03em] text-white sm:text-5xl 2xl:text-6xl">{title}</h2>
-          <p className="mt-4 max-w-xl text-base text-blue-100 2xl:text-lg">{description}</p>
+          <p className="mt-4 max-w-xl text-base leading-relaxed text-white 2xl:text-lg">{description}</p>
         </div>
-        <div className="flex flex-wrap gap-3">
+        <div className="flex shrink-0 flex-wrap gap-3">
           <ButtonLink href="/contact" variant="onDark" arrow>
             Request a demo
           </ButtonLink>
