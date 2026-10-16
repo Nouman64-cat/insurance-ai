@@ -26,6 +26,8 @@ export interface PolicyListItem {
   effective_date: string | null;
   expiry_date: string | null;
   created_at: string;
+  /** When the policy last moved (e.g. approved out of underwriting, issued). */
+  updated_at?: string;
 }
 
 export interface PolicyStats {

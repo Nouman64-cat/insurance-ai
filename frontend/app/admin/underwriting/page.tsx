@@ -17,7 +17,7 @@ import {
 import { fmtCoverage } from "@/lib/mock-data";
 import { useCaseEvents } from "@/lib/agent/useCaseEvents";
 import { underwritingUrl } from "@/lib/appLinks";
-import { useNewArrivals, recentIds, NewArrivalsBanner, NEW_ARRIVAL_CLASS, scrollToFirstNew } from "@/lib/useNewArrivals";
+import { useNewArrivals, floatNew, useRevealNew, recentIds, NewArrivalsBanner, NEW_ARRIVAL_CLASS, scrollToFirstNew } from "@/lib/useNewArrivals";
 import { Pagination, usePagination } from "@/components/Pagination";
 import RowActionsMenu, { type RowAction } from "@/components/RowActionsMenu";
 import { useNotify } from "@/components/NotificationContext";
@@ -209,7 +209,7 @@ export default function AdminUnderwritingPage() {
   const [underwriters, setUnderwriters] = useState<TrackUnderwriter[]>([]);
   const [loading, setLoading] = useState(true);
   const arrivalIds = useMemo(() => cases.map((c) => c.caseld), [cases]);
-  const arrivals = useNewArrivals("admin-underwriting", arrivalIds, !loading, recentIds(cases, (c) => c.caseld, (c) => c.createdAt));
+  const arrivals = useNewArrivals("admin-underwriting", arrivalIds, !loading, recentIds(cases, (c) => c.caseld, (c) => c.updatedAt));
   const [error, setError] = useState("");
   const [segment, setSegment] = useState<SegmentFilter>("all");
   const [stage, setStage] = useState<Stage | "ALL">("ALL");
@@ -269,8 +269,14 @@ export default function AdminUnderwritingPage() {
     [searched, segment],
   );
 
-  const filtered = useMemo(() => (stage === "ALL" ? scoped : scoped.filter((c) => stageOf(c) === stage)), [scoped, stage]);
+  // Most recently active first, so the lead that was just sent to underwriting stays at the top (and any not-yet-opened arrival leads).
+  const filtered = useMemo(() => {
+    const list = stage === "ALL" ? scoped : scoped.filter((c) => stageOf(c) === stage);
+    const byRecent = [...list].sort((a, b) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
+    return floatNew(byRecent, (c) => c.caseld, arrivals.newIds);
+  }, [scoped, stage, arrivals.newIds]);
   const { pageItems, pagination } = usePagination(filtered, 15, `${segment}|${stage}|${search}`);
+  const revealNew = useRevealNew({ filtered, keyOf: (c) => c.caseld, newIds: arrivals.newIds, pageSize: 15, setPage: pagination.setPage, reset: () => { setSegment("all"); setStage("ALL"); setSearch(""); } });
 
   const segmentCounts: Record<SegmentFilter, number> = {
     all: searched.length,
@@ -309,7 +315,7 @@ export default function AdminUnderwritingPage() {
 
   return (
     <div className="px-6 py-5 space-y-4 max-w-screen-2xl mx-auto w-full font-sans">
-      <NewArrivalsBanner count={arrivals.newIds.size} noun="case" onShow={scrollToFirstNew} onDismiss={arrivals.markAllSeen} />
+      <NewArrivalsBanner count={arrivals.newIds.size} noun="case" onShow={revealNew} onDismiss={arrivals.markAllSeen} />
       {/* Header — same shape as the Leads page */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>

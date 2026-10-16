@@ -12,7 +12,7 @@ import { listCases } from "@/app/services/cases";
 import UnifiedDetailsModal from "@/components/UnifiedDetailsModal";
 import FiltersPanel from "@/components/FiltersPanel";
 import AddEntryChooser, { EntryEntityType } from "@/components/entities/AddEntryChooser";
-import { useNewArrivals, NewArrivalsBanner, NEW_ARRIVAL_CLASS, scrollToFirstNew } from "@/lib/useNewArrivals";
+import { useNewArrivals, recentIds, NewArrivalsBanner, NEW_ARRIVAL_CLASS, scrollToFirstNew } from "@/lib/useNewArrivals";
 import NewLeadAlert, { NewLeadInfo } from "@/components/NewLeadAlert";
 import { getUserDirectory } from "@/app/services/agents";
 import { useNotify } from "@/components/NotificationContext";
@@ -658,7 +658,7 @@ export default function LeadsHubPage() {
   };
 
   const arrivalIds = useMemo(() => leads.map((l) => l.id), [leads]);
-  const arrivals = useNewArrivals("leads", arrivalIds, !loading);
+  const arrivals = useNewArrivals("leads", arrivalIds, !loading, recentIds(leads, (l) => l.id, (l) => l.created_at));
   const handleCardClick = (lead: UnifiedLead) => {
     arrivals.markSeen(lead.id);
     setSelectedEntity({ id: lead.id, type: lead.type });

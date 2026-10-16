@@ -8,7 +8,7 @@ import { updateUnderwritingTrack, type UnderwritingReview, type UnderwritingRevi
 import CaseWorkspaceHeader, { type CaseTab } from "@/components/case/CaseWorkspaceHeader";
 import { fmtCoverage } from "@/lib/mock-data";
 import { displayDate } from "@/lib/dateDisplay";
-import { useNewArrivals, recentIds, NewArrivalsBanner, NEW_ARRIVAL_CLASS, scrollToFirstNew } from "@/lib/useNewArrivals";
+import { useNewArrivals, floatNew, useRevealNew, recentIds, NewArrivalsBanner, NEW_ARRIVAL_CLASS, scrollToFirstNew } from "@/lib/useNewArrivals";
 import { downloadReviewReport } from "./reviewReportPdf";
 import ReviewDocuments, { isProcessing } from "./ReviewDocuments";
 import TrackOperations from "./TrackOperations";
@@ -241,7 +241,9 @@ export function SpecialistCaseWorkspace({ track }: { track: "medical" | "financi
   // Applications that went on to approval, closure or rejection stay as a read-only record, after the open ones.
   const filtered = scoped.filter((r) => filter === "ALL" || (filter === "CLOSED" ? r.closed : r.review.status === filter || (filter === "DECIDED" && ["CLEARED", "REFERRED", "DECLINED"].includes(r.review.status))))
     .sort((a, b) => Number(Boolean(a.closed)) - Number(Boolean(b.closed)));
-  const { pageItems, pagination } = usePagination(filtered, 12, `${filter}:${search}`);
+  const filteredFirst = floatNew(filtered, (r) => r.id, arrivals.newIds);   // the case that just arrived sits at the top
+  const { pageItems, pagination } = usePagination(filteredFirst, 12, `${filter}:${search}`);
+  const revealNew = useRevealNew({ filtered: filteredFirst, keyOf: (r: ReviewRow) => r.id, newIds: arrivals.newIds, pageSize: 12, setPage: pagination.setPage, reset: () => { setFilter("ALL"); setSearch(""); } });
   return <div className={caseId ? "case-modern mx-auto max-w-screen-2xl space-y-5 px-6 pb-10" : "mx-auto max-w-screen-2xl space-y-5 px-4 py-6 sm:px-6"}>
     {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}</p>}
     <Toaster />
@@ -291,7 +293,7 @@ export function SpecialistCaseWorkspace({ track }: { track: "medical" | "financi
           productName={workspace.product_name} coverage={workspace.coverage_amount} termYears={workspace.term_years} openedAt={workspace.created_at} />
       </div>
     </> : <>
-      <NewArrivalsBanner count={arrivals.newIds.size} noun="case" onShow={scrollToFirstNew} onDismiss={arrivals.markAllSeen} />
+      <NewArrivalsBanner count={arrivals.newIds.size} noun="case" onShow={revealNew} onDismiss={arrivals.markAllSeen} />
       <QueueHeader track={track} label={label} rows={rows} loading={saving} onRefresh={() => void load(true)} onPick={setFilter} />
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 p-4">

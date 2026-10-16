@@ -37,7 +37,7 @@ import {
 } from "@/app/services/postIssuance";
 import { Pagination, usePagination } from "@/components/Pagination";
 import { tx } from "@/lib/i18n/tx";
-import { useNewArrivals, recentIds, NewArrivalsBanner, NEW_ARRIVAL_CLASS, scrollToFirstNew } from "@/lib/useNewArrivals";
+import { useNewArrivals, floatNew, useRevealNew, recentIds, NewArrivalsBanner, NEW_ARRIVAL_CLASS, scrollToFirstNew } from "@/lib/useNewArrivals";
 
 /** The subset of a reinsurer the placement modal renders — shared by the live
  *  panel from tenant-service and the illustrative fallback below. */
@@ -398,7 +398,7 @@ export default function PostUnderwritingPage() {
   const [stats, setStats] = useState<PolicyStats | null>(null);
   const [loading, setLoading] = useState(true);
   const arrivalIds = useMemo(() => policies.map((p) => p.id), [policies]);
-  const arrivals = useNewArrivals("post-underwriting", arrivalIds, !loading, recentIds(policies, (p) => p.id, (p) => p.created_at));
+  const arrivals = useNewArrivals("post-underwriting", arrivalIds, !loading, recentIds(policies, (p) => p.id, (p) => p.updated_at));
 
   // Filters & Search
   const [search, setSearch] = useState("");
@@ -597,8 +597,8 @@ export default function PostUnderwritingPage() {
           p.product_name.toLowerCase().includes(q)
       );
     }
-    return list;
-  }, [policies, segment, showCompleted, search, acceptedCounterOffers, reinsuranceReferrals, courierLogs, welcomeCalls]);
+    return floatNew(list, (p) => p.id, arrivals.newIds);   // the policy that just arrived sits at the top
+  }, [policies, segment, showCompleted, search, acceptedCounterOffers, reinsuranceReferrals, courierLogs, welcomeCalls, arrivals.newIds]);
 
   // Dynamic Segment Counts matching the current view mode (active vs all)
   const segmentCounts = useMemo(() => {
@@ -806,10 +806,11 @@ export default function PostUnderwritingPage() {
   };
 
   const { pageItems: pagedPolicies, pagination } = usePagination(filtered);
+  const revealNew = useRevealNew({ filtered, keyOf: (p: PolicyListItem) => p.id, newIds: arrivals.newIds, pageSize: 12, setPage: pagination.setPage, reset: () => { setSearch(""); setSegment("all"); setFilterGate("ALL"); } });
 
   return (
     <div className="px-6 py-4 space-y-6 max-w-screen-2xl mx-auto w-full animate-in fade-in duration-300">
-      <NewArrivalsBanner count={arrivals.newIds.size} noun="policy" onShow={scrollToFirstNew} onDismiss={arrivals.markAllSeen} />
+      <NewArrivalsBanner count={arrivals.newIds.size} noun="policy" onShow={revealNew} onDismiss={arrivals.markAllSeen} />
       {/* Executive Header Banner matching Pre-Underwriting */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
         <div className="flex items-center gap-3.5">

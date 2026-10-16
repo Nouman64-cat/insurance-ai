@@ -372,7 +372,7 @@ function UnderwritingMainContent() {
   const [showAllGates, setShowAllGates] = useState<Record<string, boolean>>({});
 
   const [loading, setLoading] = useState(true);
-  const arrivals = useNewArrivals("underwriting-queue", arrivalIds, !loading, recentIds(cases, (c) => c.caseld, (c) => c.createdAt));
+  const arrivals = useNewArrivals("underwriting-queue", arrivalIds, !loading, recentIds(cases, (c) => c.caseld, (c) => c.updatedAt));
   const [error, setError] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
 

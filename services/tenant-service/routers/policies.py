@@ -670,6 +670,7 @@ async def list_policies(
             "effective_date": p.effective_date.isoformat() if p.effective_date else None,
             "expiry_date": p.expiry_date.isoformat() if p.expiry_date else None,
             "created_at": p.created_at.isoformat(),
+            "updated_at": (p.updated_at or p.created_at).isoformat(),
         })
     return out
 

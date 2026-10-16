@@ -872,7 +872,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { Pagination, usePagination } from "@/components/Pagination";
 import { tx } from "@/lib/i18n/tx";
-import { useNewArrivals, recentIds, NewArrivalsBanner, NEW_ARRIVAL_CLASS, scrollToFirstNew } from "@/lib/useNewArrivals";
+import { useNewArrivals, floatNew, recentIds, NewArrivalsBanner, NEW_ARRIVAL_CLASS, scrollToFirstNew } from "@/lib/useNewArrivals";
 
 function PolicyIssuanceContent() {
   const searchParams = useSearchParams();
@@ -880,10 +880,7 @@ function PolicyIssuanceContent() {
   const [policies, setPolicies] = useState<PolicyListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  // A policy is "new" when it reaches this page and again each time it moves to its next stage (issuance, payment, in force).
-  const arrivalKey = (p: PolicyListItem) => `${p.id}|${statusKey(p.status)}`;
-  const arrivalIds = useMemo(() => policies.map(arrivalKey), [policies]);
-  const arrivals = useNewArrivals("policy-issuance", arrivalIds, !loading, recentIds(policies, arrivalKey, (p) => p.created_at));
+
   // Both legacy queue URLs now open the same policy list.
   useEffect(() => {
     if (searchParams.has("tab")) {
@@ -965,6 +962,11 @@ function PolicyIssuanceContent() {
     ].includes((p.status || "").toUpperCase().replace(/[^A-Z]/g, "")));
   }, [policies, queue]);
 
+  // Only policies this page actually lists can be new. A policy is "new" when it reaches this page and again each time it moves to its next stage (issuance, payment, in force).
+  const arrivalKey = (p: PolicyListItem) => `${p.id}|${statusKey(p.status)}`;
+  const arrivalIds = useMemo(() => managedPolicies.map(arrivalKey), [managedPolicies]);
+  const arrivals = useNewArrivals("policy-issuance", arrivalIds, !loading, recentIds(managedPolicies, arrivalKey, (p) => p.updated_at));
+
   const clearFilters = () => {
     setDateFrom("");
     setDateTo("");
@@ -979,6 +981,7 @@ function PolicyIssuanceContent() {
     let list = [...managedPolicies].sort(
       (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime(),
     );
+    list = floatNew(list, arrivalKey, arrivals.newIds);   // the policy that just arrived sits at the top
     if (segment !== "all") {
       list = list.filter((p) => p.segment === segment);
     }
@@ -999,7 +1002,7 @@ function PolicyIssuanceContent() {
         (p.case_number ?? "").toLowerCase().includes(q) ||
         p.product_name.toLowerCase().includes(q),
     );
-  }, [managedPolicies, search, segment, dateFrom, dateTo]);
+  }, [managedPolicies, search, segment, dateFrom, dateTo, arrivals.newIds]);
 
   const statusPills = useMemo(() => {
     const counts = new Map<string, number>();
@@ -1017,6 +1020,22 @@ function PolicyIssuanceContent() {
     12,
     `${segment}:${filterStatus}:${search}:${dateFrom}:${dateTo}`,
   );
+
+  // "Show" on the new-policy banner: clear anything that hides the policy, go to its page, then scroll to it.
+  const [revealPending, setRevealPending] = useState(false);
+  const revealNew = () => {
+    const idx = filtered.findIndex((p) => arrivals.newIds.has(arrivalKey(p)));
+    if (idx >= 0) { pagination.setPage(Math.floor(idx / 12) + 1); scrollToFirstNew(); return; }
+    setSearch(""); setSegment("all"); setFilterStatus("ALL"); setDateFrom(""); setDateTo("");
+    setRevealPending(true);
+  };
+  useEffect(() => {
+    if (!revealPending) return;
+    const idx = filtered.findIndex((p) => arrivals.newIds.has(arrivalKey(p)));
+    if (idx >= 0) { pagination.setPage(Math.floor(idx / 12) + 1); scrollToFirstNew(); }
+    setRevealPending(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealPending, filtered]);
 
   const segmentCounts = useMemo(() => {
     const list = managedPolicies;
@@ -1063,7 +1082,7 @@ function PolicyIssuanceContent() {
 
   return (
     <div className="px-6 py-5 space-y-4 max-w-screen-2xl mx-auto w-full">
-      <NewArrivalsBanner count={arrivals.newIds.size} noun="policy" onShow={scrollToFirstNew} onDismiss={arrivals.markAllSeen} />
+      <NewArrivalsBanner count={arrivals.newIds.size} noun="policy" onShow={revealNew} onDismiss={arrivals.markAllSeen} />
       {/* Header — same shape as the Leads page; the title follows the queue */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>

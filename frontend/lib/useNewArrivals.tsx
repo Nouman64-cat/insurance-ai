@@ -9,7 +9,7 @@ import { tx } from "@/lib/i18n/tx";
  * browser, so a lead moved from Leads to Proposals is still flagged when the user gets there, and stays flagged
  * until they open it. The first visit only records what is already there, so nothing old is flagged.
  */
-const key = (page: string) => `new_arrivals_seen:v2:${page}`;
+const key = (page: string) => `new_arrivals_seen:v7:${page}`;
 const read = (page: string): Set<string> | null => {
   try { const raw = localStorage.getItem(key(page)); return raw ? new Set(JSON.parse(raw) as string[]) : null; } catch { return null; }
 };
@@ -19,33 +19,28 @@ const write = (page: string, seen: Set<string>) => {
 
 /** `freshIds`: records recent enough that they should still be flagged on a first visit (e.g. created in the last day),
  *  so a case that arrived just before the page was first opened is not mistaken for old. */
-export function useNewArrivals(page: string, ids: string[], ready: boolean, freshIds?: Set<string>) {
+export function useNewArrivals(page: string, ids: string[], ready: boolean, freshIds?: Map<string, number>) {
   const [seen, setSeen] = useState<Set<string> | null>(null);
 
-  useEffect(() => {
-    if (!ready) return;
-    const stored = read(page);
-    if (stored) {
-      // A key can carry a version ("id|submitted"). A record already seen before versions existed counts as seen at its current version.
-      const upgraded = ids.filter((k) => k.includes("|") && !stored.has(k) && stored.has(k.split("|")[0]));
-      if (upgraded.length) { upgraded.forEach((k) => stored.add(k)); write(page, stored); }
-      setSeen(new Set(stored));
-      return;
-    }
-    const baseline = new Set(ids.filter((id) => !freshIds?.has(id)));   // first visit: what is already here counts as seen, except very recent arrivals
-    write(page, baseline);
-    setSeen(baseline);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, ready]);
+  // What this browser has opened. It only ever matters for records that are ALSO recent (see below).
+  useEffect(() => { setSeen(read(page) ?? new Set()); }, [page]);
 
-  const newIds = useMemo(() => new Set(seen ? ids.filter((id) => !seen.has(id)) : []), [seen, ids]);
+  // Only ONE record is ever "new": the single most recent arrival on this page, and only while it is recent (`freshIds`:
+  // touched within the last few minutes) and has not been opened here. Opening it clears it, and nothing else takes its
+  // place — an older record is never flagged because a newer one was opened. A newer arrival becomes the new one.
+  const newIds = useMemo(() => {
+    if (!ready || !seen || !freshIds) return new Set<string>();
+    let latest: string | null = null; let at = -Infinity;
+    for (const id of ids) { const ms = freshIds.get(id); if (ms !== undefined && ms > at) { at = ms; latest = id; } }
+    return new Set(latest && !seen.has(latest) ? [latest] : []);
+  }, [ready, seen, ids, freshIds]);
 
   const markSeen = useCallback((id: string) => {
     setSeen((prev) => { if (!prev || prev.has(id)) return prev; const next = new Set(prev); next.add(id); write(page, next); return next; });
   }, [page]);
   const markAllSeen = useCallback(() => {
-    setSeen((prev) => { const next = new Set(prev ?? []); ids.forEach((id) => next.add(id)); write(page, next); return next; });
-  }, [page, ids]);
+    setSeen((prev) => { const next = new Set(prev ?? []); newIds.forEach((id) => next.add(id)); write(page, next); return next; });
+  }, [page, newIds]);
 
   return { newIds, markSeen, markAllSeen };
 }
@@ -76,17 +71,53 @@ export function NewArrivalsBanner({ count, noun, onShow, onDismiss }: { count: n
   );
 }
 
-/** Scrolls the first highlighted row into view. */
-export const scrollToFirstNew = () => document.querySelector<HTMLElement>(`.${NEW_ARRIVAL_CLASS}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+/** Scrolls the first highlighted row into view (retrying briefly: the row may only render after a filter or page change). */
+export const scrollToFirstNew = () => {
+  let tries = 0;
+  const go = () => {
+    const el = document.querySelector<HTMLElement>(`.${NEW_ARRIVAL_CLASS}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    else if (++tries < 12) window.setTimeout(go, 120);
+  };
+  go();
+};
 
-/** The single most recent record (and only if it is within the last `hours`) — pass as `freshIds`, so a first visit flags
- *  just the latest arrival and not everything created recently. */
-export const recentIds = <T,>(items: T[], id: (t: T) => string, at: (t: T) => string | null | undefined, hours = 24) => {
-  const cutoff = Date.now() - hours * 3600_000;
-  let best: { id: string; t: number } | null = null;
-  for (const item of items) {
-    const v = at(item); const t = v ? new Date(v).getTime() : NaN;
-    if (!Number.isNaN(t) && t >= cutoff && (!best || t > best.t)) best = { id: id(item), t };
-  }
-  return new Set(best ? [best.id] : []);
+/** id → time for the records touched within the last `minutes` (default 30) — pass as `freshIds`. */
+export const recentIds = <T,>(items: T[], id: (t: T) => string, at: (t: T) => string | null | undefined, minutes = 30) => {
+  const cutoff = Date.now() - minutes * 60_000;
+  const out = new Map<string, number>();
+  for (const t of items) { const v = at(t); const ms = v ? new Date(v).getTime() : NaN; if (!Number.isNaN(ms) && ms >= cutoff) out.set(id(t), ms); }
+  return out;
+};
+
+/**
+ * "Show" on the banner for paginated, filterable lists: if the new row is hidden by a filter or sits on another page,
+ * clear the filters (`reset`), jump to its page, then scroll to it.
+ */
+export function useRevealNew<T>(opts: {
+  filtered: T[]; keyOf: (t: T) => string; newIds: Set<string>; pageSize: number;
+  setPage: (page: number) => void; reset: () => void;
+}) {
+  const { filtered, keyOf, newIds, pageSize, setPage, reset } = opts;
+  const [pending, setPending] = useState(false);
+  const jump = () => {
+    const idx = filtered.findIndex((t) => newIds.has(keyOf(t)));
+    if (idx < 0) return false;
+    setPage(Math.floor(idx / pageSize) + 1);
+    scrollToFirstNew();
+    return true;
+  };
+  useEffect(() => {
+    if (!pending) return;
+    jump();
+    setPending(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending, filtered]);
+  return () => { if (!jump()) { reset(); setPending(true); } };
+}
+
+/** New arrivals first, everything else keeps its order. */
+export const floatNew = <T,>(list: T[], keyOf: (t: T) => string, newIds: Set<string>): T[] => {
+  if (newIds.size === 0) return list;
+  return [...list.filter((t) => newIds.has(keyOf(t))), ...list.filter((t) => !newIds.has(keyOf(t)))];
 };

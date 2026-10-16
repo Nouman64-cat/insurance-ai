@@ -15,7 +15,7 @@ import { listUnderwriters, Agent } from "../services/agents";
 import { listAcquisitionSources, AcquisitionSource } from "../services/acquisitionSources";
 import { updateCustomer } from "../services/customers";
 import { getPolicyIPP, requestPolicyPayment, type IPP } from "../services/initialPremiumPayment";
-import { useNewArrivals, NewArrivalsProvider, useNewArrivalsContext, NewArrivalsBanner, NEW_ARRIVAL_CLASS, scrollToFirstNew } from "@/lib/useNewArrivals";
+import { useNewArrivals, recentIds, NewArrivalsProvider, useNewArrivalsContext, NewArrivalsBanner, NEW_ARRIVAL_CLASS, scrollToFirstNew } from "@/lib/useNewArrivals";
 import { PaymentPanel } from "@/components/proposal/PaymentPanel";
 import { listInsurancePlans, InsurancePlan } from "../services/insurancePlans";
 import { getPlanValidationError } from "@/components/entities/customerShared";
@@ -657,7 +657,7 @@ export default function QuotePage() {
     option.tier === "decision" ? tx("Reject {count} selected? This cannot be undone.", { count: selectedCount }) : undefined;
 
   const arrivalIds = useMemo(() => quotes.map(arrivalKey), [quotes]);
-  const arrivals = useNewArrivals("proposals", arrivalIds, !loading);
+  const arrivals = useNewArrivals("proposals", arrivalIds, !loading, recentIds(quotes, arrivalKey, (q) => q.updated_at));
   const { markSeen } = arrivals;
   const openQuote = useCallback(async (quoteId: string) => {
     const opened = quotes.find((q) => q.quote_id === quoteId);
