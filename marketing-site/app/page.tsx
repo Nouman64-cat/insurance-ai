@@ -97,7 +97,7 @@ export default function HomePage() {
 
       <Section>
         <div className="grid items-center gap-12 lg:grid-cols-2 2xl:gap-24">
-          <div data-reveal="left" className="min-[1536px]:[zoom:1.22]">
+          <div data-reveal="left">
             <CopilotMock />
           </div>
           <div>
@@ -129,7 +129,7 @@ export default function HomePage() {
               </ButtonLink>
             </div>
           </div>
-          <div data-reveal="right" className="min-[1536px]:[zoom:1.22]">
+          <div data-reveal="right">
             <AgentMock />
           </div>
         </div>
