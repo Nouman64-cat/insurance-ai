@@ -276,3 +276,33 @@ def test_journey_evaluation_is_bound_to_the_case(monkeypatch,saved_case,success)
     result = asyncio.run(journey._run_evaluation_directly({"id":"cust"},{"id":"pol"},ExecCtx(tenant_id="t1",jwt_token=token(),role="Admin"),"case-1"))
     assert observed[0]["case_id"] == "case-1"
     assert result["success"] is success
+
+
+def test_unassigned_underwriters_block_pre_underwriting_before_any_link():
+    from lifecycle import application_state
+    pending = {"status": "PENDING", "assigned_user_id": None}
+    case = {"caseNumber": "APP-2026-77760C", "caseStatus": "Pending Documents",
+            "medical_review": pending, "financial_review": pending, "e_application_status": "Submitted"}
+    state = application_state(case)
+    assert state["blockers"][0].startswith("No Medical or Financial Underwriter assigned")
+    assert [a["label"] for a in state["allowed_actions"]] == ["Assign Medical Underwriter", "Assign Financial Underwriter"]
+    assert not any("E-App" in a["label"] for a in state["allowed_actions"])
+    medical_done = application_state({**case, "medical_review": {"status": "PENDING", "assigned_user_id": "u1"}})
+    assert [a["label"] for a in medical_done["allowed_actions"]] == ["Assign Financial Underwriter"]
+
+
+def test_gate_refused_for_unassigned_underwriters_offers_the_assignment():
+    import asyncio, httpx
+    from unittest.mock import patch
+    from tool_executor import execute_tool, _HANDLERS
+    detail = {"code": "UNDERWRITERS_NOT_ASSIGNED", "missing_tracks": ["MEDICAL", "FINANCIAL"],
+              "message": "Assign a Medical Underwriter and a Financial Underwriter to this case first."}
+    async def refused(args, ctx):
+        req = httpx.Request("POST", "http://t/e-application/invite")
+        raise httpx.HTTPStatusError("409", request=req, response=httpx.Response(409, json={"detail": detail}, request=req))
+    with patch.dict(_HANDLERS, {"verify_e_application": refused}):
+        from tool_executor import ExecCtx
+        out = asyncio.run(execute_tool("verify_e_application", {"case_number": "APP-2026-77760C"}, ExecCtx(tenant_id="t", jwt_token="")))
+    assert out["error"] == detail["message"] and out["error_code"] == "conflict"
+    assert [q["payload"] for q in out["quick_actions"]] == ["Assign the medical review of case APP-2026-77760C",
+                                                            "Assign the financial review of case APP-2026-77760C"]

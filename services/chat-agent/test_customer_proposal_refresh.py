@@ -65,10 +65,12 @@ class CaseClient:
         self.cases=[{'id':'case-teacher','caseNumber':'APP-T','customer_cnic':'33100-2094014-7','customer_name':'Usman Khan','caseStatus':'New'}]
         self.policies=policies or []
         self.posts=[]
+        self.puts=[]
     async def get(self,url,**kw):
         if url.endswith('/customers'): data=self.customers
         elif url.endswith('/cases'): data=self.cases
         elif url.endswith('/policies'): data=self.policies
+        elif url.endswith('/underwriting-tracks'): data=getattr(self,'tracks',{})
         else: data=next((c for c in self.customers if url.endswith('/'+c['id'])),{})
         return httpx.Response(200,json=data,request=httpx.Request('GET',url))
     async def post(self,url,json=None,**kw):
@@ -78,6 +80,9 @@ class CaseClient:
             self.cases.append(case); data=case
         else: data={'id':'pol-new'}
         return httpx.Response(201,json=data,request=httpx.Request('POST',url))
+    async def put(self,url,json=None,**kw):
+        self.puts.append((url,json))
+        return httpx.Response(200,json={},request=httpx.Request('PUT',url))
 
 def test_cnic_without_a_case_never_falls_back_to_a_namesakes_case():
     from tool_executor import _find_case, _find_customer
@@ -93,6 +98,30 @@ def test_proposal_opens_its_own_case_and_links_to_it():
     assert result['case_id']=='case-new' and result['navigate']['route']=='case/case-new'
     assert client.posts[1][1]['policy_id']=='pol-new'  # the case is linked to its proposal
     assert 'APP-NEW' in result['message']
+
+def test_proposal_replaces_the_leads_form_plan_so_it_is_not_created_twice():
+    # Zainab Khan: Sehat Zamanat picked on the form, then "change it to Salary Protection" in the chat.
+    client=CaseClient()
+    client.customers[0]['details']={'phone':'123','pending_plan':{'product_name':'Sehat Zamanat','coverage_amount':12900000,'term_years':5}}
+    result=asyncio.run(_HANDLERS['create_proposal']({'cnic':'36302-0072138-8','product_name':'Salary Protection Plan'},_ctx(client)))
+    assert client.puts==[(client.puts[0][0],{'details':{'phone':'123'}})]  # form plan cleared, other details kept
+    assert 'replaces the previously selected **Sehat Zamanat**' in result['message']
+
+def test_switching_plan_never_opens_a_second_open_proposal():
+    client=CaseClient(policies=[{'id':'pol-old','status':'Quoted','product_name':'Sehat Zamanat'}])
+    result=asyncio.run(_HANDLERS['create_proposal']({'cnic':'36302-0072138-8','product_name':'Salary Protection Plan'},_ctx(client)))
+    assert result['skipped'] and not client.posts
+    assert 'open **Sehat Zamanat** proposal' in result['message'] and 'Change Plan' in result['message']
+    result=asyncio.run(_HANDLERS['create_proposal']({'cnic':'36302-0072138-8','product_name':'Salary Protection Plan','additional_proposal':True},_ctx(client)))
+    assert not result.get('skipped') and client.posts[0][1]['product_name']=='Salary Protection Plan'
+
+def test_new_proposal_asks_for_both_underwriters_before_the_e_application():
+    client=CaseClient()
+    client.tracks={'medical':{'status':'PENDING','reviewer':None},'financial':{'status':'PENDING','reviewer':None}}
+    result=asyncio.run(_HANDLERS['create_proposal']({'cnic':'36302-0072138-8','product_name':'Apna Savings'},_ctx(client)))
+    labels=[q['label'] for q in result['quick_actions']]
+    assert labels[:2]==['Assign Medical Underwriter','Assign Financial Underwriter'] and not any('E-App' in l for l in labels)
+    assert 'Assign the **Medical Underwriter and Financial Underwriter** first' in result['message']
 
 def test_e_application_opens_the_missing_case_for_an_open_proposal():
     from tool_executor import _case_for_open_proposal

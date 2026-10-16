@@ -51,6 +51,13 @@ def uses_specialist_reviews(case: dict) -> bool:
     return any((case.get(key) or {}).get("status", "PENDING") != "PENDING" or (case.get(key) or {}).get("assigned_user_id") for key in ("medical_review", "financial_review"))
 
 
+def unassigned_reviews(case: dict) -> list[str]:
+    """"Medical" / "Financial" for each specialist review the case row shows still pending without an underwriter."""
+    return [label for key, label in (("medical_review", "Medical"), ("financial_review", "Financial"))
+            if key in case and not (case.get(key) or {}).get("assigned_user_id")
+            and (case.get(key) or {}).get("status", "PENDING") == "PENDING"]
+
+
 def gate_rows(case: dict) -> list[dict]:
     if uses_specialist_reviews(case):
         rows = [{"key": key, "label": label, "status": (case.get(key) or {}).get("status") or "PENDING",
@@ -95,8 +102,14 @@ def application_state(case: dict) -> dict:
     elif open_gates:
         stage = "Pre-Underwriting"
         nxt = open_gates[0]
+        unassigned = unassigned_reviews(case)
         blockers += [f"{g['label']}: {g['status']}" for g in open_gates]
-        if nxt["key"] in {"medical_review", "financial_review"}:
+        if unassigned:
+            # tenant-service refuses every gate (e-application links included) until both underwriters are assigned
+            blockers.insert(0, f"No {' or '.join(unassigned)} Underwriter assigned — nothing can be sent to the customer yet.")
+            actions += [_chip(f"Assign {t} Underwriter", f"Assign the {t.lower()} review of case {no}", f"assign:{t.lower()}")
+                        for t in unassigned]
+        elif nxt["key"] in {"medical_review", "financial_review"}:
             actions.append(_chip("Check specialist reviews", f"Show specialist reviews for case {no}", "specialist_reviews"))
         else:
             meta = next(x for x in GATES if x[0] == nxt["key"])
