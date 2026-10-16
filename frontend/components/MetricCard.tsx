@@ -17,7 +17,7 @@ const ACCENT_GRADIENT: Record<NonNullable<MetricCardProps["accent"]>, string> = 
   slate:   "from-slate-500/5 to-slate-400/5",
   emerald: "from-blue-500/10 to-blue-400/5",
   amber:   "from-amber-500/10 to-orange-400/5",
-  blue:    "from-blue-600/10 to-blue-400/5",
+  blue:    "from-blue-50 to-blue-50/30",
   sky:     "from-sky-500/10 to-sky-400/5",
   red:     "from-rose-500/10 to-red-400/5",
   purple:  "from-blue-500/10 to-fuchsia-400/5",
@@ -29,7 +29,7 @@ const ACCENT_TEXT: Record<NonNullable<MetricCardProps["accent"]>, string> = {
   slate:   "text-slate-700",
   emerald: "text-blue-800",
   amber:   "text-amber-800",
-  blue:    "text-blue-800",
+  blue:    "text-slate-800",
   sky:     "text-sky-800",
   red:     "text-red-800",
   purple:  "text-blue-800",
@@ -41,7 +41,7 @@ const ACCENT_ICON_BG: Record<NonNullable<MetricCardProps["accent"]>, string> = {
   slate:   "bg-white text-slate-600 shadow-slate-200/50",
   emerald: "bg-white text-blue-600 shadow-blue-200/50",
   amber:   "bg-white text-amber-600 shadow-amber-200/50",
-  blue:    "bg-white text-blue-600 shadow-blue-200/50",
+  blue:    "bg-blue-50 text-blue-400 ring-1 ring-blue-100 shadow-blue-100/30",
   sky:     "bg-white text-sky-600 shadow-sky-200/50",
   red:     "bg-white text-rose-600 shadow-rose-200/50",
   purple:  "bg-white text-blue-600 shadow-blue-200/50",
@@ -66,8 +66,6 @@ export function MetricCard({ title, value, subtitle, accent = "slate", trend, ic
       {/* Decorative gradient overlay */}
       <div className={`absolute inset-0 bg-gradient-to-br ${ACCENT_GRADIENT[accent]} opacity-100 pointer-events-none`} />
       
-      {/* Glossy top highlight */}
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent" />
       
       <div className={`relative ${isCompact ? 'px-3 py-2.5' : 'px-4 py-3'}`}>
         <div className="flex items-start justify-between gap-2">

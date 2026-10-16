@@ -112,10 +112,17 @@ from role_seed import SEED_ROLES as _SEED_ROLES
 
 
 async def _seed_roles(session: AsyncSession) -> None:
+    """Create each built-in role once. A built-in a SuperAdmin later renamed or
+    deleted stays that way — except SuperAdmin itself, which must always exist."""
+    from shared.models.core import SystemRoleSeed
+
     for name, description in _SEED_ROLES:
         exists = (await session.exec(select(Role).where(Role.name == name))).first()
-        if not exists:
+        already_seeded = await session.get(SystemRoleSeed, name) is not None
+        if not exists and (not already_seeded or name == "SuperAdmin"):
             session.add(Role(name=name, description=description))
+        if not already_seeded:
+            session.add(SystemRoleSeed(name=name))
     await session.commit()
 
 

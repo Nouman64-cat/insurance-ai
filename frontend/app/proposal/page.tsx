@@ -116,6 +116,7 @@ const STATUS_LABEL: Record<string, string> = {
   AcceptedWithLoadings: "Accepted (Loadings)",
   Declined: "Rejected",
   Issued: "Issued",
+  Active: "Active",
 };
 
 const STATUS_BADGE_STYLE: Record<string, string> = {
@@ -127,6 +128,7 @@ const STATUS_BADGE_STYLE: Record<string, string> = {
   AcceptedWithLoadings: "bg-blue-50 text-blue-700 border-blue-200",
   Declined: "bg-rose-50 text-rose-700 border-rose-200",
   Issued: "bg-blue-50 text-blue-700 border-blue-200",
+  Active: "bg-emerald-50 text-emerald-700 border-emerald-200",
 };
 
 const STATUS_DOT: Record<string, string> = {
@@ -138,6 +140,7 @@ const STATUS_DOT: Record<string, string> = {
   AcceptedWithLoadings: "bg-blue-500",
   Declined: "bg-rose-500",
   Issued: "bg-blue-500",
+  Active: "bg-emerald-500",
 };
 
 function StatusBadge({ status, className = "" }: { status: string; className?: string }) {
@@ -1700,15 +1703,15 @@ function ProposalsTable({
         <thead>
           <tr className="border-b border-slate-200 bg-white text-[11px] font-semibold uppercase tracking-wider text-slate-400">
             <th className={`${th} pl-5 text-start`}>{tx("Applicant")}</th>
+            <th className={`${th} text-start`}>{tx("Agent")}</th>
             <th className={`${th} text-start`}>{tx("Type")}</th>
             <th className={`${th} text-start`}>{tx("Plan")}</th>
             <th className={`${th} text-start`}>{tx("Status")}</th>
             <th className={`${th} text-end`}>{tx("Coverage")}</th>
             <th className={`${th} text-center`}>{tx("Term")}</th>
             <th className={`${th} text-end`}>{tx("Premium")}</th>
-            <th className={`${th} text-end`}>{tx("Risk")}</th>
+            <th className={`${th} text-end`}>{tx("Loading")}</th>
             <th className={`${th} text-end`}>{tx("Total")}</th>
-            <th className={`${th} text-start`}>{tx("Underwriter")}</th>
             <th className={`${th} text-start`}>{tx("Generated")}</th>
             <th className="px-4 py-3 w-10"><span className="sr-only">{tx("Open")}</span></th>
           </tr>
@@ -1732,13 +1735,18 @@ function ProposalsTable({
                     </span>
                     <div className="min-w-0">
                       <p className="font-semibold text-slate-900 truncate max-w-[200px] group-hover:text-blue-700 transition-colors" title={row.customer_name}>{row.customer_name}</p>
-                      <p className="text-[11px] text-slate-400 mt-0.5 truncate max-w-[240px]" title={source ?? undefined}>
+                      <p className="text-[11px] text-slate-400 mt-0.5 truncate max-w-[240px]">
                         <span className="font-mono">{formatLeadDisplayId(row.customer_id, row.created_at, seg)}</span>
                         {" · "}<span className="font-mono">{row.customer_cnic ?? "—"}</span>
-                        {source ? ` · ${source}` : ""}
                       </p>
                     </div>
                   </div>
+                </td>
+                <td className="px-3 py-3.5">
+                  <p className="max-w-[200px] truncate text-slate-700 font-medium" title={source ?? undefined}>{row.acquisition_source_name || "—"}</p>
+                  {row.acquisition_source_name && (
+                    <p className="mt-0.5 text-[11px] text-slate-400">{tx(SOURCE_TYPE_LABELS[row.acquisition_source_type ?? ""] ?? "Source")}</p>
+                  )}
                 </td>
                 <td className="px-3 py-3.5">
                   <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${TYPE_STYLE[seg]}`}>{tx(TYPE_LABEL[seg])}</span>
@@ -1753,10 +1761,6 @@ function ProposalsTable({
                 <td className="px-3 py-3 text-end text-slate-600 tabular-nums whitespace-nowrap">{formatPKR(row.base_premium)}</td>
                 <td className="px-3 py-3 text-end text-slate-600 tabular-nums whitespace-nowrap">{formatPKR(row.loading_applied)}</td>
                 <td className="px-3 py-3 text-end font-bold text-slate-900 tabular-nums whitespace-nowrap">{formatPKR(row.total_premium)}</td>
-                <td className="px-3 py-3">
-                  <UnderwriterAvatar name={row.assigned_underwriter_name} />
-                  <div className="mt-1"><SlaHint status={row.sla_status} daysRemaining={row.sla_days_remaining} /></div>
-                </td>
                 <td className="px-3 py-3 text-slate-500 text-xs whitespace-nowrap">{displayDate(row.created_at)}</td>
                 <td className="px-4 py-3 text-right">
                   <button

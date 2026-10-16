@@ -1,9 +1,12 @@
 """The platform's built-in roles.
 
 Code across the system recognises these by name (verify_admin, the chat agent's
-permission matrix, the portal's menus…), so they are seeded at startup and
-protected from rename / deletion in the role management API.
+permission matrix, the portal's menus…), so they are seeded once at startup. A
+SuperAdmin may rename or delete them (losing the access tied to the name);
+only SuperAdmin itself is locked, so the platform console can't be lost.
 """
+
+LOCKED_ROLE_NAME = "SuperAdmin"
 
 SEED_ROLES = [
     ("SuperAdmin",  "Platform-level access — create tenants and bootstrap their first Admin."),

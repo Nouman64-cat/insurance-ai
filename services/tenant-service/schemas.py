@@ -203,7 +203,8 @@ class RoleManageRead(BaseModel):
     id: UUID
     name: str
     description: str
-    is_system: bool      # built-in: fixed name, can't be deleted
+    is_system: bool      # built-in: platform access is tied to its name
+    is_locked: bool = False  # SuperAdmin: can't be renamed or deleted
     user_count: int = 0  # users currently holding the role
 
 

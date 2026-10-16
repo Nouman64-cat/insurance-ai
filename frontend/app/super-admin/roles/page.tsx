@@ -12,6 +12,7 @@ interface Role {
   name: string;
   description: string;
   is_system: boolean;
+  is_locked: boolean;
   user_count: number;
 }
 
@@ -87,15 +88,22 @@ export default function RoleManagementPage() {
       setFormError(tx("Role name is required."));
       return;
     }
+    // Access across the platform is tied to built-in role names — renaming one strips it.
+    if (
+      editing?.is_system &&
+      form.name.trim() !== editing.name &&
+      !confirm(tx("\"{0}\" is a built-in role. The platform grants access by this exact name, so after renaming it the {1} user(s) holding it will lose that access. Rename anyway?", { 0: editing.name, 1: editing.user_count }))
+    )
+      return;
     setSaving(true);
     try {
       if (editing) {
-        // A built-in role's name is fixed — only its description is sent.
-        const payload = editing.is_system
+        // SuperAdmin's name is fixed — only its description is sent.
+        const payload = editing.is_locked
           ? { description: form.description }
           : { name: form.name, description: form.description };
         await api.put(`/roles/${editing.id}`, payload);
-        setSuccess(tx("Role \"{0}\" updated.", { 0: editing.is_system ? editing.name : form.name.trim() }));
+        setSuccess(tx("Role \"{0}\" updated.", { 0: editing.is_locked ? editing.name : form.name.trim() }));
       } else {
         await api.post("/roles", { name: form.name, description: form.description });
         setSuccess(tx("Role \"{0}\" created.", { 0: form.name.trim() }));
@@ -116,7 +124,10 @@ export default function RoleManagementPage() {
       setError(tx("\"{0}\" is still assigned to {1} user(s) — move them to another role before deleting it.", { 0: role.name, 1: role.user_count }));
       return;
     }
-    if (!confirm(tx("Delete the role \"{0}\"? This can't be undone.", { 0: role.name }))) return;
+    const prompt = role.is_system
+      ? tx("\"{0}\" is a built-in role that platform features depend on. Deleting it is permanent — it won't be recreated. Delete anyway?", { 0: role.name })
+      : tx("Delete the role \"{0}\"? This can't be undone.", { 0: role.name });
+    if (!confirm(prompt)) return;
     setDeletingId(role.id);
     try {
       await api.delete(`/roles/${role.id}`);
@@ -288,7 +299,7 @@ export default function RoleManagementPage() {
                                 role.is_system ? "bg-slate-100 text-slate-500" : "bg-blue-50 text-blue-600"
                               }`}
                             >
-                              {role.is_system ? (
+                              {role.is_locked ? (
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className="w-4 h-4">
                                   <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
                                 </svg>
@@ -330,8 +341,8 @@ export default function RoleManagementPage() {
                             </button>
                             <button
                               onClick={() => handleDelete(role)}
-                              disabled={role.is_system || deletingId === role.id}
-                              title={role.is_system ? tx("Built-in roles can't be deleted") : undefined}
+                              disabled={role.is_locked || deletingId === role.id}
+                              title={role.is_locked ? tx("SuperAdmin can't be deleted") : undefined}
                               className="px-3 py-1.5 text-xs font-semibold text-red-600 bg-white hover:bg-slate-50 transition-colors disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed"
                             >
                               {deletingId === role.id ? tx("Deleting…") : tx("Delete")}
@@ -353,7 +364,7 @@ export default function RoleManagementPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
             </svg>
             <p>
-              <span className="font-semibold text-slate-600">{tx("Built-in")}</span>{" "}{tx("roles are recognised by name across the platform, so only their description can be edited.")}{" "}<span className="font-semibold text-slate-600">{tx("Custom")}</span>{" "}{tx("roles can be assigned to users but carry no extra access until permissions are set up for them.")}
+              <span className="font-semibold text-slate-600">{tx("Built-in")}</span>{" "}{tx("roles are recognised by name across the platform — renaming or deleting one removes the access tied to it. SuperAdmin is locked.")}{" "}<span className="font-semibold text-slate-600">{tx("Custom")}</span>{" "}{tx("roles can be assigned to users but carry no extra access until permissions are set up for them.")}
             </p>
           </div>
         </div>
@@ -384,15 +395,17 @@ export default function RoleManagementPage() {
                   type="text"
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  disabled={!!editing?.is_system}
+                  disabled={!!editing?.is_locked}
                   maxLength={50}
                   placeholder={tx("e.g. Compliance Officer")}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                 />
                 <p className="text-[11px] text-slate-400">
-                  {editing?.is_system
-                    ? tx("Built-in role — the name is fixed because the platform recognises it by name.")
-                    : tx("2–50 characters: letters, numbers, spaces, hyphens or underscores.")}
+                  {editing?.is_locked
+                    ? tx("The SuperAdmin name is fixed — the platform console depends on it.")
+                    : editing?.is_system
+                      ? tx("Built-in role — the platform grants access by this name, so renaming it removes that access.")
+                      : tx("2–50 characters: letters, numbers, spaces, hyphens or underscores.")}
                 </p>
               </div>
               <div className="space-y-1.5">

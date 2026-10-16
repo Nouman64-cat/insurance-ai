@@ -261,6 +261,17 @@ class Role(SQLModel, table=True):
     users: List["User"] = Relationship(back_populates="role")
 
 
+class SystemRoleSeed(SQLModel, table=True):
+    """Built-in role names that have already been seeded once.
+
+    Lets a SuperAdmin rename or delete a built-in role without startup seeding
+    bringing the original name back.
+    """
+    __tablename__ = "system_role_seeds"
+
+    name: str = Field(primary_key=True, max_length=100)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # UserStatus & UserType
 # ─────────────────────────────────────────────────────────────────────────────

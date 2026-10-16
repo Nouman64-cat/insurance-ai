@@ -1226,8 +1226,7 @@ export default function LeadsHubPage() {
                       <table className="w-full min-w-[1080px] text-left text-sm whitespace-nowrap">
                         <thead className="bg-white border-b border-slate-200">
                           <tr className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                            <th className="pl-6 pr-4 py-3">{tx("Lead ID")}</th>
-                            <th className="px-4 py-3">{tx("Leads")}</th>
+                            <th className="pl-6 pr-4 py-3">{tx("Leads")}</th>
                             <th className="px-4 py-3">{tx("Type")}</th>
                             <th className="px-4 py-3">{tx("Agent")}</th>
                             <th className="px-4 py-3">{tx("Contact")}</th>
@@ -1262,16 +1261,14 @@ export default function LeadsHubPage() {
                                 onClick={() => handleCardClick(lead)}
                                 className={`group cursor-pointer transition-colors hover:bg-slate-50/70 ${isDead ? "opacity-60" : ""}`}
                               >
-                                <td className="pl-6 pr-4 py-3.5 font-mono text-[11px] font-medium text-slate-500">
-                                  {lead.displayId || "-"}
-                                </td>
-                                <td className="px-4 py-3.5">
+                                <td className="pl-6 pr-4 py-3.5">
                                   <div className="flex items-center gap-3">
                                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[11px] font-semibold text-blue-700 ring-1 ring-inset ring-blue-100">
                                       {initials(lead.name)}
                                     </span>
                                     <div className="min-w-0">
                                       <div className="font-semibold text-slate-900 group-hover:text-blue-700 transition-colors">{lead.name}</div>
+                                      <div className="mt-0.5 font-mono text-[11px] font-medium text-slate-500">{lead.displayId || "-"}</div>
                                       {lead.walkIn && (
                                         <div className="mt-1 flex flex-wrap items-center gap-1 font-normal">
                                           <span

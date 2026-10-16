@@ -26,6 +26,13 @@ const COLOR_CLASSES: Record<string, { badge: string; accent: string }> = {
   rose: { badge: "bg-rose-50 text-rose-700 border-rose-200", accent: "border-t-rose-500" },
 };
 
+const TYPE_LABELS: Record<string, string> = {
+  TERM_LIFE: "Term life", WHOLE_LIFE: "Whole life", ENDOWMENT: "Endowment",
+  CHILD_EDUCATION_MARRIAGE: "Education & marriage", GROUP_LIFE: "Group life",
+  SAVINGS: "Savings", SINGLE_PREMIUM: "Single premium", HEALTH_CASH: "Health cash",
+};
+const typeLabel = (type: string) => TYPE_LABELS[type] ?? type.toLowerCase().replaceAll("_", " ");
+
 const COLOR_OPTIONS = Object.keys(COLOR_CLASSES);
 const INSURANCE_TYPES = [
   "TERM_LIFE",
@@ -270,14 +277,16 @@ function PlanCatalog() {
   const { pageItems: pagedPlans, pagination: planPagination } = usePagination(filteredPlans);
 
   return (
-    <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full font-sans">
+    <div className="px-5 py-6 sm:px-8 space-y-6 max-w-screen-2xl mx-auto w-full font-sans">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="relative flex flex-wrap items-center justify-between gap-5 overflow-hidden rounded-2xl border border-blue-100 bg-blue-50/70 px-6 py-7 sm:px-8">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Insurance Plans")}</h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            {tx("Your tenant's catalog of plan types, their eligibility rules, and required documents.")}
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{tx("Product catalog")}</p>
+          <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900 tracking-tight">{tx("Insurance Plans")}</h1>
+          <p className="text-sm text-slate-500 mt-2 max-w-xl leading-6">
+            {tx("Explore coverage options, eligibility and early-exit terms in one place.")}
           </p>
+          {!loading && <div className="mt-4 flex flex-wrap gap-2 text-xs"><span className="rounded-lg border border-blue-100 bg-white/80 px-3 py-1.5 text-slate-600">{plans.length} {tx("plans")}</span><span className="flex items-center gap-2 rounded-lg border border-blue-100 bg-white/80 px-3 py-1.5 text-slate-600"><span className="h-1.5 w-1.5 rounded-full bg-blue-400" />{plans.filter(p => p.status === "Active").length} {tx("active")}</span></div>}
         </div>
         {isAdmin && (
           <div className="flex items-center gap-2 shrink-0">
@@ -291,7 +300,7 @@ function PlanCatalog() {
             )}
             <button
               onClick={openCreate}
-              className="text-sm font-semibold px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+              className="text-sm font-semibold px-4 py-3 rounded-xl border border-blue-200 bg-white/90 text-slate-700 hover:bg-blue-100 shadow-sm"
             >
               {tx("+ New Plan")}
             </button>
@@ -319,29 +328,19 @@ function PlanCatalog() {
         </div>
       ) : (
         <>
-          {/* Search + filters */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative flex-1 min-w-[220px]">
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={tx("Search by name, code, description, or bank…")}
-                className="w-full rounded-lg border border-slate-300 pl-3 pr-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-              />
+          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" aria-label={tx("Plan filters")}>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
+              <div role="group" aria-label={tx("Distribution channel")} className="flex flex-wrap gap-1">{[ALL,...PRODUCT_CATEGORIES].map(channel => <button key={channel} type="button" aria-pressed={productCategoryFilter === channel} onClick={() => setProductCategoryFilter(channel)} className={`rounded-lg px-3 py-2 text-xs font-medium transition ${productCategoryFilter === channel ? "border border-blue-100 bg-blue-50 text-slate-700" : "border border-transparent text-slate-400 hover:bg-slate-50 hover:text-slate-600"}`}>{tx(channel === ALL ? "All channels" : channel)}</button>)}</div>
+              <span className="text-xs text-slate-400">{filteredPlans.length} {tx("matching plans")}</span>
             </div>
-            <FilterSelect value={productCategoryFilter} onChange={setProductCategoryFilter} label={tx("Channel")} options={PRODUCT_CATEGORIES} />
-            <FilterSelect value={insuranceTypeFilter} onChange={setInsuranceTypeFilter} label={tx("Type")} options={INSURANCE_TYPES} />
-            <FilterSelect value={categoryFilter} onChange={setCategoryFilter} label={tx("Category")} options={["Individual", "Group"]} />
-            <FilterSelect value={statusFilter} onChange={setStatusFilter} label={tx("Status")} options={STATUSES} />
-            {hasActiveFilters && (
-              <button
-                onClick={clearFilters}
-                className="text-xs font-semibold px-3 py-2 rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50"
-              >
-                {tx("Clear filters")}
-              </button>
-            )}
-          </div>
+            <div className="grid items-center gap-3 p-4 sm:px-5 lg:grid-cols-[minmax(240px,1fr)_auto_auto_auto_auto]">
+              <div className="relative"><svg className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 5 5" /></svg><input aria-label={tx("Search insurance plans")} value={search} onChange={e => setSearch(e.target.value)} placeholder={tx("Find a plan or partner bank…")} className="w-full rounded-xl border border-slate-200 bg-slate-50/60 py-2.5 pl-10 pr-3 text-sm text-slate-700 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100" /></div>
+              <FilterSelect value={insuranceTypeFilter} onChange={setInsuranceTypeFilter} label={tx("Coverage")} options={INSURANCE_TYPES} />
+              <FilterSelect value={categoryFilter} onChange={setCategoryFilter} label={tx("Customer")} options={["Individual","Group"]} />
+              <FilterSelect value={statusFilter} onChange={setStatusFilter} label={tx("Status")} options={STATUSES} />
+              {hasActiveFilters && <button onClick={clearFilters} className="px-2 py-2 text-xs font-medium text-slate-500 hover:text-slate-800">{tx("Reset filters")}</button>}
+            </div>
+          </section>
 
           {filteredPlans.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center text-sm text-slate-500">
@@ -422,16 +421,17 @@ function FilterSelect({
 }) {
   return (
     <select
+      aria-label={label}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className={`text-sm rounded-lg border px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
-        value === ALL ? "border-slate-300 text-slate-500" : "border-blue-300 text-blue-700 bg-blue-50/50 font-semibold"
+      className={`text-xs rounded-xl border px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 ${
+        value === ALL ? "border-slate-200 text-slate-500" : "border-blue-200 text-slate-700 bg-blue-50/50 font-medium"
       }`}
     >
       <option value={ALL}>{label}{tx(": All")}</option>
       {options.map((o) => (
         <option key={o} value={o}>
-          {o}
+          {tx(TYPE_LABELS[o] ?? o)}
         </option>
       ))}
     </select>
@@ -458,83 +458,23 @@ function formatPKRCompact(n: number): string {
 }
 
 function PlansTable({ plans, onView }: { plans: InsurancePlan[]; onView: (p: InsurancePlan) => void }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
-      <table className="w-full text-sm min-w-[1150px]">
-        <thead>
-          <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-            <th className="px-4 py-2.5">{tx("Plan")}</th>
-            <th className="px-4 py-2.5">{tx("Type")}</th>
-            <th className="px-4 py-2.5">{tx("Channel")}</th>
-            <th className="px-4 py-2.5">{tx("Category")}</th>
-            <th className="px-4 py-2.5">{tx("Entry Age")}</th>
-            <th className="px-4 py-2.5">{tx("Term")}</th>
-            <th className="px-4 py-2.5">{tx("Medical Exam Thresholds (PKR)")}</th>
-            <th className="px-4 py-2.5">{tx("Status")}</th>
-            <th className="px-4 py-2.5">{tx("Early Exit")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {plans.map((plan) => {
-            const colors = COLOR_CLASSES[plan.color] ?? COLOR_CLASSES.blue;
-            const tiers = [...plan.medical_exam_tiers].sort((a, b) => a.minSumAssured - b.minSumAssured);
-            return (
-              <tr
-                key={plan.id}
-                onClick={() => onView(plan)}
-                className="border-b border-slate-100 last:border-0 cursor-pointer hover:bg-slate-50"
-              >
-                <td className="px-4 py-2.5">
-                  <div className="font-semibold text-slate-800">{plan.label}</div>
-                  <div className="text-[11px] text-slate-400">{plan.code}</div>
-                </td>
-                <td className="px-4 py-2.5">
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${colors.badge}`}>
-                    {plan.insurance_type}
-                  </span>
-                </td>
-                <td className="px-4 py-2.5">
-                  <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${PRODUCT_CATEGORY_BADGE[plan.product_category] ?? ""}`}
-                  >
-                    {plan.product_category}
-                  </span>
-                  {plan.partner_bank && <div className="text-[11px] text-slate-400 mt-1">{plan.partner_bank}</div>}
-                </td>
-                <td className="px-4 py-2.5 text-slate-600">{plan.category}</td>
-                <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap">
-                  {plan.entry_age_min}–{plan.entry_age_max}{" "}{tx("yrs")}
-                </td>
-                <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap">
-                  {plan.term_min_years}–{plan.term_max_years}{" "}{tx("yrs")}
-                </td>
-                <td className="px-4 py-2.5">
-                  {tiers.length === 0 ? (
-                    <span className="text-[11px] text-slate-400">—</span>
-                  ) : (
-                    <div className="flex flex-col gap-0.5">
-                      {tiers.map((t, i) => (
-                        <span key={i} className="text-[11px] text-slate-600 whitespace-nowrap">
-                          <span className="text-slate-400">≥{formatPKRCompact(t.minSumAssured)}:</span>{" "}
-                          {shortTierLabel(t.tier)}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </td>
-                <td className="px-4 py-2.5">
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${STATUS_BADGE[plan.status] ?? ""}`}>
-                    {plan.status}
-                  </span>
-                </td>
-                <td className="px-4 py-2.5 text-xs text-slate-600">{surrenderStatus(plan.surrender_terms)}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
+  return <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" aria-label={tx("Insurance plan catalog")}>
+    <div className="overflow-x-auto"><table className="w-full min-w-[1040px] text-left text-sm">
+      <thead><tr className="border-b border-slate-100 bg-slate-50/60 text-[10px] font-medium uppercase tracking-widest text-slate-400">{["Plan & coverage","Distribution","Eligibility","Medical requirements","Early exit","Status",""].map((label,i) => <th key={i} className="px-5 py-4 font-medium">{tx(label)}</th>)}</tr></thead>
+      <tbody className="divide-y divide-slate-100">{plans.map(plan => {
+        const tiers = [...plan.medical_exam_tiers].sort((a,b) => a.minSumAssured-b.minSumAssured);
+        return <tr key={plan.id} className="group cursor-pointer transition-colors hover:bg-blue-50/40" onClick={() => onView(plan)}>
+          <td className="max-w-[330px] px-5 py-5"><div className="flex items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-blue-400"><svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m12 3 8 3v6c0 5-8 9-8 9S4 17 4 12V6Z" /><path d="m8 12 3 3 5-6" /></svg></span><div><button onClick={e => {e.stopPropagation();onView(plan);}} className="text-left font-semibold leading-5 text-slate-800 hover:underline focus-visible:outline-blue-400">{plan.label}</button><p className="mt-1 text-xs text-slate-400">{tx(typeLabel(plan.insurance_type))}</p></div></div></td>
+          <td className="px-5 py-5"><p className="text-xs font-medium text-slate-600">{tx(plan.product_category)}</p><p className="mt-1 text-xs text-slate-400">{plan.partner_bank || tx(plan.product_category === "Bancassurance" ? "Bank partner not specified" : "Direct distribution")}</p></td>
+          <td className="px-5 py-5 text-xs"><p className="font-medium text-slate-600">{plan.entry_age_min}–{plan.entry_age_max} {tx("years old")}</p><p className="mt-1 text-slate-400">{plan.term_min_years}–{plan.term_max_years} {tx("year term")} · {tx(plan.category)}</p></td>
+          <td className="px-5 py-5">{tiers.length ? <ul className="space-y-1.5 text-xs text-slate-500">{tiers.map((tier,i) => <li key={i}><span className="mr-1.5 inline-block h-1 w-1 rounded-full bg-blue-300" />{tier.minSumAssured > 0 ? `PKR ${formatPKRCompact(tier.minSumAssured)}+ · ` : ""}{tx(shortTierLabel(tier.tier) === "None" ? "No examination" : shortTierLabel(tier.tier))}</li>)}</ul> : <span className="text-xs text-slate-400">{tx("Not specified")}</span>}</td>
+          <td className="max-w-[170px] px-5 py-5 text-xs leading-5 text-slate-500">{surrenderStatus(plan.surrender_terms)}</td>
+          <td className="px-5 py-5"><span className="inline-flex items-center gap-1.5 rounded-lg border border-blue-100 bg-blue-50/80 px-2.5 py-1 text-[11px] font-medium text-slate-600"><span className={`h-1.5 w-1.5 rounded-full ${plan.status === "Active" ? "bg-blue-400" : "bg-slate-300"}`} />{tx(plan.status)}</span></td>
+          <td className="px-4 py-5"><button onClick={e => {e.stopPropagation();onView(plan);}} aria-label={tx("View {0}",{0:plan.label})} className="flex h-8 w-8 items-center justify-center rounded-lg border border-transparent text-slate-400 transition group-hover:border-blue-100 group-hover:bg-blue-50 group-hover:text-slate-600 focus-visible:outline-blue-400">→</button></td>
+        </tr>;
+      })}</tbody>
+    </table></div>
+  </section>;
 }
 
 // ── Plan detail drawer ───────────────────────────────────────────────────────
@@ -848,7 +788,7 @@ function PlanFormModal({
               <label className={labelCls}>{tx("Insurance Type")}</label>
               <select className={inputCls} value={form.insurance_type} onChange={(e) => setField("insurance_type", e.target.value as any)}>
                 {INSURANCE_TYPES.map((t) => (
-                  <option key={t} value={t}>{t}</option>
+                  <option key={t} value={t}>{tx(typeLabel(t))}</option>
                 ))}
               </select>
             </div>

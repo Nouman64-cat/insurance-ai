@@ -1,9 +1,10 @@
 """Role management (CRUD) — SuperAdmin only.
 
-Roles are global (not tenant-scoped). The platform's built-in roles are
-recognised by *name* throughout the codebase, so they can't be renamed or deleted
-here (their description can be edited). Any other role can be created, renamed and
-deleted — deletion is refused while users still hold the role.
+Roles are global (not tenant-scoped). Any role can be created, renamed and
+deleted — deletion is refused while users still hold the role. Built-in roles are
+recognised by *name* throughout the codebase, so renaming or deleting one drops
+the access tied to it (the UI warns first). Only SuperAdmin is locked, so the
+platform console can never be lost.
 
 The public, read-only ``GET /roles`` (used by pickers everywhere) lives in main.py
 and is unchanged; this router adds the management endpoints beside it.
@@ -18,7 +19,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
-from role_seed import SYSTEM_ROLE_NAMES
+from role_seed import LOCKED_ROLE_NAME, SYSTEM_ROLE_NAMES
 from routers.auth import verify_superadmin
 from schemas import RoleCreate, RoleManageRead, RoleUpdate
 from shared.models.core import Role, User
@@ -57,6 +58,7 @@ def _to_read(role: Role, user_count: int = 0) -> RoleManageRead:
         name=role.name,
         description=role.description,
         is_system=role.name in SYSTEM_ROLE_NAMES,
+        is_locked=role.name == LOCKED_ROLE_NAME,
         user_count=user_count,
     )
 
@@ -98,10 +100,10 @@ async def update_role(role_id: UUID, body: RoleUpdate, session: AsyncSession = D
     if "name" in updates and updates["name"] is not None:
         new_name = _clean_name(updates["name"])
         if new_name != role.name:
-            if role.name in SYSTEM_ROLE_NAMES:
+            if role.name == LOCKED_ROLE_NAME:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"'{role.name}' is a built-in role and can't be renamed — the platform recognises it by name.",
+                    detail=f"'{role.name}' can't be renamed — the platform console depends on it.",
                 )
             if await _name_taken(session, new_name, except_id=role.id):
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A role named '{new_name}' already exists.")
@@ -119,10 +121,10 @@ async def update_role(role_id: UUID, body: RoleUpdate, session: AsyncSession = D
 @router.delete("/{role_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a role")
 async def delete_role(role_id: UUID, session: AsyncSession = Depends(get_session)):
     role = await _get_role(session, role_id)
-    if role.name in SYSTEM_ROLE_NAMES:
+    if role.name == LOCKED_ROLE_NAME:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"'{role.name}' is a built-in role and can't be deleted.",
+            detail=f"'{role.name}' can't be deleted — the platform console depends on it.",
         )
     holders = (await session.execute(
         select(func.count()).select_from(User).where(User.role_id == role.id)

@@ -297,19 +297,19 @@ export default function PolicyholdersPage() {
           </button>
           <button
             onClick={() => setActiveAdd({ type: "INDIVIDUAL" })}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow active:scale-95"
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-600 bg-blue-50 border border-blue-100 rounded-lg hover:bg-blue-100 transition-all shadow-sm hover:shadow active:scale-95"
           >
             {tx("+ Add Individual")}
           </button>
           <button
             onClick={() => setActiveAdd({ type: "FAMILY" })}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow active:scale-95"
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-600 bg-blue-50 border border-blue-100 rounded-lg hover:bg-blue-100 transition-all shadow-sm hover:shadow active:scale-95"
           >
             {tx("+ Add Family")}
           </button>
           <button
             onClick={() => setActiveAdd({ type: "CORPORATE" })}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow active:scale-95"
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-600 bg-blue-50 border border-blue-100 rounded-lg hover:bg-blue-100 transition-all shadow-sm hover:shadow active:scale-95"
           >
             {tx("+ Add Corporate")}
           </button>
@@ -355,7 +355,7 @@ export default function PolicyholdersPage() {
                   onClick={() => setFilterType(ft as FilterType)}
                   className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-300 ${
                     filterType === ft
-                      ? "bg-white text-blue-600 shadow-md ring-1 ring-black/5 scale-[1.02]"
+                      ? "bg-blue-50 text-slate-600 shadow-sm ring-1 ring-blue-100"
                       : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
                   }`}
                 >
@@ -412,7 +412,7 @@ export default function PolicyholdersPage() {
             {activeFilterChips.map((chip) => (
               <span
                 key={chip.key}
-                className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-medium"
+                className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-blue-50 border border-blue-100 text-slate-600 text-xs font-medium"
               >
                 {tx(chip.label)}
                 <button
@@ -486,21 +486,21 @@ export default function PolicyholdersPage() {
                         </td>
                         <td className="px-6 py-4">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border ${
-                            p.type === 'INDIVIDUAL' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                            p.type === 'FAMILY' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                            'bg-blue-50 text-blue-700 border-blue-200'
+                            p.type === 'INDIVIDUAL' ? 'bg-blue-50 text-slate-600 border-blue-100' :
+                            p.type === 'FAMILY' ? 'bg-blue-50 text-slate-600 border-blue-100' :
+                            'bg-blue-50 text-slate-600 border-blue-100'
                           }`}>
                             {p.type}
                           </span>
                         </td>
                         <td className="px-6 py-4 text-slate-600">{p.contact_info}</td>
                         <td className="px-6 py-4 text-slate-500 font-mono text-xs">{p.primaryIdentifier || "-"}</td>
-                        <td className="px-6 py-4 text-blue-700 font-mono font-semibold text-xs">{p.policy_number || "-"}</td>
+                        <td className="px-6 py-4 text-slate-600 font-mono font-medium text-xs">{p.policy_number || "-"}</td>
                         <td className="px-6 py-4">
                           {p.policy_status ? (
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border ${
                               p.policy_status === "Active" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-                              p.policy_status === "Matured" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                              p.policy_status === "Matured" ? "bg-blue-50 text-slate-600 border-blue-100" :
                               "bg-slate-100 text-slate-600 border-slate-300"
                             }`}>{tx(p.policy_status)}</span>
                           ) : <span className="text-slate-300">-</span>}
@@ -509,7 +509,7 @@ export default function PolicyholdersPage() {
                         <td className="px-6 py-4 text-right space-x-3">
                           <button 
                             onClick={(e) => { e.stopPropagation(); handleRowClick(p); }} 
-                            className="text-blue-600 hover:text-blue-800 font-semibold text-xs"
+                            className="rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-1.5 text-slate-600 hover:bg-blue-100 font-medium text-xs"
                           >
                             {tx("View Details")}
                           </button>
@@ -555,7 +555,7 @@ export default function PolicyholdersPage() {
                                       {(familyMembersCache[p.id] || []).map((m: any) => (
                                         <tr key={m.id} className="hover:bg-slate-50 transition-colors">
                                           <td className="px-4 py-2.5 font-semibold text-slate-800">{m.name}</td>
-                                          <td className="px-4 py-2.5 text-blue-700 font-medium">{m.relationship || "-"}</td>
+                                          <td className="px-4 py-2.5 text-slate-600 font-medium">{m.relationship || "-"}</td>
                                           <td className="px-4 py-2.5 text-slate-500 font-mono">{m.cnic || "-"}</td>
                                           <td className="px-4 py-2.5 text-slate-600">
                                             {m.gender || "-"} {m.dob ? `· ${new Date().getFullYear() - new Date(m.dob).getFullYear()}y` : ""}

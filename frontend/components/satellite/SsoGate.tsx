@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import BrandSplash from "@/components/BrandSplash";
 import api from "@/app/services/api";
 import { clearLocalSession, redirectToLogin, resetLoginRedirects } from "@/lib/sso";
 import { PORTAL_URL } from "@/lib/appLinks";
@@ -133,25 +134,14 @@ export default function SsoGate({
 
   if (!user) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-3 bg-slate-50 px-6 text-center text-sm text-slate-500">
-        {problem === null && (
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
-        )}
-        <p>
-          {problem === "unreachable"
-            ? tx("Can't reach the sign-in service. Retrying…")
-            : problem === "notResponding"
-              ? tx("The sign-in service isn't responding. Retrying…")
-              : problem === "loop"
-                ? tx("Signing in keeps failing in this browser. Sign in on the portal, then reload this page.")
-                : tx("Signing you in…")}
-        </p>
-        {problem === "loop" && (
-          <a href={`${PORTAL_URL}/login`} className="text-xs font-semibold text-blue-600 hover:underline">
-            {tx("Open the portal sign-in")}
-          </a>
-        )}
-      </div>
+      <BrandSplash logoSrc={`${PORTAL_URL}/logo-full.png`} loading={problem === null} message={
+        problem === "unreachable" ? tx("Can't reach the sign-in service. Retrying…")
+          : problem === "notResponding" ? tx("The sign-in service isn't responding. Retrying…")
+            : problem === "loop" ? tx("Signing in keeps failing in this browser. Sign in on the portal, then reload this page.")
+              : tx("Signing you in…")
+      }>
+        {problem === "loop" && <a href={`${PORTAL_URL}/login`} className="mt-4 text-xs font-semibold text-blue-600 hover:underline">{tx("Open the portal sign-in")}</a>}
+      </BrandSplash>
     );
   }
 
