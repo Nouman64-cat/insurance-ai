@@ -5,8 +5,7 @@ import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import api from "../services/api";
 import { getQuote, listQuotes, QuoteDetail, QuoteListItem } from "../services/quotes";
-import { MetricCard } from "@/components/MetricCard";
-import { SegmentDropdown, SegmentFilter } from "@/components/SegmentDropdown";
+import type { SegmentFilter } from "@/components/SegmentDropdown";
 import { type StatusFilter } from "@/components/StatusDropdown";
 import { FancyDropdown, FancyDropdownOption } from "@/components/FancyDropdown";
 import { fmtCoverage } from "@/lib/mock-data";
@@ -691,7 +690,7 @@ export default function QuotePage() {
       const data = await listQuotes(filters);
       let quotesList = data || [];
 
-      // Fetch customers an agent has explicitly sent here with "Send Draft" on the
+      // Fetch customers an agent has explicitly sent here with "Create Proposal" on the
       // Leads board (profile_status DRAFT) that don't have a real quote yet, so they
       // show up in the Draft tab. Leads and In Progress customers stay on the Leads
       // board until sent. `customers` has no server-side status filter, so the
@@ -810,11 +809,14 @@ export default function QuotePage() {
     const q = search.trim().toLowerCase();
     let fullyFilteredQuotes = segmentQuotes;
     if (q) {
+      // Same match as the list below, so the totals describe the rows on screen.
       fullyFilteredQuotes = segmentQuotes.filter(
         (qt) =>
           qt.customer_name?.toLowerCase().includes(q) ||
-          qt.policy_name?.toLowerCase().includes(q) ||
-          (qt.customer_type === "ORGANIZATION" && qt.registration_number?.toLowerCase().includes(q))
+          qt.customer_cnic?.toLowerCase().includes(q) ||
+          qt.plan_label?.toLowerCase().includes(q) ||
+          (qt.organization_name?.toLowerCase().includes(q) ?? false) ||
+          (qt.family_group_name?.toLowerCase().includes(q) ?? false)
       );
     }
     const totalCoverage = fullyFilteredQuotes.reduce((sum, qt) => sum + qt.coverage_amount, 0);
@@ -949,73 +951,81 @@ export default function QuotePage() {
   };
 
   return (
-    <div className="px-6 py-5 max-w-screen-2xl mx-auto w-full space-y-5">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm shrink-0">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-              <path d="M14 3v4a1 1 0 001 1h4" />
-              <path d="M17 21H7a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5v11a2 2 0 01-2 2z" />
-              <path d="M9 13h6M9 17h4" />
-            </svg>
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Proposals & Applications")}</h1>
-            <p className="text-sm text-slate-500 mt-0.5 max-w-2xl">
-              {tx("A draft is a proposal. Once it is submitted it becomes an application and moves through review and underwriting. Corporate entries nest by organization and master policy; family entries by family and floater/life-bundle policy.")}
-            </p>
-          </div>
+    <div className="px-6 py-5 max-w-screen-2xl mx-auto w-full space-y-4">
+      {/* Header — same shape as the Leads page: title, one-line description, actions on the right */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Proposals & Applications")}</h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {tx("A draft is a proposal; once submitted it becomes an application and moves through review and underwriting.")}
+          </p>
         </div>
-        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold tracking-wide font-mono shrink-0">
-          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-          {tx("GET /quotes")}
-        </span>
-      </div>
-
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map((k) => <MetricCard key={k.title} {...k} />)}
+        <button
+          onClick={fetchQuotes}
+          disabled={loading}
+          className="flex items-center gap-1.5 self-start px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm disabled:opacity-50"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}>
+            <polyline points="23 4 23 10 17 10" />
+            <polyline points="1 20 1 14 7 14" />
+            <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+          </svg>
+          {tx("Refresh")}
+        </button>
       </div>
 
       <div className="flex flex-col gap-3">
-        {/* Stage filter: one tap to see only the proposals at that stage, with how many; "All proposals" until one is picked */}
-        <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label={tx("Stage")}>
-          {STATUS_TABS.map((t) => {
-            const on = activeTab === t.id;
-            const dot: Record<string, string> = {
-              ALL: "bg-slate-400", Quoted: "bg-slate-400", Proposed: "bg-blue-500", UnderReview: "bg-amber-500",
-              InformationRequested: "bg-amber-300", Approved: "bg-emerald-500", Declined: "bg-rose-500", Issued: "bg-emerald-500",
-            };
-            return (
+        {/* Toolbar: segment tabs with counts, search, filters, view toggle — every control 42px tall */}
+        <div className="flex flex-wrap items-center gap-3 w-full">
+          <div className="inline-flex h-[42px] items-stretch bg-white p-1 rounded-xl shadow-sm border border-slate-200 shrink-0">
+            {([["all", "All"], ["individual", "Individual"], ["family", "Family"], ["organization", "Corporate"]] as [SegmentFilter, string][]).map(([value, label]) => (
               <button
-                key={t.id}
+                key={value}
                 type="button"
-                role="tab"
-                aria-selected={on}
-                onClick={() => setActiveTab(t.id as StatusFilter)}
-                className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors ${
-                  on ? "border-blue-600 bg-blue-600 text-white shadow-sm" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
-                }`}
+                onClick={() => setSegment(value)}
+                className={`inline-flex items-center gap-2 px-3.5 rounded-lg text-sm font-semibold transition-colors ${segment === value
+                  ? "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-100"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                  }`}
               >
-                {t.id !== "ALL" && <span className={`h-2 w-2 rounded-full ${on ? "bg-white" : dot[t.id] ?? "bg-slate-400"}`} />}
-                {tx(t.label)}
-                <span className={`tabular-nums ${on ? "text-blue-100" : "text-slate-400"}`}>{statusCounts[t.id as StatusFilter] ?? 0}</span>
+                {tx(label)}
+                <span className={`min-w-[1.5rem] rounded-full px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${segment === value ? "bg-white text-blue-700 ring-1 ring-inset ring-blue-100" : "bg-slate-100 text-slate-500"}`}>
+                  {segmentCounts[value] ?? 0}
+                </span>
               </button>
-            );
-          })}
-        </div>
-        <div className="flex flex-wrap gap-3 items-center">
+            ))}
+          </div>
+
+          <div className="relative w-full max-w-[320px] shrink-0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none">
+              <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              type="text"
+              placeholder={tx("Search by customer, CNIC, organization, or plan…")}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full h-[42px] ps-9 pe-8 text-sm border border-slate-200 rounded-xl bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-shadow"
+            />
+            {search && (
+              <button onClick={() => setSearch("")} className="absolute end-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                ✕
+              </button>
+            )}
+          </div>
+
           <button
             onClick={() => setFiltersOpen(!filtersOpen)}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border rounded-lg transition-colors ${
-              filtersOpen ? "bg-blue-50 border-blue-200 text-blue-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+            className={`inline-flex items-center gap-2 h-[42px] px-4 rounded-xl text-sm font-semibold border shadow-sm transition-colors shrink-0 ${
+              filtersOpen || activeFilterCount > 0 ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
             }`}
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-              <line x1="4" y1="6" x2="20" y2="6" /><line x1="8" y1="12" x2="16" y2="12" /><line x1="11" y1="18" x2="13" y2="18" />
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
             </svg>
-            {filtersOpen ? tx("Hide Filters") : tx("Advanced Filters")}
+            {tx("Filters")}
             {activeFilterCount > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-600 text-white">{activeFilterCount}</span>
+              <span className="inline-flex items-center justify-center min-w-[1.25rem] h-[1.25rem] px-1.5 rounded-full bg-blue-600 text-white text-[10px] font-bold">{activeFilterCount}</span>
             )}
           </button>
           {activeFilterCount > 0 && (
@@ -1023,9 +1033,27 @@ export default function QuotePage() {
               {tx("Clear filters")}
             </button>
           )}
+
+          <div className="ml-auto shrink-0 inline-flex h-[42px] items-stretch bg-white p-1 rounded-xl shadow-sm border border-slate-200">
+            <button
+              onClick={() => setViewMode("grid")}
+              title={tx("Grid View")}
+              className={`px-2 rounded-lg transition-all ${viewMode === "grid" ? "bg-blue-50 text-blue-600" : "text-slate-500 hover:text-slate-700"}`}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>
+            </button>
+            <button
+              onClick={() => setViewMode("list")}
+              title={tx("List View")}
+              className={`px-2 rounded-lg transition-all ${viewMode === "list" ? "bg-blue-50 text-blue-600" : "text-slate-500 hover:text-slate-700"}`}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>
+            </button>
+          </div>
         </div>
+
         {filtersOpen && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">{tx("Created From")}</label>
               <input
@@ -1070,53 +1098,41 @@ export default function QuotePage() {
             </div>
           </div>
         )}
-      </div>
 
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
-          <div className="relative w-full max-w-xs">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none">
-              <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-            <input
-              type="text"
-              placeholder={tx("Search by customer, CNIC, organization, or plan…")}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full ps-9 pe-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
-            />
+        {/* Stage filter: quiet pills, the selected one dark, empty stages dimmed */}
+        <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label={tx("Stage")}>
+          {STATUS_TABS.map((t) => {
+            const on = activeTab === t.id;
+            const count = statusCounts[t.id as StatusFilter] ?? 0;
+            const dot: Record<string, string> = {
+              ALL: "bg-slate-400", Quoted: "bg-slate-400", Proposed: "bg-blue-500", UnderReview: "bg-amber-500",
+              InformationRequested: "bg-amber-300", Approved: "bg-emerald-500", Declined: "bg-rose-500", Issued: "bg-emerald-500",
+            };
+            return (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                onClick={() => setActiveTab(t.id as StatusFilter)}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  on ? "bg-slate-900 text-white" : count === 0 ? "text-slate-400 hover:bg-slate-100" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                }`}
+              >
+                {t.id !== "ALL" && <span className={`h-1.5 w-1.5 rounded-full ${on ? "bg-white" : count === 0 ? "bg-slate-300" : dot[t.id] ?? "bg-slate-400"}`} />}
+                {tx(t.label)}
+                <span className={`tabular-nums ${on ? "text-slate-300" : "text-slate-400"}`}>{count}</span>
+              </button>
+            );
+          })}
+          {/* What used to be the KPI cards, as one quiet line */}
+          <div className="ml-auto flex items-center gap-4 text-xs text-slate-500">
+            {kpis.slice(1).map((k) => (
+              <span key={k.title} className="whitespace-nowrap">
+                {k.title} <span className="font-semibold text-slate-800 tabular-nums">{k.value}</span>
+              </span>
+            ))}
           </div>
-          <SegmentDropdown value={segment} onChange={setSegment} counts={segmentCounts} />
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="inline-flex bg-slate-100/80 p-1 rounded-xl shadow-inner border border-slate-200/60 shrink-0">
-            <button
-              onClick={() => setViewMode("list")}
-              title={tx("List View")}
-              className={`p-2 rounded-lg transition-all ${viewMode === "list" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>
-            </button>
-            <button
-              onClick={() => setViewMode("grid")}
-              title={tx("Grid View")}
-              className={`p-2 rounded-lg transition-all ${viewMode === "grid" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>
-            </button>
-          </div>
-          <button
-            onClick={fetchQuotes}
-            disabled={loading}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50 h-[36px]"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}>
-              <polyline points="23 4 23 10 17 10" />
-              <polyline points="1 20 1 14 7 14" />
-              <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
-            </svg>
-            {tx("Refresh")}
-          </button>
         </div>
       </div>
 
@@ -1148,7 +1164,7 @@ export default function QuotePage() {
               {quotes.length === 0
                 ? tx("Send a lead to Draft from the Leads page and its proposal will appear here.")
                 : segmentQuotes.length === 0
-                  ? tx("Try a different stage or switch the segment filter to All Cases.")
+                  ? tx("Try a different stage or switch the segment to All.")
                   : tx("Try a different customer name, CNIC, organization, or plan.")}
             </p>
           </div>
@@ -1597,8 +1613,8 @@ function BatchActionBar({
   const { tx } = useI18n();
   // Selection and batch actions were removed from the list; the bar is just the folder's count.
   return (
-    <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/50">
-      <p className="text-xs font-semibold text-slate-500">{tx("{count} plan(s) in this folder", { count: totalCount })}</p>
+    <div className="px-5 py-2.5 border-b border-slate-100 bg-white">
+      <p className="text-xs font-medium text-slate-400">{tx("{count} plan(s) in this folder", { count: totalCount })}</p>
     </div>
   );
 }
@@ -1670,14 +1686,16 @@ function ProposalsTable({
   const allSelected = quotes.length > 0 && quotes.every(q => selectedQuoteIds.has(q.quote_id));
 
   const TYPE_LABEL = { individual: "Individual", family: "Family", organization: "Corporate" } as const;
-  const TYPE_STYLE = { individual: "bg-blue-50 text-blue-700 border-blue-200", family: "bg-violet-50 text-violet-700 border-violet-200", organization: "bg-amber-50 text-amber-700 border-amber-200" } as const;
+  const TYPE_STYLE = { individual: "bg-blue-50 text-blue-700 ring-blue-600/15", family: "bg-violet-50 text-violet-700 ring-violet-600/15", organization: "bg-amber-50 text-amber-800 ring-amber-600/20" } as const;
   const th = "px-3 py-3 whitespace-nowrap";
+  const initials = (name: string) =>
+    name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]?.toUpperCase()).join("") || "?";
 
   return (
     <div className="overflow-x-auto bg-white w-full border-t border-slate-100">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-slate-100 bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          <tr className="border-b border-slate-200 bg-white text-[11px] font-semibold uppercase tracking-wider text-slate-400">
             <th className={`${th} pl-5 text-start`}>{tx("Applicant")}</th>
             <th className={`${th} text-start`}>{tx("Type")}</th>
             <th className={`${th} text-start`}>{tx("Plan")}</th>
@@ -1689,7 +1707,7 @@ function ProposalsTable({
             <th className={`${th} text-end`}>{tx("Total")}</th>
             <th className={`${th} text-start`}>{tx("Underwriter")}</th>
             <th className={`${th} text-start`}>{tx("Generated")}</th>
-            <th className="px-4 py-3" />
+            <th className="px-4 py-3 w-10"><span className="sr-only">{tx("Open")}</span></th>
           </tr>
         </thead>
         <tbody>
@@ -1702,17 +1720,25 @@ function ProposalsTable({
               <tr
                 key={row.quote_id}
                 onClick={() => openQuote(row.quote_id)}
-                className={`border-b border-slate-100 last:border-0 transition-colors cursor-pointer ${selected ? "bg-blue-50/50" : "hover:bg-slate-50"}`}
+                className={`group border-b border-slate-100 last:border-0 transition-colors cursor-pointer ${selected ? "bg-blue-50/50" : "hover:bg-slate-50/70"}`}
               >
-                <td className="pl-5 pr-3 py-3">
-                  <p className="font-semibold text-slate-900 truncate max-w-[180px]" title={row.customer_name}>{row.customer_name}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{tx("CNIC:")} <span className="font-mono">{row.customer_cnic ?? "—"}</span></p>
-                  <p className="text-[11px] text-slate-400 mt-0.5 truncate max-w-[220px]" title={source ?? undefined}>
-                    {formatLeadDisplayId(row.customer_id, row.created_at, seg)}{source ? ` · ${source}` : ""}
-                  </p>
+                <td className="pl-5 pr-3 py-3.5">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[11px] font-semibold text-blue-700 ring-1 ring-inset ring-blue-100">
+                      {initials(row.customer_name ?? "")}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900 truncate max-w-[200px] group-hover:text-blue-700 transition-colors" title={row.customer_name}>{row.customer_name}</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5 truncate max-w-[240px]" title={source ?? undefined}>
+                        <span className="font-mono">{formatLeadDisplayId(row.customer_id, row.created_at, seg)}</span>
+                        {" · "}<span className="font-mono">{row.customer_cnic ?? "—"}</span>
+                        {source ? ` · ${source}` : ""}
+                      </p>
+                    </div>
+                  </div>
                 </td>
-                <td className="px-3 py-3">
-                  <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border ${TYPE_STYLE[seg]}`}>{tx(TYPE_LABEL[seg])}</span>
+                <td className="px-3 py-3.5">
+                  <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${TYPE_STYLE[seg]}`}>{tx(TYPE_LABEL[seg])}</span>
                 </td>
                 <td className="px-3 py-3">
                   <p className="text-slate-700 font-medium">{row.plan_label}</p>
@@ -1732,10 +1758,12 @@ function ProposalsTable({
                 <td className="px-4 py-3 text-right">
                   <button
                     type="button"
+                    title={tx("Open")}
                     onClick={(e) => { e.stopPropagation(); openQuote(row.quote_id); }}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:border-blue-300 hover:text-blue-700"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors group-hover:text-blue-600 hover:bg-white hover:ring-1 hover:ring-slate-200"
                   >
-                    {tx("Open")}
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><polyline points="9 18 15 12 9 6" /></svg>
+                    <span className="sr-only">{tx("Open")}</span>
                   </button>
                 </td>
               </tr>

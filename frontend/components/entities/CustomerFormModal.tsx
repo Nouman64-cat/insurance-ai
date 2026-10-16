@@ -223,7 +223,7 @@ export default function CustomerFormModal({
     typeof window !== "undefined" &&
     window.parent !== window;
   // The plan, sum assured and term are chosen on the Insurance Plan tab. A new
-  // lead keeps them in details.pending_plan until Send Draft turns them into the
+  // lead keeps them in details.pending_plan until Create Proposal turns them into the
   // proposal; the Copilot chat creates the proposal straight away.
   const formTabs = customerTabs;
 
@@ -1125,7 +1125,7 @@ export default function CustomerFormModal({
         }
       }
       // Outside the Copilot chat the new lead stays on the Leads board; its chosen plan
-      // waits on the customer until "Send Draft" turns it into a proposal.
+      // waits on the customer until "Create Proposal" turns it into a proposal.
       const holdPlan = !!policyPayload && !inChatPanel;
 
       const customerResp = await api.post<Customer>(

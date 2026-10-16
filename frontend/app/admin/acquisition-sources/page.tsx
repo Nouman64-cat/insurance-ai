@@ -3,8 +3,7 @@
 import { useState, useEffect } from "react";
 import api from "@/app/services/api";
 import { useCaseEvents } from "@/lib/agent/useCaseEvents";
-import { MetricCard } from "@/components/MetricCard";
-import FiltersPanel from "@/components/FiltersPanel";
+import RowActionsMenu, { type RowAction } from "@/components/RowActionsMenu";
 import { formatCnic } from "@/lib/cnic";
 import { Pagination, usePagination } from "@/components/Pagination";
 import DemoFillButton from "@/components/DemoFillButton";
@@ -50,14 +49,27 @@ const SOURCE_TYPE_LABELS: Record<SourceType, string> = {
   DIGITAL: "Digital",
 };
 
+// One hue per type, so a mixed list reads at a glance (badge = ring style, as on Leads).
 const SOURCE_TYPE_STYLE: Record<SourceType, string> = {
-  AGENT: "bg-blue-50 text-blue-700 border-blue-100",
-  BROKER: "bg-blue-50 text-blue-700 border-blue-100",
-  BANCASSURANCE: "bg-blue-50 text-blue-700 border-blue-100",
-  CORPORATE_AGENT: "bg-amber-50 text-amber-700 border-amber-100",
-  DIRECT: "bg-slate-100 text-slate-600 border-slate-200",
-  DIGITAL: "bg-rose-50 text-rose-700 border-rose-100",
+  AGENT: "bg-blue-50 text-blue-700 ring-blue-600/15",
+  BROKER: "bg-violet-50 text-violet-700 ring-violet-600/15",
+  BANCASSURANCE: "bg-teal-50 text-teal-700 ring-teal-600/15",
+  CORPORATE_AGENT: "bg-amber-50 text-amber-800 ring-amber-600/20",
+  DIRECT: "bg-slate-50 text-slate-600 ring-slate-500/15",
+  DIGITAL: "bg-rose-50 text-rose-700 ring-rose-600/15",
 };
+
+const SOURCE_TYPE_DOT: Record<SourceType, string> = {
+  AGENT: "bg-blue-500",
+  BROKER: "bg-violet-500",
+  BANCASSURANCE: "bg-teal-500",
+  CORPORATE_AGENT: "bg-amber-500",
+  DIRECT: "bg-slate-400",
+  DIGITAL: "bg-rose-500",
+};
+
+const initials = (name: string) =>
+  name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]?.toUpperCase()).join("") || "?";
 
 const SOURCE_TYPES: SourceType[] = ["AGENT", "BROKER", "BANCASSURANCE", "CORPORATE_AGENT", "DIRECT", "DIGITAL"];
 
@@ -271,23 +283,8 @@ export default function AcquisitionSourcesPage() {
     }
   };
 
-  const clearFilters = () => {
-    setFilterType("ALL");
-    setFilterStatus("ALL");
-  };
-
-  const structuredFilterCount = [filterType !== "ALL", filterStatus !== "ALL"].filter(Boolean).length;
-
-  const activeFilterChips: { key: string; label: string; onRemove: () => void }[] = [];
-  if (filterType !== "ALL") {
-    activeFilterChips.push({ key: "type", label: SOURCE_TYPE_LABELS[filterType as SourceType], onRemove: () => setFilterType("ALL") });
-  }
-  if (filterStatus !== "ALL") {
-    activeFilterChips.push({ key: "status", label: filterStatus === "ACTIVE" ? "Active Only" : "Inactive Only", onRemove: () => setFilterStatus("ALL") });
-  }
-
-  const filtered = sources.filter((s) => {
-    if (filterType !== "ALL" && s.source_type !== filterType) return false;
+  // Status tab + search, before the type pill — so each type pill can show how many it would leave.
+  const statusScoped = sources.filter((s) => {
     if (filterStatus === "ACTIVE" && !s.is_active) return false;
     if (filterStatus === "INACTIVE" && s.is_active) return false;
 
@@ -300,6 +297,7 @@ export default function AcquisitionSourcesPage() {
       SOURCE_TYPE_LABELS[s.source_type].toLowerCase().includes(q)
     );
   });
+  const filtered = statusScoped.filter((s) => filterType === "ALL" || s.source_type === filterType);
 
   const activeSources = sources.filter(s => s.is_active);
   const totalCustomers = sources.reduce((sum, s) => sum + s.customer_count, 0);
@@ -319,8 +317,8 @@ export default function AcquisitionSourcesPage() {
   }
 
   return (
-    <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full font-sans">
-      {/* Header */}
+    <div className="px-6 py-5 space-y-4 max-w-screen-2xl mx-auto w-full font-sans">
+      {/* Header — same shape as the Leads page */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Acquisition Sources")}</h1>
@@ -330,115 +328,103 @@ export default function AcquisitionSourcesPage() {
         </div>
         <button
           onClick={openCreate}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-600 rounded-xl hover:from-blue-700 hover:to-blue-700 transition-all shadow-sm active:scale-95 self-start"
+          className="flex items-center gap-1.5 self-start px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow active:scale-95"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          {tx("Add Source")}
+          {tx("+ Add Source")}
         </button>
       </div>
 
       {error && <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600 font-medium">{error}</div>}
       {success && <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-600 font-medium">{success}</div>}
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard
-          title={tx("Total Sources")}
-          value={loading ? "—" : sources.length}
-          accent="blue"
-          icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>}
-        />
-        <MetricCard
-          title={tx("Active Channels")}
-          value={loading ? "—" : activeSources.length}
-          accent="blue"
-          icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>}
-        />
-        <MetricCard
-          title={tx("Total Customers Sourced")}
-          value={loading ? "—" : totalCustomers}
-          accent="blue"
-          icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>}
-        />
-        <MetricCard
-          title={tx("Top Channel")}
-          value={loading ? "—" : (topChannel?.name ?? "None")}
-          subtitle={loading ? "" : topChannel ? tx("{0} customers", { 0: topChannel.customer_count }) : ""}
-          accent="blue"
-          icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>}
-        />
-      </div>
+      <div className="flex flex-col gap-3">
+        {/* Toolbar: status tabs with counts, search, view toggle — every control 42px tall */}
+        <div className="flex flex-wrap items-center gap-3 w-full">
+          <div className="inline-flex h-[42px] items-stretch bg-white p-1 rounded-xl shadow-sm border border-slate-200 shrink-0">
+            {([["ALL", "All", sources.length], ["ACTIVE", "Active", activeSources.length], ["INACTIVE", "Inactive", sources.length - activeSources.length]] as ["ALL" | "ACTIVE" | "INACTIVE", string, number][]).map(([value, label, count]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setFilterStatus(value)}
+                className={`inline-flex items-center gap-2 px-3.5 rounded-lg text-sm font-semibold transition-colors ${filterStatus === value
+                  ? "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-100"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                  }`}
+              >
+                {tx(label)}
+                <span className={`min-w-[1.5rem] rounded-full px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${filterStatus === value ? "bg-white text-blue-700 ring-1 ring-inset ring-blue-100" : "bg-slate-100 text-slate-500"}`}>
+                  {loading ? "—" : count}
+                </span>
+              </button>
+            ))}
+          </div>
 
-      {/* Control Bar */}
-      <div className="flex flex-col sm:flex-row items-center gap-3">
-        <div className="flex-1 w-full relative group">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-blue-500 transition-colors" ><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input
-            type="text"
-            placeholder={tx("Search by name, code, partner, or type…")}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-white shadow-sm transition-all"
-          />
-        </div>
-        
-        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto pb-2 sm:pb-0">
-          <FiltersPanel
-            typeFilter={filterType}
-            onTypeChange={setFilterType}
-            typeOptions={[
-              ...SOURCE_TYPES.map(t => ({ value: t, label: `${SOURCE_TYPE_NUMBER[t]}. ${SOURCE_TYPE_LABELS[t]}` }))
-            ]}
-            statusFilter={filterStatus}
-            onStatusChange={setFilterStatus}
-            statusOptions={[
-              { value: "ACTIVE", label: "Active Only" },
-              { value: "INACTIVE", label: "Inactive Only" }
-            ]}
-            activeCount={structuredFilterCount}
-            onClearAll={clearFilters}
-          />
+          <div className="relative w-full max-w-[320px] shrink-0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input
+              type="text"
+              placeholder={tx("Search by name, code, partner, or type…")}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full h-[42px] pl-9 pr-8 text-sm border border-slate-200 rounded-xl bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-shadow"
+            />
+            {search && (
+              <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                ✕
+              </button>
+            )}
+          </div>
 
-          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/80 ml-auto sm:ml-1 h-[42px] items-center shadow-sm">
-            <button
-              onClick={() => setViewMode("list")}
-              className={`p-1.5 rounded text-slate-600 transition-all ${viewMode === "list" ? "bg-white shadow text-blue-600" : "hover:text-slate-900"}`}
-              title={tx("List View")}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-            </button>
+          <div className="ml-auto shrink-0 inline-flex h-[42px] items-stretch bg-white p-1 rounded-xl shadow-sm border border-slate-200">
             <button
               onClick={() => setViewMode("kanban")}
-              className={`p-1.5 rounded text-slate-600 transition-all ${viewMode === "kanban" ? "bg-white shadow text-blue-600" : "hover:text-slate-900"}`}
+              className={`px-2 rounded-lg transition-all ${viewMode === "kanban" ? "bg-blue-50 text-blue-600" : "text-slate-500 hover:text-slate-700"}`}
               title={tx("Kanban Board")}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="13" rx="1"/></svg>
             </button>
+            <button
+              onClick={() => setViewMode("list")}
+              className={`px-2 rounded-lg transition-all ${viewMode === "list" ? "bg-blue-50 text-blue-600" : "text-slate-500 hover:text-slate-700"}`}
+              title={tx("List View")}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            </button>
           </div>
         </div>
-      </div>
 
-      {activeFilterChips.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 -mt-2">
-          {activeFilterChips.map((chip) => (
-            <span
-              key={chip.key}
-              className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-medium"
-            >
-              {tx(chip.label)}
+        {/* Source type: quiet pills, the selected one dark, empty types dimmed; the old KPI cards as one line on the right */}
+        <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label={tx("Source type")}>
+          {(["ALL", ...SOURCE_TYPES] as (SourceType | "ALL")[]).map((t) => {
+            const on = filterType === t;
+            const count = statusScoped.filter((s) => t === "ALL" || s.source_type === t).length;
+            return (
               <button
-                onClick={chip.onRemove}
-                className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-blue-100 text-blue-400 hover:text-blue-700"
+                key={t}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                onClick={() => setFilterType(t)}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  on ? "bg-slate-900 text-white" : count === 0 ? "text-slate-400 hover:bg-slate-100" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                }`}
               >
-                ✕
+                {t !== "ALL" && <span className={`h-1.5 w-1.5 rounded-full ${on ? "bg-white" : count === 0 ? "bg-slate-300" : SOURCE_TYPE_DOT[t]}`} />}
+                {t === "ALL" ? tx("All types") : tx(SOURCE_TYPE_LABELS[t])}
+                <span className={`tabular-nums ${on ? "text-slate-300" : "text-slate-400"}`}>{loading ? "—" : count}</span>
               </button>
-            </span>
-          ))}
-          <button onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-blue-600 hover:underline ml-1">
-            {tx("Clear all")}
-          </button>
+            );
+          })}
+          {!loading && sources.length > 0 && (
+            <div className="ml-auto flex items-center gap-4 text-xs text-slate-500">
+              <span className="whitespace-nowrap">{tx("Customers sourced")} <span className="font-semibold text-slate-800 tabular-nums">{totalCustomers}</span></span>
+              {topChannel && topChannel.customer_count > 0 && (
+                <span className="whitespace-nowrap">{tx("Top channel")} <span className="font-semibold text-slate-800">{topChannel.name}</span> <span className="tabular-nums">({topChannel.customer_count})</span></span>
+              )}
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {loading ? (
         <div className="py-20 flex flex-col items-center justify-center gap-2 bg-white rounded-xl border border-slate-200 shadow-sm">
@@ -459,7 +445,7 @@ export default function AcquisitionSourcesPage() {
               <div key={type} className="flex-shrink-0 w-80 flex flex-col snap-start">
                 <div className="flex items-center justify-between mb-4 px-2">
                   <div className="flex items-center gap-2">
-                    <span className={`w-2.5 h-2.5 rounded-full ${SOURCE_TYPE_STYLE[type].split(' ')[0]}`} />
+                    <span className={`w-2.5 h-2.5 rounded-full ${SOURCE_TYPE_DOT[type]}`} />
                     <span className="text-xs font-bold tabular-nums text-slate-400">{SOURCE_TYPE_NUMBER[type]}</span>
                     <h3 className="text-sm font-bold text-slate-800 tracking-wide uppercase">{tx(SOURCE_TYPE_LABELS[type])}</h3>
                   </div>
@@ -516,128 +502,88 @@ export default function AcquisitionSourcesPage() {
         /* List View */
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden w-full relative">
           <div className="overflow-x-auto w-full">
-            <table className="w-full text-sm min-w-[1000px]">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/80 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                  <th className="px-5 py-4 text-left">{tx("Name")}</th>
-                  <th className="px-5 py-4 text-left">{tx("Type")}</th>
-                  <th className="px-5 py-4 text-left">{tx("Code")}</th>
-                  <th className="px-5 py-4 text-left">{tx("Partner")}</th>
-                  <th className="px-5 py-4 text-left">{tx("Contact")}</th>
-                  <th className="px-5 py-4 text-left">{tx("City")}</th>
-                  <th className="px-5 py-4 text-right">{tx("Customers")}</th>
-                  <th className="px-5 py-4 text-center">{tx("Status")}</th>
-                  <th className="px-5 py-4 text-center">{tx("Actions")}</th>
+            <table className="w-full text-sm min-w-[960px] text-left whitespace-nowrap">
+              <thead className="bg-white border-b border-slate-200">
+                <tr className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  <th className="pl-6 pr-4 py-3">{tx("Name")}</th>
+                  <th className="px-4 py-3">{tx("Type")}</th>
+                  <th className="px-4 py-3">{tx("Partner")}</th>
+                  <th className="px-4 py-3">{tx("Contact")}</th>
+                  <th className="px-4 py-3">{tx("City")}</th>
+                  <th className="px-4 py-3 text-right">{tx("Customers")}</th>
+                  <th className="px-4 py-3">{tx("Status")}</th>
+                  <th className="pl-4 pr-6 py-3 text-right w-16"><span className="sr-only">{tx("Actions")}</span></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100/80">
-                {pagedSources.map((s) => (
-                  <tr key={s.id} className="hover:bg-blue-50/30 transition-colors group">
-                    <td className="px-5 py-4">
-                      <p className="font-bold text-slate-800">{s.name}</p>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className={`inline-flex px-2.5 py-1 rounded-md text-[10px] font-bold border ${SOURCE_TYPE_STYLE[s.source_type]}`}>
-                        {tx(SOURCE_TYPE_LABELS[s.source_type])}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className="font-mono text-[11px] font-semibold text-slate-600 bg-slate-100/80 border border-slate-200/60 rounded px-2 py-1 inline-block">{s.code}</span>
-                    </td>
-                    <td className="px-5 py-4 text-slate-600 font-medium">
-                      {s.partner_name ? (
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-6 h-6 rounded bg-slate-100 border border-slate-200 flex items-center justify-center flex-shrink-0 text-slate-400">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              <tbody className="divide-y divide-slate-100">
+                {pagedSources.map((s) => {
+                  const actions: RowAction[] = [
+                    { key: "edit", label: tx("Edit"), icon: "edit", onSelect: () => openEdit(s) },
+                    ...(s.login_status === "invited" ? [{ key: "resend", label: tx("Resend login"), icon: "mail", onSelect: () => handleResend(s) } as RowAction] : []),
+                    { key: "delete", label: tx("Delete"), icon: "trash", tone: "danger", onSelect: () => handleDelete(s) },
+                  ];
+                  return (
+                    <tr key={s.id} onClick={() => openEdit(s)} className={`group cursor-pointer transition-colors hover:bg-slate-50/70 ${s.is_active ? "" : "opacity-60"}`}>
+                      <td className="pl-6 pr-4 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[11px] font-semibold text-blue-700 ring-1 ring-inset ring-blue-100">
+                            {initials(s.name)}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="font-semibold text-slate-900 group-hover:text-blue-700 transition-colors">{s.name}</div>
+                            <div className="font-mono text-[11px] text-slate-400 mt-0.5">{s.code}</div>
                           </div>
-                          <span className="truncate max-w-[120px]">{s.partner_name}</span>
                         </div>
-                      ) : (
-                        <span className="text-slate-300 font-normal">—</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-4 text-slate-600">
-                      {s.contact_person || s.contact_phone || s.contact_email ? (
-                        <div className="flex flex-col leading-tight gap-1">
-                          {s.contact_person && <span className="text-xs font-semibold text-slate-700">{s.contact_person}</span>}
-                          {s.contact_phone && <span className="text-[11px] text-slate-500 font-medium">{s.contact_phone}</span>}
-                          {s.contact_email && <span className="text-[11px] text-slate-500 font-medium">{s.contact_email}</span>}
-                          {s.login_status === "invited" && (
-                            <span className="flex items-center gap-1.5 flex-wrap">
-                              <span
-                                className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200"
-                                title={tx("Credentials were emailed. They become a user once they sign in.")}
-                              >
-                                {tx("Invite sent · not signed in")}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${SOURCE_TYPE_STYLE[s.source_type]}`}>
+                          {tx(SOURCE_TYPE_LABELS[s.source_type])}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3.5 text-[13px] text-slate-600">
+                        {s.partner_name ? <span className="truncate max-w-[160px] inline-block align-bottom">{s.partner_name}</span> : <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        {s.contact_person || s.contact_phone || s.contact_email ? (
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-[13px] font-medium text-slate-700">{s.contact_person || s.contact_email || s.contact_phone}</span>
+                            {(() => {
+                              const primary = s.contact_person || s.contact_email || s.contact_phone;
+                              const rest = [s.contact_phone, s.contact_email].filter((v) => v && v !== primary).join(" · ");
+                              return rest ? <span className="text-[11px] text-slate-400">{rest}</span> : null;
+                            })()}
+                            {s.login_status === "invited" && (
+                              <span className="inline-flex items-center gap-1 text-[11px] text-amber-700" title={tx("Credentials were emailed. They become a user once they sign in.")}>
+                                <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                                {tx("Invite sent · not signed in")}{s.login_role ? ` · ${s.login_role}` : ""}
+                                {resendingId === s.id && <span className="text-slate-400">{" "}{tx("Sending…")}</span>}
                               </span>
-                              {s.login_role && (
-                                <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                                  {s.login_role}
-                                </span>
-                              )}
-                              <button
-                                onClick={() => handleResend(s)}
-                                disabled={resendingId === s.id}
-                                className="text-[10px] font-bold text-blue-600 hover:underline disabled:opacity-50"
-                              >
-                                {resendingId === s.id ? tx("Sending…") : tx("Resend login")}
-                              </button>
-                            </span>
-                          )}
-                          {s.login_status === "active" && (
-                            <span
-                              className="inline-flex w-fit px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200"
-                              title={tx("Signed in — listed in User Management.")}
-                            >
-                              {tx("Signed in ·")}{" "}{s.login_role || tx("user")}
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-slate-300">—</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-4 text-slate-600 text-xs font-medium">
-                      {s.city ? (
-                         <div className="flex items-center gap-1">
-                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3 text-slate-400"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                           {s.city}
-                         </div>
-                      ) : (
-                        <span className="text-slate-300">—</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-4 text-right font-bold text-slate-800 text-sm">
-                      {s.customer_count > 0 ? (
-                        <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md inline-block">{s.customer_count}</span>
-                      ) : (
-                        <span className="text-slate-400">{s.customer_count}</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-4 text-center">
-                      <span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold ${s.is_active ? "bg-blue-100 text-blue-800" : "bg-slate-100 text-slate-500"}`}>
-                        {s.is_active ? tx("Active") : tx("Inactive")}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4 text-center whitespace-nowrap">
-                      <div className="inline-flex rounded-lg shadow-sm border border-slate-200 overflow-hidden divide-x divide-slate-200 opacity-30 group-hover:opacity-100 transition-opacity focus-within:opacity-100">
-                        <button
-                          onClick={() => openEdit(s)}
-                          className="px-3 py-1.5 text-xs font-bold text-blue-600 bg-white hover:bg-blue-50 transition-colors flex items-center gap-1"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
-                          {tx("Edit")}
-                        </button>
-                        <button
-                          onClick={() => handleDelete(s)}
-                          className="px-3 py-1.5 text-xs font-bold text-red-600 bg-white hover:bg-red-50 transition-colors"
-                        >
-                          {tx("Delete")}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                            )}
+                            {s.login_status === "active" && (
+                              <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700" title={tx("Signed in — listed in User Management.")}>
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                {tx("Signed in ·")}{" "}{s.login_role || tx("user")}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5 text-xs text-slate-500">{s.city || <span className="text-slate-300">—</span>}</td>
+                      <td className={`px-4 py-3.5 text-right tabular-nums text-[13px] ${s.customer_count > 0 ? "font-semibold text-slate-900" : "text-slate-400"}`}>{s.customer_count}</td>
+                      <td className="px-4 py-3.5">
+                        <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${s.is_active ? "text-emerald-700" : "text-slate-400"}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${s.is_active ? "bg-emerald-500" : "bg-slate-300"}`} />
+                          {s.is_active ? tx("Active") : tx("Inactive")}
+                        </span>
+                      </td>
+                      <td className="pl-4 pr-6 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
+                        <RowActionsMenu actions={actions} disabled={resendingId === s.id} />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -933,6 +933,12 @@ async def proxy_tenant_cases(tenant_id: UUID, path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases{path}")
 
 
+# Medical / financial underwriting tracks: who can take each one (routers/underwriting_tracks.py).
+@app.api_route("/tenants/{tenant_id}/underwriting{path:path}", methods=["GET", "OPTIONS"], include_in_schema=False)
+async def proxy_tenant_underwriting(tenant_id: UUID, path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/underwriting{path}")
+
+
 @app.api_route("/tenants/{tenant_id}/customers{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)
 async def proxy_tenant_customers(tenant_id: UUID, path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/customers{path}")

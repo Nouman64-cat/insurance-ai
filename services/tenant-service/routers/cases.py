@@ -378,6 +378,9 @@ async def list_cases(
         if head_id in ipp_status_by_case:
             ipp_status_by_case[spouse_case_id] = ipp_status_by_case[head_id]
 
+    from routers.underwriting_tracks import reviews_by_case
+    reviews = await reviews_by_case(session, case_ids)
+
     out = []
     for c in cases:
         customer = customers.get(c.customer_id)
@@ -431,6 +434,8 @@ async def list_cases(
         row["insurance_history_status"] = hist_status.value if hist_status else "NotStarted"
         med_status = medical_status_by_case.get(c.caseld)
         row["medical_exam_status"] = med_status.value if med_status else "NotAssessed"
+        row["medical_review"] = reviews[c.caseld]["MEDICAL"]
+        row["financial_review"] = reviews[c.caseld]["FINANCIAL"]
 
         out.append(row)
     return out

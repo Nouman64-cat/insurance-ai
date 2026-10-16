@@ -69,6 +69,7 @@ const ur: Messages = {
     "Pre-Underwriting": "پری انڈر رائٹنگ",
     "Risk Engine & OCR OPS": "رسک انجن اور OCR آپریشنز",
     "Post-Underwriting Verification": "انڈر رائٹنگ کے بعد تصدیق",
+    "Policies": "پالیسیاں",
     "Policy Issuance": "پالیسی کا اجراء",
     "Pre-Issuance Queue": "اجراء سے پہلے کی قطار",
     "Post-Issuance Queue": "اجراء کے بعد کی قطار",

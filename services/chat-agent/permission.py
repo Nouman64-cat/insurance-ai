@@ -172,6 +172,7 @@ SAFE_TOOLS = {
     "get_document_checklist",
     "list_artifacts",
     "list_users",
+    "list_acquisition_sources",
     "list_organizations",
     "list_family_groups",
     "list_quotes",
@@ -410,6 +411,7 @@ STEP_LABELS: dict[str, str] = {
     "get_document_checklist": "Checking documents",
     "list_artifacts": "Fetching documents",
     "list_users": "Fetching users",
+    "list_acquisition_sources": "Fetching acquisition sources",
     "list_organizations": "Fetching organizations",
     "list_family_groups": "Fetching family groups",
     "list_quotes": "Fetching quotations",
@@ -748,6 +750,7 @@ ADMIN_ONLY_TOOLS = {
     "add_user",
     "delete_user",
     "list_users",
+    "list_acquisition_sources",
     "delete_customer",
     "deploy_rule_version",
     "archive_rule_version",
@@ -1033,6 +1036,84 @@ ARG_ALTERNATIVES: dict[str, tuple[str, ...]] = {
     # Demo data supplies the name itself (a generated company / family), so none has to be asked for.
     "name": ("use_demo_data",),
 }
+
+
+# How a missing required field is named to the user — never the raw arg name.
+# Each reads naturally after "could you tell me …".
+FIELD_LABELS: dict[str, str] = {
+    "first_name": "the first name",
+    "last_name": "the last name",
+    "full_name": "the full name",
+    "name": "the name",
+    "cnic": "the CNIC (e.g. 35202-1234567-1)",
+    "date_of_birth": "the date of birth (e.g. 14 March 1990)",
+    "gender": "the gender",
+    "occupation": "the occupation",
+    "declared_income": "the annual income in PKR",
+    "email": "the email address",
+    "organization_name": "the organization name",
+    "member_name": "the member's name",
+    "customer_id": "which customer this is for",
+    "identifier": "which record you mean (name, ID or CNIC)",
+    "query": "what to search for",
+    "record_type": "the kind of record",
+    "page_name": "which page to open",
+    "role_name": "the role",
+    "assigned_user_name": "who to assign it to",
+    "new_status": "the new status",
+    "coverage_type": "the type of cover",
+    "document_type": "the document type",
+    "endorsement_type": "what to change on the policy",
+    "exit_type": "how the policy should end (e.g. surrender or cancellation)",
+    "comment": "the comment",
+    "comment_text": "the comment",
+    "description": "a short description",
+    "title": "a title",
+    "reason": "the reason",
+    "symptom": "the symptom or issue",
+    "evidence": "the evidence required",
+    "reference": "the payment or transaction reference",
+    "request_reference": "the request reference",
+    "ticket_reference": "the ticket reference",
+    "percent_of_base": "the percentage",
+    "rule_set_code": "the rule set",
+    "category_code": "the rule category",
+    "subcategory_code": "the rule subcategory",
+    "channel_code": "the sales channel",
+    "customers_json": "the customer list",
+    "results_json": "the results",
+}
+
+# What the user is doing, for "To <action>, I still need …".
+TOOL_ACTIONS: dict[str, str] = {
+    "add_customer": "register this customer",
+    "update_customer": "update this customer",
+    "add_organization": "add this organization",
+    "add_family_group": "add this family",
+    "add_user": "add this user",
+    "create_case": "open the application",
+    "create_proposal": "create the proposal",
+    "assign_case": "assign this application",
+}
+
+
+def _join_words(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def missing_args_question(tool_name: str, args: dict, missing: list[str]) -> str:
+    """A plain-language request for the fields missing_args found."""
+    action = TOOL_ACTIONS.get(tool_name)
+    who = " ".join(str(args[k]) for k in ("first_name", "last_name") if args.get(k)) or args.get("name") or args.get("full_name")
+    if tool_name in {"add_customer", "update_customer"} and who:
+        action = f"{'register' if tool_name == 'add_customer' else 'update'} {who}"
+    labels = [FIELD_LABELS.get(field, field.replace("_", " ")) for field in missing]
+    lead = f"To {action}, " if action else ""
+    if len(labels) == 1:
+        question = f"could you tell me {labels[0]}?"
+        return lead + question if lead else question[0].upper() + question[1:]
+    bullets = "\n".join(f"- {label[0].upper()}{label[1:]}" for label in (l.removeprefix("the ") for l in labels))
+    return f"{lead or 'To continue, '}I still need a few details:\n\n{bullets}\n\nYou can send them all in one message."
 
 
 def missing_args(tool_name: str, args: dict) -> list[str]:

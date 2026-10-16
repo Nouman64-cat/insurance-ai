@@ -109,6 +109,8 @@ class ListLeadsArgs(BaseModel):
     segment: Optional[Literal["individual", "family", "organization"]] = Field(default=None, description="Customer segment; used only with record_scope customers.")
     search: Optional[str] = Field(default=None, description="Filter by lead name, board ID, CNIC or contact.")
     lead_type: Optional[Literal["INDIVIDUAL", "FAMILY", "CORPORATE"]] = None
+    sort: Literal["newest", "oldest"] = Field(default="newest", description="Order by date added. Rows come newest first, so 'most recent lead' is limit=1; 'first/oldest lead' needs sort=oldest.")
+    brought_by: Optional[str] = Field(default=None, description="Acquisition source or assigned agent name/code, for 'leads brought by / from / sourced by X'. Not a lead-name search.")
     limit: int = Field(default=20, ge=1, le=100, description="Maximum rows shown; total counts all matching leads.")
     offset: int = Field(default=0, ge=0, description="Rows to skip for pagination.")
 
@@ -200,6 +202,25 @@ def list_users(**kwargs) -> str:
 
 class EmptyArgs(BaseModel):
     pass
+
+
+class ListAcquisitionSourcesArgs(BaseModel):
+    search: Optional[str] = Field(default=None, description="Filter by name, code, partner, contact or city.")
+    source_type: Optional[Literal["AGENT", "BROKER", "BANCASSURANCE", "CORPORATE_AGENT", "DIRECT", "DIGITAL"]] = Field(
+        default=None, description="DIRECT is shown to users as Walk-in.")
+    status: Literal["active", "inactive", "all"] = Field(default="active", description="Active sources unless the user asks otherwise.")
+    limit: int = Field(default=20, ge=1, le=50, description="Maximum rows shown; total counts all matching sources.")
+    offset: int = Field(default=0, ge=0, description="Rows to skip for pagination.")
+
+
+@tool(args_schema=ListAcquisitionSourcesArgs)
+def list_acquisition_sources(**kwargs) -> str:
+    """Count and list acquisition sources: the agents, brokers, bank desks and
+    channels customers arrive through. Use for 'list acquisition sources', 'how many
+    brokers do we have?'. Do NOT navigate to the page instead. Display the returned
+    Markdown table as-is; when has_more is true, say how many remain and offer the
+    next page (offset) or a filter rather than fetching everything."""
+    return "{}"
 
 
 @tool(args_schema=EmptyArgs)
@@ -302,7 +323,7 @@ class UpdateCustomerArgs(BaseModel):
 def update_customer(**kwargs) -> str:
     """Update an existing customer's details. Identify them by cnic or name, then
     pass only the fields that change. For send draft / send to proposals, set
-    send_to_draft=true. This is the Leads page Send Draft action, not create_case."""
+    send_to_draft=true. This is the Leads page Create Proposal action, not create_case."""
     return "{}"
 
 
@@ -2851,6 +2872,7 @@ ALL_TOOLS = [
     get_document_checklist,
     list_artifacts,
     list_users,
+    list_acquisition_sources,
     list_organizations,
     list_family_groups,
     list_quotes,

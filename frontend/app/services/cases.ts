@@ -37,6 +37,44 @@ export interface CaseQueueItem {
   medical_exam_status?:
     | "NotAssessed" | "NotRequired" | "Required" | "Invited"
     | "Scheduled" | "Completed" | "Waived" | "Expired";
+  /** The medical and financial underwriting reviews; PENDING until an underwriter picks the track up. */
+  medical_review?: UnderwritingReview;
+  financial_review?: UnderwritingReview;
+}
+
+export type UnderwritingTrack = "medical" | "financial";
+export type UnderwritingReviewStatus = "PENDING" | "IN_REVIEW" | "CLEARED" | "REFERRED" | "DECLINED";
+
+export interface UnderwritingReview {
+  status: UnderwritingReviewStatus;
+  assigned_user_id: string | null;
+  assigned_user_name: string | null;
+  note: string | null;
+  updated_at: string | null;
+}
+
+export interface TrackUnderwriter {
+  id: string;
+  full_name: string;
+  email: string;
+  role: string;
+  tracks: UnderwritingTrack[];
+}
+
+/** Users who can take the medical and/or financial review (Medical / Financial Underwriter, Underwriter). */
+export async function listTrackUnderwriters(tenantId: string): Promise<TrackUnderwriter[]> {
+  const resp = await api.get<TrackUnderwriter[]>(`/tenants/${tenantId}/underwriting/underwriters`);
+  return resp.data;
+}
+
+export async function updateUnderwritingTrack(
+  tenantId: string,
+  caseId: string,
+  track: UnderwritingTrack,
+  body: { status?: UnderwritingReviewStatus; assigned_user_id?: string; clear_assignee?: boolean; note?: string },
+): Promise<UnderwritingReview> {
+  const resp = await api.put<UnderwritingReview>(`/tenants/${tenantId}/cases/${caseId}/underwriting-tracks/${track}`, body);
+  return resp.data;
 }
 
 export async function listCases(

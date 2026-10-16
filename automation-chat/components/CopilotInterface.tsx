@@ -4797,16 +4797,12 @@ export function CopilotInterface() {
     setIsRecording(false);
   };
 
+  // Only where the agent defaulted to an individual without the user choosing:
+  // once they've picked Individual (wizard or their own words), or are already
+  // adding a family, the chip just second-guesses them. Typing "actually I need
+  // family insurance" still revises any question.
   const canSwitchToFamily =
-    pendingInterrupt &&
-    [
-      "resolve_customer_type",
-      "add_customer",
-      "create_proposal",
-      "update_customer",
-      "quick_start_workflow",
-      "add_family_group",
-    ].includes(pendingInterrupt.toolCall.name);
+    pendingInterrupt?.toolCall.name === "quick_start_workflow";
   const liveVoice = showVoice ? (
     <div
       className={

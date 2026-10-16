@@ -83,6 +83,7 @@ from permission import (
     is_destructive,
     is_role_allowed,
     missing_args,
+    missing_args_question,
 )
 from state import ChatState
 from tool_executor import (
@@ -173,7 +174,8 @@ Use “Application” / “Applications” in all user-facing wording and action
   highlights the exact row. Lead IDs start IND-/FAM-/CORP-; use record_type "lead".
 - User asks to open a page ("go to fraud detection") → **navigate_to_page**.
 - User is searching vaguely ("any customers called Malik?") → **search_records**.
-- For lead counts or lists ("how many leads do I have?", "show my leads"), call **list_leads**. Report its total and returned leads in a Markdown table with columns Lead ID, Name, Type, Status, Occupation, and Declared Income (PKR). Use an em dash for missing values. Display status_label and type_label as readable labels (e.g. Ready for Underwriting, Draft, Individual), never raw enums such as UNDERWRITING_READY. Preserve the table returned by the tool instead of rewriting it as a numbered or bullet list; never substitute registered customer counts or infer zero without a successful lead lookup.
+- For lead counts or lists ("how many leads do I have?", "show my leads"), call **list_leads**. Report its total and returned leads in a Markdown table with columns Lead ID, Name, Type, Status, Occupation, Declared Income (PKR), and Added. Leads come newest first; for "oldest"/"first" leads pass sort="oldest". Lead ID numbers follow creation order, so never infer recency from them. Use an em dash for missing values. Display status_label and type_label as readable labels (e.g. Ready for Underwriting, Draft, Individual), never raw enums such as UNDERWRITING_READY. Preserve the table returned by the tool instead of rewriting it as a numbered or bullet list; never substitute registered customer counts or infer zero without a successful lead lookup. For leads brought in by / sourced from / belonging to an agent, broker or other acquisition source, pass their name as **brought_by** — never as search, which only matches the lead's own name, ID, CNIC or contact.
+- For acquisition source counts or lists (agents, brokers, bank desks, channels customers came through), call **list_acquisition_sources** — never just open the page. Preserve its Markdown table. It returns one page (20 rows by default); when has_more is true, state the total and offer the next page or a filter instead of paging through everything.
 - For policyholder counts or lists, call **list_leads** with record_scope="policyholders". Only customers, families and organizations with active coverage qualify. Never label all registered customers or proposal applicants as policyholders. When the user disputes a count, fetch fresh results with the correct scope before answering.
 - Display all dates in user-facing text and tables as day short-month, year (for example 14 Oct, 2026). Include the time alongside this format when relevant. Keep ISO dates in tool arguments and stored data unchanged.
 - In user-facing text and tables, use readable labels for insurance types and statuses. For proposals, preserve list_quotes’ table and use insurance_type_label/status_label (Term Life, Single Premium Investment, Under Review), never raw enums. Keep IDs unchanged.
@@ -1742,7 +1744,7 @@ async def _permission_gate(state: ChatState) -> Command:
         source_rows: list = []
         agent_rows: list = []
         if not is_agent_role:
-            source_rows = (await execute_tool("list_acquisition_sources", {}, ctx)).get("sources") or []
+            source_rows = (await execute_tool("list_active_acquisition_sources", {}, ctx)).get("sources") or []
             agent_rows = (await execute_tool("list_agent_users", {}, ctx)).get("agents") or []
         no_source_label = "No acquisition source"
         # Active sources grouped by their type (Agent, Broker, …), in a stable order.
@@ -2687,10 +2689,7 @@ async def _permission_gate(state: ChatState) -> Command:
         answer = interrupt({
             "kind": "clarify",
             "tool_call": {"name": name, "args": args},
-            "question": (
-                f"I need a bit more information to {name.replace('_', ' ')}: "
-                f"missing {', '.join(missing)}. Could you provide it?"
-            ),
+            "question": missing_args_question(name, args, missing),
         })
         # The resumed value is the user's free-text reply. Rather than trying
         # to programmatically merge that into structured args (fragile — "the

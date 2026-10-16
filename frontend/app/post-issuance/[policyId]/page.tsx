@@ -240,31 +240,31 @@ function StatCard({
 }>) {
   return (
     <div
-      className={`group relative overflow-hidden rounded-2xl border p-6 transition-all duration-300 hover:shadow-xl hover:-translate-y-1 ${
+      className={`group relative overflow-hidden rounded-xl border px-4 py-3 transition-colors ${
         accent
           ? "border-blue-200 bg-gradient-to-br from-blue-50 to-white shadow-blue-100/40"
-          : "border-slate-200 bg-white shadow-sm hover:border-blue-300"
+          : "border-slate-200 bg-white hover:border-blue-200"
       }`}
     >
       <div
-        className={`absolute top-0 left-0 w-full h-1 transition-all duration-300 ${accent ? "bg-blue-400" : "bg-transparent group-hover:bg-blue-400"}`}
+        className={`absolute top-0 left-0 w-full h-0.5 ${accent ? "bg-blue-400" : "bg-transparent"}`}
       ></div>
       <p
-        className={`text-[11px] uppercase tracking-widest font-bold mb-2 transition-colors duration-300 ${
-          accent ? "text-blue-600" : "text-slate-400 group-hover:text-blue-600"
+        className={`text-[10px] uppercase tracking-wider font-semibold mb-1 ${
+          accent ? "text-blue-600" : "text-slate-400"
         }`}
       >
         {label}
       </p>
       <p
-        className={`text-2xl font-black tracking-tight ${
+        className={`text-lg font-bold tracking-tight ${
           accent ? "text-blue-900" : "text-slate-800"
         }`}
       >
         {value}
       </p>
       {hint && (
-        <p className="text-[12px] font-medium text-slate-500 mt-2">{hint}</p>
+        <p className="text-[11px] font-medium text-slate-500 mt-0.5">{hint}</p>
       )}
     </div>
   );
@@ -276,10 +276,10 @@ function CountdownUnit({
 }: Readonly<{ value: number; label: string }>) {
   return (
     <div className="flex flex-col items-center">
-      <span className="tabular-nums text-3xl font-bold text-blue-700 bg-white border border-blue-200 rounded-xl w-16 py-2 text-center shadow-sm">
+      <span className="tabular-nums text-xl font-bold text-blue-700 bg-white border border-blue-200 rounded-lg w-12 py-1 text-center shadow-sm">
         {String(value).padStart(2, "0")}
       </span>
-      <span className="text-[10px] uppercase tracking-wider font-semibold text-blue-600/70 mt-1.5">
+      <span className="text-[9px] uppercase tracking-wider font-semibold text-blue-600/70 mt-1">
         {label}
       </span>
     </div>
@@ -2305,7 +2305,7 @@ export default function PostIssuancePage() {
   // hardcoded page. Falls back to the list if there's no history to pop.
   const goBack = () => {
     if (window.history.length > 1) router.back();
-    else router.push("/policy-issuance?tab=active");
+    else router.push("/policy-issuance");
   };
 
   const doCancel = async () => {
@@ -2344,58 +2344,39 @@ export default function PostIssuancePage() {
   const liveCount = STAGE_B_STEPS.filter((s) => s.live).length;
 
   return (
-    <div className="max-w-[1440px] mx-auto px-6 lg:px-10 py-8 space-y-6">
-      {/* Breadcrumb + heading */}
+    <div className="max-w-screen-2xl mx-auto w-full px-6 py-5 space-y-4">
+      {/* Heading: back, name and policy line on the left; status and actions on the right */}
       <div>
-        <button
-          onClick={goBack}
-          className="text-xs font-bold uppercase tracking-wider text-slate-400 hover:text-blue-600 transition-colors inline-flex items-center gap-1.5 mb-2"
-        >
-          <svg
-            className="w-3.5 h-3.5"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={3}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M10 19l-7-7m0 0l7-7m-7 7h18"
-            />
-          </svg>
-          {tx("Back")}
-        </button>
-        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mt-2">
-          <div>
-            <div className="inline-flex items-center gap-2 mb-2.5 px-3 py-1 rounded-md bg-blue-50 border border-blue-100 shadow-sm">
-              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-              <p className="text-[10px] font-bold text-blue-700 uppercase tracking-widest">
-                {tx("Stage B · Policy Management")}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              onClick={goBack}
+              title={tx("Back")}
+              className="flex items-center justify-center w-9 h-9 shrink-0 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-blue-600 hover:border-blue-200 transition-colors shadow-sm"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+              <span className="sr-only">{tx("Back")}</span>
+            </button>
+            <div className="min-w-0">
+              <h1 className="text-xl font-bold text-slate-900 tracking-tight truncate">
+                {detail?.customer_name ?? tx("Policy")}
+              </h1>
+              <p className="text-xs text-slate-500 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span className="font-mono font-semibold text-slate-700">{detail?.policy_number?.replace("POL-", "PL-") ?? "—"}</span>
+                {detail?.product_name && <><span className="text-slate-300">·</span><span>{detail.product_name}</span></>}
+                {detail?.segment && (
+                  <>
+                    <span className="text-slate-300">·</span>
+                    <span>
+                      {detail.segment === "organization" ? tx("Corporate") : detail.segment === "family" ? tx("Family") : tx("Individual")}
+                    </span>
+                  </>
+                )}
+                <span className="text-slate-300">·</span>
+                <span className="text-slate-400">{tx("Policy Management")}</span>
               </p>
-            </div>
-            <h1 className="text-3xl font-black text-slate-900 tracking-tight">
-              {detail?.customer_name ?? tx("Policy")}
-            </h1>
-            {detail?.segment && (
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mt-1">
-                {detail.segment === "organization"
-                  ? tx("Corporate")
-                  : detail.segment === "family"
-                    ? tx("Family")
-                    : tx("Individual")}{" "}
-                {tx("Lead")}
-              </p>
-            )}
-            <div className="flex items-center gap-3 mt-2">
-              <span className="text-xs font-bold font-mono text-slate-700 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
-                {detail?.policy_number?.replace("POL-", "PL-") ?? "—"}
-              </span>
-              {detail?.product_name && (
-                <span className="text-sm font-semibold text-slate-500 px-1 border-l-2 border-slate-200 pl-3">
-                  {detail.product_name}
-                </span>
-              )}
             </div>
           </div>
           {detail && (
@@ -2536,41 +2517,39 @@ export default function PostIssuancePage() {
         </div>
       )}
 
-      {/* Contract facts — full-width card row */}
+      {/* Contract facts — one slim strip instead of four cards */}
       {detail && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard
-            label={tx("Sum Assured")}
-            value={fmtCoverage(detail.coverage_amount)}
-          />
-          <StatCard
-            label={tx("Effective")}
-            value={displayDate(detail.effective_date ?? "—")}
-          />
-          <StatCard
-            label={tx("Expiry")}
-            value={displayDate(detail.expiry_date ?? "—")}
-          />
-          <StatCard label={tx("Nominee")} value={detail.nominee_name ?? "—"} />
+        <div className="grid grid-cols-2 lg:grid-cols-4 rounded-xl border border-slate-200 bg-white shadow-sm divide-x divide-slate-100">
+          {[
+            [tx("Sum Assured"), fmtCoverage(detail.coverage_amount)],
+            [tx("Effective"), displayDate(detail.effective_date ?? "—")],
+            [tx("Expiry"), displayDate(detail.expiry_date ?? "—")],
+            [tx("Nominee"), detail.nominee_name ?? "—"],
+          ].map(([label, value]) => (
+            <div key={label} className="px-5 py-3 min-w-0">
+              <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">{label}</p>
+              <p className="text-base font-bold text-slate-900 mt-0.5 truncate">{value}</p>
+            </div>
+          ))}
         </div>
       )}
 
       {/* Two-pane: step navigator + active panel */}
-      <div className="grid lg:grid-cols-[320px_1fr] gap-6 items-start">
+      <div className="grid lg:grid-cols-[280px_1fr] gap-4 items-start">
         {/* Navigator */}
         <nav
           aria-label={tx("Post-issuance steps")}
-          className="rounded-2xl border border-slate-200 bg-white p-3"
+          className="rounded-xl border border-slate-200 bg-white p-2 shadow-sm lg:sticky lg:top-4"
         >
           <div className="flex items-center justify-between px-2 pb-2 mb-1 border-b border-slate-100">
             <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-              {tx("Post-Issuance Journey")}
+              {tx("Policy Journey")}
             </p>
             <span className="text-[10px] font-semibold text-blue-600">
               {liveCount}/{STAGE_B_STEPS.length} {tx("live")}
             </span>
           </div>
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             {STAGE_B_STEPS.map((step) => {
               const isActive = step.id === active;
               return (
@@ -2578,16 +2557,18 @@ export default function PostIssuancePage() {
                   key={step.id}
                   aria-current={isActive ? "step" : undefined}
                   onClick={() => setActive(step.id)}
-                  className={`w-full text-left flex items-center gap-3 rounded-xl border px-3 py-3 transition-colors ${
+                  className={`w-full text-left flex items-center gap-2.5 rounded-lg border px-2.5 py-2 transition-colors ${
                     isActive
                       ? "border-blue-300 bg-blue-50"
                       : "border-transparent hover:border-slate-200 hover:bg-slate-50"
                   }`}
                 >
                   <span
-                    className={`flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-bold flex-shrink-0 ${
-                      step.live
-                        ? "bg-slate-200 text-slate-700"
+                    className={`flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold flex-shrink-0 ${
+                      isActive
+                        ? "bg-blue-600 text-white"
+                        : step.live
+                        ? "bg-slate-100 text-slate-600"
                         : "bg-slate-100 text-slate-400"
                     }`}
                   >
@@ -2595,7 +2576,7 @@ export default function PostIssuancePage() {
                   </span>
                   <span className="min-w-0 flex-1">
                     <span
-                      className={`block text-sm font-semibold truncate ${isActive ? "text-blue-800" : "text-slate-700"}`}
+                      className={`block text-[13px] font-semibold truncate ${isActive ? "text-blue-800" : "text-slate-700"}`}
                     >
                       {tx(step.title)}
                     </span>
@@ -2615,11 +2596,11 @@ export default function PostIssuancePage() {
         </nav>
 
         {/* Active step panel */}
-        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden min-h-[460px] flex flex-col relative">
+        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden flex flex-col relative shadow-sm">
           <div key={active} className="animate-dropdown flex flex-col flex-1">
-            <header className="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
+            <header className="px-5 py-3 border-b border-slate-100 flex items-center gap-3">
               <span
-                className={`flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold ${
+                className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold ${
                   activeStep.live
                     ? "bg-blue-600 text-white"
                     : "bg-slate-200 text-slate-500"
@@ -2635,7 +2616,7 @@ export default function PostIssuancePage() {
               </div>
             </header>
 
-            <div className="p-6 flex-1">
+            <div className="p-5 flex-1">
               {active === "free-look" && (
                 <FreeLookPanel
                   freeLook={freeLook}
@@ -2803,9 +2784,9 @@ function FreeLookPanel({
   else if (freeLook.status === "Active") windowState = "Closed";
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Stat card row — fills the panel width */}
-      <div className="grid sm:grid-cols-3 gap-4">
+      <div className="grid sm:grid-cols-3 gap-3">
         <StatCard
           label={tx("Documents delivered")}
           value={displayDate(freeLook.delivery_date ?? "—")}
@@ -2829,8 +2810,8 @@ function FreeLookPanel({
         onCancel={onCancel}
       />
 
-      <div className="mt-8 pt-6 border-t border-slate-100">
-        <div className="flex items-center justify-between mb-5">
+      <div className="pt-4 border-t border-slate-100">
+        <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <span className="flex items-center justify-center w-6 h-6 rounded bg-blue-100 text-blue-600 shadow-sm">
               <svg
@@ -2857,7 +2838,7 @@ function FreeLookPanel({
         </div>
 
         {documents.length > 0 ? (
-          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
             {/* The initial premium receipt comes first; the rest keep their order. */}
             {[...documents]
               .sort((x, y) => Number(y.document_type === "PremiumNotice") - Number(x.document_type === "PremiumNotice"))
@@ -2865,10 +2846,11 @@ function FreeLookPanel({
               <button
                 key={doc.id}
                 onClick={() => downloadDocument(policyId, doc.id, doc.document_name)}
-                className="group relative overflow-hidden flex items-start gap-3 p-4 rounded-xl border border-slate-200 bg-white hover:border-blue-300 hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 text-left"
+                title={doc.document_name}
+                className="group relative overflow-hidden flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white hover:border-blue-300 hover:shadow-sm transition-all text-left"
               >
                 <div className="absolute top-0 left-0 w-1 h-full bg-blue-400 scale-y-0 group-hover:scale-y-100 transition-transform origin-top"></div>
-                <div className="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-lg bg-slate-50 text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors border border-slate-100 group-hover:border-blue-100">
+                <div className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-lg bg-slate-50 text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors border border-slate-100 group-hover:border-blue-100">
                   <svg
                     className="w-5 h-5"
                     fill="none"
@@ -2884,7 +2866,7 @@ function FreeLookPanel({
                   </svg>
                 </div>
                 <div className="flex-1 min-w-0 pt-0.5">
-                  <p className="text-sm font-bold text-slate-700 group-hover:text-blue-800 truncate transition-colors">
+                  <p className="text-[13px] font-semibold text-slate-700 group-hover:text-blue-800 truncate transition-colors">
                     {doc.document_name}
                   </p>
                   <p className="text-[11px] font-medium text-slate-400 mt-0.5 flex items-center gap-1.5">
@@ -2987,9 +2969,9 @@ function FreeLookStateCard({
 
   if (freeLook.is_open && countdown) {
     return (
-      <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+      <div className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="min-w-0 flex-1 basis-64">
             <p className="text-sm font-bold text-blue-800">
               {tx("Free-look window is open")}
             </p>
@@ -3000,21 +2982,21 @@ function FreeLookStateCard({
               <b>{fmtPKR(freeLook.refund_amount)}</b>.
             </p>
           </div>
+          <div className="flex items-start gap-1.5">
+            <CountdownUnit value={countdown.days} label={tx("Days")} />
+            <span className="text-xl font-bold text-blue-300 pt-1">:</span>
+            <CountdownUnit value={countdown.hours} label={tx("Hrs")} />
+            <span className="text-xl font-bold text-blue-300 pt-1">:</span>
+            <CountdownUnit value={countdown.mins} label={tx("Min")} />
+            <span className="text-xl font-bold text-blue-300 pt-1">:</span>
+            <CountdownUnit value={countdown.secs} label={tx("Sec")} />
+          </div>
           <button
             onClick={onCancel}
-            className="px-4 py-2.5 rounded-xl text-xs font-semibold bg-white border border-red-200 text-red-700 hover:bg-red-50 transition-colors flex-shrink-0"
+            className="px-4 py-2 rounded-lg text-xs font-semibold bg-white border border-red-200 text-red-700 hover:bg-red-50 transition-colors flex-shrink-0"
           >
             {tx("Cancel for full refund")}
           </button>
-        </div>
-        <div className="flex items-end gap-3 mt-6">
-          <CountdownUnit value={countdown.days} label={tx("Days")} />
-          <span className="text-3xl font-bold text-blue-300 pb-7">:</span>
-          <CountdownUnit value={countdown.hours} label={tx("Hrs")} />
-          <span className="text-3xl font-bold text-blue-300 pb-7">:</span>
-          <CountdownUnit value={countdown.mins} label={tx("Min")} />
-          <span className="text-3xl font-bold text-blue-300 pb-7">:</span>
-          <CountdownUnit value={countdown.secs} label={tx("Sec")} />
         </div>
       </div>
     );

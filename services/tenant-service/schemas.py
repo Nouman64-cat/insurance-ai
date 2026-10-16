@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, computed_field, field_validator, model_validator
@@ -1214,8 +1214,20 @@ class CaseRead(BaseModel):
     # Pre-underwriting gates 5 & 6 — anti-selection screen and panel medical.
     insurance_history_status: Optional[str] = None
     medical_exam_status:      Optional[str] = None
+    # The medical and financial underwriting reviews (case_underwriting_tracks):
+    # {status, assigned_user_id, assigned_user_name, note, updated_at}. Status is
+    # PENDING when no underwriter has picked the track up yet.
+    medical_review:           Optional[dict] = None
+    financial_review:         Optional[dict] = None
 
     model_config = {"from_attributes": True}
+
+class UnderwritingTrackUpdate(BaseModel):
+    """Any field left out is unchanged; clear_assignee unassigns."""
+    status:           Optional[Literal["PENDING", "IN_REVIEW", "CLEARED", "REFERRED", "DECLINED"]] = None
+    assigned_user_id: Optional[UUID] = None
+    clear_assignee:   bool = False
+    note:             Optional[str] = Field(default=None, max_length=2000)
 
 class CaseStatusUpdate(BaseModel):
     status: CaseStatusEnum

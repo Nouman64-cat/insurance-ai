@@ -223,6 +223,20 @@ const NAV_ITEMS = [
         badge: null,
       },
       {
+        // Admins: the medical / financial underwriting overview in the portal.
+        href: "/admin/underwriting",
+        label: "Underwriting",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            <path d="M9 12l2 2 4-4" />
+          </svg>
+        ),
+        badge: null,
+        adminOnly: true,
+      },
+      {
+        // Underwriters: their queues in the Underwriting Workbench.
         href: "/underwriting",
         label: "Underwriting",
         icon: (
@@ -232,6 +246,7 @@ const NAV_ITEMS = [
           </svg>
         ),
         badge: null,
+        hideForAdmin: true,
         subLinks: [
           { href: "/underwriting?tab=pre-underwriting", label: "Pre-Underwriting" },
           { href: "/post-underwriting", label: "Post-Underwriting Verification" },
@@ -239,7 +254,7 @@ const NAV_ITEMS = [
       },
       {
         href: "/policy-issuance",
-        label: "Policy Issuance",
+        label: "Policies",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
             <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
@@ -248,10 +263,6 @@ const NAV_ITEMS = [
           </svg>
         ),
         badge: null,
-        subLinks: [
-          { href: "/policy-issuance?tab=queue", label: "Pre-Issuance Queue" },
-          { href: "/policy-issuance?tab=active", label: "Post-Issuance Queue" },
-        ],
       },
       {
         href: "/claims/register",
@@ -265,12 +276,10 @@ const NAV_ITEMS = [
           </svg>
         ),
         badge: null,
-        subLinks: [
-          { href: "/claims/register", label: "Claims Register" },
-        ],
       },
       {
         href: "/renewals",
+        hidden: true, // hidden from the sidebar; the page still opens by URL
         label: "Renewals",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
@@ -283,6 +292,7 @@ const NAV_ITEMS = [
       },
       {
         href: "/live-evaluation",
+        hidden: true, // hidden from the sidebar; the page still opens by URL
         label: "Live Evaluation",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
@@ -293,6 +303,7 @@ const NAV_ITEMS = [
       },
       {
         href: "/case-summarizer",
+        hidden: true, // hidden from the sidebar; the page still opens by URL
         label: "Application Summarizer",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
@@ -305,6 +316,7 @@ const NAV_ITEMS = [
       },
       {
         href: "/assessments",
+        hidden: true, // hidden from the sidebar; the page still opens by URL
         label: "Assessment History",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
@@ -461,6 +473,7 @@ const NAV_ITEMS = [
       },
       {
         href: "#comm-ops",
+        hidden: true, // hidden from the sidebar; the page still opens by URL
         label: "Commission Ops",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
@@ -476,6 +489,7 @@ const NAV_ITEMS = [
       },
       {
         href: "/treasury",
+        hidden: true, // hidden from the sidebar; the page still opens by URL
         label: "Disbursement",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
@@ -492,6 +506,7 @@ const NAV_ITEMS = [
       },
       {
         href: "/risk",
+        hidden: true, // hidden from the sidebar; the page still opens by URL
         label: "Compliance",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
@@ -521,7 +536,7 @@ const NAV_ITEMS = [
 /**
  * Which sidebar entry is lit for this URL. A page with sub-links (Underwriting, Policy Issuance, Claims...)
  * lights the exact sub-link the user is on, matched by path and query (?tab=...), so arriving at
- * /policy-issuance from an approved case highlights "Pre-Issuance Queue", not just "Policy Issuance".
+ * Policy issuance and servicing share one Policies entry.
  * A page opened without a tab falls back to the first sub-link for that path, which is the tab the page
  * itself opens on. Anything else lights the plain link for the path.
  */
@@ -529,7 +544,7 @@ const NAV_ITEMS = [
 // underwriting actually happens, a policy's post-issuance page is part of the Post-Issuance queue, and so on.
 const SECTION_PAGES: { prefix: string; href: string }[] = [
   { prefix: "/case/", href: "/underwriting?tab=pre-underwriting" },
-  { prefix: "/post-issuance/", href: "/policy-issuance?tab=active" },
+  { prefix: "/post-issuance/", href: "/policy-issuance" },
   { prefix: "/claims/", href: "/claims/register" },
 ];
 
@@ -618,7 +633,7 @@ export function Sidebar() {
             // even for someone who has re-ordered the menu); with no such neighbour it goes at the end.
             let insertAt = validParsed.length;
             for (let k = gi - 1; k >= 0; k--) {
-              const pos = validParsed.findIndex((x: any) => x.group === (NAV_ITEMS as any[])[k].group);
+              const pos = validParsed.findIndex((x: any) => x.group === (NAV_ITEMS as unknown as any[])[k].group);
               if (pos >= 0) { insertAt = pos + 1; break; }
             }
             validParsed.splice(insertAt, 0, { group: g.group, links: g.links.map((l: any) => l.href) });
@@ -704,7 +719,7 @@ export function Sidebar() {
     links: g.links.map((href: string) => allLinksMap.get(href)).filter(Boolean)
   }));
 
-  const workingHrefs = ["/customer-service", "/acr", "/profile", "/cases", "/requests", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/users", "/admin/leads", "/admin/policyholders", "/plans", "/financial", "/claims", "/claims/dashboard", "/claims/register"];
+  const workingHrefs = ["/customer-service", "/acr", "/profile", "/cases", "/requests", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/underwriting", "/admin/users", "/admin/leads", "/admin/policyholders", "/plans", "/financial", "/claims", "/claims/dashboard", "/claims/register"];
   const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/roles", "/super-admin/tokens", "/super-admin/llm-config"];
 
   const displayGroups = (userRole === "SuperAdmin"
@@ -777,6 +792,8 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-5" aria-label={t("sidebar.navLabel")}>
         {displayGroups.map((group: any, gIndex: number) => {
           const visibleLinks = group.links.filter((link: any) => {
+            if (["Medical Underwriter", "Financial Underwriter"].includes(userRole ?? "") && !["/underwriting", "/profile"].includes(link.href)) return false;
+            if (link.hidden) return false;
             if (link.hideForAdmin && userRole === "Admin") return false;
             if (link.adminOnly && userRole !== "Admin" && !(link.agentToo && (userRole === "Agent" || userRole === "Broker"))) return false;
             if (link.superAdminOnly && userRole !== "SuperAdmin") return false;
@@ -793,6 +810,8 @@ export function Sidebar() {
               )}
               <div className="space-y-0.5">
                 {visibleLinks.map((link: any, lIndex: number) => {
+                  const specialist = ["Medical Underwriter", "Financial Underwriter"].includes(userRole ?? "");
+                  const hasSubLinks = !!link.subLinks && !specialist;
                   const isActive = activeHref === link.href || (link.subLinks && link.subLinks.some((sub: any) => activeHref === sub.href));
                   const isDraggingThis = draggedItem?.groupIndex === gIndex && draggedItem?.linkIndex === lIndex;
 
@@ -812,11 +831,11 @@ export function Sidebar() {
                       className={`relative group ${isDraggingThis ? "opacity-50 border border-dashed border-slate-300 rounded-xl" : ""}`}
                     >
                       <Link
-                        href={link.subLinks ? "#" : appHref(link.href)}
+                        href={hasSubLinks ? "#" : appHref(link.href)}
                         data-tour={link.href}
                         title={collapsed ? t(`nav.${link.label}`) : undefined}
                         onClick={(e) => {
-                          if (link.subLinks) toggleSubmenu(e);
+                          if (hasSubLinks) toggleSubmenu(e);
                           else setActiveHref(link.href);
                         }}
                         className={`
@@ -850,7 +869,7 @@ export function Sidebar() {
                             {link.badge}
                           </span>
                         )}
-                        {!collapsed && link.subLinks && (
+                        {!collapsed && hasSubLinks && (
                           <svg
                             className={`ms-auto w-4 h-4 transition-transform duration-200 text-slate-400 ${expandedMenus[link.href] ? "rotate-180" : ""}`}
                             viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
@@ -864,7 +883,7 @@ export function Sidebar() {
                       </Link>
 
                       {/* Sub-links Rendering */}
-                      {!collapsed && link.subLinks && expandedMenus[link.href] && (
+                      {!collapsed && hasSubLinks && expandedMenus[link.href] && (
                         <div className="mt-1 mb-2 ms-[36px] relative space-y-1 animate-in slide-in-from-top-1 fade-in duration-200 me-2">
                           {/* Continuous vertical line for the tree */}
                           <div className="absolute start-[9px] top-2 bottom-3.5 w-[2px] bg-slate-100 rounded-full" />

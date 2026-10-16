@@ -57,6 +57,7 @@ from routers.users import router as users_router
 from routers.auth import router as auth_router
 from routers.customers import router as customers_router
 from routers.cases import router as cases_router
+from routers.underwriting_tracks import router as underwriting_tracks_router
 from routers.artifacts import router as artifacts_router
 from routers.organizations import router as organizations_router
 from routers.group_policies import router as group_policies_router
@@ -215,6 +216,8 @@ _TENANT_RESOURCE = re.compile(r"^/tenants/([0-9a-fA-F-]{36})/([A-Za-z][\w-]*)")
 
 # Underwriting hold: a held case refuses every write (case_hold.py).
 app.middleware("http")(refuse_writes_on_held_case)
+from specialist_access import restrict_specialist_writes
+app.middleware("http")(restrict_specialist_writes)
 
 
 @app.middleware("http")
@@ -251,6 +254,7 @@ app.include_router(users_router)
 app.include_router(auth_router)
 app.include_router(customers_router)
 app.include_router(cases_router)
+app.include_router(underwriting_tracks_router)
 app.include_router(artifacts_router)
 app.include_router(organizations_router)
 app.include_router(group_policies_router)

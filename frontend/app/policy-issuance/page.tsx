@@ -2,10 +2,9 @@
 
 import { displayDate } from '../../lib/dateDisplay';
 import { useEffect, useMemo, useState } from "react";
-import { SegmentDropdown, SegmentFilter } from "@/components/SegmentDropdown";
+import type { SegmentFilter } from "@/components/SegmentDropdown";
 import { useNotify } from "@/components/NotificationContext";
 import {
-  getPolicyStats,
   listPolicies,
   issuePolicy,
   getIssuancePreview,
@@ -17,7 +16,6 @@ import {
   listPolicyDocuments,
   downloadDocument,
   PolicyListItem,
-  PolicyStats,
   IssuanceResult,
   IssuancePreview,
   PaymentMethod,
@@ -28,21 +26,20 @@ import { fmtCoverage } from "@/lib/mock-data";
 
 import { PolicyLifecycleDrawer } from "@/components/policy/PolicyLifecycleDrawer";
 import { LifecycleStepper } from "@/components/policy/LifecycleStepper";
-import { MetricCard } from "@/components/MetricCard";
 import FiltersPanel from "@/components/FiltersPanel";
 
 const STATUS_BADGE: Record<string, string> = {
-  APPROVED: "bg-blue-50 text-blue-700 border-blue-200",
-  ACCEPTEDWITHLOADINGS: "bg-amber-50 text-amber-700 border-amber-200",
-  PENDINGPAYMENT: "bg-blue-50 text-blue-700 border-blue-200",
-  ACTIVE: "bg-blue-50 text-blue-700 border-blue-200",
-  ISSUED: "bg-blue-50 text-blue-700 border-blue-200",
-  QUOTED: "bg-slate-50 text-slate-600 border-slate-200",
-  LAPSED: "bg-red-50 text-red-700 border-red-200",
-  CANCELLED: "bg-red-50 text-red-700 border-red-200",
-  POSTPONED: "bg-amber-50 text-amber-700 border-amber-200",
-  REINSURERREFERRED: "bg-blue-50 text-blue-700 border-blue-200",
-  NOTTAKENUP: "bg-slate-50 text-red-700 border-slate-200",
+  APPROVED: "bg-blue-50 text-blue-700 ring-blue-600/15",
+  ACCEPTEDWITHLOADINGS: "bg-blue-50 text-blue-700 ring-blue-600/15",
+  PENDINGPAYMENT: "bg-amber-50 text-amber-800 ring-amber-600/20",
+  ACTIVE: "bg-emerald-50 text-emerald-700 ring-emerald-600/15",
+  ISSUED: "bg-blue-50 text-blue-700 ring-blue-600/15",
+  QUOTED: "bg-slate-50 text-slate-600 ring-slate-500/15",
+  LAPSED: "bg-rose-50 text-rose-700 ring-rose-600/15",
+  CANCELLED: "bg-rose-50 text-rose-700 ring-rose-600/15",
+  POSTPONED: "bg-amber-50 text-amber-800 ring-amber-600/20",
+  REINSURERREFERRED: "bg-blue-50 text-blue-700 ring-blue-600/15",
+  NOTTAKENUP: "bg-slate-50 text-rose-700 ring-slate-500/15",
 };
 
 // ── Shared issuance stepper ──────────────────────────────────────────────────
@@ -539,6 +536,44 @@ interface PaymentModalProps {
 
 const isPendingPayment = (status: string | null | undefined) => (status || "").toUpperCase().replace(/[^A-Z]/g, "") === "PENDINGPAYMENT";
 
+/** What the list shows as a policy's status: Approved and AcceptedWithLoadings both read
+ *  "Pending Issuance", so they are one filter pill, not two. */
+const statusKey = (status: string | null | undefined) => {
+  const st = (status || "").toUpperCase().replace(/[^A-Z]/g, "");
+  if (st === "APPROVED" || st === "ACCEPTEDWITHLOADINGS") return "PENDINGISSUANCE";
+  return st || "UNKNOWN";
+};
+
+const STATUS_KEY_LABEL: Record<string, string> = {
+  PENDINGISSUANCE: "Pending Issuance",
+  PENDINGPAYMENT: "Pending Payment",
+  COUNTEROFFER: "Counter Offer",
+  ISSUED: "Issued",
+  ACTIVE: "Active",
+  LAPSED: "Lapsed",
+  CANCELLED: "Cancelled",
+  GRACEPERIOD: "Grace Period",
+  MATURED: "Matured",
+  SURRENDERED: "Surrendered",
+  TERMINATED: "Terminated",
+  EXPIRED: "Expired",
+  REINSTATED: "Reinstated",
+  PAIDUP: "Paid Up",
+};
+
+const STATUS_KEY_DOT: Record<string, string> = {
+  PENDINGISSUANCE: "bg-blue-500",
+  PENDINGPAYMENT: "bg-amber-400",
+  COUNTEROFFER: "bg-amber-400",
+  ISSUED: "bg-blue-500",
+  ACTIVE: "bg-emerald-500",
+  LAPSED: "bg-rose-500",
+  CANCELLED: "bg-rose-500",
+};
+
+const initials = (name: string) =>
+  name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]?.toUpperCase()).join("") || "?";
+
 function PaymentModal({
   policy,
   onClose,
@@ -825,20 +860,17 @@ import { tx } from "@/lib/i18n/tx";
 function PolicyIssuanceContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const initialTab = searchParams.get("tab") === "active" ? "active" : "queue";
-
-  const [stats, setStats] = useState<PolicyStats | null>(null);
   const [policies, setPolicies] = useState<PolicyListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [tab, setTab] = useState<"queue" | "active">(initialTab);
-
+  // Both legacy queue URLs now open the same policy list.
   useEffect(() => {
-    const t = searchParams.get("tab");
-    if (t === "active" || t === "queue") {
-      setTab(t);
+    if (searchParams.has("tab")) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("tab");
+      router.replace(`/policy-issuance${params.size ? `?${params}` : ""}`, { scroll: false });
     }
-  }, [searchParams]);
+  }, [router, searchParams]);
 
   const [selectedPolicy, setSelectedPolicy] = useState<PolicyListItem | null>(
     null,
@@ -863,9 +895,7 @@ function PolicyIssuanceContent() {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const [s, p] = await Promise.all([getPolicyStats(), listPolicies()]);
-      setStats(s);
-      setPolicies(p);
+      setPolicies(await listPolicies());
     } catch (err: any) {
       console.error(err);
       setErrorMsg(err.message ?? String(err));
@@ -905,64 +935,30 @@ function PolicyIssuanceContent() {
     [policies],
   );
 
-  const active = useMemo(
-    () => policies.filter((p) => (p.status || "").toUpperCase() === "ACTIVE"),
-    [policies],
-  );
+  const managedPolicies = useMemo(() => {
+    const readyIds = new Set(queue.map((p) => p.id));
+    return policies.filter((p) => readyIds.has(p.id) || p.policy_number || [
+      "ACTIVE", "GRACEPERIOD", "LAPSED", "CANCELLED", "MATURED", "SURRENDERED",
+      "TERMINATED", "EXPIRED", "REINSTATED", "PAIDUP",
+    ].includes((p.status || "").toUpperCase().replace(/[^A-Z]/g, "")));
+  }, [policies, queue]);
 
   const clearFilters = () => {
-    setFilterStatus("ALL");
     setDateFrom("");
     setDateTo("");
   };
 
-  const structuredFilterCount = [
-    filterStatus !== "ALL",
-    dateFrom || dateTo,
-  ].filter(Boolean).length;
+  const structuredFilterCount = [dateFrom || dateTo].filter(Boolean).length;
 
-  const activeFilterChips: {
-    key: string;
-    label: string;
-    onRemove: () => void;
-  }[] = [];
-  if (filterStatus !== "ALL")
-    activeFilterChips.push({
-      key: "status",
-      label: filterStatus,
-      onRemove: () => setFilterStatus("ALL"),
-    });
-  if (dateFrom || dateTo) {
-    const label =
-      dateFrom && dateTo
-        ? dateFrom === dateTo
-          ? `On ${dateFrom}`
-          : `${dateFrom} → ${dateTo}`
-        : dateFrom
-          ? `From ${dateFrom}`
-          : `Until ${dateTo}`;
-    activeFilterChips.push({
-      key: "date",
-      label,
-      onRemove: () => {
-        setDateFrom("");
-        setDateTo("");
-      },
-    });
-  }
 
-  const filtered = useMemo(() => {
-    // Newest first, in both the pre- and post-issuance queues, so a freshly added entry lands at the top.
-    let list = [...(tab === "queue" ? queue : active)].sort(
+  // Queue + segment + dates + search — everything but the status pill, so each pill can show its count.
+  const scoped = useMemo(() => {
+    // Newest first across every policy status.
+    let list = [...managedPolicies].sort(
       (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime(),
     );
-
-    // Segment filter
     if (segment !== "all") {
       list = list.filter((p) => p.segment === segment);
-    }
-    if (filterStatus !== "ALL") {
-      list = list.filter((p) => p.status === filterStatus);
     }
     if (dateFrom || dateTo) {
       list = list.filter((p) => {
@@ -972,32 +968,43 @@ function PolicyIssuanceContent() {
         return d >= start && d <= end;
       });
     }
-
     if (!search.trim()) return list;
     const q = search.toLowerCase();
     return list.filter(
       (p) =>
         p.customer_name.toLowerCase().includes(q) ||
         (p.policy_number ?? "").toLowerCase().includes(q) ||
+        (p.case_number ?? "").toLowerCase().includes(q) ||
         p.product_name.toLowerCase().includes(q),
     );
-  }, [tab, queue, active, search, segment, filterStatus, dateFrom, dateTo]);
+  }, [managedPolicies, search, segment, dateFrom, dateTo]);
+
+  const statusPills = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of scoped) counts.set(statusKey(p.status), (counts.get(statusKey(p.status)) ?? 0) + 1);
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  }, [scoped]);
+
+  const filtered = useMemo(
+    () => (filterStatus === "ALL" ? scoped : scoped.filter((p) => statusKey(p.status) === filterStatus)),
+    [scoped, filterStatus],
+  );
 
   const { pageItems: pagedPolicies, pagination } = usePagination(
     filtered,
     12,
-    tab,
+    `${segment}:${filterStatus}:${search}:${dateFrom}:${dateTo}`,
   );
 
   const segmentCounts = useMemo(() => {
-    const list = tab === "queue" ? queue : active;
+    const list = managedPolicies;
     return {
       all: list.length,
       individual: list.filter((p) => p.segment === "individual").length,
       organization: list.filter((p) => p.segment === "organization").length,
       family: list.filter((p) => p.segment === "family").length,
     };
-  }, [tab, queue, active]);
+  }, [managedPolicies]);
 
   const pendingPaymentCount = useMemo(
     () =>
@@ -1016,12 +1023,7 @@ function PolicyIssuanceContent() {
     load();
   };
 
-  // Pre-issuance is finished once the policy is Active; it then lives in the Post-Issuance Queue, so go there
-  // (the URL carries the tab, which also moves the sidebar highlight).
-  const goToPostIssuance = () => {
-    setTab("active");
-    router.replace("/policy-issuance?tab=active");
-  };
+  const showAllPolicies = () => setFilterStatus("ALL");
 
   const handleConfirmed = (result: PaymentConfirmResult, policyId: string) => {
     const pol = policies.find((p) => p.id === policyId);
@@ -1033,45 +1035,34 @@ function PolicyIssuanceContent() {
       }),
     );
     load();
-    goToPostIssuance();
+    showAllPolicies();
     setTimeout(() => setActivatedMsg(null), 6000);
   };
 
   return (
-    <div className="px-6 py-4 space-y-4 max-w-screen-2xl mx-auto w-full">
-      {/* Sleek Compact Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/80">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-xs shrink-0">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              className="w-4 h-4"
-            >
-              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-              <path d="M9 15l2 2 4-4" />
-            </svg>
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-slate-900 tracking-tight">
-                {tx("Policy Issuance Hub")}
-              </h1>
-              <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 text-[10px] font-semibold uppercase tracking-wider">
-                {tx("Unified Portal")}
-              </span>
-            </div>
-            <p className="text-xs text-slate-500">
-              {tx(
-                "Bind approved proposals, verify pre-issuance gates, collect premiums & manage active contracts.",
-              )}
-            </p>
-          </div>
+    <div className="px-6 py-5 space-y-4 max-w-screen-2xl mx-auto w-full">
+      {/* Header — same shape as the Leads page; the title follows the queue */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+            {tx("Policies")}
+          </h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {tx("Issue, activate and manage policies in one place. Filter by status to find the next action.")}
+          </p>
         </div>
-
-        {/* Segmented Switcher removed as sidebar handles navigation */}
+        <button
+          onClick={load}
+          disabled={loading}
+          className="flex items-center gap-1.5 self-start px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm disabled:opacity-50"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}>
+            <polyline points="23 4 23 10 17 10" />
+            <polyline points="1 20 1 14 7 14" />
+            <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+          </svg>
+          {tx("Refresh")}
+        </button>
       </div>
 
       {errorMsg && (
@@ -1081,109 +1072,88 @@ function PolicyIssuanceContent() {
         </div>
       )}
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        {[
-          {
-            title: "Pending Issuance",
-            value: stats?.pending_issuance ?? "—",
-            sub: "approved, not yet bound",
-            color: "blue" as const,
-          },
-          {
-            title: "Pending Payment",
-            value: loading ? "—" : pendingPaymentCount,
-            sub: "awaiting payment or activation",
-            color: "blue" as const,
-          },
-          {
-            title: "Active Policies",
-            value: stats?.active ?? "—",
-            sub: "in-force coverage",
-            color: "blue" as const,
-          },
-          {
-            title: "Expiring (30d)",
-            value: stats?.expiring_30d ?? "—",
-            sub: "renewal due soon",
-            color: "blue" as const,
-          },
-          {
-            title: "Lapsed",
-            value: stats?.lapsed ?? "—",
-            sub: "coverage terminated",
-            color: "blue" as const,
-          },
-        ].map((k) => (
-          <MetricCard
-            key={k.title}
-            title={k.title}
-            value={loading ? "—" : k.value}
-            subtitle={k.sub}
-            accent={k.color}
-          />
-        ))}
-      </div>
-
-      {/* Search & Filters */}
-      <div className="flex items-center justify-between gap-3 flex-wrap bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
-        <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
-          <input
-            type="text"
-            placeholder={tx("Search customer, policy, product…")}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full max-w-xs px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-slate-50"
-          />
-          <SegmentDropdown
-            value={segment}
-            onChange={setSegment}
-            counts={segmentCounts}
-          />
-
-          <FiltersPanel
-            dateFrom={dateFrom}
-            dateTo={dateTo}
-            onDateFromChange={setDateFrom}
-            onDateToChange={setDateTo}
-            statusFilter={filterStatus}
-            onStatusChange={setFilterStatus}
-            statusOptions={[
-              { value: "PendingPayment", label: "Pending Payment" },
-              { value: "Approved", label: "Approved" },
-              { value: "Active", label: "Active" },
-              { value: "Issued", label: "Issued" },
-              { value: "Quoted", label: "Quoted" },
-            ]}
-            activeCount={structuredFilterCount}
-            onClearAll={clearFilters}
-          />
-        </div>
-      </div>
-      {activeFilterChips.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 -mt-2">
-          {activeFilterChips.map((chip) => (
-            <span
-              key={chip.key}
-              className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-medium"
-            >
-              {tx(chip.label)}
+      <div className="flex flex-col gap-3">
+        {/* Toolbar: segment tabs with counts, search, date filters — every control 42px tall */}
+        <div className="flex flex-wrap items-center gap-3 w-full">
+          <div className="inline-flex h-[42px] items-stretch bg-white p-1 rounded-xl shadow-sm border border-slate-200 shrink-0">
+            {([["all", "All"], ["individual", "Individual"], ["family", "Family"], ["organization", "Corporate"]] as [SegmentFilter, string][]).map(([value, label]) => (
               <button
-                onClick={chip.onRemove}
-                className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-blue-100 text-blue-400 hover:text-blue-700"
+                key={value}
+                type="button"
+                onClick={() => setSegment(value)}
+                className={`inline-flex items-center gap-2 px-3.5 rounded-lg text-sm font-semibold transition-colors ${segment === value
+                  ? "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-100"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                  }`}
               >
+                {tx(label)}
+                <span className={`min-w-[1.5rem] rounded-full px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${segment === value ? "bg-white text-blue-700 ring-1 ring-inset ring-blue-100" : "bg-slate-100 text-slate-500"}`}>
+                  {loading ? "—" : segmentCounts[value as keyof typeof segmentCounts] ?? 0}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <div className="relative w-full max-w-[320px] shrink-0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+            <input
+              type="text"
+              placeholder={tx("Search customer, policy, application or product…")}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full h-[42px] pl-9 pr-8 text-sm border border-slate-200 rounded-xl bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-shadow"
+            />
+            {search && (
+              <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                 ✕
               </button>
-            </span>
-          ))}
-          <button
-            onClick={clearFilters}
-            className="text-xs font-semibold text-slate-400 hover:text-blue-600 hover:underline ml-1"
-          >
-            {tx("Clear all")}
-          </button>
+            )}
+          </div>
+
+          <div className="shrink-0">
+            <FiltersPanel
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+              onDateFromChange={setDateFrom}
+              onDateToChange={setDateTo}
+              activeCount={structuredFilterCount}
+              onClearAll={clearFilters}
+            />
+          </div>
         </div>
-      )}
+
+        {/* Status: quiet pills from what's in this queue; the old KPI cards as one line on the right */}
+        <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label={tx("Status")}>
+          {[["ALL", scoped.length] as [string, number], ...statusPills].map(([key, count]) => {
+            const on = filterStatus === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                onClick={() => setFilterStatus(key)}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  on ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                }`}
+              >
+                {key !== "ALL" && <span className={`h-1.5 w-1.5 rounded-full ${on ? "bg-white" : STATUS_KEY_DOT[key] ?? "bg-slate-400"}`} />}
+                {key === "ALL" ? tx("All") : tx(STATUS_KEY_LABEL[key] ?? key.charAt(0) + key.slice(1).toLowerCase())}
+                <span className={`tabular-nums ${on ? "text-slate-300" : "text-slate-400"}`}>{loading ? "—" : count}</span>
+              </button>
+            );
+          })}
+          {!loading && (
+            <div className="ml-auto flex items-center gap-4 text-xs text-slate-500">
+              {[[tx("Pending issuance"), managedPolicies.filter((p) => statusKey(p.status) === "PENDINGISSUANCE").length], [tx("Pending payment"), pendingPaymentCount], [tx("Active"), managedPolicies.filter((p) => statusKey(p.status) === "ACTIVE").length], [tx("Lapsed"), managedPolicies.filter((p) => statusKey(p.status) === "LAPSED").length]].map(([label, value]) => (
+                <span key={String(label)} className="whitespace-nowrap">
+                  {label} <span className="font-semibold text-slate-800 tabular-nums">{value ?? "—"}</span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1192,219 +1162,124 @@ function PolicyIssuanceContent() {
             <div className="animate-spin h-6 w-6 rounded-full border-2 border-slate-100 border-t-blue-500" />
           </div>
         ) : filtered.length === 0 ? (
-          <div className="py-20 flex flex-col items-center text-center">
+          <div className="py-20 flex flex-col items-center text-center px-6">
             <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3">
-              <span className="text-2xl">📋</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6 text-slate-400">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><path d="M14 2v6h6" />
+              </svg>
             </div>
             <p className="text-sm font-semibold text-slate-600">
-              {tab === "queue"
-                ? tx("No policies awaiting issuance")
-                : tx("No active policies")}
+              {managedPolicies.length > 0 ? tx("No policies match your search and filters") : tx("No policies yet")}
             </p>
             <p className="text-xs text-slate-400 mt-1 max-w-xs">
-              {tab === "queue"
-                ? tx("Approved cases from underwriting will appear here.")
-                : tx("Issued policies will appear here once bound.")}
+              {managedPolicies.length > 0 ? tx("Try a different segment, status or search.") : tx("Approved applications and issued policies will appear here.")}
             </p>
           </div>
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                    <th className="px-5 py-3 text-left">{tx("Customer")}</th>
-                    {tab === "queue" && (
-                      <th className="px-5 py-3 text-left">{tx("Case No")}</th>
-                    )}
-                    {tab === "active" && (
-                      <th className="px-5 py-3 text-left">{tx("Policy No")}</th>
-                    )}
-                    <th className="px-5 py-3 text-left">{tx("Product")}</th>
-                    <th className="px-5 py-3 text-right">
-                      {tx("Sum Assured")}
-                    </th>
-                    <th className="px-5 py-3 text-left">{tx("Status")}</th>
-                    {tab === "queue" && (
-                      <th className="px-5 py-3 text-left w-56">
-                        {tx("Stage")}
-                      </th>
-                    )}
-                    {tab === "active" && (
-                      <th className="px-5 py-3 text-left">{tx("Expiry")}</th>
-                    )}
-                    <th className="px-5 py-3 text-right">{tx("Action")}</th>
+              <table className="w-full text-sm text-left whitespace-nowrap">
+                <thead className="bg-white border-b border-slate-200">
+                  <tr className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    <th className="pl-6 pr-4 py-3">{tx("Customer")}</th>
+                    <th className="px-4 py-3">{tx("Policy / Application")}</th>
+                    <th className="px-4 py-3">{tx("Product")}</th>
+                    <th className="px-4 py-3 text-right">{tx("Sum Assured")}</th>
+                    <th className="px-4 py-3">{tx("Status")}</th>
+                    <th className="px-4 py-3 w-56">{tx("Stage")}</th>
+                    <th className="px-4 py-3">{tx("Expiry")}</th>
+                    <th className="pl-4 pr-6 py-3 text-right"><span className="sr-only">{tx("Action")}</span></th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {pagedPolicies.map((p) => (
-                    <tr
-                      key={p.id}
-                      className="hover:bg-slate-50 transition-colors cursor-pointer"
-                      onClick={() => setViewPolicy(p)}
-                    >
-                      <td className="px-5 py-3">
-                        <div>
-                          <p className="font-semibold text-slate-800 text-xs">
-                            {p.customer_name}
-                          </p>
-                          {tab === "queue" && (
-                            <p className="text-[10px] text-slate-400 mt-0.5">
-                              {p.term_years}
-                              {tx("yr term")}
-                            </p>
-                          )}
-                        </div>
-                      </td>
-                      {tab === "queue" && (
-                        <td className="px-5 py-3">
-                          {p.case_number ? (
-                            <p className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-semibold inline-block">
-                              {p.case_number}
-                            </p>
-                          ) : (
-                            <span className="text-slate-300">—</span>
-                          )}
-                        </td>
-                      )}
-                      {tab === "active" && (
-                        <td className="px-5 py-3">
-                          <p className="font-mono text-[10px] text-blue-700 font-bold inline-block">
-                            {p.policy_number ?? "—"}
-                          </p>
-                        </td>
-                      )}
-                      <td className="px-5 py-3 text-xs text-slate-600">
-                        {p.product_name}
-                      </td>
-                      <td className="px-5 py-3 text-right font-semibold text-slate-700 text-xs">
-                        {fmtCoverage(p.coverage_amount)}
-                      </td>
-                      <td className="px-5 py-3">
-                        {(() => {
-                          // Money in, cover not yet bound: say so, instead of "pending payment".
-                          const paidAwaitingActivation = isPendingPayment(p.status) && (p.initial_premium_received ?? 0) > 0 && !((p.initial_premium_balance ?? 0) > 0);
-                          return (
-                            <>
-                              <span
-                                className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border ${paidAwaitingActivation ? "bg-emerald-50 text-emerald-700 border-emerald-200" : (STATUS_BADGE[(p.status || "").toUpperCase()] ?? "bg-slate-100 text-slate-600 border-slate-200")}`}
-                              >
-                                {paidAwaitingActivation
-                                  ? tx("Payment received")
-                                  : p.status === "Approved" || p.status === "AcceptedWithLoadings"
-                                    ? tx("Pending Issuance")
-                                    : isPendingPayment(p.status) ? tx("Pending Payment") : p.status}
-                              </span>
-                              {isPendingPayment(p.status) && (p.initial_premium_balance ?? 0) > 0 && (
-                                <p className="mt-0.5 text-[10px] text-amber-700">{tx("{0} paid · {1} balance due", { 0: fmtPKR(p.initial_premium_received ?? 0), 1: fmtPKR(p.initial_premium_balance ?? 0) })}</p>
-                              )}
-                              {paidAwaitingActivation && (
-                                <p className="mt-0.5 text-[10px] text-slate-500">{tx("{0} collected · ready to activate", { 0: fmtPKR(p.initial_premium_received ?? 0) })}</p>
-                              )}
-                            </>
-                          );
-                        })()}
-                      </td>
-                      {tab === "queue" && (
-                        <td className="px-5 py-3">
-                          <div className="max-w-[190px]">
-                            <LifecycleStepper status={p.status} compact />
+                <tbody className="divide-y divide-slate-100">
+                  {pagedPolicies.map((p) => {
+                    // Money in, cover not yet bound: say so, instead of "pending payment".
+                    const paidAwaitingActivation = isPendingPayment(p.status) && (p.initial_premium_received ?? 0) > 0 && !((p.initial_premium_balance ?? 0) > 0);
+                    const noAccess = userRole === "Agent";
+                    const noAccessTitle = noAccess ? tx("Currently, you have no access to do this, ask your manager") : undefined;
+                    return (
+                      <tr
+                        key={p.id}
+                        className="group hover:bg-slate-50/70 transition-colors cursor-pointer"
+                        onClick={() => setViewPolicy(p)}
+                      >
+                        <td className="pl-6 pr-4 py-3.5">
+                          <div className="flex items-center gap-3">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[11px] font-semibold text-blue-700 ring-1 ring-inset ring-blue-100">
+                              {initials(p.customer_name)}
+                            </span>
+                            <div className="min-w-0">
+                              <div className="font-semibold text-slate-900 group-hover:text-blue-700 transition-colors">{p.customer_name}</div>
+                              <div className="text-[11px] text-slate-400 mt-0.5">{tx("{0}-year term", { 0: p.term_years })}</div>
+                            </div>
                           </div>
                         </td>
-                      )}
-                      {tab === "active" && (
-                        <td className="px-5 py-3 text-xs text-slate-500">
-                          {displayDate(p.expiry_date ?? "—")}
+                        <td className="px-4 py-3.5 font-mono text-xs text-slate-500">
+                          <div>{p.policy_number || tx("Not yet issued")}</div>
+                          {p.case_number && <div className="mt-1 text-[11px] text-slate-400">{p.case_number.replace(/^CASE-/, "APP-")}</div>}
                         </td>
-                      )}
-                      <td className="px-5 py-3 text-right">
-                        {tab === "queue" ? (
-                          (p.status || "")
-                            .toUpperCase()
-                            .replace(/[^A-Z]/g, "") === "PENDINGPAYMENT" ? (
+                        <td className="px-4 py-3.5 text-[13px] text-slate-600">{p.product_name}</td>
+                        <td className="px-4 py-3.5 text-right text-[13px] font-semibold text-slate-900 tabular-nums">{fmtCoverage(p.coverage_amount)}</td>
+                        <td className="px-4 py-3.5">
+                          <span
+                            className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${paidAwaitingActivation ? "bg-emerald-50 text-emerald-700 ring-emerald-600/15" : (STATUS_BADGE[(p.status || "").toUpperCase().replace(/[^A-Z]/g, "")] ?? "bg-slate-50 text-slate-600 ring-slate-500/15")}`}
+                          >
+                            {paidAwaitingActivation
+                              ? tx("Payment received")
+                              : p.status === "Approved" || p.status === "AcceptedWithLoadings"
+                                ? tx("Pending Issuance")
+                                : isPendingPayment(p.status) ? tx("Pending Payment") : p.status}
+                          </span>
+                          {isPendingPayment(p.status) && (p.initial_premium_balance ?? 0) > 0 && (
+                            <p className="mt-1 text-[11px] text-amber-700">{tx("{0} paid · {1} balance due", { 0: fmtPKR(p.initial_premium_received ?? 0), 1: fmtPKR(p.initial_premium_balance ?? 0) })}</p>
+                          )}
+                          {paidAwaitingActivation && (
+                            <p className="mt-1 text-[11px] text-slate-500">{tx("{0} collected · ready to activate", { 0: fmtPKR(p.initial_premium_received ?? 0) })}</p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5">
+                          {["PENDINGISSUANCE", "PENDINGPAYMENT", "ISSUED", "COUNTEROFFER"].includes(statusKey(p.status))
+                            ? <div className="max-w-[190px]"><LifecycleStepper status={p.status} compact /></div>
+                            : <span className="text-xs text-slate-500">{tx("Policy servicing")}</span>}
+                        </td>
+                        <td className="px-4 py-3.5 text-xs text-slate-500">{p.expiry_date ? displayDate(p.expiry_date) : "—"}</td>
+                        <td className="pl-4 pr-6 py-3.5 text-right">
+                          {["APPROVED", "ACCEPTEDWITHLOADINGS", "PENDINGPAYMENT"].includes((p.status || "").toUpperCase().replace(/[^A-Z]/g, "")) ? (
                             <button
-                              disabled={userRole === "Agent"}
+                              disabled={noAccess}
+                              title={noAccessTitle}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (userRole === "Agent") return;
-                                setPaymentPolicy(p);
+                                if (noAccess) return;
+                                if (isPendingPayment(p.status)) setPaymentPolicy(p);
+                                else setSelectedPolicy(p);
                               }}
-                              title={
-                                userRole === "Agent"
-                                  ? tx(
-                                      "Currently, you have no access to do this, ask your manager",
-                                    )
-                                  : undefined
-                              }
-                              className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white rounded-lg shadow-sm whitespace-nowrap transition-all ${
-                                userRole === "Agent"
-                                  ? "bg-slate-400 opacity-50 cursor-not-allowed"
-                                  : "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 active:scale-95"
-                              }`}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-600 shadow-sm transition-colors hover:bg-blue-700 active:scale-95 disabled:bg-slate-300 disabled:cursor-not-allowed disabled:active:scale-100"
                             >
-                              <svg
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2.5"
-                                className="w-3 h-3"
-                              >
-                                <rect
-                                  x="1"
-                                  y="4"
-                                  width="22"
-                                  height="16"
-                                  rx="2"
-                                />
-                                <line x1="1" y1="10" x2="23" y2="10" />
-                              </svg>
-                              {(p.initial_premium_received ?? 0) > 0 && !((p.initial_premium_balance ?? 0) > 0) ? tx("Activate Cover") : tx("Confirm Payment")}
+                              {isPendingPayment(p.status) ? (
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3"><rect x="1" y="4" width="22" height="16" rx="2" /><line x1="1" y1="10" x2="23" y2="10" /></svg>
+                              ) : (
+                                <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3"><polygon points="5 3 19 12 5 21" /></svg>
+                              )}
+                              {isPendingPayment(p.status)
+                                ? paidAwaitingActivation ? tx("Activate Cover") : tx("Confirm Payment")
+                                : tx("Issue Policy")}
                             </button>
                           ) : (
                             <button
-                              disabled={userRole === "Agent"}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (userRole === "Agent") return;
-                                setSelectedPolicy(p);
-                              }}
-                              title={
-                                userRole === "Agent"
-                                  ? tx(
-                                      "Currently, you have no access to do this, ask your manager",
-                                    )
-                                  : undefined
-                              }
-                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-bold shadow-sm transition-colors ${
-                                userRole === "Agent"
-                                  ? "bg-slate-400 opacity-50 cursor-not-allowed"
-                                  : "bg-blue-600 hover:bg-blue-700"
-                              }`}
+                              type="button"
+                              title={tx("View Details")}
+                              onClick={(e) => { e.stopPropagation(); setViewPolicy(p); }}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors group-hover:text-blue-600 hover:bg-white hover:ring-1 hover:ring-slate-200"
                             >
-                              <svg
-                                viewBox="0 0 24 24"
-                                fill="currentColor"
-                                className="w-3 h-3"
-                              >
-                                <polygon points="5 3 19 12 5 21" />
-                              </svg>
-                              {tx("Issue Policy")}
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><polyline points="9 18 15 12 9 6" /></svg>
+                              <span className="sr-only">{tx("View Details")}</span>
                             </button>
-                          )
-                        ) : (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setViewPolicy(p);
-                            }}
-                            className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors"
-                          >
-                            {tx("View Details")}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1508,7 +1383,7 @@ function PolicyIssuanceContent() {
                 .toUpperCase()
                 .replace(/[^A-Z]/g, "") === "PENDINGPAYMENT";
             setIssuanceResult(null);
-            if (!pending) goToPostIssuance();
+            if (!pending) showAllPolicies();
           }}
         />
       )}
@@ -1521,7 +1396,7 @@ export default function PolicyIssuancePage() {
     <Suspense
       fallback={
         <div className="p-8 text-center text-slate-500">
-          {tx("Loading Policy Issuance Hub…")}
+          {tx("Loading policies…")}
         </div>
       }
     >

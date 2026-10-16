@@ -1,6 +1,16 @@
 // Urdu page text: policy management components (stage list, lifecycle drawer and stepper, process rail,
 // Stage A pre-issuance panel, reinsurance panel). Keyed by the exact English wording; see ../ur-text.ts.
 const policy: Record<string, string> = {
+  "Issue, activate and manage policies in one place. Filter by status to find the next action.": "پالیسیوں کا اجرا، فعالیت اور انتظام ایک جگہ کریں۔ اگلا اقدام دیکھنے کے لیے حالت کے مطابق فلٹر کریں۔",
+  "Search customer, policy, application or product…": "صارف، پالیسی، درخواست یا پروڈکٹ تلاش کریں…",
+  "Policy / Application": "پالیسی / درخواست",
+  "Policy servicing": "پالیسی کی خدمات",
+  "No policies yet": "ابھی کوئی پالیسیاں نہیں ہیں",
+  "Approved applications and issued policies will appear here.": "منظور شدہ درخواستیں اور جاری شدہ پالیسیاں یہاں ظاہر ہوں گی۔",
+  "Loading policies…": "پالیسیاں لوڈ ہو رہی ہیں…",
+  "Opening policies…": "پالیسیاں کھولی جا رہی ہیں…",
+  "Policy Journey": "پالیسی کے مراحل",
+
   // ── Policy management list & drawer ───────────────────────────────────────
   "Policy Management": "پالیسی کا انتظام",
   "How policy issuance works": "پالیسی کا اجرا کیسے ہوتا ہے",

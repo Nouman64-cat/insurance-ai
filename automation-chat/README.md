@@ -61,8 +61,8 @@ Reference: [OpenAI WebRTC guide](https://developers.openai.com/api/docs/guides/v
 ## Revisiting choices and changing insurance type
 
 At a guided question or confirmation, use **Change an earlier choice**, type a correction such as
-“Actually, I need family insurance”, or say that correction in live voice. Revision-capable questions
-also offer **Family insurance instead**. Corrections supersede the pending action without treating them
+“Actually, I need family insurance”, or say that correction in live voice. Quick-start questions,
+where the agent defaulted to an individual customer, also offer **Family insurance instead**. Corrections supersede the pending action without treating them
 as consent. Saved customer and proposal records remain unchanged. Existing customer-intake Go back
 buttons retain their one-step behavior.
 

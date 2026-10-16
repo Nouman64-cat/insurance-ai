@@ -103,6 +103,8 @@ export default function LoginPage() {
         targetPath = "/proposal";
       } else if (userRoleName === "ClaimsAdjuster" || userRoleName === "ClaimsManager") {
         targetPath = "/claims";
+      } else if (["Medical Underwriter", "Financial Underwriter"].includes(userRoleName)) {
+        targetPath = (process.env.NEXT_PUBLIC_UNDERWRITING_URL || "http://localhost:3005") + "/underwriting";
       } else if (userRoleName !== "Admin") {
         targetPath = "/cases";
       }

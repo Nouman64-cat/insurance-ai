@@ -10,6 +10,7 @@ import { tx } from "@/lib/i18n/tx";
 import { useRecordHighlighter } from "@/lib/useHighlightTarget";
 import { AUTOMATION_URL, PORTAL_URL, portalUrl } from "@/lib/appLinks";
 import { signOut } from "@/lib/sso";
+import { trackForRole } from "./SpecialistWorkspace";
 import { useWorkbenchUser } from "./SsoGate";
 
 // The workbench's frame: a top bar with the underwriting sections, who is signed in, the language switch and the way
@@ -66,7 +67,9 @@ export default function WorkbenchShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const embedded = useEmbedded();
-  const lit = activeSection(pathname, searchParams.get("tab"));
+  const track = trackForRole(user.role_name);
+  const sections = track ? [{ href: "/underwriting", label: track === "medical" ? "Medical Underwriting" : "Financial Underwriting" }] : SECTIONS;
+  const lit = track ? "/underwriting" : activeSection(pathname, searchParams.get("tab"));
 
   // "Pop the record the agent just navigated to" (?case_id=…, ?highlight=…), as in the portal.
   useRecordHighlighter();
@@ -100,8 +103,8 @@ export default function WorkbenchShell({ children }: { children: ReactNode }) {
 
           {/* Sections sit in the bar on wide screens and drop to their own row (below) on narrow ones. */}
           <nav aria-label={tx("Underwriting sections")} className="hidden h-full items-stretch gap-1 lg:flex">
-            {SECTIONS.map((s) => (
-              <SectionLink key={s.href} href={s.href} label={t(`nav.${s.label}`)} active={lit === s.href} />
+            {sections.map((s) => (
+              <SectionLink key={s.href} href={s.href} label={track ? tx(s.label) : t(`nav.${s.label}`)} active={lit === s.href} />
             ))}
           </nav>
 
@@ -120,7 +123,7 @@ export default function WorkbenchShell({ children }: { children: ReactNode }) {
               {tx("Automation")}
             </a>
             <a
-              href={portalHome(user.role_name)}
+              href={track ? portalUrl("/profile") : portalHome(user.role_name)}
               title={PORTAL_URL}
               className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
             >
@@ -155,8 +158,8 @@ export default function WorkbenchShell({ children }: { children: ReactNode }) {
           </div>
         </div>
         <nav aria-label={tx("Underwriting sections")} className="flex h-11 items-stretch gap-1 overflow-x-auto border-t border-slate-100 px-5 lg:hidden">
-          {SECTIONS.map((s) => (
-            <SectionLink key={s.href} href={s.href} label={t(`nav.${s.label}`)} active={lit === s.href} />
+          {sections.map((s) => (
+            <SectionLink key={s.href} href={s.href} label={track ? tx(s.label) : t(`nav.${s.label}`)} active={lit === s.href} />
           ))}
         </nav>
       </header>

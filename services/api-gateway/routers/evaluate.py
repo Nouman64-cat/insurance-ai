@@ -31,7 +31,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import _session_factory, get_session
-from dependencies import get_kafka_producer, get_settings, get_tenant_id
+from dependencies import get_kafka_producer, get_settings, get_tenant_id, get_current_user, oauth2_scheme
 from kafka_producer import PROPOSAL_TOPIC
 from schemas import (
     EvaluateRequest,
@@ -61,6 +61,17 @@ CASE_ON_HOLD = {"code": "CASE_ON_HOLD", "message": "This case is on hold. Remove
 from risk_persistence import advance_case_workflow, persist_assessment
 
 log = logging.getLogger(__name__)
+
+async def specialist_review_only(token: Optional[str] = Depends(oauth2_scheme), session: AsyncSession = Depends(get_session)):
+    # Preserve internal service evaluation calls, but specialist logins cannot
+    # launch the full application decision pipeline through the gateway.
+    if token:
+        from shared.models.core import Role
+        user = await get_current_user(token, session)
+        role = await session.get(Role, user.role_id)
+        if role and role.name in {"Medical Underwriter", "Financial Underwriter"}:
+            raise HTTPException(403, "Specialist underwriters record their own review; full risk evaluation requires a general underwriter or admin.")
+
 
 router = APIRouter(tags=["Underwriting"])
 
@@ -103,6 +114,7 @@ async def _fetch_evidence_bundle(tenant_id: UUID, case_id: UUID) -> dict:
 
 @router.post(
     "/evaluate",
+    dependencies=[Depends(specialist_review_only)],
     response_model=ProposalAcceptedResponse,
     status_code=status.HTTP_202_ACCEPTED,
     summary="Submit a proposal for async AI underwriting",
@@ -274,7 +286,7 @@ async def evaluate(
 # POST /evaluate/stream — synchronous SSE path (kept for dev / testing)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.post("/evaluate/stream", summary="Run AI underwriting evaluation with streaming progress")
+@router.post("/evaluate/stream", dependencies=[Depends(specialist_review_only)], summary="Run AI underwriting evaluation with streaming progress")
 async def evaluate_stream(
     request: EvaluateRequest,
     tenant_id: UUID = Depends(get_tenant_id),

@@ -67,6 +67,7 @@ const en = {
     "Pre-Underwriting": "Pre-Underwriting",
     "Risk Engine & OCR OPS": "Risk Engine & OCR OPS",
     "Post-Underwriting Verification": "Post-Underwriting Verification",
+    "Policies": "Policies",
     "Policy Issuance": "Policy Issuance",
     "Pre-Issuance Queue": "Pre-Issuance Queue",
     "Post-Issuance Queue": "Post-Issuance Queue",

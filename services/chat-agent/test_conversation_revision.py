@@ -87,3 +87,16 @@ class RevisionTests(unittest.IsolatedAsyncioTestCase):
   result=await _prepare_family_insurance({'customer_id':'11111111-1111-4111-8111-111111111111'},ctx)
   self.assertEqual(result['quick_actions'][0]['payload'],'admin/families/existing-family')
 if __name__=='__main__':unittest.main()
+
+
+def test_missing_fields_are_asked_in_plain_language():
+    from permission import missing_args_question
+    question = missing_args_question(
+        "add_customer", {"first_name": "Nouma", "last_name": "Ejaz"},
+        ["cnic", "date_of_birth", "occupation", "declared_income"],
+    )
+    assert question.startswith("To register Nouma Ejaz, I still need a few details:")
+    assert "- Date of birth" in question and "- Annual income in PKR" in question
+    assert "date_of_birth" not in question and "declared_income" not in question
+    assert missing_args_question("assign_case", {}, ["assigned_user_name"]) == \
+        "To assign this application, could you tell me who to assign it to?"

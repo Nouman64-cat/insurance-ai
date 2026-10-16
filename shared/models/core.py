@@ -1789,6 +1789,32 @@ class CaseAssignment(SQLModel, table=True):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 4b. CaseUnderwritingTrack — the medical and the financial review of one
+#     application, each owned by its own underwriter role. A case with no row
+#     for a track has not been picked up on it yet (reads as Pending).
+# ─────────────────────────────────────────────────────────────────────────────
+UNDERWRITING_TRACKS = ("MEDICAL", "FINANCIAL")
+UNDERWRITING_TRACK_STATUSES = ("PENDING", "IN_REVIEW", "CLEARED", "REFERRED", "DECLINED")
+
+
+class CaseUnderwritingTrack(SQLModel, table=True):
+    __tablename__ = "case_underwriting_tracks"
+    __table_args__ = (UniqueConstraint("case_id", "track", name="uq_case_underwriting_track"),)
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True)
+    case_id: UUID = Field(foreign_key="cases.caseld", index=True)
+    # Plain strings (see UNDERWRITING_TRACKS / UNDERWRITING_TRACK_STATUSES): no Postgres enum type to migrate.
+    track: str = Field(max_length=20)
+    status: str = Field(default="PENDING", max_length=20)
+    assigned_user_id: Optional[UUID] = Field(default=None, foreign_key="users.id", index=True)
+    note: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    updated_by: Optional[UUID] = Field(default=None, foreign_key="users.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 5. CaseHistory
 # ─────────────────────────────────────────────────────────────────────────────
 class CaseHistory(SQLModel, table=True):

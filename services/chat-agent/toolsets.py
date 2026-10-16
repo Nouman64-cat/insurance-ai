@@ -98,6 +98,7 @@ CORE_TOOLS: set[str] = {
 DOMAIN_TOOLS: dict[str, set[str]] = {
     "admin": {
         "list_users",
+        "list_acquisition_sources",
         "add_user",
         "delete_user",
         "list_organizations",
@@ -301,6 +302,8 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "user", "users", "staff", "team", "role", "underwriter", "organization",
         "organisation", "corporate", "company", "family", "families", "household",
         "bulk", "batch", "delete case", "remove case",
+        "acquisition", "acquisition source", "broker", "brokers", "bancassurance",
+        "lead source", "lead sources",
     ),
     "rules": (
         "rule", "rules", "rule set", "ruleset", "rule engine", "criteria",

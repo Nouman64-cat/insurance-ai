@@ -713,6 +713,34 @@ def _lead_status_label(value: str) -> str:
     return _LEAD_STATUS_LABELS.get(value, value.replace("_", " ").title())
 
 
+async def _filter_brought_by(rows: list[dict], who: str, ctx: Ctx) -> tuple[list[dict], Optional[str]]:
+    """Keep leads whose acquisition source (the board's Source filter) or assigned
+    agent matches `who`. Returns (rows, " brought in by …") or (rows, None) when
+    nothing by that name exists — so "none found" is never confused with "zero leads"."""
+    needle = who.lower().strip()
+    sources = [s for s in (await _fetch_acquisition_sources(ctx) or [])
+               if _matches(s, needle, ("name", "code", "partner_name"))]
+    # Non-admins can't read the sources list, but customer rows embed their source.
+    embedded = {str(r["acquisition_source"]["id"]): r["acquisition_source"] for r in rows
+                if isinstance(r.get("acquisition_source"), dict)
+                and _matches(r["acquisition_source"], needle, ("name", "code", "partner_name"))}
+    source_names = {str(s["id"]): s.get("name") for s in [*sources, *embedded.values()]}
+    try:
+        agents = [u for u in await _list_agent_users(ctx) if _matches(u, needle, ("full_name", "email"))]
+    except httpx.HTTPError:
+        agents = []
+    agent_ids = {str(u["id"]) for u in agents}
+    if not source_names and not agent_ids:
+        return rows, None
+
+    def source_id(row: dict) -> str:
+        return str(row.get("acquisition_source_id") or (row.get("acquisition_source") or {}).get("id") or "")
+
+    kept = [r for r in rows if source_id(r) in source_names or str(r.get("assigned_agent_id") or "") in agent_ids]
+    names = sorted({n for n in source_names.values() if n} | {u.get("full_name") for u in agents if u.get("full_name")})
+    return kept, " brought in by " + ", ".join(names)
+
+
 @handles("list_leads")
 async def _list_leads(args: dict, ctx: Ctx) -> dict:
     if args.get("record_scope") == "policyholders":
@@ -720,11 +748,22 @@ async def _list_leads(args: dict, ctx: Ctx) -> dict:
     if args.get("record_scope") == "customers":
         return await _list_customers(args, ctx)
     rows = await _load_leads(ctx)
+    brought_by = ""
+    if args.get("brought_by"):
+        rows, brought_by = await _filter_brought_by(rows, args["brought_by"], ctx)
+        if brought_by is None:
+            return {"success": False, "total": None,
+                    "message": f"No acquisition source or agent matches \"{args['brought_by']}\", so leads "
+                               "can't be filtered by them. Check the name with list_acquisition_sources.",
+                    "quick_actions": [{"label": "Open Acquisition Sources", "actionType": "navigate",
+                                       "payload": "admin/acquisition-sources"}]}
     if args.get("lead_type"):
         rows = [r for r in rows if r["lead_type"] == args["lead_type"]]
     if args.get("search"):
         rows = [r for r in rows if _matches(r, args["search"],
                 _RECORD_SOURCES["lead"]["fields"] + ("first_name", "last_name"))]
+    # Newest first, like the board shows them; IDs were numbered oldest-first above.
+    rows.sort(key=_created_key, reverse=args.get("sort", "newest") != "oldest")
     total = len(rows)
     limit = max(1, min(100, int(args.get("limit") or 20)))
     offset = max(0, int(args.get("offset") or 0))
@@ -733,17 +772,17 @@ async def _list_leads(args: dict, ctx: Ctx) -> dict:
     def cell(value: Any) -> str:
         return str(value if value is not None and value != "" else "—").replace("\\", "\\\\").replace("|", "\\|").replace("\r", " ").replace("\n", " ")
 
-    table = ["| Lead ID | Name | Type | Status | Occupation | Declared Income (PKR) |",
-             "| --- | --- | --- | --- | --- | ---: |"]
+    table = ["| Lead ID | Name | Type | Status | Occupation | Declared Income (PKR) | Added |",
+             "| --- | --- | --- | --- | --- | ---: | --- |"]
     for row in shown:
         income = row.get("declared_income")
         if isinstance(income, (int, float)):
             income = f"{income:,.0f}"
         values = (row["display_id"], _full_name(row), row["type_label"],
-                  row["status_label"], row.get("occupation"), income)
+                  row["status_label"], row.get("occupation"), income, _created_key(row)[:10])
         table.append("| " + " | ".join(cell(value) for value in values) + " |")
     lines = "\n".join(table)
-    message = f"{total} lead(s) match."
+    message = f"{total} lead(s){brought_by} match."
     if shown:
         message += f" Showing {offset + 1}–{offset + len(shown)}:\n\n{lines}"
     elif total:
@@ -1524,24 +1563,89 @@ async def _list_roles(args: dict, ctx: Ctx) -> dict:
     return {"success": True, "roles": res.json()}
 
 
-@handles("list_acquisition_sources")
-async def _list_acquisition_sources(args: dict, ctx: Ctx) -> dict:
-    """Not model-facing — exists so permission_gate can ask where a new customer
-    came from before anything else. The endpoint is Admin-only: for any role that
-    can't read it, return no sources so the question is simply skipped."""
+_SOURCE_TYPE_LABELS = {
+    "AGENT": "Agent", "BROKER": "Broker", "BANCASSURANCE": "Bancassurance",
+    "CORPORATE_AGENT": "Corporate Agent", "DIRECT": "Walk-in", "DIGITAL": "Digital",
+}
+
+
+def _source_type_label(value: Any) -> str:
+    value = str(value or "")
+    return _SOURCE_TYPE_LABELS.get(value, value.replace("_", " ").title() or "—")
+
+
+async def _fetch_acquisition_sources(ctx: Ctx) -> list[dict] | None:
+    """Raw rows from the Admin-only endpoint, or None when this role can't read it."""
     try:
         res = await ctx.client.get(ctx.tsvc("/acquisition-sources"))
         res.raise_for_status()
     except httpx.HTTPError:
-        return {"success": True, "sources": []}
+        return None
+    return res.json()
+
+
+@handles("list_active_acquisition_sources")
+async def _list_active_acquisition_sources(args: dict, ctx: Ctx) -> dict:
+    """Not model-facing — exists so permission_gate can ask where a new customer
+    came from before anything else. Returns every active source (the gate groups
+    them by type). For any role that can't read the endpoint, return no sources
+    so the question is simply skipped."""
+    rows = await _fetch_acquisition_sources(ctx) or []
     return {
         "success": True,
         "sources": [
             {"id": str(s.get("id")), "name": s.get("name"), "code": s.get("code"), "type": s.get("source_type"),
              "user_id": str(s["user_id"]) if s.get("user_id") else None}
-            for s in res.json()
+            for s in rows
             if s.get("is_active", True)
         ],
+    }
+
+
+@handles("list_acquisition_sources")
+async def _list_acquisition_sources(args: dict, ctx: Ctx) -> dict:
+    rows = await _fetch_acquisition_sources(ctx)
+    if rows is None:
+        return {"success": False, "message": "Acquisition sources are visible to Admins only."}
+    status = args.get("status") or "active"
+    if status != "all":
+        rows = [r for r in rows if bool(r.get("is_active", True)) == (status == "active")]
+    if args.get("source_type"):
+        rows = [r for r in rows if r.get("source_type") == args["source_type"]]
+    if args.get("search"):
+        rows = [r for r in rows if _matches(r, args["search"],
+                ("name", "code", "partner_name", "contact_person", "contact_email", "contact_phone", "city"))]
+    total = len(rows)
+    limit = max(1, min(50, int(args.get("limit") or 20)))
+    offset = max(0, int(args.get("offset") or 0))
+    shown = [{"id": str(r.get("id")), "code": r.get("code"), "name": r.get("name"),
+              "type_label": _source_type_label(r.get("source_type")), "partner_name": r.get("partner_name"),
+              "city": r.get("city"), "customer_count": r.get("customer_count", 0),
+              "status_label": "Active" if r.get("is_active", True) else "Inactive"}
+             for r in rows[offset:offset + limit]]
+
+    def cell(value: Any) -> str:
+        return str(value if value is not None and value != "" else "—").replace("\\", "\\\\").replace("|", "\\|").replace("\r", " ").replace("\n", " ")
+
+    table = ["| Code | Name | Type | Partner | City | Customers | Status |",
+             "| --- | --- | --- | --- | --- | ---: | --- |"]
+    for row in shown:
+        values = (row["code"], row["name"], row["type_label"], row["partner_name"],
+                  row["city"], row["customer_count"], row["status_label"])
+        table.append("| " + " | ".join(cell(value) for value in values) + " |")
+    noun = {"active": "active ", "inactive": "inactive "}.get(status, "")
+    message = f"{total} {noun}acquisition source(s) match."
+    if shown:
+        message += f" Showing {offset + 1}–{offset + len(shown)}:\n\n" + "\n".join(table)
+        if offset + len(shown) < total:
+            message += f"\n\n{total - offset - len(shown)} more — ask for the next page or narrow with a search or type."
+    elif total:
+        message += " No sources on this page; use a smaller offset."
+    return {
+        "success": True, "message": message, "sources": shown, "total": total,
+        "offset": offset, "has_more": offset + len(shown) < total,
+        "quick_actions": [{"label": "Open Acquisition Sources", "actionType": "navigate",
+                           "payload": "admin/acquisition-sources"}],
     }
 
 

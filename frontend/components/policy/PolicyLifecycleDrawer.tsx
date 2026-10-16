@@ -26,7 +26,7 @@ const PRE_ISSUANCE_STATUSES = new Set([
 
 // Statuses where the policy is in-force / post-issuance — Stage B management.
 const POST_ISSUANCE_STATUSES = new Set([
-  "ACTIVE", "GRACEPERIOD", "LAPSED", "CANCELLED",
+  "ACTIVE", "GRACEPERIOD", "LAPSED", "CANCELLED", "MATURED", "SURRENDERED", "TERMINATED", "EXPIRED", "REINSTATED", "PAIDUP",
 ]);
 
 interface DrawerProps {
