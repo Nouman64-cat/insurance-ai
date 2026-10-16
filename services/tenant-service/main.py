@@ -223,6 +223,9 @@ _TENANT_RESOURCE = re.compile(r"^/tenants/([0-9a-fA-F-]{36})/([A-Za-z][\w-]*)")
 
 # Underwriting hold: a held case refuses every write (case_hold.py).
 app.middleware("http")(refuse_writes_on_held_case)
+# Pre-underwriting gates wait until both the Medical and Financial underwriters are assigned (underwriter_assignment.py).
+from underwriter_assignment import refuse_gates_until_underwriters_assigned
+app.middleware("http")(refuse_gates_until_underwriters_assigned)
 from specialist_access import restrict_specialist_writes
 app.middleware("http")(restrict_specialist_writes)
 

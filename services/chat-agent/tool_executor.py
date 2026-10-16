@@ -324,6 +324,28 @@ async def _case_for_open_proposal(args: dict, ctx: Ctx) -> Optional[dict]:
     return case
 
 
+async def _assignment_chips(case_id: str, case_no: str, ctx: Ctx) -> list[dict]:
+    """"Assign … Underwriter" chips for each specialist review of the case without an underwriter. tenant-service
+    refuses the e-application link and every other gate until both are assigned, so these come before Gate 1."""
+    try:
+        res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/underwriting-tracks"))
+        tracks = res.json() if res.status_code == 200 else {}
+    except httpx.HTTPError:
+        return []
+    return [{"label": f"Assign {label} Underwriter", "actionType": "submit",
+             "payload": f"Assign the {key} review of case {case_no}"}
+            for key, label in (("medical", "Medical"), ("financial", "Financial"))
+            if isinstance(tracks.get(key), dict) and not tracks[key].get("reviewer")]
+
+
+def _underwriters_named(chips: list[dict]) -> str:
+    return " and ".join(c["label"].removeprefix("Assign ") for c in chips)
+
+
+_ASSIGN_FIRST = ("Assign the **{who}** first — no e-application link or other pre-underwriting step can be sent "
+                 "until both reviews have an underwriter.")
+
+
 async def _ensure_case(customer: dict, ctx: Ctx, policy_id: Optional[str] = None) -> tuple[dict, bool]:
     """The customer's open underwriting case, opened now when they have none, and whether it was just opened.
     A proposal is worked on its case: without one, Gate 1 (the e-application link) has nothing to attach to.
@@ -884,6 +906,23 @@ async def _list_cases(args: dict, ctx: Ctx) -> dict:
     }
 
 
+def _initial_premium_line(payment: dict) -> str:
+    """One line on the proposal's initial premium, as the proposal's payment step shows it."""
+    status = payment.get("status")
+    if status == "Realized":
+        amount = _as_float(payment.get("amount")) or 0
+        when = str(payment.get("realized_at") or "")[:10]
+        via = ", ".join(x for x in (payment.get("method"), payment.get("reference") and f"ref {payment['reference']}") if x)
+        return (f"Initial premium **received**: PKR {amount:,.0f}" + (f" on {when}" if when else "")
+                + (f" ({via})" if via else "") + ". The application can now go to underwriting.\n\n")
+    if status == "Initiated":
+        due = _as_float(payment.get("amount_due") or payment.get("amount"))
+        return ("Initial premium **requested, not yet received**" + (f" — PKR {due:,.0f} due" if due else "") + ".\n\n")
+    if status and status != "NotStarted":
+        return f"Initial premium: **{_readable_label(status)}**.\n\n"
+    return "Initial premium: **not yet requested**.\n\n"
+
+
 @handles("get_case_details")
 async def _get_case_details(args: dict, ctx: Ctx) -> dict:
     try:
@@ -899,8 +938,9 @@ async def _get_case_details(args: dict, ctx: Ctx) -> dict:
         policies_res = await ctx.client.get(ctx.tsvc(f"/customers/{customer['id']}/policies"))
         policies_res.raise_for_status()
         policies = policies_res.json()
-        policies.sort(key=_created_key, reverse=True)
-        policy = policies[0] if policies else {}
+        # Her plan is the one the Proposals page shows against her name: the newest proposal. Older ones it hides
+        # are left out here too, or the model lists several "plans" for one customer.
+        policy = max(policies, key=_created_key) if policies else {}
         status = policy.get("status")
         stages = {"Quoted": "Proposal Draft", "Draft": "Proposal Draft", "Proposed": "Proposal Submitted",
                   "UnderReview": "Proposal Under Review", "InformationRequested": "Proposal — Information Requested",
@@ -908,10 +948,22 @@ async def _get_case_details(args: dict, ctx: Ctx) -> dict:
                   "Declined": "Proposal Declined", "PendingPayment": "Policy Issuance — Awaiting Payment",
                   "Issued": "Policy Issued", "Active": "Active Policy"}
         stage = stages.get(status, "Proposal Draft — Generation Pending" if customer.get("profile_status") == "DRAFT" else "Lead — Ready for Proposal")
-        return {"success": True, "application_stage": stage, "customer": customer, "policies": policies,
-                "underwriting_case": None,
-                "message": f"**{_full_name(customer)}** is at **{stage}**.\n\n" +
-                           (f"Proposal status: **{_readable_label(status)}**.\n\n" if status else "") +
+        plan = ({k: policy.get(k) for k in ("id", "product_name", "insurance_type", "coverage_amount", "term_years", "status")}
+                if policy else None)
+        plan_line = (f"Plan: **{policy.get('product_name')}** — PKR {_as_float(policy.get('coverage_amount')) or 0:,.0f} "
+                     f"over {policy.get('term_years')} years.\n\n" if policy.get("product_name") else "")
+        # The initial premium is taken on the proposal before any case exists, so it is read from the proposal —
+        # without this a received payment was reported as "no payment recorded".
+        payment, payment_line = None, ""
+        if policy.get("id"):
+            ipp_res = await ctx.client.get(ctx.tsvc(f"/policies/{policy['id']}/ipp"))
+            if ipp_res.status_code == 200:
+                payment = ipp_res.json()
+                payment_line = _initial_premium_line(payment)
+        return {"success": True, "application_stage": stage, "customer": customer, "plan": plan,
+                "initial_premium": payment, "underwriting_case": None,
+                "message": f"**{_full_name(customer)}** is at **{stage}**.\n\n" + plan_line +
+                           (f"Proposal status: **{_readable_label(status)}**.\n\n" if status else "") + payment_line +
                            "An underwriting case has not been opened. The application remains in Proposals until it is sent to underwriting.",
                 "quick_actions": [{"label": "Open Proposals", "actionType": "navigate", "payload": "proposal"}]}
     case_id = _case_id(case)
@@ -1896,6 +1948,7 @@ async def _create_case(args: dict, ctx: Ctx) -> dict:
     case_id = _case_id(data)
     case_no = data.get("caseNumber") or case_id
     route = build_route("cases", case_id)
+    assign = await _assignment_chips(case_id, case_no, ctx) if has_proposal else []
     next_step = (
         {"label": "1. Generate E-App Link (Gate 1)", "actionType": "submit",
          "payload": f"Generate e-application link for CNIC {customer.get('cnic')}"}
@@ -1908,12 +1961,13 @@ async def _create_case(args: dict, ctx: Ctx) -> dict:
         "case_id": case_id,
         **({} if opened else {"skipped": True, "result": {"status": "skipped", "reason": "open_case_exists"}}),
         "message": (f"Case **{case_no}** opened for {_full_name(customer)}." if opened else
-                    f"{_full_name(customer)} already has an open case, **{case_no}** — no new case was opened."),
+                    f"{_full_name(customer)} already has an open case, **{case_no}** — no new case was opened.")
+                   + ("\n\n" + _ASSIGN_FIRST.format(who=_underwriters_named(assign)) if assign else ""),
         "last_action": _action("create_case", "case", case_id, route,
                                f"Case {case_no} created" if opened else f"Case {case_no}"),
         # Show the case inline in the chat panel straight away; the proposal then appears in the same view.
         "navigate": {"route": f"case/{case_id}", "entity_id": case_id, "highlight": False, "embed": True},
-        "quick_actions": [next_step, {"label": "View Application", "actionType": "embed", "payload": f"case/{case_id}"}],
+        "quick_actions": [*(assign or [next_step]), {"label": "View Application", "actionType": "embed", "payload": f"case/{case_id}"}],
     }
 
 
@@ -2074,22 +2128,25 @@ async def _create_proposal(args: dict, ctx: Ctx) -> dict:
         return context
     customer = context["customer"]
 
-    # Re-read the customer's proposals first: a second click or a retried
-    # request must not open a duplicate of a proposal that is still in flight.
+    # Re-read the customer's proposals first: a second click, a retried request, or a "switch to plan X"
+    # must not open a second proposal next to one that is still in flight — of the same product or another.
     product = args.get("product_name") or "Term Life Plus"
     existing_res = await ctx.client.get(ctx.tsvc(f"/customers/{customer['id']}/policies"))
     existing_res.raise_for_status()
-    open_same = [p for p in existing_res.json()
-                 if p.get("product_name") == product and p.get("status") in _OPEN_PROPOSAL_STATUSES]
-    if open_same and not args.get("additional_proposal"):
-        p = sorted(open_same, key=_created_key, reverse=True)[0]
+    open_proposals = [p for p in existing_res.json() if p.get("status") in _OPEN_PROPOSAL_STATUSES]
+    if open_proposals and not args.get("additional_proposal"):
+        p = sorted(open_proposals, key=_created_key, reverse=True)[0]
+        open_product = p.get("product_name") or product
+        switch_note = ("" if open_product == product else
+                       f" Creating a **{product}** proposal would leave this customer with two plans; to switch plans, "
+                       f"use **Change Plan** on the underwriting case, or withdraw the **{open_product}** proposal first.")
         return {
             "success": True, "skipped": True,
             "result": {"status": "skipped", "reason": "open_proposal_exists"},
             "entity": {"type": "proposal", "id": p.get("id"), "tenant_id": ctx.tenant_id,
-                       "label": f"{_full_name(customer)} — {product}", "customer_id": customer["id"]},
-            "message": f"**{_full_name(customer)}** already has an open **{product}** proposal "
-                       f"({_readable_label(p.get('status'))}). Nothing new was created.",
+                       "label": f"{_full_name(customer)} — {open_product}", "customer_id": customer["id"]},
+            "message": f"**{_full_name(customer)}** already has an open **{open_product}** proposal "
+                       f"({_readable_label(p.get('status'))}). Nothing new was created.{switch_note}",
             "quick_actions": [
                 {"label": "Check Application Stage", "actionType": "submit",
                  "payload": f"What stage is the application for CNIC {customer.get('cnic')}?"},
@@ -2108,16 +2165,28 @@ async def _create_proposal(args: dict, ctx: Ctx) -> dict:
     res.raise_for_status()
     data = res.json()
 
+    # The lead's plan chosen on the form (details.pending_plan) is now this proposal. Clear it, or the form's
+    # Send to Proposals still shows that old plan and later turns it into a second proposal.
+    details = dict(customer.get("details") or {})
+    replaced = details.pop("pending_plan", None)
+    if replaced is not None:
+        cleared = await ctx.client.put(ctx.tsvc(f"/customers/{customer['id']}"), json={"details": details})
+        cleared.raise_for_status()
+    replaced_name = (replaced or {}).get("product_name")
+    replaced_line = (f"It replaces the previously selected **{replaced_name}** plan.\n\n"
+                     if replaced_name and replaced_name != product else "")
+
     route = build_route("admin/leads", customer.get("cnic"))
 
     # The proposal is worked on the customer's case. Open it now if there isn't one, so "Pre-Underwriting" below is
     # true and the Gate 1 button works — it used to fail with "No case found" every time — then show it inline.
-    case_view, case_line = None, ""
+    case_view, case_line, assign = None, "", []
     try:
         case, opened = await _ensure_case(customer, ctx, data.get("id"))
         case_view = f"case/{_case_id(case)}"
         if opened:
             case_line = f"Underwriting case **{case.get('caseNumber') or _case_id(case)}** opened for it.\n\n"
+        assign = await _assignment_chips(_case_id(case), case.get("caseNumber") or _case_id(case), ctx)
     except httpx.HTTPError:
         pass  # the proposal stands; the lead view below still works and Gate 1 can open the case later
 
@@ -2128,15 +2197,16 @@ async def _create_proposal(args: dict, ctx: Ctx) -> dict:
         "message": (
             f"Proposal created for **{_full_name(customer)}** — "
             f"{args.get('product_name') or 'Term Life Plus'}, PKR {coverage:,.0f} over "
-            f"{int(args.get('term_years') or 10)} years.\n\n{case_line}"
-            + ("The case is now in **Pre-Underwriting**. To proceed, complete the 5 clearance gates sequentially starting with **Gate 1: Customer E-Application**."
+            f"{int(args.get('term_years') or 10)} years.\n\n{replaced_line}{case_line}"
+            + (_ASSIGN_FIRST.format(who=_underwriters_named(assign)) if assign else
+               "The case is now in **Pre-Underwriting**. To proceed, complete the 5 clearance gates sequentially starting with **Gate 1: Customer E-Application**."
                if case_view else "No underwriting case could be opened yet — Gate 1 will open it when you generate the e-application link.")
         ),
         "last_action": _action("create_proposal", "customer", customer.get("cnic", ""), route, "Proposal created"),
         **({"navigate": {"route": case_view, "entity_id": "", "highlight": False, "embed": True}} if case_view else {}),
         "quick_actions": [
-            {"label": "1. Generate E-App Link (Gate 1)", "actionType": "submit",
-             "payload": f"Generate e-application link for CNIC {customer.get('cnic')}"},
+            *(assign or [{"label": "1. Generate E-App Link (Gate 1)", "actionType": "submit",
+                          "payload": f"Generate e-application link for CNIC {customer.get('cnic')}"}]),
             {"label": "Check Gate Status", "actionType": "submit",
              "payload": f"Check pre-underwriting status for CNIC {customer.get('cnic')}"},
             {"label": "View Proposal", "actionType": "embed", "payload": case_view}
@@ -4455,8 +4525,15 @@ async def execute_tool(name: str, args: dict[str, Any], ctx: ExecCtx) -> dict[st
             pass
         error_code = {404: "not_found", 409: "conflict", 410: "expired", 422: "validation"}.get(
             code, "service_unavailable" if code >= 500 else "rejected")
-        return {"success": False, "error": _readable_detail(detail) or str(exc), "error_code": error_code,
-                "retryable": code >= 500, "needs_user_input": code in (400, 422)}
+        out = {"success": False, "error": _readable_detail(detail) or str(exc), "error_code": error_code,
+               "retryable": code >= 500, "needs_user_input": code in (400, 422)}
+        if isinstance(detail, dict) and detail.get("code") == "UNDERWRITERS_NOT_ASSIGNED":
+            # A pre-underwriting gate waits for both underwriters: offer the assignment instead of a retry.
+            ref = next((args[k] for k in ("case_number", "case_id", "cnic", "applicant_name") if args.get(k)), "")
+            out["quick_actions"] = [{"label": f"Assign {t.title()} Underwriter", "actionType": "submit",
+                                     "payload": f"Assign the {t.lower()} review of case {ref}".rstrip()}
+                                    for t in detail.get("missing_tracks") or ()]
+        return out
     except httpx.TimeoutException:
         # The request may have reached the service and still be running, so a
         # mutation's outcome is unknown — re-read state before any retry.
@@ -4477,6 +4554,8 @@ def _readable_detail(detail) -> Optional[str]:
         return None
     if isinstance(detail, str):
         return detail
+    if isinstance(detail, dict) and isinstance(detail.get("message"), str):
+        return detail["message"]          # {code, message} refusals (case hold, unassigned underwriters)
     if isinstance(detail, list):
         msgs = []
         for d in detail:
