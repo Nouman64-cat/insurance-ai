@@ -137,6 +137,7 @@ class PolicyStatusEnum(str, Enum):
     LAPSED = "Lapsed"
     CANCELLED = "Cancelled"
     POSTPONED = "Postponed"
+    ON_HOLD = "OnHold"   # paused by staff on the Proposals page; resumes to the status it was held from
     REINSURER_REFERRED = "ReinsurerReferred"
     NOT_TAKEN_UP = "NotTakenUp"
     # Final states of Stage B step 9 (Policy Maturity & Exit). Terminal — nothing leaves them.

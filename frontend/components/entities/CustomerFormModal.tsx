@@ -1016,7 +1016,9 @@ export default function CustomerFormModal({
     });
   };
 
-  const handleSuggestPlan = async () => {
+  // With `onlyPlan` the suggestion is for that plan alone: the coverage and term are worked out for the plan
+  // the user just picked, rather than choosing a different plan for them.
+  const handleSuggestPlan = async (onlyPlan?: (typeof availablePlans)[number]) => {
     if (availablePlans.length === 0) return;
     setIsSuggestingPlan(true);
     setSuggestedReasoning("");
@@ -1031,12 +1033,18 @@ export default function CustomerFormModal({
       };
       const res = await api.post(`/suggest-plan`, {
         customer: customerData,
-        plans: availablePlans,
+        plans: onlyPlan ? [onlyPlan] : availablePlans,
       });
       const data = res.data;
-      setValue("selectedPlanId", data.suggested_plan_id);
+      const planId = onlyPlan ? onlyPlan.id : data.suggested_plan_id;
+      setValue("selectedPlanId", planId);
       setValue("policyCoverage", data.suggested_coverage);
       setValue("policyTerm", data.suggested_term);
+      if (!isCreate) {
+        setEditSelectedPlanId(planId);
+        setEditPolicyCoverage(data.suggested_coverage == null ? "" : String(data.suggested_coverage));
+        setEditPolicyTerm(data.suggested_term == null ? "" : String(data.suggested_term));
+      }
       setSuggestedReasoning(data.reasoning);
       setPlanAiLocked(true);
     } catch (err: any) {
@@ -3218,15 +3226,13 @@ export default function CustomerFormModal({
                                 setEditSelectedPlanId(nextId);
                                 setValue("selectedPlanId", nextId);
                                 if (!isSelected) {
+                                  // A different plan has different limits: clear the old figures, then fill in the
+                                  // coverage and term suggested for the plan just picked.
                                   setEditPolicyCoverage("");
-                                  setEditPolicyTerm(
-                                    String(plan.term_min_years),
-                                  );
+                                  setEditPolicyTerm(String(plan.term_min_years));
                                   setValue("policyCoverage", "");
-                                  setValue(
-                                    "policyTerm",
-                                    String(plan.term_min_years),
-                                  );
+                                  setValue("policyTerm", String(plan.term_min_years));
+                                  void handleSuggestPlan(plan);
                                 }
                               }}
                               className={`relative w-full text-left p-4 rounded-xl border-2 transition-all ${
@@ -3565,7 +3571,7 @@ export default function CustomerFormModal({
                   </p>
                   <button
                     type="button"
-                    onClick={handleSuggestPlan}
+                    onClick={() => handleSuggestPlan()}
                     disabled={isSuggestingPlan || availablePlans.length === 0}
                     className="flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-blue-300 transition-colors shadow-sm whitespace-nowrap"
                   >
@@ -3656,8 +3662,11 @@ export default function CustomerFormModal({
                               isSelected ? "" : plan.id,
                             );
                             if (!isSelected) {
+                              // A different plan has different limits: clear the old figures, then fill in the
+                              // coverage and term suggested for the plan just picked.
                               setValue("policyCoverage", undefined);
                               setValue("policyTerm", plan.term_min_years);
+                              void handleSuggestPlan(plan);
                             }
                           }}
                           className={`relative w-full text-left p-4 rounded-xl border-2 transition-all ${
@@ -3766,9 +3775,17 @@ export default function CustomerFormModal({
 
                     return (
                       <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
-                        <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                          {tx("Plan Configuration")}
-                        </h4>
+                        <div className="flex items-center justify-between gap-3">
+                          <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                            {tx("Plan Configuration")}
+                          </h4>
+                          {isSuggestingPlan && (
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-blue-600">
+                              <span className="h-3 w-3 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
+                              {tx("Working out coverage and term for this plan…")}
+                            </span>
+                          )}
+                        </div>
 
                         {ageNotice && (
                           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 font-medium flex items-center gap-2">

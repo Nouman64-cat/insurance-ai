@@ -27,6 +27,8 @@ export function PaymentPanel({ policyId, ipp, canAct, onChange, onCleared }: {
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [receiving, setReceiving] = useState(false);
+  const [showNote, setShowNote] = useState(false);
+  const [open, setOpen] = useState(ipp?.proof_status === "Submitted");   // collapsed by default; opens itself when a customer claim needs review
   const [form, setForm] = useState({ method: "Cash", reference: "", note: "" });
   if (ipp?.status === "Realized") return <ReceiptCard policyId={policyId} />;       // cleared: just the receipt
 
@@ -73,27 +75,35 @@ export function PaymentPanel({ policyId, ipp, canAct, onChange, onCleared }: {
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white text-xs text-slate-600">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 border-b border-slate-100">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className={`flex w-full flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 text-start hover:bg-slate-50 transition-colors rounded-lg ${open ? "border-b border-slate-100 rounded-b-none" : ""}`}
+      >
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{tx("Initial premium")}</p>
           <p className="text-sm font-bold text-slate-900">{tx("Payment required from the customer")} · <span className="text-blue-700">{pkr(amount)}</span></p>
         </div>
-        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ${state.cls}`}>{state.text}</span>
-      </div>
+        <span className="flex items-center gap-2">
+          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ${state.cls}`}>{state.text}</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-4 h-4 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`}><polyline points="6 9 12 15 18 9" /></svg>
+        </span>
+      </button>
 
-      <div className="px-3.5 py-3 space-y-3">
-        {(ipp?.breakdown ?? ipp?.breakdown_due)?.split?.message_upfront && (
+      {open && <div className="px-3.5 py-3 space-y-3">
+        {!receiving && (ipp?.breakdown ?? ipp?.breakdown_due)?.split?.message_upfront && (
           <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">{(ipp?.breakdown ?? ipp?.breakdown_due)!.split!.message_upfront}</p>
         )}
-        {(ipp?.breakdown ?? ipp?.breakdown_due) && (
-          <details open className="group">
+        {!receiving && (ipp?.breakdown ?? ipp?.breakdown_due) && (
+          <details className="group">
             <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-600">{tx("How this amount is made up")}</summary>
             <div className="mt-2 max-w-sm"><BreakdownTable b={(ipp?.breakdown ?? ipp?.breakdown_due)!} compact /></div>
           </details>
         )}
-        {!requested && <p>{tx("Ask the customer to pay. They get a secure link by email and in their portal, and can upload a receipt or tell us they have paid. Or record the payment yourself if you have already received it.")}</p>}
+        {!requested && !receiving && <p>{tx("Ask the customer to pay. They get a secure link by email and in their portal, and can upload a receipt or tell us they have paid. Or record the payment yourself if you have already received it.")}</p>}
 
-        {requested && (
+        {requested && !receiving && (
           <>
             <p>
               {tx("Requested {when} by {who}.", { when: displayDateTime(ipp!.requested_at!), who: ipp!.requested_by ?? "—" })}{" "}
@@ -124,19 +134,37 @@ export function PaymentPanel({ policyId, ipp, canAct, onChange, onCleared }: {
         )}
 
         {receiving && (
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 space-y-2">
-            <p className="font-semibold text-slate-700">{tx("Record the payment as received")}</p>
-            <div className="grid sm:grid-cols-3 gap-2">
-              <label className="space-y-1"><span className="text-[10px] font-semibold uppercase text-slate-400">{tx("Received by")}</span>
-                <select className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5" value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>{METHODS.map((m) => <option key={m} value={m}>{tx(m)}</option>)}</select></label>
-              <label className="space-y-1"><span className="text-[10px] font-semibold uppercase text-slate-400">{tx("Reference / receipt no.")}</span>
-                <input className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5" value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} maxLength={100} /></label>
-              <label className="space-y-1"><span className="text-[10px] font-semibold uppercase text-slate-400">{tx("Note")}</span>
-                <input className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} maxLength={500} /></label>
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">{tx("Record payment received")}</p>
+              <p className="mt-0.5 text-slate-500">{tx("Confirm that")} <span className="font-semibold text-slate-800">{pkr(amount)}</span> {tx("has been received. The application can then go to underwriting.")}</p>
             </div>
-            <div className="flex gap-2">
-              <button type="button" disabled={!!busy} onClick={received} className={`${BTN} bg-blue-600 text-white hover:bg-blue-700`}>{busy === "received" ? tx("Saving…") : tx("Save: payment received")}</button>
-              <button type="button" disabled={!!busy} onClick={() => setReceiving(false)} className={`${BTN} bg-white text-slate-600 border border-slate-200 hover:bg-slate-50`}>{tx("Cancel")}</button>
+            <fieldset>
+              <legend className="mb-1.5 text-[11px] font-semibold text-slate-500">{tx("How was it paid?")}</legend>
+              <div className="flex flex-wrap gap-1.5">
+                {METHODS.map((m) => (
+                  <button key={m} type="button" role="radio" aria-checked={form.method === m} onClick={() => setForm({ ...form, method: m })}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${form.method === m ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"}`}>
+                    {tx(m)}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+            <label className="block">
+              <span className="mb-1.5 block text-[11px] font-semibold text-slate-500">{tx("Reference / receipt no.")} <span className="font-normal text-slate-400">({tx("optional")})</span></span>
+              <input className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20" value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} maxLength={100} />
+            </label>
+            {showNote ? (
+              <label className="block">
+                <span className="mb-1.5 block text-[11px] font-semibold text-slate-500">{tx("Note")} <span className="font-normal text-slate-400">({tx("optional")})</span></span>
+                <textarea rows={2} className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} maxLength={500} autoFocus />
+              </label>
+            ) : (
+              <button type="button" onClick={() => setShowNote(true)} className="text-xs font-medium text-blue-700 hover:underline">+ {tx("Add a note")}</button>
+            )}
+            <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+              <button type="button" disabled={!!busy} onClick={() => setReceiving(false)} className="px-3 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 disabled:opacity-50">{tx("Cancel")}</button>
+              <button type="button" disabled={!!busy} onClick={received} className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50">{busy === "received" ? tx("Saving…") : tx("Confirm payment received")}</button>
             </div>
           </div>
         )}
@@ -151,7 +179,7 @@ export function PaymentPanel({ policyId, ipp, canAct, onChange, onCleared }: {
             {requested && !expired && !claim && <button type="button" disabled={!!busy} onClick={withdraw} className={`${BTN} text-slate-500 hover:text-rose-600`}>{tx("Withdraw request")}</button>}
           </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 }

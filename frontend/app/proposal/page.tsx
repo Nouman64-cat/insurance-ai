@@ -1,7 +1,7 @@
 "use client";
 
 import { displayDate, displayDateTime } from '../../lib/dateDisplay';
-import { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import api from "../services/api";
 import { getQuote, listQuotes, QuoteDetail, QuoteListItem } from "../services/quotes";
@@ -15,6 +15,7 @@ import { listUnderwriters, Agent } from "../services/agents";
 import { listAcquisitionSources, AcquisitionSource } from "../services/acquisitionSources";
 import { updateCustomer } from "../services/customers";
 import { getPolicyIPP, requestPolicyPayment, type IPP } from "../services/initialPremiumPayment";
+import { useNewArrivals, NewArrivalsProvider, useNewArrivalsContext, NewArrivalsBanner, NEW_ARRIVAL_CLASS, scrollToFirstNew } from "@/lib/useNewArrivals";
 import { PaymentPanel } from "@/components/proposal/PaymentPanel";
 import { listInsurancePlans, InsurancePlan } from "../services/insurancePlans";
 import { getPlanValidationError } from "@/components/entities/customerShared";
@@ -98,6 +99,7 @@ const STATUS_TABS = [
   { id: "Proposed", label: "Submitted" },
   { id: "UnderReview", label: "Under Review" },
   { id: "InformationRequested", label: "Info Requested" },
+  { id: "OnHold", label: "On Hold" },
   { id: "Approved", label: "Approved" },
   { id: "Declined", label: "Rejected" },
   { id: "Issued", label: "Issued" },
@@ -112,6 +114,7 @@ const STATUS_LABEL: Record<string, string> = {
   Proposed: "Submitted",
   UnderReview: "Under Review",
   InformationRequested: "Info Requested",
+  OnHold: "On Hold",
   Approved: "Approved",
   AcceptedWithLoadings: "Accepted (Loadings)",
   Declined: "Rejected",
@@ -124,6 +127,7 @@ const STATUS_BADGE_STYLE: Record<string, string> = {
   Proposed: "bg-blue-50 text-blue-700 border-blue-200",
   UnderReview: "bg-amber-50 text-amber-700 border-amber-200",
   InformationRequested: "bg-amber-50 text-amber-600 border-amber-200",
+  OnHold: "bg-slate-100 text-slate-700 border-slate-300",
   Approved: "bg-blue-50 text-blue-700 border-blue-200",
   AcceptedWithLoadings: "bg-blue-50 text-blue-700 border-blue-200",
   Declined: "bg-rose-50 text-rose-700 border-rose-200",
@@ -136,6 +140,7 @@ const STATUS_DOT: Record<string, string> = {
   Proposed: "bg-blue-500",
   UnderReview: "bg-amber-500",
   InformationRequested: "bg-amber-300",
+  OnHold: "bg-slate-500",
   Approved: "bg-blue-500",
   AcceptedWithLoadings: "bg-blue-500",
   Declined: "bg-rose-500",
@@ -294,6 +299,9 @@ function getAvailableActions(
   // underwriting and the Agent can only watch it, so no actions are offered at all.
   if (isAgent && (status === "Proposed" || status === "UnderReview")) return [];
 
+  // A held proposal can only be resumed (back to the status it was held from).
+  if (status === "OnHold") return isAgent ? [] : [{ value: "resume", label: "Resume", tier: "submission" }];
+
   if (status === "Quoted") { // Draft
     if (forBatch || !hasMissingFields) {
       opts.push({ value: "status:Proposed", label: "Submit Proposal", tier: "submission" });
@@ -329,8 +337,8 @@ function getAvailableActions(
     return [];
   }
 
-  // "On hold" is offered at every one of those steps: it changes nothing and leaves the proposal exactly where it is.
-  opts.push({ value: "hold", label: "On hold", tier: "submission" });
+  // "On hold" is offered at every one of those steps: the proposal moves to the On Hold status until it is resumed.
+  opts.push({ value: "status:OnHold", label: "On hold", tier: "submission" });
 
   // Reject is legal directly from any of the four statuses above
   // A Draft is still a proposal; once submitted it is an application.
@@ -497,16 +505,16 @@ export default function QuotePage() {
 
 
 
-  const toggleSelection = (quoteId: string) => {
+  const toggleSelection = useCallback((quoteId: string) => {
     setSelectedProposalIds((prev) => {
       const next = new Set(prev);
       if (next.has(quoteId)) next.delete(quoteId);
       else next.add(quoteId);
       return next;
     });
-  };
+  }, []);
 
-  const toggleAllInFolder = (quoteIds: string[]) => {
+  const toggleAllInFolder = useCallback((quoteIds: string[]) => {
     setSelectedProposalIds((prev) => {
       const next = new Set(prev);
       const allSelected = quoteIds.every((id) => next.has(id));
@@ -517,7 +525,7 @@ export default function QuotePage() {
       }
       return next;
     });
-  };
+  }, []);
 
   const handleBulkProceed = async (customerQuotes: QuoteListItem[]) => {
     const selectedQuotes = customerQuotes.filter((q) => selectedQuoteIds.has(q.quote_id));
@@ -648,7 +656,12 @@ export default function QuotePage() {
   const getBatchConfirmMessage = (option: ProposalActionOption, selectedCount: number) =>
     option.tier === "decision" ? tx("Reject {count} selected? This cannot be undone.", { count: selectedCount }) : undefined;
 
+  const arrivalIds = useMemo(() => quotes.map(arrivalKey), [quotes]);
+  const arrivals = useNewArrivals("proposals", arrivalIds, !loading);
+  const { markSeen } = arrivals;
   const openQuote = useCallback(async (quoteId: string) => {
+    const opened = quotes.find((q) => q.quote_id === quoteId);
+    if (opened) markSeen(arrivalKey(opened));
     if (quoteId.startsWith("draft-")) {
       alert(tx("This is an unquoted draft lead. Please go to the Leads Hub and generate a Quotation for this customer before proceeding here."));
       return;
@@ -665,7 +678,7 @@ export default function QuotePage() {
     } finally {
       setDetailLoading(false);
     }
-  }, []);
+  }, [quotes, markSeen]);
 
   // Re-read the open proposal in place (no spinner, nothing closes), after one of its moves.
   const reloadDetail = useCallback(async () => {
@@ -684,9 +697,12 @@ export default function QuotePage() {
   // instant — no network round-trip just to change which status you're
   // looking at. Only the other filters (date range, underwriter, source)
   // still go to the server.
+  const hasLoadedRef = useRef(false);
   const fetchQuotes = useCallback(async () => {
     setError(null);
-    setLoading(true);
+    // First load shows the skeleton; later refreshes (after a status move, a filter change) update the list in place
+    // instead of blanking it, which is what made every action feel slow.
+    if (!hasLoadedRef.current) setLoading(true);
     try {
       const filters: any = {};
       if (dateFrom) filters.created_from = dateFrom;
@@ -694,6 +710,11 @@ export default function QuotePage() {
       if (agentFilter) filters.assigned_underwriter_id = agentFilter;
       if (sourceFilter) filters.acquisition_source_id = sourceFilter;
 
+      const tenantId = localStorage.getItem("tenant_id");
+      // The two reads are independent: run them together instead of one after the other.
+      const draftsPromise = tenantId
+        ? api.get(`/tenants/${tenantId}/customers`).catch((e) => { console.warn("Failed to fetch pipeline customers:", e); return null; })
+        : Promise.resolve(null);
       const data = await listQuotes(filters);
       let quotesList = data || [];
 
@@ -702,11 +723,10 @@ export default function QuotePage() {
       // show up in the Draft tab. Leads and In Progress customers stay on the Leads
       // board until sent. `customers` has no server-side status filter, so the
       // split happens client-side here.
-      const tenantId = localStorage.getItem("tenant_id");
       if (tenantId) {
         try {
-          const draftRes = await api.get(`/tenants/${tenantId}/customers`);
-          if (draftRes.data && Array.isArray(draftRes.data)) {
+          const draftRes = await draftsPromise;
+          if (draftRes?.data && Array.isArray(draftRes.data)) {
             const pipelineCustomers = draftRes.data.filter(
               (c: any) => c.profile_status === "DRAFT"
             );
@@ -745,6 +765,7 @@ export default function QuotePage() {
       }
 
       setQuotes(quotesList);
+      hasLoadedRef.current = true;
     } catch (err: any) {
       setError(err.message ?? tx("Failed to load quotations."));
     } finally {
@@ -958,7 +979,9 @@ export default function QuotePage() {
   };
 
   return (
+    <NewArrivalsProvider value={arrivals}>
     <div className="px-6 py-5 max-w-screen-2xl mx-auto w-full space-y-4">
+      <NewArrivalsBanner count={arrivals.newIds.size} noun="proposal" onShow={scrollToFirstNew} onDismiss={arrivals.markAllSeen} />
       {/* Header — same shape as the Leads page: title, one-line description, actions on the right */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -1436,6 +1459,7 @@ export default function QuotePage() {
         />
       )}
     </div>
+    </NewArrivalsProvider>
   );
 }
 
@@ -1457,7 +1481,10 @@ const ACTION_ICON_PROPS = {
 };
 
 function ActionIcon({ value }: { value: string }) {
-  if (value === "hold") {
+  if (value === "resume") {
+    return <svg {...ACTION_ICON_PROPS}><polygon points="6 4 20 12 6 20 6 4" /></svg>;
+  }
+  if (value === "hold" || value === "status:OnHold") {
     return (
       <svg {...ACTION_ICON_PROPS}><line x1="9" y1="5" x2="9" y2="19" /><line x1="15" y1="5" x2="15" y2="19" /></svg>
     );
@@ -1520,11 +1547,16 @@ function ActionDropdown({
   const visible = options.filter((o) => (o.tier === "decision" ? canDecide : canAct));
   const [selected, setSelected] = useState(visible[0]?.value ?? "");
   const [applying, setApplying] = useState(false);
-  const [held, setHeld] = useState(false);
 
+  // The primary action leads the list. When it changes (e.g. "Payment Required from Customer" becomes
+  // "Send to Underwriting" once the payment clears) the selection follows it; otherwise keep the user's pick.
+  const firstValue = visible[0]?.value ?? "";
+  const prevFirst = useRef(firstValue);
   useEffect(() => {
-    if (!visible.find((o) => o.value === selected)) {
-      setSelected(visible[0]?.value ?? "");
+    const primaryChanged = prevFirst.current !== firstValue;
+    prevFirst.current = firstValue;
+    if (primaryChanged || !visible.find((o) => o.value === selected)) {
+      setSelected(firstValue);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible.map((o) => o.value).join("|")]);
@@ -1545,12 +1577,6 @@ function ActionDropdown({
 
   const handleApply = async () => {
     if (!selectedOption) return;
-    if (selectedOption.value === "hold") {
-      // Deliberately does nothing: no status change, no request. The note only confirms it.
-      setHeld(true);
-      window.setTimeout(() => setHeld(false), 4000);
-      return;
-    }
     const confirmMessage = getConfirmMessage?.(selectedOption);
     if (confirmMessage && !window.confirm(confirmMessage)) return;
     setApplying(true);
@@ -1565,11 +1591,12 @@ function ActionDropdown({
     <div className="flex flex-wrap items-center gap-2">
       <FancyDropdown
         value={selected}
-        onChange={(v) => { setSelected(v); setHeld(false); }}
+        onChange={setSelected}
         options={dropdownOptions}
         disabled={disabled || applying}
         size="sm"
         className="min-w-[190px]"
+        panelClassName="!bottom-full !mt-0 mb-1.5 !origin-bottom"
       />
       <button
         onClick={handleApply}
@@ -1592,9 +1619,6 @@ function ActionDropdown({
         )}
         {applying ? tx("Applying…") : tx("Apply")}
       </button>
-      {held && (
-        <span role="status" className="text-xs font-semibold text-blue-700">{tx("On hold — nothing was changed.")}</span>
-      )}
     </div>
   );
 }
@@ -1674,7 +1698,10 @@ function ProposalsSkeleton({ viewMode }: { viewMode: "list" | "grid" }) {
 
 // ── Level 3: Proposals Views ───────────────────────────────────────────────────
 
-function ProposalsTable({
+/** What counts as "new" for a proposal: it arriving, and again when it is submitted (so it beats where it lands next). */
+const arrivalKey = (q: { quote_id: string; status: string }) => (q.status === "Proposed" ? `${q.quote_id}|submitted` : q.quote_id);
+
+const ProposalsTable = memo(function ProposalsTable({
   quotes,
   selectedQuoteIds,
   toggleSelection,
@@ -1688,6 +1715,7 @@ function ProposalsTable({
   openQuote: (quoteId: string) => void;
 }) {
   const { tx } = useI18n();
+  const { newIds } = useNewArrivalsContext();
   if (quotes.length === 0) return null;
   const allSelected = quotes.length > 0 && quotes.every(q => selectedQuoteIds.has(q.quote_id));
 
@@ -1726,7 +1754,7 @@ function ProposalsTable({
               <tr
                 key={row.quote_id}
                 onClick={() => openQuote(row.quote_id)}
-                className={`group border-b border-slate-100 last:border-0 transition-colors cursor-pointer ${selected ? "bg-blue-50/50" : "hover:bg-slate-50/70"}`}
+                className={`group border-b border-slate-100 last:border-0 transition-colors cursor-pointer ${newIds.has(arrivalKey(row)) ? NEW_ARRIVAL_CLASS : selected ? "bg-blue-50/50" : "hover:bg-slate-50/70"}`}
               >
                 <td className="pl-5 pr-3 py-3.5">
                   <div className="flex items-center gap-3">
@@ -1780,9 +1808,9 @@ function ProposalsTable({
       </table>
     </div>
   );
-}
+});
 
-function ProposalsGrid({
+const ProposalsGrid = memo(function ProposalsGrid({
   quotes,
   selectedQuoteIds,
   toggleSelection,
@@ -1795,6 +1823,7 @@ function ProposalsGrid({
   openQuote: (quoteId: string) => void;
 }) {
   const { tx } = useI18n();
+  const { newIds } = useNewArrivalsContext();
   if (quotes.length === 0) return null;
 
   return (
@@ -1803,7 +1832,7 @@ function ProposalsGrid({
         <div
           key={row.quote_id}
           onClick={() => openQuote(row.quote_id)}
-          className={`relative border rounded-xl p-4 flex flex-col gap-3 cursor-pointer transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg bg-white ${selectedQuoteIds.has(row.quote_id) ? "border-blue-300 ring-1 ring-blue-400/20 shadow-md" : "border-slate-200 shadow-sm"}`}
+          className={`relative border rounded-xl p-4 flex flex-col gap-3 cursor-pointer transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg bg-white ${newIds.has(arrivalKey(row)) ? NEW_ARRIVAL_CLASS : ""} ${selectedQuoteIds.has(row.quote_id) ? "border-blue-300 ring-1 ring-blue-400/20 shadow-md" : "border-slate-200 shadow-sm"}`}
         >
           <div>
             <h4 className="font-bold text-slate-900 truncate">{row.customer_name}</h4>
@@ -1844,7 +1873,7 @@ function ProposalsGrid({
       ))}
     </div>
   );
-}
+});
 
 
 // ── Detail modal ─────────────────────────────────────────────────────────────
@@ -1867,6 +1896,7 @@ function proposalProgress(status: string, withPayment: boolean, paid: boolean): 
   switch (status) {
     case "Quoted": return { current: 1 };
     case "InformationRequested": return { current: 1, note: "Info requested: add the details and re-submit", tone: "amber" };
+    case "OnHold": return { current: 1, note: "On hold: resume to continue", tone: "amber" };
     case "Proposed": return { current: 2 };
     case "UnderReview": return { current: withPayment && paid ? last : withPayment ? 3 : last };
     case "Declined": return { current: last + 1, note: "Rejected", tone: "red" };
@@ -2280,10 +2310,36 @@ function QuoteDetailModal({
     return getAvailableActions(detail.status, missingFields.length > 0, false, canSendToUnderwriting, isAgent, payment);
   }, [detail?.status, missingFields.length, canSendToUnderwriting, isAgent, payment]);
 
+  const [confirmUw, setConfirmUw] = useState(false);
+  const [uwBusy, setUwBusy] = useState(false);
+  const submitToUnderwriting = async () => {
+    setUwBusy(true);
+    setStartError(null);
+    try {
+      // The last step: opens the underwriting case and takes the user there. Only now does the window close.
+      await onStartUnderwriting();
+      onClose();
+    } catch (err: any) {
+      setConfirmUw(false);
+      setStartError(err.response?.data?.detail ?? err.message ?? tx("Failed to update."));
+    } finally {
+      setUwBusy(false);
+    }
+  };
+
   const handleApplyAction = async (value: string) => {
     if (!detail) return;
     setStartError(null);
     try {
+      if (value === "resume") {
+        // Back to the status it was held from.
+        const back = detail.held_from_status && detail.held_from_status !== "OnHold" ? detail.held_from_status : "Proposed";
+        await updateQuote(detail.quote_id, { status: back });
+        onStatusChange(back);
+        onRefresh();
+        await onReloadDetail();
+        return;
+      }
       if (value === "payment_request") {
         // Opens the payment request: the secure link and the email to the customer (see PaymentPanel for everything after that).
         const res = await requestPolicyPayment(detail.policy_id);
@@ -2291,9 +2347,8 @@ function QuoteDetailModal({
         return;
       }
       if (value === "underwriting") {
-        // The last step: opens the underwriting case and takes the user there. Only now does the window close.
-        await onStartUnderwriting();
-        onClose();
+        // Say what this starts before it does: the case opens with a medical and a financial review (see the dialog below).
+        setConfirmUw(true);
         return;
       }
       if (value === "save_info") {
@@ -2317,14 +2372,14 @@ function QuoteDetailModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-[2px] flex items-start justify-center overflow-y-auto py-10 px-4"
+      className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center py-6 px-4"
       onClick={onClose}
     >
       <div
-        className="modal-pop bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-2xl overflow-hidden"
+        className="modal-pop bg-white rounded-2xl border border-slate-200 shadow-2xl relative w-full max-w-5xl max-h-full flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+        <div className="shrink-0 px-6 py-3.5 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <p className="text-sm font-semibold text-slate-700">{tx(isApp ? "Application Details" : "Proposal Details")}</p>
             {detail && <StatusBadge status={detail.status} />}
@@ -2339,9 +2394,15 @@ function QuoteDetailModal({
           </button>
         </div>
 
+        <div className="flex-1 min-h-0 overflow-y-auto">
         {detail && !loading && (
-          <div className="space-y-4 border-b border-slate-100 bg-slate-50/70 px-5 py-4">
+          <div className="space-y-4 border-b border-slate-100 bg-slate-50/70 px-6 py-4">
             <ProposalProgress status={detail.status} withPayment={hasPaymentStep} paid={payment === "paid"} />
+            {detail.status === "OnHold" && (
+              <div role="status" className="rounded-lg border border-slate-300 bg-slate-100 px-3.5 py-2.5 text-xs text-slate-700">
+                <span className="font-semibold">{tx("On hold")}</span> — {tx("this proposal is paused and stays here until it is resumed.")}
+              </div>
+            )}
             {hasPaymentStep && detail.status === "UnderReview" && ipp !== null && (
               <PaymentPanel policyId={detail.policy_id} ipp={ipp} canAct={canAct && !isAgent} onChange={setIpp}
                 onCleared={async () => { await loadIpp(); onRefresh(); await onReloadDetail(); }} />
@@ -2352,27 +2413,6 @@ function QuoteDetailModal({
                   ? tx("Initial premium received. This application can now go to underwriting.")
                   : tx("Waiting for the initial premium. Underwriting opens once the payment has cleared.")}
               </p>
-            )}
-            {isAgent && modalOptions.length === 0 && ["Proposed", "UnderReview", "Approved", "AcceptedWithLoadings", "Declined", "Issued"].includes(detail.status) && (
-              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-500" title={tx("Currently, you have no access to do this, ask your manager")}>
-                {tx("This application has been sent to the admin team for further review, so it can no longer be changed from here. You can follow its progress on this page.")}
-              </div>
-            )}
-            {/* The next move: only what is legal from here */}
-            {modalOptions.length > 0 && (
-              <div className="space-y-2">
-                {startError && (
-                  <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{startError}</p>
-                )}
-                <ActionDropdown
-                  options={modalOptions}
-                  onApply={handleApplyAction}
-                  isOptionDisabled={(value) => value === "save_info" && Object.keys(missingFormData).length === 0}
-                  getConfirmMessage={(o) => (o.tier === "decision" ? tx(isApp ? "Reject this application? This cannot be undone." : "Reject this proposal? This cannot be undone.") : undefined)}
-                  canAct={canAct}
-                  canDecide={canDecide}
-                />
-              </div>
             )}
           </div>
         )}
@@ -2394,7 +2434,7 @@ function QuoteDetailModal({
         )}
 
         {detail && !loading && (
-          <div className="p-5 space-y-5">
+          <div className="px-6 py-5 space-y-5">
             {/* Proposal Statement */}
             <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-5 py-4 space-y-1.5">
               <div className="flex items-center justify-between mb-1">
@@ -2925,6 +2965,60 @@ function QuoteDetailModal({
                 {tx("This application's outcome was decided on its underwriting case, not here — open the case to review the decision.")}
               </div>
             )}
+          </div>
+        )}
+        </div>
+
+        {detail && !loading && (modalOptions.length > 0 || (isAgent && ["Proposed", "UnderReview", "Approved", "AcceptedWithLoadings", "Declined", "Issued"].includes(detail.status))) && (
+          <div className="shrink-0 space-y-2 border-t border-slate-200 bg-white px-6 py-3.5 shadow-[0_-8px_20px_-12px_rgba(15,23,42,0.15)]">
+            {isAgent && modalOptions.length === 0 && ["Proposed", "UnderReview", "Approved", "AcceptedWithLoadings", "Declined", "Issued"].includes(detail.status) && (
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-500" title={tx("Currently, you have no access to do this, ask your manager")}>
+                {tx("This application has been sent to the admin team for further review, so it can no longer be changed from here. You can follow its progress on this page.")}
+              </div>
+            )}
+            {/* The next move: only what is legal from here */}
+            {modalOptions.length > 0 && (
+              <div className="space-y-2">
+                {startError && (
+                  <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{startError}</p>
+                )}
+                <ActionDropdown
+                  options={modalOptions}
+                  onApply={handleApplyAction}
+                  isOptionDisabled={(value) => value === "save_info" && Object.keys(missingFormData).length === 0}
+                  getConfirmMessage={(o) => (o.tier === "decision" ? tx(isApp ? "Reject this application? This cannot be undone." : "Reject this proposal? This cannot be undone.") : undefined)}
+                  canAct={canAct}
+                  canDecide={canDecide}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {confirmUw && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => !uwBusy && setConfirmUw(false)}>
+            <div role="dialog" aria-modal="true" aria-labelledby="uw-confirm-title" className="modal-pop w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <h3 id="uw-confirm-title" className="text-base font-semibold text-slate-900">{tx("Send to underwriting?")}</h3>
+              <p className="mt-1 text-xs text-slate-500">{tx("This opens an underwriting case. Both reviews below are required before a final decision can be made.")}</p>
+              <ul className="mt-4 space-y-2.5">
+                <li className="flex gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-600">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78z" /></svg>
+                  </span>
+                  <span><span className="block text-sm font-semibold text-slate-800">{tx("Medical underwriting")}</span><span className="block text-xs text-slate-500">{tx("Health, medical history and examination results, reviewed by a medical underwriter.")}</span></span>
+                </li>
+                <li className="flex gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" /></svg>
+                  </span>
+                  <span><span className="block text-sm font-semibold text-slate-800">{tx("Financial underwriting")}</span><span className="block text-xs text-slate-500">{tx("Income, source of funds and whether the cover is justified, reviewed by a financial underwriter.")}</span></span>
+                </li>
+              </ul>
+              <div className="mt-5 flex justify-end gap-2">
+                <button type="button" disabled={uwBusy} onClick={() => setConfirmUw(false)} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-[13px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">{tx("Cancel")}</button>
+                <button type="button" disabled={uwBusy} onClick={submitToUnderwriting} className="rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-700 disabled:opacity-60">{uwBusy ? tx("Sending…") : tx("Send to underwriting")}</button>
+              </div>
+            </div>
           </div>
         )}
       </div>

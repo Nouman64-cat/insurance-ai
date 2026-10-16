@@ -39,6 +39,7 @@ export function ReceiptCard({ policyId }: { policyId: string }) {
   const [r, setR] = useState<PaymentReceipt | null>(null);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   useEffect(() => { getPolicyReceipt(policyId).then(setR).catch(() => setFailed(true)); }, [policyId]);
   if (failed) return null;
   if (!r) return <div className="h-24 rounded-lg border border-slate-200 bg-white animate-pulse" />;
@@ -46,60 +47,74 @@ export function ReceiptCard({ policyId }: { policyId: string }) {
     [tx("Received from"), r.customer_name ?? "—"], [tx("For"), `${r.plan_label ?? "—"} — ${tx("initial premium")}`], [tx("Date received"), displayDate(r.received_at)],
     [tx("Paid by"), r.method ?? "—"], [tx("Reference"), r.reference ?? "—"], [tx("Confirmed by"), r.confirmed_by ?? "—"],
   ];
+  const split = r.breakdown?.split && r.breakdown.split.remaining_amount > 0 ? r.breakdown.split : null;
+  const chevron = (o: boolean) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`h-4 w-4 shrink-0 text-slate-400 transition-transform duration-300 ${o ? "rotate-180" : ""}`}><polyline points="6 9 12 15 18 9" /></svg>
+  );
   return (
     <div className="overflow-hidden rounded-2xl border border-emerald-200/80 bg-white text-sm text-slate-600 shadow-sm shadow-emerald-900/5">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 to-white px-5 py-4">
-        <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><polyline points="20 6 9 17 4 12" /></svg>
-          </span>
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">{tx("Payment receipt")}</p>
-            <p className="font-mono text-base font-bold tracking-tight text-slate-900">{r.receipt_no}</p>
+      {/* Summary: always visible, one line. Everything else is one click away. */}
+      <button
+        type="button"
+        onClick={() => setShowDetails((o) => !o)}
+        aria-expanded={showDetails}
+        aria-controls="receipt-details"
+        className="flex w-full items-center gap-3 bg-gradient-to-r from-emerald-50 to-white px-4 py-3 text-start transition-colors hover:from-emerald-100/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500"
+      >
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><polyline points="20 6 9 17 4 12" /></svg>
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[11px] font-semibold uppercase tracking-wider text-emerald-700">{tx("Initial premium received")}</span>
+          <span className="block truncate font-mono text-xs text-slate-500">{r.receipt_no}</span>
+        </span>
+        <span className="text-lg font-extrabold tracking-tight text-emerald-700 tabular-nums">{pkr(r.amount)}</span>
+        {chevron(showDetails)}
+      </button>
+
+      <div id="receipt-details" className={`grid transition-all duration-300 ease-out ${showDetails ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`} aria-hidden={!showDetails}>
+        <div className="overflow-hidden">
+          <div className="border-t border-emerald-100">
+            {split && (
+              <p className="mx-4 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                {tx("{0}% of the premium has been paid. The remaining {1}% (PKR {2}) is paid at policy issuance.", { 0: split.upfront_pct, 1: split.remaining_pct, 2: Math.round(split.remaining_amount).toLocaleString() })}
+              </p>
+            )}
+            <dl className="grid gap-x-8 px-4 py-2 sm:grid-cols-2">
+              {rows.map(([k, v]) => (
+                <div key={k} className="flex items-baseline justify-between gap-4 border-b border-slate-100 py-2 last:border-0 sm:[&:nth-last-child(2):nth-child(odd)]:border-0">
+                  <dt className="text-xs text-slate-400">{k}</dt>
+                  <dd className="text-end text-[13px] font-semibold text-slate-800">{v}</dd>
+                </div>
+              ))}
+            </dl>
+
+            <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-3">
+              {r.breakdown && (
+                <button
+                  type="button"
+                  onClick={() => setOpen((o) => !o)}
+                  aria-expanded={open}
+                  aria-controls="receipt-breakdown"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-1.5 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                >
+                  {open ? tx("Hide payment breakdown") : tx("View payment breakdown")}
+                  {chevron(open)}
+                </button>
+              )}
+              <button type="button" onClick={() => printReceipt(r)} className="ms-auto inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></svg>
+                {tx("Print / save PDF")}
+              </button>
+            </div>
+            {r.breakdown && (
+              <div id="receipt-breakdown" className={`grid transition-all duration-300 ease-out ${open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`} aria-hidden={!open}>
+                <div className="overflow-hidden px-4"><div className="pb-4"><BreakdownTable b={r.breakdown} compact /></div></div>
+              </div>
+            )}
           </div>
         </div>
-        <button type="button" onClick={() => printReceipt(r)} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3.5 py-2 text-xs font-semibold text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></svg>
-          {tx("Print / save PDF")}
-        </button>
       </div>
-
-      <div className="flex items-center justify-between gap-4 bg-emerald-600/5 px-5 py-4">
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{tx("Amount received")}</span>
-        <span className="text-2xl font-extrabold tracking-tight text-emerald-700">{pkr(r.amount)}</span>
-      </div>
-
-      {r.breakdown?.split && r.breakdown.split.remaining_amount > 0 && (
-        <p className="mx-5 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-          {tx("{0}% of the premium has been paid. The remaining {1}% (PKR {2}) is paid at policy issuance.", { 0: r.breakdown.split.upfront_pct, 1: r.breakdown.split.remaining_pct, 2: Math.round(r.breakdown.split.remaining_amount).toLocaleString() })}
-        </p>
-      )}
-      <dl className="grid gap-x-8 px-5 py-3 sm:grid-cols-2">
-        {rows.map(([k, v]) => (
-          <div key={k} className="flex items-baseline justify-between gap-4 border-b border-slate-100 py-2.5 last:border-0 sm:[&:nth-last-child(2):nth-child(odd)]:border-0">
-            <dt className="text-xs text-slate-400">{k}</dt>
-            <dd className="text-end text-[13px] font-semibold text-slate-800">{v}</dd>
-          </div>
-        ))}
-      </dl>
-
-      {r.breakdown && (
-        <div className="border-t border-slate-100 px-5 py-3">
-          <button
-            type="button"
-            onClick={() => setOpen((o) => !o)}
-            aria-expanded={open}
-            aria-controls="receipt-breakdown"
-            className="flex w-full items-center justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50/60 px-3.5 py-2.5 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-          >
-            <span>{open ? tx("Hide payment breakdown") : tx("View payment breakdown")}</span>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`h-4 w-4 transition-transform duration-300 ${open ? "rotate-180" : ""}`}><polyline points="6 9 12 15 18 9" /></svg>
-          </button>
-          <div id="receipt-breakdown" className={`grid transition-all duration-300 ease-out ${open ? "mt-3 grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`} aria-hidden={!open}>
-            <div className="overflow-hidden"><BreakdownTable b={r.breakdown} compact /></div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

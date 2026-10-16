@@ -56,6 +56,7 @@ const en = {
     "Claims Dashboard": "Claims Dashboard",
     "Commission Dashboard": "Commission Dashboard",
     "Leads": "Leads",
+    "Lead/Customer Acquisition": "Lead/Customer Acquisition",
     "Proposal": "Proposal",
     "Policy Holders": "Policy Holders",
     "Cases": "Cases",

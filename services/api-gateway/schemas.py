@@ -315,6 +315,8 @@ class QuoteListItem(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class QuoteDetail(QuoteListItem):
+    # Set while the proposal is On hold: the status it was held from, which Resume returns it to.
+    held_from_status: Optional[str] = None
     # Customer — full risk profile, not just name/CNIC
     customer_dob: date
     customer_age: int

@@ -44,6 +44,8 @@ export interface QuoteListItem {
 }
 
 export interface QuoteDetail extends QuoteListItem {
+  /** While On hold: the status the proposal was held from (what Resume returns it to). */
+  held_from_status?: string | null;
   customer_dob: string;
   customer_age: number;
   customer_gender: string;

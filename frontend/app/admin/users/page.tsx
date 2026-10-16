@@ -252,6 +252,8 @@ export default function UserManagementPage() {
   const visibleUsers = users.filter((u) => u.email !== currentUserEmail);
   const { pageItems: pagedUsers, pagination } = usePagination(visibleUsers);
 
+  useHighlightTarget("userId", !loading && visibleUsers.length > 0);
+
   if (!authorized) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-950 text-center font-sans min-h-screen">
@@ -273,8 +275,6 @@ export default function UserManagementPage() {
       </div>
     );
   }
-
-  useHighlightTarget("userId", !loading && visibleUsers.length > 0);
 
   return (
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full font-sans">

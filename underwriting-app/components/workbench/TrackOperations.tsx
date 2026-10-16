@@ -73,7 +73,29 @@ function MedicalOperations({ caseId, disabled, onChanged, documentsVersion }: Op
       <td className="px-3 py-3 tabular-nums">{(order?.abnormal_findings ?? []).filter((f) => f.test === test.code).map((f) => `${f.loading_pct}%`).join(", ") || "—"}</td>
     </tr>; })}</tbody></table></div>
       : <p className="mt-4 rounded-xl border border-dashed border-slate-200 px-5 py-5 text-sm text-slate-500">{tx(assessing || !order ? "Working out the medical requirements…" : order.status === "NotRequired" ? "Sum assured is within the non-medical limit — no examination is needed." : order.status === "Waived" ? "The medical examination was waived." : disabled ? "Medical requirements are worked out when you start this review." : "No tests are required.")}</p>}
-    {order?.outcome && <p className="mt-4 rounded-xl bg-slate-50 p-3 text-sm">{tx("Clinical outcome")}: <b>{order.outcome}</b> · {tx("Suggested loading")}: {order.suggested_loading_pct ?? "—"}%</p>}
+    {order?.outcome && (() => {
+      const tone = order.outcome === "Normal" ? { chip: "bg-emerald-50 text-emerald-700 ring-emerald-200", bar: "bg-emerald-500", text: "text-emerald-700" }
+        : order.outcome === "MinorFindings" ? { chip: "bg-amber-50 text-amber-800 ring-amber-200", bar: "bg-amber-500", text: "text-amber-700" }
+        : { chip: "bg-rose-50 text-rose-700 ring-rose-200", bar: "bg-rose-500", text: "text-rose-700" };
+      const loading = order.suggested_loading_pct ?? 0;
+      return <section aria-label={tx("Medical underwriting result")} className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-stretch divide-y divide-slate-100 sm:divide-x sm:divide-y-0">
+          <div className="flex min-w-48 flex-1 flex-col justify-center gap-2 p-5">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{tx("Clinical outcome")}</p>
+            <span className={`inline-flex w-fit items-center rounded-full px-3 py-1 text-sm font-semibold ring-1 ring-inset ${tone.chip}`}>{tx(order.outcome.replace(/([a-z])([A-Z])/g, "$1 $2"))}</span>
+          </div>
+          <div className="flex min-w-64 flex-[2] flex-col justify-center p-5">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{tx("Suggested premium loading")}</p>
+            <div className="mt-1 flex items-end gap-3">
+              <span className={`text-4xl font-bold leading-none tabular-nums ${loading > 0 ? tone.text : "text-slate-900"}`}>{loading > 0 ? `+${loading}%` : tx("None")}</span>
+              <span className="pb-0.5 text-xs text-slate-500">{tx(loading > 0 ? "added to the base premium at policy issuance" : "no extra premium is needed")}</span>
+            </div>
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100" aria-hidden="true"><div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${Math.min(100, loading)}%` }} /></div>
+          </div>
+        </div>
+        {order.abnormal_findings?.length > 0 && <div className="border-t border-slate-100 bg-slate-50/60 px-5 py-3"><p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">{tx("Why")}</p><ul className="space-y-1.5">{order.abnormal_findings.map((f, n) => <li key={n} className="flex items-start justify-between gap-3 text-sm text-slate-700"><span>{f.label}{f.finding ? ` — ${f.finding}` : ""} <span className="text-slate-400">({f.value}{f.unit ? ` ${f.unit}` : ""})</span></span>{f.loading_pct ? <span className="shrink-0 font-semibold text-slate-900">+{f.loading_pct}%</span> : null}</li>)}</ul></div>}
+      </section>;
+    })()}
     {tests.length > 0 && !noExam && <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
       <div className="min-w-0"><p className="text-sm font-semibold text-slate-900">{tx(ready ? (rated ? "Results recorded" : "All reports are in") : "Waiting for reports")}</p>
         <p className="mt-0.5 text-xs text-slate-500">{ready ? tx(rated ? "Run again to re-read the reports and re-rate." : "Required next step: run AI medical underwriting, review the extracted results, then Save & rate to complete this requirement.")

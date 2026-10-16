@@ -17,6 +17,7 @@ import {
 import { fmtCoverage } from "@/lib/mock-data";
 import { useCaseEvents } from "@/lib/agent/useCaseEvents";
 import { underwritingUrl } from "@/lib/appLinks";
+import { useNewArrivals, recentIds, NewArrivalsBanner, NEW_ARRIVAL_CLASS, scrollToFirstNew } from "@/lib/useNewArrivals";
 import { Pagination, usePagination } from "@/components/Pagination";
 import RowActionsMenu, { type RowAction } from "@/components/RowActionsMenu";
 import { useNotify } from "@/components/NotificationContext";
@@ -207,6 +208,8 @@ export default function AdminUnderwritingPage() {
   const [cases, setCases] = useState<CaseQueueItem[]>([]);
   const [underwriters, setUnderwriters] = useState<TrackUnderwriter[]>([]);
   const [loading, setLoading] = useState(true);
+  const arrivalIds = useMemo(() => cases.map((c) => c.caseld), [cases]);
+  const arrivals = useNewArrivals("admin-underwriting", arrivalIds, !loading, recentIds(cases, (c) => c.caseld, (c) => c.createdAt));
   const [error, setError] = useState("");
   const [segment, setSegment] = useState<SegmentFilter>("all");
   const [stage, setStage] = useState<Stage | "ALL">("ALL");
@@ -306,6 +309,7 @@ export default function AdminUnderwritingPage() {
 
   return (
     <div className="px-6 py-5 space-y-4 max-w-screen-2xl mx-auto w-full font-sans">
+      <NewArrivalsBanner count={arrivals.newIds.size} noun="case" onShow={scrollToFirstNew} onDismiss={arrivals.markAllSeen} />
       {/* Header — same shape as the Leads page */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -441,13 +445,13 @@ export default function AdminUnderwritingPage() {
                     const actions: RowAction[] = [
                       { key: "medical", label: medical(c).assigned_user_id ? tx("Reassign medical review") : tx("Assign medical review"), icon: "stethoscope", onSelect: () => setAssigning({ c, track: "medical" }) },
                       { key: "financial", label: financial(c).assigned_user_id ? tx("Reassign financial review") : tx("Assign financial review"), icon: "wallet", onSelect: () => setAssigning({ c, track: "financial" }) },
-                      { key: "open", label: tx("Open in Workbench"), icon: "external", onSelect: () => window.open(workbench, "_blank", "noopener") },
+                      { key: "open", label: tx("Open in Workbench"), icon: "external", onSelect: () => { arrivals.markSeen(c.caseld); window.open(workbench, "_blank", "noopener"); } },
                     ];
                     return (
                       <tr
                         key={c.caseld}
-                        onClick={() => window.open(workbench, "_blank", "noopener")}
-                        className={`group cursor-pointer transition-colors hover:bg-slate-50/70 ${c.caseStatus === "Closed" ? "opacity-60" : ""}`}
+                        onClick={() => { arrivals.markSeen(c.caseld); window.open(workbench, "_blank", "noopener"); }}
+                        className={`group cursor-pointer transition-colors hover:bg-slate-50/70 ${c.caseStatus === "Closed" ? "opacity-60" : ""} ${arrivals.newIds.has(c.caseld) ? NEW_ARRIVAL_CLASS : ""}`}
                       >
                         <td className="pl-6 pr-4 py-3.5">
                           <div className="flex items-center gap-3">

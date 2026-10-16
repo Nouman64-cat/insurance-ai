@@ -51,6 +51,7 @@ import { Pagination, usePagination } from "@/components/Pagination";
 import { tx } from "@/lib/i18n/tx";
 import { LinkEmailNote, linkDeliveryText, type LinkDelivery } from "@/components/LinkEmailNote";
 import { appHref, portalUrl } from "@/lib/appLinks";
+import { useNewArrivals, recentIds, NewArrivalsBanner, NEW_ARRIVAL_CLASS, scrollToFirstNew } from "@/lib/useNewArrivals";
 import dynamic from "next/dynamic";
 
 // Dialogs are loaded when first opened, not with the page.
@@ -364,12 +365,14 @@ function UnderwritingMainContent() {
   // The hub has one tab now (the Risk Engine & OCR Ops tab was removed); an old ?tab=risk-engine link lands here.
   const activeTab = "pre-underwriting" as const;
   const [cases, setCases] = useState<CaseQueueItem[]>([]);
+  const arrivalIds = useMemo(() => cases.map((c) => c.caseld), [cases]);
   const [expandedGates, setExpandedGates] = useState<Record<string, number>>(
     {},
   );
   const [showAllGates, setShowAllGates] = useState<Record<string, boolean>>({});
 
   const [loading, setLoading] = useState(true);
+  const arrivals = useNewArrivals("underwriting-queue", arrivalIds, !loading, recentIds(cases, (c) => c.caseld, (c) => c.createdAt));
   const [error, setError] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
 
@@ -1057,6 +1060,7 @@ function UnderwritingMainContent() {
 
   return (
     <div className="px-6 py-4 space-y-4 max-w-screen-2xl mx-auto w-full">
+      <NewArrivalsBanner count={arrivals.newIds.size} noun="case" onShow={scrollToFirstNew} onDismiss={arrivals.markAllSeen} />
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl text-xs font-semibold">
           {error}
@@ -1286,8 +1290,8 @@ function UnderwritingMainContent() {
                 return (
                   <React.Fragment key={c.caseld}>
                     <tr
-                      onClick={() => router.push(`/case/${c.caseld}`)}
-                      className={`border-b border-slate-100 cursor-pointer transition-colors ${cleared ? "bg-emerald-50/30 hover:bg-emerald-50/60" : "hover:bg-slate-50"}`}
+                      onClick={() => { arrivals.markSeen(c.caseld); router.push(`/case/${c.caseld}`); }}
+                      className={`border-b border-slate-100 cursor-pointer transition-colors ${arrivals.newIds.has(c.caseld) ? NEW_ARRIVAL_CLASS : ""} ${cleared ? "bg-emerald-50/30 hover:bg-emerald-50/60" : "hover:bg-slate-50"}`}
                     >
                       <td className="pl-5 pr-3 py-3">
                         <button

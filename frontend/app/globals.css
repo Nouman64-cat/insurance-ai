@@ -467,3 +467,15 @@ html.dark .case-modern .section-label { color: #f8fafc; }
   color: white;
   box-shadow: 0 6px 20px -6px rgb(59 130 246 / .4);
 }
+
+/* A record that arrived (e.g. a lead moved to Proposals) and has not been opened yet: beats in light blue. */
+@keyframes new-arrival-beat {
+  0%, 100% { background-color: rgba(219, 234, 254, 0.35); box-shadow: inset 3px 0 0 0 rgba(59, 130, 246, 0.9); }
+  50% { background-color: rgba(191, 219, 254, 0.8); box-shadow: inset 3px 0 0 0 rgba(37, 99, 235, 1); }
+}
+.new-arrival {
+  animation: new-arrival-beat 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .new-arrival { animation: none; background-color: rgba(219, 234, 254, 0.7); }
+}

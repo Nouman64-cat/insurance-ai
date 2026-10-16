@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import api from "@/app/services/api";
@@ -8,6 +8,8 @@ import { updateUnderwritingTrack, type UnderwritingReview, type UnderwritingRevi
 import CaseWorkspaceHeader, { type CaseTab } from "@/components/case/CaseWorkspaceHeader";
 import { fmtCoverage } from "@/lib/mock-data";
 import { displayDate } from "@/lib/dateDisplay";
+import { useNewArrivals, recentIds, NewArrivalsBanner, NEW_ARRIVAL_CLASS, scrollToFirstNew } from "@/lib/useNewArrivals";
+import { downloadReviewReport } from "./reviewReportPdf";
 import ReviewDocuments, { isProcessing } from "./ReviewDocuments";
 import TrackOperations from "./TrackOperations";
 import { useCaseEvents } from "@/lib/agent/useCaseEvents";
@@ -65,6 +67,8 @@ export function SpecialistCaseWorkspace({ track }: { track: "medical" | "financi
   const [note, setNote] = useState("");
   const [decision, setDecision] = useState<UnderwritingReviewStatus>("IN_REVIEW");
   const [saving, setSaving] = useState(false);
+  const arrivalIds = useMemo(() => rows.map((r) => r.id), [rows]);
+  const arrivals = useNewArrivals(`specialist-queue:${track}`, arrivalIds, !loading && !caseId, recentIds(rows, (r) => r.id, (r) => r.created_at));
   const label = track === "medical" ? "Medical Underwriting" : "Financial Underwriting";
   const root = `/tenants/${user.tenant_id}/underwriting/reviews`;
   const load = async (silent = false) => {
@@ -115,6 +119,20 @@ export function SpecialistCaseWorkspace({ track }: { track: "medical" | "financi
       onUploadProgress: event => progress(event.total ? Math.round(event.loaded / event.total * 100) : 0),
     });
   };
+  // DEMO ONLY: files an accepted placeholder for each outstanding document so a walkthrough needs no real uploads.
+  const markDocumentsUploaded = async (items: { document_type: string; test_code: string }[]) => {
+    if (!caseId) return;
+    await api.post(`/tenants/${user.tenant_id}/cases/${caseId}/underwriting-documents/demo-complete`, { items });
+    void load(true);
+  };
+  // Waives this track's e-application questionnaire (with a recorded reason) instead of waiting on the customer.
+  const waiveEApplication = async () => {
+    if (!caseId) return;
+    try {
+      await api.post(`/tenants/${user.tenant_id}/cases/${caseId}/e-application/${track}/waive`, { reason: "Waived" });
+      void load(true);
+    } catch (error: any) { notify("error", error?.response?.data?.detail ?? tx("Could not waive.")); }
+  };
   // Bulk upload: the server reads each file and names the required test / document type it is.
   const classifyDocuments = async (files: File[]) => {
     if (!caseId) return files.map(() => ({ match: null }));
@@ -131,24 +149,24 @@ export function SpecialistCaseWorkspace({ track }: { track: "medical" | "financi
     try { const url = await getArtifactUrl(id); if (tab) tab.location.href = url; }
     catch { tab?.close(); notify("error", tx("Could not open the document.")); }
   };
+  // The report is available once the review is complete: a decision is recorded, or the AI underwriting result is saved.
+  const reviewDone = !!workspace && (["CLEARED", "REFERRED", "DECLINED"].includes(workspace.review.status)
+    || (track === "medical" && workspace.requirements.some(r => r.key === "medical_ai" && r.status === "Completed"))
+    || (track === "financial" && workspace.ai_underwriting != null && (workspace.ai_underwriting as any).result != null));
+  const [downloading, setDownloading] = useState(false);
   const downloadReview = async () => {
-    if (!workspace) return;
-    const { jsPDF } = await import("jspdf");
-    const pdf = new jsPDF(); let y = 18;
-    const line = (text: string) => {
-      const lines = pdf.splitTextToSize(text, 174) as string[];
-      for (const row of lines) { if (y > 278) { pdf.addPage(); y = 18; } pdf.text(row, 18, y); y += 6; }
-      y += 3;
-    };
-    pdf.setFontSize(15); line(label); pdf.setFontSize(10);
-    line(`${workspace.customer_name} | ${workspace.reference}`);
-    line(`Plan: ${workspace.product_name ?? "Not linked"}`);
-    line(`Review: ${LABELS[workspace.review.status]} | Assignee: ${workspace.review.assigned_user_name ?? "Unassigned"}`);
-    for (const [key, value] of Object.entries(workspace.evidence)) line(`${key}: ${valueText(value)}`);
-    if (workspace.assessment) { line(`Risk score: ${workspace.assessment.score}/100`); line(valueText(workspace.assessment.reasons)); }
-    line(`Review rationale: ${workspace.review.note ?? "Not recorded"}`);
-    line("Specialist review only. This is not final application approval or an issued policy.");
-    pdf.save(`${track}-review-${workspace.reference}.pdf`);
+    if (!workspace || !caseId || !reviewDone) return;
+    setDownloading(true);
+    try {
+      await downloadReviewReport({
+        track, reference: workspace.reference, customerName: workspace.customer_name, customerCnic: workspace.customer_cnic,
+        productName: workspace.product_name, coverageAmount: workspace.coverage_amount, termYears: workspace.term_years,
+        reviewStatus: workspace.review.status, reviewer: workspace.review.assigned_user_name, decidedAt: workspace.review.updated_at,
+        note: workspace.review.note, evidence: workspace.evidence, assessment: workspace.assessment ? { score: workspace.assessment.score, reasons: workspace.assessment.reasons } : null,
+        documents: workspace.documents.map(d => ({ name: d.name, type: d.type, status: d.status })),
+      }, caseId);
+    } catch { notify("error", tx("Could not create the report.")); }
+    finally { setDownloading(false); }
   };
   const sendEApplication = async () => {
     if (!caseId) return;
@@ -193,7 +211,7 @@ export function SpecialistCaseWorkspace({ track }: { track: "medical" | "financi
         extraStatus={<span className="text-xs font-semibold text-blue-600">{tx(label)}</span>}
         fields={[{ label: "CNIC", value: workspace.customer_cnic }, { label: "Plan", value: workspace.product_name }, { label: "Cover", value: workspace.coverage_amount != null ? fmtCoverage(workspace.coverage_amount) : null }, { label: "Term", value: workspace.term_years ? `${workspace.term_years} ${tx("yrs")}` : null }, { label: "Opened", value: displayDate(workspace.created_at) }]}
         tab={caseTab} onTab={setCaseTab} documentCount={workspace.documents.length}
-        actions={<div className="flex items-center gap-2"><button onClick={() => setCaseTab("documents")} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700">{tx(track === "medical" ? "Upload reports" : "Documents")} · {workspace.documents.length}</button><button onClick={() => void downloadReview()} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700">{tx("Download")}</button><button onClick={() => void load()} disabled={loading || saving} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700">{tx("Refresh")}</button><Badge status={workspace.review.status} /></div>}
+        actions={<div className="flex items-center gap-2"><button onClick={() => setCaseTab("documents")} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700">{tx(track === "medical" ? "Upload reports" : "Documents")} · {workspace.documents.length}</button><button onClick={() => void downloadReview()} disabled={!reviewDone || downloading} title={reviewDone ? undefined : tx("Available once the underwriting review is completed")} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">{downloading ? tx("Preparing…") : tx("Download")}</button><button onClick={() => void load()} disabled={loading || saving} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700">{tx("Refresh")}</button><Badge status={workspace.review.status} /></div>}
       />
       {workspace.on_hold && <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{tx("Application on hold")}: {workspace.hold_reason}. {tx("Review changes are disabled until the hold is released.")}</p>}
       {workspace.read_only && !workspace.on_hold && <p className="rounded-xl bg-slate-100 p-4 text-sm text-slate-700">{tx("This application is closed for specialist review.")}</p>}
@@ -216,7 +234,8 @@ export function SpecialistCaseWorkspace({ track }: { track: "medical" | "financi
       </div>
       <div className={caseTab === "requirements" ? "space-y-5" : "hidden"}>
         <RequirementsBoard track={track} requirements={workspace.requirements} requiredDocuments={workspace.required_documents} outstanding={workspace.application_outstanding} onOpen={setCaseTab}
-          onSendEApplication={workspace.read_only || workspace.review.assigned_user_id !== user.id ? undefined : () => void sendEApplication()} sending={saving} />
+          onSendEApplication={workspace.read_only || workspace.review.assigned_user_id !== user.id ? undefined : () => void sendEApplication()} sending={saving}
+          onWaiveEApplication={workspace.read_only || workspace.review.assigned_user_id !== user.id ? undefined : () => void waiveEApplication()} />
       </div>
       <div className={caseTab === "documents" ? "space-y-5" : "hidden"}>
         <ReviewDocuments key={caseId} medical={track === "medical"} documents={workspace.documents}
@@ -224,13 +243,14 @@ export function SpecialistCaseWorkspace({ track }: { track: "medical" | "financi
           requiredTypes={track === "financial" ? workspace.required_documents.map(d => d.type) : []}
           applicationDocuments={workspace.application_outstanding.filter(o => o.can_upload).map(o => ({ type: o.document_type!, reason: o.reason, canUpload: o.can_upload, owner: o.owner }))}
           disabled={workspace.read_only || workspace.review.assigned_user_id !== user.id}
-          onUploadFile={uploadDocument} onClassify={classifyDocuments} onUploaded={() => { void load(true); }} onOpen={id => { void openDocument(id); }} />
+          onUploadFile={uploadDocument} onMarkAllUploaded={markDocumentsUploaded} onClassify={classifyDocuments} onUploaded={() => { void load(true); }} onOpen={id => { void openDocument(id); }} />
       </div>
       <div className={caseTab === "applicant" ? "" : "hidden"}>
         <ApplicantPolicyTab track={track} evidence={workspace.evidence} customerName={workspace.customer_name} cnic={workspace.customer_cnic}
           productName={workspace.product_name} coverage={workspace.coverage_amount} termYears={workspace.term_years} openedAt={workspace.created_at} />
       </div>
     </> : <>
+      <NewArrivalsBanner count={arrivals.newIds.size} noun="case" onShow={scrollToFirstNew} onDismiss={arrivals.markAllSeen} />
       <QueueHeader track={track} label={label} rows={rows} loading={saving} onRefresh={() => void load(true)} onPick={setFilter} />
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 p-4">
@@ -238,7 +258,7 @@ export function SpecialistCaseWorkspace({ track }: { track: "medical" | "financi
         </div>
         <div className="flex flex-wrap gap-1.5 border-b border-slate-100 px-4 py-3">{["ALL", ...Object.keys(LABELS), "CLOSED"].map((key) => { const count = scoped.filter((r) => key === "ALL" || (key === "CLOSED" ? r.closed : r.review.status === key)).length; return <button key={key} onClick={() => setFilter(key)} aria-pressed={filter === key} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition ${filter === key ? "bg-slate-900 text-white" : count ? "text-slate-600 hover:bg-slate-100" : "text-slate-400 hover:bg-slate-50"}`}>{tx(key === "ALL" ? "All statuses" : key === "CLOSED" ? "Closed applications" : LABELS[key as UnderwritingReviewStatus])}<span className={`rounded-full px-1.5 text-[11px] ${filter === key ? "bg-white/20" : "bg-slate-100"}`}>{count}</span></button>; })}</div>
         {filtered.length ? <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-slate-50/70 text-[11px] font-semibold uppercase tracking-wide text-slate-500"><tr>{["Applicant", "Plan & cover", "Opened", "Your review", ""].map((h, i) => <th key={i} className="whitespace-nowrap px-5 py-2.5">{h && tx(h)}</th>)}</tr></thead>
-          <tbody className="divide-y divide-slate-100">{pageItems.map((row) => { const days = row.created_at ? Math.max(0, Math.floor((Date.now() - new Date(row.created_at).getTime()) / 86400000)) : null; return <tr key={row.id} className={`group cursor-pointer transition hover:bg-blue-50/40 ${row.closed ? "bg-slate-50/50" : ""}`} onClick={() => router.push(`/case/${row.id}`)}>
+          <tbody className="divide-y divide-slate-100">{pageItems.map((row) => { const days = row.created_at ? Math.max(0, Math.floor((Date.now() - new Date(row.created_at).getTime()) / 86400000)) : null; return <tr key={row.id} className={`group cursor-pointer transition hover:bg-blue-50/40 ${row.closed ? "bg-slate-50/50" : ""} ${arrivals.newIds.has(row.id) ? NEW_ARRIVAL_CLASS : ""}`} onClick={() => { arrivals.markSeen(row.id); router.push(`/case/${row.id}`); }}>
             <td className="px-5 py-3.5"><div className="flex items-center gap-3"><span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-xs font-bold text-white">{initials(row.customer_name)}</span><div className="min-w-0"><p className="truncate font-semibold text-slate-900">{row.customer_name}</p><p className="font-mono text-[11px] text-slate-400">{row.reference.replace(/^CASE-/, "APP-")}</p></div>{row.closed && <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${row.case_status === "Approved" ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : row.case_status === "Rejected" ? "bg-rose-50 text-rose-700 ring-rose-200" : "bg-slate-100 text-slate-600 ring-slate-200"}`}>{tx(row.case_status === "Approved" ? "Application approved" : row.case_status === "Rejected" ? "Application rejected" : "Application closed")}</span>}{row.on_hold && <span title={row.hold_reason ?? undefined} className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-200">{tx("On hold")}</span>}</div></td>
             <td className="px-5 py-3.5"><p className="text-slate-800">{row.product_name ?? <span className="text-slate-400">{tx("No plan linked")}</span>}</p>{row.coverage_amount != null && <p className="text-xs text-slate-500">{fmtCoverage(row.coverage_amount)}</p>}</td>
             <td className="whitespace-nowrap px-5 py-3.5"><p className="text-slate-700">{row.created_at ? displayDate(row.created_at) : "—"}</p>{days != null && <p className={`text-xs ${days > 7 ? "text-amber-700" : "text-slate-400"}`}>{days === 0 ? tx("Today") : `${days} ${tx(days === 1 ? "day ago" : "days ago")}`}</p>}</td>
@@ -357,10 +377,10 @@ function RiskEvidence({ assessment }: { assessment: Workspace["assessment"] }) {
 
 // The e-application can be (re)sent until the customer submits it; a new link replaces the old one.
 const SENDABLE = new Set(["NotSent", "Sent", "InProgress", "Expired"]);
-function RequirementsBoard({ track, requirements, requiredDocuments, outstanding, onOpen, onSendEApplication, sending }: {
+function RequirementsBoard({ track, requirements, requiredDocuments, outstanding, onOpen, onSendEApplication, onWaiveEApplication, sending }: {
   track: "medical" | "financial"; requirements: Requirement[]; requiredDocuments: RequiredDocument[]; outstanding: Outstanding[]; onOpen: (tab: CaseTab) => void;
   /** Absent when this specialist can't act on the application (not theirs, held or closed). */
-  onSendEApplication?: () => void; sending: boolean;
+  onSendEApplication?: () => void; onWaiveEApplication?: () => void; sending: boolean;
 }) {
   const done = requirements.filter((r) => requirementState(r.status) === "done").length;
   return <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -377,6 +397,7 @@ function RequirementsBoard({ track, requirements, requiredDocuments, outstanding
       </div>
       <StatusPill status={r.status} />
       {r.key === "e_application" && SENDABLE.has(r.status) && <button disabled={!onSendEApplication || sending} onClick={onSendEApplication} title={onSendEApplication ? undefined : tx("Start your review to email the customer.")} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-40"><svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6h16v12H4z" /><path d="m4 7 8 6 8-6" /></svg>{tx(sending ? "Sending…" : r.status === "NotSent" ? "Email to customer" : "Resend email")}</button>}
+      {r.key === "e_application" && SENDABLE.has(r.status) && <button disabled={!onWaiveEApplication || sending} onClick={onWaiveEApplication} className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40">{tx("Waive")}</button>}
       <button onClick={() => { onOpen(r.section); if (r.key === "medical_ai") requestAnimationFrame(() => document.getElementById("medical-underwriting")?.scrollIntoView({behavior:"smooth",block:"start"})); }} className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${state === "done" ? "text-slate-500 hover:bg-slate-50" : "border border-slate-200 text-blue-700 hover:border-blue-300"}`}>{tx(state === "done" ? "View" : r.key === "medical_ai" ? "Run AI medical underwriting" : r.key === "documents" || r.key === "application_documents" ? "Upload" : "Open")} →</button>
     </li>; })}</ol>
   </section>;

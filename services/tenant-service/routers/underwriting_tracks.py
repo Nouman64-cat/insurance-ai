@@ -20,7 +20,7 @@ themselves. The admin's Underwriting page reads the tracks through GET /cases.
 
 from datetime import datetime
 from typing import Literal, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from sqlmodel import select
@@ -311,7 +311,8 @@ async def specialist_workspace(tenant_id: UUID, case_id: UUID, session: AsyncSes
         CustomerEApplicationPart.case_id == case_id, CustomerEApplicationPart.part == track.lower()))).first()
     # Before the split the e-application was one combined form: its status stands for both parts.
     raw_status = part.status if part else (app.status if app else "NotSent")
-    e_application_status = "Submitted" if app and str(getattr(app.status, "value", app.status)) == "Verified" else str(getattr(raw_status, "value", raw_status))
+    waived = bool(part and isinstance(part.declaration, dict) and part.declaration.get("waived"))
+    e_application_status = "Waived" if waived else "Submitted" if app and str(getattr(app.status, "value", app.status)) == "Verified" else str(getattr(raw_status, "value", raw_status))
     requirements = [
         # Each track reviews from its own e-application questionnaire.
         {"key": "e_application", "label": "Medical E-Application Questionnaire" if track == "MEDICAL" else "Financial E-Application Questionnaire",
@@ -408,6 +409,91 @@ async def upload_specialist_document(
     return result
 
 
+# ── Demo shortcut: mark documents as uploaded ────────────────────────────────
+# DEMO ONLY. Files a small accepted placeholder for each document the underwriter
+# names, so a walkthrough does not need every file uploaded by hand. Each item is
+# checked exactly as a real upload is; the placeholders are named "(demo)".
+
+_DEMO_PDF = (b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+             b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 120]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n")
+
+
+@router.post('/cases/{case_id}/underwriting-documents/demo-complete')
+async def demo_mark_documents_uploaded(
+    tenant_id: UUID, case_id: UUID, body: dict,
+    session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme),
+):
+    from shared.models.core import Artifact, MedicalExamOrder
+    from services.medical_report_uploads import store_report
+    from specialist_access import DOCUMENT_TYPES
+    user, track = await _specialist_identity(tenant_id, token, session)
+    case = await session.get(Case, case_id)
+    if not case or case.tenant_id != tenant_id:
+        raise HTTPException(404, "Underwriting application not found.")
+    if case.on_hold:
+        raise HTTPException(409, "This application is on hold.")
+    waived = body.get("status") == "Waived"   # a bulk waive files "Waived" placeholders instead of accepted ones
+    items = body.get("items") or []
+    if not isinstance(items, list) or not items or len(items) > 60:
+        raise HTTPException(422, "Nothing to mark as uploaded.")
+    order = (await session.exec(select(MedicalExamOrder).where(MedicalExamOrder.case_id == case_id))).first() if track == "MEDICAL" else None
+    ordered = {t.get("code") for t in (order.required_tests or [])} if order else set()
+    if order and ordered:
+        # Medical results can only be recorded from real reports: at least 3 (or all, if fewer are ordered) must be actual uploads.
+        real = {a.document_type for a in (await session.exec(select(Artifact).where(
+            Artifact.case_id == case_id, Artifact.document_type.startswith("Medical Report: ")))).all()
+            if not any(tag in (a.file_name or "").lower() for tag in ("(demo)", "(waived)"))}
+        if len(real) < min(3, len(ordered)):
+            raise HTTPException(422, f"Upload at least {min(3, len(ordered))} real reports first ({len(real)} uploaded). The rest can then be marked as uploaded.")
+    made = 0
+    for item in items:
+        document_type, test_code = str(item.get("document_type") or ""), item.get("test_code")
+        if track == "MEDICAL" and test_code:
+            if test_code not in ordered:
+                continue
+            document_type = f"Medical Report: {test_code}"
+        elif document_type not in DOCUMENT_TYPES[track.lower()] and not await _fills_outstanding_requirement(session, tenant_id, case_id, track, document_type):
+            continue
+        artifact_id = uuid4()
+        filename = f"{document_type.replace(':', '').replace('/', '-')} ({'waived' if waived else 'demo'}).pdf"
+        storage_url = await store_report(_DEMO_PDF, f"{tenant_id}/cases/{case_id}/{artifact_id}/demo.pdf", "application/pdf")
+        session.add(Artifact(id=artifact_id, tenant_id=tenant_id, customer_id=case.customer_id, case_id=case_id,
+                             source_request_id=order.id if order and test_code else None, uploaded_by=user.id,
+                             document_type=document_type, file_name=filename, file_size=len(_DEMO_PDF), file_type="application/pdf",
+                             storage_url=storage_url, status="Waived" if waived else "Accepted",
+                             ocr_result="Waived by the underwriter." if waived else "Demo placeholder: marked as uploaded."))
+        made += 1
+    await session.commit()
+    await _refresh_case_requirements(session, tenant_id, case_id)
+    return {"marked": made}
+
+
+@router.post('/cases/{case_id}/e-application/{part_name}/waive')
+async def waive_e_application_part(
+    tenant_id: UUID, case_id: UUID, part_name: str, body: dict,
+    session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme),
+):
+    """Records that this track's e-application questionnaire is waived (with a reason), without touching the customer's answers."""
+    from shared.models.core import CustomerEApplicationPart, EApplicationStatusEnum
+    user, track = await _specialist_identity(tenant_id, token, session)
+    reason = str(body.get("reason") or "").strip() or "Waived"
+    if part_name != track.lower():
+        raise HTTPException(403, "You can only waive your own track's questionnaire.")
+    case = await session.get(Case, case_id)
+    if not case or case.tenant_id != tenant_id:
+        raise HTTPException(404, "Underwriting application not found.")
+    part = (await session.exec(select(CustomerEApplicationPart).where(
+        CustomerEApplicationPart.case_id == case_id, CustomerEApplicationPart.part == part_name))).first()
+    if part is None:
+        part = CustomerEApplicationPart(tenant_id=tenant_id, case_id=case_id, part=part_name, status=EApplicationStatusEnum.NOT_SENT)
+    declaration = dict(part.declaration or {})
+    declaration["waived"] = {"by": str(user.id), "reason": reason, "at": datetime.utcnow().isoformat()}
+    part.declaration = declaration
+    session.add(part)
+    await session.commit()
+    return {"status": "Waived"}
+
+
 # ── AI financial underwriting ────────────────────────────────────────────────
 # The financial counterpart of AI medical underwriting: once the financial
 # requirements are in, risk-engine scores the financial risk, works out the
@@ -425,7 +511,8 @@ async def _financial_ai_blockers(session: AsyncSession, case: Case, policy) -> l
         CustomerEApplicationPart.case_id == case.caseld, CustomerEApplicationPart.part == "financial"))).first()
     app = (await session.exec(select(CustomerEApplication).where(CustomerEApplication.case_id == case.caseld))).first()
     submitted = {"Submitted", "Verified"}
-    if not ((part and str(getattr(part.status, "value", part.status)) in submitted)
+    waived = bool(part and isinstance(part.declaration, dict) and part.declaration.get("waived"))   # waived by the underwriter
+    if not (waived or (part and str(getattr(part.status, "value", part.status)) in submitted)
             or (not part and app and str(getattr(app.status, "value", app.status)) in submitted)):
         blockers.append("The customer has not submitted the financial e-application.")
     history = (await session.exec(select(InsuranceHistoryCheck).where(InsuranceHistoryCheck.case_id == case.caseld))).first()

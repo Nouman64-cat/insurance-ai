@@ -58,6 +58,7 @@ const ur: Messages = {
     "Claims Dashboard": "کلیمز ڈیش بورڈ",
     "Commission Dashboard": "کمیشن ڈیش بورڈ",
     "Leads": "لیڈز",
+    "Lead/Customer Acquisition": "لیڈ / کسٹمر ایکوزیشن",
     "Proposal": "پروپوزل",
     "Policy Holders": "پالیسی ہولڈرز",
     "Cases": "کیسز",

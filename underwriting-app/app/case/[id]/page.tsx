@@ -2082,7 +2082,6 @@ function GeneralCasePage({ params }: { params: { id: string } }) {
     } else if (effStatus === "done" && hasLive && !autoTriggeredRef.current) {
       autoTriggeredRef.current = true;
       setTimeout(() => {
-        downloadPDFRef.current?.();
         triggerNotesRef.current?.();
         traceStage("report", { status: "done", detail: tx("Report ready") });
         // Leave the finished checklist on screen for a moment before the report replaces it.
@@ -5482,174 +5481,186 @@ function GeneralCasePage({ params }: { params: { id: string } }) {
       )}
 
       {/* ── AI Assessment Report Modal ────────────────────────────────────── */}
-      {showReportModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 lg:p-8 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 my-auto">
+      {showReportModal && (() => {
+        const riskTone = (n: number) =>
+          n <= 30
+            ? { bar: "bg-emerald-500", text: "text-emerald-600", chip: "bg-emerald-50 text-emerald-700 ring-emerald-600/20", label: "Low" }
+            : n <= 70
+              ? { bar: "bg-amber-500", text: "text-amber-600", chip: "bg-amber-50 text-amber-700 ring-amber-600/20", label: "Moderate" }
+              : { bar: "bg-red-500", text: "text-red-600", chip: "bg-red-50 text-red-700 ring-red-600/20", label: "High" };
+        const compositeTone = riskTone(compositeScore);
+        return (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6"
+          onClick={() => setShowReportModal(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+            className="bg-slate-50 rounded-3xl shadow-2xl ring-1 ring-slate-900/5 w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+          >
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-              <div className="flex items-center gap-4">
-                <img src="/rizvi.png" alt={tx("Rizviz")} className="h-8" />
-                <div className="h-6 w-px bg-slate-300"></div>
-                <div>
-                  <h2 className="text-lg font-bold text-slate-900 tracking-tight">
+            <div className="flex items-center justify-between gap-4 px-6 sm:px-8 py-5 bg-white border-b border-slate-200">
+              <div className="flex items-center gap-4 min-w-0">
+                <img src="/rizvi.png" alt={tx("Rizviz")} className="h-8 flex-shrink-0" />
+                <div className="h-8 w-px bg-slate-200 flex-shrink-0" />
+                <div className="min-w-0">
+                  <h2 className="text-lg font-semibold text-slate-900 tracking-tight truncate">
                     {tx("AI Underwriting Assessment")}
                   </h2>
-                  <p className="text-xs text-slate-500 font-medium mt-0.5">
-                    {tx("Applicant:")} {customer?.name} {tx("·  Application:")}{" "}
-                    {c.caseNumber}
+                  <p className="text-xs text-slate-500 mt-0.5 truncate">
+                    {customer?.name}
+                    <span className="mx-1.5 text-slate-300">/</span>
+                    <span className="font-mono">{c.caseNumber}</span>
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setShowReportModal(false)}
-                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-full transition-colors focus:outline-none"
+                aria-label={tx("Close")}
+                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               >
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
 
             {/* Body */}
-            <div className="p-6 md:p-8 space-y-8 bg-white overflow-y-auto max-h-[75vh]">
-              {/* Hero Decision Section */}
-              <div className="flex flex-col items-center justify-center text-center space-y-3 pb-8 border-b border-slate-100">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-                  {tx("Final AI Decision")}
-                </h3>
-                {aiDecision ? (
-                  <div className="scale-125 transform-origin-center my-1">
-                    <StatusBadge decision={aiDecision} size="lg" />
-                  </div>
-                ) : (
-                  <span className="text-xl font-bold text-slate-400 my-1">
-                    {tx("Pending")}
+            <div className="flex-1 overflow-y-auto p-5 sm:p-8 space-y-6">
+              {/* Summary: decision + composite risk */}
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <div className="md:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col items-start justify-center gap-3">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                    {tx("Final AI Decision")}
                   </span>
-                )}
-                {suggestedLoading !== null && (
-                  <p className="text-sm font-semibold text-amber-800 bg-amber-50 px-4 py-1.5 rounded-full border border-amber-200/50 mt-2 shadow-sm">
-                    {tx("Suggested Loading: +")}
-                    {suggestedLoading}%
-                  </p>
-                )}
-
-                <div className="w-full max-w-lg mt-8">
-                  <div className="flex justify-between items-end mb-2">
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                      {tx("Composite Risk")}
+                  {aiDecision ? (
+                    <StatusBadge decision={aiDecision} size="lg" />
+                  ) : (
+                    <span className="text-xl font-semibold text-slate-400">{tx("Pending")}</span>
+                  )}
+                  {suggestedLoading !== null && (
+                    <span className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800 ring-1 ring-inset ring-amber-600/20">
+                      {tx("Suggested Loading: +")}{suggestedLoading}%
                     </span>
-                    <span className="text-3xl font-black text-slate-900 tracking-tighter">
-                      {compositeScore}%
+                  )}
+                </div>
+
+                <div className="md:col-span-3 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col justify-center">
+                  <div className="flex items-end justify-between mb-3">
+                    <div>
+                      <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                        {tx("Composite Risk")}
+                      </span>
+                      <span className={`ms-2 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${compositeTone.chip}`}>
+                        {tx(compositeTone.label)}
+                      </span>
+                    </div>
+                    <span className="text-4xl font-bold text-slate-900 tabular-nums tracking-tight leading-none">
+                      {compositeScore}<span className="text-xl text-slate-400">%</span>
                     </span>
                   </div>
-                  <div className="h-3.5 w-full bg-slate-100 rounded-full overflow-hidden shadow-inner">
+                  <div className="h-2.5 w-full bg-slate-100 rounded-full overflow-hidden">
                     <div
-                      className={`h-full rounded-full transition-all duration-1000 ${
-                        compositeScore <= 30
-                          ? "bg-blue-500"
-                          : compositeScore <= 70
-                            ? "bg-amber-500"
-                            : "bg-red-500"
-                      }`}
-                      style={{ width: `${compositeScore}%` }}
+                      className={`h-full rounded-full transition-all duration-700 ${compositeTone.bar}`}
+                      style={{ width: `${Math.min(100, Math.max(0, compositeScore))}%` }}
                     />
+                  </div>
+                  <div className="flex justify-between mt-1.5 text-[10px] text-slate-400 tabular-nums">
+                    <span>0</span><span>30</span><span>70</span><span>100</span>
                   </div>
                 </div>
               </div>
 
-              {/* Metrics Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {reasonSections.map((section, idx) => (
-                  <div
-                    key={idx}
-                    className="bg-slate-50/80 rounded-2xl border border-slate-200/60 p-6 flex flex-col text-left shadow-sm"
-                  >
-                    <div className="flex justify-between items-start mb-4">
-                      <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-widest">
-                        {tx(section.label)}
-                      </span>
-                      <span
-                        className={`text-2xl font-black ${section.accentColor}`}
-                      >
-                        {section.scoreLabel}
-                      </span>
-                    </div>
+              {/* Risk factor cards */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {reasonSections.map((section, idx) => {
+                  const tone = riskTone(section.score);
+                  return (
+                    <div
+                      key={idx}
+                      className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden"
+                    >
+                      <div className="p-5 border-b border-slate-100">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="text-lg leading-none" aria-hidden="true">{section.icon}</span>
+                            <span className="text-sm font-semibold text-slate-900 truncate">
+                              {tx(section.label)}
+                            </span>
+                          </div>
+                          <span className={`text-2xl font-bold tabular-nums ${tone.text}`}>
+                            {section.scoreLabel}
+                          </span>
+                        </div>
+                        <div className="mt-3 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${tone.bar}`}
+                            style={{ width: `${Math.min(100, Math.max(0, section.score))}%` }}
+                          />
+                        </div>
+                      </div>
 
-                    <ul className="w-full space-y-2.5">
-                      {section.reasons.length > 0 ? (
-                        section.reasons.map((r, rIdx) => {
-                          const isObj = typeof r === "object" && r !== null;
-                          const text = isObj
-                            ? `${r.parameter || r.factor}: ${r.observation || r.reason}`
-                            : (r as string);
-                          return (
-                            <li
-                              key={rIdx}
-                              className="text-[13px] text-slate-700 flex items-start gap-2.5 leading-relaxed"
-                            >
-                              <span
-                                className={`mt-[3px] font-bold ${section.accentColor}`}
-                              >
-                                •
-                              </span>{" "}
-                              {text.replace(/\*\*/g, "")}
-                            </li>
-                          );
-                        })
-                      ) : (
-                        <li className="text-[13px] text-slate-400 italic py-2">
-                          {tx("No significant risk factors flagged.")}
-                        </li>
-                      )}
-                    </ul>
-                  </div>
-                ))}
+                      <ul className="divide-y divide-slate-100 flex-1">
+                        {section.reasons.length > 0 ? (
+                          section.reasons.map((r, rIdx) => {
+                            const isObj = typeof r === "object" && r !== null;
+                            const label = isObj ? String(r.parameter || r.factor || "") : "";
+                            const raw = isObj ? String(r.observation || r.reason || "") : (r as string);
+                            let head = label;
+                            let value = raw.replace(/\*\*/g, "");
+                            if (!isObj) {
+                              const i = value.indexOf(": ");
+                              if (i > 0 && i < 60) {
+                                head = value.slice(0, i);
+                                value = value.slice(i + 2);
+                              }
+                            } else {
+                              value = value.replace(/\*\*/g, "");
+                            }
+                            return (
+                              <li key={rIdx} className="px-5 py-3">
+                                {head && (
+                                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                                    {head}
+                                  </p>
+                                )}
+                                <p className="text-[13px] text-slate-800 leading-relaxed mt-0.5">{value}</p>
+                              </li>
+                            );
+                          })
+                        ) : (
+                          <li className="px-5 py-8 text-center text-[13px] text-slate-400">
+                            {tx("No significant risk factors flagged.")}
+                          </li>
+                        )}
+                      </ul>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-between px-6 py-4 bg-slate-50 border-t border-slate-200/80">
-              <span className="text-xs text-slate-500 font-medium">
+            <div className="flex items-center justify-between px-6 sm:px-8 py-4 bg-white border-t border-slate-200">
+              <span className="text-xs text-slate-500">
                 {tx("Generated")}{" "}
-                {displayDate(new Date(), {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                })}
+                {displayDate(new Date(), { month: "short", day: "numeric", year: "numeric" })}
               </span>
               <div className="flex items-center gap-3">
                 <button
                   onClick={downloadPDF}
-                  className="px-5 py-2.5 text-[13px] font-bold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 shadow-sm transition-all flex items-center gap-2 focus:ring-2 focus:ring-slate-200"
+                  className="px-4 py-2 text-[13px] font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 transition-colors flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                 >
-                  <svg
-                    className="w-4 h-4 text-slate-500"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2.5"
-                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                    ></path>
+                  <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
                   {tx("Save PDF")}
                 </button>
                 <button
                   onClick={() => setShowReportModal(false)}
-                  className="px-6 py-2.5 text-[13px] font-bold text-white bg-blue-600 border border-transparent rounded-xl hover:bg-blue-700 shadow-sm shadow-blue-600/20 transition-all focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+                  className="px-5 py-2 text-[13px] font-semibold text-white bg-blue-600 rounded-xl hover:bg-blue-700 shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                 >
                   {tx("Done")}
                 </button>
@@ -5657,7 +5668,8 @@ function GeneralCasePage({ params }: { params: { id: string } }) {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

@@ -78,8 +78,8 @@ export function FancyDropdown({
 
   useEffect(() => {
     if (open) {
-      if (searchable) requestAnimationFrame(() => searchRef.current?.focus());
-      else listRef.current?.focus();
+      if (searchable) requestAnimationFrame(() => searchRef.current?.focus({ preventScroll: true }));
+      else listRef.current?.focus({ preventScroll: true });
     } else {
       setQuery("");
     }
@@ -152,7 +152,7 @@ export function FancyDropdown({
 
       <div
         className={`absolute z-30 mt-1.5 min-w-full w-max max-w-xs bg-white border border-slate-200 rounded-xl shadow-lg origin-top transition-all duration-150 ${
-          open ? "opacity-100 scale-100 pointer-events-auto" : "opacity-0 scale-95 pointer-events-none"
+          open ? "opacity-100 scale-100 pointer-events-auto" : "invisible opacity-0 scale-95 pointer-events-none"
         } ${panelClassName}`}
       >
         {searchable && (

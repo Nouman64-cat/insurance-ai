@@ -189,10 +189,10 @@ function IssuanceModal({
   const blockers = preview?.readiness.blockers ?? [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col">
         {/* Header + stepper */}
-        <div className="bg-blue-600 px-6 py-4 flex items-center justify-between">
+        <div className="shrink-0 bg-blue-600 px-6 py-4 flex items-center justify-between">
           <div>
             <h2 className="text-white text-lg font-bold">
               {tx("Issue Policy")}
@@ -248,12 +248,14 @@ function IssuanceModal({
                   </ul>
                 </div>
               )}
+              <div className="space-y-6">
+              <div className="space-y-6">
               {/* Insured */}
               <div>
                 <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">
                   {tx("Insured")}
                 </p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 rounded-xl p-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-slate-50 rounded-xl p-5">
                   <Field label={tx("Name")} value={preview.insured.name} />
                   <Field
                     label={tx("CNIC")}
@@ -271,7 +273,7 @@ function IssuanceModal({
                 <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">
                   {tx("Contract terms")}
                 </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 bg-slate-50 rounded-xl p-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-5 bg-slate-50 rounded-xl p-5">
                   <Field
                     label={tx("Product")}
                     value={preview.contract.product_name}
@@ -303,6 +305,65 @@ function IssuanceModal({
                 </div>
               </div>
 
+              <div>
+              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">
+                {tx("Payment")}
+              </p>
+              {partialPrepaid ? (
+                <div className="space-y-3">
+                  <PartPaymentSummary paid={prepaid!.amount ?? 0} pct={prepaid!.split?.upfront_pct} quotedTotal={prepaid!.split?.total ?? 0}
+                    plannedRemaining={prepaid!.split?.remaining_amount ?? 0} finalTotal={pb?.total_premium ?? ((prepaid!.amount ?? 0) + (prepaid!.remaining_due ?? 0))} />
+                  <ol className="list-decimal space-y-0.5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 ps-8 text-xs text-slate-600">
+                    <li>{tx("Press “Issue & bind” — the policy number is created.")}</li>
+                    <li>{tx("Pay the balance shown above.")}</li>
+                    <li>{tx("Cover starts as soon as the balance is paid.")}</li>
+                  </ol>
+                </div>
+              ) : prepaid ? (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs text-emerald-900 space-y-1">
+                  <p className="font-semibold">{tx("Payment received")} · {fmtPKR(prepaid.amount ?? 0)}</p>
+                  <p>
+                    {tx("The first premium was collected at the proposal stage")}
+                    {prepaid.method ? ` (${prepaid.method}${prepaid.reference ? `, ${prepaid.reference}` : ""})` : ""}.{" "}
+                    {tx("Issuing starts cover straight away with this payment. You will not be asked to pay again.")}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                  {tx("Issuing mints the policy number and drafts the contract, then moves to")}{" "}
+                  <b>{tx("Pending Payment")}</b>
+                  {tx(". Cover activates once the first premium is confirmed.")}
+                </p>
+              )}
+              </div>
+              {/* Beneficiaries */}
+              <div>
+                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">
+                  {tx("Beneficiaries")}
+                </p>
+                {preview.beneficiaries.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic">
+                    {tx("None captured.")}
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {preview.beneficiaries.map((b) => (
+                      <span
+                        key={b.name}
+                        className="text-xs bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1 text-slate-700"
+                      >
+                        {b.name}{" "}
+                        <span className="text-slate-400">
+                          · {b.relationship} · {b.share_pct}%
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              </div>
+              <div className="space-y-6">
               {/* Premium breakdown: only when nothing has been collected yet. A premium already received (before underwriting) is
                   shown in the payment box below, with its breakdown on the receipt, so it is not repeated here. */}
               {pb && !fullyPrepaid && (
@@ -348,58 +409,8 @@ function IssuanceModal({
                 </div>
               )}
 
-              {/* Beneficiaries */}
-              <div>
-                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">
-                  {tx("Beneficiaries")}
-                </p>
-                {preview.beneficiaries.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">
-                    {tx("None captured.")}
-                  </p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {preview.beneficiaries.map((b) => (
-                      <span
-                        key={b.name}
-                        className="text-xs bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1 text-slate-700"
-                      >
-                        {b.name}{" "}
-                        <span className="text-slate-400">
-                          · {b.relationship} · {b.share_pct}%
-                        </span>
-                      </span>
-                    ))}
-                  </div>
-                )}
               </div>
-
-              {partialPrepaid ? (
-                <div className="space-y-3">
-                  <PartPaymentSummary paid={prepaid!.amount ?? 0} pct={prepaid!.split?.upfront_pct} quotedTotal={prepaid!.split?.total ?? 0}
-                    plannedRemaining={prepaid!.split?.remaining_amount ?? 0} finalTotal={pb?.total_premium ?? ((prepaid!.amount ?? 0) + (prepaid!.remaining_due ?? 0))} />
-                  <ol className="list-decimal space-y-0.5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 ps-8 text-xs text-slate-600">
-                    <li>{tx("Press “Issue & bind” — the policy number is created.")}</li>
-                    <li>{tx("Pay the balance shown above.")}</li>
-                    <li>{tx("Cover starts as soon as the balance is paid.")}</li>
-                  </ol>
-                </div>
-              ) : prepaid ? (
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs text-emerald-900 space-y-1">
-                  <p className="font-semibold">{tx("Payment received")} · {fmtPKR(prepaid.amount ?? 0)}</p>
-                  <p>
-                    {tx("The first premium was collected at the proposal stage")}
-                    {prepaid.method ? ` (${prepaid.method}${prepaid.reference ? `, ${prepaid.reference}` : ""})` : ""}.{" "}
-                    {tx("Issuing starts cover straight away with this payment. You will not be asked to pay again.")}
-                  </p>
-                </div>
-              ) : (
-                <p className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                  {tx("Issuing mints the policy number and drafts the contract, then moves to")}{" "}
-                  <b>{tx("Pending Payment")}</b>
-                  {tx(". Cover activates once the first premium is confirmed.")}
-                </p>
-              )}
+              </div>
             </>
           )}
 
@@ -411,10 +422,10 @@ function IssuanceModal({
         </div>
 
         {/* Footer actions */}
-        <div className="border-t border-slate-100 px-6 py-4 flex gap-3">
+        <div className="shrink-0 border-t border-slate-100 bg-white px-8 py-4 flex items-center justify-end gap-3">
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-2.5 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+            className="px-5 py-2.5 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
           >
             {tx("Cancel")}
           </button>
@@ -432,7 +443,7 @@ function IssuanceModal({
                   ? tx("Clear the blocking gates first")
                   : undefined
             }
-            className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm"
+            className="min-w-56 px-6 py-2.5 text-sm font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm"
           >
             {issuing ? tx("Binding…") : fullyPrepaid ? tx("Issue & activate →") : tx("Issue & bind →")}
           </button>
@@ -676,9 +687,9 @@ function PaymentModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden">
-        <div className="bg-blue-600 px-6 py-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col">
+        <div className="shrink-0 bg-blue-600 px-8 py-5">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-blue-100 text-xs font-medium uppercase tracking-widest">
@@ -706,8 +717,8 @@ function PaymentModal({
           </div>
         </div>
 
-        <div className="px-6 py-5 space-y-5">
-          <div className="bg-slate-50 rounded-xl p-4 space-y-1.5">
+        <div className="px-8 py-6 space-y-6 overflow-y-auto">
+          <div className="bg-slate-50 rounded-xl p-5 space-y-1.5">
             <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">
               {prepaid ? tx("Policy awaiting activation") : tx("Policy Awaiting Payment")}
             </p>
@@ -734,16 +745,19 @@ function PaymentModal({
               <p className="text-xs text-slate-500">{tx("Press “Activate cover” to bind the policy with this payment.")}</p>
             </div>
           ) : (
-          <>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+          <div className="space-y-6 lg:col-span-3">
           {paidBefore && (
             <PartPaymentSummary paid={paidBefore.amount ?? 0} pct={paidBefore.split?.upfront_pct} quotedTotal={paidBefore.split?.total ?? 0}
               plannedRemaining={paidBefore.split?.remaining_amount ?? 0} finalTotal={(paidBefore.amount ?? 0) + (paidBefore.remaining_due ?? 0)} />
           )}
-          <div className="flex items-center justify-between border-y border-slate-100 py-3">
+          </div>
+          <div className="space-y-6 lg:col-span-2">
+          <div className="flex items-center justify-between rounded-xl border border-blue-100 bg-blue-50/50 px-4 py-3.5">
             <p className="text-sm font-semibold text-slate-700">
               {paidBefore ? tx("Remaining balance due now") : tx("Amount Due")}
             </p>
-            <p className="text-lg font-bold text-blue-700">
+            <p className="text-2xl font-bold text-blue-700 tabular-nums">
               {loading ? "…" : amountDue != null ? fmtPKR(amountDue) : "—"}
             </p>
           </div>
@@ -757,7 +771,7 @@ function PaymentModal({
                 <button
                   key={m.code}
                   onClick={() => setSelected(m.code)}
-                  className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${selected === m.code ? "bg-blue-50 border-blue-300 text-blue-800" : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"}`}
+                  className={`px-3 py-3 rounded-lg text-sm font-semibold border transition-all ${selected === m.code ? "bg-blue-50 border-blue-300 text-blue-800" : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"}`}
                 >
                   {tx(m.label)}
                 </button>
@@ -790,7 +804,8 @@ function PaymentModal({
             </p>
           </div>
 
-          </>
+          </div>
+          </div>
           )}
 
           {error && (
@@ -822,10 +837,12 @@ function PaymentModal({
             </button>
           )}
 
-          <div className="flex gap-3 pt-1">
+        </div>
+
+        <div className="shrink-0 border-t border-slate-100 bg-white px-8 py-4 flex items-center justify-end gap-3">
             <button
               onClick={onClose}
-              className="flex-1 px-4 py-2.5 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+              className="px-5 py-2.5 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
             >
               {tx("Cancel")}
             </button>
@@ -841,11 +858,10 @@ function PaymentModal({
                     )
                   : undefined
               }
-              className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm"
+              className="min-w-56 px-6 py-2.5 text-sm font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm"
             >
               {confirming ? tx("Confirming…") : prepaid ? tx("Activate cover") : tx("Confirm & Activate")}
             </button>
-          </div>
         </div>
       </div>
     </div>
@@ -856,6 +872,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { Pagination, usePagination } from "@/components/Pagination";
 import { tx } from "@/lib/i18n/tx";
+import { useNewArrivals, recentIds, NewArrivalsBanner, NEW_ARRIVAL_CLASS, scrollToFirstNew } from "@/lib/useNewArrivals";
 
 function PolicyIssuanceContent() {
   const searchParams = useSearchParams();
@@ -863,6 +880,10 @@ function PolicyIssuanceContent() {
   const [policies, setPolicies] = useState<PolicyListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  // A policy is "new" when it reaches this page and again each time it moves to its next stage (issuance, payment, in force).
+  const arrivalKey = (p: PolicyListItem) => `${p.id}|${statusKey(p.status)}`;
+  const arrivalIds = useMemo(() => policies.map(arrivalKey), [policies]);
+  const arrivals = useNewArrivals("policy-issuance", arrivalIds, !loading, recentIds(policies, arrivalKey, (p) => p.created_at));
   // Both legacy queue URLs now open the same policy list.
   useEffect(() => {
     if (searchParams.has("tab")) {
@@ -886,6 +907,7 @@ function PolicyIssuanceContent() {
   const [issuanceResult, setIssuanceResult] = useState<{
     result: IssuanceResult;
     policyName: string;
+    policyId: string;
   } | null>(null);
   const [activatedMsg, setActivatedMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -1019,7 +1041,7 @@ function PolicyIssuanceContent() {
   const handleIssued = (result: IssuanceResult, policyId: string) => {
     const pol = policies.find((p) => p.id === policyId);
     setSelectedPolicy(null);
-    setIssuanceResult({ result, policyName: pol?.customer_name ?? "Policy" });
+    setIssuanceResult({ result, policyName: pol?.customer_name ?? "Policy", policyId });
     load();
   };
 
@@ -1041,6 +1063,7 @@ function PolicyIssuanceContent() {
 
   return (
     <div className="px-6 py-5 space-y-4 max-w-screen-2xl mx-auto w-full">
+      <NewArrivalsBanner count={arrivals.newIds.size} noun="policy" onShow={scrollToFirstNew} onDismiss={arrivals.markAllSeen} />
       {/* Header — same shape as the Leads page; the title follows the queue */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -1200,8 +1223,8 @@ function PolicyIssuanceContent() {
                     return (
                       <tr
                         key={p.id}
-                        className="group hover:bg-slate-50/70 transition-colors cursor-pointer"
-                        onClick={() => setViewPolicy(p)}
+                        className={`group hover:bg-slate-50/70 transition-colors cursor-pointer ${arrivals.newIds.has(arrivalKey(p)) ? NEW_ARRIVAL_CLASS : ""}`}
+                        onClick={() => { arrivals.markSeen(arrivalKey(p)); setViewPolicy(p); }}
                       >
                         <td className="pl-6 pr-4 py-3.5">
                           <div className="flex items-center gap-3">
@@ -1269,7 +1292,7 @@ function PolicyIssuanceContent() {
                             <button
                               type="button"
                               title={tx("View Details")}
-                              onClick={(e) => { e.stopPropagation(); setViewPolicy(p); }}
+                              onClick={(e) => { e.stopPropagation(); arrivals.markSeen(arrivalKey(p)); setViewPolicy(p); }}
                               className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors group-hover:text-blue-600 hover:bg-white hover:ring-1 hover:ring-slate-200"
                             >
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><polyline points="9 18 15 12 9 6" /></svg>
@@ -1382,8 +1405,18 @@ function PolicyIssuanceContent() {
               (issuanceResult.result.status || "")
                 .toUpperCase()
                 .replace(/[^A-Z]/g, "") === "PENDINGPAYMENT";
+            const issuedId = issuanceResult.policyId;
             setIssuanceResult(null);
-            if (!pending) showAllPolicies();
+            if (!pending) { showAllPolicies(); return; }
+            // "Continue to payment": open Confirm Payment straight away on the freshly issued policy.
+            void (async () => {
+              try {
+                const fresh = await listPolicies();
+                setPolicies(fresh);
+                const issued = fresh.find((p) => p.id === issuedId);
+                if (issued) setPaymentPolicy(issued);
+              } catch { /* the list refresh below still runs */ }
+            })();
           }}
         />
       )}

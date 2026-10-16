@@ -774,6 +774,10 @@ MIGRATIONS: list[tuple[str, str]] = [
         "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'ACTIVE'",
     ),
     (
+        "v31x-enum — add OnHold to policystatusenum",
+        "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'ON_HOLD'",
+    ),
+    (
         "v31c-enum-fix — add GRACE_PERIOD to policystatusenum",
         "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'GRACE_PERIOD'",
     ),

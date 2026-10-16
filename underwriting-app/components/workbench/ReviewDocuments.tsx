@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { tx } from "@/lib/i18n/tx";
 
 type Document = { id: string; name: string; type: string; status: string; scope: string; tampered?: boolean; ocr_text?: string | null; extracted?: unknown };
@@ -11,6 +11,8 @@ type Props = {
   /** Documents the application as a whole still needs; uploadable ones get a card with an upload. */
   applicationDocuments?: { type: string; reason: string; canUpload: boolean; owner: string | null }[];
   onUploadFile: (file: File, type: string, testCode: string, progress: (value: number) => void) => Promise<void>;
+  /** DEMO ONLY: files an accepted placeholder for each outstanding document. */
+  onMarkAllUploaded?: (items: { document_type: string; test_code: string }[]) => Promise<void>;
   onUploaded: () => void; onOpen: (id: string) => void;
   /** Reads the files and names the matching test code (medical) or document type (financial) for each, or null. */
   onClassify?: (files: File[]) => Promise<({ match: string | null; reason?: string | null })[]>;
@@ -140,63 +142,102 @@ export default function ReviewDocuments(p: Props) {
   const attention = queue.filter(item => item.status === "failed" || (item.status === "ready" && item.match === "none"));
   const required = p.medical ? [] : p.requiredTypes ?? [];
   const unlinked = p.documents.filter(d => !p.tests.some(test => d.type === `Medical Report: ${test.code}`) && !required.includes(d.type) && !appDocs.some(a => a.type === d.type));
-  const appSection = appDocs.length > 0 && <section aria-label={tx("Needed for the application")} className="rounded-2xl border border-amber-200 bg-amber-50/40 p-5">
-    <div className="mb-4 flex flex-wrap items-end justify-between gap-2"><div><h3 className="text-sm font-semibold text-slate-900">{tx("Still needed for the application")}</h3><p className="mt-0.5 text-xs text-slate-500">{tx("The application stays in Pending documents until these are in.")}</p></div><p className="text-xs font-semibold text-amber-800">{appDocs.length} {tx("outstanding")}</p></div>
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">{appDocs.map(doc => {
-      const active = queue.some(item => item.type === doc.type && item.match !== "none" && item.match !== "reading" && item.status !== "failed");
-      // A file of this type is in but not accepted yet: it is being read, or it could not be read.
+  type Row = { key: string; title: string; hint: string; files: Document[]; done: boolean; checking: boolean; unreadable: boolean; active: boolean; canUpload: boolean; note: string | null; testCode: string; cardType: string; tag: string | null };
+  const isActive = (match: (item: QueuedFile) => boolean) => queue.some(item => match(item) && item.match !== "none" && item.match !== "reading" && item.status !== "failed");
+  const rows: Row[] = [
+    ...appDocs.map((doc): Row => {
       const files = p.documents.filter(d => d.type === doc.type);
       const checking = files.some(d => isProcessing(d.status));
       const unreadable = !checking && files.some(d => d.status === "Re-submission Requested");
-      const badge = active ? ["Uploading…", "bg-blue-50 text-blue-700"] : checking ? ["Checking document…", "bg-blue-50 text-blue-700"] : unreadable ? ["Couldn't be read", "bg-rose-50 text-rose-700"] : ["Outstanding", "bg-amber-50 text-amber-800"];
-      return <article key={doc.type} className={`flex flex-col rounded-2xl border bg-white p-5 shadow-sm ${active || checking ? "border-blue-300 ring-2 ring-blue-50" : unreadable ? "border-rose-200" : "border-slate-200"}`}>
-        <div className="flex items-start justify-between gap-2"><span className={`rounded-xl p-3 ${checking ? "bg-blue-50 text-blue-600" : unreadable ? "bg-rose-50 text-rose-600" : "bg-amber-50 text-amber-600"}`}><Icon kind="file" className="h-6 w-6" /></span><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${badge[1]}`}>{(active || checking) && <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />}{tx(badge[0])}</span></div>
-        <h4 className="mt-5 text-base font-semibold leading-6 text-slate-900">{tx(doc.type)}</h4>
-        <p className="mt-1 text-xs leading-5 text-slate-500">{checking ? tx("Uploaded — we're reading it now. This usually takes a few seconds and updates by itself.") : unreadable ? tx("The file couldn't be read clearly. Upload a sharper scan or the original PDF.") : doc.reason}</p>
-        {files.length > 0 && <div className="mt-3 space-y-1.5">{files.map(d => <button key={d.id} onClick={() => p.onOpen(d.id)} className="flex w-full items-center justify-between gap-2 rounded-lg bg-slate-50 px-2.5 py-2 text-left text-xs"><span className="truncate font-medium text-blue-700">{d.name} ↗</span><span className={d.status === "Re-submission Requested" ? "text-rose-600" : "text-slate-400"}>{tx(isProcessing(d.status) ? "Reading…" : d.status)}</span></button>)}</div>}
-        <div className="mt-auto pt-5">{checking ? null : doc.canUpload
-          ? <button disabled={locked} onClick={() => {pickerTest.current = ""; pickerType.current = doc.type; input.current?.click();}} className={`flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold transition disabled:opacity-40 ${active ? "bg-blue-600 text-white" : "bg-blue-600 text-white hover:bg-blue-700"}`}>{active ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <Icon kind="upload" className="h-4 w-4" />}{tx(active ? "Uploading…" : unreadable ? "Upload a clearer copy" : "Upload document")}</button>
-          : <p className="rounded-lg bg-slate-50 px-3 py-2.5 text-center text-xs text-slate-500">{tx(doc.owner === "medical" ? "Collected by medical underwriting" : doc.owner === "financial" ? "Collected by financial underwriting" : "Collected by pre-underwriting")}</p>}</div>
-      </article>;
-    })}</div>
+      return { key: `app:${doc.type}`, title: doc.type, done: false, checking, unreadable, files, canUpload: doc.canUpload, tag: "Application", testCode: "", cardType: doc.type,
+        active: isActive(i => i.type === doc.type),
+        hint: checking ? "Uploaded — we're reading it now. This usually takes a few seconds and updates by itself." : unreadable ? "The file couldn't be read clearly. Upload a sharper scan or the original PDF." : doc.reason,
+        note: doc.canUpload ? null : doc.owner === "medical" ? "Collected by medical underwriting" : doc.owner === "financial" ? "Collected by financial underwriting" : "Collected by pre-underwriting" };
+    }),
+    ...(p.medical ? p.tests.map((test): Row => {
+      const files = p.documents.filter(d => d.type === `Medical Report: ${test.code}`);
+      return { key: `test:${test.code}`, title: test.name, done: files.length > 0, checking: false, unreadable: false, files, canUpload: true, note: null, tag: null, testCode: test.code, cardType: "",
+        active: isActive(i => i.testCode === test.code), hint: "Attach the results for this examination." };
+    }) : required.map((type): Row => {
+      const files = p.documents.filter(d => d.type === type);
+      return { key: `req:${type}`, title: type, done: files.length > 0, checking: false, unreadable: false, files, canUpload: true, note: null, tag: null, testCode: type, cardType: "",
+        active: isActive(i => i.type === type), hint: "Requested from the customer, or upload it here." };
+    })),
+  ];
+  const pending = rows.filter(r => !r.done);
+  const [marking, setMarking] = useState(false);
+  const [dialog, setDialog] = useState(false);
+  // Medical results can only be recorded from real reports: at least 3 (or all of them, if fewer are ordered) must be actual
+  // uploads. The rest can be waived. Demo placeholders don't count.
+  const realReports = p.medical ? new Set(p.documents.filter(d => d.type.startsWith("Medical Report: ") && !/\((demo|waived)\)/i.test(d.name)).map(d => d.type)).size : 0;
+  const minReal = p.medical ? Math.min(3, p.tests.length) : 0;
+  const canMark = realReports >= minReal;
+  const [markError, setMarkError] = useState("");
+  const markable = pending.filter(r => r.canUpload && !r.checking && !r.active);
+  const markAll = async () => {
+    if (!p.onMarkAllUploaded || !markable.length || !canMark) return;
+    setMarking(true); setMarkError("");
+    try { await p.onMarkAllUploaded(markable.map(r => ({ document_type: p.medical && r.testCode ? "Medical Report" : r.cardType || r.testCode, test_code: p.medical ? r.testCode : "" }))); }
+    catch (error: any) { setMarkError(error?.response?.data?.detail ?? error?.message ?? tx("Could not mark as uploaded.")); }
+    finally { setMarking(false); setDialog(false); }
+  };
+  const receivedCount = rows.filter(r => r.done).length;
+  const pct = rows.length ? Math.round((receivedCount / rows.length) * 100) : 0;
+  const complete = rows.filter(r => r.done);
+  const renderRow = (r: Row) => {
+    const badge = r.active ? ["Uploading…", "bg-blue-50 text-blue-700"] : r.checking ? ["Checking…", "bg-blue-50 text-blue-700"] : r.unreadable ? ["Couldn't be read", "bg-rose-50 text-rose-700"] : r.done ? ["Received", "bg-emerald-50 text-emerald-700"] : ["Outstanding", "bg-amber-50 text-amber-800"];
+    const busyRow = r.active || r.checking;
+    return <li key={r.key} className="flex flex-wrap items-start gap-x-4 gap-y-3 px-5 py-4">
+      <span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${r.done ? "bg-emerald-50 text-emerald-600" : r.unreadable ? "bg-rose-50 text-rose-600" : busyRow ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-500"}`}>{busyRow ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" /> : <Icon kind={r.done ? "check" : "file"} className="h-4 w-4" />}</span>
+      <div className="min-w-0 flex-1 basis-64">
+        <div className="flex flex-wrap items-center gap-2"><h4 className="text-sm font-semibold text-slate-900">{tx(r.title)}</h4>{r.tag && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-500">{tx(r.tag)}</span>}</div>
+        <p className="mt-0.5 text-xs leading-5 text-slate-500">{r.note ? tx(r.note) : tx(r.hint)}</p>
+        {r.files.length > 0 && <ul className="mt-2 flex flex-wrap gap-1.5">{r.files.map(d => <li key={d.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 py-1 pe-2.5 ps-2.5 text-xs"><button onClick={() => p.onOpen(d.id)} className="max-w-52 truncate font-medium text-blue-700 hover:underline" title={d.name}>{d.name}</button><span className={d.tampered || d.status === "Re-submission Requested" ? "text-rose-600" : "text-slate-400"}>{d.tampered ? tx("Authenticity review needed") : tx(isProcessing(d.status) ? "Reading…" : d.status)}</span></li>)}</ul>}
+      </div>
+      <div className="flex shrink-0 items-center gap-3"><span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${badge[1]}`}>{tx(badge[0])}</span>
+        {r.canUpload && !r.checking && <button disabled={locked || r.active} onClick={() => {pickerTest.current = r.testCode; pickerType.current = r.cardType; input.current?.click();}} className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition disabled:opacity-40 ${r.done ? "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" : "bg-blue-600 text-white hover:bg-blue-700"}`}><Icon kind="upload" className="h-3.5 w-3.5" />{tx(r.unreadable ? "Upload a clearer copy" : r.done ? "Add another" : "Upload")}</button>}
+      </div>
+    </li>;
+  };
+  const checklist = rows.length > 0 && <section aria-label={tx("Required documents")} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    {pending.length > 0 && <><div className="flex items-center justify-between border-b border-amber-100 bg-amber-50/60 px-5 py-2.5"><h3 className="text-xs font-semibold uppercase tracking-wide text-amber-800">{tx("Needs action")}</h3><span className="text-xs font-medium text-amber-800">{pending.length} {tx("outstanding")}</span></div><ul className="divide-y divide-slate-100">{pending.map(renderRow)}</ul></>}
+    {complete.length > 0 && <><div className={`flex items-center justify-between border-b border-slate-100 bg-slate-50 px-5 py-2.5 ${pending.length ? "border-t" : ""}`}><h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{tx("Received")}</h3><span className="text-xs text-slate-400">{complete.length}</span></div><ul className="divide-y divide-slate-100">{complete.map(renderRow)}</ul></>}
   </section>;
-  return <div className="space-y-6">
-    <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-widest text-blue-600">{tx(p.medical ? "Clinical evidence" : "Financial evidence")}</p><h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">{tx(p.medical ? "Medical reports" : "Documents")}</h2><p className="mt-2 text-sm text-slate-500">{tx(p.medical ? "Upload from a report card, or select several files at once — each is matched to its test and filed on its card." : "Select several files at once — each is matched to its document type and filed.")}</p></div><button disabled={locked} onClick={() => {pickerTest.current = ""; input.current?.click();}} className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40"><Icon kind="upload" />{tx("Bulk upload")}</button></header>
+  return <div className="relative space-y-5" onDragOver={e => {e.preventDefault(); if (!locked) setDragging(true);}} onDragLeave={e => {if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);}} onDrop={e => {e.preventDefault(); setDragging(false); if (!locked) addFiles(Array.from(e.dataTransfer.files));}}>
+    {dragging && <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-blue-400 bg-blue-50/90 text-sm font-semibold text-blue-700">{tx("Drop files to upload — each is matched to its report")}</div>}
+    <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-widest text-blue-600">{tx(p.medical ? "Clinical evidence" : "Financial evidence")}</p><h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-900">{tx(p.medical ? "Medical reports" : "Documents")}</h2><p className="mt-1 text-sm text-slate-500">{tx("Drag files anywhere on this page, or use Bulk upload — each file is matched and filed automatically.")} <span className="text-xs text-slate-400">PDF, JPG, PNG, TIFF, BMP, HEIC</span></p></div>
+        <div className="flex flex-wrap items-center gap-2"><button disabled={locked} onClick={() => {pickerTest.current = ""; pickerType.current = ""; input.current?.click();}} className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40"><Icon kind="upload" />{tx("Bulk upload")}</button> {p.onMarkAllUploaded && markable.length > 0 && <button disabled={locked} onClick={() => {setMarkError(""); setDialog(true);}} className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40">{tx("Mark as uploaded")}</button>}</div></div>
+      {markError && <p role="alert" className="mt-2 text-xs text-red-600">{markError}</p>}
+      {rows.length > 0 && <div className="mt-4"><div className="mb-1.5 flex items-center justify-between text-xs"><span className="font-medium text-slate-700">{receivedCount} {tx("of")} {rows.length} {tx("received")}</span><span className="tabular-nums text-slate-400">{pct}%</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}><div className={`h-full rounded-full transition-all ${pct === 100 ? "bg-emerald-500" : "bg-blue-500"}`} style={{width: `${pct}%`}} /></div></div>}
+    </header>
     <input ref={input} type="file" multiple disabled={locked} aria-label={tx("Select reports")} accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp,.heic" className="sr-only" onChange={e => {addFiles(Array.from(e.target.files ?? []), pickerTest.current, pickerType.current); pickerTest.current = ""; pickerType.current = ""; e.target.value="";}} />
-    <div onDragOver={e => {e.preventDefault();if (!locked) setDragging(true);}} onDragLeave={() => setDragging(false)} onDrop={e => {e.preventDefault();setDragging(false);if (!locked) addFiles(Array.from(e.dataTransfer.files));}} className={`rounded-xl border border-dashed px-5 py-4 text-center text-sm ${dragging ? "border-blue-400 bg-blue-50 text-blue-700" : "border-slate-300 text-slate-500"}`}>{tx("Drop multiple reports here, or use Bulk upload.")} <span className="text-xs text-slate-400">PDF, JPG, PNG, TIFF, BMP, HEIC</span></div>
     {(reading > 0 || uploading > 0) && <p role="status" className="flex items-center gap-2 rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-800"><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />{reading > 0 ? `${tx("Matching")} ${reading} ${tx(reading === 1 ? "file" : "files")}…` : `${tx("Uploading")} ${uploading} ${tx(uploading === 1 ? "file" : "files")}… ${busy ? `${progress}%` : ""}`}</p>}
-    {appSection}
+    {checklist}
     {attention.length > 0 && <section className="overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm" aria-label={tx("Files that need a choice")}><div className="border-b border-amber-100 bg-amber-50 px-5 py-3"><h3 className="text-sm font-semibold text-amber-900">{tx(p.medical ? "Choose the test for these files" : "Choose the document type for these files")} · {attention.length}</h3><p className="mt-0.5 text-xs text-amber-800">{tx("They couldn't be matched automatically, or didn't upload.")}</p></div><ul className="divide-y divide-slate-100">{attention.map(item => <li key={item.id} className="flex flex-wrap items-center gap-3 px-5 py-3"><span className="rounded-lg bg-slate-50 p-2 text-blue-600"><Icon kind="file" /></span><div className="min-w-0 flex-1 basis-40"><p className="truncate text-sm font-medium text-slate-800">{item.file.name}</p>{item.error ? <p role="alert" className="mt-0.5 text-xs text-red-600">{item.error}</p> : <p className="mt-0.5 text-xs text-slate-400" title={item.reason ?? undefined}>{tx("Couldn't tell which it is")}</p>}</div>{p.medical ? <select aria-label={`${tx("Test for")} ${item.file.name}`} value={item.testCode} onChange={e => update(item.id,{testCode:e.target.value, match:"manual"})} className="max-w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs sm:w-60"><option value="">{tx("General supporting report")}</option>{p.tests.map(test => <option key={test.code} value={test.code}>{test.name}</option>)}</select> : <select aria-label={`${tx("Type for")} ${item.file.name}`} value={item.type} onChange={e => update(item.id,{type:e.target.value, match:"manual"})} className="rounded-lg border p-2 text-xs">{types.map(type => <option key={type}>{type}</option>)}</select>}<button disabled={locked} onClick={() => uploadItems([{...item, status: "ready"}])} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">{tx(item.status === "failed" ? "Retry" : "Upload")}</button><button aria-label={`${tx("Remove")} ${item.file.name}`} onClick={() => setQueue(current => current.filter(row => row.id !== item.id))} className="rounded-lg px-2 py-1 text-xl text-slate-400">×</button></li>)}</ul></section>}
-    {p.medical && p.tests.length > 0 && <section aria-label={tx("Required reports")}>
-      <div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-semibold text-slate-800">{tx("Required reports")}</h3><p className="text-xs text-slate-400">{p.tests.length} {tx("examination tests")}</p></div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">{p.tests.map((test, index) => {
-        const reports = p.documents.filter(d => d.type === `Medical Report: ${test.code}`);
-        const active = queue.some(item => item.testCode === test.code && item.match !== "none" && item.match !== "reading" && item.status !== "failed");
-        return <article key={test.code} className={`flex min-h-64 flex-col rounded-2xl border bg-white p-5 shadow-sm transition ${active ? "border-blue-400 ring-2 ring-blue-100" : "border-slate-200 hover:border-blue-200"}`}>
-          <div className="flex items-start justify-between gap-2"><span className={`rounded-xl p-3 ${reports.length ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}><Icon kind={reports.length ? "check" : "file"} className="h-6 w-6" /></span><span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${reports.length ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{tx(reports.length ? "Uploaded" : "Awaiting report")}</span></div>
-          <p className="mt-5 text-[10px] font-semibold uppercase tracking-widest text-slate-400">{tx("Required report")} {String(index + 1).padStart(2, "0")}</p>
-          <h4 className="mt-1 text-base font-semibold leading-6 text-slate-900">{test.name}</h4>
-          <p className="mb-5 mt-2 text-xs text-slate-400">{reports.length ? `${reports.length} ${tx("files attached")}` : tx("Attach the results for this examination.")}</p>
-          <div className="mt-auto space-y-2">{reports.map(report => <details key={report.id} className="rounded-lg bg-slate-50 p-2 text-xs"><summary className="cursor-pointer truncate text-slate-600">{report.name}</summary><button onClick={() => p.onOpen(report.id)} className="my-2 font-semibold text-blue-600">{tx("Open report")} ↗</button><p className="text-slate-500">{report.status}</p>{report.tampered && <p className="text-red-600">{tx("Authenticity review needed")}</p>}{Boolean(report.ocr_text || report.extracted) && <p className="mt-2 whitespace-pre-wrap break-words text-slate-500">{report.ocr_text || JSON.stringify(report.extracted, null, 2)}</p>}</details>)}<button disabled={locked} onClick={() => {pickerTest.current = test.code; input.current?.click();}} className={`flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold transition disabled:opacity-40 ${active ? "bg-blue-600 text-white" : "bg-blue-50 text-blue-700 hover:bg-blue-100"}`}>{active ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <Icon kind="upload" className="h-4 w-4" />}{tx(active ? "Uploading…" : reports.length ? "Add another file" : "Upload report")}</button></div>
-        </article>;
-      })}</div>
-    </section>}
     {p.medical && !p.tests.length && <p className="rounded-xl bg-white p-5 text-sm text-slate-500">{tx("Required report cards appear after medical requirements are assessed. You can still upload supporting reports.")}</p>}
-    {required.length > 0 && <section aria-label={tx("Required documents")}>
-      <div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-semibold text-slate-800">{tx("Required by this plan")}</h3><p className="text-xs text-slate-400">{required.filter(t => p.documents.some(d => d.type === t)).length}/{required.length} {tx("received")}</p></div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">{required.map(type => {
-        const files = p.documents.filter(d => d.type === type);
-        const active = queue.some(item => item.type === type && item.match !== "none" && item.match !== "reading" && item.status !== "failed");
-        return <article key={type} className={`flex flex-col rounded-2xl border bg-white p-5 shadow-sm transition ${active ? "border-blue-400 ring-2 ring-blue-100" : "border-slate-200 hover:border-blue-200"}`}>
-          <div className="flex items-start justify-between gap-2"><span className={`rounded-xl p-3 ${files.length ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"}`}><Icon kind={files.length ? "check" : "file"} className="h-6 w-6" /></span><span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${files.length ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{tx(files.length ? "Received" : "Awaiting document")}</span></div>
-          <h4 className="mt-5 text-base font-semibold leading-6 text-slate-900">{tx(type)}</h4>
-          <p className="mb-5 mt-1 text-xs text-slate-400">{files.length ? `${files.length} ${tx("files attached")}` : tx("Requested from the customer, or upload it here.")}</p>
-          <div className="mt-auto space-y-2">{files.map(d => <div key={d.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-2.5 py-2 text-xs"><button onClick={() => p.onOpen(d.id)} className="truncate text-left font-medium text-blue-700">{d.name} ↗</button><span className={d.tampered ? "text-red-600" : "text-slate-400"}>{d.tampered ? tx("Authenticity review") : d.status}</span></div>)}<button disabled={locked} onClick={() => {pickerTest.current = type; input.current?.click();}} className={`flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold transition disabled:opacity-40 ${active ? "bg-blue-600 text-white" : "bg-blue-50 text-blue-700 hover:bg-blue-100"}`}>{active ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <Icon kind="upload" className="h-4 w-4" />}{tx(active ? "Uploading…" : files.length ? "Add another file" : "Upload document")}</button></div>
-        </article>;
-      })}</div>
-    </section>}
     {!p.medical && !required.length && <p className="rounded-xl bg-white p-5 text-sm text-slate-500">{tx("This plan doesn't require financial documents. You can still upload supporting income evidence.")}</p>}
     {unlinked.length > 0 && <section><h3 className="mb-4 text-sm font-semibold text-slate-800">{tx(p.medical ? "Other uploaded documents" : "Uploaded documents")}</h3><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{unlinked.map(d => <article key={d.id} className="rounded-xl border bg-white p-4"><button onClick={() => p.onOpen(d.id)} className="text-left text-sm font-semibold text-blue-700">{d.name} ↗</button><p className="mt-2 text-xs text-slate-500">{d.type} · {d.status}</p>{d.tampered && <p className="mt-2 text-xs text-red-600">{tx("Authenticity review needed")}</p>}</article>)}</div></section>}
+    {dialog && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => !marking && setDialog(false)}>
+      <div role="dialog" aria-modal="true" aria-labelledby="waive-title" onClick={e => e.stopPropagation()} className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+        <h3 id="waive-title" className="text-lg font-semibold text-slate-900">{tx("Mark as uploaded")}</h3>
+        <p className="mt-1 text-sm text-slate-500">{tx(p.medical ? "Medical results can only be recorded from real reports. Upload a few, then mark the rest as uploaded." : "Mark the remaining documents as uploaded so this review can continue.")}</p>
+        <ol className="mt-5 space-y-3">
+          {p.medical && <li className={`rounded-xl border p-4 ${canMark ? "border-emerald-200 bg-emerald-50/50" : "border-slate-200"}`}>
+            <div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold text-slate-900">{tx("1. Upload at least")} {minReal} {tx("reports")}</p><p className="mt-0.5 text-xs text-slate-500">{realReports} {tx("of")} {minReal} {tx("uploaded")}</p></div>
+              {canMark ? <span className="text-xs font-semibold text-emerald-700">✓ {tx("Done")}</span> : <button onClick={() => {pickerTest.current = ""; pickerType.current = ""; input.current?.click();}} className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700"><Icon kind="upload" className="h-3.5 w-3.5" />{tx("Upload reports")}</button>}</div>
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full transition-all ${canMark ? "bg-emerald-500" : "bg-blue-500"}`} style={{width: `${minReal ? Math.min(100, Math.round(realReports / minReal * 100)) : 100}%`}} /></div>
+          </li>}
+          <li className={`rounded-xl border p-4 ${canMark ? "border-slate-200" : "border-slate-100 opacity-60"}`}>
+            <p className="text-sm font-semibold text-slate-900">{p.medical ? "2. " : ""}{tx("Mark the remaining")} {markable.length} {tx(markable.length === 1 ? "document" : "documents")} {tx("as uploaded")}</p>
+            <p className="mt-0.5 text-xs text-slate-500">{tx("They are filed as accepted placeholders marked “demo”. Demo only.")}</p>
+          </li>
+        </ol>
+        {(queue.length > 0 || busy) && <p role="status" className="mt-3 text-xs text-blue-700">{tx("Uploading…")} {busy ? `${progress}%` : ""}</p>}
+        {markError && <p role="alert" className="mt-3 text-xs text-red-600">{markError}</p>}
+        <div className="mt-6 flex justify-end gap-2"><button disabled={marking} onClick={() => setDialog(false)} className="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">{tx("Cancel")}</button><button disabled={!canMark || marking} onClick={() => void markAll()} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40">{marking ? tx("Saving…") : tx("Mark as uploaded")}</button></div>
+      </div>
+    </div>}
     {p.disabled && <p className="text-xs text-amber-700">{tx("Uploads are available when this review is assigned to you and open for changes.")}</p>}
   </div>;
 }

@@ -41,6 +41,7 @@ from shared.models.core import (
     MasterPolicy,
     Organization,
     Policy,
+    PolicyEvent,
     PolicyStatusEnum,
     PremiumQuote,
     Role,
@@ -51,6 +52,16 @@ from shared.pricing.calculator import calculate_premium
 
 _log = logging.getLogger(__name__)
 TENANT_SERVICE_URL = os.environ.get("TENANT_SERVICE_URL", "http://tenant-service:8001")
+
+
+async def _with_held_from(session, policy, detail):
+    """While a proposal is On hold, say which status it was held from (what Resume returns it to)."""
+    if policy.status == PolicyStatusEnum.ON_HOLD:
+        held = (await session.exec(select(PolicyEvent).where(
+            PolicyEvent.policy_id == policy.id, PolicyEvent.to_status == PolicyStatusEnum.ON_HOLD.value,
+        ).order_by(PolicyEvent.created_at.desc()))).first()
+        detail.held_from_status = held.from_status if held else None
+    return detail
 
 
 async def _early_knockout(tenant_id: UUID, occupation: Optional[str], dob: Optional[date]) -> list[str]:
@@ -332,7 +343,9 @@ async def get_quote_detail(
             detail=f"Quote '{quote_id}' not found for this tenant.",
         )
     quote, policy, customer, source, master_policy, org, family_policy, family_group, underwriter = row
-    return _row_to_detail(quote, policy, customer, source, master_policy, org, family_policy, family_group, underwriter)
+    detail = _row_to_detail(quote, policy, customer, source, master_policy, org, family_policy, family_group, underwriter)
+    await _with_held_from(session, policy, detail)
+    return detail
 
 @router.patch(
     "/quotes/{quote_id}",
@@ -405,7 +418,7 @@ async def update_quote(
         await session.commit()
         await session.refresh(policy)
         
-    return _row_to_detail(quote, policy, customer, source, master_policy, org, family_policy, family_group, underwriter)
+    return await _with_held_from(session, policy, _row_to_detail(quote, policy, customer, source, master_policy, org, family_policy, family_group, underwriter))
 
 
 def _age_from_dob(dob: date) -> int:

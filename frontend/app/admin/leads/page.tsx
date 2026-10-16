@@ -1,7 +1,7 @@
 "use client";
 
 import { displayDate } from '../../../lib/dateDisplay';
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { listBranches, Branch } from "@/app/services/branches";
 import { listAcquisitionSources, AcquisitionSource } from "@/app/services/acquisitionSources";
 import Link from "next/link";
@@ -12,6 +12,7 @@ import { listCases } from "@/app/services/cases";
 import UnifiedDetailsModal from "@/components/UnifiedDetailsModal";
 import FiltersPanel from "@/components/FiltersPanel";
 import AddEntryChooser, { EntryEntityType } from "@/components/entities/AddEntryChooser";
+import { useNewArrivals, NewArrivalsBanner, NEW_ARRIVAL_CLASS, scrollToFirstNew } from "@/lib/useNewArrivals";
 import NewLeadAlert, { NewLeadInfo } from "@/components/NewLeadAlert";
 import { getUserDirectory } from "@/app/services/agents";
 import { useNotify } from "@/components/NotificationContext";
@@ -656,7 +657,10 @@ export default function LeadsHubPage() {
     }
   };
 
+  const arrivalIds = useMemo(() => leads.map((l) => l.id), [leads]);
+  const arrivals = useNewArrivals("leads", arrivalIds, !loading);
   const handleCardClick = (lead: UnifiedLead) => {
+    arrivals.markSeen(lead.id);
     setSelectedEntity({ id: lead.id, type: lead.type });
   };
 
@@ -810,11 +814,12 @@ export default function LeadsHubPage() {
 
   return (
     <div className="px-6 py-5 space-y-4 max-w-screen-2xl mx-auto w-full font-sans">
+      <NewArrivalsBanner count={arrivals.newIds.size} noun="lead" onShow={scrollToFirstNew} onDismiss={arrivals.markAllSeen} />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Leads")}</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Lead/Customer Acquisition")}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
             {isAgent ? tx("Add leads and take them as far as a submitted proposal.") : tx("Manage & track your prospects across all segments.")}
           </p>
@@ -1259,7 +1264,7 @@ export default function LeadsHubPage() {
                               <tr
                                 key={lead.id}
                                 onClick={() => handleCardClick(lead)}
-                                className={`group cursor-pointer transition-colors hover:bg-slate-50/70 ${isDead ? "opacity-60" : ""}`}
+                                className={`group cursor-pointer transition-colors hover:bg-slate-50/70 ${isDead ? "opacity-60" : ""} ${arrivals.newIds.has(lead.id) ? NEW_ARRIVAL_CLASS : ""}`}
                               >
                                 <td className="pl-6 pr-4 py-3.5">
                                   <div className="flex items-center gap-3">

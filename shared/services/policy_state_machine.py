@@ -37,6 +37,7 @@ log = logging.getLogger(__name__)
 
 _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
     PolicyStatusEnum.QUOTED: {
+        PolicyStatusEnum.ON_HOLD,   # staff can pause it from the Proposals page
         PolicyStatusEnum.PROPOSED,
         # A Draft is auto-generated with no form filled in — basic KYC fields
         # (DOB, gender, occupation, income) may still be missing, so it must
@@ -45,6 +46,7 @@ _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
         PolicyStatusEnum.DECLINED,
     },
     PolicyStatusEnum.PROPOSED: {
+        PolicyStatusEnum.ON_HOLD,   # staff can pause it from the Proposals page
         PolicyStatusEnum.UNDER_REVIEW,
         PolicyStatusEnum.INFORMATION_REQUESTED,
         PolicyStatusEnum.COUNTER_OFFER,
@@ -55,6 +57,7 @@ _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
         PolicyStatusEnum.QUOTED,
     },
     PolicyStatusEnum.UNDER_REVIEW: {
+        PolicyStatusEnum.ON_HOLD,   # staff can pause it from the Proposals page
         PolicyStatusEnum.INFORMATION_REQUESTED,
         PolicyStatusEnum.COUNTER_OFFER,
         PolicyStatusEnum.APPROVED,
@@ -85,6 +88,7 @@ _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
         PolicyStatusEnum.DECLINED,
     },
     PolicyStatusEnum.INFORMATION_REQUESTED: {
+        PolicyStatusEnum.ON_HOLD,   # staff can pause it from the Proposals page
         # Once the missing info is supplied, resume wherever the proposal
         # would naturally sit next — Proposed if this pause happened before
         # formal review even started (the common case: a Draft missing basic
@@ -166,6 +170,14 @@ _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
         PolicyStatusEnum.UNDER_REVIEW,
         PolicyStatusEnum.APPROVED,
         PolicyStatusEnum.ACCEPTED_WITH_LOADINGS,
+    },
+    # Resume goes back to wherever it was held from (the quote detail reports it as held_from_status).
+    PolicyStatusEnum.ON_HOLD: {
+        PolicyStatusEnum.QUOTED,
+        PolicyStatusEnum.PROPOSED,
+        PolicyStatusEnum.UNDER_REVIEW,
+        PolicyStatusEnum.INFORMATION_REQUESTED,
+        PolicyStatusEnum.DECLINED,
     },
     PolicyStatusEnum.NOT_TAKEN_UP: set(),
     PolicyStatusEnum.MATURED: set(),

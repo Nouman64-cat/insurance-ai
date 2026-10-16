@@ -37,6 +37,7 @@ import {
 } from "@/app/services/postIssuance";
 import { Pagination, usePagination } from "@/components/Pagination";
 import { tx } from "@/lib/i18n/tx";
+import { useNewArrivals, recentIds, NewArrivalsBanner, NEW_ARRIVAL_CLASS, scrollToFirstNew } from "@/lib/useNewArrivals";
 
 /** The subset of a reinsurer the placement modal renders — shared by the live
  *  panel from tenant-service and the illustrative fallback below. */
@@ -396,6 +397,8 @@ export default function PostUnderwritingPage() {
   const [policies, setPolicies] = useState<PolicyListItem[]>([]);
   const [stats, setStats] = useState<PolicyStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const arrivalIds = useMemo(() => policies.map((p) => p.id), [policies]);
+  const arrivals = useNewArrivals("post-underwriting", arrivalIds, !loading, recentIds(policies, (p) => p.id, (p) => p.created_at));
 
   // Filters & Search
   const [search, setSearch] = useState("");
@@ -806,6 +809,7 @@ export default function PostUnderwritingPage() {
 
   return (
     <div className="px-6 py-4 space-y-6 max-w-screen-2xl mx-auto w-full animate-in fade-in duration-300">
+      <NewArrivalsBanner count={arrivals.newIds.size} noun="policy" onShow={scrollToFirstNew} onDismiss={arrivals.markAllSeen} />
       {/* Executive Header Banner matching Pre-Underwriting */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
         <div className="flex items-center gap-3.5">
@@ -949,14 +953,14 @@ export default function PostUnderwritingPage() {
             const done = [gates.isCounterAccepted, gates.isReinsured, gates.isHistoryClear, gates.isDispatched, gates.isWelcomeDone];
             const next = done.findIndex((d) => !d);              // the gate waiting to be done; everything after it is locked
             const stage = gates.isFullyCleared ? "completed" : !gates.isCounterAccepted ? "signoff" : "in_progress";
-            const toggle = () => setOpenId(isOpen ? null : p.id);
+            const toggle = () => { arrivals.markSeen(p.id); setOpenId(isOpen ? null : p.id); };
 
             return (
               <React.Fragment key={p.id}>
                 <tr
                   onClick={toggle}
                   aria-expanded={isOpen}
-                  className={`border-b border-slate-100 cursor-pointer transition-colors ${gates.isFullyCleared ? "bg-emerald-50/30 hover:bg-emerald-50/60" : isOpen ? "bg-blue-50/40" : "hover:bg-slate-50"}`}
+                  className={`border-b border-slate-100 cursor-pointer transition-colors ${arrivals.newIds.has(p.id) ? NEW_ARRIVAL_CLASS : ""} ${gates.isFullyCleared ? "bg-emerald-50/30 hover:bg-emerald-50/60" : isOpen ? "bg-blue-50/40" : "hover:bg-slate-50"}`}
                 >
                   <td className="pl-5 pr-3 py-3">
                     <button onClick={(e) => { e.stopPropagation(); toggle(); }} className="font-semibold text-slate-900 hover:text-blue-600 transition-colors text-left">
