@@ -303,6 +303,10 @@ function ReviewPanel({ track, workspace, decision, setDecision, note, setNote, s
   const [editing, setEditing] = useState(!FINAL.includes(saved.status));
   const locked = workspace.read_only || saving;
   const needsNote = FINAL.includes(decision) && !note.trim();
+  // Cleared is only possible once every requirement of this review is met (referring or declining can come earlier).
+  const DONE = ["Submitted", "Verified", "Clear", "Completed", "NotRequired", "Waived", "Received"];
+  const unmet = workspace.requirements.filter((r) => !DONE.includes(r.status));
+  const canClear = unmet.length === 0;
   const unchanged = decision === saved.status && note === (saved.note ?? "");
   if (!editing && OUTCOME[saved.status]) {
     const o = OUTCOME[saved.status];
@@ -317,16 +321,17 @@ function ReviewPanel({ track, workspace, decision, setDecision, note, setNote, s
   return <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
     <div className="flex items-start justify-between gap-3"><div><h2 className="text-base font-semibold text-slate-900">{tx("Your review")}</h2><p className="mt-0.5 text-xs text-slate-500">{tx("Specialist review only — it does not approve or issue the policy.")}</p></div><Badge status={saved.status} /></div>
     <fieldset className="mt-4" disabled={locked}><legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">{tx("Review status")}</legend>
-      <div className="mt-2 grid grid-cols-2 gap-2">{(Object.keys(DECISION_TONE) as (keyof typeof DECISION_TONE)[]).map((key) => <button key={key} type="button" aria-pressed={decision === key} onClick={() => setDecision(key)}
-        className={`rounded-xl border px-3 py-2 text-sm font-semibold transition disabled:opacity-50 ${decision === key ? DECISION_TONE[key] : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"}`}>{tx(LABELS[key])}</button>)}</div>
+      <div className="mt-2 grid grid-cols-2 gap-2">{(Object.keys(DECISION_TONE) as (keyof typeof DECISION_TONE)[]).map((key) => <button key={key} type="button" aria-pressed={decision === key} disabled={key === "CLEARED" && !canClear} title={key === "CLEARED" && !canClear ? tx("Complete every requirement first") : undefined} onClick={() => setDecision(key)}
+        className={`rounded-xl border px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${decision === key ? DECISION_TONE[key] : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"}`}>{tx(LABELS[key])}</button>)}</div>
     </fieldset>
+    {!canClear && <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">{tx("Cleared unlocks once every requirement is complete. Still open:")} {unmet.map((r) => tx(r.label)).join(", ")}.</p>}
     <label className="mt-4 block"><span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{tx("Notes and rationale")}</span>
       <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={4} maxLength={2000} disabled={locked} placeholder={tx("Summarise the evidence behind your decision…")} className="mt-2 w-full resize-y rounded-xl border border-slate-200 p-3 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" />
     </label>
     <div className="mt-1 flex justify-between text-[11px] text-slate-400"><span>{needsNote ? tx("A rationale is required for this decision.") : saved.updated_at ? `${tx("Last saved")} ${new Date(saved.updated_at).toLocaleString()}` : ""}</span><span>{note.length}/2000</span></div>
     <div className="mt-3 flex gap-2">
       {FINAL.includes(saved.status) && <button onClick={() => { setDecision(saved.status); setNote(saved.note ?? ""); setEditing(false); }} disabled={saving} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600">{tx("Cancel")}</button>}
-      <button onClick={onSave} disabled={locked || needsNote || unchanged} className="flex-1 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40">{tx(saving ? "Saving…" : FINAL.includes(decision) ? `Record: ${LABELS[decision]}` : "Save review")}</button>
+      <button onClick={onSave} disabled={locked || needsNote || unchanged || (decision === "CLEARED" && !canClear)} className="flex-1 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40">{tx(saving ? "Saving…" : FINAL.includes(decision) ? `Record: ${LABELS[decision]}` : "Save review")}</button>
     </div>
   </section>;
 }

@@ -9,7 +9,7 @@ import { tx } from "@/lib/i18n/tx";
  * browser, so a lead moved from Leads to Proposals is still flagged when the user gets there, and stays flagged
  * until they open it. The first visit only records what is already there, so nothing old is flagged.
  */
-const key = (page: string) => `new_arrivals_seen:${page}`;
+const key = (page: string) => `new_arrivals_seen:v2:${page}`;
 const read = (page: string): Set<string> | null => {
   try { const raw = localStorage.getItem(key(page)); return raw ? new Set(JSON.parse(raw) as string[]) : null; } catch { return null; }
 };
@@ -79,8 +79,14 @@ export function NewArrivalsBanner({ count, noun, onShow, onDismiss }: { count: n
 /** Scrolls the first highlighted row into view. */
 export const scrollToFirstNew = () => document.querySelector<HTMLElement>(`.${NEW_ARRIVAL_CLASS}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
 
-/** Ids whose timestamp is within the last `hours` — pass as `freshIds`. */
+/** The single most recent record (and only if it is within the last `hours`) — pass as `freshIds`, so a first visit flags
+ *  just the latest arrival and not everything created recently. */
 export const recentIds = <T,>(items: T[], id: (t: T) => string, at: (t: T) => string | null | undefined, hours = 24) => {
   const cutoff = Date.now() - hours * 3600_000;
-  return new Set(items.filter((t) => { const v = at(t); return v ? new Date(v).getTime() >= cutoff : false; }).map(id));
+  let best: { id: string; t: number } | null = null;
+  for (const item of items) {
+    const v = at(item); const t = v ? new Date(v).getTime() : NaN;
+    if (!Number.isNaN(t) && t >= cutoff && (!best || t > best.t)) best = { id: id(item), t };
+  }
+  return new Set(best ? [best.id] : []);
 };

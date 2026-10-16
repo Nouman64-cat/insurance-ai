@@ -162,6 +162,13 @@ async def update_track(
         if body.status in {"CLEARED", "REFERRED", "DECLINED"} and not (body.note or '').strip():
             raise HTTPException(422, "Record a reason for the review decision.")
 
+    if body.status == "CLEARED":
+        # An application is only cleared once everything this review needs is in (referring or declining can happen earlier).
+        workspace = await _build_workspace(session, tenant_id, case_id, user, track_key)
+        done = {"Submitted", "Verified", "Clear", "Completed", "NotRequired", "Waived", "Received"}
+        outstanding = [r for r in workspace["requirements"] if r.get("status") not in done]
+        if outstanding:
+            raise HTTPException(422, "Complete every requirement before clearing: " + "; ".join(f"{r['label']} ({r['status']})" for r in outstanding) + ".")
     if body.status is not None:
         row.status = body.status
     if body.clear_assignee:
@@ -248,8 +255,12 @@ async def specialist_queue(tenant_id: UUID, session: AsyncSession = Depends(get_
 
 @router.get("/underwriting/reviews/{case_id}")
 async def specialist_workspace(tenant_id: UUID, case_id: UUID, session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme)):
-    from shared.models.core import Customer, Policy, CustomerEApplication, MedicalExamOrder, RiskAssessment, CaseTypeEnum, Artifact, AgentConfidentialReport, PremiumQuote, DocumentRequest, InsuranceHistoryCheck
     user, track = await _specialist_identity(tenant_id, token, session)
+    return await _build_workspace(session, tenant_id, case_id, user, track)
+
+
+async def _build_workspace(session: AsyncSession, tenant_id: UUID, case_id: UUID, user, track: str):
+    from shared.models.core import Customer, Policy, CustomerEApplication, MedicalExamOrder, RiskAssessment, CaseTypeEnum, Artifact, AgentConfidentialReport, PremiumQuote, DocumentRequest, InsuranceHistoryCheck
     case = await session.get(Case, case_id)
     if not case or case.tenant_id != tenant_id or case.caseType != CaseTypeEnum.UNDERWRITING:
         raise HTTPException(404, "Underwriting application not found.")
