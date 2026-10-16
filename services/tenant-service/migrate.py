@@ -1498,6 +1498,7 @@ MIGRATIONS: list[tuple[str, str]] = [
     ("v65c — case_underwriting_tracks.ai_run_at", "ALTER TABLE case_underwriting_tracks ADD COLUMN IF NOT EXISTS ai_run_at TIMESTAMP WITHOUT TIME ZONE"),
     ("v66a — cases.claim_id (an underwriting case opened by a claim referral)", "ALTER TABLE cases ADD COLUMN IF NOT EXISTS claim_id UUID"),
     ("v66b — index cases.claim_id", "CREATE INDEX IF NOT EXISTS ix_cases_claim_id ON cases (claim_id)"),
+    ("v67a — source-backed insurance plan claims terms", "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS claims_terms JSON"),
 ]
 
 

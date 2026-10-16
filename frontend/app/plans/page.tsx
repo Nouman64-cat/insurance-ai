@@ -16,6 +16,7 @@ import {
 import { Pagination, usePagination } from "@/components/Pagination";
 import { tx } from "@/lib/i18n/tx";
 import PlanSurrenderDetails, { surrenderStatus } from "@/components/PlanSurrenderDetails";
+import PlanClaimsDetails from "@/components/PlanClaimsDetails";
 
 const COLOR_CLASSES: Record<string, { badge: string; accent: string }> = {
   blue: { badge: "bg-blue-50 text-blue-700 border-blue-200", accent: "border-t-blue-500" },
@@ -610,6 +611,7 @@ function PlanDetailDrawer({
           </div>
           <div className="min-w-0">
             <PlanSurrenderDetails terms={plan.surrender_terms} />
+            <PlanClaimsDetails terms={plan.claims_terms} />
           </div>
           </div>
 

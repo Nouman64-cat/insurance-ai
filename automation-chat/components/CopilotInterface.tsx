@@ -82,8 +82,20 @@ import {
 import GroupCensusClientTool from "@/components/group/GroupCensusClientTool";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 
-// The greeting that opens every chat; its text is the UI language's (composer.greeting).
+// The greeting that opens every chat; its text is the UI language's (composer.greeting, or the role's own).
 const WELCOME_ID = "1";
+
+const ROLE_GREETINGS: Record<string, string> = {
+  ClaimsManager: "composer.greetingClaimsManager",
+  MedicalUnderwriter: "composer.greetingMedicalUnderwriter",
+  FinancialUnderwriter: "composer.greetingFinancialUnderwriter",
+};
+
+/** Display only — what the chat may do is decided by chat-agent from the verified role. */
+function roleGreetingKey(): string {
+  const role = typeof window !== "undefined" ? (localStorage.getItem("user_role") ?? "").replace(/\s+/g, "") : "";
+  return ROLE_GREETINGS[role] ?? "composer.greeting";
+}
 
 const STORAGE_KEY = "copilot_history";
 const DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001";
@@ -365,10 +377,36 @@ function customerChoiceRows(actions: QuickAction[]) {
   return rows.every((row) => row !== null) ? rows : null;
 }
 
+const ROLE_STARTERS: Record<string, QuickAction[]> = {
+  MedicalUnderwriter: [
+    { label: "My medical reviews", actionType: "submit", payload: "Show my medical underwriting reviews" },
+    { label: "Start next review", actionType: "submit", payload: "Start my next medical review" },
+    { label: "AI medical underwriting", actionType: "submit", payload: "Run AI medical underwriting for my current review" },
+    { label: "Send medical questionnaire", actionType: "submit", payload: "Send the medical e-application questionnaire for my current review" },
+  ],
+  FinancialUnderwriter: [
+    { label: "My financial reviews", actionType: "submit", payload: "Show my financial underwriting reviews" },
+    { label: "Start next review", actionType: "submit", payload: "Start my next financial review" },
+    { label: "AI financial underwriting", actionType: "submit", payload: "Run AI financial underwriting for my current review" },
+    { label: "Insurance history check", actionType: "submit", payload: "Run the insurance history check for my current review" },
+  ],
+  ClaimsManager: [
+    { label: "Claims dashboard", actionType: "submit", payload: "Show the claims dashboard" },
+    { label: "Awaiting authorisation", actionType: "submit", payload: "List claims awaiting settlement authorisation" },
+    { label: "Register claim", actionType: "submit", payload: "Register a new claim" },
+    { label: "Open claims", actionType: "submit", payload: "List all open claims" },
+  ],
+};
+
 function getRecommendedActions(
   lastMessage: AgentMessage | undefined,
 ): QuickAction[] {
   if (!lastMessage) {
+    // Starting points for the roles that work one job. Only which buttons show depends on this stored role —
+    // what each prompt may do is decided by chat-agent from the signed-in user's verified role.
+    const role = typeof window !== "undefined" ? (localStorage.getItem("user_role") ?? "").replace(/\s+/g, "") : "";
+    const starters = ROLE_STARTERS[role];
+    if (starters) return starters;
     return [
       { label: "Add customer", actionType: "submit", payload: "Add a new customer" },
       { label: "Underwrite", actionType: "submit", payload: "Start underwriting journey for a customer" },
@@ -1355,7 +1393,7 @@ function getRecommendedActions(
 export function CopilotInterface({ compact = false }: { compact?: boolean } = {}) {
   const { t, locale } = useI18n();
   const welcome = useMemo<AgentMessage>(
-    () => ({ id: WELCOME_ID, role: "assistant", text: t("composer.greeting") }),
+    () => ({ id: WELCOME_ID, role: "assistant", text: t(roleGreetingKey()) }),
     [t],
   );
   const router = useRouter();

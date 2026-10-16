@@ -119,6 +119,52 @@ def page_for_route(route: str) -> Optional[Page]:
     return _BY_ROUTE.get(route)
 
 
+# Roles that work in one workspace: the pages and record types their chat may open. Mirrors the portal, which
+# shows a Medical / Financial Underwriter only Underwriting and Profile and sends a Claims Manager to the claims
+# app. A route also covers what is under it ("case/<id>", "claims/CLM-…"); whether this user may see that
+# particular case or claim is still the backend's call. Roles not listed keep every page.
+ROLE_PAGES: dict[str, frozenset[str]] = {
+    "Medical Underwriter": frozenset({"underwriting", "case", "profile"}),
+    "Financial Underwriter": frozenset({"underwriting", "case", "profile"}),
+    "ClaimsManager": frozenset({"claims", "claims/dashboard", "claims/register", "profile"}),
+}
+ROLE_RECORDS: dict[str, frozenset[str]] = {
+    "Medical Underwriter": frozenset({"case"}),
+    "Financial Underwriter": frozenset({"case"}),
+    "ClaimsManager": frozenset({"claim"}),
+}
+
+
+def page_allowed(role: str, route: str) -> bool:
+    allowed = ROLE_PAGES.get(role)
+    if allowed is None:
+        return True
+    base = route.split("?", 1)[0].strip("/")
+    return any(base == p or base.startswith(p + "/") for p in allowed)
+
+
+def record_types_for(role: str, types) -> list[str]:
+    """The record types this role's chat may look up, out of `types`."""
+    allowed = ROLE_RECORDS.get(role)
+    return [t for t in types if allowed is None or t in allowed]
+
+
+def page_for_record_for(record_type: str, role: str) -> Optional[Page]:
+    """The page that lists `record_type` for this role: its usual page, or another listing page in their workspace
+    (a specialist's cases open on Underwriting, not on Applications). None when the role may not open it."""
+    if record_type not in record_types_for(role, [record_type]):
+        return None
+    page = _BY_RECORD.get(record_type)
+    if page and page_allowed(role, page.route):
+        return page
+    return next((p for p in PAGES if p.lists == record_type and page_allowed(role, p.route)), None)
+
+
+def workspace_line(role: str) -> str:
+    pages = [p.label for p in PAGES if p.route in ROLE_PAGES.get(role, ())]
+    return f"You can open: {', '.join(pages)}." if pages else ""
+
+
 def page_for_record(record_type: str) -> Optional[Page]:
     return _BY_RECORD.get(record_type)
 

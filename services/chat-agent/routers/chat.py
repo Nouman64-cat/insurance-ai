@@ -12,8 +12,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, Header, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.types import Command
 
@@ -21,11 +21,39 @@ from graph import generate_chat_title
 from permission import is_role_allowed, step_label
 from schemas import ChatResumeRequest, ChatStreamRequest, ChatTitleRequest, ExecuteToolRequest
 from tool_executor import ExecCtx, execute_tool
+from routers.voice import voice_user
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 _SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"}
 _PLANNER_NODES = {'agent', 'general_agent', 'commission_agent', 'claims_agent', 'underwriting_agent', 'servicing_agent', 'group_agent'}
+
+
+async def _caller(authorization: str, tenant_id: str) -> dict:
+    """The signed-in user, read from tenant-service with their own token — never from the request body. The role the
+    browser sends (localStorage) is a display hint only: trusting it let any user claim "Admin" and get Admin's tools,
+    prompts and specialists. Inactive accounts and other tenants are refused (SuperAdmin may act in any tenant)."""
+    try:
+        return await voice_user(authorization, tenant_id)
+    except HTTPException as exc:
+        if exc.status_code == 401 and not authorization:
+            raise HTTPException(401, "Sign in to use the Copilot") from exc
+        raise
+
+
+def _owner_mismatch(snapshot, caller: dict) -> bool:
+    """A conversation belongs to the user who started it. Resuming someone else's paused step would run it with the
+    token saved in their thread, so another user's thread is never continued or resumed."""
+    values = (snapshot.values if snapshot else None) or {}
+    owner = values.get("user_id")
+    if owner:
+        return owner != str(caller.get("id"))
+    # Threads from before ownership was recorded: hold them to their tenant and role.
+    return bool(values) and (values.get("tenant_id") not in (None, "", caller.get("tenant_id")) and caller.get("role_name") != "SuperAdmin"
+                             or values.get("user_role") not in (None, "", caller.get("role_name")))
+
+
+_NOT_YOURS = {"detail": "This conversation belongs to another user."}
 
 
 def _event(payload: dict) -> str:
@@ -212,6 +240,7 @@ async def _checkpoint_before(graph, thread_id: str, text: str, occurrence: int):
 
 @router.post("/stream")
 async def chat_stream(body: ChatStreamRequest, request: Request, x_tenant_id: str = Header(default=""), authorization: str = Header(default="")):
+    caller = await _caller(authorization, x_tenant_id)
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": body.thread_id}}
 
@@ -228,6 +257,8 @@ async def chat_stream(body: ChatStreamRequest, request: Request, x_tenant_id: st
         async def _failed():
             yield _event({"type": "error", "message": "I couldn't read this conversation just now — please try again."})
         return StreamingResponse(_failed(), media_type="text/event-stream", headers=_SSE_HEADERS)
+    if _owner_mismatch(existing, caller):
+        return JSONResponse(status_code=403, content=_NOT_YOURS)
     pending = _pending_interrupt_event(existing, body.thread_id) if fork is None else None
     if pending is not None:
         async def _regen():
@@ -260,7 +291,8 @@ async def chat_stream(body: ChatStreamRequest, request: Request, x_tenant_id: st
     input_ = {
         "messages": [HumanMessage(content=message_content)],
         "tenant_id": x_tenant_id,
-        "user_role": body.role,
+        "user_role": caller.get("role_name") or "",  # verified, not body.role
+        "user_id": str(caller.get("id")),
         "platform": body.platform,
         "locale": body.locale,
         "jwt_token": jwt_token,
@@ -270,9 +302,12 @@ async def chat_stream(body: ChatStreamRequest, request: Request, x_tenant_id: st
 
 
 @router.post("/resume")
-async def chat_resume(body: ChatResumeRequest, request: Request):
+async def chat_resume(body: ChatResumeRequest, request: Request, x_tenant_id: str = Header(default=""), authorization: str = Header(default="")):
+    caller = await _caller(authorization, x_tenant_id)
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": body.thread_id}}
+    if _owner_mismatch(await graph.aget_state(config), caller):
+        return JSONResponse(status_code=403, content=_NOT_YOURS)
     return StreamingResponse(
         _consume(graph, config, Command(resume=body.resume_value)),
         media_type="text/event-stream",
@@ -304,18 +339,22 @@ async def chat_execute_tool(body: ExecuteToolRequest, x_tenant_id: str = Header(
     (Deepgram's own model decides when to call a function, with no pause), but
     the role-based hard block still applies here — it must not become a way to
     bypass RBAC just because it skips the graph."""
-    if not is_role_allowed(body.name, body.role, body.platform):
+    role = (await _caller(authorization, x_tenant_id)).get("role_name") or ""
+    if not is_role_allowed(body.name, role, body.platform):
         return {"success": False, "error": "Currently, you have no access to do this, ask your manager."}
     jwt_token = authorization.replace("Bearer ", "") if authorization else ""
-    ctx = ExecCtx(tenant_id=x_tenant_id, jwt_token=jwt_token, role=body.role)
+    ctx = ExecCtx(tenant_id=x_tenant_id, jwt_token=jwt_token, role=role)
     return await execute_tool(body.name, body.args, ctx)
 
 
 @router.post("/bulk-underwriting/stream")
 async def bulk_underwriting_stream(request: Request, body: dict, x_tenant_id: str = Header(default=""), authorization: str = Header(default="")):
+    role = (await _caller(authorization, x_tenant_id)).get("role_name") or ""
+    if not is_role_allowed("bulk_underwriting_journey", role):
+        raise HTTPException(403, "Currently, you have no access to do this, ask your manager.")
     cnics = body.get("cnics", [])
     jwt_token = authorization.replace("Bearer ", "") if authorization else ""
-    ctx = ExecCtx(tenant_id=x_tenant_id, jwt_token=jwt_token)
+    ctx = ExecCtx(tenant_id=x_tenant_id, jwt_token=jwt_token, role=role)
     
     async def _generate():
         if not cnics:

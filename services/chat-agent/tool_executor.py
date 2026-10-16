@@ -35,7 +35,7 @@ from typing import Any, Awaitable, Callable, Optional
 
 import httpx
 
-from pages import build_route, page_for_record, page_for_route
+from pages import build_route, page_allowed, page_for_record, page_for_record_for, page_for_route, record_types_for, workspace_line
 from langgraph.types import interrupt
 from langgraph.errors import GraphInterrupt
 from env_mode import is_demo, strip_demo_args
@@ -417,6 +417,10 @@ async def _navigate(args: dict, ctx: Ctx) -> dict:
     page = page_for_route(route)
     if not page:
         return {"success": False, "error": f'"{route}" is not a page in this application.'}
+    role = ctx.exec_ctx.role or ""
+    if not page_allowed(role, route):
+        return {"success": False, "error_code": "forbidden", "retryable": False,
+                "error": f"{page.label} isn't part of your workspace, so I can't open it. {workspace_line(role)}".strip()}
     entity_id = args.get("entity_id")
     return {
         "success": True,
@@ -631,7 +635,11 @@ async def _show_record(args: dict, ctx: Ctx) -> dict:
     record_type = (args.get("record_type") or "").strip()
     identifier = (args.get("identifier") or "").strip()
 
-    page = page_for_record(record_type)
+    role = ctx.exec_ctx.role or ""
+    if record_type in _RECORD_SOURCES and page_for_record(record_type) and not page_for_record_for(record_type, role):
+        return {"success": False, "error_code": "forbidden", "retryable": False,
+                "error": f"{record_type.title()} records aren't part of your workspace, so I can't look one up. {workspace_line(role)}".strip()}
+    page = page_for_record_for(record_type, role)
     if record_type not in _RECORD_SOURCES or not page:
         return {"success": False, "error": f"I can't look up '{record_type}' records yet."}
 
@@ -652,7 +660,7 @@ async def _show_record(args: dict, ctx: Ctx) -> dict:
     if not match:
         # Users often name the wrong type ("lead CASE-2026-…"). Before calling
         # it missing, see whether the identifier is some other kind of record.
-        elsewhere = await _search_all(ctx, identifier, [t for t in _RECORD_SOURCES if t != record_type])
+        elsewhere = await _search_all(ctx, identifier, record_types_for(role, [t for t in _RECORD_SOURCES if t != record_type]))
         if elsewhere:
             lines = "\n".join(f"- **{h['type']}** — {h['label']}" for h in elsewhere[:5])
             return {
@@ -692,7 +700,12 @@ async def _search_records(args: dict, ctx: Ctx) -> dict:
     query = (args.get("query") or "").strip()
     only = args.get("record_type")
     unavailable: list[str] = []
-    hits = await _search_all(ctx, query, [only] if only else list(_RECORD_SOURCES), unavailable)
+    # Only the record types this role's workspace holds (a Claims Manager searches claims, a specialist cases).
+    types = record_types_for(ctx.exec_ctx.role or "", [only] if only else list(_RECORD_SOURCES))
+    if not types:
+        return {"success": False, "error_code": "forbidden", "retryable": False, "results": [],
+                "error": f"{only.title()} records aren't part of your workspace, so I can't search them."}
+    hits = await _search_all(ctx, query, types, unavailable)
     gap = (f"\n\n⚠️ Couldn't search {', '.join(unavailable)} right now — those results may be missing."
            if unavailable else "")
 
@@ -6698,6 +6711,16 @@ async def _refer_claim_to_underwriting(args: dict, ctx: Ctx) -> dict:
     res = await ctx.client.post(_claims(ctx, f"/{claim['id']}/re-underwrite"), json=body)
     res.raise_for_status()
     updated = {**claim, **res.json()}
+
+    # A claim on the claims-management workflow reports where it now stands there (Decision — awaiting
+    # underwriting, with the Claim UW case) and that workflow's next moves, not the register's status path.
+    if claim.get("policy_id"):
+        from claim_workflow_tools import _base, _result
+        ws_res = await ctx.client.get(_base(ctx, str(claim["policy_id"]), str(claim["id"])))
+        if ws_res.status_code == 200:
+            out = _result(ws_res.json(), str(claim["policy_id"]),
+                          f"`{claim.get('claim_number')}` referred to the Underwriting department. Trigger: {reason}", "refer_claim_to_underwriting")
+            return {**out, "claim": updated}
 
     return {
         "success": True,

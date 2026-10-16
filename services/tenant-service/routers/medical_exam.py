@@ -380,6 +380,11 @@ async def assess_medical_exam(
     completed or waived is never reset by a re-assessment."""
     await _get_current_user(token, session)
     case = await _get_case(session, tenant_id, case_id)
+    if case.claim_id:
+        # The non-medical grid sets new-business evidence by sum assured. A Claim UW review checks the claim's own
+        # medical evidence against the plan's claim terms instead, so no examination is ordered for it.
+        raise HTTPException(status_code=409, detail="A claim underwriting review doesn't order a medical examination — "
+                                                    "review the claim's medical evidence against the plan's claim terms.")
 
     customer = await session.get(Customer, case.customer_id)
     if customer is None:

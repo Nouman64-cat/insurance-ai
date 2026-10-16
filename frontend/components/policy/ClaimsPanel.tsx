@@ -11,6 +11,7 @@ import {
   getExitOverview, openExit, type ExitOverview,
   type ClaimsOverview, type ClaimWorkspace, type ClaimStage, type ClaimCategory, type ClaimPayee, type RegisterClaimBody,
 } from "@/app/services/postIssuance";
+import { referClaimToUnderwriting } from "@/app/services/claims";
 import {
   AuditTimeline, btnDanger, btnGhost, btnPrimary, CheckList, Chip, fmtDate, fmtDateTime, inputCls, KV, StageDot, TRACKER_TEXT,
 } from "@/components/policy/panelKit";
@@ -470,10 +471,9 @@ function DocRow({ it, ws, policyId, locked, isManager, run }: Readonly<{ it: Cla
         <div className="flex flex-wrap items-center gap-2">
           <input type="file" accept=".pdf,.png,.jpg,.jpeg,.tiff" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="text-[11px] text-slate-500 max-w-[220px]" />
           <button disabled={locked || !file} className={btnGhost} onClick={() => file && run(() => uploadClaimDocument(policyId, ws.claim.id, it.key, file), tx("Document received."))}>{tx("Receive")}</button>
-          {isManager && <>
-            <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={tx("Reason to waive")} className={`${inputCls} !w-44`} />
-            <button disabled={locked || reason.trim().length < 10} className={btnDanger} onClick={() => run(() => waiveClaimDocument(policyId, ws.claim.id, it.key, reason.trim()), tx("Document waived."))}>{tx("Waive")}</button>
-          </>}
+          {isManager && (
+            <button disabled={locked} className={btnDanger} onClick={() => run(() => waiveClaimDocument(policyId, ws.claim.id, it.key), tx("Document waived."))}>{tx("Waive")}</button>
+          )}
         </div>
       )}
       {ws.can.edit_documents && it.status === "Received" && (
@@ -584,6 +584,10 @@ function DecisionStep({ ws, policyId, locked, canDecide, isManager, run }: Reado
   const d = ws.decision;
   const payable = ws.assessment.result?.payable ?? 0;
   const blockedByManager = d.requires_manager && !isManager && (choice === "Approve" || choice === "PartialApprove" || choice === "Reject");
+  const uw = ws.underwriting;
+  // A contestable claim is approved only after Underwriting clears it (the backend refuses otherwise).
+  const blockedByUnderwriting = !ws.can.approve && (choice === "Approve" || choice === "PartialApprove");
+  const [uwReason, setUwReason] = useState("");
   const need = choice !== "Approve" && !reason.trim() ? tx("A reason is required.")
     : choice === "PartialApprove" && !(Number(amount) > 0 && Number(amount) < payable) ? tx("Enter an amount below the assessed benefit.")
       : choice === "RequestInfo" && !asks.some((a) => a.trim()) ? tx("List what is needed.") : null;
@@ -597,6 +601,19 @@ function DecisionStep({ ws, policyId, locked, canDecide, isManager, run }: Reado
         </div>
       )}
       <p className="text-xs text-slate-500">{ws.sla.message}{d.requires_manager ? ` ${tx("Above")} ${fmtPKR(d.manager_limit)} ${tx("(or already referred) a claims manager must decide.")}` : ""}</p>
+      {uw && uw.state !== "not_required" && (
+        <div className={`rounded-lg border px-4 py-3 text-xs space-y-2 ${uw.state === "cleared" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : uw.state === "declined" ? "border-red-200 bg-red-50 text-red-800" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
+          <p><b>{tx("Underwriting review")}</b>{uw.case_number ? ` · ${uw.case_number}` : ""} — {tx(uw.message)}</p>
+          {uw.notes && <p className="text-[11px] opacity-80">{uw.notes}</p>}
+        </div>
+      )}
+      {ws.can.refer_underwriting && uw?.state === "not_referred" && (
+        <div className="flex flex-wrap items-center gap-2">
+          <input value={uwReason} onChange={(e) => setUwReason(e.target.value)} placeholder={tx("What should Underwriting check? (e.g. non-disclosure of medical history)")} className={`${inputCls} flex-1 min-w-[240px]`} />
+          <button disabled={locked || !uwReason.trim()} className={btnPrimary}
+            onClick={() => run(() => referClaimToUnderwriting(ws.claim.id, uwReason.trim()), tx("Referred to Underwriting."))}>{tx("Refer to Underwriting")}</button>
+        </div>
+      )}
       {!decided && ws.can.decide && (canDecide ? (
         <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-3">
           <div className="flex flex-wrap gap-2">
@@ -614,16 +631,17 @@ function DecisionStep({ ws, policyId, locked, canDecide, isManager, run }: Reado
           )}
           <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} className={inputCls} placeholder={choice === "Approve" ? tx("Rationale (optional; required for a flagged duplicate)") : tx("Reason (required)")} />
           <div className="flex items-center gap-3 flex-wrap">
-            <button disabled={locked || !!need || blockedByManager} className={choice === "Reject" ? "px-3.5 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white disabled:opacity-40" : btnPrimary}
+            <button disabled={locked || !!need || blockedByManager || blockedByUnderwriting} className={choice === "Reject" ? "px-3.5 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white disabled:opacity-40" : btnPrimary}
               onClick={() => run(() => decideClaim(policyId, ws.claim.id, {
                 decision: choice, amount: choice === "PartialApprove" ? Number(amount) : undefined, reason: reason.trim() || undefined,
                 info_requests: choice === "RequestInfo" ? asks.filter((a) => a.trim()).map((label) => ({ label: label.trim() })) : undefined,
               }), tx("Decision recorded."))}>{tx("Record decision")}</button>
-            {blockedByManager ? <p className="text-[11px] text-amber-600">{tx("Needs a claims manager — use “Refer to manager”.")}</p> : need && <p className="text-[11px] text-amber-600">{need}</p>}
+            {blockedByUnderwriting ? <p className="text-[11px] text-amber-600">{tx("Refer this claim to Underwriting first — it can be approved once they clear it.")}</p>
+              : blockedByManager ? <p className="text-[11px] text-amber-600">{tx("Needs a claims manager — use “Refer to manager”.")}</p> : need && <p className="text-[11px] text-amber-600">{need}</p>}
           </div>
         </div>
       ) : <p className="text-xs text-slate-500">{tx("Only an authorised claims officer can record the decision.")}</p>)}
-      {!decided && !ws.can.decide && ws.claim.status !== "Referred to Manager" && <p className="text-xs text-slate-400">{tx("The decision opens once documents are complete, any investigation is done and the benefit is assessed.")}</p>}
+      {!decided && !ws.can.decide && ws.claim.status !== "Referred to Manager" && uw?.state !== "in_review" && <p className="text-xs text-slate-400">{tx("The decision opens once documents are complete, any investigation is done and the benefit is assessed.")}</p>}
       {d.history.length > 1 && (
         <div className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100">
           {[...d.history].reverse().map((h, i) => <p key={i} className="px-3 py-2 text-xs text-slate-600"><b>{tx(h.decision)}</b>{h.amount > 0 ? ` · ${fmtPKR(h.amount)}` : ""} · {h.by} · {fmtDateTime(h.at)}{h.reason ? ` — ${h.reason}` : ""}</p>)}

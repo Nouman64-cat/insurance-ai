@@ -45,7 +45,7 @@ from shared.models.core import (
 )
 from shared.underwriting.profile import UnderwritingProfile, build_profile
 from shared.underwriting.requirements_rules import apply_medical_exam_order, determine_requirements
-from shared.underwriting.results import VerificationFindingSpec
+from shared.underwriting.results import RequirementCategory, RequirementSpec, RequirementStatus, VerificationFindingSpec
 from shared.underwriting.verification import verify_profile
 
 logger = logging.getLogger(__name__)
@@ -222,7 +222,70 @@ def _requirement_rows_satisfied(rows: list[CaseRequirement]) -> bool:
     )
 
 
+async def claim_documents_for(session: AsyncSession, tenant_id: UUID, claim_id) -> list[dict]:
+    """The documents a claim needs, each with its status: the claim's checklist when it runs on the claims workflow;
+    otherwise (a claim only in the register) its plan's claim documents for the claim type — the insurer's standard
+    list when the plan has none — ticked against the files attached to the claim."""
+    from shared.models.core import Artifact, Claim, ClaimProcess, InsurancePlan, Policy
+    from services import claim_engine, insurer_config as cfg
+    proc = (await session.exec(select(ClaimProcess).where(ClaimProcess.claim_id == claim_id))).first()
+    if proc and proc.documents_json:
+        return list(proc.documents_json)
+    claim = await session.get(Claim, claim_id)
+    if claim is None:
+        return []
+    category = proc.category if proc else next(
+        (k for k, v in cfg.CLAIM_CATEGORIES.items() if v.get("claim_type", "").lower() == (claim.claim_type or "").lower()),
+        "Hospitalization" if any(w in (claim.claim_type or "").lower() for w in ("hospital", "surgery", "reimburse")) else None)
+    if not category:
+        return []
+    policy = await session.get(Policy, claim.policy_id)
+    plan = (await session.exec(select(InsurancePlan).where(
+        InsurancePlan.tenant_id == tenant_id, InsurancePlan.label == policy.product_name))).first() if policy else None
+    # Without the workflow there is no recorded cause or nominee check, so only the unconditional documents are
+    # required (plus the contestability review when the claim is contestable); the rest are the claims team's call.
+    docs = [d for d in (claim_engine.plan_claim_documents(plan.claims_terms if plan else None, category)
+                        or cfg.CLAIM_DOCUMENTS.get(category, []))
+            if d.get("when") == "always" or (d.get("when") == "contestable" and claim.is_contestable)]
+    files = {(a.document_type or "").strip().lower(): a for a in (await session.exec(
+        select(Artifact).where(Artifact.claim_id == claim_id))).all()}
+    out = []
+    for d in docs:
+        hit = files.get(d["label"].strip().lower())
+        out.append({**d, "status": "Received" if hit else "Requested", "artifact_id": str(hit.id) if hit else None})
+    return out
+
+
+async def _claim_specs(session: AsyncSession, tenant_id: UUID, case: Case) -> list[RequirementSpec]:
+    """A Claim UW case's requirements: the claim's own documents, from its plan's claim terms (the claim checklist),
+    not the new-business rules (medical exam, ECG, lab reports, questionnaire) — those set evidence for writing
+    cover by age and sum assured, which a claim review doesn't do."""
+    from services import claim_engine
+    docs = await claim_documents_for(session, tenant_id, case.claim_id)
+    specs = []
+    for d in docs:
+        if not d.get("required"):
+            continue
+        label = d.get("label") or d.get("key") or "Claim document"
+        status = d.get("status")
+        art = d.get("artifact_id")
+        specs.append(RequirementSpec(
+            code="_".join("".join(ch if ch.isalnum() else " " for ch in label).split())[:100],
+            category=(RequirementCategory.MEDICAL if claim_engine.is_medical_document(label)
+                      else RequirementCategory.IDENTITY if "cnic" in label.lower() else RequirementCategory.OTHER),
+            required=True,
+            status=(RequirementStatus.SATISFIED if status == "Received" else RequirementStatus.WAIVED if status == "Waived"
+                    else RequirementStatus.MISSING),
+            reason=f"Claim document — {d.get('reason') or 'required for this claim by the plan'}"
+                   + (" (collected by the claims team)" if status not in ("Received", "Waived") else ""),
+            satisfied_by_artifact_id=UUID(art) if art and status == "Received" else None,
+        ))
+    return specs
+
+
 async def _current_specs(session: AsyncSession, tenant_id: UUID, case: Case):
+    if case.claim_id:
+        return await _claim_specs(session, tenant_id, case)
     profile = await build_case_profile(session, tenant_id, case)
     prior = await _prior_findings(session, case.caseld)
     specs = determine_requirements(profile, prior)
@@ -289,6 +352,12 @@ async def compute_requirements(
         session.add(row)
         result_rows.append(row)
 
+    if case.claim_id:
+        # New-business rows left on a claim case from before claim requirements existed (medical exam, ECG…).
+        wanted = {spec.code for spec in specs}
+        for code, row in existing_rows.items():
+            if code not in wanted:
+                await session.delete(row)
     await session.flush()
     satisfied = _requirement_rows_satisfied(result_rows)
 

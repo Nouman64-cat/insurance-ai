@@ -298,7 +298,8 @@ async def _build_workspace(session: AsyncSession, tenant_id: UUID, case_id: UUID
         RiskAssessment.superseded_at == None).order_by(RiskAssessment.created_at.desc()))).first()
     evidence = {}
     if track == 'MEDICAL':
-        exam = (await session.exec(select(MedicalExamOrder).where(MedicalExamOrder.case_id == case_id))).first()
+        # A claim review orders no examination; one left on a claim case from before isn't evidence for it.
+        exam = None if case.claim_id else (await session.exec(select(MedicalExamOrder).where(MedicalExamOrder.case_id == case_id))).first()
         evidence = {"Date of birth": customer.dob, "Smoker": customer.is_smoker,
             "Height (cm)": customer.height_cm, "Weight (kg)": customer.weight_kg,
             "Medical questionnaire": app.medical_questionnaire if app else None,
@@ -321,10 +322,17 @@ async def _build_workspace(session: AsyncSession, tenant_id: UUID, case_id: UUID
     request_ids = (await session.exec(select(DocumentRequest.id).where(DocumentRequest.policy_id == policy.id))).all() if policy else []
     documents = (await session.exec(select(Artifact).where(Artifact.tenant_id == tenant_id, or_(
         Artifact.case_id == case_id,
+        *([Artifact.claim_id == case.claim_id] if case.claim_id else []),
         and_(Artifact.case_id == None, Artifact.customer_id == case.customer_id,
              or_(Artifact.source_request_id == None, Artifact.source_request_id.in_(request_ids)))
     )))).all()
     allowed_documents = ({'medicalreport', 'medicalexamination', 'labreport', 'ecg', 'bloodtest', 'xray', 'mriscan', 'physicianreport'} if track == 'MEDICAL' else {'salaryslip', 'bankstatement', 'incomecertificate', 'incometaxreturn', 'taxreturn', 'financialstatement', 'proofofincome'}) | {'cnic'}
+    if case.claim_id:
+        from services import claim_engine
+        from services.underwriting_gate import claim_documents_for
+        allowed_documents |= {''.join(ch for ch in d["label"].lower() if ch.isalpha())
+                              for d in await claim_documents_for(session, tenant_id, case.claim_id)
+                              if claim_engine.is_medical_document(d["label"]) == (track == "MEDICAL")}
     documents = [{"id": str(d.id), "name": d.file_name or d.document_type, "type": d.document_type, "status": d.status, "scope": "application" if d.case_id else "customer", "ocr_text": d.ocr_result, "extracted": d.extracted_metadata, "quality_score": d.quality_score, "tampered": d.tampered_flag}
                  for d in documents if ''.join(ch for ch in d.document_type.lower() if ch.isalpha()) in allowed_documents or (track == 'MEDICAL' and d.document_type.startswith('Medical Report: '))]
     # Only the evidence this application actually asks for: the plan's financial
@@ -396,12 +404,26 @@ async def _build_workspace(session: AsyncSession, tenant_id: UUID, case_id: UUID
     if outstanding_documents:
         requirements.append({"key": "application_documents", "label": "Application documents", "status": "Outstanding", "section": "documents",
                              "detail": f"{len(outstanding_documents)} still needed for the application"})
-    # A Claim UW case reviews a claim, not an application: no application requirements, and the claim travels with it.
+    # A Claim UW case reviews a claim, not an application: the application's own outstanding items don't apply, and the
+    # claim travels with it. The track's requirements do — its e-application questionnaire, insurance history and
+    # evidence are what the underwriter reviews the claim on, so only the application-level ones are dropped.
     claim_info = None
     if case.claim_id:
-        from shared.models.core import Claim
-        requirements, application_outstanding = [], []
+        from shared.models.core import Claim, ClaimProcess, InsurancePlan
+        from services import claim_engine
+        application_outstanding = []
         claim = await session.get(Claim, case.claim_id)
+        # A claim review is checked against the claim's own plan terms (insurance_plans.claims_terms) and the claim's
+        # document checklist — not the policy's underwriting requirements (questionnaire, history, income documents).
+        proc = (await session.exec(select(ClaimProcess).where(ClaimProcess.claim_id == case.claim_id))).first()
+        plan = (await session.exec(select(InsurancePlan).where(InsurancePlan.tenant_id == tenant_id,
+                                                               InsurancePlan.label == policy.product_name))).first() if policy else None
+        from services.underwriting_gate import claim_documents_for
+        claim_docs = await claim_documents_for(session, tenant_id, case.claim_id)
+        requirements, required_documents = claim_engine.claim_review_requirements(
+            track=track, claims_terms=plan.claims_terms if plan else None, documents=claim_docs,
+            contestable=bool(((proc.eligibility_json if proc else None) or {}).get("contestable")) or bool(claim and claim.is_contestable),
+            review_submitted=review["status"] in ("CLEARED", "REFERRED", "DECLINED"))
         both = (await reviews_by_case(session, [case_id]))[case_id]
         if claim:
             claim_info = {"id": str(claim.id), "claim_number": claim.claim_number, "claim_type": claim.claim_type,
@@ -435,7 +457,8 @@ async def upload_specialist_document(
     from routers.artifacts import upload_artifact
     user, track = await _specialist_identity(tenant_id, token, session)
     from specialist_access import DOCUMENT_TYPES
-    if document_type not in DOCUMENT_TYPES[track.lower()] and not await _fills_outstanding_requirement(session, tenant_id, case_id, track, document_type):
+    claim_doc = await _claim_document_for_track(session, tenant_id, case_id, track, document_type)
+    if claim_doc is None and document_type not in DOCUMENT_TYPES[track.lower()] and not await _fills_outstanding_requirement(session, tenant_id, case_id, track, document_type):
         raise HTTPException(403, 'This document type belongs to another underwriting track.')
     if track == 'MEDICAL' and test_code:
         from routers.medical_exam import _load_order, _ensure_reports_open, _save_reports, _report_view
@@ -452,6 +475,8 @@ async def upload_specialist_document(
     # The shared middleware enforces ownership, tenant, hold and application state.
     result = await upload_artifact(request=request, tenant_id=tenant_id, case_id=case_id,
         document_type=document_type, file=file, token=token, session=session)
+    if claim_doc is not None:
+        await _file_on_claim(session, case_id, claim_doc, result, user)
     await _refresh_case_requirements(session, tenant_id, case_id)
     return result
 
@@ -639,6 +664,42 @@ async def run_financial_underwriting(
     session.add(row)
     await session.commit()
     return {"result": row.ai_result, "run_at": row.ai_run_at}
+
+
+async def _claim_document_for_track(session: AsyncSession, tenant_id: UUID, case_id: UUID, track: str, document_type: str) -> Optional[dict]:
+    """On a Claim UW case, the claim document (from the plan's claim terms) this upload is — when it belongs to this
+    underwriter's track (medical evidence to the Medical Underwriter, the rest to the Financial Underwriter)."""
+    from services import claim_engine
+    from services.underwriting_gate import claim_documents_for
+    case = await session.get(Case, case_id)
+    if case is None or case.tenant_id != tenant_id or not case.claim_id:
+        return None
+    return next((d for d in await claim_documents_for(session, tenant_id, case.claim_id)
+                 if d.get("label") == document_type and claim_engine.is_medical_document(d["label"]) == (track.upper() == "MEDICAL")), None)
+
+
+async def _file_on_claim(session: AsyncSession, case_id: UUID, doc: dict, uploaded: dict, user) -> None:
+    """A claim document uploaded by an underwriter is the claim's document: link the file to the claim and, on a
+    workflow claim, mark the checklist item received — so the claims team sees it too."""
+    from datetime import datetime as _dt
+    from shared.models.core import Artifact, Claim, ClaimProcess
+    case = await session.get(Case, case_id)
+    art = await session.get(Artifact, UUID(str(uploaded.get("id")))) if isinstance(uploaded, dict) and uploaded.get("id") else None
+    if case is None or art is None:
+        return
+    art.claim_id = case.claim_id
+    session.add(art)
+    proc = (await session.exec(select(ClaimProcess).where(ClaimProcess.claim_id == case.claim_id))).first()
+    if proc and doc.get("key") and any(d.get("key") == doc["key"] for d in proc.documents_json or []):
+        from routers.claim_workflow import _sync_documents, _touch, _update_doc
+        _update_doc(proc, doc["key"], status="Received", received_at=_dt.utcnow().isoformat(), artifact_id=str(art.id),
+                    file_name=art.file_name, note="Uploaded by underwriting")
+        claim = await session.get(Claim, case.claim_id)
+        if claim is not None:
+            await _sync_documents(session, claim, proc, user)
+        _touch(proc)
+        session.add(proc)
+    await session.commit()
 
 
 async def _fills_outstanding_requirement(session: AsyncSession, tenant_id: UUID, case_id: UUID, track: str, document_type: str) -> bool:

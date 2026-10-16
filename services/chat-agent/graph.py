@@ -899,7 +899,7 @@ async def agent_node(state: ChatState, config: RunnableConfig = None) -> dict:
     direct = _direct_group_continue(state) or _direct_intake_demo(state)
     if direct is not None:
         return direct
-    user_role = state.get("user_role") or "Admin"
+    user_role = state.get("user_role") or ""  # no role is not Admin: is_role_allowed gives an unknown role read-only tools
     platform = state.get("platform") or "web"
 
     # Bind only the tools this conversation is plausibly about — see toolsets.py.

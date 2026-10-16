@@ -306,3 +306,19 @@ def test_gate_refused_for_unassigned_underwriters_offers_the_assignment():
     assert out["error"] == detail["message"] and out["error_code"] == "conflict"
     assert [q["payload"] for q in out["quick_actions"]] == ["Assign the medical review of case APP-2026-77760C",
                                                             "Assign the financial review of case APP-2026-77760C"]
+
+
+def test_claim_review_next_steps_are_the_claims_not_a_new_applications():
+    from specialist_review_tools import _next_steps
+    ws = {"reference": "UW-CLM-2026-0003-65B8", "read_only": False, "claim": {"claim_number": "CLM-2026-0003"},
+          "review": {"assigned_user_id": "u1", "status": "IN_REVIEW"},
+          "required_documents": [{"type": "Death certificate", "received": True}, {"type": "Hospital records", "received": False}],
+          "requirements": [{"key": "documents", "label": "Claim documents (from the plan)", "status": "Outstanding"},
+                           {"key": "claim_exclusions", "label": "Plan exclusions to check", "status": "Required", "detail": "Suicide."}],
+          "application_outstanding": [], "ai_underwriting": {"ready": False, "blockers": ["Upload the salary slip"]}}
+    for track in ("medical", "financial"):
+        steps, chips = _next_steps(track, ws, {"status": "NotAssessed"})
+        text = " ".join(steps)
+        assert "Hospital records" in text and "plan exclusions to check: Suicide." in text and "CLM-2026-0003" in text
+        assert "e-application" not in text and "salary slip" not in text and "AI" not in text
+        assert [c["label"] for c in chips] == ["Record my review"]

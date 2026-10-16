@@ -2610,7 +2610,7 @@ class ClaimDocumentArgs(ClaimLookupArgs):
         description="request = add a document to the checklist; waive = manager excuses a required one; "
         "reject = send a received one back to the claimant.")
     document: Optional[str] = Field(default=None, description="Checklist item label, e.g. 'Death certificate'.")
-    reason: Optional[str] = Field(default=None, description="Required for waive and reject.")
+    reason: Optional[str] = Field(default=None, description="Required for reject. Optional for waive — never ask for one.")
     required: Optional[bool] = Field(default=True, description="For request: does the decision wait on it?")
 
 

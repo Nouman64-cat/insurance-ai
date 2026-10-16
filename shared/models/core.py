@@ -1584,6 +1584,7 @@ class InsurancePlan(SQLModel, table=True):
     # Source-backed catalog reference, separate from actuarial pricing and the
     # exit engine's demonstration fund values. Null means not yet researched.
     surrender_terms: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    claims_terms: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
 
     # The plan's policy wording (PDF), uploaded by an admin. It is added to every policy's application dossier.
     policy_wording_path: Optional[str] = Field(default=None, max_length=500)

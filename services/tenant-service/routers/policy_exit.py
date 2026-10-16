@@ -94,7 +94,7 @@ class ExtensionBody(BaseModel):
 
 
 class NoteBody(BaseModel):
-    note: str
+    note: Optional[str] = None  # waiving a document needs no reason; one given goes on the file
 
 
 class ConsentBody(BaseModel):
@@ -691,12 +691,11 @@ async def waive_document(tenant_id: UUID, policy_id: UUID, case_id: UUID, key: s
     item = _find_doc(case, key)
     if case.accepted_at:
         raise HTTPException(409, "The settlement has been accepted — documents are locked.")
-    if len(body.note.strip()) < 10:
-        raise HTTPException(400, "Give a reason for waiving the document.")
-    _update_doc(case, key, status="Waived", note=body.note.strip(), received_at=_now().isoformat())
+    note = (body.note or "").strip() or None
+    _update_doc(case, key, status="Waived", note=note, received_at=_now().isoformat())
     _sync_docs(case)
     _touch(case)
-    ev = _audit(session, policy, case, "ExitDocumentWaived", _actor(user), {"document": item["label"], "reason": body.note.strip()})
+    ev = _audit(session, policy, case, "ExitDocumentWaived", _actor(user), {"document": item["label"], "reason": note})
     await session.commit()
     await _publish(request, policy, [ev])
     return await _overview(session, policy)

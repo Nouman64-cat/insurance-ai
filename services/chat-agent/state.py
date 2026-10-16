@@ -9,6 +9,8 @@ class ChatState(TypedDict, total=False):
     messages: Annotated[list[AnyMessage], add_messages]
     tenant_id: str
     user_role: str
+    # The signed-in user who owns this conversation (from /auth/me) — only they may continue or resume it.
+    user_id: str
     platform: str  # "web" or "mobile" — see permission.py
     locale: str  # UI language, "en" or "ur" — the agent replies in it
     jwt_token: str

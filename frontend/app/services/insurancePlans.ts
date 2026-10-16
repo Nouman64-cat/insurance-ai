@@ -57,6 +57,20 @@ export interface SurrenderTerms {
   }[];
 }
 
+export interface ClaimsTerms {
+  status: "published_summary" | "conflicting_sources" | "not_disclosed";
+  researched_on: string;
+  benefits: { event: string; scope: "base" | "built_in" | "optional_rider" | "plan_benefit"; summary: string; conditions: string[] }[];
+  waiting_periods: { summary: string; days: number; applies_to: string }[] | null;
+  notification: { days: number; summary: string } | null;
+  exclusions: { summary: string; scope: string }[] | null;
+  documents: Record<string, { required: string[]; conditional: { document: string; condition: string }[] }>;
+  filing: { portal_url: string; steps: string[]; document_authenticity: string; decision_time: string };
+  notes: string[];
+  not_disclosed: string[];
+  sources: { id: string; url: string; title: string; pages?: number[]; section?: string }[];
+}
+
 export interface InsurancePlan {
   id: string;
   tenant_id: string;
@@ -70,6 +84,7 @@ export interface InsurancePlan {
   description: string;
   color: string;
   surrender_terms?: SurrenderTerms | null;
+  claims_terms?: ClaimsTerms | null;
 
   entry_age_min: number;
   entry_age_max: number;

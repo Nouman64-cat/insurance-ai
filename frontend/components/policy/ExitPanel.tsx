@@ -513,7 +513,6 @@ function EligibilityStep({ kase, policyId, locked, run }: Readonly<{ kase: ExitC
 function DocumentsStep({ kase, policyId, locked, isManager, run }: Readonly<{ kase: ExitCaseView; policyId: string; locked: boolean; isManager: boolean; run: Run }>) {
   const d = kase.documents;
   const [files, setFiles] = useState<Record<string, File | null>>({});
-  const [waive, setWaive] = useState<Record<string, string>>({});
   const [by, setBy] = useState(kase.consent.state?.by ?? "");
   const [method, setMethod] = useState(kase.consent.state?.method ?? kase.consent.methods[0]);
   const [accepted, setAccepted] = useState<string[]>((kase.consent.state?.declarations ?? []).filter((x) => x.accepted).map((x) => x.key));
@@ -537,10 +536,9 @@ function DocumentsStep({ kase, policyId, locked, isManager, run }: Readonly<{ ka
                 <div className="flex flex-wrap items-center gap-2">
                   <input type="file" accept=".pdf,.png,.jpg,.jpeg,.tiff" onChange={(e) => setFiles({ ...files, [it.key]: e.target.files?.[0] ?? null })} className="text-[11px] text-slate-500 max-w-[220px]" />
                   <button disabled={locked || !files[it.key]} className={btnGhost} onClick={() => { const f = files[it.key]; if (f) run(() => uploadExitDocument(policyId, kase.case.id, it.key, f), tx("Document received.")); }}>{tx("Receive")}</button>
-                  {isManager && <>
-                    <input value={waive[it.key] ?? ""} onChange={(e) => setWaive({ ...waive, [it.key]: e.target.value })} placeholder={tx("Reason to waive")} className={`${inputCls} !w-44`} />
-                    <button disabled={locked || (waive[it.key] ?? "").trim().length < 10} className={btnDanger} onClick={() => run(() => waiveExitDocument(policyId, kase.case.id, it.key, waive[it.key].trim()), tx("Document waived."))}>{tx("Waive")}</button>
-                  </>}
+                  {isManager && (
+                    <button disabled={locked} className={btnDanger} onClick={() => run(() => waiveExitDocument(policyId, kase.case.id, it.key), tx("Document waived."))}>{tx("Waive")}</button>
+                  )}
                 </div>
               )}
             </div>

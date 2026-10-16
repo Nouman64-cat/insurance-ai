@@ -262,11 +262,15 @@ export function SpecialistCaseWorkspace({ track }: { track: "medical" | "financi
 
       <div className={caseTab === "overview" ? "grid items-start gap-5 xl:grid-cols-12" : "hidden"}>
         <div className="min-w-0 space-y-5 xl:col-span-8">
+          {/* A claim review is checked against the claim's plan terms (Requirements tab) — not run like a new
+              application: no exam ordered from the non-medical grid, no exposure check, AI rating or e-application. */}
+          {!workspace.claim && <>
           <TrackOperations key={caseId} track={track} caseId={caseId} documentsVersion={workspace.documents.map((d) => `${d.id}:${d.status}`).join(",")} disabled={workspace.read_only || workspace.review.assigned_user_id !== user.id || !workspace.policy_linked} onChanged={() => { void load(true); }} />
           {track === "financial" && <FinancialAIPanel tenantId={user.tenant_id!} caseId={caseId} ai={workspace.ai_underwriting}
             disabled={workspace.read_only || workspace.review.assigned_user_id !== user.id || !workspace.policy_linked} onDone={() => { void load(true); }} />}
           <EApplicationPanel caseId={caseId} track={track} refreshKey={workspace.requirements.find((r) => r.key === "e_application")?.status}
             onSend={() => void sendEApplication()} sending={saving} canSend={!workspace.read_only && workspace.review.assigned_user_id === user.id} onViewAnswers={() => setCaseTab("applicant")} />
+          </>}
         </div>
         <aside className="space-y-5 xl:col-span-4">
           {workspace.claim && <ClaimDecisionPanel tenantId={user.tenant_id!} claim={workspace.claim} disabled={workspace.read_only} onDone={() => { void load(true); }} />}
@@ -284,7 +288,10 @@ export function SpecialistCaseWorkspace({ track }: { track: "medical" | "financi
         <ReviewDocuments key={caseId} medical={track === "medical"} documents={workspace.documents}
           tests={Array.isArray(workspace.evidence["Required tests"]) ? workspace.evidence["Required tests"] as {code: string; name: string}[] : []}
           requiredTypes={track === "financial" ? workspace.required_documents.map(d => d.type) : []}
-          applicationDocuments={workspace.application_outstanding.filter(o => o.can_upload).map(o => ({ type: o.document_type!, reason: o.reason, canUpload: o.can_upload, owner: o.owner }))}
+          applicationDocuments={workspace.claim
+            // A claim review's documents are the claim's, from its plan's claim terms: one card each for this track.
+            ? workspace.required_documents.filter(d => !d.received).map(d => ({ type: d.type, reason: tx("Required for this claim by the plan."), canUpload: true, owner: null, tag: "Claim" }))
+            : workspace.application_outstanding.filter(o => o.can_upload).map(o => ({ type: o.document_type!, reason: o.reason, canUpload: o.can_upload, owner: o.owner }))}
           disabled={workspace.read_only || workspace.review.assigned_user_id !== user.id}
           onUploadFile={uploadDocument} onMarkAllUploaded={markDocumentsUploaded} onClassify={classifyDocuments} onUploaded={() => { void load(true); }} onOpen={id => { void openDocument(id); }} />
       </div>

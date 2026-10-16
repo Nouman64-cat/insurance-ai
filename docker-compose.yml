@@ -591,6 +591,7 @@ services:
       NEXT_PUBLIC_SUMMARIZER_URL: ${NEXT_PUBLIC_SUMMARIZER_URL:-http://localhost:8015}
       NEXT_PUBLIC_PORTAL_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000} # the dashboard: embedded pages and the sign-in redirect
       NEXT_PUBLIC_UNDERWRITING_URL: ${NEXT_PUBLIC_UNDERWRITING_URL:-http://localhost:3005} # case views and other underwriting pages it opens or embeds
+      NEXT_PUBLIC_CLAIMS_URL: ${NEXT_PUBLIC_CLAIMS_URL:-http://localhost:3011} # the Claims Manager app, which hosts the Copilot window
       API_GATEWAY_INTERNAL_URL: http://api-gateway:8000
       SSO_COOKIE_NAME: ${SSO_COOKIE_NAME:-insurance_sso}
       SSO_COOKIE_DOMAIN: ${SSO_COOKIE_DOMAIN:-}

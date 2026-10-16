@@ -2199,6 +2199,17 @@ function GeneralCasePage({ params }: { params: { id: string } }) {
     redeterminedFor.current = acceptedKey;
     void runDetermineRequirements();
   }, [acceptedKey, runDetermineRequirements, userRole]);
+  // Requirements are worked out as the case opens — the rules engine is idempotent (waived rows stay waived), so
+  // nobody has to press "Determine requirements" to see them. Same conditions as that button: not for an Agent,
+  // not on a held case, and not once the case is decided.
+  const autoDetermined = useRef<string>("");
+  useEffect(() => {
+    const kase = detail?.case;
+    if (!kase || autoDetermined.current === caseId || userRole === "Agent" || kase.on_hold
+        || ["Approved", "Rejected", "Closed"].includes(kase.caseStatus)) return;
+    autoDetermined.current = caseId;
+    void runDetermineRequirements();
+  }, [detail, caseId, userRole, runDetermineRequirements]);
 
 
   const waiveRequirement = useCallback(

@@ -887,12 +887,15 @@ CLAIMS_ADJUSTER_ALLOWED_TOOLS = CLAIMS_READ_TOOLS | {
     "add_ticket_comment",
 }
 
-CLAIMS_MANAGER_ALLOWED_TOOLS = CLAIMS_ADJUSTER_ALLOWED_TOOLS | CLAIMS_MANAGER_ONLY_TOOLS | {
+CLAIMS_MANAGER_ALLOWED_TOOLS = (CLAIMS_ADJUSTER_ALLOWED_TOOLS | CLAIMS_MANAGER_ONLY_TOOLS | {
     "get_active_policy_status",
     "list_users",
-    "assign_case",
     # Claims managers are Customer Service staff too (customer-service STAFF roles).
     "assign_support_ticket",
+}) - {
+    # Underwriting work, not claims: assigning underwriting cases and running a member's pre-underwriting steps.
+    "assign_case",
+    "resume_member_workflow",
 }
 
 # Customer Service desk: reads everything a customer may ask about, works its tickets,
@@ -991,8 +994,12 @@ SPECIALIST_TOOLS = {
     "send_e_application_questionnaire",
     "record_underwriting_review",
 }
-MEDICAL_UNDERWRITER_ALLOWED_TOOLS = SAFE_TOOLS | SPECIALIST_TOOLS | {"run_ai_medical_underwriting"}
-FINANCIAL_UNDERWRITER_ALLOWED_TOOLS = SAFE_TOOLS | SPECIALIST_TOOLS | {"run_ai_financial_underwriting", "run_insurance_history_check"}
+# Their whole allow-list — no SAFE_TOOLS: a specialist has no business reading commission ledgers, agent
+# statements, claims, group schemes, the rule engine or the user list. The same list applies whether the request
+# comes through their subagent, a quick-action chip or voice (/chat/execute-tool).
+SPECIALIST_NAVIGATION = {"navigate_to_page", "show_record", "search_records"}
+MEDICAL_UNDERWRITER_ALLOWED_TOOLS = SPECIALIST_TOOLS | SPECIALIST_NAVIGATION | {"run_ai_medical_underwriting", "get_medical_report_status"}
+FINANCIAL_UNDERWRITER_ALLOWED_TOOLS = SPECIALIST_TOOLS | SPECIALIST_NAVIGATION | {"run_ai_financial_underwriting", "run_insurance_history_check"}
 # Final underwriting: compiles the two specialist reviews (Admin has every tool).
 FINAL_UNDERWRITING_TOOLS = {
     "list_track_underwriters",

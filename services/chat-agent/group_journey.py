@@ -66,7 +66,7 @@ def _ctx(state: ChatState) -> ExecCtx:
     return ExecCtx(
         tenant_id=state.get("tenant_id", ""),
         jwt_token=state.get("jwt_token", ""),
-        role=state.get("user_role") or "Admin",
+        role=state.get("user_role") or "",
         current_org_id=state.get("group_current_org_id"),
     )
 

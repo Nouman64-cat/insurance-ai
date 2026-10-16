@@ -9,10 +9,16 @@ from underwriting_specialist import select_underwriting_specialist, _EXPLICIT as
 from claims_specialist import select_claims_specialist, _EXPLICIT as CLAIM_WORDS, _COMMISSION as COMMISSION_WORDS
 from track_specialists import select_final_underwriting, select_track_specialist
 
+# Roles whose whole job is one domain: every message goes to that domain's specialist, whatever it asks about —
+# keyword routing would hand an off-topic question ("can you do customer acquisition?") to the broad planner,
+# whose prompt describes onboarding the role can't do.
+PINNED_SPECIALIST = {"ClaimsManager": "claims"}
+
 
 def coordinator_node(state):
-    # A Medical or Financial Underwriter's role is one track: their own subagent handles every message.
-    track = select_track_specialist(state)
+    # A Medical or Financial Underwriter's role is one track: their own subagent handles every message,
+    # and a Claims Manager's every message goes to the claims specialist.
+    track = select_track_specialist(state) or PINNED_SPECIALIST.get(state.get('user_role') or '')
     if track:
         changed = track != state.get('active_specialist')
         return {'active_specialist': track, 'specialist_handoff':

@@ -122,6 +122,17 @@ def test_waive_resolves_document_by_label():
     assert [w["path"] for w in client.writes()] == [WS_PATH + "/documents/death_cert/waive"]
 
 
+def test_waive_needs_no_reason_but_sending_back_does():
+    client = FakeClient(_claim_routes(extra={("POST", WS_PATH + "/documents/death_cert/waive"): _workspace()}))
+    out = _call("update_claim_document", {"claim_number": "CLM-2026-0001", "action": "waive", "document": "death certificate"},
+                client, role="ClaimsManager")
+    assert out["success"] and [w["path"] for w in client.writes()] == [WS_PATH + "/documents/death_cert/waive"]
+    client = FakeClient(_claim_routes())
+    out = _call("update_claim_document", {"claim_number": "CLM-2026-0001", "action": "reject", "document": "death certificate"},
+                client, role="ClaimsManager")
+    assert not out["success"] and "sent back" in out["error"] and not client.writes()
+
+
 def test_already_disbursed_claim_is_not_paid_twice():
     ws = _workspace(settlement={"disbursed_at": "2026-10-01T10:00:00", "paid_total": 900000})
     client = FakeClient(_claim_routes(ws))
@@ -447,3 +458,38 @@ def test_missing_documents_come_from_the_workflow_checklist_not_the_register_lis
     assert out["missing"] == [] and "document file is complete" in out["message"]
     assert "Hospital" not in out["message"] and "waived: Branch form lost" in out["message"]
     assert "Next: **Investigation & assessment — Investigation required**" in out["message"]
+
+
+def test_contestable_claim_offers_underwriting_referral_not_approval():
+    from claim_workflow_tools import _actions, _summary
+    ws = _workspace()
+    ws["can"] = {**ws.get("can", {}), "decide": True, "approve": False, "refer_underwriting": True}
+    ws["underwriting"] = {"required": True, "state": "not_referred", "case_number": None,
+                          "message": "This claim is within the contestability period — refer it to Underwriting before deciding."}
+    labels = [a["label"] for a in _actions(ws, "pol-1")]
+    assert "Refer to Underwriting" in labels and not any(l.startswith("Approve") for l in labels)
+    assert "contestability period" in _summary(ws)
+
+
+def test_workflow_claim_referred_to_underwriting_reports_the_workflow_stage():
+    ws = _workspace()
+    ws["claim"]["status"] = "Re-Underwriting Required"
+    ws["can"] = {**ws.get("can", {}), "decide": False, "approve": False, "refer_underwriting": False}
+    ws["underwriting"] = {"required": True, "state": "in_review", "case_number": "UW-CLM-2026-0001-AB12",
+                          "message": "Underwriting is reviewing this claim — the decision waits for their outcome."}
+    client = FakeClient(_claim_routes(ws, extra={("POST", "/claims/c-1/re-underwrite"): {"status": "Re-Underwriting Required"}}))
+    out = _call("refer_claim_to_underwriting", {"claim_number": "CLM-2026-0001", "referral_reason": "Contestable period"},
+                client, role="ClaimsManager")
+    assert out["success"] and "UW-CLM-2026-0001-AB12" in out["message"] and "decision waits" in out["message"]
+    assert not any(a["label"].startswith("Approve") for a in out["quick_actions"])
+
+
+def test_claim_summary_names_the_plan_terms():
+    from claim_workflow_tools import _summary
+    ws = _workspace()
+    ws["plan_terms"] = {"plan": "Life Protection Plus", "from_plan": True, "exclusions": ["Suicide.", "Pre-existing medical conditions."],
+                        "waiting_periods": [], "notification": None}
+    text = _summary(ws)
+    assert "Plan **Life Protection Plus** — documents per the plan's claim terms" in text and "Suicide" in text
+    ws["plan_terms"] = {"plan": "Old Plan", "from_plan": False, "exclusions": [], "waiting_periods": []}
+    assert "standard checklist" in _summary(ws)

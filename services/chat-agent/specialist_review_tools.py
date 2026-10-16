@@ -142,6 +142,23 @@ async def _list_my_underwriting_reviews(args: dict, ctx: Ctx) -> dict:
     }
 
 
+def _claim_next_steps(track: str, ws: dict) -> tuple[list[str], list[dict]]:
+    """A Claim UW review is checked against the claim's plan terms, not run like a new application: no e-application
+    to email, no exam to order, no AI rating — the claim's documents (collected by the claims team) and the plan's
+    exclusions, waiting periods and contestability, then the underwriter's own decision."""
+    ref, steps, chips = ws["reference"], [], []
+    missing = [d["type"] for d in ws.get("required_documents") or [] if not d.get("received")]
+    if missing:
+        steps.append(f"Claim documents still awaited from the claims team: {', '.join(missing)}.")
+    for r in ws["requirements"]:
+        if r["key"].startswith("claim_") and r["status"] != "Completed":
+            steps.append(f"Check {r['label'].lower()}" + (f": {r['detail']}" if r.get("detail") else "") + ".")
+    if ws["review"]["status"] not in FINAL:
+        steps.append(f"Record your {track} finding on claim {(ws.get('claim') or {}).get('claim_number') or ref} with your rationale.")
+        chips.append(_chip("Record my review", f"I want to record my {track} review for case {ref}"))
+    return steps or ["Your review is recorded. Nothing else is needed from you."], chips
+
+
 def _next_steps(track: str, ws: dict, exam: Optional[dict]) -> tuple[list[str], list[dict]]:
     """What the specialist should do next on this application, in order, with chips."""
     ref = ws["reference"]
@@ -152,6 +169,8 @@ def _next_steps(track: str, ws: dict, exam: Optional[dict]) -> tuple[list[str], 
         return ["Start your review to use the tools for this application."], [_chip("Start my review", f"Start my review for case {ref}")]
     if ws.get("read_only"):
         return ["This application is closed for specialist review."], []
+    if ws.get("claim"):
+        return _claim_next_steps(track, ws)
     eapp = next((r for r in ws["requirements"] if r["key"] == "e_application"), None)
     if eapp and eapp["status"] not in _PART_DONE:
         steps.append(f"The customer hasn't submitted the {track} e-application ({eapp['status']}).")

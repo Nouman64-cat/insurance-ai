@@ -863,8 +863,11 @@ export interface ClaimWorkspace {
   closure: { outcome: string | null; closed_by: string | null; closed_at: string | null; coverage_update: Record<string, unknown> | null;
     confirmation: { generated_at: string | null; sent_at: string | null; sent_to: string | null } };
   stages: ClaimStage[];
-  can: { verify: boolean; assess: boolean; decide: boolean; investigate: boolean; edit_documents: boolean; verify_payees: boolean;
-    authorize: boolean; disburse: boolean; reconcile: boolean; close: boolean };
+  /** The Underwriting department's review of a contestable claim — Claims approves only once it is cleared. */
+  underwriting: { required: boolean; state: "not_required" | "not_referred" | "in_review" | "cleared" | "declined"; message: string;
+    case_number: string | null; referral_reason: string | null; notes: string | null };
+  can: { verify: boolean; assess: boolean; decide: boolean; approve: boolean; refer_underwriting: boolean; investigate: boolean;
+    edit_documents: boolean; verify_payees: boolean; authorize: boolean; disburse: boolean; reconcile: boolean; close: boolean };
   timeline: ReinstatementTimelineItem[];
 }
 
@@ -903,8 +906,8 @@ export async function uploadClaimDocument(policyId: string, claimId: string, key
   if (note) form.append("note", note);
   return (await api.post(`${claimsBase(policyId, claimId)}/documents/${key}`, form)).data;
 }
-export async function waiveClaimDocument(policyId: string, claimId: string, key: string, reason: string): Promise<ClaimWorkspace> {
-  return (await api.post(`${claimsBase(policyId, claimId)}/documents/${key}/waive`, { reason })).data;
+export async function waiveClaimDocument(policyId: string, claimId: string, key: string, reason?: string): Promise<ClaimWorkspace> {
+  return (await api.post(`${claimsBase(policyId, claimId)}/documents/${key}/waive`, reason ? { reason } : {})).data;
 }
 export async function returnClaimDocument(policyId: string, claimId: string, key: string, reason: string): Promise<ClaimWorkspace> {
   return (await api.post(`${claimsBase(policyId, claimId)}/documents/${key}/reject`, { reason })).data;
@@ -1039,8 +1042,8 @@ export async function uploadExitDocument(policyId: string, caseId: string, key: 
   const form = new FormData(); form.append("file", file);
   return (await api.post(`${exitBase(policyId, caseId)}/documents/${key}`, form)).data;
 }
-export async function waiveExitDocument(policyId: string, caseId: string, key: string, note: string): Promise<ExitOverview> {
-  return (await api.post(`${exitBase(policyId, caseId)}/documents/${key}/waive`, { note })).data;
+export async function waiveExitDocument(policyId: string, caseId: string, key: string, note?: string): Promise<ExitOverview> {
+  return (await api.post(`${exitBase(policyId, caseId)}/documents/${key}/waive`, note ? { note } : {})).data;
 }
 export const exitDocumentUrl = (policyId: string, caseId: string, key: string) => exitUrl(`${exitBase(policyId, caseId)}/documents/${key}/download`);
 export async function recordExitConsent(policyId: string, caseId: string, body: { accepted: string[]; by: string; method: string }): Promise<ExitOverview> {

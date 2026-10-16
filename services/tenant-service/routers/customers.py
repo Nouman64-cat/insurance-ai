@@ -1022,12 +1022,13 @@ async def update_customer(
     # that's a sticky terminal state an unrelated field edit shouldn't silently clear;
     # only an explicit profile_status in the request (a manual "Reactivate") can move it.
     # DRAFT is the same: it means "sent to Proposal" by an explicit click, so a later
-    # edit must not silently pull the lead back out of the proposal list.
+    # edit must not silently pull the lead back out of the proposal list. And a POLICYHOLDER
+    # already holds a policy: correcting their email or address must not demote them to a lead stage.
     if body.profile_status == ProfileStatusEnum.DRAFT and not was_draft:
         await _enforce_early_knockout(session, tenant_id, customer, override_knockout_reason, token)
     if body.profile_status is not None:
         customer.profile_status = body.profile_status
-    elif customer.profile_status not in (ProfileStatusEnum.NOT_INTERESTED, ProfileStatusEnum.DRAFT):
+    elif customer.profile_status not in (ProfileStatusEnum.NOT_INTERESTED, ProfileStatusEnum.DRAFT, ProfileStatusEnum.POLICYHOLDER):
         if customer.cnic and customer.dob and customer.declared_income and customer.occupation:
             customer.profile_status = ProfileStatusEnum.UNDERWRITING_READY
         elif customer.dob or customer.declared_income or customer.occupation or customer.cnic:

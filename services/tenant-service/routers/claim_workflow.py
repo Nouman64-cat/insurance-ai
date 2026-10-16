@@ -54,12 +54,16 @@ from services.email_templates import claim_closure_email
 from shared.models.core import (
     Artifact,
     Beneficiary,
+    Case,
+    CaseStatusEnum,
+    CaseTypeEnum,
     Claim,
     ClaimPayout,
     ClaimProcess,
     ClaimStatusEnum,
     ClaimStatusHistory,
     Customer,
+    InsurancePlan,
     Policy,
     PolicyEvent,
     PolicyRider,
@@ -119,6 +123,10 @@ class NoteBody(BaseModel):
 
 class DocReasonBody(BaseModel):
     reason: str
+
+
+class DocWaiveBody(BaseModel):
+    reason: Optional[str] = None  # optional: a manager just waives; a reason, if given, goes on the claim file
 
 
 class DocRequestBody(BaseModel):
@@ -321,6 +329,26 @@ async def _refresh_investigation(session: AsyncSession, policy: Policy, claim: C
                                "notes": prior.get("notes"), "evaluated_at": _now().isoformat()}
 
 
+async def _claims_terms(session: AsyncSession, policy: Policy) -> Optional[dict]:
+    """The claims terms of the plan this policy was sold under (insurance_plans.claims_terms). Exact product match
+    only — another plan of the same type has its own claim rules — so None means the generic insurer list applies."""
+    plan = (await session.exec(select(InsurancePlan).where(
+        InsurancePlan.tenant_id == policy.tenant_id, InsurancePlan.label == policy.product_name))).first()
+    return plan.claims_terms if plan else None
+
+
+async def _plan_terms_view(session: AsyncSession, policy: Policy) -> dict:
+    """The plan's claim terms as the claim screens and the chat show them: whether the checklist comes from the plan,
+    and the exclusions, waiting periods and notification rule the claim is judged against."""
+    terms = await _claims_terms(session, policy) or {}
+    waiting = terms.get("waiting_periods") or []
+    return {"plan": policy.product_name, "from_plan": bool(terms.get("documents")),
+            "exclusions": [e["summary"] for e in terms.get("exclusions") or [] if isinstance(e, dict) and e.get("summary")],
+            "waiting_periods": [w["summary"] for w in (waiting if isinstance(waiting, list) else [waiting])
+                                if isinstance(w, dict) and w.get("summary")],
+            "notification": (terms.get("notification") or {}).get("summary")}
+
+
 async def _run_eligibility(session: AsyncSession, policy: Policy, claim: Claim, proc: ClaimProcess, user) -> dict:
     """Verify cover on the event date, set up the checklist, and triage the claim."""
     elig = await _evaluate(session, policy, claim, proc)
@@ -332,7 +360,8 @@ async def _run_eligibility(session: AsyncSession, policy: Policy, claim: Claim, 
     if elig["status"] != "Ineligible" or proc.eligibility_override_by:
         wanted = eng.build_checklist(category=proc.category, segment=proc.segment, cause=proc.event_cause,
                                      claimant_is_nominee=elig["claimant_is_nominee"], contestable=elig["contestable"], now=now,
-                                     product_rules=cfg.claim_rules(policy.product_name))
+                                     product_rules=cfg.claim_rules(policy.product_name),
+                                     claims_terms=await _claims_terms(session, policy))
         proc.documents_json = eng.merge_documents(proc.documents_json, wanted)
         proc.checklist_generated_at = proc.checklist_generated_at or now
     await _refresh_investigation(session, policy, claim, proc, elig)
@@ -398,6 +427,53 @@ def _doc_view(d: dict) -> dict:
     return {k: v for k, v in d.items()}
 
 
+async def _underwriting(session: AsyncSession, claim: Claim, proc: ClaimProcess) -> dict:
+    """Whether the Underwriting department must review this claim before Claims decides it, and where that stands.
+
+    A claim within the contestability period (a death soon after issue or reinstatement) is the classic case: the
+    proposal answers must be checked against the medical history before anything is paid. The review runs on a Claim
+    UW case (Medical + Financial underwriters, see routers/claims.py re-underwrite → resolve-underwriting); Claims may
+    approve only once Underwriting has cleared it. A non-disclosure finding declines the claim from that side.
+    state: not_required | not_referred | in_review | cleared | declined"""
+    inv_flags = {f.get("code") for f in ((proc.investigation_json or {}).get("flags") or []) if isinstance(f, dict)}
+    required = bool((proc.eligibility_json or {}).get("contestable")) or "contestable" in inv_flags
+    cases = (await session.exec(select(Case).where(Case.claim_id == claim.id, Case.caseType == CaseTypeEnum.UNDERWRITING)
+                                .order_by(Case.createdAt.desc()))).all()  # type: ignore[arg-type]
+    latest = cases[0] if cases else None
+    if _cstatus(claim) == ClaimStatusEnum.REUNDERWRITING_REQUIRED or (
+            latest and latest.caseStatus not in (CaseStatusEnum.APPROVED, CaseStatusEnum.REJECTED, CaseStatusEnum.CLOSED)):
+        state, message = "in_review", "Underwriting is reviewing this claim — the decision waits for their outcome."
+    elif latest and latest.caseStatus == CaseStatusEnum.REJECTED:
+        state, message = "declined", "Underwriting found non-disclosure."
+    elif latest:
+        state, message = "cleared", "Underwriting has cleared this claim."
+    elif required:
+        state, message = "not_referred", ("This claim is within the contestability period — refer it to Underwriting to check "
+                                          "the proposal against the medical history before deciding.")
+    else:
+        state, message = "not_required", ""
+    return {"required": required, "state": state, "message": message, "case_number": latest.caseNumber if latest else None,
+            "referral_reason": claim.underwriting_referral_reason, "notes": claim.underwriting_decision_notes}
+
+
+async def _assert_underwriting_cleared(session: AsyncSession, claim: Claim, proc: ClaimProcess) -> None:
+    """No money moves on a claim Underwriting still has to clear (one approved before this rule, or under review)."""
+    uw = await _underwriting(session, claim, proc)
+    if uw["state"] in ("not_referred", "in_review"):
+        raise HTTPException(409, uw["message"] if uw["state"] == "in_review" else
+                            "This claim is within the contestability period and Underwriting has not cleared it — "
+                            "refer it to Underwriting before paying.")
+
+
+def _underwriting_blocks(uw: dict, decision: str) -> Optional[str]:
+    """Why Underwriting's involvement stops this decision, or None."""
+    if uw["state"] == "in_review" and decision in ("Approve", "PartialApprove", "Reject"):
+        return uw["message"]
+    if uw["state"] == "not_referred" and decision in ("Approve", "PartialApprove"):
+        return uw["message"]
+    return None
+
+
 async def _workspace(session: AsyncSession, policy: Policy, claim: Claim, proc: ClaimProcess) -> dict:
     payouts = await _payouts(session, claim)
     paid = round(sum(p["amount"] for p in payouts), 2)
@@ -409,9 +485,19 @@ async def _workspace(session: AsyncSession, policy: Policy, claim: Claim, proc: 
     ineligible = proc.eligibility_status == "Ineligible" and not proc.eligibility_override_by
     investigated = (not inv.get("requires_investigation")) or bool(proc.investigation_completed_at)
     can_assess = st == ClaimStatusEnum.UNDER_INVESTIGATION and prog["complete"] and investigated and not ineligible
-    can_decide = (bool(proc.assessed_at) and prog["complete"] and investigated and not ineligible and
-                  st in (ClaimStatusEnum.UNDER_INVESTIGATION, ClaimStatusEnum.REFERRED_TO_MANAGER, ClaimStatusEnum.REUNDERWRITING_REQUIRED))
+    uw = await _underwriting(session, claim, proc)
+    # While Underwriting reviews the claim nothing is decided; an un-referred contestable claim may still be
+    # rejected, referred to a manager or sent back for information — just not approved (see decide_claim).
+    can_decide = (bool(proc.assessed_at) and prog["complete"] and investigated and not ineligible and uw["state"] != "in_review" and
+                  st in (ClaimStatusEnum.UNDER_INVESTIGATION, ClaimStatusEnum.REFERRED_TO_MANAGER))
+    if uw["state"] in ("not_referred", "in_review") and st not in _DECIDED:
+        stages = [({**s, "state": "action", "label": "Awaiting underwriting" if uw["state"] == "in_review" else "Refer to underwriting",
+                    "detail": uw["message"]} if s.get("key") == "decision" else s) for s in stages]
     approved = st in (ClaimStatusEnum.APPROVED, ClaimStatusEnum.PARTIAL_APPROVAL)
+    uw_clear = uw["state"] not in ("not_referred", "in_review")
+    if approved and not uw_clear and not proc.disbursed_at:
+        stages = [({**s, "state": "action", "label": "Awaiting underwriting" if uw["state"] == "in_review" else "Refer to underwriting",
+                    "detail": uw["message"]} if s.get("key") == "settlement" else s) for s in stages]
     payees = proc.payees_json or []
     return {
         "claim": {
@@ -455,13 +541,19 @@ async def _workspace(session: AsyncSession, policy: Policy, claim: Claim, proc: 
                     "confirmation": {"generated_at": _iso(proc.confirmation_generated_at), "sent_at": _iso(proc.confirmation_sent_at),
                                      "sent_to": proc.confirmation_sent_to}},
         "stages": stages,
+        "underwriting": uw,
+        "plan_terms": await _plan_terms_view(session, policy),
         "can": {
             "verify": st not in _DECIDED, "assess": can_assess, "decide": can_decide,
+            "approve": can_decide and uw["state"] not in ("not_referred", "in_review"),
+            # Also an approved claim not yet paid: one approved before Underwriting cleared it goes back through them.
+            "refer_underwriting": proc.eligibility_status is not None and uw["state"] in ("not_referred", "not_required") and (
+                st not in _DECIDED or (approved and not proc.disbursed_at)),
             "investigate": st == ClaimStatusEnum.UNDER_INVESTIGATION or st == ClaimStatusEnum.PENDING_DOCUMENTS,
             "edit_documents": st not in _DECIDED and proc.eligibility_status is not None,
-            "verify_payees": approved and not proc.authorized_at,
-            "authorize": approved and bool(proc.payees_verified_at) and not proc.authorized_at,
-            "disburse": approved and bool(proc.authorized_at) and not proc.disbursed_at,
+            "verify_payees": approved and uw_clear and not proc.authorized_at,
+            "authorize": approved and uw_clear and bool(proc.payees_verified_at) and not proc.authorized_at,
+            "disburse": approved and uw_clear and bool(proc.authorized_at) and not proc.disbursed_at,
             "reconcile": st == ClaimStatusEnum.SETTLED and not proc.reconciled_at,
             "close": (st == ClaimStatusEnum.SETTLED and bool(proc.reconciled_at)) or st == ClaimStatusEnum.DECLINED,
         },
@@ -478,6 +570,10 @@ async def _claim_row(session: AsyncSession, claim: Claim, proc: Optional[ClaimPr
     if proc:
         paid = (await session.exec(select(ClaimPayout).where(ClaimPayout.claim_id == claim.id))).all()
         stages = eng.project_stages(proc, claim, payout_total=sum(p.amount for p in paid))
+        uw = await _underwriting(session, claim, proc)
+        if uw["state"] in ("not_referred", "in_review") and _cstatus(claim) not in _DECIDED:
+            stages = [({**s, "state": "action", "label": "Awaiting underwriting" if uw["state"] == "in_review" else "Refer to underwriting"}
+                       if s.get("key") == "decision" else s) for s in stages]
         done = sum(1 for s in stages if s["state"] in ("complete", "skipped"))
         cur = next((s for s in stages if s["state"] not in ("complete", "skipped")), None)
         sla = eng.sla_state(docs_complete_at=proc.docs_complete_at, decision_at=proc.decision_at, today=date.today())
@@ -696,7 +792,8 @@ async def override_eligibility(
     wanted = eng.build_checklist(category=proc.category, segment=proc.segment, cause=proc.event_cause,
                                  claimant_is_nominee=(proc.eligibility_json or {}).get("claimant_is_nominee", True),
                                  contestable=bool((proc.eligibility_json or {}).get("contestable")),
-                                 product_rules=cfg.claim_rules(policy.product_name))
+                                 product_rules=cfg.claim_rules(policy.product_name),
+                                 claims_terms=await _claims_terms(session, policy))
     proc.documents_json = eng.merge_documents(proc.documents_json, wanted)
     proc.checklist_generated_at = proc.checklist_generated_at or _now()
     await _sync_documents(session, claim, proc, user)
@@ -774,23 +871,22 @@ async def receive_document(
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/documents/{key}/waive")
 async def waive_document(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID, key: str,
-    body: DocReasonBody,
+    body: DocWaiveBody,
     request: Request,
     user=Depends(require_roles(*_MANAGERS)),
     session: AsyncSession = Depends(get_session),
 ):
     """A claims manager may waive a document that cannot be produced (e.g. no FIR for a
-    natural death). The reason is recorded."""
+    natural death). No reason is needed; one given is recorded."""
     policy = await _get_policy(session, tenant_id, policy_id)
     claim, proc = await _get_claim(session, policy_id, claim_id)
     _assert_not_decided(claim, "The document checklist")
     item = _find_doc(proc, key)
-    if len(body.reason.strip()) < 10:
-        raise HTTPException(400, "Give a reason for waiving the document.")
-    _update_doc(proc, key, status="Waived", note=body.reason.strip(), received_at=_now().isoformat())
+    reason = (body.reason or "").strip() or None
+    _update_doc(proc, key, status="Waived", note=reason, received_at=_now().isoformat())
     await _sync_documents(session, claim, proc, user)
     _touch(proc)
-    ev = _audit(session, policy, claim, proc, "ClaimDocumentWaived", _actor(user), {"document": item["label"], "reason": body.reason.strip()})
+    ev = _audit(session, policy, claim, proc, "ClaimDocumentWaived", _actor(user), {"document": item["label"], "reason": reason})
     await session.commit()
     await _publish(request, policy, [ev])
     return await _workspace(session, policy, claim, proc)
@@ -1033,6 +1129,10 @@ async def decide_claim(
     approved_amount = 0.0
     note = ""
 
+    blocked = _underwriting_blocks(await _underwriting(session, claim, proc), body.decision)
+    if blocked:
+        raise HTTPException(409, blocked)
+
     if body.decision in ("Approve", "PartialApprove"):
         a = proc.assessment_json or {}
         inv = proc.investigation_json or {}
@@ -1143,6 +1243,7 @@ async def verify_payees(
     claim, proc = await _get_claim(session, policy_id, claim_id)
     if _cstatus(claim) not in (ClaimStatusEnum.APPROVED, ClaimStatusEnum.PARTIAL_APPROVAL):
         raise HTTPException(409, "Payees are verified once the claim is approved and before it is paid.")
+    await _assert_underwriting_cleared(session, claim, proc)
     if proc.authorized_at:
         raise HTTPException(409, "Disbursement is already authorised — payees can no longer change.")
     payees = [dict(p) for p in (proc.payees_json or [])]
@@ -1190,6 +1291,7 @@ async def authorize_disbursement(
     claim, proc = await _get_claim(session, policy_id, claim_id)
     if _cstatus(claim) not in (ClaimStatusEnum.APPROVED, ClaimStatusEnum.PARTIAL_APPROVAL):
         raise HTTPException(409, "Only an approved claim can be authorised for payment.")
+    await _assert_underwriting_cleared(session, claim, proc)
     if not proc.payees_verified_at:
         raise HTTPException(409, "Verify every payee before authorising the disbursement.")
     if proc.authorized_at:
@@ -1221,6 +1323,7 @@ async def disburse_claim(
     claim, proc = await _get_claim(session, policy_id, claim_id)
     if not proc.authorized_at:
         raise HTTPException(409, "Authorise the disbursement first.")
+    await _assert_underwriting_cleared(session, claim, proc)
     if proc.disbursed_at or _cstatus(claim) == ClaimStatusEnum.SETTLED:
         raise HTTPException(409, "This claim has already been paid.")
     if body.method not in cfg.CLAIM_PAYOUT_METHODS:

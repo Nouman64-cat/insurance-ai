@@ -416,20 +416,106 @@ def _applies(when: str, *, segment: str, cause: Optional[str], claimant_is_nomin
         "accident_or_unnatural": unnatural,
         "claimant_not_nominee": not claimant_is_nominee,
         "contestable": contestable,
+        "if_needed": True,
     }.get(when, True)
 
 
+# Workflow claim category → the event its plan's claims_terms.documents lists documents under.
+_PLAN_EVENT = {"Death": "death", "AccidentalDeath": "death", "Disability": "disability", "Hospitalization": "hospitalization"}
+# What the insurer needs to run any claim, whatever the plan's brochure lists: paying it, paying the right person,
+# and the contestability review.
+_OPERATIONAL_KEYS = ("bank_details", "legal_heir", "prior_treatment")
+
+
+def _slug(label: str) -> str:
+    return "plan_" + "_".join("".join(ch if ch.isalnum() else " " for ch in label.lower()).split())[:60]
+
+
+def _plan_condition(condition: str) -> tuple[str, bool]:
+    """A plan's conditional document → (when, required). The plans word three conditions; anything else is asked
+    only if needed, with the plan's own wording as the reason."""
+    c = (condition or "").lower()
+    if "accident" in c:
+        return "accident_or_unnatural", True
+    if "treatment" in c or "medical" in c:
+        return "illness", True
+    return "if_needed", False
+
+
+def plan_claim_documents(claims_terms: Optional[dict], category: str) -> Optional[list[dict]]:
+    """The claim documents the policy's own plan lists for this kind of claim (insurance_plans.claims_terms), as
+    checklist items, plus the insurer's operational items. None when the plan lists none for it — the caller then
+    keeps the generic insurer_config list."""
+    event = _PLAN_EVENT.get(category)
+    docs = ((claims_terms or {}).get("documents") or {}).get(event) if event else None
+    if not docs or not (docs.get("required") or docs.get("conditional")):
+        return None
+    items = [{"key": _slug(label), "label": label, "required": True, "when": "always"} for label in docs.get("required") or []]
+    for c in docs.get("conditional") or []:
+        when, required = _plan_condition(c.get("condition", ""))
+        items.append({"key": _slug(c["document"]), "label": c["document"], "required": required, "when": when,
+                      "condition": c.get("condition")})
+    operational = [d for d in cfg.CLAIM_DOCUMENTS.get(category, []) if d["key"] in _OPERATIONAL_KEYS]
+    return items + operational
+
+
+# A claim's documents that carry medical evidence go to the Medical Underwriter's claim review; the rest (identity,
+# policy, claim forms, payee and legal papers) to the Financial Underwriter's.
+_MEDICAL_WORDS = ("death certificate", "medical", "hospital", "physician", "post-mortem", "postmortem", "autopsy",
+                  "treatment", "doctor", "diagnos", "disability certificate")
+
+
+def is_medical_document(label: str) -> bool:
+    l = (label or "").lower()
+    return any(w in l for w in _MEDICAL_WORDS)
+
+
+def claim_review_requirements(*, track: str, claims_terms: Optional[dict], documents: list[dict],
+                              contestable: bool, review_submitted: bool) -> tuple[list[dict], list[dict]]:
+    """What a Claim UW review checks, from the claim's own plan rather than the policy's underwriting rules:
+    the claim's documents for this track (as on the claim's checklist), the plan's exclusions and waiting periods,
+    and contestability. Returns (requirements, required_documents) in the specialist workspace's shapes."""
+    medical = track.upper() == "MEDICAL"
+    mine = [d for d in documents if d.get("required") and is_medical_document(d.get("label", "")) == medical]
+    required_documents = [{"type": d["label"], "received": d.get("status") in ("Received", "Waived")} for d in mine]
+    checked = "Completed" if review_submitted else "Required"
+    reqs: list[dict] = []
+    if required_documents:
+        missing = sum(not d["received"] for d in required_documents)
+        reqs.append({"key": "documents", "label": "Claim documents (from the plan)", "section": "documents",
+                     "status": "Received" if not missing else "Outstanding",
+                     "detail": f"{len(required_documents) - missing} of {len(required_documents)} received"})
+    terms = claims_terms or {}
+    exclusions = [e.get("summary") for e in terms.get("exclusions") or [] if isinstance(e, dict) and e.get("summary")]
+    if exclusions:
+        reqs.append({"key": "claim_exclusions", "label": "Plan exclusions to check", "section": "overview", "status": checked,
+                     "detail": " · ".join(exclusions)})
+    waiting = terms.get("waiting_periods")
+    if waiting:
+        items = waiting if isinstance(waiting, list) else [waiting]
+        text = " · ".join((w.get("summary") if isinstance(w, dict) else str(w)) or "" for w in items).strip(" ·")
+        reqs.append({"key": "claim_waiting_periods", "label": "Waiting periods", "section": "overview", "status": checked,
+                     "detail": text or None})
+    if contestable:
+        reqs.append({"key": "claim_contestability", "label": "Contestability — proposal answers vs. history", "section": "overview",
+                     "status": checked, "detail": "The event is within the contestability period: check the proposal's "
+                     + ("medical declarations against the medical evidence." if medical else "income, occupation and existing-cover declarations.")})
+    return reqs, required_documents
+
+
 def build_checklist(*, category: str, segment: str, cause: Optional[str], claimant_is_nominee: bool,
-                    contestable: bool, now: Optional[datetime] = None, product_rules: Optional[dict] = None) -> list[dict]:
-    """The Adamjee-style document list for this claim: the type's items filtered by what
-    this particular claim needs (individual vs group form, illness vs accident, whether
-    the claimant is the named nominee, contestability)."""
+                    contestable: bool, now: Optional[datetime] = None, product_rules: Optional[dict] = None,
+                    claims_terms: Optional[dict] = None) -> list[dict]:
+    """The document list for this claim: the documents its plan lists for this kind of claim (claims_terms), or the
+    insurer's generic list when the plan has none, filtered by what this particular claim needs (individual vs group
+    form, illness vs accident, whether the claimant is the named nominee, contestability)."""
     now = now or datetime.utcnow()
     out, seen = [], set()
     # The product's own claim section wins over a default item with the same key.
     extra = list(((product_rules or {}).get("extra_documents") or {}).get(category, []))
     extra_keys = {d["key"] for d in extra}
-    base = [d for d in cfg.CLAIM_DOCUMENTS.get(category, []) if d["key"] not in extra_keys]
+    base = [d for d in (plan_claim_documents(claims_terms, category) or cfg.CLAIM_DOCUMENTS.get(category, []))
+            if d["key"] not in extra_keys]
     core = [d for d in base if d["key"] in ("policy_doc", "bank_details")]
     ordered = [d for d in base if d not in core] + extra + core
     for d in ordered:
@@ -440,7 +526,7 @@ def build_checklist(*, category: str, segment: str, cause: Optional[str], claima
         seen.add(d["key"])
         out.append({
             "key": d["key"], "label": d["label"], "required": bool(d["required"]), "when": d["when"],
-            "reason": None if d["when"] == "always" else {
+            "reason": d.get("condition") if d.get("condition") else None if d["when"] == "always" else {
                 "illness": "Death from illness", "accident_or_unnatural": "Accident / unnatural cause",
                 "claimant_not_nominee": "Claimant is not the named nominee", "contestable": "Contestable period",
                 "individual": "Individual / family policy", "group": "Group scheme"}.get(d["when"]),

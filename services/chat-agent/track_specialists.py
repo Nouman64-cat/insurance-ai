@@ -117,7 +117,17 @@ run it with confirm=true only after the user confirms. The compile produces a re
 decline or referral is never overridden — and approving the application is a separate, explicit step. You do not
 do the specialists' work (e-application answers, medical results, AI financial runs, their decisions)."""
 
-PROMPTS = {"medical_underwriting": _MEDICAL, "financial_underwriting": _FINANCIAL, "final_underwriting": _FINAL_PROMPT}
+# A Medical or Financial Underwriter's assistant is their whole chat (specialist_router): nothing outside the track.
+_TRACK_ONLY = """You help ONLY with this {track} review work on the applications assigned to this user. For anything
+else — customer acquisition or onboarding, leads, proposals, other underwriting tracks, final approval, policy
+issuance, premiums, claims, commissions, users, rules, other pages or general questions — do not offer help, do not
+say you can do it and do not describe how it is done: reply in one or two sentences that you can only help with
+{track} underwriting here, and offer a {track} review action instead (e.g. show my reviews). Never open a page
+outside the Underwriting workspace."""
+
+PROMPTS = {"medical_underwriting": _MEDICAL + "\n" + _TRACK_ONLY.format(track="medical"),
+           "financial_underwriting": _FINANCIAL + "\n" + _TRACK_ONLY.format(track="financial"),
+           "final_underwriting": _FINAL_PROMPT}
 SCOPES = {"medical_underwriting": MEDICAL_TOOLS, "financial_underwriting": FINANCIAL_TOOLS, "final_underwriting": FINAL_TOOLS}
 SERVICES = {
     "medical_underwriting": usage.SERVICE_MEDICAL_UNDERWRITING_SPECIALIST,
@@ -136,7 +146,7 @@ def specialist_prompt(kind: str, locale: str) -> str:
 def _node(kind: str):
     async def agent_node(state, config: RunnableConfig):
         from graph import _llm, _complete_agent_turn
-        role, platform = state.get("user_role") or "Admin", state.get("platform") or "web"
+        role, platform = state.get("user_role") or "", state.get("platform") or "web"
         allowed = frozenset(t.name for t in get_tools_for_role(role, platform) if t.name in SCOPES[kind])
         cfg = await providers.resolve()
         llm = _llm(cfg, role, platform, DOMAINS, tool_scope=allowed)

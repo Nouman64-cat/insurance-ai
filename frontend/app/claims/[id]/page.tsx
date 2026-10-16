@@ -11,6 +11,7 @@ import {
   Claim, ClaimStatus,
 } from "@/app/services/claims";
 import { tx } from "@/lib/i18n/tx";
+import { getClaimWorkspace, type ClaimWorkspace } from "@/app/services/postIssuance";
 import ClaimWorkspaceHeader from "@/components/claims/ClaimWorkspaceHeader";
 import { ClaimJourneyTimeline } from "@/components/claims/ClaimJourneyTimeline";
 
@@ -129,6 +130,7 @@ export default function ClaimDetailPage() {
   const claimId = params.id as string;
 
   const [claim, setClaim] = useState<Claim | null>(null);
+  const [workspace, setWorkspace] = useState<ClaimWorkspace | null>(null);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -193,6 +195,9 @@ export default function ClaimDetailPage() {
     try {
       const data = await getClaimDetail(claimId);
       setClaim(data);
+      // A claim run on the claims-management workflow has its own seven steps (underwriting review sits at the
+      // decision, after assessment) — show those rather than the register's status path. 404: not on the workflow.
+      setWorkspace(data.policy_id ? await getClaimWorkspace(data.policy_id, claimId).catch(() => null) : null);
       setAdjAmount(data.submitted_amount);
       setPayAmount(data.approved_amount || data.submitted_amount);
       const opts = VALID_NEXT[data.status] || [];
@@ -397,11 +402,15 @@ export default function ClaimDetailPage() {
 
   const isClosedStatus = ["Paid", "Approved", "Rejected", "Declined", "Voided", "Closed", "Settled"].includes(claim.status);
   const isReUnderwriting = claim.status === "Re-Underwriting Required";
-  const displaySteps = isReUnderwriting
-    ? ["New", "Triaged", "Re-Underwriting Review", "Under Investigation", "Approved", "Settled"]
-    : WORKFLOW_STEPS;
+  const flowStages = workspace?.stages ?? null;
+  const flowCurrent = flowStages ? flowStages.findIndex((s) => !["complete", "skipped"].includes(s.state)) : -1;
+  const displaySteps: string[] = flowStages
+    ? flowStages.map((s) => s.title)
+    : isReUnderwriting ? ["New", "Triaged", "Re-Underwriting Review", "Under Investigation", "Approved", "Settled"] : WORKFLOW_STEPS;
   const currentStepName = isReUnderwriting ? "Re-Underwriting Review" : claim.status;
-  const stepIdx = displaySteps.indexOf(currentStepName as any);
+  // On the workflow, the current step is its first open one (all done → past the end, everything ticked).
+  const stepIdx = flowStages ? (flowCurrent < 0 ? flowStages.length : flowCurrent) : displaySteps.indexOf(currentStepName as any);
+  const stepNote = flowStages && flowCurrent >= 0 ? `${tx(flowStages[flowCurrent].label)}${flowStages[flowCurrent].detail ? ` — ${tx(flowStages[flowCurrent].detail)}` : ""}` : null;
   const nextOpts = VALID_NEXT[claim.status] || [];
   const hasDocs = (claim.artifacts?.length ?? 0) > 0;
   const daysOpen = Math.max(0, Math.floor((Date.now() - new Date(claim.reported_date).getTime()) / 86_400_000));
@@ -605,6 +614,7 @@ export default function ClaimDetailPage() {
                     })}
                   </ol>
                   {stepIdx < 0 && <p className="mt-3 text-xs text-slate-500">{tx("This claim is outside the standard path.")}</p>}
+                  {stepNote && <p className="mt-3 text-xs text-slate-600"><b>{tx(displaySteps[stepIdx])}:</b> {stepNote}</p>}
                   <div className={`mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3 ${guide.done ? "bg-slate-50" : "bg-blue-50"}`}>
                     <div className="min-w-0">
                       <p className={`text-[11px] font-bold uppercase tracking-wider ${guide.done ? "text-slate-500" : "text-blue-600"}`}>{guide.done ? tx("All done") : tx("Next step")}</p>

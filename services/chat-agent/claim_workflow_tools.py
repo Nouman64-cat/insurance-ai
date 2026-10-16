@@ -142,6 +142,16 @@ def _summary(ws: dict) -> str:
             line += " — " + "; ".join(failed[:3])
         lines.append(line)
 
+    terms = ws.get("plan_terms") or {}
+    if terms.get("plan"):
+        bits = [f"documents per the plan's claim terms" if terms.get("from_plan") else "the insurer's standard checklist (the plan lists no claim terms)"]
+        if terms.get("exclusions"):
+            bits.append(f"{len(terms['exclusions'])} exclusion(s): " + "; ".join(e.rstrip(".") for e in terms["exclusions"][:3])
+                        + ("…" if len(terms["exclusions"]) > 3 else ""))
+        if terms.get("waiting_periods"):
+            bits.append("waiting periods: " + "; ".join(terms["waiting_periods"][:2]))
+        lines.append(f"Plan **{terms['plan']}** — " + " · ".join(bits))
+
     docs = ws.get("documents") or {}
     prog = docs.get("progress") or {}
     if prog.get("required"):
@@ -158,6 +168,11 @@ def _summary(ws: dict) -> str:
     assessed = (ws.get("assessment") or {}).get("result") or {}
     if assessed:
         lines.append(f"Assessed benefit payable: **{_pkr(assessed.get('payable'))}**")
+
+    uw = ws.get("underwriting") or {}
+    if uw.get("state") not in (None, "not_required"):
+        icon = {"cleared": "✅", "declined": "⛔"}.get(uw["state"], "🧾")
+        lines.append(f"{icon} Underwriting{' (' + uw['case_number'] + ')' if uw.get('case_number') else ''}: {uw.get('message')}")
 
     dec = ws.get("decision") or {}
     if dec.get("decision"):
@@ -213,10 +228,15 @@ def _actions(ws: dict, policy_id: str) -> list[dict]:
                     "payload": json.dumps({"claim_id": ws["claim"]["id"], "claim_number": ref, "policy_id": policy_id})})
     if can.get("assess"):
         out.append(_chip("Assess the benefit", f"Assess the benefit on claim {ref}"))
+    uw = ws.get("underwriting") or {}
+    if can.get("refer_underwriting") and uw.get("state") == "not_referred":
+        # A contestable claim goes to the Underwriting department before it can be approved.
+        out.append(_chip("Refer to Underwriting", f"Refer claim {ref} to underwriting"))
     if can.get("decide"):
         if dec.get("requires_manager"):
             out.append(_chip("Refer to manager", f"Decide claim {ref}: Refer to a claims manager"))
-        out.append(_chip(f"Approve {_pkr(payable)}" if payable else "Approve", f"Decide claim {ref}: Approve"))
+        if can.get("approve", True):
+            out.append(_chip(f"Approve {_pkr(payable)}" if payable else "Approve", f"Decide claim {ref}: Approve"))
         out.append(_chip("Request information", f"Decide claim {ref}: RequestInfo"))
         out.append(_chip("Reject", f"Decide claim {ref}: Reject"))
     if can.get("verify_payees"):
@@ -459,10 +479,10 @@ async def _update_claim_document(args: dict, ctx: Ctx) -> dict:
         open_items = [d for d in (ws.get("documents") or {}).get("items") or [] if d.get("status") not in ("Waived",)]
         raise ChoiceNeeded(f"Which document on {ref} should I {action}?",
                            [_chip(d["label"], f"{action.capitalize()} the {d['label']} on claim {ref}") for d in open_items[:6]])
-    if not reason:
+    if not reason and action != "waive":    # a waiver needs no reason; sending a document back does
         return {"success": False, "needs_user_input": True, "error_code": "missing_details",
-                "error": f"Say why the {doc['label']} is being {'waived' if action == 'waive' else 'sent back'} — it goes on the claim file."}
-    ws = await _post(ctx, claim, f"/documents/{doc['key']}/{action}", {"reason": reason})
+                "error": f"Say why the {doc['label']} is being sent back — it goes on the claim file."}
+    ws = await _post(ctx, claim, f"/documents/{doc['key']}/{action}", {"reason": reason} if reason else {})
     verb = "Waived" if action == "waive" else "Sent back"
     return _result(ws, str(claim["policy_id"]), f"{verb} **{doc['label']}** on {ref}.", "update_claim_document")
 

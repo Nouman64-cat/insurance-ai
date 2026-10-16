@@ -3,6 +3,7 @@
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { NavigationProgress } from "@/components/NavigationProgress";
+import AutomationChatLauncher from "@/components/AutomationChatLauncher";
 import AppHeader from "@/components/satellite/AppHeader";
 import { tx } from "@/lib/i18n/tx";
 
@@ -48,6 +49,8 @@ export default function ClaimsShell({ children }: { children: ReactNode }) {
         sectionsLabel={tx("Claims Manager sections")}
       />
       <main className="relative flex-1 overflow-auto bg-slate-50">{children}</main>
+      {/* The Claims Manager's Copilot: same chat as the portal, with the claims tools their role allows. */}
+      <AutomationChatLauncher />
     </div>
   );
 }

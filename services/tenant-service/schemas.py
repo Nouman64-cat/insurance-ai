@@ -1424,6 +1424,7 @@ class InsurancePlanRead(BaseModel):
     required_documents: List[str]
 
     surrender_terms: Optional[dict] = None
+    claims_terms: Optional[dict] = None
     policy_wording_filename: Optional[str] = None
     policy_wording_uploaded_at: Optional[datetime] = None
 
