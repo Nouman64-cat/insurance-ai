@@ -1,5 +1,6 @@
 "use client";
 
+import AutomationChatLauncher from "@/components/AutomationChatLauncher";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
@@ -8,7 +9,7 @@ import { NavigationProgress } from "@/components/NavigationProgress";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import { tx } from "@/lib/i18n/tx";
 import { useRecordHighlighter } from "@/lib/useHighlightTarget";
-import { AUTOMATION_URL, PORTAL_URL, portalUrl } from "@/lib/appLinks";
+import { PORTAL_URL, portalUrl } from "@/lib/appLinks";
 import { signOut } from "@/lib/sso";
 import { trackForRole } from "./SpecialistWorkspace";
 import { useWorkbenchUser } from "./SsoGate";
@@ -86,6 +87,7 @@ export default function WorkbenchShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-slate-50">
       <NavigationProgress />
+      <AutomationChatLauncher />
       <header className="shrink-0 border-b border-slate-200 bg-white">
         <div className="flex h-14 items-center gap-6 px-5">
           <Link href="/underwriting" className="flex flex-shrink-0 items-center gap-2.5">
@@ -111,17 +113,6 @@ export default function WorkbenchShell({ children }: { children: ReactNode }) {
           <div className="ms-auto flex items-center gap-2">
             <LanguageSwitcher />
             <span className="mx-1 hidden h-6 w-px bg-slate-200 md:block" aria-hidden="true" />
-            <a
-              href={AUTOMATION_URL}
-              target="_blank"
-              rel="noopener"
-              className="hidden items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 md:inline-flex"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
-                <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" />
-              </svg>
-              {tx("Automation")}
-            </a>
             <a
               href={track ? portalUrl("/profile") : portalHome(user.role_name)}
               title={PORTAL_URL}

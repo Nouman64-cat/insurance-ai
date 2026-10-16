@@ -1,6 +1,7 @@
 """The conversational agent graph.
 
     START -> coordinator (agent) -> general_agent | commission_agent | claims_agent | underwriting_agent | servicing_agent | group_agent
+                                    | medical_underwriting_agent | financial_underwriting_agent | final_underwriting_agent
           -> (tool call?) -> permission_gate -> [interrupt() if needed] -> coordinator
           -> (no tool call) -> END
 
@@ -67,6 +68,7 @@ from commission_specialist import commission_agent_node
 from claims_specialist import claims_agent_node
 from underwriting_specialist import underwriting_agent_node
 from servicing_specialist import servicing_agent_node
+from track_specialists import final_underwriting_agent_node, financial_underwriting_agent_node, medical_underwriting_agent_node
 from group_specialist import group_agent_node
 from specialist_router import coordinator_node, route_coordinator
 
@@ -2901,16 +2903,22 @@ _graph_builder.add_node("commission_agent", commission_agent_node)
 _graph_builder.add_node("claims_agent", claims_agent_node)
 _graph_builder.add_node("underwriting_agent", underwriting_agent_node)
 _graph_builder.add_node("servicing_agent", servicing_agent_node)
+_graph_builder.add_node("medical_underwriting_agent", medical_underwriting_agent_node)
+_graph_builder.add_node("financial_underwriting_agent", financial_underwriting_agent_node)
+_graph_builder.add_node("final_underwriting_agent", final_underwriting_agent_node)
 _graph_builder.add_node("group_agent", group_agent_node)
 _graph_builder.add_node("permission_gate", permission_gate)
 _graph_builder.add_node("client_executor", client_executor_node)
 _graph_builder.add_edge(START, "agent")
-_graph_builder.add_conditional_edges("agent", route_coordinator, {"general_agent": "general_agent", "commission_agent": "commission_agent", "claims_agent": "claims_agent", "underwriting_agent": "underwriting_agent", "servicing_agent": "servicing_agent", "group_agent": "group_agent"})
+_graph_builder.add_conditional_edges("agent", route_coordinator, {"general_agent": "general_agent", "commission_agent": "commission_agent", "claims_agent": "claims_agent", "underwriting_agent": "underwriting_agent", "servicing_agent": "servicing_agent", "group_agent": "group_agent", "medical_underwriting_agent": "medical_underwriting_agent", "financial_underwriting_agent": "financial_underwriting_agent", "final_underwriting_agent": "final_underwriting_agent"})
 _graph_builder.add_conditional_edges("general_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
 _graph_builder.add_conditional_edges("commission_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
 _graph_builder.add_conditional_edges("claims_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
 _graph_builder.add_conditional_edges("underwriting_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
 _graph_builder.add_conditional_edges("servicing_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
+_graph_builder.add_conditional_edges("medical_underwriting_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
+_graph_builder.add_conditional_edges("financial_underwriting_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
+_graph_builder.add_conditional_edges("final_underwriting_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
 _graph_builder.add_conditional_edges("group_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
 # permission_gate routes itself via Command (agent | j_intake | j_resume) —
 # no static outgoing edge, so Command is the single source of truth.

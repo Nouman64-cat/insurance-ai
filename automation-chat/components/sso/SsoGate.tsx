@@ -40,7 +40,11 @@ export default function SsoGate({ children }: { children: ReactNode }) {
         return;
       }
       if (cancelled) return;
-      if (res.status === 401) { clearLocal(); toPortalLogin(); return; }
+      if (res.status === 401) {
+        clearLocal();
+        if (window.parent !== window) { tokenRef.current = null; setReady(false); setProblem("Please sign in to the portal, then reopen chat."); return; }
+        toPortalLogin(); return;
+      }
       if (!res.ok) { if (initial) setProblem(t("sso.notResponding")); return; }
 
       const { token, user } = await res.json();

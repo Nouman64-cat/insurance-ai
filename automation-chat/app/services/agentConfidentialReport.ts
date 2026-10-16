@@ -101,6 +101,13 @@ export interface ACRRequest {
 }
 
 /** ACRs the signed-in user has been asked to file and hasn't submitted yet, newest first. */
+/** Underwriter / Admin: bypass the ACR when the agent's report never arrives. A reason is required (5+ characters). */
+export async function waiveACR(caseId: string, reason: string): Promise<AgentConfidentialReport> {
+  const tid = tenantId();
+  const res = await api.post(`/tenants/${tid}/cases/${caseId}/acr/waive`, { reason });
+  return res.data;
+}
+
 export async function listMyACRRequests(): Promise<ACRRequest[]> {
   const tid = tenantId();
   const res = await api.get<ACRRequest[]>(`/tenants/${tid}/acr-requests`);

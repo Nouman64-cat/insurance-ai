@@ -659,8 +659,10 @@ async def ai_review_medical_reports(
     if order is None or order.status in (MedicalExamStatusEnum.NOT_ASSESSED, MedicalExamStatusEnum.NOT_REQUIRED):
         raise HTTPException(409, "No medical examination was ordered for this case.")
     reports = [a for a in await _uploaded_reports(session, order) if a.status == "Accepted"]
-    if not reports:
-        raise HTTPException(409, "The customer has not uploaded any processed reports yet.")
+    required_codes = {t.get("code") for t in (order.required_tests or [])}
+    processed_codes = {a.document_type.split(": ", 1)[-1] for a in reports}
+    if not required_codes or required_codes - processed_codes:
+        raise HTTPException(409, "Submit readable reports for every required test before running AI medical underwriting.")
     tests = [t for t in (order.required_tests or []) if test_code in (None, t.get("code"))]
     if not tests:
         raise HTTPException(400, "That test is not part of this examination.")
@@ -708,18 +710,18 @@ async def record_medical_result(
         raise HTTPException(status_code=409, detail="This medical was waived — reinstate it before recording results.")
 
     reports = await _uploaded_reports(session, order)
+    required = {t.get("code") for t in (order.required_tests or [])}
+    processed = {a.document_type.split(": ", 1)[-1] for a in reports if a.status == "Accepted"}
+    if not required or required - processed:
+        raise HTTPException(409, "Submit readable reports for every required test before recording the medical review.")
     if reports:
-        required = {t.get("code") for t in (order.required_tests or [])}
-        processed = {a.document_type.split(": ", 1)[-1] for a in reports if a.status == "Accepted"}
-        if required - processed:
-            raise HTTPException(409, "Wait for readable reports for every required test before recording the medical review.")
         if body.artifact_id and body.artifact_id not in {a.id for a in reports if a.status == "Accepted"}:
             raise HTTPException(400, "Choose a processed report uploaded for this examination.")
 
     verdict = medical_findings.evaluate(body.results)
 
     now = datetime.utcnow()
-    order.results_json = body.results
+    order.results_json = {**body.results, "ai_review": (order.results_json or {}).get("ai_review", {})}
     order.outcome = MedicalExamOutcomeEnum(verdict["outcome"])
     order.abnormal_findings = verdict["abnormal_findings"]
     order.suggested_loading_pct = verdict["suggested_loading_pct"]

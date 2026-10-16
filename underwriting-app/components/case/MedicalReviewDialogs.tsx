@@ -393,6 +393,7 @@ export function MedicalResultModal({
   onClose: () => void;
   onSubmit: (results: Record<string, string>) => void;
 }>) {
+  const [resultFilter, setResultFilter] = useState("all");
   const [values, setValues] = useState<Record<string, string>>({});
   const filled = Object.values(values).filter((v) => v.trim() !== "").length;
   const reports = (order.reports ?? []).filter(usableReport);
@@ -476,54 +477,42 @@ export function MedicalResultModal({
     const state = aiState[code];
     const read = aiRead[code];
     if (state === "waiting")
-      return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-slate-500">{tx("Queued for AI")}</span>;
+      return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-slate-500">{tx("Queued for AI")}</span>;
     if (state === "reading")
-      return <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-blue-700"><AiSpinner className="h-2.5 w-2.5" />{tx("AI reading…")}</span>;
+      return <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-blue-700"><AiSpinner className="h-2.5 w-2.5" />{tx("AI reading…")}</span>;
     if (state === "failed")
-      return <button type="button" onClick={() => void readTest(code, true)} className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-slate-700 hover:bg-slate-200">{tx("AI failed · Retry")}</button>;
+      return <button type="button" onClick={() => void readTest(code, true)} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-slate-700 hover:bg-slate-200">{tx("AI failed · Retry")}</button>;
     if (state === "done" && edited.has(code))
-      return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-slate-600">{tx("Edited by you")}</span>;
+      return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-slate-600">{tx("Edited by you")}</span>;
     if (state === "done" && read?.readable)
-      return <span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal ${read.abnormal ? "bg-blue-100 text-blue-800" : "bg-blue-600 text-white"}`}>{read.abnormal ? "⚠ " + tx("AI · outside range") : "✨ " + tx("AI-filled")}</span>;
+      return <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal ${read.abnormal ? "bg-amber-50 text-amber-700 ring-1 ring-amber-200" : "bg-emerald-50 text-emerald-700"}`}>{read.abnormal ? tx("Outside range · AI") : tx("AI extracted")}</span>;
     if (state === "done")
-      return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-slate-500">{tx("Enter manually")}</span>;
+      return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-slate-500">{tx("Enter manually")}</span>;
     return null;
   };
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm p-3 sm:p-6"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden"
+        role="dialog" aria-modal="true" aria-labelledby="medical-results-title"
+        className="flex max-h-[92dvh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-white/60 bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="bg-blue-600 px-5 py-3">
-          <p className="text-white/80 text-[11px] font-semibold uppercase tracking-wider">
-            {readable.length > 0 ? "✨ " + tx("AI-assisted review") : tx("Panel Clinic Report")}
-          </p>
-          <h2 className="text-white text-lg font-bold">
-            {tx("Record Medical Results")}
-          </h2>
-          <p className="text-white/80 text-xs">
-            {order.reports_submitted
-              ? tx("Reports submitted by the customer")
-              : (order.clinic?.name ?? tx("Panel clinic"))}
-            {order.completed_at
-              ? " " +
-                tx("· reported {0}", {
-                  0: displayDate(order.completed_at),
-                })
-              : ""}
-          </p>
+        <div className="flex shrink-0 items-start justify-between gap-5 border-b border-slate-100 px-6 py-5 sm:px-8">
+          <div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-600">{tx("Clinical review")} · {tx("AI assisted")}</p>
+            <h2 id="medical-results-title" className="mt-1.5 text-2xl font-semibold tracking-tight text-slate-900">{tx("Record Medical Results")}</h2>
+            <p className="mt-2 text-xs text-slate-500">{order.clinic?.name ?? tx("Panel clinic")} · {tests.length} {tx("examinations")}{order.completed_at ? ` · ${displayDate(order.completed_at)}` : ""}</p>
+          </div><button type="button" onClick={onClose} aria-label={tx("Close medical results")} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xl text-slate-500 transition hover:bg-slate-200">×</button>
         </div>
 
         {readable.length > 0 && (
           <div
             role="status"
             aria-live="polite"
-            className={`border-b px-5 py-3 ${aiRunning ? "border-blue-100 bg-blue-50" : "border-slate-100 bg-slate-50"}`}
+            className={`shrink-0 border-b px-6 py-4 sm:px-8 ${aiRunning ? "border-blue-100 bg-blue-50" : "border-slate-100 bg-slate-50"}`}
           >
             {aiRunning || !aiStarted ? (
               <>
@@ -581,27 +570,31 @@ export function MedicalResultModal({
           </div>
         )}
 
-        <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto">
-          {tests.map((t) => {
+        <div className="flex shrink-0 flex-wrap gap-2 border-b border-slate-100 bg-white px-6 py-3 sm:px-8">
+          {[{id:"all",label:"All results",count:tests.length},{id:"flagged",label:"Outside range",count:aiFlagged},{id:"empty",label:"Not entered",count:tests.length-filled}].map(filter => <button type="button" key={filter.id} aria-pressed={resultFilter === filter.id} onClick={() => setResultFilter(filter.id)} className={`rounded-lg px-3 py-2 text-xs font-medium transition ${resultFilter === filter.id ? "bg-slate-900 text-white" : "bg-slate-50 text-slate-500 hover:bg-slate-100"}`}>{tx(filter.label)} <span className="ml-1.5 opacity-60">{filter.count}</span></button>)}
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/80 p-5 sm:p-6">
+          <div className="grid items-start gap-4 md:grid-cols-2">
+          {tests.filter(t => resultFilter === "all" || (resultFilter === "flagged" ? aiRead[t.code]?.readable && aiRead[t.code]?.abnormal : !values[t.code]?.trim())).map((t) => {
             const state = aiState[t.code];
             const read = aiRead[t.code];
             const pending = state === "waiting" || state === "reading";
             return (
-              <div key={t.code}>
-                <div className="flex items-center justify-between gap-2">
+              <div key={t.code} className={`min-w-0 rounded-2xl border bg-white p-5 shadow-sm ${read?.readable && read.abnormal && !edited.has(t.code) ? "border-amber-200" : "border-slate-200"}`}>
+                <div className="flex flex-wrap items-start justify-between gap-2">
                   <label
                     htmlFor={`med-result-${t.code}`}
-                    className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1.5"
+                    className="text-sm font-semibold leading-5 text-slate-800 flex flex-1 flex-col items-start gap-1"
                   >
                     {t.name}
-                    <span className="text-[9px] font-mono text-slate-400 normal-case">
+                    <span className="text-[10px] font-mono text-slate-400 normal-case">
                       {t.code}
                     </span>
                   </label>
                   {fieldBadge(t.code)}
                 </div>
                 {reports.some((r) => r.test_code === t.code) && (
-                  <div className="mt-1 flex flex-wrap gap-1.5">
+                  <div className="mt-4 flex flex-wrap gap-1.5">
                     {reports
                       .filter((r) => r.test_code === t.code)
                       .map((r) => (
@@ -610,9 +603,9 @@ export function MedicalResultModal({
                           type="button"
                           onClick={() => void openReport(r.id)}
                           title={r.file_name}
-                          className="max-w-full truncate rounded-md border border-blue-100 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 hover:bg-blue-100"
+                          className="max-w-full truncate rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[10px] font-medium text-slate-500 hover:border-blue-200 hover:text-blue-700"
                         >
-                          📄 {r.file_name}
+                          {r.file_name} ↗
                           {r.status !== "Accepted" && (
                             <span className="ml-1 text-blue-700">
                               ({tx("processing")})
@@ -622,7 +615,7 @@ export function MedicalResultModal({
                       ))}
                   </div>
                 )}
-                <div className="relative mt-1">
+                <div className="relative mt-4">
                   <input
                     id={`med-result-${t.code}`}
                     value={values[t.code] ?? ""}
@@ -638,13 +631,13 @@ export function MedicalResultModal({
                           ? tx("Waiting for AI…")
                           : (QUALITATIVE_HINTS[t.code] ?? tx("Reported value"))
                     }
-                    className={`w-full text-sm border rounded-lg px-3 py-2 transition-all duration-500 ${
+                    className={`w-full text-base font-medium text-slate-900 border rounded-xl px-3.5 py-3 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-100 ${
                       pending
-                        ? "border-blue-200 bg-blue-50/60 animate-pulse pr-9"
+                        ? "border-slate-200 bg-slate-50 pr-9"
                         : justFilled.has(t.code)
                           ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200"
                           : read?.readable && read.abnormal && !edited.has(t.code)
-                            ? "border-blue-300 bg-blue-50/50"
+                            ? "border-amber-200 bg-amber-50/40"
                             : "border-slate-200"
                     }`}
                   />
@@ -654,19 +647,16 @@ export function MedicalResultModal({
                     </span>
                   )}
                 </div>
-                {state === "done" && read && (
-                  <p
-                    title={read.evidence ?? undefined}
-                    className={`mt-1 line-clamp-2 text-[10px] ${!read.readable ? "text-slate-400" : read.abnormal ? "text-blue-700" : "text-slate-500"}`}
-                  >
-                    {!read.readable
-                      ? tx("AI could not find this result in the report — enter it manually.")
-                      : `${tx("From the report")}: “${read.evidence ?? read.value}”`}
-                  </p>
-                )}
+                {state === "done" && read && (read.readable ? <details className="mt-3 rounded-lg bg-slate-50 px-3 py-2.5">
+                  <summary className="cursor-pointer text-[11px] font-medium text-slate-500">{tx("View source evidence")}</summary>
+                  <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-slate-500">{read.evidence ?? read.value}</p>
+                </details> : <p className="mt-3 text-xs leading-5 text-slate-400">{tx("AI could not find this result in the report — enter it manually.")}</p>)}
+
               </div>
             );
           })}
+          </div>
+          {((resultFilter === "flagged" && aiFlagged === 0) || (resultFilter === "empty" && filled === tests.length)) && <p className="py-10 text-center text-sm text-slate-500">{tx("No results in this view.")}</p>}
           {openError && (
             <p role="alert" className="text-[11px] text-slate-700">
               {openError}
@@ -677,14 +667,14 @@ export function MedicalResultModal({
               {tx("Save is available once at least one result is filled in. The AI could not read any value from the reports yet, so type the results in manually.")}
             </p>
           )}
-          <p className="text-[11px] text-slate-400 pt-1">
+          <p className="mt-5 rounded-xl border border-slate-200 bg-white p-4 text-xs leading-5 text-slate-500">
             {tx(
               "Leave a test blank if the lab has not reported it yet — it will be listed as outstanding rather than rated. Values are graded against the underwriting manual on save.",
             )}
           </p>
         </div>
 
-        <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+        <div className="shrink-0 px-6 py-4 sm:px-8 bg-white border-t border-slate-200 flex flex-wrap gap-3 items-center justify-between">
           <span className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium">
             {aiRunning ? (
               <>
@@ -700,7 +690,7 @@ export function MedicalResultModal({
           <div className="flex gap-2">
             <button
               onClick={onClose}
-              className="px-3 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700"
+              className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
             >
               {tx("Cancel")}
             </button>
@@ -708,7 +698,7 @@ export function MedicalResultModal({
               onClick={submit}
               disabled={busy || filled === 0 || aiRunning}
               title={aiRunning ? tx("Wait for the AI to finish reading the reports") : filled === 0 ? tx("Enter at least one result to save") : undefined}
-              className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40"
+              className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {busy ? tx("Saving…") : tx("Save & rate")}
             </button>

@@ -4,6 +4,7 @@ import { displayDateTime } from '../../lib/dateDisplay';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { PORTAL_ORIGIN } from "@/lib/portal";
+import api from "@/app/services/api";
 import { fmtCoverage } from "@/lib/mock-data";
 import type { ChecklistItem, RequirementsChecklist } from "@/lib/agent/types";
 import { useConfirm } from "@/components/ConfirmDialog";
@@ -11,7 +12,7 @@ import { DocumentUploadDialog } from "@/components/agent/DocumentUploadDialog";
 import MedicalReportReviewModal from "@/components/agent/MedicalReportReviewModal";
 import VerifyEAppModal from "@/components/entities/VerifyEAppModal";
 import { IPPModal } from "@/components/entities/IPPModal";
-import { getACR, requestACR } from "@/app/services/agentConfidentialReport";
+import { getACR, requestACR, waiveACR } from "@/app/services/agentConfidentialReport";
 import { getEApplication, inviteEApplication, type EApplication } from "@/app/services/eApplication";
 import { runCaseCompliance, clearComplianceCheck } from "@/app/services/cases";
 import { getInsuranceHistory, runInsuranceHistory, clearInsuranceHistory, type InsuranceHistory } from "@/app/services/insuranceHistory";
@@ -251,11 +252,15 @@ function EAppStep({ checklist, item, changed, report }: StepProps) {
 
 // ── 3 · Agent's Confidential Report ─────────────────────────────────────────
 
-function AcrStep({ checklist, item, changed }: StepProps) {
-  // The report is the agent's own, filed from the agent app, so there is no form here: this step asks for it and waits.
+function AcrStep({ checklist, item, changed, report }: StepProps) {
+  // The report is the agent's own, filed from the agent app, so there is no form here: this step asks for it and waits —
+  // or an underwriter waives it, with a reason, when the report isn't coming.
   const [asked, setAsked] = useState<{ text: string } | null>(null);
   const [requestedAt, setRequestedAt] = useState<string | null>(null);
   const { busy, error, run } = useAction();
+  const waiver = useAction();
+  const [waiving, setWaiving] = useState(false);
+  const [reason, setReason] = useState("");
 
   const load = useCallback(async () => {
     try { setRequestedAt((await getACR(checklist.caseId)).requested_at ?? null); } catch { /* none yet */ }
@@ -273,15 +278,39 @@ function AcrStep({ checklist, item, changed }: StepProps) {
     await load();
   }, "Couldn't send the request.");
 
+  const waive = () => waiver.run(async () => {
+    await waiveACR(checklist.caseId, reason.trim());
+    report("acr", { tone: "warn", title: "ACR waived", lines: [`Reason: ${reason.trim()}`, "Recorded against your name. If the agent files the report later, it is still kept."] });
+    setWaiving(false);
+    await changed();
+  }, "Couldn't waive the ACR.");
+
   return (
     <div>
       <Waiting>
         {item.status === "Draft" ? "The agent has started the report in the app…" : "Waiting for the agent to submit the report from the agent app…"}
       </Waiting>
       {asked && <p className="mt-2 rounded-lg bg-blue-50 px-2.5 py-1.5 text-[12px] font-medium text-blue-800">{asked.text}</p>}
-      <div className="mt-3">
-        <Btn kind="secondary" onClick={ask} busy={busy}>{requestedAt || asked ? "Remind agent" : "Request from agent"}</Btn>
-      </div>
+      {waiving ? (
+        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+          <p className="text-[12px] font-semibold text-amber-900">Waive the Agent's Confidential Report</p>
+          <p className="mt-0.5 text-[12px] text-amber-800">Use this only when the report isn't coming. Your reason and name are recorded.</p>
+          <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={500} autoFocus
+            placeholder="Why is the ACR being waived? e.g. Agent has left; the applicant was verified in branch."
+            className="mt-2 w-full rounded-lg border border-amber-200 bg-white px-2.5 py-2 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-100" />
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Btn kind="warn" onClick={waive} busy={waiver.busy} disabled={reason.trim().length < 5}>Waive ACR</Btn>
+            <Btn kind="secondary" onClick={() => { setWaiving(false); waiver.setError(null); }}>Cancel</Btn>
+            {reason.trim().length < 5 && <span className="text-[11px] text-amber-700">At least 5 characters.</span>}
+          </div>
+          <ErrorLine text={waiver.error} />
+        </div>
+      ) : (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Btn kind="secondary" onClick={ask} busy={busy}>{requestedAt || asked ? "Remind agent" : "Request from agent"}</Btn>
+          <Btn kind="secondary" onClick={() => setWaiving(true)}>Waive ACR</Btn>
+        </div>
+      )}
       <ErrorLine text={error} />
     </div>
   );
@@ -605,6 +634,75 @@ function MedicalStep({ checklist, item, changed, report }: StepProps) {
   );
 }
 
+// ── Specialist reviews · medical and financial ──────────────────────────────
+
+type Underwriter = { id: string; full_name: string; role: string; tracks: string[] };
+type TrackReview = { status: string; submitted: boolean; reviewer: string | null; note: string | null };
+
+/** One specialist review: assign its underwriter, then wait for them to record it in their own workspace. */
+function ReviewStep({ checklist, item, changed, report }: StepProps) {
+  const track = item.id === "medical_review" ? "medical" : "financial";
+  const [review, setReview] = useState<TrackReview | null>(null);
+  const [people, setPeople] = useState<Underwriter[]>([]);
+  const [pick, setPick] = useState("");
+  const { busy, error, run } = useAction();
+  const root = `/tenants/${checklist.tenantId}`;
+
+  const load = useCallback(async () => {
+    try { setReview((await api.get(`${root}/cases/${checklist.caseId}/underwriting-tracks`)).data[track]); } catch { /* keep what is shown */ }
+  }, [root, checklist.caseId, track]);
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!review || review.reviewer) return;
+    api.get(`${root}/underwriting/underwriters`).then((r) => {
+      // The track's own specialists first; general underwriters can take either review.
+      const eligible = (r.data as Underwriter[]).filter((u) => u.tracks.includes(track))
+        .sort((a, b) => Number(a.role === "Underwriter") - Number(b.role === "Underwriter"));
+      setPeople(eligible);
+      setPick((current) => current || eligible[0]?.id || "");
+    }).catch(() => setPeople([]));
+  }, [review, root, track]);
+  // Their review arrives as a live case event (and on a slow poll while waiting).
+  useLive(checklist.caseId, () => { void load().then(() => changed()); }, Boolean(review?.reviewer && !review.submitted));
+
+  const assign = () => run(async () => {
+    await api.put(`${root}/cases/${checklist.caseId}/underwriting-tracks/${track}`, { assigned_user_id: pick });
+    const who = people.find((u) => u.id === pick)?.full_name ?? "the underwriter";
+    report(item.id, { tone: "ok", title: `Assigned to ${who}`, lines: [`They'll see it in their ${track} review queue.`] });
+    await load();
+    await changed();
+  }, "Couldn't assign the review.");
+
+  if (!review) return <Waiting>Loading the {track} review…</Waiting>;
+  if (!review.reviewer) {
+    return (
+      <div className="mt-3">
+        {people.length ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <select value={pick} onChange={(e) => setPick(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[13px] text-slate-800">
+              {people.map((u) => <option key={u.id} value={u.id}>{u.full_name} · {u.role}</option>)}
+            </select>
+            <Btn onClick={assign} busy={busy} disabled={!pick}>Assign {track} underwriter</Btn>
+          </div>
+        ) : (
+          <p className="text-[12px] text-amber-700">No active user can take the {track} review. Add a {track === "medical" ? "Medical" : "Financial"} Underwriter first.</p>
+        )}
+        <ErrorLine text={error} />
+      </div>
+    );
+  }
+  return (
+    <div>
+      <Waiting>
+        {review.reviewer} is doing the {track} review ({review.status === "IN_REVIEW" ? "in review" : "not started"}) —
+        {track === "medical" ? " medical e-application, examination reports and AI medical underwriting." : " financial e-application, insurance history, income documents and AI financial underwriting."}
+      </Waiting>
+      <p className="mt-1 text-[12px] text-slate-400">This updates by itself when they record their review.</p>
+    </div>
+  );
+}
+
 export function RequirementStep(props: StepProps) {
   switch (props.item.id) {
     case "docs": return <DocsStep {...props} />;
@@ -614,5 +712,7 @@ export function RequirementStep(props: StepProps) {
     case "ipp": return <IppStep {...props} />;
     case "history": return <HistoryStep {...props} />;
     case "medical": return <MedicalStep {...props} />;
+    case "medical_review":
+    case "financial_review": return <ReviewStep {...props} />;
   }
 }

@@ -10,8 +10,8 @@ import "./globals.css";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: { default: "insurance-ai | Automation Chat", template: "%s | insurance-ai" },
-  description: "The insurance-ai AI copilot: lead to policy by conversation.",
+  title: { default: "GetInsuredAI Copilot", template: "%s | insurance-ai" },
+  description: "GetInsuredAI Copilot: lead to policy by conversation.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -47,9 +47,20 @@ def _gate_status(case: dict, key: str) -> Optional[str]:
     return case.get(f"{key}_status")
 
 
+def uses_specialist_reviews(case: dict) -> bool:
+    return any((case.get(key) or {}).get("status", "PENDING") != "PENDING" or (case.get(key) or {}).get("assigned_user_id") for key in ("medical_review", "financial_review"))
+
+
 def gate_rows(case: dict) -> list[dict]:
+    if uses_specialist_reviews(case):
+        rows = [{"key": key, "label": label, "status": (case.get(key) or {}).get("status") or "PENDING",
+                 "done": (case.get(key) or {}).get("status") in {"CLEARED", "REFERRED", "DECLINED"}, "tool": "get_specialist_reviews"}
+                for key, label in (("medical_review", "Medical specialist review"), ("financial_review", "Financial specialist review"))]
+        rows += [{"key": "acr", "label": "Agent's Confidential Report", "status": case.get("acr_status") or "NotStarted", "done": case.get("acr_status") in {"Submitted", "Waived"}, "tool": "submit_agent_confidential_report"},
+                 {"key": "compliance", "label": "PEP & Sanctions Screening", "status": case.get("compliance_status") or "NotStarted", "done": case.get("compliance_status") in {"Passed", "Cleared"}, "tool": "run_compliance_screening"}]
+        return rows
     return [{"key": key, "label": label, "status": _gate_status(case, key) or "NotStarted",
-             "done": (_gate_status(case, key) or "") in done, "tool": tool}
+             "done": (_gate_status(case, key) or "") in done or (key == "acr" and _gate_status(case, key) == "Waived"), "tool": tool}
             for key, label, done, _chip, _prompt, tool in GATES]
 
 
@@ -85,12 +96,15 @@ def application_state(case: dict) -> dict:
         stage = "Pre-Underwriting"
         nxt = open_gates[0]
         blockers += [f"{g['label']}: {g['status']}" for g in open_gates]
-        meta = next(x for x in GATES if x[0] == nxt["key"])
-        actions.append(_chip(meta[3], meta[4].format(no=no), f"gate:{nxt['key']}"))
+        if nxt["key"] in {"medical_review", "financial_review"}:
+            actions.append(_chip("Check specialist reviews", f"Show specialist reviews for case {no}", "specialist_reviews"))
+        else:
+            meta = next(x for x in GATES if x[0] == nxt["key"])
+            actions.append(_chip(meta[3], meta[4].format(no=no), f"gate:{nxt['key']}"))
     elif not decision:
         stage = "Underwriting"
         blockers.append("AI risk assessment has not run.")
-        actions.append(_chip("Run AI Underwriting", f"Run risk assessment for case {no}", "risk_assessment"))
+        actions.append(_chip("Run AI Underwriting", f"Compile final underwriting for case {no}" if uses_specialist_reviews(case) else f"Run risk assessment for case {no}", "risk_assessment"))
     else:
         stage = "Underwriting Decision"
         blockers.append(f"Awaiting an underwriter's decision (AI recommendation: {decision}).")

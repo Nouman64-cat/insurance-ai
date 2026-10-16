@@ -1071,6 +1071,8 @@ async def initiate_payment(
     return {
         "policy_id": str(policy_id),
         "amount_due": float(balance),
+        "premium_total": float(schedule.amount_due),
+        "amount_already_paid": float(schedule.amount_paid),
         "payment": intent.to_dict(),
         "available_payment_methods": payment_gateway.available_methods(),
     }

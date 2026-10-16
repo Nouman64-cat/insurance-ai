@@ -86,7 +86,7 @@ export interface FamilyMember {
 // The underwriting requirements shown as an interactive card (components/agent/RequirementsCard.tsx) instead of prose.
 export interface ChecklistItem {
   /** Which step this is; the card runs the step itself. */
-  id: "docs" | "eapp" | "acr" | "pep" | "ipp" | "history" | "medical";
+  id: "docs" | "eapp" | "acr" | "pep" | "ipp" | "history" | "medical" | "medical_review" | "financial_review";
   name: string;
   /** The raw status word ("Missing (2)", "NotSent", "Passed"...), shown as a chip. */
   status: string;

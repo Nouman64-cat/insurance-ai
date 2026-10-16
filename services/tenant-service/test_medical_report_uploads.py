@@ -172,3 +172,16 @@ class AiReportReadingTests(IsolatedAsyncioTestCase):
         self.assertEqual(set(both['tests']), {'FBS', 'LIPID'})
         self.assertEqual([[t['code'] for t in c.args[1]] for c in reader.await_args_list], [['FBS'], ['LIPID'], ['FBS']])
         self.assertEqual(order.status, MedicalExamStatusEnum.INVITED)
+
+
+class MedicalReviewPrerequisiteTests(IsolatedAsyncioTestCase):
+    async def test_ai_and_result_wait_for_every_required_processed_report(self):
+        for reports in ([], [SimpleNamespace(id=uuid4(),status="Accepted",document_type="Medical Report: FBS")], [SimpleNamespace(id=uuid4(),status="Processing",document_type="Medical Report: FBS")]):
+            order = SimpleNamespace(status=MedicalExamStatusEnum.INVITED, required_tests=[{"code":"FBS"},{"code":"ECG"}])
+            with patch.object(medical_exam,"_get_current_user",AsyncMock()), patch.object(medical_exam,"_get_case",AsyncMock()), patch.object(medical_exam,"_load_order",AsyncMock(return_value=order)), patch.object(medical_exam,"_uploaded_reports",AsyncMock(return_value=reports)):
+                with self.assertRaises(HTTPException) as ai:
+                    await medical_exam.ai_review_medical_reports(uuid4(),uuid4(),token="t",session=Mock())
+                self.assertEqual(ai.exception.status_code,409)
+                with self.assertRaises(HTTPException) as result:
+                    await medical_exam.record_medical_result(uuid4(),uuid4(),medical_exam.ResultRequest(results={"FBS":"90"}),SimpleNamespace(),token="t",session=Mock())
+                self.assertEqual(result.exception.status_code,409)

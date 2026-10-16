@@ -39,7 +39,7 @@ from pages import build_route, page_for_record, page_for_route
 from langgraph.types import interrupt
 from langgraph.errors import GraphInterrupt
 from env_mode import is_demo, strip_demo_args
-from lifecycle import application_state, approval_blockers, transition_problem
+from lifecycle import application_state, approval_blockers, transition_problem, uses_specialist_reviews
 
 TENANT_SERVICE_URL = os.environ.get("TENANT_SERVICE_URL", "http://tenant-service:8001")
 API_GATEWAY_URL = os.environ.get("API_GATEWAY_URL", "http://api-gateway:8000")
@@ -2246,8 +2246,20 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
             )
         }
 
+    # A resumed/retried final compilation uses the same four specialist inputs as
+    # the initial compile. Never send completed specialists back through legacy gates.
+    specialist_ready = False
+    if uses_specialist_reviews(case):
+        from specialist_review_tools import _compile_state
+        compile_state = await _compile_state(case, ctx)
+        specialist_ready = compile_state["ready"]
+        if not specialist_ready:
+            missing_inputs = [f"{name} ({status})" for name, done, status, _ in compile_state["inputs"] if not done]
+            return {"success": False, "message": "Final underwriting is waiting on: " + ", ".join(missing_inputs),
+                    "quick_actions": [{"label": "Check specialist reviews", "actionType": "submit", "payload": f"Show specialist reviews for case {case.get('caseNumber')}"}]}
+
     # Pre-Underwriting 6-Gate Clearance Guard
-    if pre_status and not pre_status.get("is_ready") and not args.get("bypass_gates"):
+    if pre_status and not pre_status.get("is_ready") and not specialist_ready and not args.get("bypass_gates"):
         pending_gates = []
         next_action = None
 
@@ -2256,7 +2268,7 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
             if not next_action:
                 next_action = {"label": "1. Generate E-App Link (Gate 1)", "actionType": "submit",
                                "payload": f"Generate e-application link for case {case.get('caseNumber')}"}
-        if pre_status.get("acr") != "Submitted":
+        if pre_status.get("acr") not in ("Submitted", "Waived"):
             pending_gates.append(f"Gate 2: Agent Confidential Report ({pre_status.get('acr', 'NotStarted')})")
             if not next_action:
                 next_action = {"label": "2. Submit ACR (Gate 2)", "actionType": "submit",
@@ -2340,6 +2352,8 @@ def _gate_icon(status: str) -> str:
 @handles("get_pre_underwriting_status")
 async def _get_pre_underwriting_status(args: dict, ctx: Ctx) -> dict:
     case = await _resolve_case(args, ctx)
+    if uses_specialist_reviews(case):
+        return await _HANDLERS["get_specialist_reviews"](args, ctx)
     case_id = _case_id(case)
 
     detail_res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/detail"))
@@ -2547,6 +2561,8 @@ async def _verify_e_application(args: dict, ctx: Ctx) -> dict:
     token = invite_data.get("token")
     link_path = invite_data.get("link_path")
     full_link = f"http://localhost:3000{link_path}" if link_path else ""
+    # The e-application is two questionnaires (medical and financial), each with its own link.
+    links = invite_data.get("parts") or [invite_data]
 
     # If action is auto_submit (used in bulk/demo journey runs)
     if action == "auto_submit" and is_demo():
@@ -2571,9 +2587,19 @@ async def _verify_e_application(args: dict, ctx: Ctx) -> dict:
                         "signature_name": cust_name,
                     },
                 }
-                await ctx.client.put(f"{TENANT_SERVICE_URL}/public/e-application/{token}", json=demo_payload)
-                sub_res = await ctx.client.post(f"{TENANT_SERVICE_URL}/public/e-application/{token}/submit")
-                sub_res.raise_for_status()
+                demo_payload["financial_profile"] = {
+                    "employment": {"employment_type": "Salaried", "occupation": "", "employer_or_business": "", "years_in_role": ""},
+                    "income": {"annual_income": "", "income_basis": "Gross"},
+                    "commitments": {"has_loans": False}, "assets": {}, "funding": {"premium_payer": "Myself"},
+                }
+                # Each questionnaire's link keeps only its own sections of the same payload.
+                for link in links:
+                    part_token = link.get("token")
+                    if not part_token:
+                        continue
+                    await ctx.client.put(f"{TENANT_SERVICE_URL}/public/e-application/{part_token}", json=demo_payload)
+                    sub_res = await ctx.client.post(f"{TENANT_SERVICE_URL}/public/e-application/{part_token}/submit")
+                    sub_res.raise_for_status()
             except Exception:
                 pass
         ver_res = await ctx.client.post(
@@ -2604,13 +2630,16 @@ async def _verify_e_application(args: dict, ctx: Ctx) -> dict:
     return {
         "success": True,
         "message": (
-            f"📋 **Gate 1: Customer E-Application Link Generated** for case **{case.get('caseNumber')}**\n\n"
-            f"The customer must fill and sign their medical questionnaire and declarations directly. "
+            f"📋 **Gate 1: Customer E-Application Links Generated** for case **{case.get('caseNumber')}**\n\n"
+            f"The customer fills and signs two questionnaires directly — medical, and financial. "
             f"{_link_delivery_line(invite_data, f'**{cust_name}**')}\n\n"
-            f"🔗 **[Open Customer E-Application Form]({full_link})**\n"
-            f"`{full_link}`\n\n"
-            f"*(This is a public, tokenized link — the applicant does not need to log in)*.\n\n"
-            f"👉 **After the customer submits their form**, click **Verify E-Application** below to review and approve it."
+            + "".join(
+                f"🔗 **[Open the {(link.get('part') or 'customer').title()} E-Application]"
+                f"(http://localhost:3000{link.get('link_path')})**\n"
+                for link in links if link.get("link_path")
+            )
+            + "\n*(These are public, tokenized links — the applicant does not need to log in)*.\n\n"
+            "👉 **After the customer submits both**, click **Verify E-Application** below to review and approve it."
         ),
         "link_path": link_path,
         "full_link": full_link,
@@ -2967,7 +2996,9 @@ async def _run_insurance_history_check(args: dict, ctx: Ctx) -> dict:
     pre = detail.get("pre_underwriting_status") or {}
     comp_status = pre.get("compliance", "NotRun")
 
-    if comp_status not in ("Passed", "Cleared") and not args.get("bypass_prerequisites"):
+    # The financial underwriter runs the history check as part of their own review, in no fixed gate order.
+    specialist = ctx.exec_ctx.role == "Financial Underwriter"
+    if comp_status not in ("Passed", "Cleared") and not args.get("bypass_prerequisites") and not specialist:
         return {
             "success": False,
             "message": (
@@ -3035,6 +3066,13 @@ async def _run_insurance_history_check(args: dict, ctx: Ctx) -> dict:
              "payload": f"Check pre-underwriting status for case {case.get('caseNumber')}"},
         ]
 
+    if specialist:
+        tail = ("👉 This gate is on hold — accept or reject the findings on the application before AI financial underwriting."
+                if held else "👉 Next: AI financial underwriting, once the financial e-application and documents are in.")
+        actions = [
+            {"label": "What's next?", "actionType": "submit", "payload": f"Show my underwriting review for case {case.get('caseNumber')}"},
+            {"label": "Open the application", "actionType": "embed", "payload": f"case/{case_id}"},
+        ]
     return {
         "success": True,
         "message": (
@@ -3738,18 +3776,6 @@ async def _confirm_policy_payment(args: dict, ctx: Ctx) -> dict:
     case = await _issuance_case(args, ctx)
     case_id = _case_id(case)
 
-    # The gateway already settled the first premium: activation is pending, not
-    # another payment. Never open a second charge from a chat request.
-    if case.get("ipp_status") == "Realized":
-        return {
-            "success": True, "skipped": True,
-            "result": {"status": "skipped", "reason": "already_paid"},
-            "message": f"The first premium for **{case.get('caseNumber')}** is already recorded as paid by the payment "
-                       "gateway — no second payment was taken. Check the policy status to see whether it is active.",
-            "quick_actions": [{"label": "Check Policy Status", "actionType": "submit",
-                               "payload": f"Show me the active policy status for case {case.get('caseNumber')}"}],
-        }
-
     policy = await _resolve_policy_for_case(ctx, case)
     if not policy:
         return {
@@ -3759,6 +3785,20 @@ async def _confirm_policy_payment(args: dict, ctx: Ctx) -> dict:
 
     policy_id = policy.get("id")
     current_status = (policy.get("status") or "").replace(" ", "")
+
+    # Realized IPP is the proposal's upfront receipt, not proof that the final
+    # premium schedule is settled. Only the schedule can rule out a balance.
+    if case.get("ipp_status") == "Realized" and current_status.upper() != "ACTIVE":
+        receipt_res = await ctx.client.get(ctx.tsvc(f"/policies/{policy_id}/payments/prepaid"))
+        receipt_res.raise_for_status()
+        receipt = receipt_res.json()
+        if receipt.get("settled"):
+            return {
+                "success": True, "skipped": True,
+                "result": {"status": "skipped", "reason": "already_paid"},
+                "message": f"The first-premium schedule for **{case.get('caseNumber')}** is fully settled. No further payment is due; check policy activation status.",
+                "quick_actions": [{"label": "Check Policy Status", "actionType": "submit", "payload": f"Show me the active policy status for case {case.get('caseNumber')}"}],
+            }
 
     # If already Active
     if current_status.upper() == "ACTIVE":
@@ -6681,3 +6721,4 @@ import workflow_tools  # noqa: E402,F401
 import claim_workflow_tools  # noqa: E402,F401
 import commission_tools  # noqa: E402,F401
 import profile_risk_tools  # noqa: E402,F401
+import specialist_review_tools  # noqa: E402,F401

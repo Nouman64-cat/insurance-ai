@@ -315,7 +315,8 @@ def test_duplicate_open_proposal_is_not_created():
 
 def test_a_settled_first_premium_is_never_charged_again():
     case = {**FAMILY[1], "caseStatus": "Approved", "ipp_status": "Realized", "policy_id": "p-1"}
-    client = FakeClient({("GET", "/cases"): [case], ("GET", "/cases/k-2/detail"): {},
+    client = FakeClient({("GET", "/cases"): [case], ("GET", "/cases/k-2/detail"): {"policy":{"id":"p-1","status":"PendingPayment"}},
+                         ("GET", "/policies/p-1/payments/prepaid"): {"settled":True},
                          ("GET", "/policies/p-1"): {"id": "p-1", "status": "PendingPayment"},
                          ("GET", "/customers/c-2/policies"): [{"id": "p-1", "status": "PendingPayment"}]})
     res = _call("confirm_policy_payment", {"case_number": "CASE-2026-F2"}, client)
@@ -363,3 +364,14 @@ def test_placeholder_email_never_reaches_a_live_policy():
         assert errors and "valid email" in errors[0]
         _, errors = validate_and_normalize(tool, {"endorsement_type": "contact", "email": "hamza@example.com"})
         assert not errors
+
+
+def test_upfront_receipt_does_not_block_collection_of_the_issuance_balance():
+    case = {**FAMILY[1], "caseStatus":"Approved", "ipp_status":"Realized", "policy_id":"p-1"}
+    client = FakeClient({("GET","/cases"):[case], ("GET","/cases/k-2/detail"):{"policy":{"id":"p-1","status":"PendingPayment"}},
+                         ("GET","/policies/p-1/payments/prepaid"):{"received":True,"amount":13302.9,"settled":False,"remaining_due":53211.6,"split":{"upfront_pct":20,"remaining_pct":80}}})
+    result = _call("confirm_policy_payment",{"case_number":"CASE-2026-F2"},client)
+    assert result["__client_execute__"] is True
+    assert result["tool_call"]["name"] == "confirm_policy_payment"
+    assert result["tool_call"]["args"]["policy"]["id"] == "p-1"
+    assert not client.writes()

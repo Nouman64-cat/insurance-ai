@@ -237,7 +237,7 @@ async def specialist_queue(tenant_id: UUID, session: AsyncSession = Depends(get_
         Case.caseType == CaseTypeEnum.UNDERWRITING).order_by(Case.createdAt.desc()))).all()
     reviews = await reviews_by_case(session, [c.caseld for c, _, _ in rows])
     resolved = {c.caseld: policy or await resolve_review_policy(session, c) for c, _, policy in rows}
-    return [{"id": str(c.caseld), "reference": c.caseNumber, "customer_name": customer.name,
+    return [{"id": str(c.caseld), "reference": c.caseNumber, "customer_name": customer.name, "customer_cnic": customer.cnic,
              "product_name": policy.product_name if policy else None,
              "coverage_amount": policy.coverage_amount if policy else None,
              "case_status": c.caseStatus, "on_hold": c.on_hold, "hold_reason": c.hold_reason,
@@ -316,15 +316,27 @@ async def specialist_workspace(tenant_id: UUID, case_id: UUID, session: AsyncSes
         # Each track reviews from its own e-application questionnaire.
         {"key": "e_application", "label": "Medical E-Application Questionnaire" if track == "MEDICAL" else "Financial E-Application Questionnaire",
          "status": e_application_status, "section": "overview"},
-        {"key": "medical_exam", "label": "Medical Examination / NML Grid", "status": str(getattr(exam.status, "value", exam.status)) if exam else "NotAssessed", "section": "overview"}
-        if track == "MEDICAL" else
-        {"key": "insurance_history", "label": "Insurance History Clearance", "status": str(getattr(history.status, "value", history.status)) if history else "NotStarted", "section": "overview"},
     ]
+    if track == "FINANCIAL":
+        requirements.append({"key": "insurance_history", "label": "Insurance History Clearance", "status": str(getattr(history.status, "value", history.status)) if history else "NotStarted", "section": "overview"})
     if required_documents:
         missing = sum(not d["received"] for d in required_documents)
         requirements.append({"key": "documents", "label": "Medical documents & reports" if track == "MEDICAL" else "Financial documents & income evidence",
                              "status": "Received" if not missing else "Outstanding", "section": "documents",
                              "detail": f"{len(required_documents) - missing} of {len(required_documents)} received"})
+    if track == "MEDICAL":
+        no_exam = exam and str(getattr(exam.status, "value", exam.status)) in {"NotRequired", "Waived"}
+        from routers.medical_exam import _uploaded_reports
+        exam_reports = await _uploaded_reports(session, exam) if exam else []
+        required_codes = {t.get("code") for t in (exam.required_tests or [])} if exam else set()
+        accepted_codes = {a.document_type.split(": ", 1)[-1] for a in exam_reports if a.status == "Accepted"}
+        reports_ready = bool(required_codes) and required_codes <= accepted_codes
+        ai_tests = (((exam.results_json or {}).get("ai_review") or {}).get("tests") or {}) if exam else {}
+        ai_complete = reports_ready and bool(exam.outcome) and required_codes <= set(ai_tests) and all(
+            sorted((ai_tests.get(code) or {}).get("report_ids") or []) == sorted(str(a.id) for a in exam_reports if a.status == "Accepted" and a.document_type == f"Medical Report: {code}")
+            for code in required_codes)
+        requirements.append({"key": "medical_ai", "label": "AI Medical Underwriting", "status": "NotRequired" if no_exam else "Completed" if ai_complete else "Required" if reports_ready else "Outstanding", "section": "overview",
+                             "detail": "No medical examination is required." if no_exam else "AI results reviewed and saved." if ai_complete else "Required: run AI medical underwriting, review the extracted results, then Save & rate." if reports_ready else "Upload all required reports and wait for processing before running AI medical underwriting."})
     # What the application as a whole still waits on (owned by pre-underwriting),
     # so "Pending Documents" is explained rather than left unexplained.
     from services.underwriting_gate import outstanding_requirements

@@ -30,7 +30,7 @@ from langchain_core.messages import ToolMessage
 
 from pages import build_route
 from state import ChatState
-from tool_executor import API_GATEWAY_URL, ExecCtx, execute_tool, upload_documents_action
+from tool_executor import API_GATEWAY_URL, TENANT_SERVICE_URL, ExecCtx, execute_tool, upload_documents_action
 from env_mode import is_demo
 
 # Stage metadata: node -> (stage id, UI label). Order matters for the
@@ -39,7 +39,8 @@ STAGES: dict[str, tuple[str, str]] = {
     "j_intake":             ("lead_intake",                 "Stage 1 · Lead Intake"),
     "j_case":               ("case_creation",               "Stage 2 · Case Creation"),
     "j_proposal":           ("proposal_structuring",        "Stage 3 · Proposal Structuring"),
-    "j_pre_underwriting":   ("pre_underwriting_clearance",  "Stage 4 · Pre-Underwriting Clearance (5 Gates)"),
+    # Same stage id the UI keys on; the stage is now the specialist reviews plus ACR & PEP.
+    "j_pre_underwriting":   ("pre_underwriting_clearance",  "Stage 4 · Specialist Reviews, ACR & PEP"),
     "j_audit":              ("document_audit",              "Stage 5 · Document Audit"),
     "j_risk":               ("risk_assessment",             "Stage 6 · AI Risk Assessment"),
     "j_decide":             ("underwriting_decision",       "Stage 7 · Underwriting Decision"),
@@ -220,21 +221,105 @@ async def j_proposal(state: ChatState) -> dict:
     }
 
 
+# Outcomes at which stage 4 waits for a person; continue_underwriting_journey re-enters stage 4.
+SPECIALIST_PAUSES = ("Awaiting Assignment", "Awaiting Specialist Reviews", "Awaiting ACR", "PEP Flagged")
+
+
+async def _tsvc_get(ctx: ExecCtx, path: str) -> dict:
+    async with httpx.AsyncClient(timeout=30.0, headers=ctx.headers) as client:
+        res = await client.get(f"{TENANT_SERVICE_URL}/tenants/{ctx.effective_tenant_id}{path}")
+        res.raise_for_status()
+        return res.json()
+
+
+def _pause(state: ChatState, outcome: str, entry: str, **extra) -> dict:
+    return {"journey_stage": "pre_underwriting_clearance", "journey_outcome": outcome, "journey_pre_underwriting": None,
+            "journey_audit": _log(state, entry), **extra, **_mark("j_pre_underwriting", next_node=None, status="error")}
+
+
 async def j_pre_underwriting(state: ChatState) -> dict:
-    """Stage 4 — 5-gate Pre-Underwriting clearance (E-App, ACR, Compliance, History, Medical)."""
+    """Stage 4 — the medical and financial underwriters' reviews, then the agent's report and PEP screening.
+
+    The specialists own the e-application, examination, insurance history and their documents; this stage
+    assigns their reviews, sends both e-application questionnaires and waits for both reviews, then makes sure
+    the ACR and PEP screening are in — the four inputs final underwriting compiles. It pauses (with chips) where
+    a person is needed and resumes here. Demo mode stands in for the specialists, labelled as such."""
     ctx = _ctx(state)
     case_no = state.get("journey_case_number")
-    cnic = state.get("journey_cnic")
-    lookup = {"case_number": case_no} if case_no else {"cnic": cnic}
+    case_id = state.get("journey_case_id")
+    lookup = {"case_number": case_no} if case_no else {"cnic": state.get("journey_cnic")}
+    demo = is_demo()
 
-    res = await execute_tool("run_pre_underwriting_clearance", lookup, ctx)
-    if not res.get("success"):
-        return _fail(state, "j_pre_underwriting", res.get("error") or res.get("message") or "Could not complete pre-underwriting clearance.")
+    reviews = await execute_tool("get_specialist_reviews", lookup, ctx)
+    if not reviews.get("success"):
+        return _fail(state, "j_pre_underwriting", reviews.get("error") or reviews.get("message") or "Could not read the specialist reviews.")
+    tracks = reviews["tracks"]
+    case_id = case_id or reviews.get("case_id")
+    log: list[str] = []
 
+    # 1. Each review needs an underwriter: the one eligible specialist is assigned; a choice is the user's.
+    for track in ("medical", "financial"):
+        if tracks[track]["reviewer"]:
+            continue
+        people = (await execute_tool("list_track_underwriters", {"track": track}, ctx)).get("underwriters") or []
+        specialists = [u for u in people if u.get("role") != "Underwriter"] or people
+        if len(specialists) == 1:
+            res = await execute_tool("assign_underwriting_track", {**lookup, "track": track, "underwriter_id": specialists[0]["id"]}, ctx)
+            if res.get("success"):
+                log.append(f"{track.title()} review assigned to {specialists[0]['full_name']}")
+                continue
+        return _pause(state, "Awaiting Assignment", f"Waiting for the {track} review to be assigned",
+                      journey_waiting_on={"track": track, "choices": [{"id": u["id"], "name": u["full_name"], "role": u.get("role")} for u in people[:6]]})
+
+    # 2. Both e-application questionnaires go out once.
+    eapp = await _tsvc_get(ctx, f"/cases/{case_id}/e-application")
+    unsent = [p for p in ("medical", "financial") if (eapp.get("parts") or {}).get(p, {}).get("status", "NotSent") == "NotSent"
+              and eapp.get("status") not in ("Submitted", "Verified")]
+    for part in unsent:
+        res = await execute_tool("send_e_application_questionnaire", {**lookup, "part": part}, ctx)
+        log.append(f"{part.title()} e-application {'sent' if res.get('success') else 'not sent: ' + str(res.get('message'))}")
+
+    # 3. Both reviews submitted. Demo mode records them as the specialists would, marked as demo.
+    if demo and not (tracks["medical"]["submitted"] and tracks["financial"]["submitted"]):
+        await execute_tool("run_pre_underwriting_clearance", lookup, ctx)
+        for track in ("medical", "financial"):
+            if not tracks[track]["submitted"]:
+                await execute_tool("record_underwriting_review", {**lookup, "track": track, "decision": "CLEARED", "confirm": True,
+                                                                  "rationale": "Demo mode: recorded automatically by the underwriting journey."}, ctx)
+                log.append(f"Demo mode: {track} review recorded as Cleared")
+        tracks = (await execute_tool("get_specialist_reviews", lookup, ctx)).get("tracks") or tracks
+    waiting = [t for t in ("medical", "financial") if not tracks[t]["submitted"]]
+    if waiting:
+        who = ", ".join(f"{t} ({tracks[t]['reviewer']}: {tracks[t]['status'].replace('_', ' ').lower()})" for t in waiting)
+        return _pause(state, "Awaiting Specialist Reviews", "; ".join([*log, f"Waiting for the {who} review"]),
+                      journey_waiting_on={"tracks": waiting})
+
+    # 4. The agent's report.
+    detail = await _tsvc_get(ctx, f"/cases/{case_id}/detail")
+    pre = detail.get("pre_underwriting_status") or {}
+    if pre.get("acr") not in ("Submitted", "Waived"):
+        if pre.get("acr") in (None, "NotStarted"):
+            await execute_tool("submit_agent_confidential_report", lookup, ctx)
+            pre = (await _tsvc_get(ctx, f"/cases/{case_id}/detail")).get("pre_underwriting_status") or {}
+        if pre.get("acr") not in ("Submitted", "Waived"):
+            return _pause(state, "Awaiting ACR", "; ".join([*log, f"Waiting for the Agent's Confidential Report ({pre.get('acr')})"]))
+
+    # 5. PEP & sanctions screening.
+    if pre.get("compliance") not in ("Passed", "Cleared"):
+        res = await execute_tool("run_compliance_screening", lookup, ctx)
+        pre = (await _tsvc_get(ctx, f"/cases/{case_id}/detail")).get("pre_underwriting_status") or {}
+        if pre.get("compliance") not in ("Passed", "Cleared"):
+            return _pause(state, "PEP Flagged", "; ".join([*log, f"PEP screening {pre.get('compliance')}: {res.get('message', '')[:120]}"]))
+
+    summary = {"medical_review": tracks["medical"]["status"], "financial_review": tracks["financial"]["status"],
+               "acr": pre.get("acr"), "compliance": pre.get("compliance")}
     return {
         "journey_stage": "document_audit",
-        "journey_pre_underwriting": res.get("pre_underwriting_status") or {},
-        "journey_audit": _log(state, f"Pre-Underwriting clearance passed — all 5 gates verified for {case_no or cnic}"),
+        "journey_outcome": None,
+        "journey_waiting_on": None,
+        "journey_pre_underwriting": summary,
+        "journey_audit": _log(state, "; ".join([*log, f"Specialist reviews in (medical {summary['medical_review']}, "
+                                                       f"financial {summary['financial_review']}), ACR {summary['acr']}, PEP {summary['compliance']}"])),
         **_mark("j_pre_underwriting", next_node="j_audit"),
     }
 
@@ -276,7 +361,7 @@ async def j_audit(state: ChatState) -> dict:
     }
 
 
-async def _run_evaluation_directly(customer: dict, policy: dict, ctx: ExecCtx) -> dict:
+async def _run_evaluation_directly(customer: dict, policy: dict, ctx: ExecCtx, case_id: str) -> dict:
     """Runs + persists a risk assessment server-side, for callers (like this
     journey) that have no browser to stream progress to.
 
@@ -290,7 +375,7 @@ async def _run_evaluation_directly(customer: dict, policy: dict, ctx: ExecCtx) -
     async with httpx.AsyncClient(timeout=120.0) as client:
         async with client.stream(
             "POST", f"{API_GATEWAY_URL}/evaluate/stream",
-            json={"customer": customer, "policy": policy},
+            json={"customer": customer, "policy": policy, "case_id": case_id},
             headers=ctx.headers,
         ) as resp:
             resp.raise_for_status()
@@ -304,6 +389,8 @@ async def _run_evaluation_directly(customer: dict, policy: dict, ctx: ExecCtx) -
                         continue
                     evt = json.loads(line[6:])
                     if evt.get("type") == "saved":
+                        if str((evt.get("data") or {}).get("case_id")) != str(case_id):
+                            return {"success": False, "message": "The assessment was not saved against this application. It cannot be used for approval."}
                         return {"success": True, "assessment": evt["data"]}
                     if evt.get("type") in ("error", "invalid"):
                         data = evt.get("data") or {}
@@ -317,13 +404,14 @@ async def j_risk(state: ChatState) -> dict:
     ctx = _ctx(state)
     await execute_tool("update_case_status", {"cnic": state.get("journey_cnic"), "new_status": "InProgress"}, ctx)
 
-    res = await execute_tool("run_risk_assessment", {"cnic": state.get("journey_cnic")}, ctx)
+    # Stage 4 gathered the four compile inputs, which replace the old five gates.
+    res = await execute_tool("run_risk_assessment", {"cnic": state.get("journey_cnic"), "bypass_gates": True}, ctx)
     if res.get("__client_execute__"):
         # Every precondition (gates, documents, an existing policy) already
         # passed for the marker to be returned — nothing left to check, just
         # run it ourselves since there's no browser to hand it to.
         args = res["tool_call"]["args"]
-        res = await _run_evaluation_directly(args["customer"], args["policy"], ctx)
+        res = await _run_evaluation_directly(args["customer"], args["policy"], ctx, args["case_id"])
     if not res.get("success"):
         return _fail(state, "j_risk", res.get("error") or res.get("message") or "Risk assessment failed.")
 
@@ -427,6 +515,12 @@ def route_after_audit(state: ChatState) -> str:
     return "j_finish" if state.get("journey_missing_documents") else "j_risk"
 
 
+def route_after_specialists(state: ChatState) -> str:
+    if state.get("journey_error") or state.get("journey_outcome") in SPECIALIST_PAUSES:
+        return "j_finish"
+    return "j_audit"
+
+
 def route_after_decide(state: ChatState) -> str:
     if state.get("journey_error") or state.get("requires_human_intervention"):
         return "j_finish"
@@ -512,6 +606,30 @@ async def j_finish(state: ChatState) -> dict:
                 {"label": "Resume journey", "actionType": "submit", "payload": "Continue the underwriting journey"},
             ],
         })
+    elif outcome in SPECIALIST_PAUSES:
+        waiting = state.get("journey_waiting_on") or {}
+        resume = {"label": "Resume journey", "actionType": "submit", "payload": "Continue the underwriting journey"}
+        if outcome == "Awaiting Assignment":
+            track = waiting.get("track", "medical")
+            message = f"Journey paused at specialist reviews — who should take the **{track}** review of {case_no}?"
+            chips = [{"label": f"{c['name']} ({c.get('role')})", "actionType": "submit",
+                      "payload": f"Assign the {track} review of case {case_no} to underwriter_id {c['id']} and continue the underwriting journey"}
+                     for c in waiting.get("choices") or []]
+        elif outcome == "Awaiting Specialist Reviews":
+            names = " and ".join(waiting.get("tracks") or ["specialist"])
+            message = (f"Journey paused — waiting for the **{names}** review of {case_no}. Both e-application questionnaires "
+                       "have been sent; the underwriters run AI underwriting and record their reviews in their workspaces. "
+                       "Resume once they've submitted.")
+            chips = [{"label": "Show specialist reviews", "actionType": "submit", "payload": f"Show the specialist reviews for case {case_no}"}]
+        elif outcome == "Awaiting ACR":
+            message = f"Journey paused — waiting for the agent to submit the Agent's Confidential Report for {case_no}."
+            chips = []
+        else:
+            message = f"Journey paused — PEP & sanctions screening for {case_no} is flagged and needs an underwriter's review."
+            chips = [{"label": "Proceed anyway (override)", "actionType": "submit",
+                      "payload": f"Override the compliance screening for case {case_no}"}]
+        result.update({"success": True, "message": message,
+                       "quick_actions": [*chips[:5], {"label": "Open Case", "actionType": "embed", "payload": route}, resume]})
     elif outcome == "Under Review":
         r = state.get("journey_risk") or {}
         rec = r.get("recommendation", "Human Review")
@@ -601,7 +719,7 @@ def register_journey(builder) -> None:
     builder.add_conditional_edges("j_intake", route_error("j_case"), {"j_case": "j_case", "j_finish": "j_finish"})
     builder.add_conditional_edges("j_case", route_error("j_proposal"), {"j_proposal": "j_proposal", "j_finish": "j_finish"})
     builder.add_conditional_edges("j_proposal", route_error("j_pre_underwriting"), {"j_pre_underwriting": "j_pre_underwriting", "j_finish": "j_finish"})
-    builder.add_conditional_edges("j_pre_underwriting", route_error("j_audit"), {"j_audit": "j_audit", "j_finish": "j_finish"})
+    builder.add_conditional_edges("j_pre_underwriting", route_after_specialists, {"j_audit": "j_audit", "j_finish": "j_finish"})
     builder.add_conditional_edges("j_audit", route_after_audit, {"j_risk": "j_risk", "j_finish": "j_finish"})
     builder.add_conditional_edges("j_risk", route_error("j_decide"), {"j_decide": "j_decide", "j_finish": "j_finish"})
     builder.add_conditional_edges("j_decide", route_after_decide, {"j_close": "j_close", "j_finish": "j_finish"})

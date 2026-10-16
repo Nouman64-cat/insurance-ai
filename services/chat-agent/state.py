@@ -53,6 +53,8 @@ class ChatState(TypedDict, total=False):
     journey_missing_documents: list[str]
     journey_pre_underwriting: Optional[dict[str, Any]]
     journey_risk: Optional[dict[str, Any]]
+    # What a paused stage 4 waits on: a track to assign (with choices) or the reviews still outstanding.
+    journey_waiting_on: Optional[dict[str, Any]]
     journey_outcome: Optional[str]  # Approved | Rejected | Under Review | Pending Documents
     requires_human_intervention: bool
     # Immutable, timestamped log of every pipeline transition — written to the

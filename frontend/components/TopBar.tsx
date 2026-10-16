@@ -1,19 +1,10 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { openAutomationChat, endSso } from "@/lib/sso";
-import { useNotify } from "@/components/NotificationContext";
+import { endSso } from "@/lib/sso";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 
-function ChatIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 5h16v11H9l-5 4V5z" />
-      <path d="M14 3h7v7M21 3l-8 8" opacity="0" />
-    </svg>
-  );
-}
 
 /** The signed-in user's initials; opens a small menu with their details, Profile and Sign out. */
 function ProfileMenu() {
@@ -93,29 +84,11 @@ function ProfileMenu() {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function TopBar() {
-  const { notify } = useNotify();
-  const { t } = useI18n();
 
   return (
     <header className="sticky top-0 z-30 h-14 flex-shrink-0 flex items-center justify-end gap-4 px-6 bg-white/80 backdrop-blur-md border-b border-slate-200 shadow-sm">
       <div className="flex items-center gap-3 flex-shrink-0">
         <LanguageSwitcher />
-
-        {/* The Automation Chat is a separate app in its own container: this opens it in a new tab (it is a link out,
-            not a mode of this page), or says it is not running. */}
-        <button
-          type="button"
-          onClick={async () => {
-            if (!(await openAutomationChat())) {
-              notify(t("topBar.automationChatDown"), false);
-            }
-          }}
-          title={t("topBar.automationChatTitle")}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
-        >
-          <ChatIcon />
-          {t("topBar.automationChat")}
-        </button>
 
         <span className="h-6 w-px bg-slate-200" aria-hidden="true" />
         <ProfileMenu />

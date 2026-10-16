@@ -112,7 +112,7 @@ async def _consume(graph, config, input_):
                 handoff = node_data.get('specialist_handoff')
                 if handoff:
                     yield step('specialist:' + handoff['agent'],
-                               {'commission':'Commission specialist selected', 'claims':'Claims specialist selected', 'underwriting':'Underwriting specialist selected', 'servicing':'Policy servicing specialist selected', 'group':'Group insurance specialist selected'}.get(handoff['agent'], 'Main assistant selected'), 'done')
+                               {'commission':'Commission specialist selected', 'claims':'Claims specialist selected', 'underwriting':'Underwriting specialist selected', 'servicing':'Policy servicing specialist selected', 'group':'Group insurance specialist selected', 'medical_underwriting':'Medical underwriting specialist selected', 'financial_underwriting':'Financial underwriting specialist selected', 'final_underwriting':'Final underwriting specialist selected'}.get(handoff['agent'], 'Main assistant selected'), 'done')
 
                 # Autonomous journey stages narrate themselves: each pipeline
                 # node reports its own completion (journey_done) and what runs

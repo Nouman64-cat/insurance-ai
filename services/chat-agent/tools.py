@@ -771,7 +771,7 @@ def get_pre_underwriting_status(**kwargs) -> str:
     3. Compliance Screening (PEP, Sanctions, AML, SECP)
     4. SECP Insurance History (HLV & cumulative exposure)
     5. Medical Examination (Non-Medical Limit NML grid & panel clinics)
-    The initial premium is not a gate — it is collected at policy issuance.
+    The rule-defined upfront premium is collected before underwriting. At issuance, credit that receipt and collect only the outstanding balance, including any underwriting loading.
     Use when the user asks "check pre-underwriting status", "are gates cleared?",
     "what's pending before risk assessment?"."""
     return "{}"
@@ -2860,6 +2860,139 @@ def explain_commission_earning(**kwargs) -> str:
     return "{}"
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Specialist underwriting — medical & financial reviews, compiled into the
+# final decision (specialist_review_tools.py)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class ReviewLookupArgs(BaseModel):
+    case_number: Optional[str] = Field(default=None, description="Application reference, e.g. APP-2026-19A187 or CASE-2026-19A187.")
+    applicant_name: Optional[str] = Field(default=None, description="Applicant's name as stored.")
+    cnic: Optional[str] = Field(default=None, description="Applicant CNIC. Never put a UUID here.")
+
+
+class ListMyReviewsArgs(BaseModel):
+    status: Optional[Literal["open", "closed", "PENDING", "IN_REVIEW", "CLEARED", "REFERRED", "DECLINED"]] = Field(
+        default=None, description="Filter: 'open' (still in progress), 'closed' (approved/closed/rejected) or one review status.")
+
+
+@tool(args_schema=ListMyReviewsArgs)
+def list_my_underwriting_reviews(**kwargs) -> str:
+    """Medical/Financial Underwriter only: the applications assigned to me on my track, with my review status.
+    Read-only."""
+    return "{}"
+
+
+@tool(args_schema=ReviewLookupArgs)
+def get_underwriting_review(**kwargs) -> str:
+    """Medical/Financial Underwriter only: one assigned application's review workspace — my review status,
+    my requirements (e-application questionnaire, medical exam or insurance history, documents), documents
+    still needed from me, and whether AI underwriting can run yet — with the next step. Read-only."""
+    return "{}"
+
+
+@tool(args_schema=ReviewLookupArgs)
+def start_my_review(**kwargs) -> str:
+    """Medical/Financial Underwriter: take an unassigned application on my track (assigns it to me)."""
+    return "{}"
+
+
+class SendEApplicationArgs(ReviewLookupArgs):
+    part: Optional[Literal["medical", "financial", "both"]] = Field(
+        default=None, description="Which questionnaire. A specialist always sends their own track's; defaults to it.")
+
+
+@tool(args_schema=SendEApplicationArgs)
+def send_e_application_questionnaire(**kwargs) -> str:
+    """Email the customer the medical and/or financial e-application questionnaire (a secure link each).
+    A specialist sends only their own track's; resending replaces the old link but is refused once submitted."""
+    return "{}"
+
+
+class RunAiMedicalArgs(ReviewLookupArgs):
+    confirm: Optional[bool] = Field(default=False, description=(
+        "False (default): read the reports and show the AI's results to check. True ONLY after the user has "
+        "explicitly confirmed recording those results (clicked 'Record these results')."))
+
+
+@tool(args_schema=RunAiMedicalArgs)
+def run_ai_medical_underwriting(**kwargs) -> str:
+    """Medical Underwriter: AI medical underwriting. Works out the medical requirements if needed, checks every
+    required test has an accepted report, has the AI read each result, and shows them for review. Only with
+    confirm=true (after the user confirms) are the results recorded and rated (clinical outcome, loading)."""
+    return "{}"
+
+
+@tool(args_schema=ReviewLookupArgs)
+def run_ai_financial_underwriting(**kwargs) -> str:
+    """Financial Underwriter: AI financial underwriting — financial risk score, the cover the income supports
+    and whether a referral is needed. Needs the financial e-application submitted, insurance history cleared and
+    the plan's financial documents accepted. Analysis only: it records no decision."""
+    return "{}"
+
+
+class RecordReviewArgs(ReviewLookupArgs):
+    decision: Literal["CLEARED", "REFERRED", "DECLINED", "IN_REVIEW"] = Field(description="The review outcome.")
+    rationale: Optional[str] = Field(default=None, description="The underwriter's reason, in their words. Required for Cleared/Referred/Declined.")
+    track: Optional[Literal["medical", "financial"]] = Field(default=None, description="Only for general underwriters; specialists use their own track.")
+    confirm: Optional[bool] = Field(default=False, description="True ONLY after the user explicitly confirmed this exact decision and rationale.")
+
+
+@tool(args_schema=RecordReviewArgs)
+def record_underwriting_review(**kwargs) -> str:
+    """Record my medical or financial review decision (Cleared / Referred / Declined) with a rationale. Without
+    confirm=true it only shows what will be recorded; never decide on the underwriter's behalf."""
+    return "{}"
+
+
+class TrackUnderwritersArgs(BaseModel):
+    track: Optional[Literal["medical", "financial"]] = Field(default=None, description="Only those who can take this track.")
+
+
+@tool(args_schema=TrackUnderwritersArgs)
+def list_track_underwriters(**kwargs) -> str:
+    """The underwriters who can take the medical or financial review. Read-only."""
+    return "{}"
+
+
+class AssignTrackArgs(ReviewLookupArgs):
+    track: Literal["medical", "financial"] = Field(description="Which review to assign.")
+    underwriter_name: Optional[str] = Field(default=None, description="The underwriter's name or email. Asks with choices when omitted or ambiguous.")
+    underwriter_id: Optional[str] = Field(default=None, description="The underwriter's user UUID, when already chosen.")
+
+
+@tool(args_schema=AssignTrackArgs)
+def assign_underwriting_track(**kwargs) -> str:
+    """Admin: assign an application's medical or financial review to an underwriter."""
+    return "{}"
+
+
+@tool(args_schema=ReviewLookupArgs)
+def get_specialist_reviews(**kwargs) -> str:
+    """Final underwriting: both specialist reviews of an application (status, reviewer, rationale, AI results)
+    plus the Agent's Confidential Report and PEP screening — and whether it is ready to compile. Read-only."""
+    return "{}"
+
+
+class CompileArgs(ReviewLookupArgs):
+    confirm: Optional[bool] = Field(default=False, description="True ONLY after the user explicitly confirmed running the final compile.")
+
+
+@tool(args_schema=CompileArgs)
+def compile_final_underwriting(**kwargs) -> str:
+    """Final underwriting: once the medical and financial reviews, the ACR and PEP screening are in, compile them
+    with the AI risk assessment into the final recommendation (a specialist's decline or referral is never
+    overridden). Without confirm=true it shows readiness and a summary only. It recommends; it does not approve."""
+    return "{}"
+
+
+SPECIALIST_REVIEW_TOOLS = [
+    list_my_underwriting_reviews, get_underwriting_review, start_my_review, send_e_application_questionnaire,
+    run_ai_medical_underwriting, run_ai_financial_underwriting, record_underwriting_review,
+    list_track_underwriters, assign_underwriting_track, get_specialist_reviews, compile_final_underwriting,
+]
+
+
 ALL_TOOLS = [
     # navigation & discovery
     navigate_to_page,
@@ -3080,5 +3213,6 @@ ALL_TOOLS = [
     list_commission_exceptions,
     reconcile_commission_receipts,
     explain_commission_earning,
+    *SPECIALIST_REVIEW_TOOLS,
 ]
 

@@ -73,6 +73,7 @@ export interface IssuanceResult {
   version: string;
   documents_generated: number;
   amount_due?: number;
+  initial_premium_credited?: number;
   payment?: PaymentIntent;
   available_payment_methods?: PaymentMethod[];
 }
@@ -261,7 +262,7 @@ export async function issuePolicy(policyId: string): Promise<IssuanceResult> {
 export async function initiatePayment(
   policyId: string,
   method?: string
-): Promise<{ policy_id: string; amount_due: number; payment: PaymentIntent; available_payment_methods: PaymentMethod[] }> {
+): Promise<{ policy_id: string; amount_due: number; premium_total?: number; amount_already_paid?: number; payment: PaymentIntent; available_payment_methods: PaymentMethod[] }> {
   const tid = tenantId();
   const res = await api.post(
     `/tenants/${tid}/policies/${policyId}/payments/initiate`,

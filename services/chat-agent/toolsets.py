@@ -289,6 +289,21 @@ DOMAIN_TOOLS: dict[str, set[str]] = {
     "profile_risk": {
         "assess_customer_risk_profile",
     },
+    # Specialist underwriting: the medical and financial reviews and the final compile
+    # (specialist_review_tools.py). The specialist agents bind this pack on its own.
+    "specialist_review": {
+        "list_my_underwriting_reviews",
+        "get_underwriting_review",
+        "start_my_review",
+        "send_e_application_questionnaire",
+        "run_ai_medical_underwriting",
+        "run_ai_financial_underwriting",
+        "record_underwriting_review",
+        "list_track_underwriters",
+        "assign_underwriting_track",
+        "get_specialist_reviews",
+        "compile_final_underwriting",
+    },
 }
 
 # Bound when no keyword matches and nothing is sticky. Must fit the provider cap
@@ -400,6 +415,11 @@ DOMAIN_KEYWORDS["claims_workflow"] = DOMAIN_KEYWORDS["claims"] + (
     "intimat", "eligib", "in force on", "was the policy in force", "covered on", "nominee", "payee", "iban",
     "assess the benefit", "benefit payable", "closure letter", "close the claim", "reconcile the settlement",
     "death benefit", "disability", "accidental death", "hospital", "ex-gratia", "ex gratia",
+)
+DOMAIN_KEYWORDS["specialist_review"] = (
+    "medical review", "financial review", "specialist review", "medical underwriter", "financial underwriter",
+    "assign the medical", "assign the financial", "compile", "final underwriting", "my reviews", "my review",
+    "ai medical underwriting", "ai financial underwriting", "medical e-application", "financial e-application",
 )
 DOMAIN_KEYWORDS["profile_risk"] = (
     "risk profile", "profile risk", "risk assessment", "assess risk", "assess the risk", "risk factors",

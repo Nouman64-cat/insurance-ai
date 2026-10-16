@@ -9,6 +9,14 @@ the graph checks before a tool ever runs.
 from env_mode import is_demo
 
 MUTATING_TOOLS = {
+    # Specialist underwriting (specialist_review_tools.py)
+    "start_my_review",
+    "send_e_application_questionnaire",
+    "run_ai_medical_underwriting",
+    "run_ai_financial_underwriting",
+    "record_underwriting_review",
+    "assign_underwriting_track",
+    "compile_final_underwriting",
     "add_customer",
     "update_customer",
     "delete_customer",
@@ -160,6 +168,11 @@ MUTATING_TOOLS = {
 # Read-only + navigation. Never gated, never confirmed — asking "shall I open
 # the cases page?" before every navigation makes the agent unusable.
 SAFE_TOOLS = {
+    # Specialist underwriting reads — scoped further by ROLE_SCOPED_READS below.
+    "list_my_underwriting_reviews",
+    "get_underwriting_review",
+    "list_track_underwriters",
+    "get_specialist_reviews",
     "prepare_family_insurance",
     "resolve_customer_type",
     "navigate_to_page",
@@ -317,6 +330,8 @@ CLIENT_EXECUTED_TOOLS = {"upload_document"}
 # that are optional/inferable (e.g. create_case's applicant lookup, which can
 # proceed on cnic OR applicant_name).
 REQUIRED_ARGS: dict[str, list[str]] = {
+    "record_underwriting_review": ["decision"],
+    "assign_underwriting_track": ["track"],
     "add_customer": [
         "first_name", "last_name", "cnic", "date_of_birth",
         "gender", "occupation", "declared_income",
@@ -383,6 +398,17 @@ REQUIRED_ARGS: dict[str, list[str]] = {
 # Tools that emit progress steps worth showing in the UI's process graph, with
 # the label each step gets. Everything else falls back to a humanised tool name.
 STEP_LABELS: dict[str, str] = {
+    "list_my_underwriting_reviews": "Loading your reviews",
+    "get_underwriting_review": "Reading the review workspace",
+    "start_my_review": "Starting your review",
+    "send_e_application_questionnaire": "Sending the e-application",
+    "run_ai_medical_underwriting": "Running AI medical underwriting",
+    "run_ai_financial_underwriting": "Running AI financial underwriting",
+    "record_underwriting_review": "Recording your review",
+    "list_track_underwriters": "Finding underwriters",
+    "assign_underwriting_track": "Assigning the review",
+    "get_specialist_reviews": "Reading the specialist reviews",
+    "compile_final_underwriting": "Compiling final underwriting",
     "resolve_customer_type": "Determining customer type",
     "add_customer": "Registering customer",
     "update_customer": "Updating customer",
@@ -956,6 +982,39 @@ UNDERWRITER_ALLOWED_TOOLS = SAFE_TOOLS | {
 }
 
 
+# The Medical and Financial Underwriter work one track each, in their own
+# workspace; the backend additionally refuses anything outside their track.
+SPECIALIST_TOOLS = {
+    "list_my_underwriting_reviews",
+    "get_underwriting_review",
+    "start_my_review",
+    "send_e_application_questionnaire",
+    "record_underwriting_review",
+}
+MEDICAL_UNDERWRITER_ALLOWED_TOOLS = SAFE_TOOLS | SPECIALIST_TOOLS | {"run_ai_medical_underwriting"}
+FINANCIAL_UNDERWRITER_ALLOWED_TOOLS = SAFE_TOOLS | SPECIALIST_TOOLS | {"run_ai_financial_underwriting", "run_insurance_history_check"}
+# Final underwriting: compiles the two specialist reviews (Admin has every tool).
+FINAL_UNDERWRITING_TOOLS = {
+    "list_track_underwriters",
+    "get_specialist_reviews",
+    "compile_final_underwriting",
+    "send_e_application_questionnaire",
+    "record_underwriting_review",
+}
+
+
+# Read-only, but carrying medical findings and underwriters' rationale: only the
+# roles that do the work see them, never Viewer or Customer Service.
+_FINAL_READERS = {"SuperAdmin", "Admin", "Underwriter"}
+ROLE_SCOPED_READS: dict[str, set[str]] = {
+    # Admins may call these too; the handlers explain they are a specialist's view.
+    "list_my_underwriting_reviews": {"Medical Underwriter", "Financial Underwriter", *ADMIN_ROLES},
+    "get_underwriting_review": {"Medical Underwriter", "Financial Underwriter", *ADMIN_ROLES},
+    "list_track_underwriters": _FINAL_READERS,
+    "get_specialist_reviews": _FINAL_READERS,
+}
+
+
 def is_role_allowed(tool_name: str, role: str, platform: str = "web") -> bool:
     """Whether `role` may run `tool_name`.
 
@@ -964,6 +1023,8 @@ def is_role_allowed(tool_name: str, role: str, platform: str = "web") -> bool:
     registries above defaulted to *permitted* for unrecognised roles, and
     Underwriter was a deny-list that auto-granted anything newly added.
     """
+    if tool_name in ROLE_SCOPED_READS and role not in ROLE_SCOPED_READS[tool_name]:
+        return False
     if role in ADMIN_ROLES:
         return True
     if tool_name in GROUP_TOOLS or tool_name in COMMISSION_ADMIN_TOOLS:
@@ -975,7 +1036,11 @@ def is_role_allowed(tool_name: str, role: str, platform: str = "web") -> bool:
     if role == "Underwriter":
         if tool_name in ADMIN_ONLY_TOOLS:
             return False
-        return tool_name in UNDERWRITER_ALLOWED_TOOLS
+        return tool_name in UNDERWRITER_ALLOWED_TOOLS or tool_name in FINAL_UNDERWRITING_TOOLS
+    if role == "Medical Underwriter":
+        return tool_name in MEDICAL_UNDERWRITER_ALLOWED_TOOLS
+    if role == "Financial Underwriter":
+        return tool_name in FINANCIAL_UNDERWRITER_ALLOWED_TOOLS
     if role == "ClaimsManager":
         return tool_name in CLAIMS_MANAGER_ALLOWED_TOOLS
     if role == "ClaimsAdjuster":

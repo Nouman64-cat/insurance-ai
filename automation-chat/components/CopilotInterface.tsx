@@ -1,4 +1,5 @@
 "use client";
+import { paymentSummary } from "@/lib/agent/premiumSplit";
 import { resolveUploadCase, uploadTargetFromText, type UploadTarget } from "@/lib/agent/documentTarget";
 import { displayDate, displayDateTime } from '../lib/dateDisplay';
 import { isRevisionText, revision } from "../lib/agent/revision";
@@ -1351,7 +1352,7 @@ function getRecommendedActions(
   ];
 }
 
-export function CopilotInterface() {
+export function CopilotInterface({ compact = false }: { compact?: boolean } = {}) {
   const { t, locale } = useI18n();
   const welcome = useMemo<AgentMessage>(
     () => ({ id: WELCOME_ID, role: "assistant", text: t("composer.greeting") }),
@@ -1528,8 +1529,19 @@ export function CopilotInterface() {
     | "back_submitted"
     | "resubmit"
     | "return_review"
-    | "reject";
+    | "reject"
+    // The initial premium, collected while the proposal is Under Review (same as the Proposal page's PaymentPanel).
+    | "payment_request"
+    | "payment_check"
+    | "payment_remind"
+    | "payment_received"
+    | "payment_accept"
+    | "payment_reject";
   type ProposalState = "draft" | "submitted" | "review" | "info";
+  // Underwriting opens only once the initial premium has cleared. A family's or a group's premium is
+  // collected on its own policy, so those go straight on ("none").
+  type Payment = "none" | "due" | "requested" | "proof" | "paid";
+  const PAYMENT_METHODS = ["Cash", "Bank transfer", "Cheque", "JazzCash", "Easypaisa", "Card"];
   // A family's proposal is one shared quote for the whole group; its member cases already exist,
   // so "Send to Underwriting" hands over to pre-underwriting on those cases instead of opening one.
   type ProposalBase = {
@@ -1540,17 +1552,19 @@ export function CopilotInterface() {
     name: string;
     hasMissing: boolean;
     memberCases?: FamilyJourney["cases"];
+    payment?: Payment;
   };
   // `from` is the state the buttons were offered in, so a cancelled action can offer them again.
   type ProposalStep = ProposalBase & {
     step: ProposalStepId;
     from: ProposalState;
+    method?: string;
   };
 
   // What each button does: the status it sets and the state the proposal is in
   // afterwards (which decides the next set of buttons).
   const PROPOSAL_STEPS: Record<
-    Exclude<ProposalStepId, "underwrite">,
+    Exclude<ProposalStepId, "underwrite" | `payment_${string}`>,
     { label: string; status: string; to: ProposalState | null; done: string }
   > = {
     submit: {
@@ -1639,10 +1653,38 @@ export function CopilotInterface() {
   };
   const SENT_FOR_REVIEW =
     "✅ **Your proposal has been sent to the admin team for further review.** They will take it from here, and you can follow its progress under Proposals.";
-  const proposalNext = (state: ProposalState) =>
+  const PAYMENT_NEXT: Record<Payment, string> = {
+    due: "Next step: **request the initial premium** from the customer. Underwriting opens once it has cleared.",
+    requested: "Waiting for the customer to pay the initial premium. Underwriting opens once it has cleared.",
+    proof: "The customer says they have paid. **Check it and confirm** the payment to continue.",
+    paid: PROPOSAL_OPTIONS.review.next,
+    none: PROPOSAL_OPTIONS.review.next,
+  };
+  const proposalNext = (state: ProposalState, payment?: Payment) =>
     state === "review" && !canHandOffToUnderwriting()
       ? ""
-      : PROPOSAL_OPTIONS[state].next;
+      : state === "review" && payment
+        ? PAYMENT_NEXT[payment]
+        : PROPOSAL_OPTIONS[state].next;
+  const stepChip = (label: string, base: ProposalBase, step: ProposalStepId, from: ProposalState, extra: object = {}): QuickAction => ({
+    label, actionType: "proposal_step", payload: JSON.stringify({ ...base, step, from, ...extra }),
+  });
+  // In Under Review, "Send to Underwriting" is offered only once the premium is paid (or not needed).
+  const paymentActions = (base: ProposalBase): QuickAction[] => {
+    switch (base.payment) {
+      case "due":
+        return [stepChip("Request Initial Premium", base, "payment_request", "review")];
+      case "requested":
+        return [stepChip("Check Payment", base, "payment_check", "review"), stepChip("Record Payment Received", base, "payment_received", "review"),
+                stepChip("Resend Payment Link", base, "payment_remind", "review")];
+      case "proof":
+        return [stepChip("Confirm Payment Received", base, "payment_accept", "review"), stepChip("Reject Receipt", base, "payment_reject", "review")];
+      case undefined:
+        return [stepChip("Check Payment", base, "payment_check", "review")];
+      default:
+        return [stepChip("Send to Underwriting", base, "underwrite", "review")];
+    }
+  };
   const proposalActions = (
     state: ProposalState,
     base: ProposalBase,
@@ -1662,14 +1704,9 @@ export function CopilotInterface() {
         ]
       : PROPOSAL_OPTIONS[state].ids
           .filter((step) => !(step === "submit" && base.hasMissing))
-          .map<QuickAction>((step) => ({
-            label:
-              step === "underwrite"
-                ? "Send to Underwriting"
-                : PROPOSAL_STEPS[step].label,
-            actionType: "proposal_step" as const,
-            payload: JSON.stringify({ ...base, step, from: state }),
-          }))
+          .flatMap<QuickAction>((step) => step === "underwrite"
+            ? paymentActions(base)
+            : [stepChip(PROPOSAL_STEPS[step as keyof typeof PROPOSAL_STEPS].label, base, step, state)])
           .concat(
             !base.memberCases &&
               base.customerId &&
@@ -1867,13 +1904,77 @@ export function CopilotInterface() {
 
   const [confirm, confirmDialog] = useConfirm();
 
+  // The initial premium's state, read from the same record the Proposal page's PaymentPanel uses.
+  const loadPayment = async (base: ProposalBase): Promise<{ payment: Payment; ipp: any }> => {
+    if (base.memberCases?.length || !base.policyId || base.policyId.startsWith("draft-")) return { payment: "none", ipp: null };
+    const tenantId = localStorage.getItem("tenant_id");
+    const ipp = (await api.get(`/tenants/${tenantId}/policies/${base.policyId}/ipp`)).data;
+    const payment: Payment = ipp?.status === "Realized" ? "paid"
+      : ipp?.proof_status === "Submitted" ? "proof"
+      : ipp?.requested_at ? "requested" : "due";
+    return { payment, ipp };
+  };
+
+  // What happens once an application is sent to underwriting.
+  const UNDERWRITING_HANDOFF =
+    `Underwriting is now split between two specialists:\n\n` +
+    `- **Medical underwriter** — the medical e-application, examination reports and AI medical underwriting.\n` +
+    `- **Financial underwriter** — the financial e-application, insurance history, income documents and AI financial underwriting.\n\n` +
+    `Each records their own review. Once both are in, together with the **agent's report** and **PEP screening**, ` +
+    `the final underwriting compiles them into the recommendation.\n\n` +
+    `- **Assign underwriters & track** — assign the two reviews here and follow all four inputs live.\n` +
+    `- **Open the case workspace** — see the same on the case page.`;
+
   const runProposalStep = useCallback(
     async (p: ProposalStep) => {
-      const { step, from, ...base } = p;
+      const { step, from, method, ...base } = p;
       try {
+        if (step.startsWith("payment_")) {
+          const tenantId = localStorage.getItem("tenant_id");
+          const root = `/tenants/${tenantId}/policies/${base.policyId}/ipp`;
+          let lead = "";
+          if (step === "payment_request" || step === "payment_remind") {
+            const r = (await api.post(`${root}/${step === "payment_request" ? "request" : "remind"}`)).data;
+            lead = r.emailed
+              ? `📨 ${step === "payment_request" ? "Payment link" : "Reminder"} emailed to **${r.customer_email}**. They can pay by link, upload a receipt or tell us they have paid.`
+              : `The customer has no email on file. Share this payment link with them yourself: ${r.link}`;
+          } else if (step === "payment_received") {
+            if (!method) {
+              addAssistantMessage(`How was **${p.name}**'s initial premium received?`,
+                PAYMENT_METHODS.map((m) => stepChip(m, base, "payment_received", from, { method: m })));
+              return;
+            }
+            const currentPayment = await loadPayment(base);
+            if (!(await confirm({ title: "Record the initial premium as received?", message: `${paymentSummary(currentPayment.payment, currentPayment.ipp)}\n\nReceived by ${method}. Confirm only after checking the payment evidence.`, confirmLabel: "Record payment" }))) {
+              addAssistantMessage("Okay — nothing was recorded.", proposalActions("review", base));
+              return;
+            }
+            await api.post(`${root}/mark-received`, { method });
+            lead = `✅ Initial premium recorded as received by ${method}.`;
+          } else if (step === "payment_accept" || step === "payment_reject") {
+            const accept = step === "payment_accept";
+            if (!(await confirm({
+              title: accept ? "Confirm the initial premium has been received?" : "Reject the customer's payment claim?",
+              message: accept ? "The application can then go to underwriting." : "The customer is told and can try again.",
+              confirmLabel: accept ? "Confirm payment" : "Reject", tone: accept ? undefined : "danger",
+            }))) {
+              addAssistantMessage("Okay — nothing changed.", proposalActions("review", base));
+              return;
+            }
+            await api.post(`${root}/review`, { decision: accept ? "accept" : "reject", note: accept ? undefined : "Payment could not be confirmed." });
+            lead = accept ? "✅ Payment confirmed." : "The payment claim was rejected; the customer has been told.";
+          }
+          const { payment, ipp } = await loadPayment(base);
+          const next = { ...base, payment };
+          addAssistantMessage(
+            [lead, paymentSummary(payment, ipp), proposalNext("review", payment)].filter(Boolean).join("\n\n"),
+            proposalActions("review", next),
+          );
+          return;
+        }
         if (step === "underwrite" && p.memberCases?.length) {
           // Family: the head and — if the family chose it — an insured spouse already have underwriting cases from
-          // enrolment. They are worked in this order: the head's 7 requirements first, then the spouse's.
+          // enrolment. They are worked in this order: the head's specialist reviews first, then the spouse's.
           // Nominees have no cover and no underwriting.
           const ordered = [
             ...p.memberCases.filter((c) => c.relationship === "Self"),
@@ -1890,12 +1991,10 @@ export function CopilotInterface() {
                 ? ` ${rest.map((c) => `**${c.name}** (${role(c)}, case ${c.case_number})`).join(", ")} ${rest.length === 1 ? "follows" : "follow"} once ${first.name}'s requirements are complete — the risk assessment runs after both.`
                 : "") +
               `\n\n` +
-              `Underwriting has 6 requirements (documents, e-application, agent report, PEP & sanctions screening, insurance history and medical examination). How would you like to work through them?\n\n` +
-              `- **Guide me step by step** — I'll take you through them one at a time, explaining each.\n` +
-              `- **Open the case workspace** — see all 7 together and complete them yourself on the case page.`,
+              UNDERWRITING_HANDOFF,
             [
               {
-                label: `Guide me step by step — ${first.name}`,
+                label: `Assign underwriters & track — ${first.name}`,
                 actionType: "uw_requirements",
                 payload: JSON.stringify({
                   caseId: first.case_id,
@@ -1925,12 +2024,10 @@ export function CopilotInterface() {
           // what the user gets rather than how it is built.
           addAssistantMessage(
             `**${p.name}**'s proposal has been **sent to underwriting** — case **${caseNo}** is open.\n\n` +
-              `Underwriting has 6 requirements (documents, e-application, agent report, PEP & sanctions screening, insurance history and medical examination). How would you like to work through them?\n\n` +
-              `- **Guide me step by step** — I'll take you through them one at a time, explaining each.\n` +
-              `- **Open the case workspace** — see all 7 together and complete them yourself on the case page.`,
+              UNDERWRITING_HANDOFF,
             [
               {
-                label: "Guide me step by step",
+                label: "Assign underwriters & track",
                 actionType: "uw_requirements",
                 payload: JSON.stringify({ caseId, caseNo }),
               },
@@ -1939,13 +2036,13 @@ export function CopilotInterface() {
               {
                 label: "Open the case workspace",
                 actionType: "embed",
-                payload: `case/${caseId}${familyQueueRef.current.some((c) => c.case_id === caseId) ? "" : "?autoRun=true"}`,
+                payload: `case/${caseId}`,
               },
             ],
           );
           return;
         }
-        const def = PROPOSAL_STEPS[step];
+        const def = PROPOSAL_STEPS[step as keyof typeof PROPOSAL_STEPS];
         if (
           step === "reject" &&
           !(await confirm({
@@ -1956,7 +2053,7 @@ export function CopilotInterface() {
           }))
         ) {
           addAssistantMessage(
-            `Okay — **${p.name}**'s proposal was not rejected. ${proposalNext(from)}`,
+            `Okay — **${p.name}**'s proposal was not rejected. ${proposalNext(from, base.payment)}`,
             proposalActions(from, base),
           );
           return;
@@ -1974,10 +2071,17 @@ export function CopilotInterface() {
             : base.hasMissing,
         };
         if (def.to) {
+          let paymentLine = "";
+          if (def.to === "review" && canHandOffToUnderwriting()) {
+            const { payment, ipp } = await loadPayment(fresh).catch(() => ({ payment: undefined as Payment | undefined, ipp: null }));
+            fresh.payment = payment;
+            paymentLine = payment ? paymentSummary(payment, ipp) : "";
+          }
           addAssistantMessage(
             `**${p.name}**'s proposal ${def.done}\n\n` +
               (detail ? `${proposalSummary(detail, def.to)}\n\n` : "") +
-              proposalNext(def.to),
+              (paymentLine ? `${paymentLine}\n\n` : "") +
+              proposalNext(def.to, fresh.payment),
             proposalActions(def.to, fresh),
           );
         } else {
@@ -1998,16 +2102,29 @@ export function CopilotInterface() {
           );
         }
       } catch (err: any) {
+        const detail = String(err?.response?.data?.detail ?? err?.message ?? "unknown error");
+        if (step === "underwrite" && /initial premium/i.test(detail)) {
+          // The premium has not cleared (the chip predates a change, or it was never collected): collect it first.
+          const { payment, ipp } = await loadPayment(base).catch(() => ({ payment: "due" as Payment, ipp: null }));
+          const next = { ...base, payment };
+          addAssistantMessage(
+            [`The initial premium has to clear before **${p.name}**'s application can go to underwriting.`, paymentSummary(payment, ipp), proposalNext("review", payment)].filter(Boolean).join("\n\n"),
+            proposalActions("review", next),
+          );
+          return;
+        }
         addAssistantMessage(
-          `⚠️ Couldn't complete that step: ${err?.response?.data?.detail ?? err?.message ?? "unknown error"}. You can try again.`,
+          `⚠️ Couldn't complete that step: ${detail}. You can try again.`,
           [
             {
               label:
                 step === "underwrite"
                   ? "Send to Underwriting"
-                  : PROPOSAL_STEPS[step].label,
+                  : step.startsWith("payment_")
+                    ? "Check Payment"
+                    : PROPOSAL_STEPS[step as keyof typeof PROPOSAL_STEPS].label,
               actionType: "proposal_step",
-              payload: JSON.stringify(p),
+              payload: JSON.stringify(step.startsWith("payment_") ? { ...p, step: "payment_check" } : p),
             },
           ],
         );
@@ -2122,17 +2239,17 @@ export function CopilotInterface() {
         }
         setCasePanel(null);
         addAssistantMessage(
-          "All 6 pre-underwriting gates have cleared for this case. Would you like to proceed with the AI underwriting now?",
+          "Both specialist reviews, the agent's report and PEP screening are in for this case. Compile the final underwriting now?",
           [
             {
-              label: "Run AI Underwriting",
+              label: "Compile final underwriting",
               actionType: "submit",
-              payload: `Run risk assessment for case ${caseRef}`,
+              payload: `Compile final underwriting for case ${caseRef}`,
             },
             {
               label: "Cancel",
               actionType: "submit",
-              payload: "Not right now — I'll run the risk assessment later.",
+              payload: "Not right now — I'll compile the final underwriting later.",
             },
           ],
         );
@@ -2233,13 +2350,31 @@ export function CopilotInterface() {
             );
           familyDoneRef.current = new Set();
         }
+        // Underwriting is two specialist reviews — the medical underwriter's and the financial underwriter's, each
+        // done in their own workspace (e-application, documents, examination or insurance history, AI underwriting) —
+        // plus the agent's report and PEP screening. Final underwriting compiles those four.
         const pre = d.pre_underwriting_status || {};
         const missingDocs: string[] = d.document_checklist?.missing ?? [];
-        const eApp = pre.e_application ?? "NotStarted",
-          acr = pre.acr ?? "NotStarted",
+        const acr = pre.acr ?? "NotStarted",
           comp = pre.compliance ?? "NotRun";
-        const hist = pre.insurance_history ?? "NotStarted",
-          med = pre.medical_exam ?? "NotAssessed";
+        const tracks = (await api.get(`/tenants/${tenantId}/cases/${caseId}/underwriting-tracks`)).data;
+        const REVIEW_LABEL: Record<string, string> = {
+          PENDING: "Not started", IN_REVIEW: "In review", CLEARED: "Cleared", REFERRED: "Referred", DECLINED: "Declined",
+        };
+        const review = (track: "medical" | "financial") => {
+          const r = tracks[track];
+          return {
+            id: `${track}_review` as ChecklistItem["id"],
+            name: track === "medical" ? "Medical Underwriting Review" : "Financial Underwriting Review",
+            status: r.reviewer ? REVIEW_LABEL[r.status] ?? r.status : "Unassigned",
+            ok: Boolean(r.submitted),
+            detail: r.submitted
+              ? `${r.reviewer} recorded ${String(REVIEW_LABEL[r.status]).toLowerCase()}${r.note ? ` — “${r.note}”` : "."}`
+              : track === "medical"
+                ? "The medical underwriter reviews the medical e-application and examination reports, runs AI medical underwriting and records their decision."
+                : "The financial underwriter reviews the financial e-application, insurance history and income documents, runs AI financial underwriting and records their decision.",
+          };
+        };
 
         const reqs: {
           id: ChecklistItem["id"];
@@ -2248,30 +2383,13 @@ export function CopilotInterface() {
           ok: boolean;
           detail: string;
         }[] = [
-          {
-            id: "docs",
-            name: "Mandatory Documents Checklist",
-            status: missingDocs.length
-              ? `Missing (${missingDocs.length})`
-              : "Complete",
-            ok: missingDocs.length === 0,
-            detail: missingDocs.length
-              ? `Missing required document(s): ${missingDocs.join(", ")}.`
-              : "All required documents are uploaded.",
-          },
-          {
-            id: "eapp",
-            name: "Customer E-Application Questionnaire",
-            status: eApp,
-            ok: eApp === "Verified",
-            detail:
-              "The customer's health disclosures questionnaire — send the link, then verify it once submitted.",
-          },
+          review("medical"),
+          review("financial"),
           {
             id: "acr",
             name: "Agent's Confidential Report (ACR)",
             status: acr,
-            ok: acr === "Submitted",
+            ok: ["Submitted", "Waived"].includes(acr),
             detail: d.family_head_case
               ? `Filed once for the whole family (recorded on the head's case ${d.family_head_case.case_number}) — one proposer, one report.`
               : "The agent's own confidential assessment of the applicant, filed by the agent from the agent app.",
@@ -2283,21 +2401,6 @@ export function CopilotInterface() {
             ok: ["Passed", "Cleared"].includes(comp),
             detail:
               "PEP and AML screening of the applicant against watchlists.",
-          },
-          {
-            id: "history",
-            name: "Insurance History Clearance",
-            status: hist,
-            ok: ["Clear", "Cleared"].includes(hist),
-            detail: "Prior policy coverage and over-insurance history check.",
-          },
-          {
-            id: "medical",
-            name: "Medical Examination / NML Grid",
-            status: med,
-            ok: ["Completed", "Waived", "NotRequired"].includes(med),
-            detail:
-              "Non-medical limit grid or panel diagnostic check, depending on the cover amount.",
           },
         ];
         const doneCount = reqs.filter((r) => r.ok).length;
@@ -2314,12 +2417,11 @@ export function CopilotInterface() {
         });
         // The steps run inside the card itself; `footerActions` are the card as a whole (they go to the chat).
         let footerActions: QuickAction[] = [workspace];
-        let warning: string | undefined;
         let note: string | undefined;
         const allDone = reqs.every((r) => r.ok);
         if (allDone) {
           footerActions = [
-            act("Run AI Underwriting", `Run risk assessment for case ${no}`),
+            act("Compile final underwriting", `Compile final underwriting for case ${no}`),
             workspace,
           ];
           // A family's next insured member (the spouse) is underwritten once this one's requirements are in.
@@ -2330,7 +2432,7 @@ export function CopilotInterface() {
           // In a family one member is never assessed alone: the assessments run together once everyone's requirements are in.
           if (at >= 0 && queue.length > 1)
             footerActions = footerActions.filter(
-              (x) => x.label !== "Run AI Underwriting",
+              (x) => x.label !== "Compile final underwriting",
             );
           if (next) {
             note = `Next member: ${next.name} (${next.relationship === "Self" ? "head" : "fully insured spouse"}). Their underwriting starts now.`;
@@ -2359,11 +2461,7 @@ export function CopilotInterface() {
               workspace,
             ];
           }
-        } else if (!reqs[4].ok && reqs.slice(0, 4).every((r) => r.ok)) {
-          warning =
-            "Choose carefully: a collected premium can't be undone from here.";
         }
-        const nextIdx = reqs.findIndex((r) => !r.ok);
         const checklist: RequirementsChecklist = {
           caseId,
           caseNo: no,
@@ -2376,27 +2474,25 @@ export function CopilotInterface() {
           asOf: Date.now(),
           note,
           footerActions,
-          items: reqs.map((r, i) => ({
+          items: reqs.map((r) => ({
             id: r.id,
             name: r.name,
             status: r.status,
             detail: r.detail,
+            // The four inputs are independent: every unfinished one can be worked on now.
             state: r.ok
               ? "done"
-              : i === nextIdx
-                ? /flag|fail|reject/i.test(r.status)
-                  ? "issue"
-                  : "next"
-                : "todo",
-            ...(i === nextIdx && warning ? { warning } : {}),
+              : /flag|fail|reject|declin/i.test(r.status)
+                ? "issue"
+                : "next",
           })),
         };
         // The plain-text twin of the card: what a copy, an export or an old saved chat shows.
         const summary =
-          `Underwriting requirements for case ${no}: ${doneCount} of ${reqs.length} ready.` +
+          `Underwriting for case ${no}: ${doneCount} of ${reqs.length} inputs in.` +
           (allDone
-            ? " All requirements are complete."
-            : ` Up next: ${reqs[nextIdx].name}.`);
+            ? " Ready to compile the final underwriting."
+            : ` Still waiting on: ${reqs.filter((r) => !r.ok).map((r) => r.name).join(", ")}.`);
         const allActions = footerActions;
         if (refreshId)
           patchMessage(refreshId, {
@@ -4220,9 +4316,17 @@ export function CopilotInterface() {
       /* storage unavailable */
     }
   }, [activeSessionId]);
+  useEffect(() => {
+    if (!compact || window.parent === window) return;
+    try {
+      const parentOrigin = new URL(document.referrer).origin;
+      window.parent.postMessage({type:"automation-chat:status", busy:isLoading}, parentOrigin);
+    } catch { /* Opened directly without a parent. */ }
+  }, [compact, isLoading]);
   // Chat-history sidebar open/closed. Remembered across reloads; closing it gives the
   // conversation the full width.
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => {
+    if (compact) return false;
     if (typeof window === "undefined") return true;
     try {
       return localStorage.getItem("copilot_sidebar_open") !== "false";
@@ -4232,7 +4336,7 @@ export function CopilotInterface() {
   });
   useEffect(() => {
     try {
-      localStorage.setItem("copilot_sidebar_open", String(sidebarOpen));
+      if (!compact) localStorage.setItem("copilot_sidebar_open", String(sidebarOpen));
     } catch {
       /* storage unavailable */
     }
@@ -4874,6 +4978,7 @@ export function CopilotInterface() {
   ) : null;
 
   const openVoice = () => {
+    if (compact) { window.open(new URL("/", window.location.origin).href, "_blank", "noopener,noreferrer"); return; }
     setVoiceMinimized(false);
     setShowVoice(true);
   };
@@ -5041,8 +5146,8 @@ export function CopilotInterface() {
                 <button
                   type="button"
                   onClick={openVoice}
-                  title={t("composer.voiceAgent")}
-                  aria-label={t("composer.voiceAgent")}
+                  title={compact ? "Open full chat for voice" : t("composer.voiceAgent")}
+                  aria-label={compact ? "Open full chat for voice" : t("composer.voiceAgent")}
                   className="flex items-center justify-center h-11 w-11 rounded-full bg-gradient-to-br from-blue-300 via-blue-400 to-blue-500 text-white ring-4 ring-blue-100 shadow-[0_8px_20px_-6px_rgba(37,99,235,0.35)] hover:from-blue-400 hover:to-blue-600 transition-colors"
                 >
                   <svg
@@ -5139,7 +5244,9 @@ export function CopilotInterface() {
                 setSuccessModalResult(null);
 
                 const total = res.premium_breakdown?.total_premium || 0;
-                const msg = `Policy **${res.policy_number}** drafted for **${caseNum}** ✅\n\n- Status: **Pending Payment**\n- Effective: ${displayDate(res.effective_date)}\n- Expiry: ${displayDate(res.expiry_date)}\n- Total Premium: PKR ${total.toLocaleString()}\n- Payment Reference: ${res.payment?.reference || "—"}\n\nConfirm payment to activate coverage and bind the contract.`;
+                const credited = res.initial_premium_credited ?? 0;
+                const balance = res.amount_due ?? Math.max(0, total - credited);
+                const msg = `Policy **${res.policy_number}** drafted for **${caseNum}** ✅\n\n- Status: **Pending Payment**\n- Effective: ${displayDate(res.effective_date)}\n- Expiry: ${displayDate(res.expiry_date)}\n- Total Premium: PKR ${total.toLocaleString()}\n- Upfront payment credited: PKR ${credited.toLocaleString()}\n- Remaining balance due: PKR ${balance.toLocaleString()}\n- Payment Reference: ${res.payment?.reference || "—"}\n\nConfirm receipt of the remaining balance to activate coverage and bind the contract.`;
 
                 resolveInterrupt({
                   success: true,
@@ -5325,7 +5432,7 @@ export function CopilotInterface() {
 
         {/* Sidebar */}
         <div
-          className={`w-[272px] flex-shrink-0 flex-col hidden ${sidebarOpen ? "md:flex" : ""} relative overflow-hidden`}
+          className={`w-[272px] flex-shrink-0 flex-col hidden ${!compact && sidebarOpen ? "md:flex" : ""} relative overflow-hidden`}
         >
           <div className="px-5 pt-5 pb-4 flex items-center justify-between gap-3">
             {/* The product logo, as supplied. `logo-plate` gives it a white backing in dark mode, where the navy wordmark would vanish. */}
@@ -5884,8 +5991,9 @@ export function CopilotInterface() {
           {/* Main Chat Area */}
           <div className="flex-1 flex flex-row relative h-full min-w-0 min-h-0">
             <div className="flex-1 flex flex-col relative h-full min-w-0 min-h-0">
+              {compact && <div className="flex shrink-0 justify-end border-b border-slate-100 px-3 py-2"><button type="button" disabled={isLoading} onClick={handleClearChat} className="rounded-lg px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-50 disabled:opacity-40">+ {t("sidebar.newChat")}</button></div>}
               {/* Chat Header */}
-              <div className="flex items-center justify-between gap-3 px-4 sm:px-7 pt-4 sm:pt-6 pb-3 relative z-20">
+              <div className={`${compact ? "hidden" : "flex"} items-center justify-between gap-3 px-4 sm:px-7 pt-4 sm:pt-6 pb-3 relative z-20`}>
                 <div className="flex items-center gap-2 min-w-0">
                   <button
                     onClick={() => setAutomationMode(false)}
@@ -6098,8 +6206,8 @@ export function CopilotInterface() {
                   messages[0].role === "assistant" ? (
                     <div className="flex flex-col items-center justify-center min-h-full px-4 sm:px-6 pt-6 pb-10">
                       <div className="w-full max-w-[860px] flex flex-col items-center">
-                        <div className="logo-plate flex items-center justify-center mb-8 mt-2">
-                          <img src="/logo-full.png" alt="GetInsuredAI, powered by Rizviz" className="w-[min(420px,82vw)] h-auto object-contain" />
+                        <div className={`logo-plate flex items-center justify-center ${compact ? "mb-4 mt-1" : "mb-8 mt-2"}`}>
+                          <img src="/logo-full.png" alt="GetInsuredAI, powered by Rizviz" className={`${compact ? "w-48" : "w-[min(420px,82vw)]"} h-auto object-contain`} />
                         </div>
                         <p
                           dir="auto"
@@ -6109,7 +6217,7 @@ export function CopilotInterface() {
                             ? t("composer.hello", { name: firstName })
                             : t("composer.helloAnon")}
                         </p>
-                        <h2 className="text-3xl md:text-[46px] font-semibold tracking-tight text-center leading-tight text-zinc-950 mb-10">
+                        <h2 className={`${compact ? "text-2xl mb-5" : "text-3xl md:text-[46px] mb-10"} font-semibold tracking-tight text-center leading-tight text-zinc-950`}>
                           {t("composer.welcome")}
                         </h2>
 
@@ -6125,7 +6233,7 @@ export function CopilotInterface() {
                             ? turnActions
                             : getRecommendedActions(undefined)
                           )
-                            .slice(0, 6)
+                            .slice(0, compact ? 3 : 6)
                             .map((action, idx) =>
                               action.actionType === "select" ? (
                                 <QuickActionSelect

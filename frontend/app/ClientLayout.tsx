@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
+import AutomationChatLauncher from "@/components/AutomationChatLauncher";
 import { TopBar } from "@/components/TopBar";
 import { endSso, publishSso, safeNext, startSso } from "@/lib/sso";
 import AdminTour from "@/components/tour/AdminTour";
@@ -296,6 +297,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
           {/* ── Sidebar ──────────────────────────────────────────────────────── */}
           {!isPortalEmbed && <Sidebar />}
           {!isPortalEmbed && <AdminTour />}
+          {!isPortalEmbed && <AutomationChatLauncher />}
 
           {/* ── Main column ─────────────────────────────────────────────────── */}
           <div className="flex flex-col flex-1 min-w-0 overflow-hidden">

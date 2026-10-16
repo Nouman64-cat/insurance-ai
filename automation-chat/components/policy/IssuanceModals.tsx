@@ -250,6 +250,8 @@ export interface PaymentModalProps {
 export function PaymentModal({ policy, onClose, onConfirmed }: PaymentModalProps) {
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [selected, setSelected] = useState<string>("");
+  const [alreadyPaid, setAlreadyPaid] = useState<number | null>(null);
+  const [premiumTotal, setPremiumTotal] = useState<number | null>(null);
   const [amountDue, setAmountDue] = useState<number | null>(null);
   const [reference, setReference] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -270,6 +272,8 @@ export function PaymentModal({ policy, onClose, onConfirmed }: PaymentModalProps
         setMethods(res.available_payment_methods);
         setSelected(res.payment.method);
         setAmountDue(res.amount_due);
+        setAlreadyPaid(res.amount_already_paid ?? null);
+        setPremiumTotal(res.premium_total ?? null);
         setReference(res.payment.reference);
 
         const notice = docs.find(d => d.document_type === "PremiumNotice");
@@ -333,8 +337,9 @@ export function PaymentModal({ policy, onClose, onConfirmed }: PaymentModalProps
             <p className="text-xs text-slate-500 font-mono">{policy.policy_number ?? "—"} · {policy.product_name}</p>
           </div>
 
+          {alreadyPaid != null && alreadyPaid > 0 && <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm"><div className="flex justify-between"><span>Final premium</span><strong>{premiumTotal != null ? fmtPKR(premiumTotal) : "—"}</strong></div><div className="mt-2 flex justify-between text-blue-700"><span>Payment already credited</span><strong>{fmtPKR(alreadyPaid)}</strong></div><p className="mt-2 text-xs text-blue-600">Only the remaining balance below is collected now.</p></div>}
           <div className="flex items-center justify-between border-y border-slate-100 py-3">
-            <p className="text-sm font-semibold text-slate-700">Amount Due</p>
+            <p className="text-sm font-semibold text-slate-700">Remaining amount due</p>
             <p className="text-lg font-bold text-amber-700">
               {loading ? "…" : amountDue != null ? fmtPKR(amountDue) : "—"}
             </p>
