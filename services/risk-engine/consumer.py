@@ -105,6 +105,7 @@ async def _process(
             document_evidence=event.payload.document_evidence,
             verified_facts=event.payload.verified_facts,
             requirements_satisfied=event.payload.requirements_satisfied,
+            specialist_reviews=event.payload.specialist_reviews,
         ),
     )
 

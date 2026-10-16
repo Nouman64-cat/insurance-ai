@@ -278,6 +278,8 @@ app.include_router(reinstatement_router)
 app.include_router(renewals_router)
 app.include_router(claim_workflow_router)
 app.include_router(policy_exit_router)
+from routers.underwriting_questionnaires import router as underwriting_questionnaires_router
+app.include_router(underwriting_questionnaires_router)
 app.include_router(e_application_router)
 app.include_router(document_requests_router)
 app.include_router(agent_confidential_report_router)

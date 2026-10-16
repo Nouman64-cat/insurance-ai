@@ -71,6 +71,8 @@ class ProposalPayload(BaseModel):
     document_evidence: Optional[List[dict]] = None
     verified_facts: Optional[List[dict]] = None
     requirements_satisfied: bool = True
+    # The medical and financial underwriters' submitted reviews (final decision compiles them).
+    specialist_reviews: Optional[dict] = None
 
 
 class ProposalSubmittedEvent(BaseModel):

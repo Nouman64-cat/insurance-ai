@@ -43,7 +43,7 @@ router = APIRouter(tags=["Pre-Underwriting — Insurance History"])
 
 # Overriding an adverse history finding is an underwriting call, not a data-entry
 # one — the same split cases.py applies to case decisions.
-_OVERRIDE_ROLES = {"Underwriter", "Admin", "SuperAdmin"}
+_OVERRIDE_ROLES = {"Underwriter", "Financial Underwriter", "Admin", "SuperAdmin"}
 
 
 async def _get_case(session: AsyncSession, tenant_id: UUID, case_id: UUID) -> Case:
@@ -254,6 +254,9 @@ async def clear_insurance_history(
     """Underwriter accepts a flagged history — e.g. the over-insurance is
     justified by evidence held outside the system."""
     actor = await _assert_override_role(token, session)
+    user = await _get_current_user(token, session)
+    if await _role_name(user, session) == "Financial Underwriter" and not (body.note or "").strip():
+        raise HTTPException(422, "Record financial evidence and a rationale for this history decision.")
     await _get_case(session, tenant_id, case_id)
 
     check = await _load_check(session, case_id)
@@ -283,6 +286,9 @@ async def fail_insurance_history(
     """Underwriter treats the history as adverse — a hard stop the
     pre-underwriting gate honours."""
     actor = await _assert_override_role(token, session)
+    user = await _get_current_user(token, session)
+    if await _role_name(user, session) == "Financial Underwriter" and not (body.note or "").strip():
+        raise HTTPException(422, "Record financial evidence and a rationale for this history decision.")
     await _get_case(session, tenant_id, case_id)
 
     check = await _load_check(session, case_id)

@@ -27,6 +27,19 @@ export interface EApplication {
   lifestyle_habits: Record<string, any> | null;
   existing_insurance: Record<string, any> | null;
   declaration: Record<string, any> | null;
+  /** The financial e-application's answers: {employment, income, commitments, assets, funding}. */
+  financial_profile?: Record<string, any> | null;
+  /** Each questionnaire's own progress; empty for an e-application sent as one combined form. */
+  parts?: Partial<Record<EApplicationPart, EApplicationPartStatus>>;
+}
+
+export type EApplicationPart = "medical" | "financial";
+export interface EApplicationPartStatus {
+  status: EApplicationStatus;
+  sent_at: string | null;
+  started_at: string | null;
+  submitted_at: string | null;
+  signature_name: string | null;
 }
 
 export interface FamilyHistoryEntry {
@@ -46,6 +59,10 @@ export interface EApplicationInvite {
   /** The link is also emailed to the customer. */
   emailed_to?: string | null;
   email_status?: "sent" | "failed" | "no_email";
+  /** Which questionnaire this link opens. */
+  part?: EApplicationPart;
+  /** Sending both at once: one link per questionnaire actually sent (the top-level fields are the first). */
+  parts?: EApplicationInvite[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,6 +72,13 @@ export interface EApplicationInvite {
 export async function inviteEApplication(caseId: string): Promise<EApplicationInvite> {
   const tid = tenantId();
   const res = await api.post(`/tenants/${tid}/cases/${caseId}/e-application/invite`);
+  return res.data;
+}
+
+/** Send one questionnaire — the medical or the financial e-application — to the customer. */
+export async function inviteEApplicationPart(caseId: string, part: EApplicationPart): Promise<EApplicationInvite> {
+  const tid = tenantId();
+  const res = await api.post(`/tenants/${tid}/cases/${caseId}/e-application/${part}/invite`);
   return res.data;
 }
 

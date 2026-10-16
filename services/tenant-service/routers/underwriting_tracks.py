@@ -22,7 +22,7 @@ from datetime import datetime
 from typing import Literal, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -108,6 +108,7 @@ async def list_underwriters(
 
 @router.put("/cases/{case_id}/underwriting-tracks/{track}")
 async def update_track(
+    request: Request,
     tenant_id: UUID,
     case_id: UUID,
     track: TrackParam,
@@ -187,6 +188,11 @@ async def update_track(
             timestamp=datetime.utcnow(),
         ))
     await session.commit()
+    if row.status != before[0] and row.status in ("CLEARED", "REFERRED", "DECLINED"):
+        # Final underwriting compiles the submitted reviews: tell the case page one just came in.
+        from services.case_events import publish_case_event
+        await publish_case_event(request, session, event_type="UnderwritingReviewSubmitted", tenant_id=tenant_id,
+                                 case_id=case_id, detail={"track": track_key.lower(), "status": row.status})
     return (await reviews_by_case(session, [case_id]))[case_id][track_key]
 
 
@@ -199,26 +205,50 @@ async def _specialist_identity(tenant_id, token, session):
     return user, next(iter(tracks))
 
 
+async def resolve_review_policy(session, case):
+    """Legacy applications may predate policy_id; never guess between plans."""
+    from shared.models.core import Policy
+    if case.policy_id:
+        policy = await session.get(Policy, case.policy_id)
+        return policy if policy and policy.tenant_id == case.tenant_id and policy.customer_id == case.customer_id else None
+    policies = (await session.exec(select(Policy).where(Policy.tenant_id == case.tenant_id, Policy.customer_id == case.customer_id))).all()
+    return policies[0] if len(policies) == 1 else None
+
+
+@router.get("/cases/{case_id}/underwriting-tracks")
+async def case_specialist_reviews(tenant_id: UUID, case_id: UUID, session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme)):
+    """Both specialist reviews of one application, with their AI results — what final underwriting compiles."""
+    from services.specialist_reviews import compile_specialist_reviews
+    user = await _get_current_user(token, session)
+    case = await session.get(Case, case_id)
+    if user.tenant_id != tenant_id or not case or case.tenant_id != tenant_id:
+        raise HTTPException(404, "Application not found.")
+    return await compile_specialist_reviews(session, case_id)
+
+
 @router.get("/underwriting/reviews")
 async def specialist_queue(tenant_id: UUID, session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme)):
+    """A specialist's queue is the applications an admin assigned to them on their track.
+    Approved, closed and rejected applications stay in it (read-only) as the specialist's record."""
     from shared.models.core import Customer, Policy, CaseTypeEnum, CaseStatusEnum
     user, track = await _specialist_identity(tenant_id, token, session)
     rows = (await session.exec(select(Case, Customer, Policy).join(Customer, Customer.id == Case.customer_id)
         .outerjoin(Policy, Policy.id == Case.policy_id).where(Case.tenant_id == tenant_id,
-        Case.caseType == CaseTypeEnum.UNDERWRITING,
-        Case.caseStatus.notin_([CaseStatusEnum.APPROVED, CaseStatusEnum.CLOSED, CaseStatusEnum.REJECTED])).order_by(Case.createdAt.desc()))).all()
+        Case.caseType == CaseTypeEnum.UNDERWRITING).order_by(Case.createdAt.desc()))).all()
     reviews = await reviews_by_case(session, [c.caseld for c, _, _ in rows])
+    resolved = {c.caseld: policy or await resolve_review_policy(session, c) for c, _, policy in rows}
     return [{"id": str(c.caseld), "reference": c.caseNumber, "customer_name": customer.name,
              "product_name": policy.product_name if policy else None,
              "coverage_amount": policy.coverage_amount if policy else None,
              "case_status": c.caseStatus, "on_hold": c.on_hold, "hold_reason": c.hold_reason,
-             "created_at": c.createdAt, "review": reviews[c.caseld][track]}
-            for c, customer, policy in rows if reviews[c.caseld][track]["assigned_user_id"] in (None, str(user.id))]
+             "created_at": c.createdAt, "review": reviews[c.caseld][track],
+             "closed": str(getattr(c.caseStatus, "value", c.caseStatus)) in {"Approved", "Closed", "Rejected"}}
+            for c, customer, _ in rows for policy in [resolved[c.caseld]] if reviews[c.caseld][track]["assigned_user_id"] == str(user.id)]
 
 
 @router.get("/underwriting/reviews/{case_id}")
 async def specialist_workspace(tenant_id: UUID, case_id: UUID, session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme)):
-    from shared.models.core import Customer, Policy, CustomerEApplication, MedicalExamOrder, RiskAssessment, CaseTypeEnum, Artifact
+    from shared.models.core import Customer, Policy, CustomerEApplication, MedicalExamOrder, RiskAssessment, CaseTypeEnum, Artifact, AgentConfidentialReport, PremiumQuote, DocumentRequest, InsuranceHistoryCheck
     user, track = await _specialist_identity(tenant_id, token, session)
     case = await session.get(Case, case_id)
     if not case or case.tenant_id != tenant_id or case.caseType != CaseTypeEnum.UNDERWRITING:
@@ -227,10 +257,10 @@ async def specialist_workspace(tenant_id: UUID, case_id: UUID, session: AsyncSes
     if review['assigned_user_id'] not in (None, str(user.id)):
         raise HTTPException(403, "This review is assigned to another underwriter.")
     customer = await session.get(Customer, case.customer_id)
-    policy = await session.get(Policy, case.policy_id) if case.policy_id else None
+    policy = await resolve_review_policy(session, case)
     app = (await session.exec(select(CustomerEApplication).where(CustomerEApplication.case_id == case_id))).first()
     assessment = (await session.exec(select(RiskAssessment).where(RiskAssessment.tenant_id == tenant_id,
-        RiskAssessment.customer_id == case.customer_id, RiskAssessment.policy_id == case.policy_id,
+        RiskAssessment.customer_id == case.customer_id, RiskAssessment.case_id == case_id,
         RiskAssessment.superseded_at == None).order_by(RiskAssessment.created_at.desc()))).first()
     evidence = {}
     if track == 'MEDICAL':
@@ -243,18 +273,339 @@ async def specialist_workspace(tenant_id: UUID, case_id: UUID, session: AsyncSes
             "Required tests": exam.required_tests if exam else None,
             "Medical findings": exam.results_json if exam else None}
     else:
-        evidence = {"Declared income (PKR)": customer.declared_income, "Occupation": customer.occupation,
+        history = (await session.exec(select(InsuranceHistoryCheck).where(InsuranceHistoryCheck.case_id == case_id))).first()
+        acr = (await session.exec(select(AgentConfidentialReport).where(AgentConfidentialReport.case_id == case_id))).first()
+        quote = (await session.exec(select(PremiumQuote).where(PremiumQuote.policy_id == policy.id).order_by(PremiumQuote.created_at.desc()))).first() if policy else None
+        evidence = {"Quoted premium (PKR)": quote.total_premium if quote else None,
+            "Agent income verification": {"Occupation verified": acr.occupation_verified, "Income source verified": acr.income_source_verified, "Estimated income opinion": acr.estimated_income_opinion, "Income consistency": acr.income_consistency_note} if acr else None,
+            "Declared income (PKR)": customer.declared_income, "Occupation": customer.occupation,
             "Sum assured (PKR)": policy.coverage_amount if policy else None,
             "Term (years)": policy.term_years if policy else None,
-            "Existing insurance": app.existing_insurance if app else None}
-    documents = (await session.exec(select(Artifact).where(Artifact.tenant_id == tenant_id, Artifact.case_id == case_id))).all()
-    allowed_documents = {'medicalreport', 'medicalexamination', 'labreport', 'ecg', 'bloodtest', 'xray', 'mriscan'} if track == 'MEDICAL' else {'salaryslip', 'bankstatement', 'incomecertificate', 'incometaxreturn', 'taxreturn', 'financialstatement', 'proofofincome'}
-    documents = [{"id": str(d.id), "name": d.file_name or d.document_type, "type": d.document_type, "status": d.status}
-                 for d in documents if ''.join(ch for ch in d.document_type.lower() if ch.isalpha()) in allowed_documents]
+            "Existing insurance": app.existing_insurance if app else None,
+            "Financial e-application": app.financial_profile if app else None}
+    from sqlalchemy import or_, and_
+    request_ids = (await session.exec(select(DocumentRequest.id).where(DocumentRequest.policy_id == policy.id))).all() if policy else []
+    documents = (await session.exec(select(Artifact).where(Artifact.tenant_id == tenant_id, or_(
+        Artifact.case_id == case_id,
+        and_(Artifact.case_id == None, Artifact.customer_id == case.customer_id,
+             or_(Artifact.source_request_id == None, Artifact.source_request_id.in_(request_ids)))
+    )))).all()
+    allowed_documents = ({'medicalreport', 'medicalexamination', 'labreport', 'ecg', 'bloodtest', 'xray', 'mriscan', 'physicianreport'} if track == 'MEDICAL' else {'salaryslip', 'bankstatement', 'incomecertificate', 'incometaxreturn', 'taxreturn', 'financialstatement', 'proofofincome'}) | {'cnic'}
+    documents = [{"id": str(d.id), "name": d.file_name or d.document_type, "type": d.document_type, "status": d.status, "scope": "application" if d.case_id else "customer", "ocr_text": d.ocr_result, "extracted": d.extracted_metadata, "quality_score": d.quality_score, "tampered": d.tampered_flag}
+                 for d in documents if ''.join(ch for ch in d.document_type.lower() if ch.isalpha()) in allowed_documents or (track == 'MEDICAL' and d.document_type.startswith('Medical Report: '))]
+    # Only the evidence this application actually asks for: the plan's financial
+    # documents, or the tests the medical examination ordered. Nothing asked
+    # for means no documents requirement at all.
+    if track == "MEDICAL":
+        reported = {d["type"].removeprefix("Medical Report: ") for d in documents}
+        required_documents = [{"type": t.get("name") or t.get("code"), "received": t.get("code") in reported}
+                              for t in (exam.required_tests or [] if exam else [])]
+    else:
+        from services.document_requests import required_documents_for
+        from specialist_access import DOCUMENT_TYPES
+        received_types = {d["type"] for d in documents}
+        required_documents = [{"type": t, "received": t in received_types}
+                              for t in (await required_documents_for(session, policy) if policy else []) if t in DOCUMENT_TYPES["financial"]]
+    from shared.models.core import CustomerEApplicationPart
+    part = (await session.exec(select(CustomerEApplicationPart).where(
+        CustomerEApplicationPart.case_id == case_id, CustomerEApplicationPart.part == track.lower()))).first()
+    # Before the split the e-application was one combined form: its status stands for both parts.
+    raw_status = part.status if part else (app.status if app else "NotSent")
+    e_application_status = "Submitted" if app and str(getattr(app.status, "value", app.status)) == "Verified" else str(getattr(raw_status, "value", raw_status))
+    requirements = [
+        # Each track reviews from its own e-application questionnaire.
+        {"key": "e_application", "label": "Medical E-Application Questionnaire" if track == "MEDICAL" else "Financial E-Application Questionnaire",
+         "status": e_application_status, "section": "overview"},
+        {"key": "medical_exam", "label": "Medical Examination / NML Grid", "status": str(getattr(exam.status, "value", exam.status)) if exam else "NotAssessed", "section": "overview"}
+        if track == "MEDICAL" else
+        {"key": "insurance_history", "label": "Insurance History Clearance", "status": str(getattr(history.status, "value", history.status)) if history else "NotStarted", "section": "overview"},
+    ]
+    if required_documents:
+        missing = sum(not d["received"] for d in required_documents)
+        requirements.append({"key": "documents", "label": "Medical documents & reports" if track == "MEDICAL" else "Financial documents & income evidence",
+                             "status": "Received" if not missing else "Outstanding", "section": "documents",
+                             "detail": f"{len(required_documents) - missing} of {len(required_documents)} received"})
+    # What the application as a whole still waits on (owned by pre-underwriting),
+    # so "Pending Documents" is explained rather than left unexplained.
+    from services.underwriting_gate import outstanding_requirements
+    from specialist_access import APPLICATION_DOCUMENTS
+    from shared.underwriting.requirements_rules import _EXAM_TESTS_FOR_REQUIREMENT
+    # Once a medical examination has ordered its tests, the medical-exam, ECG and
+    # lab requirements are met by that exam's reports (recorded through AI medical
+    # underwriting), not by separate uploads — so they are not asked for twice.
+    ordered = (await session.exec(select(MedicalExamOrder).where(MedicalExamOrder.case_id == case_id))).first()
+    exam_tests = {t.get("code") for t in (ordered.required_tests or [])} if ordered else set()
+    covered = {code.value for code, tests in _EXAM_TESTS_FOR_REQUIREMENT.items() if tests & exam_tests}
+    application_outstanding = []
+    for spec in (await outstanding_requirements(session, tenant_id, case) if policy else []):
+        document_type, owner = APPLICATION_DOCUMENTS.get(spec.code, (None, None))
+        by_exam = spec.code in covered
+        application_outstanding.append({"code": spec.code, "reason": spec.reason, "document_type": document_type,
+                                        "owner": owner, "covered_by_exam": by_exam,
+                                        "can_upload": document_type is not None and not by_exam and owner in (None, track.lower())})
+    # Outstanding application documents this track collects are its to chase
+    # too; the other track's (e.g. a physician report) stay off this review.
+    outstanding_documents = [o for o in application_outstanding if o["can_upload"]]
+    if outstanding_documents:
+        requirements.append({"key": "application_documents", "label": "Application documents", "status": "Outstanding", "section": "documents",
+                             "detail": f"{len(outstanding_documents)} still needed for the application"})
     return {"id": str(case_id), "reference": case.caseNumber, "customer_name": customer.name,
         "product_name": policy.product_name if policy else None, "track": track.lower(), "review": review,
+        "case_status": case.caseStatus, "created_at": case.createdAt, "customer_cnic": customer.cnic,
+        "coverage_amount": policy.coverage_amount if policy else None, "term_years": policy.term_years if policy else None,
+        "requirements": requirements, "required_documents": required_documents,
+        "application_outstanding": application_outstanding,
+        "ai_underwriting": await _financial_ai_state(session, case, policy) if track == "FINANCIAL" else None,
         "on_hold": case.on_hold, "hold_reason": case.hold_reason,
         "read_only": case.on_hold or str(getattr(case.caseStatus, "value", case.caseStatus)) in {"Approved", "Closed", "Rejected"}, "evidence": evidence, "documents": documents,
-        "assessment": {"score": getattr(assessment, track.lower() + '_score'),
+        "policy_linked": policy is not None,
+        "assessment": {"results": (assessment.underwriting_results or {}).get(track.lower()), "score": getattr(assessment, track.lower() + '_score'),
                        "reasons": getattr(assessment, track.lower() + '_reasons') or [],
                        "created_at": assessment.created_at} if assessment else None}
+
+
+# Keep upload validation/storage/OCR in the existing artifact implementation.
+
+@router.post('/cases/{case_id}/underwriting-documents', status_code=202)
+async def upload_specialist_document(
+    request: Request, tenant_id: UUID, case_id: UUID,
+    document_type: str = Form(...), file: UploadFile = File(...), test_code: Optional[str] = Form(None),
+    session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme),
+):
+    from routers.artifacts import upload_artifact
+    user, track = await _specialist_identity(tenant_id, token, session)
+    from specialist_access import DOCUMENT_TYPES
+    if document_type not in DOCUMENT_TYPES[track.lower()] and not await _fills_outstanding_requirement(session, tenant_id, case_id, track, document_type):
+        raise HTTPException(403, 'This document type belongs to another underwriting track.')
+    if track == 'MEDICAL' and test_code:
+        from routers.medical_exam import _load_order, _ensure_reports_open, _save_reports, _report_view
+        from services.medical_report_uploads import MAX_REPORT_BYTES, validate_report
+        order = await _load_order(session, case_id)
+        if not order or test_code not in {t.get('code') for t in (order.required_tests or [])}:
+            raise HTTPException(422, 'Choose a required test from this application medical examination.')
+        _ensure_reports_open(order)
+        data = await file.read(MAX_REPORT_BYTES + 1)
+        filename, mime = validate_report(file.filename, data)
+        artifacts = await _save_reports(request, session, order, [test_code], data, filename, mime)
+        await _refresh_case_requirements(session, tenant_id, case_id)
+        return {'report': _report_view(artifacts[0])}
+    # The shared middleware enforces ownership, tenant, hold and application state.
+    result = await upload_artifact(request=request, tenant_id=tenant_id, case_id=case_id,
+        document_type=document_type, file=file, token=token, session=session)
+    await _refresh_case_requirements(session, tenant_id, case_id)
+    return result
+
+
+# ── AI financial underwriting ────────────────────────────────────────────────
+# The financial counterpart of AI medical underwriting: once the financial
+# requirements are in, risk-engine scores the financial risk, works out the
+# cover the income supports and whether a referral is needed. The result is
+# evidence on the financial review — the underwriter still records the decision.
+
+async def _financial_ai_blockers(session: AsyncSession, case: Case, policy) -> list[str]:
+    from shared.models.core import Artifact, CustomerEApplication, CustomerEApplicationPart, InsuranceHistoryCheck
+    from services.document_requests import required_documents_for
+    from specialist_access import DOCUMENT_TYPES
+    blockers: list[str] = []
+    if policy is None:
+        return ["Link a proposal to this application."]
+    part = (await session.exec(select(CustomerEApplicationPart).where(
+        CustomerEApplicationPart.case_id == case.caseld, CustomerEApplicationPart.part == "financial"))).first()
+    app = (await session.exec(select(CustomerEApplication).where(CustomerEApplication.case_id == case.caseld))).first()
+    submitted = {"Submitted", "Verified"}
+    if not ((part and str(getattr(part.status, "value", part.status)) in submitted)
+            or (not part and app and str(getattr(app.status, "value", app.status)) in submitted)):
+        blockers.append("The customer has not submitted the financial e-application.")
+    history = (await session.exec(select(InsuranceHistoryCheck).where(InsuranceHistoryCheck.case_id == case.caseld))).first()
+    if not history or str(getattr(history.status, "value", history.status)) != "Clear":
+        blockers.append("Run and clear the insurance history check.")
+    required = [t for t in await required_documents_for(session, policy) if t in DOCUMENT_TYPES["financial"]]
+    accepted = set((await session.exec(select(Artifact.document_type).where(
+        Artifact.tenant_id == case.tenant_id, Artifact.status == "Accepted",
+        (Artifact.case_id == case.caseld) | ((Artifact.case_id == None) & (Artifact.customer_id == case.customer_id))))).all())  # noqa: E711
+    for document_type in required:
+        if document_type not in accepted:
+            blockers.append(f"{document_type} has not been received and accepted yet.")
+    return blockers
+
+
+async def _financial_ai_state(session: AsyncSession, case: Case, policy) -> dict:
+    row = (await session.exec(select(CaseUnderwritingTrack).where(
+        CaseUnderwritingTrack.case_id == case.caseld, CaseUnderwritingTrack.track == "FINANCIAL"))).first()
+    blockers = await _financial_ai_blockers(session, case, policy)
+    return {"ready": not blockers, "blockers": blockers,
+            "result": row.ai_result if row else None, "run_at": row.ai_run_at if row else None}
+
+
+async def _evaluate_financial(body: dict, tenant_id: UUID) -> dict:
+    """risk-engine's financial-only evaluation (several LLM-backed seconds)."""
+    import httpx
+    import os
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(f"{os.getenv('RISK_ENGINE_URL', 'http://risk-engine:8002')}/evaluate/financial",
+                                         json=body, headers={"X-Tenant-Id": str(tenant_id)})
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"The risk engine could not be reached: {type(exc).__name__}.")
+    if response.status_code != 200:
+        raise HTTPException(502, f"The risk engine could not assess this application ({response.status_code}).")
+    return response.json()
+
+
+@router.post("/cases/{case_id}/financial-underwriting/run")
+async def run_financial_underwriting(
+    request: Request, tenant_id: UUID, case_id: UUID,
+    session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme),
+):
+    from shared.models.core import Customer
+    from services.underwriting_gate import _customer_dict, _policy_dict, build_evidence_bundle
+    user, track = await _specialist_identity(tenant_id, token, session)
+    if track != "FINANCIAL":
+        raise HTTPException(403, "AI financial underwriting is the financial underwriter's tool.")
+    case = await session.get(Case, case_id)
+    if not case or case.tenant_id != tenant_id:
+        raise HTTPException(404, "Underwriting application not found.")
+    policy = await resolve_review_policy(session, case)
+    blockers = await _financial_ai_blockers(session, case, policy)
+    if blockers:
+        raise HTTPException(409, "Not ready for AI financial underwriting: " + " ".join(blockers))
+
+    customer = await session.get(Customer, case.customer_id)
+    evidence = await build_evidence_bundle(session, tenant_id, case, request=request)
+    await session.commit()  # the bundle re-runs verification; keep its findings
+    person = _customer_dict(customer)
+    person.update({"dob": person.get("dob") or "1990-01-01", "gender": person.get("gender") or "Unknown",
+                   "occupation": person.get("occupation") or "", "declared_income": float(person.get("declared_income") or 0)})
+    from fastapi.encoders import jsonable_encoder
+    # The evidence carries UUIDs and datetimes (artifact ids, verification times): make it JSON first.
+    body = jsonable_encoder({"customer": person, "policy": _policy_dict(policy),
+            "e_application": evidence.get("e_application"), "acr": evidence.get("acr"),
+            "document_evidence": evidence.get("document_evidence"), "verified_facts": evidence.get("verified_facts")})
+    data = await _evaluate_financial(body, tenant_id)
+
+    row = (await session.exec(select(CaseUnderwritingTrack).where(
+        CaseUnderwritingTrack.case_id == case_id, CaseUnderwritingTrack.track == "FINANCIAL"))).first()
+    if row is None:
+        row = CaseUnderwritingTrack(tenant_id=tenant_id, case_id=case_id, track="FINANCIAL")
+    row.ai_result = {"score": data.get("financial_score"), "reasons": data.get("financial_reasons") or [],
+                     **(data.get("financial_result") or {})}
+    row.ai_run_at = datetime.utcnow()
+    session.add(row)
+    await session.commit()
+    return {"result": row.ai_result, "run_at": row.ai_run_at}
+
+
+async def _fills_outstanding_requirement(session: AsyncSession, tenant_id: UUID, case_id: UUID, track: str, document_type: str) -> bool:
+    """An application document (e.g. CNIC) may be uploaded by a specialist only while it is outstanding and theirs to collect."""
+    from services.underwriting_gate import outstanding_requirements
+    from specialist_access import APPLICATION_DOCUMENTS
+    case = await session.get(Case, case_id)
+    if case is None or case.tenant_id != tenant_id:
+        return False
+    return any(APPLICATION_DOCUMENTS.get(spec.code, (None, None))[0] == document_type
+               and APPLICATION_DOCUMENTS[spec.code][1] in (None, track.lower())
+               for spec in await outstanding_requirements(session, tenant_id, case))
+
+
+async def _refresh_case_requirements(session: AsyncSession, tenant_id: UUID, case_id: UUID) -> None:
+    """New evidence can meet an application requirement; never fail the upload over it."""
+    import logging
+    from services import underwriting_gate
+    try:
+        case = await session.get(Case, case_id)
+        if case is not None:
+            await underwriting_gate.compute_requirements(session, tenant_id, case)
+            await session.commit()
+    except Exception:
+        await session.rollback()
+        logging.getLogger(__name__).exception("could not refresh requirements for case %s", case_id)
+
+
+# ── Bulk upload: which document is each file? ────────────────────────────────
+# Read-only. The specialist drops several files at once; before anything is
+# stored, the configured vision LLM reads each one and names the matching
+# required test (medical) or document type (financial) from this application's
+# own options. Anything it is not sure of comes back unmatched, for the
+# underwriter to choose — a wrong guess would file a report under the wrong test.
+
+CLASSIFY_MAX_FILES = 20
+CLASSIFY_MIN_CONFIDENCE = 0.6
+
+
+def _sniff_mime(name: str, data: bytes) -> str:
+    if data[:4] == b"%PDF":
+        return "application/pdf"
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    return "application/octet-stream"
+
+
+def _classify_prompt(track: str, options: list[dict]) -> str:
+    listing = "\n".join(f'- "{o["id"]}": {o["label"]}' for o in options)
+    what = "medical examination report" if track == "MEDICAL" else "financial / income document"
+    return (
+        f"You are sorting files an insurance underwriter uploaded in bulk. Each should be a {what}. "
+        "Decide which ONE of these options the attached file is:\n"
+        f"{listing}\n"
+        'Respond ONLY with JSON: {"match": "<option id or null>", "confidence": <0..1>, "reason": "<max 12 words>"}. '
+        'Use null if the file matches none of the options or you cannot tell — never guess.'
+    )
+
+
+@router.post("/cases/{case_id}/underwriting-documents/classify")
+async def classify_specialist_documents(
+    tenant_id: UUID, case_id: UUID,
+    files: list[UploadFile] = File(...),
+    session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme),
+):
+    import asyncio
+    from routers.llm_config import resolved_providers
+    from services.medical_report_uploads import MAX_REPORT_BYTES
+    from services.report_llm import MODEL_READABLE, ask_json
+    from shared.models.core import MedicalExamOrder
+    from specialist_access import DOCUMENT_TYPES
+
+    user, track = await _specialist_identity(tenant_id, token, session)
+    case = await session.get(Case, case_id)
+    if not case or case.tenant_id != tenant_id:
+        raise HTTPException(404, "Underwriting application not found.")
+    if len(files) > CLASSIFY_MAX_FILES:
+        raise HTTPException(422, f"Choose at most {CLASSIFY_MAX_FILES} files at a time.")
+
+    if track == "MEDICAL":
+        order = (await session.exec(select(MedicalExamOrder).where(MedicalExamOrder.case_id == case_id))).first()
+        options = [{"id": t.get("code"), "label": t.get("name") or t.get("code")} for t in (order.required_tests or [])] if order else []
+    else:
+        options = [{"id": t, "label": t} for t in sorted(DOCUMENT_TYPES["financial"])]
+    valid = {o["id"] for o in options}
+
+    payloads = []
+    for f in files:
+        data = await f.read(MAX_REPORT_BYTES + 1)
+        payloads.append((f.filename or "file", data))
+    if not options:
+        return {"results": [{"index": i, "match": None, "confidence": 0, "reason": "No required tests to match against yet."} for i in range(len(payloads))]}
+
+    providers = await resolved_providers(session)
+    prompt = _classify_prompt(track, options)
+    gate = asyncio.Semaphore(4)
+
+    async def one(index: int, name: str, data: bytes) -> dict:
+        mime = _sniff_mime(name, data)
+        if len(data) > MAX_REPORT_BYTES or mime not in MODEL_READABLE:
+            return {"index": index, "match": None, "confidence": 0, "reason": "This file type can't be read automatically."}
+        async with gate:
+            answer = await ask_json(None, [(data, mime)], prompt, f"classify {name}", providers)
+        match = (answer or {}).get("match")
+        try:
+            confidence = float((answer or {}).get("confidence") or 0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+        if match not in valid or confidence < CLASSIFY_MIN_CONFIDENCE:
+            match = None
+        return {"index": index, "match": match, "confidence": round(confidence, 2), "reason": (answer or {}).get("reason")}
+
+    results = await asyncio.gather(*(one(i, name, data) for i, (name, data) in enumerate(payloads)))
+    return {"results": list(results)}

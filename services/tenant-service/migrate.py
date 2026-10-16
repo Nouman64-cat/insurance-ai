@@ -1489,6 +1489,9 @@ MIGRATIONS: list[tuple[str, str]] = [
     ("v63c — initial_premium_payments.reminder_count", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS reminder_count INTEGER NOT NULL DEFAULT 0"),
     ("v63d — initial_premium_payments.last_reminded_at", "ALTER TABLE initial_premium_payments ADD COLUMN IF NOT EXISTS last_reminded_at TIMESTAMP WITHOUT TIME ZONE"),
     ("v64a-enum — comparisonoperatorenum contains_any (keyword lists, e.g. high-risk occupations)", "ALTER TYPE comparisonoperatorenum ADD VALUE IF NOT EXISTS 'contains_any'"),
+    ("v65a — customer_e_applications.financial_profile (the financial e-application's answers)", "ALTER TABLE customer_e_applications ADD COLUMN IF NOT EXISTS financial_profile JSON"),
+    ("v65b — case_underwriting_tracks.ai_result (latest AI underwriting run for the track)", "ALTER TABLE case_underwriting_tracks ADD COLUMN IF NOT EXISTS ai_result JSON"),
+    ("v65c — case_underwriting_tracks.ai_run_at", "ALTER TABLE case_underwriting_tracks ADD COLUMN IF NOT EXISTS ai_run_at TIMESTAMP WITHOUT TIME ZONE"),
 ]
 
 

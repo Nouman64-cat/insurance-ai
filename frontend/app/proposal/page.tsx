@@ -382,6 +382,10 @@ interface FamilyGroupFolderData {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
+// Where a proposal goes once it is sent to underwriting: the admin's underwriting queue,
+// where the application is assigned to its medical and financial underwriters.
+const UNDERWRITING_QUEUE = "/admin/underwriting";
+
 export default function QuotePage() {
   const router = useRouter();
   const { tx } = useI18n();
@@ -543,13 +547,13 @@ export default function QuotePage() {
 
       if (selectedQuotes.length === 1) {
         const q = selectedQuotes[0];
-        const caseRes = await api.post(`/tenants/${tenantId}/cases`, {
+        await api.post(`/tenants/${tenantId}/cases`, {
           customer_id: q.customer_id,
           policy_id: q.policy_id,
           caseType: "Underwriting",
           sourceChannel: "Online",
         });
-        router.push(appHref(`/case/${caseRes.data.caseld}?autoRun=true`));
+        router.push(appHref(UNDERWRITING_QUEUE));
         setSelectedProposalIds(new Set());
         setIsBulkProceeding(false);
         return;
@@ -578,8 +582,8 @@ export default function QuotePage() {
       // 2. Persist the group so /case/[id] can offer a dropdown to switch plans.
       sessionStorage.setItem("underwriting_group", JSON.stringify(group));
 
-      // 3. Navigate to the first plan's case and auto-run underwriting there.
-      router.push(appHref(`/case/${group[0].caseId}?autoRun=true`));
+      // 3. Hand over to the underwriting queue, where the new applications are assigned and tracked.
+      router.push(appHref(UNDERWRITING_QUEUE));
 
       setSelectedProposalIds(new Set());
     } catch (err: any) {
@@ -1418,14 +1422,13 @@ export default function QuotePage() {
             if (!detail) return;
             const tenantId = localStorage.getItem("tenant_id");
             if (!tenantId) return;
-            const res = await api.post(`/tenants/${tenantId}/cases`, {
+            await api.post(`/tenants/${tenantId}/cases`, {
               customer_id: detail.customer_id,
               policy_id: detail.policy_id,
               caseType: "Underwriting",
               sourceChannel: "Online",
             });
-            const caseId = res.data.caseld;
-            router.push(appHref(`/case/${caseId}?autoRun=true`));
+            router.push(appHref(UNDERWRITING_QUEUE));
           }}
         />
       )}

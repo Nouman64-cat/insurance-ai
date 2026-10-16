@@ -1219,3 +1219,12 @@ async def proxy_claims(tenant_id: UUID, request: Request, token: str = Depends(o
 async def proxy_claim_subroutes(tenant_id: UUID, path: str, request: Request, token: str = Depends(oauth2_scheme)):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/claims/{path}")
 
+
+
+@app.api_route("/public/underwriting-questionnaire/{raw_token}", methods=["GET"])
+async def public_specialist_questionnaire(raw_token: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/underwriting-questionnaire/{raw_token}")
+
+@app.post("/public/underwriting-questionnaire/{raw_token}/submit")
+async def submit_specialist_questionnaire(raw_token: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/underwriting-questionnaire/{raw_token}/submit")

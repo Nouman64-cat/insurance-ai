@@ -64,6 +64,8 @@ class EvaluationRequest(BaseModel):
     document_evidence: Optional[list[Dict[str, Any]]] = None
     verified_facts: Optional[list[Dict[str, Any]]] = None
     requirements_satisfied: bool = True
+    # {"medical": {...}, "financial": {...}} — the specialists' submitted reviews.
+    specialist_reviews: Optional[Dict[str, Any]] = None
 
 
 class SuggestPlanRequest(BaseModel):
@@ -140,6 +142,7 @@ async def evaluate(
         document_evidence=request.document_evidence,
         verified_facts=request.verified_facts,
         requirements_satisfied=request.requirements_satisfied,
+        specialist_reviews=request.specialist_reviews,
     )
 
     if not result["is_valid"]:
@@ -166,6 +169,21 @@ async def evaluate(
     )
 
 
+@app.post("/evaluate/financial")
+async def evaluate_financial(
+    request: EvaluationRequest,
+    x_tenant_id: str = Header(default=""),
+):
+    """Financial underwriting only — score, cover ceiling and referral — for the
+    financial underwriter. Runs no decision and writes nothing."""
+    from workflow import run_financial_evaluation
+    return await asyncio.to_thread(
+        run_financial_evaluation,
+        request.customer.model_dump(), request.policy.model_dump(), x_tenant_id,
+        request.e_application, request.acr, request.document_evidence, request.verified_facts,
+    )
+
+
 @app.post("/evaluate/stream")
 async def evaluate_stream(
     request: EvaluationRequest,
@@ -187,6 +205,7 @@ async def evaluate_stream(
                 document_evidence=request.document_evidence,
                 verified_facts=request.verified_facts,
                 requirements_satisfied=request.requirements_satisfied,
+                specialist_reviews=request.specialist_reviews,
             ):
                 if node_name == "__done__":
                     # Persist the fully-scored customer into Memgraph before

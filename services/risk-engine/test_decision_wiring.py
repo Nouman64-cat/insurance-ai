@@ -68,3 +68,22 @@ def test_graph_outlier_signal_forces_investigation_even_at_moderate_probability(
         graph.get("income_outlier") and graph.get("coverage_cluster_size", 0) > 0
     )
     assert investigation_required is True
+
+
+# ── Final underwriting compiles the specialists' reviews ─────────────────────
+
+def test_specialist_reviews_only_make_the_decision_stricter():
+    from shared.underwriting.results import UnderwritingDecision as D
+    cleared = {"medical": {"status": "CLEARED", "note": "Normal results"}, "financial": {"status": "CLEARED"}}
+    assert workflow.compile_specialist_reviews(D.AUTO_APPROVE, cleared)[0] == D.AUTO_APPROVE
+    assert workflow.compile_specialist_reviews(D.HUMAN_REVIEW, cleared)[0] == D.HUMAN_REVIEW  # never more lenient
+    referred = {**cleared, "financial": {"status": "REFERRED", "note": "Income unverified"}}
+    decision, reasons, _ = workflow.compile_specialist_reviews(D.AUTO_APPROVE, referred)
+    assert decision == D.HUMAN_REVIEW and any("Income unverified" in r for r in reasons)
+    declined = {**cleared, "medical": {"status": "DECLINED"}}
+    assert workflow.compile_specialist_reviews(D.APPROVE_WITH_LOADING, declined)[0] == D.DECLINE
+    assert workflow.compile_specialist_reviews(D.FRAUD_INVESTIGATION, declined)[0] == D.FRAUD_INVESTIGATION
+    loaded = {**cleared, "medical": {"status": "CLEARED", "ai": {"suggested_loading_pct": 25}}}
+    decision, _, loading = workflow.compile_specialist_reviews(D.AUTO_APPROVE, loaded)
+    assert (decision, loading) == (D.APPROVE_WITH_LOADING, 25.0)
+    assert workflow.compile_specialist_reviews(D.AUTO_APPROVE, None)[0] == D.AUTO_APPROVE

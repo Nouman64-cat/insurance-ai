@@ -96,6 +96,7 @@ def _e_application_dict(ea: Optional[CustomerEApplication]) -> dict:
         "family_history": ea.family_history or {},
         "lifestyle_habits": ea.lifestyle_habits or {},
         "existing_insurance": ea.existing_insurance or {},
+        "financial_profile": ea.financial_profile or {},
     }
 
 
@@ -221,17 +222,7 @@ def _requirement_rows_satisfied(rows: list[CaseRequirement]) -> bool:
     )
 
 
-async def compute_requirements(
-    session: AsyncSession,
-    tenant_id: UUID,
-    case: Case,
-    *,
-    request: Optional[Request] = None,
-) -> tuple[list[CaseRequirement], bool]:
-    """Determine + upsert CaseRequirement rows. Idempotent: matches on
-    `code` so repeated calls never duplicate a requirement. A requirement a
-    human has already Waived is never silently reverted by a later
-    recomputation — only required/reason are refreshed for it."""
+async def _current_specs(session: AsyncSession, tenant_id: UUID, case: Case):
     profile = await build_case_profile(session, tenant_id, case)
     prior = await _prior_findings(session, case.caseld)
     specs = determine_requirements(profile, prior)
@@ -245,6 +236,31 @@ async def compute_requirements(
             [t.get("code") for t in (exam.required_tests or []) if isinstance(t, dict) and t.get("code")],
             exam.result_artifact_id,
         )
+    return specs
+
+
+async def outstanding_requirements(session: AsyncSession, tenant_id: UUID, case: Case) -> list:
+    """Read-only: the mandatory requirements the evidence does not meet right
+    now (a human waiver still counts as met). Nothing is written."""
+    waived = set((await session.exec(select(CaseRequirement.code).where(
+        CaseRequirement.case_id == case.caseld, CaseRequirement.status == CaseRequirementStatusEnum.WAIVED))).all())
+    return [spec for spec in await _current_specs(session, tenant_id, case)
+            if spec.required and spec.code not in waived
+            and spec.status.value not in (CaseRequirementStatusEnum.SATISFIED.value, CaseRequirementStatusEnum.WAIVED.value)]
+
+
+async def compute_requirements(
+    session: AsyncSession,
+    tenant_id: UUID,
+    case: Case,
+    *,
+    request: Optional[Request] = None,
+) -> tuple[list[CaseRequirement], bool]:
+    """Determine + upsert CaseRequirement rows. Idempotent: matches on
+    `code` so repeated calls never duplicate a requirement. A requirement a
+    human has already Waived is never silently reverted by a later
+    recomputation — only required/reason are refreshed for it."""
+    specs = await _current_specs(session, tenant_id, case)
 
     existing_rows = {
         row.code: row
@@ -379,9 +395,13 @@ async def build_evidence_bundle(
         select(CaseRequirement).where(CaseRequirement.case_id == case.caseld)
     )).all()
     satisfied = _requirement_rows_satisfied(requirement_rows)
+    from services.specialist_reviews import compile_specialist_reviews
 
     return {
         "requirements_satisfied": satisfied,
+        # The medical and financial underwriters' submitted reviews — the final
+        # decision is compiled from them (see risk-engine decision_engine).
+        "specialist_reviews": await compile_specialist_reviews(session, case.caseld),
         "document_evidence": profile.document_evidence,
         "e_application": profile.raw.get("e_application"),
         "acr": profile.raw.get("acr"),

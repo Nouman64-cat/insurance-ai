@@ -181,14 +181,34 @@ const emptyMedical = (): MedicalQuestionnaire => ({
   ),
 });
 
-const STEPS = [
-  "Confirm Details",
-  "Medical Questionnaire",
-  "Family History",
-  "Lifestyle & Habits",
-  "Existing Insurance",
-  "Declaration & Signature",
-];
+// The e-application is two questionnaires, each sent as its own link: the medical one and the
+// financial one. A link sent before the split ("combined") still opens every section.
+type Part = "medical" | "financial" | "combined";
+const STEPS_FOR: Record<Part, string[]> = {
+  medical: ["Confirm Details", "Medical Questionnaire", "Family History", "Lifestyle & Habits", "Declaration & Signature"],
+  financial: ["Confirm Details", "Employment & Income", "Commitments & Assets", "Premium & Purpose", "Existing Insurance", "Declaration & Signature"],
+  combined: ["Confirm Details", "Medical Questionnaire", "Family History", "Lifestyle & Habits", "Existing Insurance", "Declaration & Signature"],
+};
+const PART_TITLE: Record<Part, string> = {
+  medical: "Medical E-Application",
+  financial: "Financial E-Application",
+  combined: "Life Insurance E-Application",
+};
+
+type FinancialProfile = {
+  employment: { employment_type: string; occupation: string; employer_or_business: string; years_in_role: string };
+  income: { annual_income: string; income_basis: string; other_income_sources: string; other_income_amount: string };
+  commitments: { monthly_household_expenses: string; dependants: string; has_loans: boolean; loan_details: string; monthly_loan_repayments: string };
+  assets: { savings_and_investments: string; owns_property: boolean; property_details: string; other_assets: string };
+  funding: { premium_payer: string; premium_source: string; purpose_of_cover: string; purpose_details: string };
+};
+const emptyFinancial = (): FinancialProfile => ({
+  employment: { employment_type: "", occupation: "", employer_or_business: "", years_in_role: "" },
+  income: { annual_income: "", income_basis: "Gross", other_income_sources: "", other_income_amount: "" },
+  commitments: { monthly_household_expenses: "", dependants: "", has_loans: false, loan_details: "", monthly_loan_repayments: "" },
+  assets: { savings_and_investments: "", owns_property: false, property_details: "", other_assets: "" },
+  funding: { premium_payer: "Myself", premium_source: "", purpose_of_cover: "", purpose_details: "" },
+});
 
 export default function EApplicationPage({
   params,
@@ -201,6 +221,10 @@ export default function EApplicationPage({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [part, setPart] = useState<Part>("combined");
+  const STEPS = STEPS_FOR[part];
+  const current = STEPS[step];
+  const [financial, setFinancial] = useState<FinancialProfile>(emptyFinancial());
 
   const [applicant, setApplicant] = useState<{
     name: string;
@@ -253,7 +277,8 @@ export default function EApplicationPage({
       try {
         const res = await publicApi.get(`/public/e-application/${token}`);
         const d = res.data;
-        if (d.status === "Submitted") {
+        if (d.part === "medical" || d.part === "financial") setPart(d.part);
+        if (d.status === "Submitted" || d.status === "Verified") {
           setLoadState("submitted");
           return;
         }
@@ -304,6 +329,14 @@ export default function EApplicationPage({
               : [],
           }));
         }
+        if (d.financial_profile) {
+          const base = emptyFinancial();
+          setFinancial(Object.fromEntries(
+            (Object.keys(base) as (keyof FinancialProfile)[]).map((k) => [k, { ...base[k], ...(d.financial_profile[k] || {}) }]),
+          ) as FinancialProfile);
+        } else if (d.occupation) {
+          setFinancial((f) => ({ ...f, employment: { ...f.employment, occupation: d.occupation } }));
+        }
         if (d.declaration) setDeclaration((s) => ({ ...s, ...d.declaration }));
         setLoadState("ready");
       } catch (e: any) {
@@ -319,16 +352,18 @@ export default function EApplicationPage({
     })();
   }, [token]);
 
+  // Only the sections this questionnaire owns (the server ignores the rest anyway).
+  const payload = () => ({
+    ...(part !== "financial" ? { medical_questionnaire: medical, family_history: { entries: familyHistory }, lifestyle_habits: lifestyle } : {}),
+    ...(part !== "medical" ? { existing_insurance: existingInsurance } : {}),
+    ...(part === "financial" ? { financial_profile: financial } : {}),
+    declaration,
+  });
+
   const saveDraft = async () => {
     setSaving(true);
     try {
-      await publicApi.put(`/public/e-application/${token}`, {
-        medical_questionnaire: medical,
-        family_history: { entries: familyHistory },
-        lifestyle_habits: lifestyle,
-        existing_insurance: existingInsurance,
-        declaration,
-      });
+      await publicApi.put(`/public/e-application/${token}`, payload());
     } catch {
       // Autosave is best-effort — the user can still move on and retry at final submit.
     } finally {
@@ -434,6 +469,13 @@ export default function EApplicationPage({
       was_declined_or_deferred: false,
       declined_details: "",
     });
+    setFinancial({
+      employment: { employment_type: "Salaried", occupation: "Software engineer", employer_or_business: "Demo Company", years_in_role: "5" },
+      income: { annual_income: "3600000", income_basis: "Gross", other_income_sources: "", other_income_amount: "" },
+      commitments: { monthly_household_expenses: "100000", dependants: "2", has_loans: false, loan_details: "", monthly_loan_repayments: "" },
+      assets: { savings_and_investments: "1200000", owns_property: false, property_details: "", other_assets: "" },
+      funding: { premium_payer: "Myself", premium_source: "Salary", purpose_of_cover: "Family income protection", purpose_details: "" },
+    });
     setDeclaration({
       confirms_accurate: true,
       authorizes_records_access: true,
@@ -453,13 +495,7 @@ export default function EApplicationPage({
     setSubmitErr(null);
     setSubmitting(true);
     try {
-      await publicApi.put(`/public/e-application/${token}`, {
-        medical_questionnaire: medical,
-        family_history: { entries: familyHistory },
-        lifestyle_habits: lifestyle,
-        existing_insurance: existingInsurance,
-        declaration,
-      });
+      await publicApi.put(`/public/e-application/${token}`, payload());
       await publicApi.post(`/public/e-application/${token}/submit`);
       setLoadState("submitted");
     } catch (e: any) {
@@ -499,8 +535,8 @@ export default function EApplicationPage({
   if (loadState === "submitted") {
     return (
       <CenteredMessage
-        title={tx("Thank you — your application has been submitted")}
-        body="Your insurer has received your E-Application. No further action is needed from you at this time."
+        title={tx(part === "combined" ? "Thank you — your application has been submitted" : `Thank you — your ${part} questionnaire has been submitted`)}
+        body={tx(part === "combined" ? "Your insurer has received your E-Application. No further action is needed from you at this time." : `Your insurer has received your ${part} e-application. If you were also sent the ${part === "medical" ? "financial" : "medical"} questionnaire, please complete that one too.`)}
         tone="success"
       />
     );
@@ -511,7 +547,7 @@ export default function EApplicationPage({
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-blue-600">
-            {tx("Life Insurance E-Application")}
+            {tx(PART_TITLE[part])}
           </p>
           <h1 className="text-xl font-bold text-slate-800">
             {tx("Hi")} {applicant.name || tx("there")}
@@ -536,25 +572,28 @@ export default function EApplicationPage({
               setAccepted={setDisclaimerAccepted}
             />
           )}
-          {step === 1 && (
+          {current === "Medical Questionnaire" && (
             <StepMedical medical={medical} setMedical={setMedical} />
           )}
-          {step === 2 && (
+          {current === "Employment & Income" && <StepEmploymentIncome data={financial} setData={setFinancial} />}
+          {current === "Commitments & Assets" && <StepCommitmentsAssets data={financial} setData={setFinancial} />}
+          {current === "Premium & Purpose" && <StepPremiumPurpose data={financial} setData={setFinancial} />}
+          {current === "Family History" && (
             <StepFamilyHistory
               entries={familyHistory}
               setEntries={setFamilyHistory}
             />
           )}
-          {step === 3 && (
+          {current === "Lifestyle & Habits" && (
             <StepLifestyle lifestyle={lifestyle} setLifestyle={setLifestyle} />
           )}
-          {step === 4 && (
+          {current === "Existing Insurance" && (
             <StepExistingInsurance
               data={existingInsurance}
               setData={setExistingInsurance}
             />
           )}
-          {step === 5 && (
+          {current === "Declaration & Signature" && (
             <StepDeclaration
               declaration={declaration}
               setDeclaration={setDeclaration}
@@ -1645,6 +1684,94 @@ function StepDeclaration({
           )}
         </p>
       </div>
+    </div>
+  );
+}
+
+// ── Financial e-application steps ────────────────────────────────────────────
+
+type FinancialStepProps = { data: FinancialProfile; setData: (v: FinancialProfile) => void };
+
+function Choice({ value, options, onChange }: { value: string; options: string[]; onChange: (v: string) => void }) {
+  return (
+    <div className="mt-1 flex flex-wrap gap-2">
+      {options.map((o) => (
+        <button key={o} type="button" onClick={() => onChange(o)}
+          className={`rounded-lg border px-3 py-1.5 text-sm ${value === o ? "border-blue-600 bg-blue-50 font-semibold text-blue-700" : "border-slate-200 text-slate-600 hover:border-slate-300"}`}>
+          {tx(o)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function StepEmploymentIncome({ data, setData }: FinancialStepProps) {
+  const emp = (patch: Partial<FinancialProfile["employment"]>) => setData({ ...data, employment: { ...data.employment, ...patch } });
+  const inc = (patch: Partial<FinancialProfile["income"]>) => setData({ ...data, income: { ...data.income, ...patch } });
+  return (
+    <div className="space-y-4">
+      <div>
+        <Label>{tx("Employment type")}</Label>
+        <Choice value={data.employment.employment_type} onChange={(v) => emp({ employment_type: v })}
+          options={["Salaried", "Self-employed", "Business owner", "Professional", "Retired", "Not working"]} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div><Label>{tx("Occupation / job title")}</Label><TextInput value={data.employment.occupation} onChange={(e) => emp({ occupation: e.target.value })} /></div>
+        <div><Label>{tx("Employer or business name")}</Label><TextInput value={data.employment.employer_or_business} onChange={(e) => emp({ employer_or_business: e.target.value })} /></div>
+        <div><Label>{tx("Years in this role")}</Label><TextInput inputMode="numeric" value={data.employment.years_in_role} onChange={(e) => emp({ years_in_role: e.target.value })} /></div>
+      </div>
+      <div className="border-t border-slate-100 pt-4 grid grid-cols-2 gap-3">
+        <div><Label>{tx("Annual income (PKR)")}</Label><TextInput inputMode="numeric" placeholder="e.g. 3600000" value={data.income.annual_income} onChange={(e) => inc({ annual_income: e.target.value.replace(/[^\d]/g, "") })} /></div>
+        <div><Label>{tx("This amount is")}</Label><Choice value={data.income.income_basis} onChange={(v) => inc({ income_basis: v })} options={["Gross", "Net"]} /></div>
+        <div className="col-span-2"><Label>{tx("Other income sources (rent, investments, business), if any")}</Label><TextInput value={data.income.other_income_sources} onChange={(e) => inc({ other_income_sources: e.target.value })} /></div>
+        {data.income.other_income_sources && <div><Label>{tx("Other income per year (PKR)")}</Label><TextInput inputMode="numeric" value={data.income.other_income_amount} onChange={(e) => inc({ other_income_amount: e.target.value.replace(/[^\d]/g, "") })} /></div>}
+      </div>
+    </div>
+  );
+}
+
+function StepCommitmentsAssets({ data, setData }: FinancialStepProps) {
+  const com = (patch: Partial<FinancialProfile["commitments"]>) => setData({ ...data, commitments: { ...data.commitments, ...patch } });
+  const ast = (patch: Partial<FinancialProfile["assets"]>) => setData({ ...data, assets: { ...data.assets, ...patch } });
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div><Label>{tx("Monthly household expenses (PKR)")}</Label><TextInput inputMode="numeric" value={data.commitments.monthly_household_expenses} onChange={(e) => com({ monthly_household_expenses: e.target.value.replace(/[^\d]/g, "") })} /></div>
+        <div><Label>{tx("People financially dependent on you")}</Label><TextInput inputMode="numeric" value={data.commitments.dependants} onChange={(e) => com({ dependants: e.target.value.replace(/[^\d]/g, "") })} /></div>
+      </div>
+      <div>
+        <label className="flex items-center gap-1.5 text-sm text-slate-700">
+          <input type="checkbox" checked={data.commitments.has_loans} onChange={(e) => com({ has_loans: e.target.checked })} />
+          {tx("I have loans or other debts (home, car, personal, business, credit cards)")}
+        </label>
+        {data.commitments.has_loans && (
+          <div className="mt-2 grid grid-cols-2 gap-3 ml-5">
+            <div className="col-span-2"><Label>{tx("Loan details (lender, type, amount outstanding)")}</Label><TextArea rows={2} value={data.commitments.loan_details} onChange={(e) => com({ loan_details: e.target.value })} /></div>
+            <div><Label>{tx("Total monthly repayments (PKR)")}</Label><TextInput inputMode="numeric" value={data.commitments.monthly_loan_repayments} onChange={(e) => com({ monthly_loan_repayments: e.target.value.replace(/[^\d]/g, "") })} /></div>
+          </div>
+        )}
+      </div>
+      <div className="border-t border-slate-100 pt-4 space-y-3">
+        <div><Label>{tx("Savings and investments (PKR)")}</Label><TextInput inputMode="numeric" value={data.assets.savings_and_investments} onChange={(e) => ast({ savings_and_investments: e.target.value.replace(/[^\d]/g, "") })} /></div>
+        <label className="flex items-center gap-1.5 text-sm text-slate-700">
+          <input type="checkbox" checked={data.assets.owns_property} onChange={(e) => ast({ owns_property: e.target.checked })} />
+          {tx("I own property")}
+        </label>
+        {data.assets.owns_property && <TextInput placeholder={tx("Property details (type, city, approximate value)")} value={data.assets.property_details} onChange={(e) => ast({ property_details: e.target.value })} />}
+        <div><Label>{tx("Other significant assets, if any")}</Label><TextInput value={data.assets.other_assets} onChange={(e) => ast({ other_assets: e.target.value })} /></div>
+      </div>
+    </div>
+  );
+}
+
+function StepPremiumPurpose({ data, setData }: FinancialStepProps) {
+  const fund = (patch: Partial<FinancialProfile["funding"]>) => setData({ ...data, funding: { ...data.funding, ...patch } });
+  return (
+    <div className="space-y-4">
+      <div><Label>{tx("Who will pay the premium?")}</Label><Choice value={data.funding.premium_payer} onChange={(v) => fund({ premium_payer: v })} options={["Myself", "Spouse", "Parent", "Employer", "Other"]} /></div>
+      <div><Label>{tx("From which source?")}</Label><Choice value={data.funding.premium_source} onChange={(v) => fund({ premium_source: v })} options={["Salary", "Business income", "Savings", "Rental income", "Other"]} /></div>
+      <div><Label>{tx("Main purpose of this cover")}</Label><Choice value={data.funding.purpose_of_cover} onChange={(v) => fund({ purpose_of_cover: v })} options={["Family income protection", "Loan or mortgage cover", "Savings for children", "Business protection", "Other"]} /></div>
+      <div><Label>{tx("Anything else we should know (optional)")}</Label><TextArea rows={2} value={data.funding.purpose_details} onChange={(e) => fund({ purpose_details: e.target.value })} /></div>
     </div>
   );
 }

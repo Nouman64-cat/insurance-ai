@@ -257,6 +257,7 @@ async def evaluate(
             document_evidence=evidence.get("document_evidence") if evidence else None,
             verified_facts=evidence.get("verified_facts") if evidence else None,
             requirements_satisfied=evidence.get("requirements_satisfied", True) if evidence else True,
+            specialist_reviews=evidence.get("specialist_reviews") if evidence else None,
         ),
     )
 
@@ -375,6 +376,7 @@ async def evaluate_stream(
                 "document_evidence": evidence.get("document_evidence"),
                 "verified_facts": evidence.get("verified_facts"),
                 "requirements_satisfied": evidence.get("requirements_satisfied", True),
+                "specialist_reviews": evidence.get("specialist_reviews"),
             })
 
         # ── Stream from risk engine ───────────────────────────────────────────

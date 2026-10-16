@@ -537,7 +537,7 @@ async def get_case_detail(
         required = get_required_documents(insurance_type, case.caseType.value)
 
     artifacts_stmt = select(Artifact.document_type).where(Artifact.customer_id == case.customer_id, Artifact.tenant_id == tenant_id)
-    received = sorted({row[0] for row in (await session.execute(artifacts_stmt)).all()})
+    received = _received_document_types(row[0] for row in (await session.execute(artifacts_stmt)).all())
     missing = [doc for doc in required if doc not in received]
 
     assessments_stmt = (
@@ -1150,7 +1150,7 @@ async def get_document_checklist(
 
 
     artifacts_stmt = select(Artifact.document_type).where(Artifact.customer_id == case.customer_id, Artifact.tenant_id == tenant_id)
-    received = sorted({row[0] for row in (await session.execute(artifacts_stmt)).all()})
+    received = _received_document_types(row[0] for row in (await session.execute(artifacts_stmt)).all())
 
     missing = [doc for doc in required if doc not in received]
 
@@ -1236,6 +1236,17 @@ async def _get_case_or_404(session: AsyncSession, tenant_id: UUID, case_id: UUID
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
     return case
+
+
+def _received_document_types(types) -> list[str]:
+    """The document types on file. A medical examination files each test's report as
+    "Medical Report: <test>" — those count as the plan's "Medical Report" too."""
+    out = set()
+    for t in types:
+        out.add(t)
+        if t and t.startswith("Medical Report: "):
+            out.add("Medical Report")
+    return sorted(out)
 
 
 @router.post("/{case_id}/requirements/determine")

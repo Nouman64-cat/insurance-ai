@@ -39,6 +39,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   // redirect below and the Sidebar/TopBar/Footer portal shell entirely.
   const isPublicStandalonePage =
     pathname?.startsWith("/e-application/") ||
+    pathname?.startsWith("/underwriting-questionnaire/") ||
     pathname?.startsWith("/e-app/") ||
     pathname?.startsWith("/medical-exam/") ||
     pathname?.startsWith("/medical-lab/") ||

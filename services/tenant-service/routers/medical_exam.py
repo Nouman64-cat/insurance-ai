@@ -73,7 +73,7 @@ from services.case_events import publish_case_event
 
 router = APIRouter(tags=["Pre-Underwriting — Medical Examination"])
 
-_WAIVER_ROLES = {"Underwriter", "Admin", "SuperAdmin"}
+_WAIVER_ROLES = {"Underwriter", "Medical Underwriter", "Admin", "SuperAdmin"}
 
 # The panel every tenant starts with — the diagnostic networks Pakistani
 # insurers actually contract with for pre-policy medicals. Seeded lazily on

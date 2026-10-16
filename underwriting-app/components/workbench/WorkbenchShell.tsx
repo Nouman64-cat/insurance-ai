@@ -17,11 +17,11 @@ import { useWorkbenchUser } from "./SsoGate";
 // back to the portal. Pages embedded elsewhere (the Automation Chat's case panel opens them with ?_portal=1, or in
 // any iframe) render on their own, without this bar: the window around them already has its navigation.
 
+// Underwriting is one queue: each application's medical and financial reviews, compiled into the final decision.
+// (The old post-underwriting, live-evaluation and assessment-history pages still resolve by URL; they are no
+// longer sections of the workbench.)
 const SECTIONS = [
-  { href: "/underwriting?tab=pre-underwriting", label: "Pre-Underwriting" },
-  { href: "/post-underwriting", label: "Post-Underwriting Verification" },
-  { href: "/live-evaluation", label: "Live Evaluation" },
-  { href: "/assessments", label: "Assessment History" },
+  { href: "/underwriting?tab=pre-underwriting", label: "Underwriting" },
 ] as const;
 
 /** The section lit for a URL. A case belongs to Pre-Underwriting, where it is opened from. */

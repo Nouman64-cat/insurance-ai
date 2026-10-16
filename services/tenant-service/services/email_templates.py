@@ -642,6 +642,25 @@ def customer_action_link_email(
                  "approved lab listed on the page below, then upload your reports using the same link. "
                  "The tests are arranged and paid for by us.")
         button = "View tests & upload reports"
+    elif kind in {"medical_questionnaire", "financial_questionnaire"}:
+        specialty = "medical" if kind == "medical_questionnaire" else "financial"
+        subject = f"Your {specialty} questionnaire — {tenant_name}"
+        heading = f"Your {specialty} questionnaire"
+        intro = f"Your {specialty} reviewer needs your disclosures to continue reviewing your insurance application. Please complete and sign the secure questionnaire below."
+        button = "Complete questionnaire"
+    elif kind == "e_application_medical":
+        subject = f"Your medical e-application — {tenant_name}"
+        heading = "Your medical e-application"
+        intro = ("To continue with your insurance application, please answer a short questionnaire about your "
+                 "health, family history and lifestyle. It takes about 10 minutes and your answers are kept confidential.")
+        button = "Start medical questionnaire"
+    elif kind == "e_application_financial":
+        subject = f"Your financial e-application — {tenant_name}"
+        heading = "Your financial e-application"
+        intro = ("To continue with your insurance application, please answer a short questionnaire about your "
+                 "employment, income, commitments, how the premium will be paid and any existing cover. "
+                 "It takes about 5 minutes and your answers are kept confidential.")
+        button = "Start financial questionnaire"
     elif kind == "documents":
         subject = f"Documents needed for your application — {tenant_name}"
         heading = "Upload your documents"

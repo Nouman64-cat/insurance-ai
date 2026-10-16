@@ -1,19 +1,10 @@
 "use client";
-import { useState, useEffect } from "react";
-import { openAutomationChat } from "@/lib/sso";
+import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
+import { openAutomationChat, endSso } from "@/lib/sso";
 import { useNotify } from "@/components/NotificationContext";
-import GlobalSearch from "@/components/GlobalSearch";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { useI18n } from "@/lib/i18n/I18nProvider";
-
-function RefreshIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="23 4 23 10 17 10" />
-      <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" />
-    </svg>
-  );
-}
 
 function ChatIcon() {
   return (
@@ -24,61 +15,89 @@ function ChatIcon() {
   );
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
-
-interface TopBarProps {
-  title?: string;
-  subtitle?: string;
-}
-
-export function TopBar({ title, subtitle }: TopBarProps) {
-  const { notify } = useNotify();
+/** The signed-in user's initials; opens a small menu with their details, Profile and Sign out. */
+function ProfileMenu() {
   const { t } = useI18n();
-  // Admins can replay the welcome tour (components/tour/AdminTour.tsx) at any time.
-  const [isAdmin, setIsAdmin] = useState(false);
-  useEffect(() => { setIsAdmin(localStorage.getItem("user_role") === "Admin"); }, []);
-  const [tenantName, setTenantName] = useState("Adamjee Life");
+  const [open, setOpen] = useState(false);
+  const [user, setUser] = useState({ name: "", email: "", role: "" });
+  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const savedName = localStorage.getItem("tenant_name");
-    if (savedName) {
-      setTenantName(savedName);
-    }
-    // Always refresh in background
-    import("@/app/services/api").then(({ default: api }) => {
-      api.get("/auth/me").then(res => {
-        if (res.data.tenant_name) {
-          setTenantName(res.data.tenant_name);
-          localStorage.setItem("tenant_name", res.data.tenant_name);
-        }
-      }).catch(() => {});
+    setUser({
+      name: localStorage.getItem("user_name") ?? "",
+      email: localStorage.getItem("user_email") ?? "",
+      role: localStorage.getItem("user_role") ?? "",
     });
   }, []);
 
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const initials = user.name.split(/\s+/).filter(Boolean).slice(0, 2).map((n) => n[0]?.toUpperCase()).join("") || "?";
+
   return (
-    <header className="sticky top-0 z-30 h-14 flex-shrink-0 flex items-center justify-between gap-4 px-6 bg-white/80 backdrop-blur-md border-b border-slate-200 shadow-sm">
-
-      {/* Left: Page title */}
-      <div className="flex items-center gap-3 min-w-0">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h1 className="text-base font-bold text-slate-900 tracking-tight truncate leading-snug py-0.5">
-              {title ?? t("topBar.defaultTitle")}
-            </h1>
-            <span className="hidden sm:inline-flex items-center text-[9px] font-bold uppercase tracking-[0.12em] text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full whitespace-nowrap">
-              {tenantName}
-            </span>
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={user.name || t("sidebar.profile")}
+        className={`flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white shadow-sm ring-2 transition-all ${open ? "ring-blue-200" : "ring-white hover:ring-blue-100"}`}
+      >
+        {initials}
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 mt-2 w-60 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg shadow-slate-900/10 z-50">
+          <div className="px-2.5 py-2 border-b border-slate-100 mb-1">
+            <p className="text-sm font-semibold text-slate-900 truncate">{user.name || "—"}</p>
+            {user.email && <p className="text-[11px] text-slate-500 truncate">{user.email}</p>}
+            {user.role && <p className="mt-1 inline-flex rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">{user.role}</p>}
           </div>
-          {subtitle && (
-            <p className="text-xs text-slate-500 mt-0.5 truncate">{subtitle}</p>
-          )}
+          <Link
+            href="/profile"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-400"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+            {t("sidebar.profile")}
+          </Link>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              localStorage.clear();
+              endSso().finally(() => window.location.replace("/login"));
+            }}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-rose-600 hover:bg-rose-50"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
+            {t("sidebar.logout")}
+          </button>
         </div>
-      </div>
+      )}
+    </div>
+  );
+}
 
-      {/* Center: Search */}
-      <GlobalSearch />
+// ── Component ─────────────────────────────────────────────────────────────────
 
-      {/* Right: Actions */}
+export function TopBar() {
+  const { notify } = useNotify();
+  const { t } = useI18n();
+
+  return (
+    <header className="sticky top-0 z-30 h-14 flex-shrink-0 flex items-center justify-end gap-4 px-6 bg-white/80 backdrop-blur-md border-b border-slate-200 shadow-sm">
       <div className="flex items-center gap-3 flex-shrink-0">
         <LanguageSwitcher />
 
@@ -98,24 +117,8 @@ export function TopBar({ title, subtitle }: TopBarProps) {
           {t("topBar.automationChat")}
         </button>
 
-        {isAdmin && (
-          <button
-            type="button"
-            onClick={() => window.dispatchEvent(new Event("start-admin-tour"))}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all"
-          >
-            {t("topBar.takeTour")}
-          </button>
-        )}
-
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow-md"
-        >
-          <RefreshIcon />
-          <span className="hidden sm:inline">{t("topBar.refresh")}</span>
-        </button>
+        <span className="h-6 w-px bg-slate-200" aria-hidden="true" />
+        <ProfileMenu />
       </div>
     </header>
   );

@@ -1810,6 +1810,10 @@ class CaseUnderwritingTrack(SQLModel, table=True):
     assigned_user_id: Optional[UUID] = Field(default=None, foreign_key="users.id", index=True)
     note: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
     updated_by: Optional[UUID] = Field(default=None, foreign_key="users.id")
+    # The latest AI underwriting run for this track (e.g. the financial score,
+    # cover ceiling and referral) — evidence for the specialist, never a decision.
+    ai_result: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    ai_run_at: Optional[datetime] = Field(default=None, nullable=True)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
@@ -2051,7 +2055,38 @@ class CustomerEApplication(SQLModel, table=True):
     existing_insurance: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     # Accuracy/authorization/blank-form/terms checkboxes + typed signature name
     declaration: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    # Financial e-application: {employment, income, commitments, assets, funding}
+    financial_profile: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
 
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class CustomerEApplicationPart(SQLModel, table=True):
+    """
+    One of the two questionnaires the e-application is split into, each with its
+    own link, progress and signature: "medical" (medical questionnaire, family
+    history, lifestyle) and "financial" (financial profile, existing insurance).
+    The answers themselves stay on CustomerEApplication; its overall status is
+    Submitted once both parts are. An e-application sent before the split has no
+    parts and keeps working as one combined form.
+    """
+    __tablename__ = "customer_e_application_parts"
+    __table_args__ = (UniqueConstraint("case_id", "part", name="uq_e_application_part"),)
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    case_id: UUID = Field(foreign_key="cases.caseld", index=True, nullable=False)
+    part: str = Field(max_length=20)  # "medical" | "financial"
+    status: EApplicationStatusEnum = Field(default=EApplicationStatusEnum.NOT_SENT, max_length=50)
+    invite_token_hash: Optional[str] = Field(default=None, index=True, max_length=64, nullable=True)
+    invite_expires_at: Optional[datetime] = Field(default=None, nullable=True)
+    sent_at: Optional[datetime] = Field(default=None, nullable=True)
+    sent_by: Optional[UUID] = Field(default=None, foreign_key="users.id", nullable=True)
+    started_at: Optional[datetime] = Field(default=None, nullable=True)
+    submitted_at: Optional[datetime] = Field(default=None, nullable=True)
+    submitted_ip: Optional[str] = Field(default=None, max_length=45, nullable=True)
+    declaration: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
@@ -3885,3 +3920,18 @@ class WalkInLeadEvent(SQLModel, table=True):
     actor: str = Field(default="system", max_length=255)
     detail_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
+
+
+class UnderwritingQuestionnaire(SQLModel, table=True):
+    __tablename__ = "underwriting_questionnaires"
+    __table_args__ = (UniqueConstraint("case_id", "track"),)
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True)
+    case_id: UUID = Field(foreign_key="cases.caseld", index=True)
+    track: str = Field(max_length=20)
+    token_hash: str = Field(index=True, unique=True, max_length=64)
+    expires_at: datetime
+    sent_at: datetime = Field(default_factory=datetime.utcnow)
+    sent_by: UUID = Field(foreign_key="users.id")
+    submitted_at: Optional[datetime] = None
+    answers: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))

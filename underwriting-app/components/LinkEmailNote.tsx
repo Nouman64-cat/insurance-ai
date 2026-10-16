@@ -9,7 +9,11 @@ export type LinkDelivery = {
 };
 
 /** One-line summary for a toast. */
-export function linkDeliveryText(d: LinkDelivery | null | undefined): string {
+export function linkDeliveryText(d: (LinkDelivery & { parts?: { part?: string }[] }) | null | undefined): string {
+  // The e-application is sent as two questionnaires: say which ones went out.
+  const names = (d?.parts ?? []).map((p) => p.part).filter(Boolean);
+  if (d?.email_status === "sent" && d.emailed_to && names.length > 1) return tx("Medical and financial e-applications emailed to {0}", { 0: d.emailed_to });
+  if (d?.email_status === "sent" && d.emailed_to && names.length === 1) return tx("{1} e-application emailed to {0}", { 0: d.emailed_to, 1: names[0] === "medical" ? "Medical" : "Financial" });
   if (d?.email_status === "sent" && d.emailed_to) return tx("Link emailed to {0}", { 0: d.emailed_to });
   if (d?.email_status === "failed") return tx("Couldn't email the link to {0} — share it manually", { 0: d.emailed_to ?? "" });
   return tx("No email on record for this customer — share the link manually");

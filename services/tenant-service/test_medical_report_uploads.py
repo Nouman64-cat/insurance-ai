@@ -121,20 +121,20 @@ class ReportClassificationTests(IsolatedAsyncioTestCase):
         session = SimpleNamespace(add=Mock(), commit=AsyncMock())
         producer = SimpleNamespace(send_and_wait=AsyncMock())
         request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(kafka_producer=producer)))
-        with patch.object(medical_exam, '_resolve_by_token', AsyncMock(return_value=order)), \
+        with patch.object(medical_exam, '_resolve_by_lab_token', AsyncMock(return_value=(order, None))), \
              patch.object(medical_exam, '_uploaded_reports', AsyncMock(return_value=[])), \
              patch('services.medical_report_classifier.classify_report', AsyncMock(return_value=(['FBS', 'LIPID'], 'content'))), \
              patch('services.medical_report_uploads.store_report', AsyncMock(return_value='https://s3/r.pdf')):
-            result = await medical_exam.public_auto_upload_medical_report(
+            result = await medical_exam.lab_auto_upload_medical_report(
                 'token', request, UploadFile(filename='lab.pdf', file=BytesIO(b'%PDF-1.4')), session)
         self.assertEqual([r['test_code'] for r in result['reports']], ['FBS', 'LIPID'])
         self.assertEqual(producer.send_and_wait.await_count, 2)
     async def test_unidentified_report_is_not_stored(self):
         order = SimpleNamespace(required_tests=self.required, status=MedicalExamStatusEnum.SCHEDULED)
-        with patch.object(medical_exam, '_resolve_by_token', AsyncMock(return_value=order)), \
+        with patch.object(medical_exam, '_resolve_by_lab_token', AsyncMock(return_value=(order, None))), \
              patch('services.medical_report_classifier.classify_report', AsyncMock(return_value=([], 'none'))), \
              patch('services.medical_report_uploads.store_report', AsyncMock()) as store:
-            result = await medical_exam.public_auto_upload_medical_report(
+            result = await medical_exam.lab_auto_upload_medical_report(
                 'token', SimpleNamespace(), UploadFile(filename='scan.pdf', file=BytesIO(b'%PDF-1.4')), SimpleNamespace())
         self.assertEqual(result['test_codes'], [])
         store.assert_not_awaited()
