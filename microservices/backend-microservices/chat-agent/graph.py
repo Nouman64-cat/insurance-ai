@@ -2630,16 +2630,12 @@ async def _permission_gate(state: ChatState) -> Command:
     # ── Case assignment: the real user list, not a name to type ──────────────
     if name == "assign_case" and not args.get("assigned_user_name"):
         try:
-            listed = await execute_tool("list_users", {}, ctx)
+            listed = await execute_tool("list_assignable_users", {}, ctx)
             users = listed.get("users") or []
         except Exception:
             users = []
         if users:
-            choices = [
-                (f"{u.get('full_name')} — {(u.get('role') or {}).get('name') or u.get('role_name') or '—'}",
-                 u.get("full_name"))
-                for u in users
-            ]
+            choices = [(f"{u.get('full_name')} — {u.get('role_name') or '—'}", u.get("full_name")) for u in users]
             answer = _ask_choice(
                 name, args,
                 "Who should this case be assigned to?",
@@ -2658,6 +2654,8 @@ async def _permission_gate(state: ChatState) -> Command:
             roles = listed.get("roles") or []
         except Exception:
             roles = []
+        # SuperAdmin is only ever granted by a SuperAdmin (tenant-service refuses it otherwise).
+        roles = [r for r in roles if r["name"] != "SuperAdmin" or ctx.role == "SuperAdmin"]
         if roles:
             choices = [(r["name"], r["name"]) for r in roles]
             answer = _ask_choice(name, args, "What role should this user have?", choices)

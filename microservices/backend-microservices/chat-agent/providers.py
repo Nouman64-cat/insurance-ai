@@ -121,8 +121,8 @@ async def _fetch_remote() -> Optional[dict]:
         log.warning("LLM config fetch failed (%s); using env vars", exc)
         return None
     if not data.get("primary") or not data["primary"].get("api_key"):
-        # SuperAdmin hasn't set a primary yet — env is the source of truth.
-        return None
+        # SuperAdmin hasn't set a primary yet — env is the source of truth for chat; a live voice choice still applies.
+        return {**_env_config(), "live_voice": data["live_voice"]} if data.get("live_voice") else None
     return data
 
 

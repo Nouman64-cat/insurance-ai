@@ -449,11 +449,28 @@ async def _underwriters(ctx: Ctx, track: Optional[str]) -> list[dict]:
     return [u for u in res.json() if not track or track in u.get("tracks", [])]
 
 
+def _no_underwriter(track: Optional[str], ctx: Ctx) -> dict:
+    """Nobody can take the review: an Admin is offered to add the missing underwriter right here; anyone else is
+    told who can."""
+    role = {"medical": "Medical Underwriter", "financial": "Financial Underwriter"}.get(track or "")
+    wanted = role or "Medical or Financial Underwriter"
+    if ctx.exec_ctx.role in ("Admin", "SuperAdmin"):
+        roles = [role] if role else ["Medical Underwriter", "Financial Underwriter"]
+        return {"success": False,
+                "message": f"No active {wanted} can take {'the ' + track + ' review' if track else 'that review'} yet. "
+                           f"Add one and I'll be able to assign it.",
+                "quick_actions": [_chip(f"Add a {r}", f"Add a new {r} user") for r in roles]
+                + [_chip("Show all users", "List all users")]}
+    return {"success": False,
+            "message": f"No active {wanted} can take {'the ' + track + ' review' if track else 'that review'} yet. "
+                       "Ask an Admin to add one in User Management."}
+
+
 @handles("list_track_underwriters")
 async def _list_track_underwriters(args: dict, ctx: Ctx) -> dict:
     people = await _underwriters(ctx, args.get("track"))
     if not people:
-        return {"success": True, "message": "No active underwriters can take that review. Add a Medical or Financial Underwriter user first."}
+        return _no_underwriter(args.get("track"), ctx)
     lines = "\n".join(f"- **{u['full_name']}** ({u['role']}) — {', '.join(u['tracks'])}" for u in people)
     return {"success": True, "underwriters": people, "message": f"**Underwriters{' for the ' + args['track'] + ' review' if args.get('track') else ''}:**\n{lines}"}
 
@@ -474,7 +491,7 @@ async def _assign_underwriting_track(args: dict, ctx: Ctx) -> dict:
             people = hits
     if not chosen:
         if not people:
-            return {"success": False, "message": f"No active underwriter can take the {track} review."}
+            return _no_underwriter(track, ctx)
         raise ChoiceNeeded(f"Who should take the {track} review of {case.get('customer_name')}?", [
             _chip(f"{u['full_name']} ({u['role']})", f"Assign the {track} review of case {ref} to underwriter_id {u['id']}") for u in people[:6]])
     res = await ctx.client.put(ctx.tsvc(f"/cases/{case_id}/underwriting-tracks/{track}"), json={"assigned_user_id": chosen["id"]})

@@ -2267,6 +2267,13 @@ class TokenUsage(SQLModel, table=True):
     # Prompt-cache hits, when the provider reports them. Billed at a reduced
     # rate, so the dashboard must not price these as fresh input tokens.
     cached_tokens: int = Field(default=0)
+    # Audio share of the counts above (live voice), billed at the model's audio rates rather than its text rates.
+    # input_tokens / output_tokens / cached_tokens stay the totals; these say how many of them were audio.
+    audio_input_tokens: int = Field(default=0)
+    audio_output_tokens: int = Field(default=0)
+    audio_cached_tokens: int = Field(default=0)
+    # Seconds of audio, for models billed per minute instead of per token (e.g. gpt-transcribe).
+    audio_seconds: float = Field(default=0.0)
     # Who to bill. Null = platform-level call with no tenant in scope.
     tenant_id: Optional[UUID] = Field(default=None, index=True)
     # The model actually invoked — pricing differs per model, and the
@@ -2315,13 +2322,14 @@ class LLMProviderConfig(SQLModel, table=True):
 
 
 class LLMTaskModel(SQLModel, table=True):
-    """A model chosen for one task instead of the platform primary/fallback.
+    """A model chosen for one task instead of the platform defaults.
 
-    Today the only task is "ocr" (the OCR engine). One row per (task, role),
-    role "primary" | "fallback". The row names a provider and a model only:
-    the API key is the one stored for that provider in llm_provider_config, so
-    a key is entered once. No "primary" row for a task means the task uses the
-    platform primary/fallback, as before.
+    Tasks: "ocr" (the OCR engine and in-process document reading; roles
+    "primary" | "fallback") and "live_voice" (the realtime voice conversation;
+    one "primary" row, OpenAI only, with the voice and transcription model in
+    `settings`). The row names a provider and a model only: the API key is the
+    one stored for that provider in llm_provider_config, so a key is entered
+    once. No "primary" row for a task means it keeps its built-in defaults.
     """
 
     __tablename__ = "llm_task_model"
@@ -2333,6 +2341,8 @@ class LLMTaskModel(SQLModel, table=True):
     role: str = Field(max_length=20)
     provider: str = Field(max_length=40)
     model_name: str = Field(max_length=120)
+    # Task-specific extras, e.g. live_voice: {"voice": "cedar", "transcription_model": "gpt-transcribe"}
+    settings: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_by: Optional[UUID] = Field(default=None)
 

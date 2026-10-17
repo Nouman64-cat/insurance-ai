@@ -10,8 +10,10 @@ GET   /platform/llm-config              list providers + status (no keys)
 PUT   /platform/llm-config/{provider}   set model / role / api_key
 POST  /platform/llm-config/{provider}/test   live key check (real generation)
 PUT   /platform/llm-config/tasks/ocr    choose the OCR engine's own primary/fallback model
+PUT   /platform/llm-config/tasks/live-voice        realtime model, voice and transcription model
+POST  /platform/llm-config/tasks/live-voice/test   live check that OpenAI accepts that choice
 GET   /internal/llm-config              decrypted primary+fallback for services, plus the
-                                        OCR choice (not exposed through the api-gateway)
+                                        OCR and live-voice choices (not exposed through the api-gateway)
 
 The OCR choice names a provider and a model only; it uses the key stored for
 that provider above. Without one, OCR uses the platform primary/fallback.
@@ -41,6 +43,9 @@ router = APIRouter(tags=["Platform — LLM Config"])
 PROVIDERS = ("gemini", "openai", "anthropic")
 ROLES = ("primary", "fallback", "disabled")
 TASK_ROLES = ("primary", "fallback")
+# The live voice conversation (chat-agent/routers/voice.py) runs on OpenAI's Realtime API only. These are its
+# built-in defaults, used until a SuperAdmin chooses otherwise; keep them in step with that file.
+LIVE_VOICE_DEFAULTS = {"model_name": "gpt-realtime-2.1-mini", "voice": "cedar", "transcription_model": "gpt-transcribe"}
 DEFAULT_MODELS = {
     "gemini": os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
     "openai": os.getenv("OPENAI_FALLBACK_MODEL", "gpt-4o-mini"),
@@ -77,10 +82,25 @@ class TaskConfig(BaseModel):
     fallback: Optional[TaskModelStatus] = None
 
 
+class LiveVoiceStatus(BaseModel):
+    configured: bool  # False: the built-in defaults below are in use
+    model_name: str
+    voice: str
+    transcription_model: str
+    has_key: bool  # an OpenAI key is stored on this page
+
+
+class LiveVoiceUpdate(BaseModel):
+    model_name: str
+    voice: str
+    transcription_model: str
+
+
 class LLMConfigResponse(BaseModel):
     encryption_available: bool
     providers: list[LLMProviderStatus]
     ocr: TaskConfig = TaskConfig()
+    live_voice: Optional[LiveVoiceStatus] = None
 
 
 class TaskConfigUpdate(BaseModel):
@@ -150,6 +170,19 @@ def _version(rows: list[LLMProviderConfig], task_rows: list[LLMTaskModel] = ()) 
 
 async def _task_rows(session: AsyncSession, task: str) -> list[LLMTaskModel]:
     return list((await session.exec(select(LLMTaskModel).where(LLMTaskModel.task == task))).all())
+
+
+def _live_voice_status(rows: list[LLMProviderConfig], task_rows: list[LLMTaskModel]) -> LiveVoiceStatus:
+    row = next((t for t in task_rows if t.role == "primary"), None)
+    has_key = any(r.provider == "openai" and r.api_key_encrypted for r in rows)
+    if row is None:
+        return LiveVoiceStatus(configured=False, has_key=has_key, **LIVE_VOICE_DEFAULTS)
+    extra = row.settings or {}
+    return LiveVoiceStatus(
+        configured=True, has_key=has_key, model_name=row.model_name,
+        voice=extra.get("voice") or LIVE_VOICE_DEFAULTS["voice"],
+        transcription_model=extra.get("transcription_model") or LIVE_VOICE_DEFAULTS["transcription_model"],
+    )
 
 
 def _task_config(rows: list[LLMProviderConfig], task_rows: list[LLMTaskModel]) -> TaskConfig:
@@ -283,7 +316,83 @@ async def list_llm_config(session: AsyncSession = Depends(get_session)):
         encryption_available=is_available(),
         providers=[_status(r) for r in rows],
         ocr=_task_config(rows, await _task_rows(session, "ocr")),
+        live_voice=_live_voice_status(rows, await _task_rows(session, "live_voice")),
     )
+
+
+@router.put(
+    "/platform/llm-config/tasks/live-voice",
+    response_model=LiveVoiceStatus,
+    dependencies=[Depends(verify_superadmin)],
+)
+async def update_live_voice_config(body: Optional[LiveVoiceUpdate] = None, session: AsyncSession = Depends(get_session)):
+    """Save the live voice choice. An empty body returns live voice to its built-in defaults."""
+    rows = await _all_rows(session)
+    existing = next((t for t in await _task_rows(session, "live_voice") if t.role == "primary"), None)
+    if body is None:
+        if existing is not None:
+            await session.delete(existing)
+            await session.commit()
+        return _live_voice_status(rows, [])
+
+    values = {"model_name": body.model_name.strip(), "voice": body.voice.strip(), "transcription_model": body.transcription_model.strip()}
+    blank = [name for name, value in values.items() if not value]
+    if blank:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Fill in: {', '.join(blank)}.")
+    if not any(r.provider == "openai" and r.api_key_encrypted for r in rows):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Live voice runs on OpenAI: set an OpenAI API key above first.")
+
+    row = existing or LLMTaskModel(task="live_voice", role="primary", provider="openai", model_name=values["model_name"])
+    row.model_name = values["model_name"]
+    row.settings = {"voice": values["voice"], "transcription_model": values["transcription_model"]}
+    row.updated_at = datetime.utcnow()
+    session.add(row)
+    await session.commit()
+    return _live_voice_status(rows, [row])
+
+
+@router.post(
+    "/platform/llm-config/tasks/live-voice/test",
+    dependencies=[Depends(verify_superadmin)],
+)
+async def test_live_voice_config(body: LiveVoiceUpdate, session: AsyncSession = Depends(get_session)):
+    """Ask OpenAI to open a realtime session with this model and voice (no audio, nothing billed) and check the
+    transcription model exists, so a typo is caught here rather than when someone starts a call."""
+    rows = await _all_rows(session)
+    row = next((r for r in rows if r.provider == "openai"), None)
+    if row is None or not row.api_key_encrypted:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No OpenAI API key is stored.")
+    try:
+        api_key = decrypt_secret(row.api_key_encrypted)
+    except EncryptionUnavailable as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    started = time.monotonic()
+    headers = {"Authorization": f"Bearer {api_key}"}
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as c:
+            realtime = await c.post("https://api.openai.com/v1/realtime/client_secrets", headers=headers, json={
+                "session": {"type": "realtime", "model": body.model_name.strip(),
+                            "audio": {"output": {"voice": body.voice.strip()}}},
+            })
+            transcription = await c.get(f"https://api.openai.com/v1/models/{body.transcription_model.strip()}", headers=headers)
+    except httpx.HTTPError as exc:
+        return {"ok": False, "status": "error", "detail": f"Could not reach OpenAI: {exc}", "latency_ms": 0}
+    latency = int((time.monotonic() - started) * 1000)
+
+    if realtime.status_code in (401, 403):
+        return {"ok": False, "status": "invalid_key", "detail": f"OpenAI rejected the key (HTTP {realtime.status_code}) — {_error_message(realtime)}", "latency_ms": latency}
+    if realtime.status_code != 200:
+        return {"ok": False, "status": "bad_model",
+                "detail": f"OpenAI would not open a realtime session with {body.model_name} / voice {body.voice}: {_error_message(realtime)}",
+                "latency_ms": latency}
+    if transcription.status_code != 200:
+        return {"ok": False, "status": "bad_model",
+                "detail": f"Realtime model and voice work, but transcription model '{body.transcription_model}' was not found (HTTP {transcription.status_code}).",
+                "latency_ms": latency}
+    return {"ok": True, "status": "responding",
+            "detail": f"OpenAI accepted {body.model_name} with voice {body.voice}; {body.transcription_model} is available.",
+            "latency_ms": latency}
 
 
 # Two path segments, so it never collides with the /platform/llm-config/{provider} routes.
@@ -444,13 +553,26 @@ async def internal_llm_config(
 
     rows = await _all_rows(session)
     ocr_rows = await _task_rows(session, "ocr")
+    voice_rows = await _task_rows(session, "live_voice")
     return {
-        "version": _version(rows, ocr_rows),
+        "version": _version(rows, ocr_rows + voice_rows),
         "primary": _resolved(rows, "primary"),
         "fallback": _resolved(rows, "fallback"),
         # The OCR engine's own models, each with its provider's key; null where none is chosen (or the key is gone).
         "ocr": {role: _resolved_task(rows, ocr_rows, role) for role in TASK_ROLES},
+        # The live voice choice with the OpenAI key; null while the built-in defaults apply (or the key is gone).
+        "live_voice": _resolved_live_voice(rows, voice_rows),
     }
+
+
+def _resolved_live_voice(rows: list[LLMProviderConfig], voice_rows: list[LLMTaskModel]) -> Optional[dict]:
+    entry = _resolved_task(rows, voice_rows, "primary")
+    if entry is None:
+        return None
+    extra = next(t for t in voice_rows if t.role == "primary").settings or {}
+    return {**entry,
+            "voice": extra.get("voice") or LIVE_VOICE_DEFAULTS["voice"],
+            "transcription_model": extra.get("transcription_model") or LIVE_VOICE_DEFAULTS["transcription_model"]}
 
 
 def _resolved(rows: list[LLMProviderConfig], role: str) -> Optional[dict]:

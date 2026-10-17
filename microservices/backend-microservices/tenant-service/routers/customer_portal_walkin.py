@@ -313,7 +313,7 @@ async def derive_status(session: AsyncSession, lead: WalkInLead, customer) -> di
             stage, note, closed = "Declined", "We are unable to offer cover for this application.", True
         elif cstat and cstat != "Closed":
             stage, note = "Underwriting", "Your application is being assessed."
-        elif not lead.family_group_id and "UnderReview" in pstat and (pay := await _open_payment(session, pols)) is not None:
+        elif not lead.family_group_id and pstat & {"Proposed", "UnderReview"} and (pay := await _open_payment(session, pols)) is not None:
             if pay.proof_status == "Submitted":
                 stage, note = "Payment Verification", "We received your payment screenshot and are checking it."
             else:

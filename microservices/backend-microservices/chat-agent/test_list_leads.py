@@ -89,7 +89,7 @@ def _sourced_data():
                                      'created_at': '2026-10-03', 'acquisition_source_id': 'src-sana'}],
         ('/acquisition-sources', None): [sana, other],
         ('/roles', None): [{'id': 'r-agent', 'name': 'Agent'}],
-        ('/users/', None): [{'id': 'u-bilal', 'full_name': 'Bilal Agent', 'email': 'bilal@x.pk', 'role_id': 'r-agent'}],
+        ('/users/directory', None): [{'id': 'u-bilal', 'full_name': 'Bilal Agent', 'email': 'bilal@x.pk', 'role_id': 'r-agent'}],
     }
 
 

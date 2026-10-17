@@ -1139,23 +1139,119 @@ async def _list_artifacts(args: dict, ctx: Ctx) -> dict:
     }
 
 
+# ── User management (Admin) ──────────────────────────────────────────────────
+# The same /tenants/{t}/users endpoints the User Management screen uses; tenant-service enforces who may do what
+# (Admins only, no SuperAdmin grants, nobody locks themselves out), so a refusal is passed on in its own words.
+
+async def _roles(ctx: Ctx) -> list[dict]:
+    res = await ctx.client.get(f"{TENANT_SERVICE_URL}/roles")
+    res.raise_for_status()
+    return res.json()
+
+
+def _assignable_roles(roles: list[dict], ctx: Ctx) -> list[dict]:
+    """Roles this caller may give someone: every role but SuperAdmin, which only a SuperAdmin grants."""
+    return [r for r in roles if r["name"] != "SuperAdmin" or ctx.exec_ctx.role == "SuperAdmin"]
+
+
+def _role_named(roles: list[dict], name: str) -> Optional[dict]:
+    """A role by name, forgiving case, spaces and a trailing 's' ("medical underwriters", "claimsmanager")."""
+    key = re.sub(r"[\s_-]+", "", (name or "").casefold()).rstrip("s")
+    return next((r for r in roles if re.sub(r"[\s_-]+", "", r["name"].casefold()).rstrip("s") == key), None)
+
+
+async def _users_with_roles(ctx: Ctx) -> list[dict]:
+    """The tenant's users, each with its role's name resolved from role_id. Admins get everyone, active or not
+    (the admin-only list); other roles allowed to list users (a ClaimsManager seeing their adjusters) get the
+    directory of active users, which is all tenant-service lets them read."""
+    admin = ctx.exec_ctx.role in ("Admin", "SuperAdmin")
+    res = await ctx.client.get(ctx.tsvc("/users/" if admin else "/users/directory"))
+    res.raise_for_status()
+    names = {r["id"]: r["name"] for r in await _roles(ctx)}
+    return [{**u, "role_name": names.get(u.get("role_id"), "—")} for u in res.json()]
+
+
+def _user_line(u: dict) -> str:
+    state = "" if u.get("is_active") else " · *inactive*"
+    return f"- **{u.get('full_name')}** — {u.get('email')} · {u.get('role_name')}{state}"
+
+
+def _api_refusal(res, fallback: str) -> Optional[dict]:
+    """A failed tenant-service call as a user-facing answer, or None when it succeeded."""
+    if res.status_code < 400:
+        return None
+    try:
+        detail = res.json().get("detail")
+    except Exception:  # noqa: BLE001
+        detail = None
+    return {"success": False, "message": detail if isinstance(detail, str) else fallback}
+
+
+_ME = {"me", "myself", "my account", "my own account", "mine", "self", "my user"}
+
+
+async def _pick_user_for(ctx: Ctx, needle: str, verb: str) -> dict:
+    """_pick_user, where "me" / "my account" is the signed-in user (the API decides what they may do to it)."""
+    users = await _users_with_roles(ctx)
+    if (needle or "").strip().casefold() in _ME:
+        me = await _current_user(ctx)
+        found = next((u for u in users if u.get("id") == me.get("id")), None)
+        if found:
+            return found
+    return _pick_user(users, needle, verb)
+
+
+def _pick_user(users: list[dict], needle: str, verb: str) -> dict:
+    """The one user a name/email points at. Several matches become a choice; none, a clear miss."""
+    needle = (needle or "").strip()
+    key = needle.casefold()
+    # Best match wins: the exact email or name, then a name word or email that starts with what was typed
+    # ("Ali" → Ali Raza, not Zainab Malik), and only then any substring.
+    exact = [u for u in users if key in ((u.get("email") or "").casefold(), (u.get("full_name") or "").casefold())]
+    prefix = [u for u in users if key and (
+        any(word.startswith(key) for word in (u.get("full_name") or "").casefold().split())
+        or (u.get("full_name") or "").casefold().startswith(key) or (u.get("email") or "").casefold().startswith(key))]
+    hits = exact or prefix or [u for u in users if _matches(u, needle, ("full_name", "email"))]
+    if len(hits) == 1:
+        return hits[0]
+    if not hits:
+        raise LookupError(f'No user found for "{needle}". Try "list users" to see who is there.')
+    raise ChoiceNeeded(f'More than one user matches "{needle}". Which one should I {verb}?', [
+        {"label": f"{u.get('full_name')} ({u.get('email')})", "actionType": "submit",
+         "payload": f"{verb.capitalize()} the user {u.get('email')}"} for u in hits[:6]])
+
+
+@handles("list_assignable_users")
+async def _list_assignable_users(args: dict, ctx: Ctx) -> dict:
+    """Not model-facing: the active users work can be given to, with role names, for the assign-case picker.
+    Reads the directory (any tenant member may), so it works for an Underwriter as well as an Admin."""
+    res = await ctx.client.get(ctx.tsvc("/users/directory"))
+    res.raise_for_status()
+    names = {r["id"]: r["name"] for r in await _roles(ctx)}
+    return {"success": True, "users": [{**u, "role_name": names.get(u.get("role_id"), "—")} for u in res.json()]}
+
+
 @handles("list_users")
 async def _list_users(args: dict, ctx: Ctx) -> dict:
-    res = await ctx.client.get(ctx.tsvc("/users/"))
-    res.raise_for_status()
-    rows = res.json()
+    rows = await _users_with_roles(ctx)
     if args.get("role"):
-        rows = [u for u in rows if (u.get("role") or {}).get("name") == args["role"] or u.get("role_name") == args["role"]]
+        role = _role_named(await _roles(ctx), args["role"])
+        rows = [u for u in rows if role and u.get("role_id") == role["id"]]
+    status = args.get("status") or "all"
+    if status != "all":
+        rows = [u for u in rows if bool(u.get("is_active")) == (status == "active")]
+    if args.get("search"):
+        rows = [u for u in rows if _matches(u, args["search"], ("full_name", "email", "username"))]
     if not rows:
-        return {"success": True, "message": "No users match that.", "users": []}
+        return {"success": True, "message": "No users match that.", "users": [],
+                "quick_actions": [{"label": "Add a user", "actionType": "submit", "payload": "Add a new user"}]}
 
-    lines = "\n".join(
-        f"- **{u.get('full_name')}** — {u.get('email')} · {(u.get('role') or {}).get('name') or u.get('role_name') or '—'}"
-        for u in rows[:15]
-    )
+    rows.sort(key=lambda u: (not u.get("is_active"), u.get("role_name") or "", (u.get("full_name") or "").casefold()))
+    lines = "\n".join(_user_line(u) for u in rows[:20])
+    more = f"\n…and {len(rows) - 20} more." if len(rows) > 20 else ""
     return {
         "success": True,
-        "message": f"{len(rows)} user(s):\n{lines}",
+        "message": f"{len(rows)} user(s):\n{lines}{more}",
         "users": rows,
         "quick_actions": [{"label": "Open Users", "actionType": "navigate", "payload": "admin/users"}],
     }
@@ -1360,7 +1456,8 @@ async def _list_agent_users(ctx: Ctx) -> list[dict]:
     if not agent_role:
         return []
 
-    users_res = await ctx.client.get(ctx.tsvc("/users/"))
+    # The directory, not the admin-only user list: any signed-in member may read it, and it lists active users only.
+    users_res = await ctx.client.get(ctx.tsvc("/users/directory"))
     users_res.raise_for_status()
     return [u for u in users_res.json() if u.get("role_id") == agent_role["id"]]
 
@@ -1728,13 +1825,11 @@ async def _list_agents(args: dict, ctx: Ctx) -> dict:
 
 @handles("add_user")
 async def _add_user(args: dict, ctx: Ctx) -> dict:
-    roles_res = await ctx.client.get(f"{TENANT_SERVICE_URL}/roles")
-    roles_res.raise_for_status()
-    roles = roles_res.json()
-    role = next((r for r in roles if r["name"].lower() == args["role_name"].lower()), None)
+    roles = _assignable_roles(await _roles(ctx), ctx)
+    role = _role_named(roles, args.get("role_name") or "")
     if not role:
         raise ChoiceNeeded(
-            f"Role \"{args['role_name']}\" doesn't exist. Which role did you mean?",
+            f"\"{args.get('role_name')}\" isn't a role I can give. Which role should {args.get('full_name') or 'they'} have?",
             quick_actions=[
                 {"label": r["name"], "actionType": "submit",
                  "payload": f"Add user {args.get('full_name', '')} ({args.get('email', '')}) with role {r['name']}"}
@@ -1744,34 +1839,77 @@ async def _add_user(args: dict, ctx: Ctx) -> dict:
 
     res = await ctx.client.post(
         ctx.tsvc("/users/"),
-        json={"full_name": args["full_name"], "email": args["email"], "role_id": role["id"]},
+        json={"full_name": args["full_name"].strip(), "email": args["email"].strip(), "role_id": role["id"]},
     )
-    res.raise_for_status()
+    if refused := _api_refusal(res, "Could not add the user."):
+        return refused
     data = res.json()
     route = build_route("admin/users", data["id"])
     return {
         "success": True,
         "user_id": data["id"],
-        "message": f"**{args['full_name']}** added as {args['role_name']}.",
-        "last_action": _action("add_user", "user", data["id"], route, f"User {args['full_name']} added"),
+        "message": f"**{data.get('full_name')}** added as **{role['name']}**. Their username and a temporary password "
+                   f"have been emailed to {data.get('email')}.",
+        "last_action": _action("add_user", "user", data["id"], route, f"User {data.get('full_name')} added"),
+        "quick_actions": [{"label": "View User", "actionType": "navigate", "payload": route}],
+    }
+
+
+@handles("update_user_role")
+async def _update_user_role(args: dict, ctx: Ctx) -> dict:
+    user = await _pick_user_for(ctx, args.get("user") or "", "update")
+    roles = _assignable_roles(await _roles(ctx), ctx)
+    role = _role_named(roles, args.get("role_name") or "")
+    if not role:
+        raise ChoiceNeeded(f"Which role should {user.get('full_name')} have?", quick_actions=[
+            {"label": r["name"], "actionType": "submit", "payload": f"Change the role of {user.get('email')} to {r['name']}"}
+            for r in roles if r["id"] != user.get("role_id")])
+    if role["id"] == user.get("role_id"):
+        return {"success": True, "message": f"**{user.get('full_name')}** is already **{role['name']}**."}
+    res = await ctx.client.patch(ctx.tsvc(f"/users/{user['id']}"), json={"role_id": role["id"]})
+    if refused := _api_refusal(res, "Could not change the role."):
+        return refused
+    route = build_route("admin/users", user["id"])
+    return {
+        "success": True,
+        "message": f"**{user.get('full_name')}** is now **{role['name']}** (was {user.get('role_name')}). "
+                   "The new permissions apply from their next sign-in.",
+        "last_action": _action("update_user_role", "user", user["id"], route, f"{user.get('full_name')} → {role['name']}"),
+        "quick_actions": [{"label": "View User", "actionType": "navigate", "payload": route}],
+    }
+
+
+@handles("set_user_active")
+async def _set_user_active(args: dict, ctx: Ctx) -> dict:
+    active = bool(args.get("active"))
+    user = await _pick_user_for(ctx, args.get("user") or "", "reactivate" if active else "deactivate")
+    if bool(user.get("is_active")) == active:
+        return {"success": True, "message": f"**{user.get('full_name')}** is already {'active' if active else 'inactive'}."}
+    res = await ctx.client.patch(ctx.tsvc(f"/users/{user['id']}"), json={"is_active": active})
+    if refused := _api_refusal(res, "Could not update the user."):
+        return refused
+    route = build_route("admin/users", user["id"])
+    message = (f"**{user.get('full_name')}** is active again and can sign in." if active else
+               f"**{user.get('full_name')}** is deactivated: they can no longer sign in, and their history stays intact. "
+               "You can reactivate them at any time.")
+    return {
+        "success": True,
+        "message": message,
+        "last_action": _action("set_user_active", "user", user["id"], route,
+                               f"{user.get('full_name')} {'reactivated' if active else 'deactivated'}"),
         "quick_actions": [{"label": "View User", "actionType": "navigate", "payload": route}],
     }
 
 
 @handles("delete_user")
 async def _delete_user(args: dict, ctx: Ctx) -> dict:
-    res = await ctx.client.get(ctx.tsvc("/users/"))
-    res.raise_for_status()
-    needle = args.get("email") or args.get("full_name") or ""
-    user = next((u for u in res.json() if _matches(u, needle, ("email", "full_name"))), None)
-    if not user:
-        raise LookupError(f'No user found for "{needle}".')
-
-    delete = await ctx.client.delete(ctx.tsvc(f"/users/{user['id']}"))
-    delete.raise_for_status()
+    user = await _pick_user_for(ctx, args.get("email") or args.get("full_name") or "", "remove")
+    res = await ctx.client.delete(ctx.tsvc(f"/users/{user['id']}"))
+    if refused := _api_refusal(res, "Could not remove the user."):
+        return refused
     return {
         "success": True,
-        "message": f"Removed **{user.get('full_name')}**.",
+        "message": f"Removed **{user.get('full_name')}** ({user.get('role_name')}). They can no longer sign in.",
         "quick_actions": [{"label": "View Users", "actionType": "navigate", "payload": "admin/users"}],
     }
 
@@ -2048,7 +2186,7 @@ async def _assign_case(args: dict, ctx: Ctx) -> dict:
     case = await _resolve_case(args, ctx)
     case_id = _case_id(case)
 
-    users_res = await ctx.client.get(ctx.tsvc("/users/"))
+    users_res = await ctx.client.get(ctx.tsvc("/users/directory"))  # active users; Underwriters assign cases too
     users_res.raise_for_status()
     needle = args.get("assigned_user_name") or ""
     user = next((u for u in users_res.json() if _matches(u, needle, ("full_name", "email"))), None)

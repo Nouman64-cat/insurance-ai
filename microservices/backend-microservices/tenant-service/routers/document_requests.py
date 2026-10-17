@@ -21,6 +21,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from routers.artifacts import OCR_TOPIC, SUPPORTED_MIME, _s3_key, _upload_to_s3
 from services import document_requests as docreq
+from services.case_events import publish_case_event
 from shared.events.kafka_events import ArtifactOCRPayload, ArtifactOCRRequestedEvent
 from shared.models.core import Artifact, Customer, DocumentRequest, Policy, Tenant
 
@@ -59,7 +60,7 @@ def _require_open(req: DocumentRequest) -> None:
 
 
 @router.post("/public/documents/{raw_token}/submit")
-async def public_submit_documents(raw_token: str, session: AsyncSession = Depends(get_session)):
+async def public_submit_documents(raw_token: str, request: Request, session: AsyncSession = Depends(get_session)):
     """The customer presses Done. Only possible once every required document has arrived; afterwards the link is
     read-only (staff can reopen it by renewing the link)."""
     req = await _resolve(session, raw_token)
@@ -71,6 +72,12 @@ async def public_submit_documents(raw_token: str, session: AsyncSession = Depend
         session.add(req)
         await session.commit()
         await session.refresh(req)
+        case = await docreq.latest_case(session, req)
+        await publish_case_event(
+            request, session, event_type="CustomerDocumentsSubmitted", tenant_id=req.tenant_id,
+            case_id=case.caseld if case else None, customer_id=req.customer_id,
+            detail={"policy_id": str(req.policy_id), "document_request_id": str(req.id)},
+        )
     return await _view(session, req)
 
 
@@ -133,6 +140,13 @@ async def public_upload_document(
         status="Uploaded",
     ))
     await session.commit()
+
+    await publish_case_event(
+        request, session, event_type="CustomerDocumentUploaded", tenant_id=req.tenant_id,
+        case_id=case.caseld if case else None, customer_id=req.customer_id,
+        detail={"policy_id": str(req.policy_id), "document_request_id": str(req.id),
+                "artifact_id": str(artifact_id), "document_type": document_type},
+    )
 
     try:
         producer: Optional[AIOKafkaProducer] = getattr(request.app.state, "kafka_producer", None)

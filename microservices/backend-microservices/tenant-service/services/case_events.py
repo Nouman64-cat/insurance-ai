@@ -27,7 +27,7 @@ async def publish_case_event(
     *,
     event_type: str,
     tenant_id: UUID,
-    case_id: UUID,
+    case_id: Optional[UUID],
     customer_id: Optional[UUID] = None,
     detail: Optional[dict] = None,
 ) -> None:
@@ -35,7 +35,7 @@ async def publish_case_event(
         producer = getattr(request.app.state, "kafka_producer", None)
         if not producer:
             return
-        case = await session.get(Case, case_id)
+        case = await session.get(Case, case_id) if case_id else None
         customer = await session.get(Customer, customer_id) if customer_id else None
         event = CaseEvent(
             event_type=event_type,

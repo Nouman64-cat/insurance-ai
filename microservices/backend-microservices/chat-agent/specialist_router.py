@@ -14,6 +14,18 @@ from track_specialists import select_final_underwriting, select_track_specialist
 # whose prompt describes onboarding the role can't do.
 PINNED_SPECIALIST = {"ClaimsManager": "claims"}
 
+# Managing staff accounts ("add a Medical Underwriter", "deactivate Ali's account", "make Sana an Admin") is the main
+# assistant's job: only it carries the user tools. Without this, "underwriter" or "claims" in the request would hand
+# it to a specialist that can only open the Users page.
+_USER_ADMIN = re.compile(
+    r"\b(?:add|create|invite|onboard|register|remove|delete|deactivate|reactivate|activate|disable|enable|suspend|"
+    r"promote|demote)\b[^.?!]*\b(?:users?|accounts?|staff|team\s*members?|underwriters?|adjusters?|admins?|viewers?|"
+    r"brokers?|claims\s*managers?)\b"
+    r"|\b(?:change|update|set|switch)\b[^.?!]*\broles?\b|\bmake\b[^.?!]*\b(?:an?\s+)?(?:admin|viewer|underwriter|adjuster)\b",
+    re.I,
+)
+ADMIN_ROLES = ("Admin", "SuperAdmin")
+
 
 def coordinator_node(state):
     # A Medical or Financial Underwriter's role is one track: their own subagent handles every message,
@@ -35,6 +47,9 @@ def coordinator_node(state):
     claim_referral = bool(re.search(r'\b(?:refer|resolve|get|show|review)\b.*\bclaim\b.*\bunderwriting\b', text, re.I)) and not re.search(r'\band\b', text, re.I)
     mixed = mixed or bool(UNDERWRITING_WORDS.search(text) and CLAIM_WORDS.search(text) and not claim_referral)
     mixed = mixed or bool(SERVICING_WORDS.search(text) and (CLAIM_WORDS.search(text) or COMMISSION_INTENT.search(text) or UNDERWRITING_WORDS.search(text)))
+    if (state.get('user_role') or '') in ADMIN_ROLES and _USER_ADMIN.search(text):
+        changed = state.get('active_specialist') is not None
+        return {'active_specialist': None, 'specialist_handoff': {'agent': 'general', 'reason': 'Main assistant handoff'} if changed else None}
     selected = None if mixed else (select_servicing_specialist(state) or select_claims_specialist(state) or select_commission_specialist(state)
                                    or select_final_underwriting(state) or select_underwriting_specialist(state))
     # A disabled servicing rollout must fall back to the broad planner rather

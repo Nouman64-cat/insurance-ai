@@ -1499,6 +1499,11 @@ MIGRATIONS: list[tuple[str, str]] = [
     ("v66a — cases.claim_id (an underwriting case opened by a claim referral)", "ALTER TABLE cases ADD COLUMN IF NOT EXISTS claim_id UUID"),
     ("v66b — index cases.claim_id", "CREATE INDEX IF NOT EXISTS ix_cases_claim_id ON cases (claim_id)"),
     ("v67a — source-backed insurance plan claims terms", "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS claims_terms JSON"),
+    ("v68a — llm_task_model.settings (live voice: voice and transcription model)", "ALTER TABLE llm_task_model ADD COLUMN IF NOT EXISTS settings JSON"),
+    ("v69a — token_usage.audio_input_tokens", "ALTER TABLE token_usage ADD COLUMN IF NOT EXISTS audio_input_tokens INTEGER NOT NULL DEFAULT 0"),
+    ("v69b — token_usage.audio_output_tokens", "ALTER TABLE token_usage ADD COLUMN IF NOT EXISTS audio_output_tokens INTEGER NOT NULL DEFAULT 0"),
+    ("v69c — token_usage.audio_cached_tokens", "ALTER TABLE token_usage ADD COLUMN IF NOT EXISTS audio_cached_tokens INTEGER NOT NULL DEFAULT 0"),
+    ("v69d — token_usage.audio_seconds (per-minute billed transcription)", "ALTER TABLE token_usage ADD COLUMN IF NOT EXISTS audio_seconds DOUBLE PRECISION NOT NULL DEFAULT 0"),
 ]
 
 

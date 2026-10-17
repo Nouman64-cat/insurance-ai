@@ -297,10 +297,10 @@ async def confirm_ipp(tenant_id: UUID, case_id: UUID, body: IPPConfirmRequest, t
     return await _confirm(session, tenant_id, case.policy_id if owner == case.caseld else None, owner, body)
 
 
-# ── by policy (the proposal-side entry points: the payment comes after Start Review, before underwriting opens) ──
+# ── by policy (the proposal-side entry points: the payment comes after submission, before underwriting opens) ──
 
-# A proposal can be paid once its review has started. Before that there is nothing to pay for yet.
-PAYABLE_STATUSES = (PolicyStatusEnum.UNDER_REVIEW,)
+# Submitted proposals can collect the initial premium directly. UnderReview remains compatible with existing applications.
+PAYABLE_STATUSES = (PolicyStatusEnum.PROPOSED, PolicyStatusEnum.UNDER_REVIEW)
 
 
 async def _get_policy(session: AsyncSession, tenant_id: UUID, policy_id: UUID) -> Policy:
@@ -331,7 +331,7 @@ async def initiate_policy_ipp(tenant_id: UUID, policy_id: UUID, body: IPPInitiat
     policy = await _get_policy(session, tenant_id, policy_id)
     existing = await _find_ipp(session, tenant_id, None, policy_id)
     if policy.status not in PAYABLE_STATUSES and existing is None:
-        raise HTTPException(status_code=409, detail="Start the review of this application before collecting the initial premium.")
+        raise HTTPException(status_code=409, detail="Submit this application before collecting the initial premium.")
     return await _initiate(session, tenant_id, policy_id, None, body.method)
 
 
@@ -366,7 +366,7 @@ async def request_policy_payment(tenant_id: UUID, policy_id: UUID, token: str = 
     policy = await _get_policy(session, tenant_id, policy_id)
     ipp = await _find_ipp(session, tenant_id, None, policy_id)
     if ipp is None and policy.status not in PAYABLE_STATUSES:
-        raise HTTPException(status_code=409, detail="Start the review of this application before asking the customer to pay.")
+        raise HTTPException(status_code=409, detail="Submit this application before asking the customer to pay.")
     if ipp is not None and ipp.status == IPPStatusEnum.REALIZED:
         raise HTTPException(status_code=409, detail="Initial premium has already been paid for this case.")
     if ipp is None or ipp.status != IPPStatusEnum.REALIZED:         # always re-priced here, so the customer is asked for today's figure
@@ -459,7 +459,7 @@ async def mark_policy_payment_received(tenant_id: UUID, policy_id: UUID, body: I
     if ipp is not None and ipp.status == IPPStatusEnum.REALIZED:
         raise HTTPException(status_code=409, detail="Initial premium has already been paid for this case.")
     if ipp is None and policy.status not in PAYABLE_STATUSES:
-        raise HTTPException(status_code=409, detail="Start the review of this application before recording the payment.")
+        raise HTTPException(status_code=409, detail="Submit this application before recording the payment.")
     if not body.method.strip():
         raise HTTPException(status_code=422, detail="Say how the payment was received.")
     if ipp is None or not ipp.amount or ipp.status != IPPStatusEnum.REALIZED:   # recorded against the current premium, not an old estimate

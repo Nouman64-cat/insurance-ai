@@ -190,13 +190,15 @@ def list_artifacts(**kwargs) -> str:
 
 
 class ListUsersArgs(BaseModel):
-    role: Optional[Literal["SuperAdmin", "Admin", "Underwriter", "Agent", "Viewer"]] = None
+    role: Optional[str] = Field(default=None, description="Only users with this role. The role name exactly as the platform calls it: Admin, Underwriter, Medical Underwriter, Financial Underwriter, Agent, Broker, Bancassurance, ClaimsManager, ClaimsAdjuster, Finance or Viewer.")
+    status: Optional[Literal["active", "inactive", "all"]] = Field(default="all", description="Active, inactive (deactivated) or all users.")
+    search: Optional[str] = Field(default=None, description="Part of a name or email.")
 
 
 @tool(args_schema=ListUsersArgs)
 def list_users(**kwargs) -> str:
-    """List system users, optionally filtered by role. Useful before assign_case
-    to find out who is available to take the work."""
+    """List the tenant's staff users with their role and whether they are active (Admin only). Filter by role,
+    status or a name/email. Use it to see who exists, who can take work, or before changing a user."""
     return "{}"
 
 
@@ -358,23 +360,47 @@ def bulk_add_customers(**kwargs) -> str:
 class AddUserArgs(BaseModel):
     full_name: str
     email: str
-    role_name: Literal["SuperAdmin", "Admin", "Underwriter", "Agent", "Viewer"]
+    role_name: str = Field(description="The role name exactly as the platform calls it: Admin, Underwriter, Medical Underwriter, Financial Underwriter, Agent, Broker, Bancassurance, ClaimsManager, ClaimsAdjuster, Finance or Viewer. SuperAdmin cannot be given here.")
 
 
 @tool(args_schema=AddUserArgs)
 def add_user(**kwargs) -> str:
-    """Add a new system user (admin, underwriter, agent…)."""
+    """Add a new staff user to this tenant with any role, e.g. a Medical Underwriter when no one can take a
+    medical review (Admin only). Their username and a temporary password are emailed to them."""
+    return "{}"
+
+
+class UpdateUserRoleArgs(BaseModel):
+    user: str = Field(description="The user's email or full name, or \"me\" for the signed-in user's own account.")
+    role_name: str = Field(description="The new role. The role name exactly as the platform calls it: Admin, Underwriter, Medical Underwriter, Financial Underwriter, Agent, Broker, Bancassurance, ClaimsManager, ClaimsAdjuster, Finance or Viewer.")
+
+
+@tool(args_schema=UpdateUserRoleArgs)
+def update_user_role(**kwargs) -> str:
+    """Change an existing user's role (Admin only), e.g. make an Underwriter a Medical Underwriter."""
+    return "{}"
+
+
+class SetUserActiveArgs(BaseModel):
+    user: str = Field(description="The user's email or full name, or \"me\" for the signed-in user's own account.")
+    active: bool = Field(description="False to deactivate (they can no longer sign in, history kept), True to reactivate.")
+
+
+@tool(args_schema=SetUserActiveArgs)
+def set_user_active(**kwargs) -> str:
+    """Deactivate or reactivate a user's account (Admin only). Prefer this over delete_user when someone leaves
+    or is on leave: it is reversible and keeps their history."""
     return "{}"
 
 
 class DeleteUserArgs(BaseModel):
-    email: Optional[str] = None
+    email: Optional[str] = Field(default=None, description="The user's email, or \"me\" for the signed-in user.")
     full_name: Optional[str] = None
 
 
 @tool(args_schema=DeleteUserArgs)
 def delete_user(**kwargs) -> str:
-    """Remove a system user."""
+    """Remove a user's account for good (Admin only). If they may come back, use set_user_active instead."""
     return "{}"
 
 
@@ -3019,6 +3045,8 @@ ALL_TOOLS = [
     bulk_add_customers,
     # users / orgs / families
     add_user,
+    update_user_role,
+    set_user_active,
     delete_user,
     add_organization,
     add_family_group,

@@ -13,6 +13,8 @@ import re
 import httpx
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from services import usage_meter
+
 log = logging.getLogger("tenant-service.report-llm")
 
 LLM_TIMEOUT_SECONDS = float(os.getenv("MEDICAL_REPORT_LLM_TIMEOUT_SECONDS", "60"))
@@ -77,7 +79,9 @@ async def ask_json(session: AsyncSession | None, files: list[tuple[bytes, str]],
             async with httpx.AsyncClient(timeout=LLM_TIMEOUT_SECONDS) as client:
                 response = await client.post(req["url"], params=req.get("params"), headers=req.get("headers"), json=req["json"])
             response.raise_for_status()
-            return _json(_extract_reply(provider, response.json()))
+            body = response.json()
+            usage_meter.record(usage_meter.SERVICE_DOCUMENT_READER, provider, entry["model"], body)
+            return _json(_extract_reply(provider, body))
         except Exception as exc:
             log.warning("LLM request via %s failed for %s: %s", provider, label, exc)
     return None

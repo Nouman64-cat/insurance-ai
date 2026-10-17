@@ -1577,7 +1577,7 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
     | "resubmit"
     | "return_review"
     | "reject"
-    // The initial premium, collected while the proposal is Under Review (same as the Proposal page's PaymentPanel).
+    // The initial premium, collected after proposal submission (same as the Proposal page's PaymentPanel).
     | "payment_request"
     | "payment_check"
     | "payment_remind"
@@ -1621,10 +1621,10 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
       done: "is now **Submitted**.",
     },
     review: {
-      label: "Start Review",
-      status: "UnderReview",
-      to: "review",
-      done: "is now **Under Review**.",
+      label: "Continue Application",
+      status: "Proposed",
+      to: "submitted",
+      done: "is **Submitted** and ready for the next step.",
     },
     request_info: {
       label: "Request Info",
@@ -1651,10 +1651,10 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
       done: "is **Submitted** again.",
     },
     return_review: {
-      label: "Return to Under Review",
-      status: "UnderReview",
-      to: "review",
-      done: "is back **Under Review**.",
+      label: "Re-Submit Proposal",
+      status: "Proposed",
+      to: "submitted",
+      done: "is **Submitted** again.",
     },
     reject: {
       label: "Reject Proposal",
@@ -1674,15 +1674,15 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
       next: "Next step: submit the proposal.",
     },
     submitted: {
-      ids: ["review", "request_info", "back_draft", "reject"],
-      next: "Next step: start the review.",
+      ids: ["underwrite", "request_info", "back_draft", "reject"],
+      next: "Next step: collect the initial premium, then send it to underwriting.",
     },
     review: {
       ids: ["underwrite", "request_info", "back_submitted", "reject"],
       next: "Next step: send it to underwriting.\n\n⚠️ **Choose carefully** — once you send it to underwriting, you can't go back.",
     },
     info: {
-      ids: ["resubmit", "return_review", "reject"],
+      ids: ["resubmit", "reject"],
       next: "Once the information is in, re-submit the proposal.",
     },
   };
@@ -1708,15 +1708,15 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
     none: PROPOSAL_OPTIONS.review.next,
   };
   const proposalNext = (state: ProposalState, payment?: Payment) =>
-    state === "review" && !canHandOffToUnderwriting()
+    ["submitted", "review"].includes(state) && !canHandOffToUnderwriting()
       ? ""
-      : state === "review" && payment
+      : ["submitted", "review"].includes(state) && payment
         ? PAYMENT_NEXT[payment]
         : PROPOSAL_OPTIONS[state].next;
   const stepChip = (label: string, base: ProposalBase, step: ProposalStepId, from: ProposalState, extra: object = {}): QuickAction => ({
     label, actionType: "proposal_step", payload: JSON.stringify({ ...base, step, from, ...extra }),
   });
-  // In Under Review, "Send to Underwriting" is offered only once the premium is paid (or not needed).
+  // After submission, "Send to Underwriting" is offered only once the premium is paid (or not needed).
   const paymentActions = (base: ProposalBase): QuickAction[] => {
     switch (base.payment) {
       case "due":
@@ -1736,7 +1736,7 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
     state: ProposalState,
     base: ProposalBase,
   ): QuickAction[] =>
-    state === "review" && !canHandOffToUnderwriting()
+    ["submitted", "review"].includes(state) && !canHandOffToUnderwriting()
       ? [
           {
             label: "View Proposals",
@@ -1819,7 +1819,7 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
       );
     }
     if (state === "submitted") {
-      return `**Submitted proposal** · ${ref}\n\n${figures}\n- **Customer:** ${d.customer_name} (${d.customer_cnic})\n\nIt is now waiting for review.`;
+      return `**Submitted proposal** · ${ref}\n\n${figures}\n- **Customer:** ${d.customer_name} (${d.customer_cnic})\n\nThe submitted application can proceed to initial payment and underwriting.`;
     }
     if (state === "review") {
       return (
@@ -2119,7 +2119,7 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
         };
         if (def.to) {
           let paymentLine = "";
-          if (def.to === "review" && canHandOffToUnderwriting()) {
+          if (["submitted", "review"].includes(def.to) && canHandOffToUnderwriting()) {
             const { payment, ipp } = await loadPayment(fresh).catch(() => ({ payment: undefined as Payment | undefined, ipp: null }));
             fresh.payment = payment;
             paymentLine = payment ? paymentSummary(payment, ipp) : "";

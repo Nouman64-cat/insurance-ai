@@ -24,6 +24,7 @@ import { Pagination, usePagination } from "@/components/Pagination";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import { tx } from "@/lib/i18n/tx";
 import { appHref, portalUrl } from "@/lib/appLinks";
+import { useCaseEvents } from "@/lib/agent/useCaseEvents";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -307,30 +308,23 @@ function getAvailableActions(
       opts.push({ value: "status:Proposed", label: "Submit Proposal", tier: "submission" });
     }
     opts.push({ value: "status:InformationRequested", label: "Request Info", tier: "submission" });
-  } else if (status === "Proposed") { // Submitted
-    opts.push({ value: "status:UnderReview", label: "Start Review", tier: "submission" });
-    opts.push({ value: "status:InformationRequested", label: "Request Info", tier: "submission" });
-    // Undo an accidental Submit — back to Draft, no harm done.
-    opts.push({ value: "status:Quoted", label: "Step Back to Draft", tier: "submission" });
-  } else if (status === "UnderReview") {
+  } else if (status === "Proposed" || status === "UnderReview") {
     // An Agent's part of the journey stops here: sending to underwriting is for
     // Underwriters and above, so the option isn't offered to an Agent at all.
     if (canSendToUnderwriting) {
-      // The initial premium is collected after the review has started; underwriting opens only once it has cleared.
+      // The initial premium is collected after submission; underwriting opens only once it has cleared.
       // The initial premium is paid by the customer (a link, a receipt or "I have paid", then staff confirm) or recorded by staff:
       // see PaymentPanel. Underwriting opens only once it has cleared.
       if (payment === "due") opts.push({ value: "payment_request", label: "Payment Required from Customer", tier: "submission" });
       else if (payment === "paid" || payment === "none") opts.push({ value: "underwriting", label: "Send to Underwriting", tier: "submission" });
     }
     opts.push({ value: "status:InformationRequested", label: "Request Info", tier: "submission" });
-    // Undo an accidental Start Review — back to Submitted, no harm done.
-    opts.push({ value: "status:Proposed", label: "Step Back to Submitted", tier: "submission" });
+    if (status === "Proposed") opts.push({ value: "status:Quoted", label: "Step Back to Draft", tier: "submission" });
   } else if (status === "InformationRequested") {
     if (!forBatch && hasMissingFields) {
       opts.push({ value: "save_info", label: "Save Information", tier: "submission" });
     }
     opts.push({ value: "status:Proposed", label: "Re-Submit Application", tier: "submission" });
-    opts.push({ value: "status:UnderReview", label: "Return to Under Review", tier: "submission" });
   } else {
     // Approved / AcceptedWithLoadings / Declined / Issued: no actions here —
     // these are outcomes reached only via the underwriting Case's decision.
@@ -449,7 +443,7 @@ export default function QuotePage() {
     setIsHydrated(true);
   }, []);
 
-  // Submitting/moving a proposal along (Submit, Start Review, Send to
+  // Submitting/moving a proposal along (Submit, Send to
   // Underwriting) is something an Agent can do. A Viewer (or unrecognized
   // role) gets no action buttons on this page at all.
   const canActOnProposals = userRole != null && ["Agent", "Underwriter", "Admin", "SuperAdmin"].includes(userRole);
@@ -1879,26 +1873,25 @@ const ProposalsGrid = memo(function ProposalsGrid({
 // ── Detail modal ─────────────────────────────────────────────────────────────
 
 // The three moves a proposal makes on its way to underwriting. `current` is the one waiting to be done:
-// Draft waits on Submit, Submitted on Start Review, Under Review on Send to Underwriting. Past that, all done.
-// Individual applications pay the initial premium between the review and underwriting, so they have a fourth step.
+// Submitted applications proceed to initial payment and then underwriting.
+// Individual applications include initial payment; other applications go directly to underwriting.
 const STEP_SUBMIT = { label: "Submit proposal" };
-const STEP_REVIEW = { label: "Start review" };
 const STEP_PAYMENT = { label: "Initial payment" };
 const STEP_UNDERWRITING = { label: "Send to underwriting" };
 
 function proposalSteps(withPayment: boolean) {
-  return (withPayment ? [STEP_SUBMIT, STEP_REVIEW, STEP_PAYMENT, STEP_UNDERWRITING] : [STEP_SUBMIT, STEP_REVIEW, STEP_UNDERWRITING])
+  return (withPayment ? [STEP_SUBMIT, STEP_PAYMENT, STEP_UNDERWRITING] : [STEP_SUBMIT, STEP_UNDERWRITING])
     .map((st, i) => ({ n: i + 1, label: st.label }));
 }
 
 function proposalProgress(status: string, withPayment: boolean, paid: boolean): { current: number; note?: string; tone?: "amber" | "red" } {
-  const last = withPayment ? 4 : 3;
+  const last = withPayment ? 3 : 2;
   switch (status) {
     case "Quoted": return { current: 1 };
     case "InformationRequested": return { current: 1, note: "Info requested: add the details and re-submit", tone: "amber" };
     case "OnHold": return { current: 1, note: "On hold: resume to continue", tone: "amber" };
-    case "Proposed": return { current: 2 };
-    case "UnderReview": return { current: withPayment && paid ? last : withPayment ? 3 : last };
+    case "Proposed":
+    case "UnderReview": return { current: withPayment && !paid ? 2 : last };
     case "Declined": return { current: last + 1, note: "Rejected", tone: "red" };
     default: return { current: last + 1 };          // approved, issued...: the whole path is behind it
   }
@@ -1974,18 +1967,18 @@ function QuoteDetailModal({
   const { locale, tx } = useI18n();
 
   const [startError, setStartError] = useState<string | null>(null);
-  // The initial premium (individual applications only): collected after the review starts, and it must clear before
+  // The initial premium (individual applications only): collected after submission, and it must clear before
   // the underwriting case can open.
   const hasPaymentStep = !!detail && !detail.master_policy_id && !detail.family_policy_id && !String(detail.policy_id ?? "").startsWith("draft-");
   const [ipp, setIpp] = useState<IPP | null>(null);
   const loadIpp = useCallback(async () => {
-    if (!detail || !hasPaymentStep || detail.status !== "UnderReview") { setIpp(null); return; }
+    if (!detail || !hasPaymentStep || !["Proposed", "UnderReview"].includes(detail.status)) { setIpp(null); return; }
     try { setIpp(await getPolicyIPP(detail.policy_id)); } catch { setIpp(null); }
   }, [detail?.policy_id, detail?.status, hasPaymentStep]);
   useEffect(() => { loadIpp(); }, [loadIpp]);
   // While the customer is paying from their side, pick up their screenshot without anyone reloading the page.
   useEffect(() => {
-    if (!hasPaymentStep || detail?.status !== "UnderReview" || !ipp?.requested_at || ipp.status === "Realized") return;
+    if (!hasPaymentStep || !["Proposed", "UnderReview"].includes(detail?.status ?? "") || !ipp?.requested_at || ipp.status === "Realized") return;
     const id = setInterval(() => { if (document.visibilityState === "visible") loadIpp(); }, 15000);
     return () => clearInterval(id);
   }, [hasPaymentStep, detail?.status, ipp?.requested_at, ipp?.status, loadIpp]);
@@ -2240,26 +2233,36 @@ function QuoteDetailModal({
     expires_at: string;
     expired: boolean;
     link_path: string;
+    submitted: boolean;
   };
   const [docReq, setDocReq] = useState<DocRequest | null>(null);
   const [docReqError, setDocReqError] = useState<string | null>(null);
   const [docBusy, setDocBusy] = useState(false);
   const [confirmRenew, setConfirmRenew] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [docRefresh, setDocRefresh] = useState(0);
   const docPath = detail
     ? `/tenants/${typeof window !== "undefined" ? localStorage.getItem("tenant_id") : ""}/customers/${detail.customer_id}/policies/${detail.policy_id}/document-request`
     : "";
 
+  const documentsConnected = useCaseEvents((event) => {
+    if (event.customer_id === detail?.customer_id && event.detail?.policy_id === detail?.policy_id &&
+        (event.event_type === "CustomerDocumentUploaded" || event.event_type === "CustomerDocumentsSubmitted")) {
+      setDocRefresh((n) => n + 1);
+    }
+  }, Boolean(detail?.policy_id), () => setDocRefresh((n) => n + 1));
+
   useEffect(() => {
     if (!detail?.policy_id || !docPath) return;
     let alive = true;
-    api.get(docPath)
+    const controller = new AbortController();
+    api.get(docPath, { signal: controller.signal })
       .then((r) => { if (alive) { setDocReq(r.data); setDocReqError(null); } })
       .catch((err) => { if (alive) setDocReqError(errorText(err, tx("Could not load the document list."))); });
-    return () => { alive = false; };
+    return () => { alive = false; controller.abort(); };
     // plan_label: editing the plan can change which documents are required
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detail?.policy_id, detail?.customer_id, detail?.plan_label]);
+  }, [docPath, detail?.policy_id, detail?.customer_id, detail?.plan_label, docRefresh, documentsConnected]);
 
   const copyDocLink = async () => {
     if (!docReq) return;
@@ -2370,22 +2373,37 @@ function QuoteDetailModal({
     }
   };
 
+  // What the total adds on top of the premium and its risk loading: the policy fee, stamp duty and sales tax
+  // (shared/pricing/calculator.py). The quote only stores the three totals, so it is the remainder.
+  const feesAndTax = detail ? Math.max(0, Math.round(detail.total_premium - detail.base_premium - detail.loading_applied)) : 0;
+  const initials = (detail?.customer_name ?? "").split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+  const offersUnderwriting = modalOptions.some((o) => o.value === "underwriting");
+  const agentLocked = !!detail && isAgent && modalOptions.length === 0
+    && ["Proposed", "UnderReview", "Approved", "AcceptedWithLoadings", "Declined", "Issued"].includes(detail.status);
+  const smallButton = "px-2.5 py-1 text-[11px] font-semibold rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors disabled:opacity-50";
+
   return (
     <div
       className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center py-6 px-4"
       onClick={onClose}
     >
       <div
-        className="modal-pop bg-white rounded-2xl border border-slate-200 shadow-2xl relative w-full max-w-5xl max-h-full flex flex-col overflow-hidden"
+        className="modal-pop bg-white rounded-2xl border border-slate-200 shadow-2xl relative w-full max-w-6xl max-h-full flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="shrink-0 px-6 py-3.5 border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
+        <div className="shrink-0 px-6 py-3.5 border-b border-slate-100 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2.5">
             <p className="text-sm font-semibold text-slate-700">{tx(isApp ? "Application Details" : "Proposal Details")}</p>
             {detail && <StatusBadge status={detail.status} />}
+            {detail && (
+              <span className="hidden sm:inline font-mono text-[11px] text-slate-400">
+                {tx("Ref:")} {detail.quote_id.slice(0, 8).toUpperCase()}
+              </span>
+            )}
           </div>
           <button
             onClick={onClose}
+            aria-label={tx("Close")}
             className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
@@ -2403,11 +2421,11 @@ function QuoteDetailModal({
                 <span className="font-semibold">{tx("On hold")}</span> — {tx("this proposal is paused and stays here until it is resumed.")}
               </div>
             )}
-            {hasPaymentStep && detail.status === "UnderReview" && ipp !== null && (
+            {hasPaymentStep && ["Proposed", "UnderReview"].includes(detail.status) && ipp !== null && (
               <PaymentPanel policyId={detail.policy_id} ipp={ipp} canAct={canAct && !isAgent} onChange={setIpp}
                 onCleared={async () => { await loadIpp(); onRefresh(); await onReloadDetail(); }} />
             )}
-            {hasPaymentStep && detail.status === "UnderReview" && (
+            {hasPaymentStep && ["Proposed", "UnderReview"].includes(detail.status) && (
               <p className={`text-center text-xs font-semibold ${payment === "paid" ? "text-emerald-600" : "text-amber-600"}`}>
                 {payment === "paid"
                   ? tx("Initial premium received. This application can now go to underwriting.")
@@ -2435,488 +2453,47 @@ function QuoteDetailModal({
 
         {detail && !loading && (
           <div className="px-6 py-5 space-y-5">
-            {/* Proposal Statement */}
-            <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-5 py-4 space-y-1.5">
-              <div className="flex items-center justify-between mb-1">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500">{tx(isApp ? "Application Statement" : "Proposal Statement")}</p>
-                <span className="text-[10px] font-mono text-slate-400">{tx("Ref:")} {detail.quote_id.slice(0, 8).toUpperCase()}</span>
-              </div>
-              {detail.organization_name && (
-                <p className="flex items-center gap-1.5 text-[11px] text-amber-600 font-semibold">
-                  <OrgIcon className="w-3 h-3" />
-                  {tx("Corporate")} — {detail.organization_name}
-                  {detail.master_policy_label ? ` · ${detail.master_policy_label}` : ""}
-                </p>
-              )}
-              {detail.family_group_name && (
-                <p className="flex items-center gap-1.5 text-[11px] text-blue-600 font-semibold">
-                  <FamilyIcon className="w-3 h-3" />
-                  {tx("Family")} — {detail.family_group_name}
-                  {detail.family_policy_label ? ` · ${detail.family_policy_label}` : ""}
-                </p>
-              )}
-              {locale === "ur" ? (
-                <>
-                  <p className="text-sm text-slate-700 leading-relaxed">
-                    ہمیں{" "}<span className="font-semibold text-slate-900">{detail.customer_name}</span>{" "}کے لیے درج ذیل انشورنس
-                    {isApp ? "درخواست موصول ہوئی ہے۔" : "پروپوزل پیش کرتے ہوئے خوشی ہے۔"} فراہم کردہ معلومات کی بنیاد پر ہم{" "}
-                    <span className="font-semibold text-slate-900">{detail.plan_label}</span>{" "}پلان کے تحت{" "}
-                    <span className="font-semibold text-slate-900">{tx(INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type)}</span>{" "}
-                    پالیسی تجویز کرتے ہیں، جو{" "}
-                    <span className="font-semibold text-slate-900">{detail.term_years} سال</span>{" "}کی مدت کے لیے{" "}
-                    <span className="font-semibold text-slate-900">{formatPKR(detail.coverage_amount)}</span>{" "}کی بیمہ شدہ رقم فراہم کرتی ہے۔
+            {/* Who the proposal is for and what it covers, at a glance */}
+            <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+              <div className="flex min-w-0 items-center gap-3.5">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white" aria-hidden="true">
+                  {initials}
+                </span>
+                <div className="min-w-0">
+                  <h2 className="truncate text-lg font-bold leading-tight text-slate-900">{detail.customer_name}</h2>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    <span className="font-mono">{detail.customer_cnic}</span>
+                    <span className="mx-1.5 text-slate-300">·</span>
+                    {detail.plan_label}
+                    <span className="mx-1.5 text-slate-300">·</span>
+                    {tx(INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type)}
                   </p>
-                  <p className="text-sm text-slate-700 leading-relaxed">
-                    اس کوریج کا کل سالانہ پریمیم{" "}
-                    <span className="font-bold text-slate-900">{formatPKR(detail.total_premium)}</span>{" "}ہے
-                    (متوقع پریمیم {formatPKR(detail.base_premium)} اور رسک {formatPKR(detail.loading_applied)})۔ یہ{" "}{isApp ? "درخواست" : "پروپوزل"}
-                    تسلی بخش انڈر رائٹنگ جائزے سے مشروط ہے اور{" "}
-                    <span className="font-medium text-slate-800">{formatDate(detail.created_at)}</span>{" "}کو تیار کیا گیا۔
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm text-slate-700 leading-relaxed">
-                    {tx(isApp ? "We have received the following insurance application for" : "We are pleased to present the following insurance proposal for")}{" "}
-                    <span className="font-semibold text-slate-900">{detail.customer_name}</span>{tx(". Based on the information provided, we propose a")}{" "}
-                    <span className="font-semibold text-slate-900">
-                      {tx(INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type)}
-                    </span>{" "}
-                    {tx("policy under the")}{" "}
-                    <span className="font-semibold text-slate-900">{detail.plan_label}</span>{" "}
-                    {tx("plan, providing a sum assured of")}{" "}
-                    <span className="font-semibold text-slate-900">{formatPKR(detail.coverage_amount)}</span>{" "}
-                    {tx("over a term of")}{" "}
-                    <span className="font-semibold text-slate-900">{detail.term_years}{" "}{tx("years")}</span>.
-                  </p>
-                  <p className="text-sm text-slate-700 leading-relaxed">
-                    {tx("The total annual premium for this coverage is")}{" "}
-                    <span className="font-bold text-slate-900">{formatPKR(detail.total_premium)}</span>{" "}
-                    {tx("(expected premium of")}{" "}{formatPKR(detail.base_premium)}{" "}{tx("plus a risk of")}{" "}
-                    {formatPKR(detail.loading_applied)}{tx(isApp ? "). This application is subject to satisfactory underwriting assessment and is generated as of" : "). This proposal is valid subject to satisfactory underwriting assessment and is generated as of")}{" "}
-                    <span className="font-medium text-slate-800">{formatDate(detail.created_at)}</span>.
-                  </p>
-                </>
-              )}
-            </div>
-
-            <p className="text-[11px] text-slate-500 mt-1 mb-2 text-center italic">
-              {tx(isApp ? "Opens an Underwriting case for this customer on this exact application — documents, AI risk scoring, and the final decision all happen there." : "Opens an Underwriting case for this customer on this exact proposal — documents, AI risk scoring, and the final decision all happen there.")}
-            </p>
-
-            {/* Headline */}
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-bold text-slate-900">{detail.customer_name}</h2>
-                  {canEditCustomer && !editingCustomer && (
-                    <button
-                      onClick={startEditCustomer}
-                      className="px-2.5 py-1 text-[11px] font-semibold rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors"
-                    >
-                      {tx("Edit")}
-                    </button>
+                  {(detail.organization_name || detail.family_group_name) && (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {detail.organization_name && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                          <OrgIcon className="w-3 h-3" />
+                          {tx("Corporate")} — {detail.organization_name}
+                          {detail.master_policy_label ? ` · ${detail.master_policy_label}` : ""}
+                        </span>
+                      )}
+                      {detail.family_group_name && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+                          <FamilyIcon className="w-3 h-3" />
+                          {tx("Family")} — {detail.family_group_name}
+                          {detail.family_policy_label ? ` · ${detail.family_policy_label}` : ""}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
-                <p className="text-xs text-slate-400">{detail.customer_cnic}</p>
               </div>
-              <p className="text-[11px] text-slate-400 text-end mt-1.5">
+              <p className="text-[11px] text-slate-400">
                 {tx("Rate version {version} · Generated {date}", { version: detail.rate_version, date: displayDateTime(detail.created_at) })}
               </p>
             </div>
 
-            {/* Customer */}
-            <section>
-              <SectionLabel>{tx("Customer")}</SectionLabel>
-              {editingCustomer ? (
-                <div className="space-y-3 rounded-xl border border-blue-100 bg-blue-50/40 p-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {([
-                      ["firstName", "First Name", "text"],
-                      ["lastName", "Last Name", "text"],
-                      ["dob", "Date of Birth", "date"],
-                      ["occupation", "Occupation", "text"],
-                      ["income", "Annual Income (PKR)", "number"],
-                      ["height", "Height (cm)", "number"],
-                      ["weight", "Weight (kg)", "number"],
-                    ] as const).map(([key, label, type]) => (
-                      <div key={key}>
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx(label)}</label>
-                        <input
-                          type={type} value={custForm[key]} disabled={custSaving}
-                          onChange={(e) => setCustForm({ ...custForm, [key]: e.target.value })}
-                          className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
-                        />
-                      </div>
-                    ))}
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Gender")}</label>
-                      <FancyDropdown
-                        className="w-full"
-                        value={custForm.gender}
-                        onChange={(v) => setCustForm({ ...custForm, gender: v })}
-                        options={[{ value: "Male", label: tx("Male") }, { value: "Female", label: tx("Female") }]}
-                        placeholder={tx("Select gender")}
-                        disabled={custSaving}
-                      />
-                    </div>
-                    <label className="flex items-center gap-2 text-sm text-slate-700 sm:col-span-2">
-                      <input
-                        type="checkbox" checked={custForm.isSmoker} disabled={custSaving}
-                        onChange={(e) => setCustForm({ ...custForm, isSmoker: e.target.checked })}
-                      />
-                      {tx("Smoker")}
-                    </label>
-                  </div>
-                  <p className="text-[11px] text-slate-500">
-                    {tx("The premium is recalculated from these details when you save. The CNIC cannot be changed here.")}
-                  </p>
-                  {custError && (
-                    <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{custError}</p>
-                  )}
-                  <div className="flex items-center justify-end gap-2">
-                    <button
-                      onClick={() => { setEditingCustomer(false); setCustError(null); }}
-                      disabled={custSaving}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-50"
-                    >
-                      {tx("Cancel")}
-                    </button>
-                    <button
-                      onClick={saveCustomer}
-                      disabled={custSaving}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50"
-                    >
-                      {custSaving ? tx("Saving…") : tx("Save Changes")}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <DetailField label={tx("Date of Birth")} value={`${formatDate(detail.customer_dob)} (${tx("{age} yrs", { age: detail.customer_age })})`} />
-                <DetailField label={tx("Gender")} value={detail.customer_gender} />
-                <DetailField label={tx("Occupation")} value={detail.customer_occupation} />
-                <DetailField label={tx("Annual Income")} value={formatPKR(detail.customer_declared_income)} />
-                <DetailField label={tx("Smoker")} value={detail.customer_is_smoker ? tx("Yes") : tx("No")} />
-                <DetailField
-                  label={tx("Height / Weight")}
-                  value={`${detail.customer_height_cm} cm / ${detail.customer_weight_kg} kg${detail.customer_bmi ? ` (BMI ${detail.customer_bmi})` : ""}`}
-                />
-                {(detail.acquisition_source_name || canEditSource) && (
-                  <div className="col-span-2 sm:col-span-3">
-                    {editingSource ? (
-                      <div className="space-y-3 rounded-xl border border-blue-100 bg-blue-50/40 p-4">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{tx("Lead Generated By")}</p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <SourcePicker
-                            sources={sources}
-                            sourceId={sourceId}
-                            onChange={(src) => setSourceId(src?.id ?? "")}
-                            fieldClass="space-y-1"
-                            labelClass="text-xs font-semibold text-slate-600"
-                            selectClass="w-full bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-900"
-                          />
-                        </div>
-                        <p className="text-[11px] text-slate-500">
-                          {tx("Choose “Direct / Unassigned” to remove the source. Need a new one?")}{" "}
-                          <a href="/admin/acquisition-sources" className="font-semibold text-blue-700 hover:underline">
-                            {tx("Manage acquisition sources →")}
-                          </a>
-                        </p>
-                        {sourceError && (
-                          <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{sourceError}</p>
-                        )}
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => { setEditingSource(false); setSourceError(null); }}
-                            disabled={sourceSaving}
-                            className="px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-50"
-                          >
-                            {tx("Cancel")}
-                          </button>
-                          <button
-                            onClick={saveSource}
-                            disabled={sourceSaving}
-                            className="px-3 py-1.5 text-xs font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50"
-                          >
-                            {sourceSaving ? tx("Saving…") : tx("Save Changes")}
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-start justify-between gap-3">
-                        <DetailField
-                          label={tx("Lead Generated By")}
-                          value={
-                            detail.acquisition_source_name
-                              ? `${detail.acquisition_source_name} (${tx(SOURCE_TYPE_LABELS[detail.acquisition_source_type ?? ""] ?? detail.acquisition_source_type ?? "")})${detail.acquisition_source_partner ? ` — ${detail.acquisition_source_partner}` : ""}`
-                              : tx("Direct / Unassigned")
-                          }
-                        />
-                        {canEditSource && (
-                          <button
-                            onClick={startEditSource}
-                            className="shrink-0 px-2.5 py-1 text-[11px] font-semibold rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors"
-                          >
-                            {tx("Edit")}
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-              )}
-            </section>
-
-            {/* Policy */}
-            <section>
-              <div className="flex items-center justify-between mb-2.5">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{tx("Policy")}</p>
-                {!editing && (canEditProposal || canDeleteProposal) && (
-                  <div className="flex items-center gap-1.5">
-                    {canEditProposal && (
-                      <button
-                        onClick={startEdit}
-                        disabled={deleting}
-                        className="px-2.5 py-1 text-[11px] font-semibold rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors disabled:opacity-50"
-                      >
-                        {tx("Edit")}
-                      </button>
-                    )}
-                    {canDeleteProposal && (
-                      <button
-                        onClick={deleteProposal}
-                        disabled={deleting}
-                        className="px-2.5 py-1 text-[11px] font-semibold rounded-md text-red-600 bg-white border border-red-100 hover:bg-red-50 transition-colors disabled:opacity-50"
-                      >
-                        {deleting ? tx("Deleting…") : tx("Delete")}
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-              {editError && !editing && (
-                <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{editError}</p>
-              )}
-              {editing ? (
-                <div className="space-y-3 rounded-xl border border-blue-100 bg-blue-50/40 p-4">
-                  {plans.length > 0 && (
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Plan")}</label>
-                      <FancyDropdown
-                        className="w-full"
-                        value={form.planId}
-                        onChange={(v) => setForm({ ...form, planId: v })}
-                        options={plans.map((p) => ({ value: p.id, label: p.label }))}
-                        placeholder={tx("Select plan")}
-                        searchable={plans.length > 6}
-                        disabled={saving}
-                      />
-                    </div>
-                  )}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Coverage (PKR)")}</label>
-                      <input
-                        type="number" min={0} value={form.coverage} disabled={saving}
-                        onChange={(e) => setForm({ ...form, coverage: e.target.value })}
-                        className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Term (years)")}</label>
-                      <input
-                        type="number" min={1} value={form.term} disabled={saving}
-                        onChange={(e) => setForm({ ...form, term: e.target.value })}
-                        className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Nominee")}</label>
-                      <input
-                        type="text" value={form.nomineeName} disabled={saving}
-                        onChange={(e) => setForm({ ...form, nomineeName: e.target.value })}
-                        className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Nominee Relationship")}</label>
-                      <input
-                        type="text" value={form.nomineeRelationship} disabled={saving}
-                        onChange={(e) => setForm({ ...form, nomineeRelationship: e.target.value })}
-                        className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
-                      />
-                    </div>
-                    {editShowsDependent && (
-                      <>
-                        <div>
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Dependent")}</label>
-                          <input
-                            type="text" value={form.dependentName} disabled={saving}
-                            onChange={(e) => setForm({ ...form, dependentName: e.target.value })}
-                            className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Dependent Date of Birth")}</label>
-                          <input
-                            type="date" value={form.dependentDob} disabled={saving}
-                            onChange={(e) => setForm({ ...form, dependentDob: e.target.value })}
-                            className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
-                          />
-                        </div>
-                      </>
-                    )}
-                  </div>
-                  {editError && (
-                    <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{editError}</p>
-                  )}
-                  <div className="flex items-center justify-end gap-2">
-                    <button
-                      onClick={() => { setEditing(false); setEditError(null); }}
-                      disabled={saving}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-50"
-                    >
-                      {tx("Cancel")}
-                    </button>
-                    <button
-                      onClick={saveEdit}
-                      disabled={saving}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50"
-                    >
-                      {saving ? tx("Saving…") : tx("Save Changes")}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <DetailField label={tx("Plan")} value={detail.plan_label} />
-                <DetailField label={tx("Type")} value={tx(INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type)} />
-                <DetailField label={tx("Coverage")} value={formatPKR(detail.coverage_amount)} />
-                <DetailField label={tx("Term")} value={tx("{years} years", { years: detail.term_years })} />
-                {detail.organization_name && <DetailField label={tx("Organization")} value={detail.organization_name} />}
-                {detail.master_policy_label && <DetailField label={tx("Master Policy")} value={detail.master_policy_label} />}
-                {detail.family_group_name && <DetailField label={tx("Family")} value={detail.family_group_name} />}
-                {detail.family_policy_label && <DetailField label={tx("Family Policy")} value={detail.family_policy_label} />}
-                {detail.nominee_name && <DetailField label={tx("Nominee")} value={`${detail.nominee_name}${detail.nominee_relationship ? ` (${detail.nominee_relationship})` : ""}`} />}
-                {detail.dependent_name && <DetailField label={tx("Dependent")} value={`${detail.dependent_name}${detail.dependent_dob ? ` — b. ${formatDate(detail.dependent_dob)}` : ""}`} />}
-              </div>
-              )}
-            </section>
-
-            {/* Documents the plan requires, and the link the customer uploads them through */}
-            <section>
-              <div className="mb-2.5 flex items-center justify-between">
-                <SectionLabel>{tx("Documents")}</SectionLabel>
-                {docReq && docReq.total > 0 && (
-                  <span className="mb-2.5 rounded-full border border-blue-100 bg-blue-50 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">
-                    {tx("{0} of {1} received", { 0: docReq.received, 1: docReq.total })}
-                  </span>
-                )}
-              </div>
-              {docReqError && (
-                <p className="mb-3 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-700">{docReqError}</p>
-              )}
-              {!docReq && !docReqError && <p className="text-xs text-slate-400">{tx("Loading…")}</p>}
-              {docReq && docReq.total === 0 && (
-                <p className="text-sm text-slate-500">{tx("This plan needs no documents.")}</p>
-              )}
-              {docReq && docReq.total > 0 && (
-                <div className="space-y-3">
-                  <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
-                    {docReq.requirements.map((r) => (
-                      <li key={r.document_type} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
-                        <span className="min-w-0">
-                          <span className="font-medium text-slate-800">{r.document_type}</span>
-                          {r.files.length > 0 && (
-                            <span className="ml-2 truncate text-xs text-slate-400">{r.files[r.files.length - 1].file_name}</span>
-                          )}
-                        </span>
-                        <span
-                          className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${
-                            r.state === "received"
-                              ? "border-blue-600 bg-blue-600 text-white"
-                              : r.state === "reupload"
-                                ? "border-slate-700 bg-slate-700 text-white"
-                                : "border-slate-300 bg-white text-slate-600"
-                          }`}
-                        >
-                          {r.state === "received" ? tx("Received") : r.state === "reupload" ? tx("Needs re-upload") : tx("Waiting")}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-
-                  <div className="space-y-2.5 rounded-xl border border-blue-100 bg-blue-50/50 p-3.5">
-                    <p className="text-xs font-semibold text-slate-700">{tx("Customer upload link")}</p>
-                    <div className="flex items-center gap-2">
-                      <input
-                        readOnly
-                        value={portalUrl(docReq.link_path)}
-                        onFocus={(e) => e.currentTarget.select()}
-                        aria-label={tx("Customer upload link")}
-                        className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-mono text-xs text-slate-700"
-                      />
-                      <button
-                        type="button"
-                        onClick={copyDocLink}
-                        className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-blue-700"
-                      >
-                        {linkCopied ? tx("Copied") : tx("Copy link")}
-                      </button>
-                      <a
-                        href={portalUrl(docReq.link_path)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
-                      >
-                        {tx("Open")}
-                      </a>
-                    </div>
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                      <span>{docReq.expired ? tx("This link has expired.") : tx("Expires {0}", { 0: formatDate(docReq.expires_at) })}</span>
-                      {confirmRenew ? (
-                        <span className="flex items-center gap-2">
-                          {tx("The old link will stop working.")}
-                          <button type="button" disabled={docBusy} onClick={renewDocLink} className="font-semibold text-blue-700 hover:underline disabled:opacity-50">
-                            {docBusy ? tx("Renewing…") : tx("Renew")}
-                          </button>
-                          <button type="button" disabled={docBusy} onClick={() => setConfirmRenew(false)} className="font-semibold text-slate-600 hover:underline">
-                            {tx("Cancel")}
-                          </button>
-                        </span>
-                      ) : (
-                        <button type="button" onClick={() => setConfirmRenew(true)} className="font-semibold text-blue-700 hover:underline">
-                          {tx("Renew link")}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </section>
-
-            {/* Premium breakdown */}
-            <section>
-              <SectionLabel>{tx("Premium Breakdown")}</SectionLabel>
-              <div className="grid grid-cols-3 gap-3">
-                <StatTile label={tx("Premium")} value={formatPKR(detail.base_premium)} />
-                {/* <StatTile label="Risk" value={formatPKR(detail.loading_applied)} /> */}
-                <StatTile
-                  label={tx("Total Payable")}
-                  value={
-                    <span>
-                      {formatPKR(detail.total_premium)}{" "}
-                      <span className="text-[10px] font-medium text-slate-300"></span>
-                    </span>
-                  }
-                  highlight
-                />
-              </div>
-            </section>
-
-            {/* Missing Information section */}
+            {/* What stops this proposal from moving on comes first */}
             {missingFields.length > 0 && detail.status === "Quoted" && (
               <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl">
                 <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-1">{tx("Missing Information")}</p>
@@ -2930,7 +2507,7 @@ function QuoteDetailModal({
             {missingFields.length > 0 && detail.status === "InformationRequested" && (
               <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl">
                 <p className="text-xs font-bold text-blue-700 uppercase tracking-widest mb-3">{tx("Provide Missing Information")}</p>
-                <div className="space-y-3">
+                <div className="grid gap-3 sm:grid-cols-2">
                   {missingFields.map(f => (
                     <div key={f.key}>
                       <label className="text-xs font-semibold text-slate-700 block mb-1">{tx(f.label)}</label>
@@ -2965,23 +2542,509 @@ function QuoteDetailModal({
                 {tx("This application's outcome was decided on its underwriting case, not here — open the case to review the decision.")}
               </div>
             )}
+
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-start">
+              {/* ── Details ─────────────────────────────────────────────── */}
+              <div className="min-w-0 space-y-5">
+                <DetailCard
+                  title={tx("Customer")}
+                  action={canEditCustomer && !editingCustomer && (
+                    <button onClick={startEditCustomer} className={smallButton}>{tx("Edit")}</button>
+                  )}
+                >
+                  {editingCustomer ? (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {([
+                          ["firstName", "First Name", "text"],
+                          ["lastName", "Last Name", "text"],
+                          ["dob", "Date of Birth", "date"],
+                          ["occupation", "Occupation", "text"],
+                          ["income", "Annual Income (PKR)", "number"],
+                          ["height", "Height (cm)", "number"],
+                          ["weight", "Weight (kg)", "number"],
+                        ] as const).map(([key, label, type]) => (
+                          <div key={key}>
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx(label)}</label>
+                            <input
+                              type={type} value={custForm[key]} disabled={custSaving}
+                              onChange={(e) => setCustForm({ ...custForm, [key]: e.target.value })}
+                              className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                            />
+                          </div>
+                        ))}
+                        <div>
+                          <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Gender")}</label>
+                          <FancyDropdown
+                            className="w-full"
+                            value={custForm.gender}
+                            onChange={(v) => setCustForm({ ...custForm, gender: v })}
+                            options={[{ value: "Male", label: tx("Male") }, { value: "Female", label: tx("Female") }]}
+                            placeholder={tx("Select gender")}
+                            disabled={custSaving}
+                          />
+                        </div>
+                        <label className="flex items-center gap-2 text-sm text-slate-700 sm:col-span-2">
+                          <input
+                            type="checkbox" checked={custForm.isSmoker} disabled={custSaving}
+                            onChange={(e) => setCustForm({ ...custForm, isSmoker: e.target.checked })}
+                          />
+                          {tx("Smoker")}
+                        </label>
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        {tx("The premium is recalculated from these details when you save. The CNIC cannot be changed here.")}
+                      </p>
+                      {custError && (
+                        <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{custError}</p>
+                      )}
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => { setEditingCustomer(false); setCustError(null); }}
+                          disabled={custSaving}
+                          className="px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                        >
+                          {tx("Cancel")}
+                        </button>
+                        <button
+                          onClick={saveCustomer}
+                          disabled={custSaving}
+                          className="px-3 py-1.5 text-xs font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50"
+                        >
+                          {custSaving ? tx("Saving…") : tx("Save Changes")}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3.5">
+                      <DetailField label={tx("Date of Birth")} value={`${formatDate(detail.customer_dob)} (${tx("{age} yrs", { age: detail.customer_age })})`} />
+                      <DetailField label={tx("Gender")} value={detail.customer_gender} />
+                      <DetailField label={tx("Occupation")} value={detail.customer_occupation} />
+                      <DetailField label={tx("Annual Income")} value={formatPKR(detail.customer_declared_income)} />
+                      <DetailField label={tx("Smoker")} value={detail.customer_is_smoker ? tx("Yes") : tx("No")} />
+                      <DetailField
+                        label={tx("Height / Weight")}
+                        value={`${detail.customer_height_cm} cm / ${detail.customer_weight_kg} kg${detail.customer_bmi ? ` (BMI ${detail.customer_bmi})` : ""}`}
+                      />
+                    </div>
+                  )}
+
+                  {/* Where the lead came from: its own row with its own edit, at the foot of the customer card */}
+                  {(detail.acquisition_source_name || canEditSource) && (
+                    <div className="mt-4 border-t border-slate-100 pt-3.5">
+                      {editingSource ? (
+                        <div className="space-y-3">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{tx("Lead Generated By")}</p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <SourcePicker
+                              sources={sources}
+                              sourceId={sourceId}
+                              onChange={(src) => setSourceId(src?.id ?? "")}
+                              fieldClass="space-y-1"
+                              labelClass="text-xs font-semibold text-slate-600"
+                              selectClass="w-full bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-900"
+                            />
+                          </div>
+                          <p className="text-[11px] text-slate-500">
+                            {tx("Choose “Direct / Unassigned” to remove the source. Need a new one?")}{" "}
+                            <a href="/admin/acquisition-sources" className="font-semibold text-blue-700 hover:underline">
+                              {tx("Manage acquisition sources →")}
+                            </a>
+                          </p>
+                          {sourceError && (
+                            <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{sourceError}</p>
+                          )}
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => { setEditingSource(false); setSourceError(null); }}
+                              disabled={sourceSaving}
+                              className="px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                            >
+                              {tx("Cancel")}
+                            </button>
+                            <button
+                              onClick={saveSource}
+                              disabled={sourceSaving}
+                              className="px-3 py-1.5 text-xs font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50"
+                            >
+                              {sourceSaving ? tx("Saving…") : tx("Save Changes")}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-start justify-between gap-3">
+                          <DetailField
+                            label={tx("Lead Generated By")}
+                            value={
+                              detail.acquisition_source_name
+                                ? `${detail.acquisition_source_name} (${tx(SOURCE_TYPE_LABELS[detail.acquisition_source_type ?? ""] ?? detail.acquisition_source_type ?? "")})${detail.acquisition_source_partner ? ` — ${detail.acquisition_source_partner}` : ""}`
+                                : tx("Direct / Unassigned")
+                            }
+                          />
+                          {canEditSource && (
+                            <button onClick={startEditSource} className={`shrink-0 ${smallButton}`}>{tx("Change")}</button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </DetailCard>
+
+                <DetailCard
+                  title={tx("Policy")}
+                  action={!editing && (canEditProposal || canDeleteProposal) && (
+                    <div className="flex items-center gap-1.5">
+                      {canEditProposal && (
+                        <button onClick={startEdit} disabled={deleting} className={smallButton}>{tx("Edit")}</button>
+                      )}
+                      {canDeleteProposal && (
+                        <button
+                          onClick={deleteProposal}
+                          disabled={deleting}
+                          className="px-2.5 py-1 text-[11px] font-semibold rounded-md text-red-600 bg-white border border-red-100 hover:bg-red-50 transition-colors disabled:opacity-50"
+                        >
+                          {deleting ? tx("Deleting…") : tx("Delete")}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                >
+                  {editError && !editing && (
+                    <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{editError}</p>
+                  )}
+                  {editing ? (
+                    <div className="space-y-3">
+                      {plans.length > 0 && (
+                        <div>
+                          <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Plan")}</label>
+                          <FancyDropdown
+                            className="w-full"
+                            value={form.planId}
+                            onChange={(v) => setForm({ ...form, planId: v })}
+                            options={plans.map((p) => ({ value: p.id, label: p.label }))}
+                            placeholder={tx("Select plan")}
+                            searchable={plans.length > 6}
+                            disabled={saving}
+                          />
+                        </div>
+                      )}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Coverage (PKR)")}</label>
+                          <input
+                            type="number" min={0} value={form.coverage} disabled={saving}
+                            onChange={(e) => setForm({ ...form, coverage: e.target.value })}
+                            className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Term (years)")}</label>
+                          <input
+                            type="number" min={1} value={form.term} disabled={saving}
+                            onChange={(e) => setForm({ ...form, term: e.target.value })}
+                            className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Nominee")}</label>
+                          <input
+                            type="text" value={form.nomineeName} disabled={saving}
+                            onChange={(e) => setForm({ ...form, nomineeName: e.target.value })}
+                            className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Nominee Relationship")}</label>
+                          <input
+                            type="text" value={form.nomineeRelationship} disabled={saving}
+                            onChange={(e) => setForm({ ...form, nomineeRelationship: e.target.value })}
+                            className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                          />
+                        </div>
+                        {editShowsDependent && (
+                          <>
+                            <div>
+                              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Dependent")}</label>
+                              <input
+                                type="text" value={form.dependentName} disabled={saving}
+                                onChange={(e) => setForm({ ...form, dependentName: e.target.value })}
+                                className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">{tx("Dependent Date of Birth")}</label>
+                              <input
+                                type="date" value={form.dependentDob} disabled={saving}
+                                onChange={(e) => setForm({ ...form, dependentDob: e.target.value })}
+                                className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                              />
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      {editError && (
+                        <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{editError}</p>
+                      )}
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => { setEditing(false); setEditError(null); }}
+                          disabled={saving}
+                          className="px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                        >
+                          {tx("Cancel")}
+                        </button>
+                        <button
+                          onClick={saveEdit}
+                          disabled={saving}
+                          className="px-3 py-1.5 text-xs font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50"
+                        >
+                          {saving ? tx("Saving…") : tx("Save Changes")}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3.5">
+                      <DetailField label={tx("Plan")} value={detail.plan_label} />
+                      <DetailField label={tx("Type")} value={tx(INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type)} />
+                      <DetailField label={tx("Coverage")} value={formatPKR(detail.coverage_amount)} />
+                      <DetailField label={tx("Term")} value={tx("{years} years", { years: detail.term_years })} />
+                      {detail.organization_name && <DetailField label={tx("Organization")} value={detail.organization_name} />}
+                      {detail.master_policy_label && <DetailField label={tx("Master Policy")} value={detail.master_policy_label} />}
+                      {detail.family_group_name && <DetailField label={tx("Family")} value={detail.family_group_name} />}
+                      {detail.family_policy_label && <DetailField label={tx("Family Policy")} value={detail.family_policy_label} />}
+                      {detail.nominee_name && <DetailField label={tx("Nominee")} value={`${detail.nominee_name}${detail.nominee_relationship ? ` (${detail.nominee_relationship})` : ""}`} />}
+                      {detail.dependent_name && <DetailField label={tx("Dependent")} value={`${detail.dependent_name}${detail.dependent_dob ? ` — b. ${formatDate(detail.dependent_dob)}` : ""}`} />}
+                    </div>
+                  )}
+                </DetailCard>
+
+                {/* The formal wording for the customer. Every figure in it is shown above, so it starts folded away. */}
+                <details className="group rounded-xl border border-blue-100 bg-blue-50/50">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-blue-600">
+                      {tx(isApp ? "Application Statement" : "Proposal Statement")}
+                    </span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-blue-500 transition-transform group-open:rotate-180" aria-hidden="true">
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </summary>
+                  <div className="space-y-2 px-4 pb-4">
+                    {locale === "ur" ? (
+                      <>
+                        <p className="text-sm text-slate-700 leading-relaxed">
+                          ہمیں{" "}<span className="font-semibold text-slate-900">{detail.customer_name}</span>{" "}کے لیے درج ذیل انشورنس
+                          {isApp ? "درخواست موصول ہوئی ہے۔" : "پروپوزل پیش کرتے ہوئے خوشی ہے۔"} فراہم کردہ معلومات کی بنیاد پر ہم{" "}
+                          <span className="font-semibold text-slate-900">{detail.plan_label}</span>{" "}پلان کے تحت{" "}
+                          <span className="font-semibold text-slate-900">{tx(INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type)}</span>{" "}
+                          پالیسی تجویز کرتے ہیں، جو{" "}
+                          <span className="font-semibold text-slate-900">{detail.term_years} سال</span>{" "}کی مدت کے لیے{" "}
+                          <span className="font-semibold text-slate-900">{formatPKR(detail.coverage_amount)}</span>{" "}کی بیمہ شدہ رقم فراہم کرتی ہے۔
+                        </p>
+                        <p className="text-sm text-slate-700 leading-relaxed">
+                          اس کوریج کا کل سالانہ پریمیم{" "}
+                          <span className="font-bold text-slate-900">{formatPKR(detail.total_premium)}</span>{" "}ہے
+                          (متوقع پریمیم {formatPKR(detail.base_premium)}، رسک {formatPKR(detail.loading_applied)}
+                          {feesAndTax > 0 && <>، فیس اور ٹیکس {formatPKR(feesAndTax)}</>})۔ یہ{" "}{isApp ? "درخواست" : "پروپوزل"}
+                          تسلی بخش انڈر رائٹنگ جائزے سے مشروط ہے اور{" "}
+                          <span className="font-medium text-slate-800">{formatDate(detail.created_at)}</span>{" "}کو تیار کیا گیا۔
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm text-slate-700 leading-relaxed">
+                          {tx(isApp ? "We have received the following insurance application for" : "We are pleased to present the following insurance proposal for")}{" "}
+                          <span className="font-semibold text-slate-900">{detail.customer_name}</span>{tx(". Based on the information provided, we propose a")}{" "}
+                          <span className="font-semibold text-slate-900">
+                            {tx(INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type)}
+                          </span>{" "}
+                          {tx("policy under the")}{" "}
+                          <span className="font-semibold text-slate-900">{detail.plan_label}</span>{" "}
+                          {tx("plan, providing a sum assured of")}{" "}
+                          <span className="font-semibold text-slate-900">{formatPKR(detail.coverage_amount)}</span>{" "}
+                          {tx("over a term of")}{" "}
+                          <span className="font-semibold text-slate-900">{detail.term_years}{" "}{tx("years")}</span>.
+                        </p>
+                        <p className="text-sm text-slate-700 leading-relaxed">
+                          {tx("The total annual premium for this coverage is")}{" "}
+                          <span className="font-bold text-slate-900">{formatPKR(detail.total_premium)}</span>{" "}
+                          {tx("(expected premium of")}{" "}{formatPKR(detail.base_premium)}{" "}{tx("plus a risk of")}{" "}
+                          {formatPKR(detail.loading_applied)}
+                          {feesAndTax > 0 && <>{" "}{tx("and fees and taxes of")}{" "}{formatPKR(feesAndTax)}</>}
+                          {tx(isApp ? "). This application is subject to satisfactory underwriting assessment and is generated as of" : "). This proposal is valid subject to satisfactory underwriting assessment and is generated as of")}{" "}
+                          <span className="font-medium text-slate-800">{formatDate(detail.created_at)}</span>.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                </details>
+              </div>
+
+              {/* ── Money and paperwork: stays in view while the details scroll ── */}
+              <aside className="space-y-5 lg:sticky lg:top-0">
+                <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                  <h3 className="border-b border-slate-100 px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest text-slate-500">
+                    {tx("Premium Breakdown")}
+                  </h3>
+                  <dl className="space-y-2 px-4 py-3 text-sm">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <dt className="text-slate-500">{tx("Base premium")}</dt>
+                      <dd className="font-medium text-slate-800 tabular-nums">{formatPKR(detail.base_premium)}</dd>
+                    </div>
+                    <div className="flex items-baseline justify-between gap-3">
+                      <dt className="text-slate-500">{tx("Risk loading")}</dt>
+                      <dd className="font-medium text-slate-800 tabular-nums">{formatPKR(detail.loading_applied)}</dd>
+                    </div>
+                    {feesAndTax > 0 && (
+                      <div className="flex items-baseline justify-between gap-3">
+                        <dt className="text-slate-500">{tx("Policy fee, stamp duty & tax")}</dt>
+                        <dd className="font-medium text-slate-800 tabular-nums">{formatPKR(feesAndTax)}</dd>
+                      </div>
+                    )}
+                  </dl>
+                  <div className="flex items-end justify-between gap-3 bg-slate-900 px-4 py-3.5">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{tx("Total Payable")}</p>
+                      <p className="text-[11px] text-slate-400">{tx("per year for {years} years", { years: detail.term_years })}</p>
+                    </div>
+                    <p className="text-xl font-bold text-white tabular-nums">{formatPKR(detail.total_premium)}</p>
+                  </div>
+                </section>
+
+                {/* The documents the plan requires, and the link the customer uploads them through */}
+                <section className="rounded-xl border border-slate-200 bg-white">
+                  <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2.5">
+                    <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-500">{tx("Documents")}</h3>
+                    {docReq && docReq.total > 0 && (
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${docReq.received === docReq.total ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700"}`}>
+                        {tx("{0} of {1} received", { 0: docReq.received, 1: docReq.total })}
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-3 p-4" aria-live="polite">
+                    {docReq?.submitted && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">{tx("Customer has submitted the documents.")}</p>}
+                    {docReqError && (
+                      <p className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-700">{docReqError}</p>
+                    )}
+                    {!docReq && !docReqError && <p className="text-xs text-slate-400">{tx("Loading…")}</p>}
+                    {docReq && docReq.total === 0 && (
+                      <p className="text-sm text-slate-500">{tx("This plan needs no documents.")}</p>
+                    )}
+                    {docReq && docReq.total > 0 && (
+                      <>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
+                          <div className="h-full rounded-full bg-blue-600 transition-all duration-500" style={{ width: `${(docReq.received / docReq.total) * 100}%` }} />
+                        </div>
+                        <ul className="space-y-1.5">
+                          {docReq.requirements.map((r) => (
+                            <li key={r.document_type} className="flex items-center gap-2.5 text-sm">
+                              <span
+                                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${
+                                  r.state === "received" ? "bg-blue-600 text-white" : r.state === "reupload" ? "bg-amber-500 text-white" : "border border-dashed border-slate-300"
+                                }`}
+                                aria-hidden="true"
+                              >
+                                {r.state === "received" && (
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3"><polyline points="20 6 9 17 4 12" /></svg>
+                                )}
+                                {r.state === "reupload" && <span className="text-[11px] font-bold leading-none">!</span>}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block font-medium text-slate-800">{r.document_type}</span>
+                                {r.files.length > 0 && (
+                                  <span className="block truncate text-[11px] text-slate-400">{r.files[r.files.length - 1].file_name}</span>
+                                )}
+                              </span>
+                              <span className={`shrink-0 text-[11px] font-semibold ${
+                                r.state === "received" ? "text-blue-700" : r.state === "reupload" ? "text-amber-600" : "text-slate-400"
+                              }`}>
+                                {r.state === "received" ? tx("Received") : r.state === "reupload" ? tx("Needs re-upload") : tx("Waiting")}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+
+                        <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-xs font-semibold text-slate-700">{tx("Customer upload link")}</p>
+                          <input
+                            readOnly
+                            value={portalUrl(docReq.link_path)}
+                            onFocus={(e) => e.currentTarget.select()}
+                            aria-label={tx("Customer upload link")}
+                            className="w-full truncate rounded-md border border-slate-200 bg-white px-2.5 py-1.5 font-mono text-[11px] text-slate-600"
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={copyDocLink}
+                              disabled={docReq.expired}
+                              className="inline-flex items-center justify-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true">
+                                {linkCopied ? <polyline points="20 6 9 17 4 12" /> : <><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" /></>}
+                              </svg>
+                              {linkCopied ? tx("Copied") : tx("Copy link")}
+                            </button>
+                            <a
+                              href={portalUrl(docReq.link_path)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                            >
+                              {tx("Open")}
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true">
+                                <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
+                              </svg>
+                            </a>
+                          </div>
+                          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[11px] text-slate-500">
+                            <span className={docReq.expired ? "font-semibold text-red-600" : ""}>
+                              {docReq.expired ? tx("This link has expired.") : tx("Expires {0}", { 0: formatDate(docReq.expires_at) })}
+                            </span>
+                            {confirmRenew ? (
+                              <span className="flex items-center gap-2">
+                                {tx("The old link will stop working.")}
+                                <button type="button" disabled={docBusy} onClick={renewDocLink} className="font-semibold text-blue-700 hover:underline disabled:opacity-50">
+                                  {docBusy ? tx("Renewing…") : tx("Renew")}
+                                </button>
+                                <button type="button" disabled={docBusy} onClick={() => setConfirmRenew(false)} className="font-semibold text-slate-600 hover:underline">
+                                  {tx("Cancel")}
+                                </button>
+                              </span>
+                            ) : (
+                              <button type="button" onClick={() => setConfirmRenew(true)} className="font-semibold text-blue-700 hover:underline">
+                                {tx("Renew link")}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </section>
+              </aside>
+            </div>
           </div>
         )}
         </div>
 
-        {detail && !loading && (modalOptions.length > 0 || (isAgent && ["Proposed", "UnderReview", "Approved", "AcceptedWithLoadings", "Declined", "Issued"].includes(detail.status))) && (
-          <div className="shrink-0 space-y-2 border-t border-slate-200 bg-white px-6 py-3.5 shadow-[0_-8px_20px_-12px_rgba(15,23,42,0.15)]">
-            {isAgent && modalOptions.length === 0 && ["Proposed", "UnderReview", "Approved", "AcceptedWithLoadings", "Declined", "Issued"].includes(detail.status) && (
-              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-500" title={tx("Currently, you have no access to do this, ask your manager")}>
-                {tx("This application has been sent to the admin team for further review, so it can no longer be changed from here. You can follow its progress on this page.")}
-              </div>
+        {detail && !loading && (modalOptions.length > 0 || agentLocked) && (
+          <div className="shrink-0 border-t border-slate-200 bg-white px-6 py-3.5 shadow-[0_-8px_20px_-12px_rgba(15,23,42,0.15)]">
+            {startError && (
+              <p className="mb-2.5 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{startError}</p>
             )}
-            {/* The next move: only what is legal from here */}
-            {modalOptions.length > 0 && (
-              <div className="space-y-2">
-                {startError && (
-                  <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{startError}</p>
-                )}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              {agentLocked ? (
+                <p className="max-w-2xl text-xs text-slate-500" title={tx("Currently, you have no access to do this, ask your manager")}>
+                  {tx("This application has been sent to the admin team for further review, so it can no longer be changed from here. You can follow its progress on this page.")}
+                </p>
+              ) : (
+                <p className="max-w-md text-[11px] leading-snug text-slate-500">
+                  {offersUnderwriting &&
+                    tx(isApp ? "Opens an Underwriting case for this customer on this exact application — documents, AI risk scoring, and the final decision all happen there." : "Opens an Underwriting case for this customer on this exact proposal — documents, AI risk scoring, and the final decision all happen there.")}
+                </p>
+              )}
+              {/* The next move: only what is legal from here */}
+              {modalOptions.length > 0 && (
                 <ActionDropdown
                   options={modalOptions}
                   onApply={handleApplyAction}
@@ -2990,8 +3053,8 @@ function QuoteDetailModal({
                   canAct={canAct}
                   canDecide={canDecide}
                 />
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
 
@@ -3026,8 +3089,16 @@ function QuoteDetailModal({
   );
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2.5">{children}</p>;
+function DetailCard({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white">
+      <div className="flex min-h-[2.75rem] items-center justify-between gap-3 border-b border-slate-100 px-4 py-2">
+        <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-500">{title}</h3>
+        {action}
+      </div>
+      <div className="p-4">{children}</div>
+    </section>
+  );
 }
 
 function DetailField({ label, value }: { label: string; value: string }) {
@@ -3036,18 +3107,6 @@ function DetailField({ label, value }: { label: string; value: string }) {
     <div>
       <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wide mb-0.5">{tx(label)}</p>
       <p className="text-sm text-slate-700 font-medium">{value}</p>
-    </div>
-  );
-}
-
-function StatTile({ label, value, highlight }: { label: string; value: React.ReactNode; highlight?: boolean }) {
-  const { tx } = useI18n();
-  return (
-    <div className={`rounded-lg p-3 ${highlight ? "bg-slate-900" : "bg-slate-50"}`}>
-      <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${highlight ? "text-slate-300" : "text-slate-400"}`}>
-        {tx(label)}
-      </p>
-      <p className={`text-sm font-bold ${highlight ? "text-white" : "text-slate-800"}`}>{value}</p>
     </div>
   );
 }

@@ -15,6 +15,8 @@ import re
 import httpx
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from services import usage_meter
+
 log = logging.getLogger("tenant-service.rule-assist")
 
 TIMEOUT_SECONDS = float(os.getenv("RULE_ASSIST_LLM_TIMEOUT_SECONDS", "45"))
@@ -79,7 +81,9 @@ async def suggest_values(session: AsyncSession, field_label: str, request: str, 
             async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
                 response = await client.post(req["url"], params=req.get("params"), headers=req.get("headers"), json=req["json"])
             response.raise_for_status()
-            reply = _extract_reply(provider, response.json())
+            body = response.json()
+            usage_meter.record(usage_meter.SERVICE_RULE_ASSIST, provider, entry["model"], body)
+            reply = _extract_reply(provider, body)
             match = re.search(r"\{.*\}", reply, re.S)
             data = json.loads(match.group(0)) if match else {}
             known = {e.lower() for e in existing}

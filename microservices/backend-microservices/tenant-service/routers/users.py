@@ -121,29 +121,33 @@ async def verify_admin(
     token: str = Depends(oauth2_scheme),
     session: AsyncSession = Depends(get_session),
 ) -> None:
-    if not token:
-        return
-    try:
-        payload = decode_access_token(token)
-        user_id = payload.get("sub")
-        if not user_id:
-            return
-    except JWTError:
-        return
-
-    user = await session.get(User, user_id)
-    if not user:
-        return
-
+    """User management is for this tenant's Admins and SuperAdmins only. Anyone else is refused: a missing or
+    invalid token (401), an inactive account or any other role (403). It used to return quietly in those cases,
+    which let the request through."""
+    user = await _get_current_user(token, session)  # 401 for a missing / invalid token or a removed account
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Your account is inactive.")
     role = await session.get(Role, user.role_id)
     if not role or role.name not in ("Admin", "SuperAdmin"):
-        return
-
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only an Admin can manage users.")
     if role.name == "Admin" and user.tenant_id != tenant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot manage users outside your own tenant",
         )
+
+
+async def _acting(token: str, session: AsyncSession) -> tuple[User, str]:
+    """The signed-in user and their role name (verify_admin has already checked they may manage users)."""
+    user = await _get_current_user(token, session)
+    role = await session.get(Role, user.role_id)
+    return user, role.name if role else ""
+
+
+def _forbid_superadmin_change(acting_role: str, *role_names: Optional[str]) -> None:
+    """Only a SuperAdmin may grant the SuperAdmin role or change a SuperAdmin's account."""
+    if acting_role != "SuperAdmin" and "SuperAdmin" in role_names:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only a SuperAdmin can manage SuperAdmin accounts.")
 
 
 @router.post(
@@ -262,6 +266,7 @@ async def create_user(
     # so staff can never end up in a different office than their Admin.
     acting_user = await _get_current_user(token, session)
     acting_role = await session.get(Role, acting_user.role_id)
+    _forbid_superadmin_change(acting_role.name if acting_role else "", role.name)
     if acting_role and acting_role.name == "SuperAdmin":
         if body.branch_id is None:
             raise HTTPException(
@@ -399,6 +404,7 @@ async def update_user(
     tenant_id: UUID,
     user_id: UUID,
     body: UserUpdate,
+    token: str = Depends(oauth2_scheme),
     session: AsyncSession = Depends(get_session),
 ) -> UserRead:
     result = await session.exec(
@@ -408,10 +414,20 @@ async def update_user(
     if user is None or user.tenant_id != tenant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
 
+    acting_user, acting_role = await _acting(token, session)
+    current_role = await session.get(Role, user.role_id)
+    new_role = None
     if body.role_id is not None:
-        role = await session.get(Role, body.role_id)
-        if role is None:
+        new_role = await session.get(Role, body.role_id)
+        if new_role is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Role '{body.role_id}' not found.")
+    _forbid_superadmin_change(acting_role, current_role.name if current_role else None, new_role.name if new_role else None)
+    # Nobody can lock themselves out: no changing your own role, and no deactivating your own account.
+    if acting_user.id == user.id:
+        if new_role is not None and new_role.id != user.role_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You can't change your own role.")
+        if body.is_active is False or (body.status is not None and body.status != UserStatus.ACTIVE):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You can't deactivate your own account.")
 
     if body.branch_id is not None:
         branch = await session.get(Branch, body.branch_id)
@@ -480,11 +496,17 @@ async def update_user(
 async def delete_user(
     tenant_id: UUID,
     user_id: UUID,
+    token: str = Depends(oauth2_scheme),
     session: AsyncSession = Depends(get_session),
 ) -> None:
     user = await session.get(User, user_id)
     if user is None or user.tenant_id != tenant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    acting_user, acting_role = await _acting(token, session)
+    if acting_user.id == user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You can't remove your own account.")
+    target_role = await session.get(Role, user.role_id)
+    _forbid_superadmin_change(acting_role, target_role.name if target_role else None)
 
     # A real delete when nothing refers to the account; otherwise it is deactivated and
     # hidden (see remove_user) instead of failing with a 500 on the foreign key.

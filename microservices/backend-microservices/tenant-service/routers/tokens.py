@@ -12,6 +12,21 @@ from shared.models.core import TokenUsage
 
 router = APIRouter(prefix="/tokens", tags=["Token Management"])
 
+# The three areas the Token Economy page reports spend in. Every service_name falls in exactly one; anything not
+# listed is the base model (the chat agent and its specialists, risk engine, summarizer, rule assist...).
+OCR_SERVICES = {"OCR Engine", "Document Reader"}
+LIVE_VOICE_SERVICES = {"Live Voice", "Live Voice — Captions", "Voice Messages"}
+
+
+def category_of(service_name: str) -> str:
+    """'ocr' | 'live_voice' | 'base' for one service_name."""
+    if service_name in OCR_SERVICES:
+        return "ocr"
+    if service_name in LIVE_VOICE_SERVICES:
+        return "live_voice"
+    return "base"
+
+
 class TokenUsageCreate(BaseModel):
     service_name: str
     input_tokens: int
@@ -19,6 +34,11 @@ class TokenUsageCreate(BaseModel):
     total_tokens: int
     # Optional so the older callers (OCR, summarizer) keep working unchanged.
     cached_tokens: int = 0
+    # Live voice: the audio share of the counts above, and per-minute billed audio.
+    audio_input_tokens: int = 0
+    audio_output_tokens: int = 0
+    audio_cached_tokens: int = 0
+    audio_seconds: float = 0.0
     tenant_id: Optional[UUID] = None
     model_name: Optional[str] = None
     thread_id: Optional[str] = None
@@ -35,6 +55,10 @@ async def record_token_usage(
         output_tokens=data.output_tokens,
         total_tokens=data.total_tokens,
         cached_tokens=data.cached_tokens,
+        audio_input_tokens=data.audio_input_tokens,
+        audio_output_tokens=data.audio_output_tokens,
+        audio_cached_tokens=data.audio_cached_tokens,
+        audio_seconds=data.audio_seconds,
         tenant_id=data.tenant_id,
         model_name=data.model_name,
         thread_id=data.thread_id,
@@ -79,8 +103,9 @@ async def get_token_usage(
     results = (await session.exec(statement)).all()
     
     # Aggregate by date
-    # Format: { "YYYY-MM-DD": { "ocr-engine": { input, output, requests }, "text-summarizer": { input, output, requests } } }
+    # Format: { "YYYY-MM-DD": { "<service>": { category, input, output, cached, audio_*, requests, by_model } } }
     aggregated: Dict[str, Dict[str, Any]] = {}
+    counters = ("input", "output", "cached", "audio_input", "audio_output", "audio_cached", "audio_seconds")
     
     for row in results:
         day_str = row.created_at.strftime("%Y-%m-%d")
@@ -91,9 +116,8 @@ async def get_token_usage(
             
         if svc not in aggregated[day_str]:
             aggregated[day_str][svc] = {
-                "input": 0,
-                "output": 0,
-                "cached": 0,
+                "category": category_of(svc),
+                **{name: 0 for name in counters},
                 "requests": 0,
                 "models": [],
                 # Per-model breakdown — costs differ by an order of magnitude
@@ -102,21 +126,19 @@ async def get_token_usage(
                 "by_model": {},
             }
 
+        values = {
+            "input": row.input_tokens, "output": row.output_tokens, "cached": row.cached_tokens or 0,
+            "audio_input": row.audio_input_tokens or 0, "audio_output": row.audio_output_tokens or 0,
+            "audio_cached": row.audio_cached_tokens or 0, "audio_seconds": row.audio_seconds or 0,
+        }
         bucket = aggregated[day_str][svc]
-        bucket["input"] += row.input_tokens
-        bucket["output"] += row.output_tokens
-        bucket["cached"] += (row.cached_tokens or 0)
-        bucket["requests"] += 1
-
         model_key = row.model_name or "unknown"
         if model_key not in bucket["models"]:
             bucket["models"].append(model_key)
-        mb = bucket["by_model"].setdefault(
-            model_key, {"input": 0, "output": 0, "cached": 0, "requests": 0}
-        )
-        mb["input"] += row.input_tokens
-        mb["output"] += row.output_tokens
-        mb["cached"] += (row.cached_tokens or 0)
-        mb["requests"] += 1
+        mb = bucket["by_model"].setdefault(model_key, {**{name: 0 for name in counters}, "requests": 0})
+        for target in (bucket, mb):
+            for name, value in values.items():
+                target[name] += value
+            target["requests"] += 1
 
     return {"data": aggregated}

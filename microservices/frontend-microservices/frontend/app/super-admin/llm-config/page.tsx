@@ -27,10 +27,19 @@ interface TaskConfig {
   fallback: TaskModel | null;
 }
 
+interface LiveVoiceConfig {
+  configured: boolean;
+  model_name: string;
+  voice: string;
+  transcription_model: string;
+  has_key: boolean;
+}
+
 interface ConfigResponse {
   encryption_available: boolean;
   providers: ProviderStatus[];
   ocr: TaskConfig;
+  live_voice?: LiveVoiceConfig | null;
 }
 
 interface TestResult {
@@ -595,6 +604,139 @@ function OcrModelCard({
   );
 }
 
+// ── Live voice card ──────────────────────────────────────────────────────────
+// OpenAI's realtime voices. A voice outside this list can still be typed into the API, but these are the ones
+// the Realtime API offers today.
+const REALTIME_VOICES = ["alloy", "ash", "ballad", "cedar", "coral", "echo", "marin", "sage", "shimmer", "verse"];
+const REALTIME_MODEL_HINTS = ["gpt-realtime-2.1-mini", "gpt-realtime-2.1", "gpt-realtime-mini", "gpt-realtime"];
+const TRANSCRIBE_MODEL_HINTS = ["gpt-transcribe", "gpt-4o-transcribe", "gpt-4o-mini-transcribe", "whisper-1"];
+
+function LiveVoiceCard({ config, onSaved }: { config: LiveVoiceConfig; onSaved: () => void }) {
+  const [model, setModel] = useState(config.model_name);
+  const [voice, setVoice] = useState(config.voice);
+  const [transcription, setTranscription] = useState(config.transcription_model);
+  const [busy, setBusy] = useState<"" | "save" | "reset" | "test">("");
+  const [test, setTest] = useState<TestResult | null>(null);
+  const [err, setErr] = useState("");
+  const [savedNote, setSavedNote] = useState("");
+
+  useEffect(() => {
+    setModel(config.model_name);
+    setVoice(config.voice);
+    setTranscription(config.transcription_model);
+  }, [config]);
+  useEffect(() => setTest(null), [model, voice, transcription]);
+
+  const dirty =
+    model.trim() !== config.model_name || voice !== config.voice || transcription.trim() !== config.transcription_model;
+  const complete = !!model.trim() && !!voice && !!transcription.trim();
+  const body = { model_name: model.trim(), voice, transcription_model: transcription.trim() };
+
+  const run = async (kind: "save" | "reset" | "test") => {
+    setErr("");
+    setSavedNote("");
+    setBusy(kind);
+    try {
+      if (kind === "test") {
+        setTest((await api.post<TestResult>("/platform/llm-config/tasks/live-voice/test", body)).data);
+        return;
+      }
+      await api.put("/platform/llm-config/tasks/live-voice", kind === "save" ? body : null);
+      setSavedNote(kind === "save" ? tx("Saved.") : tx("Back on the built-in defaults."));
+      onSaved();
+    } catch (e: any) {
+      if (kind === "test") setTest({ ok: false, detail: e.message ?? "Test failed.", latency_ms: 0 });
+      else setErr(e.message ?? "Save failed.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const inputClass =
+    "w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-slate-50";
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className={`h-1 ${config.configured ? "bg-violet-500" : "bg-slate-200"}`} />
+      <div className="px-5 pt-5 pb-4 border-b border-slate-100 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-bold text-slate-900">{tx("Live voice")}</h2>
+          <p className="text-xs text-slate-500 mt-0.5 max-w-2xl">
+            {tx("The live voice conversation in the AI copilot, and voice messages typed into the chat. It runs on OpenAI's Realtime API with the OpenAI key above; what it looks up and does still goes through the chat models.")}
+          </p>
+        </div>
+        <span
+          className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded border ${
+            config.configured ? "bg-violet-50 text-violet-700 border-violet-200" : "bg-slate-100 text-slate-500 border-slate-200"
+          }`}
+        >
+          {config.configured ? tx("Custom") : tx("Built-in defaults")}
+        </span>
+      </div>
+
+      <div className="px-5 py-4 space-y-4">
+        {!config.has_key && (
+          <div className="text-xs rounded-lg px-3 py-2 border bg-amber-50 border-amber-200 text-amber-700">
+            {tx("Add an OpenAI API key above to choose the live voice models here.")}
+          </div>
+        )}
+        <div className="grid gap-4 md:grid-cols-3">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1.5">{tx("Realtime model")}</label>
+            <input list="realtime-models" value={model} onChange={(e) => setModel(e.target.value)} disabled={!config.has_key}
+              className={inputClass} placeholder={tx("model id")} />
+            <datalist id="realtime-models">{REALTIME_MODEL_HINTS.map((m) => <option key={m} value={m} />)}</datalist>
+            <p className="text-[11px] text-slate-400 mt-1">{tx("Listens, thinks and speaks during the call.")}</p>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1.5">{tx("Voice")}</label>
+            <select value={voice} onChange={(e) => setVoice(e.target.value)} disabled={!config.has_key}
+              className={inputClass.replace("font-mono", "")}>
+              {(REALTIME_VOICES.includes(voice) ? REALTIME_VOICES : [voice, ...REALTIME_VOICES]).map((v) => (
+                <option key={v} value={v}>{v.charAt(0).toUpperCase() + v.slice(1)}</option>
+              ))}
+            </select>
+            <p className="text-[11px] text-slate-400 mt-1">{tx("How the assistant sounds.")}</p>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1.5">{tx("Transcription model")}</label>
+            <input list="transcribe-models" value={transcription} onChange={(e) => setTranscription(e.target.value)} disabled={!config.has_key}
+              className={inputClass} placeholder={tx("model id")} />
+            <datalist id="transcribe-models">{TRANSCRIBE_MODEL_HINTS.map((m) => <option key={m} value={m} />)}</datalist>
+            <p className="text-[11px] text-slate-400 mt-1">{tx("Writes the captions and turns voice messages into text.")}</p>
+          </div>
+        </div>
+        {test && (
+          <div className={`text-xs rounded-lg px-3 py-2 border ${test.ok ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-red-50 border-red-200 text-red-600"}`}>
+            <span className="font-semibold">{test.ok ? tx("✓ Responding") : tx("✕ Failed")}</span>
+            {" — "}
+            {test.detail}
+          </div>
+        )}
+        {err && <div className="text-xs rounded-lg px-3 py-2 border bg-red-50 border-red-200 text-red-600">{err}</div>}
+        {savedNote && !dirty && <div className="text-xs text-emerald-600 font-medium">{savedNote}</div>}
+      </div>
+
+      <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/60 flex flex-wrap items-center justify-end gap-2">
+        {config.configured && (
+          <button type="button" onClick={() => run("reset")} disabled={!!busy}
+            className="mr-auto px-3 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 disabled:opacity-40">
+            {busy === "reset" ? tx("Saving…") : tx("Use defaults")}
+          </button>
+        )}
+        <button type="button" onClick={() => run("test")} disabled={!!busy || !complete || !config.has_key}
+          className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:border-slate-300 transition-all disabled:opacity-40">
+          {busy === "test" ? tx("Testing…") : tx("Test")}
+        </button>
+        <button type="button" onClick={() => run("save")} disabled={!!busy || !complete || !config.has_key || (!dirty && config.configured)}
+          className="px-6 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all disabled:opacity-40">
+          {busy === "save" ? tx("Saving…") : tx("Save live voice")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 function LLMConfigContent() {
   const [authorized, setAuthorized] = useState(true);
@@ -676,7 +818,7 @@ function LLMConfigContent() {
         </h1>
         <p className="text-sm text-slate-500 mt-0.5">
           {tx("Primary and fallback chat models for the AI agent and risk engine. Keys are encrypted at rest and take effect within ~60 seconds — no restart.")}{" "}
-          {tx("OCR can use its own model, set below.")}
+          {tx("OCR and live voice can use their own models, set below.")}
         </p>
       </div>
 
@@ -776,6 +918,8 @@ function LLMConfigContent() {
               platformPrimary={primary}
               onSaved={load}
             />
+
+            {cfg.live_voice && <LiveVoiceCard config={cfg.live_voice} onSaved={load} />}
           </>
         )
       )}

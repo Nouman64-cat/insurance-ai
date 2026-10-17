@@ -1,4 +1,4 @@
-"""The initial premium is paid on the PROPOSAL, after Start Review, and an individual application cannot open its underwriting
+"""The initial premium is paid on the PROPOSAL, after submission, and an individual application cannot open its underwriting
 case until that payment has cleared.
 
 Run with: docker compose exec tenant-service python test_ipp_proposal.py   (needs a migrated Postgres; cleans up after itself)
@@ -46,9 +46,9 @@ async def expect(code, coro):
     raise AssertionError(f"expected {code}")
 
 
-async def test_payment_after_review_then_case_opens():
+async def test_payment_after_submission_then_case_opens():
     async with _session_factory() as s:
-        tenant_id, customer_id, policy_id = await _fixture(s)
+        tenant_id, customer_id, policy_id = await _fixture(s, status=PolicyStatusEnum.QUOTED)
     saved = (ipp._get_current_user_id, cases_router._get_current_user, cases_router._role_name)
     ipp._get_current_user_id = lambda token: asyncio.sleep(0)
     async def fake_user(token, session): return SimpleNamespace(id=(await session.exec(select(User.id))).first())
@@ -64,10 +64,10 @@ async def test_payment_after_review_then_case_opens():
                 return await cases_router.create_case(tenant_id, CaseCreate(customer_id=customer_id, policy_id=policy_id, caseType=CaseTypeEnum.UNDERWRITING,
                                                                             sourceChannel=SourceChannelEnum.ONLINE), s, "t")
 
-        # 1. before Start Review there is nothing to pay
+        # 1. a draft cannot collect payment; submission is sufficient
         await expect(409, initiate())
         async with _session_factory() as s:
-            p = await s.get(Policy, policy_id); p.status = PolicyStatusEnum.UNDER_REVIEW; s.add(p); await s.commit()
+            p = await s.get(Policy, policy_id); p.status = PolicyStatusEnum.PROPOSED; s.add(p); await s.commit()
 
         # 2. no payment -> no underwriting case
         exc = await expect(409, create_case())
@@ -92,7 +92,7 @@ async def test_payment_after_review_then_case_opens():
             assert row.case_id == case.caseld
             via_case = await ipp.get_ipp(tenant_id, case.caseld, token="t", session=s)
             assert via_case.status == IPPStatusEnum.REALIZED
-        print("PASS test_payment_after_review_then_case_opens")
+        print("PASS test_payment_after_submission_then_case_opens")
     finally:
         ipp._get_current_user_id, cases_router._get_current_user, cases_router._role_name = saved
         async with _session_factory() as s:
@@ -397,7 +397,7 @@ async def test_other_tenants_proposal_is_not_found():
 
 
 async def main():
-    await test_payment_after_review_then_case_opens()
+    await test_payment_after_submission_then_case_opens()
     await test_customer_pays_by_link_and_staff_confirm()
     await test_every_way_a_payment_can_arrive()
     await test_received_payment_activates_cover_without_a_second_payment()

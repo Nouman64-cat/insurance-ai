@@ -10,13 +10,19 @@ import { appHref } from "@/lib/appLinks";
 // --- Per-model pricing ------------------------------------------------------
 // USD per 1M tokens. Sources (verify periodically):
 //   Gemini    — https://ai.google.dev/gemini-api/docs/pricing
-//   OpenAI    — https://platform.openai.com/docs/pricing
-//   Anthropic — https://www.anthropic.com/pricing  (cache-read ≈ 0.1× input)
-// Last checked: 2026-09-07.
+//   OpenAI    — https://developers.openai.com/api/docs/pricing
+//   Anthropic — https://claude.com/pricing  (cache-read ≈ 0.1× input)
+// Last checked: 2026-10-17 (realtime, transcription and current Claude models); 2026-09-07 (the rest).
 interface Rate {
   input: number;
   cached: number; // cache-read / cached-input rate
   output: number;
+  // Realtime models bill audio tokens at their own (much higher) rates; text tokens use the three above.
+  audio_input?: number;
+  audio_cached?: number;
+  audio_output?: number;
+  // Models billed by audio length rather than tokens (USD per minute).
+  per_minute?: number;
 }
 
 const MODEL_PRICING: Record<string, Rate> = {
@@ -39,6 +45,28 @@ const MODEL_PRICING: Record<string, Rate> = {
   "claude-3-5-sonnet": { input: 3.00, cached: 0.30, output: 15.0 },
   "claude-opus-4-1": { input: 15.0, cached: 1.50, output: 75.0 },
   "claude-opus-5": { input: 5.00, cached: 0.50, output: 25.0 },
+  // Current Claude models. Haiku 5.5 is billed at 5x above 100K-token prompts; the ≤100K tier is used here.
+  "claude-haiku-5-5": { input: 0.10, cached: 0.01, output: 0.50 },
+  "claude-sonnet-5-5": { input: 2.00, cached: 0.10, output: 10.0 },
+  "claude-opus-5-5": { input: 4.00, cached: 0.20, output: 20.0 },
+  "claude-fable-5-1": { input: 10.0, cached: 0.25, output: 50.0 },
+  "claude-fable-5": { input: 10.0, cached: 1.00, output: 50.0 },
+  "claude-opus-4-8": { input: 5.00, cached: 0.50, output: 25.0 },
+  "claude-opus-4-7": { input: 5.00, cached: 0.50, output: 25.0 },
+  "claude-opus-4-6": { input: 5.00, cached: 0.50, output: 25.0 },
+  "claude-opus-4-5": { input: 5.00, cached: 0.50, output: 25.0 },
+  // Live voice: realtime models (text rates, then audio rates)
+  "gpt-realtime-2.1-mini": { input: 0.60, cached: 0.06, output: 2.40, audio_input: 10.0, audio_cached: 0.30, audio_output: 20.0 },
+  "gpt-realtime-2.1": { input: 4.00, cached: 0.40, output: 24.0, audio_input: 32.0, audio_cached: 0.40, audio_output: 64.0 },
+  "gpt-realtime-2": { input: 4.00, cached: 0.40, output: 24.0, audio_input: 32.0, audio_cached: 0.40, audio_output: 64.0 },
+  "gpt-realtime-1.5": { input: 4.00, cached: 0.40, output: 16.0, audio_input: 32.0, audio_cached: 0.40, audio_output: 64.0 },
+  "gpt-realtime-mini": { input: 0.60, cached: 0.06, output: 2.40, audio_input: 10.0, audio_cached: 0.30, audio_output: 20.0 },
+  "gpt-realtime": { input: 4.00, cached: 0.40, output: 16.0, audio_input: 32.0, audio_cached: 0.40, audio_output: 64.0 },
+  // Live voice: transcription (captions and voice messages)
+  "gpt-4o-transcribe": { input: 2.50, cached: 2.50, output: 10.0, audio_input: 6.00, audio_cached: 6.00 },
+  "gpt-4o-mini-transcribe": { input: 1.25, cached: 1.25, output: 5.00, audio_input: 3.00, audio_cached: 3.00 },
+  "gpt-transcribe": { input: 0, cached: 0, output: 0, per_minute: 0.0045 },
+  "whisper-1": { input: 0, cached: 0, output: 0, per_minute: 0.006 },
 };
 
 // Used when a usage row's model isn't in the table (or is "unknown").
@@ -61,17 +89,37 @@ interface ModelTokens {
   output: number;
   cached: number;
   requests: number;
+  // Live voice: the audio share of the counts above, and per-minute billed audio.
+  audio_input?: number;
+  audio_output?: number;
+  audio_cached?: number;
+  audio_seconds?: number;
 }
 
-/** Cost of one model's tokens: fresh input + cached input + output, each at its own rate. */
-function costOfModel(model: string, t: ModelTokens): number {
+/** One model's cost split into what its input and its output cost. Text tokens are billed at the text rates,
+ *  audio tokens at the audio rates, per-minute audio by length; `noCache` bills cached tokens as fresh input. */
+function costParts(model: string, t: ModelTokens, noCache = false): { input: number; output: number } {
   const { rate } = rateFor(model);
-  const fresh = Math.max(t.input - t.cached, 0);
-  return (
-    (fresh / 1_000_000) * rate.input +
-    (t.cached / 1_000_000) * rate.cached +
-    (t.output / 1_000_000) * rate.output
-  );
+  const audioIn = t.audio_input ?? 0;
+  const audioCached = noCache ? 0 : t.audio_cached ?? 0;
+  const audioOut = t.audio_output ?? 0;
+  const textIn = Math.max(t.input - audioIn, 0);
+  const textCached = noCache ? 0 : Math.max(t.cached - (t.audio_cached ?? 0), 0);
+  const textOut = Math.max(t.output - audioOut, 0);
+  const perM = (n: number, price: number | undefined) => (n / 1_000_000) * (price ?? 0);
+  return {
+    input:
+      perM(Math.max(textIn - textCached, 0), rate.input) + perM(textCached, rate.cached) +
+      perM(Math.max(audioIn - audioCached, 0), rate.audio_input ?? rate.input) + perM(audioCached, rate.audio_cached ?? rate.cached) +
+      ((t.audio_seconds ?? 0) / 60) * (rate.per_minute ?? 0),
+    output: perM(textOut, rate.output) + perM(audioOut, rate.audio_output ?? rate.output),
+  };
+}
+
+/** Cost of one model's usage. */
+function costOfModel(model: string, t: ModelTokens): number {
+  const { input, output } = costParts(model, t);
+  return input + output;
 }
 
 /** Cost across a by_model map. */
@@ -82,21 +130,34 @@ function costOf(byModel: Record<string, ModelTokens>): number {
 /** Same tokens, but every token billed at the model's full (non-cached) input rate. */
 function unoptimizedCostOf(byModel: Record<string, ModelTokens>): number {
   return Object.entries(byModel).reduce((sum, [m, t]) => {
-    const { rate } = rateFor(m);
-    return (
-      sum +
-      (t.input / 1_000_000) * rate.input +
-      (t.output / 1_000_000) * rate.output
-    );
+    const { input, output } = costParts(m, t, true);
+    return sum + input + output;
   }, 0);
 }
 
+// The three areas spend is reported in. The usage API tags each service (tenant-service routers/tokens.py).
+type Area = "base" | "ocr" | "live_voice";
+const AREAS: { key: Area; label: string; description: string; accent: string }[] = [
+  { key: "base", label: "Base model", description: "Copilot chat and its specialists, risk scoring, summaries, rule assist.", accent: "bg-blue-500" },
+  { key: "ocr", label: "OCR", description: "Reading uploaded documents: CNICs, payslips, medical reports, scheme files.", accent: "bg-amber-500" },
+  { key: "live_voice", label: "Live conversation", description: "Live voice calls, their captions, and voice messages.", accent: "bg-violet-500" },
+];
+const AREA_BADGE: Record<Area, string> = {
+  base: "bg-blue-50 text-blue-700 border-blue-200",
+  ocr: "bg-amber-50 text-amber-700 border-amber-200",
+  live_voice: "bg-violet-50 text-violet-700 border-violet-200",
+};
+
 // One service's consumption on one day.
 interface ServiceDay {
+  category?: Area;
   input: number;
   output: number;
   cached: number;
   requests: number;
+  audio_input?: number;
+  audio_output?: number;
+  audio_seconds?: number;
   models: string[];
   by_model: Record<string, ModelTokens>;
 }
@@ -111,6 +172,9 @@ interface DailyUsage {
 
 interface ServiceBreakdown {
   service: string;
+  area: Area;
+  total_audio_seconds: number;
+  total_audio_tokens: number;
   total_input: number;
   total_output: number;
   total_cached: number;
@@ -152,7 +216,45 @@ const FINOPS_SERVICE_METADATA: Record<string, { description: string; route: stri
     route: "/case-summarizer",
     label: "Summarizer",
   },
+  "Document Reader": {
+    description: "Reads medical reports and sorts uploaded documents to the right test, using the OCR model.",
+    route: "/cases",
+    label: "View Cases",
+  },
+  "Rule Assist": {
+    description: "Suggests keyword lists while building underwriting rules.",
+    route: "/admin/rule-engine",
+    label: "Rule Catalog",
+  },
+  "Live Voice": {
+    description: "Live voice calls with the Copilot: listening, thinking and speaking, audio priced at audio rates.",
+    route: "/",
+    label: "Open Copilot",
+  },
+  "Live Voice — Captions": {
+    description: "Live captions of what the user says during a voice call.",
+    route: "/",
+    label: "Open Copilot",
+  },
+  "Voice Messages": {
+    description: "Recorded voice messages turned into chat text.",
+    route: "/",
+    label: "Open Copilot",
+  },
 };
+
+/** Audio length for display: seconds under a minute, minutes after. */
+function formatAudio(seconds: number): string {
+  return seconds < 60 ? `${Math.round(seconds)} ${tx("s")}` : `${(seconds / 60).toFixed(1)} ${tx("min")}`;
+}
+
+/** The area of a service when an older API response does not tag it. Keep in step with routers/tokens.py. */
+function areaOf(service: string, tagged?: Area): Area {
+  if (tagged) return tagged;
+  if (service === "OCR Engine" || service === "Document Reader") return "ocr";
+  if (service === "Live Voice" || service === "Live Voice — Captions" || service === "Voice Messages") return "live_voice";
+  return "base";
+}
 
 // --- Icons ---
 function LockIcon() {
@@ -277,6 +379,10 @@ function TokenManagementContent() {
         // recorded token consumption on this day.
         for (const [name, raw] of Object.entries(dayData)) {
           services[name] = {
+            category: raw?.category,
+            audio_input: raw?.audio_input ?? 0,
+            audio_output: raw?.audio_output ?? 0,
+            audio_seconds: raw?.audio_seconds ?? 0,
             input: raw?.input ?? 0,
             output: raw?.output ?? 0,
             cached: raw?.cached ?? 0,
@@ -326,11 +432,15 @@ function TokenManagementContent() {
     const out: Record<string, ModelTokens> = {};
     for (const map of maps) {
       for (const [model, t] of Object.entries(map || {})) {
-        const b = out[model] ?? (out[model] = { input: 0, output: 0, cached: 0, requests: 0 });
+        const b = out[model] ?? (out[model] = { input: 0, output: 0, cached: 0, requests: 0, audio_input: 0, audio_output: 0, audio_cached: 0, audio_seconds: 0 });
         b.input += t.input ?? 0;
         b.output += t.output ?? 0;
         b.cached += t.cached ?? 0;
         b.requests += t.requests ?? 0;
+        b.audio_input = (b.audio_input ?? 0) + (t.audio_input ?? 0);
+        b.audio_output = (b.audio_output ?? 0) + (t.audio_output ?? 0);
+        b.audio_cached = (b.audio_cached ?? 0) + (t.audio_cached ?? 0);
+        b.audio_seconds = (b.audio_seconds ?? 0) + (t.audio_seconds ?? 0);
       }
     }
     return out;
@@ -352,6 +462,9 @@ function TokenManagementContent() {
 
       return {
         service: name,
+        area: areaOf(name, days.find((v) => v.category)?.category),
+        total_audio_seconds: days.reduce((t, v) => t + (v.audio_seconds ?? 0), 0),
+        total_audio_tokens: days.reduce((t, v) => t + (v.audio_input ?? 0) + (v.audio_output ?? 0), 0),
         total_input: days.reduce((t, v) => t + v.input, 0),
         total_output: days.reduce((t, v) => t + v.output, 0),
         total_cached: days.reduce((t, v) => t + v.cached, 0),
@@ -377,14 +490,24 @@ function TokenManagementContent() {
   const estimatedSavings = Math.max(unoptimizedCost - totalCost, 0);
 
   // Split the total cost into its input (fresh + cached) and output parts.
-  const inputCost = Object.entries(allByModel).reduce((sum, [m, t]) => {
-    const { rate } = rateFor(m);
-    return sum + (Math.max(t.input - t.cached, 0) / 1_000_000) * rate.input + (t.cached / 1_000_000) * rate.cached;
-  }, 0);
-  const outputCost = Object.entries(allByModel).reduce((sum, [m, t]) => {
-    const { rate } = rateFor(m);
-    return sum + (t.output / 1_000_000) * rate.output;
-  }, 0);
+  const inputCost = Object.entries(allByModel).reduce((sum, [m, t]) => sum + costParts(m, t).input, 0);
+  const outputCost = Object.entries(allByModel).reduce((sum, [m, t]) => sum + costParts(m, t).output, 0);
+
+  // Spend per area: base model, OCR, live conversation.
+  const areas = AREAS.map((area) => {
+    const members = services.filter((s) => s.area === area.key);
+    const cost = members.reduce((t, s) => t + s.total_cost, 0);
+    return {
+      ...area,
+      cost,
+      share: totalCost > 0 ? (cost / totalCost) * 100 : 0,
+      tokens: members.reduce((t, s) => t + s.total_input + s.total_output, 0),
+      audioTokens: members.reduce((t, s) => t + s.total_audio_tokens, 0),
+      audioSeconds: members.reduce((t, s) => t + s.total_audio_seconds, 0),
+      requests: members.reduce((t, s) => t + s.total_requests, 0),
+      services: members.map((s) => s.service),
+    };
+  });
 
   const modelsSeen = Object.keys(allByModel).filter((m) => m && m !== "unknown");
   const hasUnknownModel = Object.keys(allByModel).some((m) => !rateFor(m).known);
@@ -552,6 +675,62 @@ function TokenManagementContent() {
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">{tx("Total API & Action Runs")}</p>
               <h3 className="text-2xl font-bold text-blue-600">{totalRequests.toLocaleString()}</h3>
               <p className="text-xs text-slate-400 mt-2">{tx("Combined LLM + 1-Click Action Executions")}</p>
+            </div>
+          </div>
+
+          {/* Cost by area: base model, OCR, live conversation */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-bold text-slate-800">{tx("Cost by area")}</p>
+              {totalCost > 0 && (
+                <div className="flex h-2 w-full max-w-sm overflow-hidden rounded-full bg-slate-200" aria-hidden="true">
+                  {areas.map((a) => (
+                    <div key={a.key} className={a.accent} style={{ width: `${a.share}%` }} />
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+              {areas.map((a) => (
+                <div key={a.key} className="p-5 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className={`h-2.5 w-2.5 rounded-full ${a.accent}`} aria-hidden="true" />
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">{tx(a.label)}</p>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-1">{tx(a.description)}</p>
+                    </div>
+                    <span className="text-xs font-bold text-slate-600 tabular-nums">{a.share.toFixed(0)}%</span>
+                  </div>
+                  <p className="text-2xl font-bold text-slate-900 tabular-nums">${a.cost.toFixed(5)}</p>
+                  <div className="space-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">{tx("Requests:")}</span>
+                      <span className="font-semibold text-slate-700 tabular-nums">{a.requests.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">{tx("Tokens:")}</span>
+                      <span className="font-semibold text-slate-700 tabular-nums">{a.tokens.toLocaleString()}</span>
+                    </div>
+                    {a.key === "live_voice" && (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">{tx("— of which audio:")}</span>
+                          <span className="font-semibold text-violet-700 tabular-nums">{a.audioTokens.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">{tx("Audio billed per minute:")}</span>
+                          <span className="font-semibold text-slate-700 tabular-nums">{formatAudio(a.audioSeconds)}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    {a.services.length > 0 ? a.services.join(" · ") : tx("No usage in this window.")}
+                  </p>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -848,7 +1027,12 @@ function TokenManagementContent() {
                       <tr key={idx} className="hover:bg-slate-50 transition-colors">
                         <td className="px-5 py-4">
                           <div className="flex items-center justify-between gap-2">
-                            <p className="font-bold text-slate-900 text-sm">{svc.service}</p>
+                            <div className="min-w-0">
+                              <p className="font-bold text-slate-900 text-sm">{svc.service}</p>
+                              <span className={`mt-1 inline-block px-1.5 py-0.5 text-[10px] font-semibold rounded border ${AREA_BADGE[svc.area]}`}>
+                                {tx(AREAS.find((a) => a.key === svc.area)?.label ?? "")}
+                              </span>
+                            </div>
                             <div className="flex flex-wrap gap-1 justify-end">
                               {Object.keys(svc.by_model).map((m) => (
                                 <span
@@ -890,6 +1074,18 @@ function TokenManagementContent() {
                               <span className="text-slate-500">{tx("Output Tokens:")}</span>
                               <span className="font-semibold text-blue-600">{svc.total_output.toLocaleString()}</span>
                             </div>
+                            {svc.total_audio_tokens > 0 && (
+                              <div className="flex justify-between">
+                                <span className="text-slate-500">{tx("— Audio tokens:")}</span>
+                                <span className="font-semibold text-violet-700">{svc.total_audio_tokens.toLocaleString()}</span>
+                              </div>
+                            )}
+                            {svc.total_audio_seconds > 0 && (
+                              <div className="flex justify-between">
+                                <span className="text-slate-500">{tx("Audio:")}</span>
+                                <span className="font-semibold text-violet-700">{formatAudio(svc.total_audio_seconds)}</span>
+                              </div>
+                            )}
 
                             {Object.keys(svc.by_model).length > 1 && (
                               <div className="pt-1 space-y-0.5">

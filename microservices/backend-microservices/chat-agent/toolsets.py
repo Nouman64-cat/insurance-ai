@@ -97,15 +97,20 @@ CORE_TOOLS: set[str] = {
 # ── Domain packs ─────────────────────────────────────────────────────────────
 DOMAIN_TOOLS: dict[str, set[str]] = {
     "admin": {
-        "list_users",
         "list_acquisition_sources",
-        "add_user",
-        "delete_user",
         "list_organizations",
         "list_family_groups",
         "bulk_add_customers",
         "bulk_underwriting_journey",
         "delete_case",
+    },
+    # User management (Admin). Keyword-only, so it never counts against the no-keyword fallback's tool cap.
+    "users": {
+        "list_users",
+        "add_user",
+        "update_user_role",
+        "set_user_active",
+        "delete_user",
     },
     "rules": {
         "list_rule_categories",
@@ -319,6 +324,11 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "bulk", "batch", "delete case", "remove case",
         "acquisition", "acquisition source", "broker", "brokers", "bancassurance",
         "lead source", "lead sources",
+    ),
+    "users": (
+        "user", "users", "staff", "team", "teammate", "employee", "colleague", "role", "roles",
+        "underwriter", "adjuster", "admin", "login", "sign in", "sign-in", "access",
+        "deactivate", "reactivate", "suspend", "promote", "demote", "account", "accounts",
     ),
     "rules": (
         "rule", "rules", "rule set", "ruleset", "rule engine", "criteria",
