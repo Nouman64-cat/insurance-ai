@@ -25,8 +25,14 @@ from typing import Any, List, Optional, Tuple
 
 from PIL import Image
 from pypdf import PdfReader, PdfWriter
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import PageBreak, Paragraph, Spacer
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfgen import canvas as rl_canvas
+from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from services import document_generator as dg
 from shared.models.core import (
@@ -42,6 +48,142 @@ _STORAGE = "/app/shared/storage"
 _S3_BUCKET = os.environ.get("S3_BUCKET_NAME", "insurance-ai-dev")
 _E = html.escape
 MAX_PAGES_PER_FILE = 2
+
+# ── Look and feel ────────────────────────────────────────────────────────────────────────────────────────────────
+# Navy for headings and bars, the insurer's blue and green (from its logo) as accents, soft blue-grey for tables.
+_ASSETS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "brand")
+_NAVY = colors.HexColor("#0b2e5c")
+_BLUE = colors.HexColor("#0b63ce")
+_GREEN = colors.HexColor("#2f9e57")
+_INK = colors.HexColor("#1e293b")
+_MUTE = colors.HexColor("#64748b")
+_LABEL_BG = colors.HexColor("#eaf1fb")
+_ZEBRA = colors.HexColor("#f6f9fd")
+_RULE = colors.HexColor("#d3deec")
+# What the customer calls this document. Adamjee Life's own wording for the pack a new policyholder receives is
+# "policy documents"; this one is the record of the application behind the policy, so it is named for that.
+DOCUMENT_TITLE = "Policy Application Record"
+_PAGE_W, _PAGE_H = A4
+_MARGIN_X = 20 * mm
+_CONTENT_W = _PAGE_W - 2 * _MARGIN_X
+_TOP_MARGIN = 36 * mm
+_BOTTOM_MARGIN = 24 * mm
+
+
+def _styles():
+    ss = getSampleStyleSheet()
+    ss.add(ParagraphStyle("Body", parent=ss["Normal"], textColor=_INK, fontSize=9.5, leading=14, spaceAfter=2))
+    ss.add(ParagraphStyle("Cell", parent=ss["Normal"], textColor=_INK, fontSize=9.2, leading=13))
+    ss.add(ParagraphStyle("CellLabel", parent=ss["Normal"], textColor=_NAVY, fontSize=8.8, leading=12, fontName="Helvetica-Bold"))
+    ss.add(ParagraphStyle("Fine", parent=ss["Normal"], textColor=_MUTE, fontSize=8, leading=11))
+    ss.add(ParagraphStyle("Sec", parent=ss["Normal"], textColor=colors.white, fontSize=12, leading=15, fontName="Helvetica-Bold"))
+    ss.add(ParagraphStyle("H", parent=ss["Normal"], textColor=_BLUE, fontSize=10.5, leading=14, fontName="Helvetica-Bold",
+                          spaceBefore=10, spaceAfter=4, keepWithNext=1))
+    ss.add(ParagraphStyle("CoverTitle", parent=ss["Normal"], textColor=_NAVY, fontSize=26, leading=31, fontName="Helvetica-Bold",
+                          alignment=TA_CENTER))
+    ss.add(ParagraphStyle("CoverSub", parent=ss["Normal"], textColor=_MUTE, fontSize=11.5, leading=16, alignment=TA_CENTER))
+    return ss
+
+
+def _section(ss, number: int, title: str) -> Table:
+    """A numbered section band: navy with a green edge, kept on the same page as what follows it."""
+    t = Table([[Paragraph(f"{number}&nbsp;&nbsp;&nbsp;{_E(title)}", ss["Sec"])]], colWidths=[_CONTENT_W])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), _NAVY),
+        ("LINEBEFORE", (0, 0), (0, -1), 4, _GREEN),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10), ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    t.spaceBefore = 12
+    t.spaceAfter = 6
+    t.keepWithNext = True
+    return t
+
+
+def _kv_table(rows: List[Tuple[str, str]]) -> Table:
+    """Label / value rows: shaded label column, soft borders. Values are already escaped."""
+    ss = _styles()
+    data = [[Paragraph(k, ss["CellLabel"]), Paragraph(v, ss["Cell"])] for k, v in rows]
+    t = Table(data, colWidths=[52 * mm, _CONTENT_W - 52 * mm])
+    t.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BACKGROUND", (0, 0), (0, -1), _LABEL_BG),
+        ("ROWBACKGROUNDS", (1, 0), (1, -1), [colors.white, _ZEBRA]),
+        ("BOX", (0, 0), (-1, -1), 0.6, _RULE),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.4, _RULE),
+        ("LINEAFTER", (0, 0), (0, -1), 0.4, _RULE),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    t.spaceAfter = 4
+    return t
+
+
+def _logo(c, name: str, x: float, y: float, height: float, align: str = "left") -> None:
+    """Draw a brand logo with its bottom edge at y. Missing files are skipped: the dossier never fails over a logo."""
+    path = os.path.join(_ASSETS, name)
+    if not os.path.isfile(path):
+        return
+    try:
+        img = ImageReader(path)
+        iw, ih = img.getSize()
+        w = height * iw / ih
+        c.drawImage(img, x - (w if align == "right" else 0), y, w, height, mask="auto")
+    except Exception:
+        log.warning("dossier: could not draw logo %s", name, exc_info=True)
+
+
+def _page_frame(meta: dict):
+    """Header (both logos over a blue rule) and footer (document, confidentiality, contact) for every generated page."""
+    def draw(c, doc):
+        c.saveState()
+        top = _PAGE_H - 8 * mm
+        _logo(c, "adamjee-life.png", _MARGIN_X, top - 17 * mm, 17 * mm)
+        _logo(c, "getinsuredai.png", _PAGE_W - _MARGIN_X, top - 14 * mm, 14 * mm, align="right")
+        y = _PAGE_H - 28 * mm
+        c.setStrokeColor(_BLUE)
+        c.setLineWidth(1.6)
+        c.line(_MARGIN_X, y, _PAGE_W - _MARGIN_X, y)
+        c.setStrokeColor(_GREEN)
+        c.setLineWidth(1.6)
+        c.line(_MARGIN_X, y, _MARGIN_X + 28 * mm, y)
+        # Footer
+        fy = 16 * mm
+        c.setStrokeColor(_RULE)
+        c.setLineWidth(0.6)
+        c.line(_MARGIN_X, fy, _PAGE_W - _MARGIN_X, fy)
+        c.setFillColor(_NAVY)
+        c.setFont("Helvetica-Bold", 7.5)
+        c.drawString(_MARGIN_X, fy - 4.5 * mm, f"{DOCUMENT_TITLE}  |  Policy {meta['policy_number']}")
+        c.setFillColor(_MUTE)
+        c.setFont("Helvetica", 7)
+        c.drawString(_MARGIN_X, fy - 8.5 * mm, f"Confidential: prepared for {meta['customer_name']}. Please keep this document in a safe place.")
+        if meta.get("contact"):
+            c.drawRightString(_PAGE_W - _MARGIN_X, fy - 4.5 * mm, meta["contact"])
+        c.restoreState()
+    return draw
+
+
+def _build_doc(path: str, story: list, meta: dict) -> None:
+    doc = SimpleDocTemplate(path, pagesize=A4, leftMargin=_MARGIN_X, rightMargin=_MARGIN_X,
+                            topMargin=_TOP_MARGIN, bottomMargin=_BOTTOM_MARGIN,
+                            title=DOCUMENT_TITLE, author=meta.get("tenant_name") or "")
+    frame = _page_frame(meta)
+    doc.build(story, onFirstPage=frame, onLaterPages=frame)
+
+
+def _number_pages(writer: PdfWriter) -> None:
+    """'Page x of y' on every page of the finished dossier, scans included (the generated sections are built apart)."""
+    total = len(writer.pages)
+    for n, page in enumerate(writer.pages, 1):
+        w, h = float(page.mediabox.width), float(page.mediabox.height)
+        buf = io.BytesIO()
+        c = rl_canvas.Canvas(buf, pagesize=(w, h))
+        c.setFillColor(_NAVY)
+        c.setFont("Helvetica-Bold", 7.5)
+        c.drawRightString(w - _MARGIN_X, 7.5 * mm, f"Page {n} of {total}")
+        c.save()
+        page.merge_page(PdfReader(io.BytesIO(buf.getvalue())).pages[0])
 
 
 def _s(v: Any) -> str:
@@ -92,7 +234,7 @@ def _image_pdf(data: bytes, title: str) -> bytes:
     w, h = A4
     c = canvas.Canvas(buf, pagesize=A4)
     c.setFont("Helvetica-Bold", 11)
-    c.setFillColorRGB(0.15, 0.39, 0.92)
+    c.setFillColor(_NAVY)
     c.drawString(18 * mm, h - 16 * mm, title[:90])
     box_w, box_h = w - 36 * mm, h - 40 * mm
     iw, ih = img.size
@@ -110,8 +252,10 @@ def _stamp(page, label: str) -> None:
     w, h = float(page.mediabox.width), float(page.mediabox.height)
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=(w, h))
-    c.setFillColorRGB(0.145, 0.388, 0.922)
+    c.setFillColor(_NAVY)
     c.rect(0, h - 9 * mm, w, 9 * mm, stroke=0, fill=1)
+    c.setFillColor(_GREEN)
+    c.rect(0, h - 9.8 * mm, w, 0.8 * mm, stroke=0, fill=1)
     c.setFillColorRGB(1, 1, 1)
     c.setFont("Helvetica-Bold", 9.5)
     c.drawString(10 * mm, h - 6 * mm, label[:110])
@@ -120,7 +264,47 @@ def _stamp(page, label: str) -> None:
 
 
 def _kv(rows: List[Tuple[str, Any]]):
-    return dg._kv_table([(k, _s(v)) for k, v in rows])
+    return _kv_table([(_E(k), _s(v)) for k, v in rows])
+
+
+_CONTENTS = [
+    ("1", "Customer Profile"), ("2", "Policy Applied For"), ("3", "Customer E-Application"), ("4", "Medical Examination"),
+    ("5", "Proposal"), ("6", "Customer Information Collected"), ("7", "Attached Scans and Policy Wording"),
+    ("8", "How to Register a Claim"), ("9", "Policy Rules"),
+]
+
+
+def _cover_story(ss, customer: Customer, policy: Policy, tenant_name: str, ctx: dict) -> list:
+    """The first page: what this document is, whose policy it covers, and what is inside."""
+    story: list = [Paragraph(DOCUMENT_TITLE, ss["CoverTitle"]),
+                   Spacer(1, 3 * mm),
+                   Paragraph(_E(f"A complete record of your application with {tenant_name}"), ss["CoverSub"]),
+                   Spacer(1, 12 * mm)]
+    summary = [
+        ("Policyholder", customer.name), ("Policy number", policy.policy_number or "Not yet issued"),
+        ("Plan", policy.product_name), ("Sum assured", dg._pkr(policy.coverage_amount)),
+        ("Policy term", f"{policy.term_years} years"),
+        ("Commencement", ctx.get("effective_date")), ("Prepared on", f"{datetime.utcnow():%d %B %Y}"),
+    ]
+    story.append(_kv(summary))
+    story.append(Spacer(1, 10 * mm))
+    story.append(Paragraph("What is inside", ss["H"]))
+    rows = [[Paragraph(n, ss["CellLabel"]), Paragraph(_E(t), ss["Cell"])] for n, t in _CONTENTS]
+    t = Table(rows, colWidths=[12 * mm, _CONTENT_W - 12 * mm])
+    t.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TEXTCOLOR", (0, 0), (0, -1), _GREEN),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.4, _RULE),
+        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 10 * mm))
+    story.append(Paragraph(_E(
+        f"This record is issued with your policy. It contains the information you gave us, the terms we agreed and the "
+        f"documents we hold, so you have everything in one place. If anything is incorrect, please contact {tenant_name} "
+        f"using the details at the foot of each page."), ss["Fine"]))
+    story.append(PageBreak())
+    return story
 
 
 def _info_story(ss, customer: Customer, policy: Policy, tenant_name: str, eapp: Optional[CustomerEApplication],
@@ -128,11 +312,7 @@ def _info_story(ss, customer: Customer, policy: Policy, tenant_name: str, eapp: 
     story: list = []
     d = customer.details or {}
     contact, addr = d.get("contact") or {}, d.get("address") or {}
-    story += dg._header(ss, tenant_name, "Application Dossier",
-                        f"{_E(customer.name or '')} · {_E(policy.policy_number or 'Not yet issued')} · "
-                        f"{datetime.utcnow():%d %b %Y}")
-
-    story.append(Paragraph("Customer Profile", ss["H"]))
+    story.append(_section(ss, 1, "Customer Profile"))
     story.append(_kv([
         ("Name", customer.name), ("CNIC", customer.cnic), ("Date of birth", customer.dob),
         ("Gender", getattr(customer.gender, "value", customer.gender)),
@@ -144,14 +324,14 @@ def _info_story(ss, customer: Customer, policy: Policy, tenant_name: str, eapp: 
         ("Height / weight", f"{customer.height_cm or '—'} cm / {customer.weight_kg or '—'} kg"),
         ("Smoker", customer.is_smoker),
     ]))
-    story.append(Paragraph("Policy Applied For", ss["H"]))
+    story.append(_section(ss, 2, "Policy Applied For"))
     story.append(_kv([
         ("Product", policy.product_name), ("Sum assured", policy.coverage_amount),
         ("Term", f"{policy.term_years} years"), ("Policy number", policy.policy_number),
     ]))
 
     story.append(PageBreak())
-    story.append(Paragraph("Customer E-Application", ss["H"]))
+    story.append(_section(ss, 3, "Customer E-Application"))
     if eapp is None or not (eapp.medical_questionnaire or eapp.declaration):
         story.append(Paragraph("The customer did not complete an e-application.", ss["Body"]))
     else:
@@ -209,7 +389,7 @@ def _info_story(ss, customer: Customer, policy: Policy, tenant_name: str, eapp: 
             ("Submitted", eapp.submitted_at), ("Verified", eapp.verified_at),
         ]))
 
-    story.append(Paragraph("Medical Examination", ss["H"]))
+    story.append(_section(ss, 4, "Medical Examination"))
     if med is None or getattr(med.status, "value", med.status) in ("NotAssessed", "NotRequired"):
         story.append(Paragraph("No medical examination was required.", ss["Body"]))
     else:
@@ -267,7 +447,7 @@ def _flatten(value: Any, prefix: str = "") -> List[Tuple[str, Any]]:
 def _details_story(ss, customer: Customer) -> list:
     """Everything recorded about the customer at registration, section by section."""
     details = customer.details or {}
-    story: list = [PageBreak(), Paragraph("Customer Information Collected", ss["H"])]
+    story: list = [PageBreak(), _section(ss, 6, "Customer Information Collected")]
     shown = False
     for key, title in _SECTION_TITLES:
         rows = _flatten(details.get(key))
@@ -288,7 +468,7 @@ def _details_story(ss, customer: Customer) -> list:
 
 def _proposal_story(ss, ctx: dict) -> list:
     pb = ctx.get("premium_breakdown") or {}
-    story: list = [PageBreak(), Paragraph("Proposal", ss["H"])]
+    story: list = [PageBreak(), _section(ss, 5, "Proposal")]
     story.append(_kv([
         ("Applicant", ctx.get("customer_name")), ("Product", ctx.get("product_name")),
         ("Plan type", ctx.get("insurance_type")), ("Sum assured", dg._pkr(ctx.get("coverage_amount"))),
@@ -317,7 +497,7 @@ def _proposal_story(ss, ctx: dict) -> list:
 def _rules_story(ss, ctx: dict, plan: Optional[InsurancePlan], tenant_name: str) -> list:
     from services import insurer_config as ic
     ins_type = ctx.get("insurance_type") or ""
-    story: list = [Paragraph("How to Register a Claim", ss["H"])]
+    story: list = [_section(ss, 8, "How to Register a Claim")]
     contact = [f"Helpline (UAN): {ctx['tenant_phone']}" if ctx.get("tenant_phone") else None,
                f"Email: {ctx['tenant_email']}" if ctx.get("tenant_email") else None,
                f"Web: {ctx['tenant_website']}" if ctx.get("tenant_website") else None]
@@ -345,7 +525,7 @@ def _rules_story(ss, ctx: dict, plan: Optional[InsurancePlan], tenant_name: str)
 
     story.append(PageBreak())
     st = (plan.surrender_terms or {}) if plan is not None else {}
-    story.append(Paragraph("Policy Rules", ss["H"]))
+    story.append(_section(ss, 9, "Policy Rules"))
 
     story.append(Paragraph("Maturity", ss["H"]))
     profile = ic.EXIT_PROFILE_BY_TYPE.get(ins_type, "Protection")
@@ -406,7 +586,6 @@ def _rules_story(ss, ctx: dict, plan: Optional[InsurancePlan], tenant_name: str)
         f"Declaration of Good Health. If it lapsed {rr['declaration_only_days']} days ago or less, the declaration is normally enough; "
         f"after {rr['medical_evidence_days']} days a medical examination may be required, and revival is always subject to underwriting approval."),
         ss["Body"]))
-    story += dg._footer(ss)
     return story
 
 
@@ -508,23 +687,37 @@ async def build(session: AsyncSession, policy: Policy) -> Optional[str]:
                                   label=medical_label)
     personal_pdfs = await _collect(personal, index, max_pages=MAX_PAGES_PER_FILE, dedupe=True)
 
-    ss = dg._styles()
+    ss = _styles()
+    meta = {"tenant_name": tenant_name, "customer_name": customer.name or "the policyholder",
+            "policy_number": policy.policy_number or "Draft",
+            "contact": " · ".join(x for x in (ctx.get("tenant_phone"), ctx.get("tenant_email"), ctx.get("tenant_website")) if x)}
     out_dir = os.path.join(dg.MEDIA_ROOT, str(policy.id))
     os.makedirs(out_dir, exist_ok=True)
     front = os.path.join(out_dir, "dossier_front.pdf")
     back = os.path.join(out_dir, "dossier_back.pdf")
-    story = (_info_story(ss, customer, policy, tenant_name, eapp, med) + _proposal_story(ss, ctx)
+    story = (_cover_story(ss, customer, policy, tenant_name, ctx)
+             + _info_story(ss, customer, policy, tenant_name, eapp, med) + _proposal_story(ss, ctx)
              + _details_story(ss, customer))
-    story.append(Paragraph("Attached Scans", ss["H"]))
+    story.append(_section(ss, 7, "Attached Scans and Policy Wording"))
     if plan is not None and plan.policy_wording_path and os.path.isfile(plan.policy_wording_path):
         index.append((plan.policy_wording_filename or "policy wording", f"Policy wording: {plan.label}", ""))
     if index:
-        for n, (name, kind, note) in enumerate(index, 1):
-            story.append(Paragraph(f"{n}. <b>{_E(kind)}</b> - {_E(name)} {_E(note)}", ss["Body"]))
+        head = [Paragraph(h, ss["CellLabel"]) for h in ("No.", "Document", "File")]
+        data = [head] + [[Paragraph(str(n), ss["Cell"]), Paragraph(f"<b>{_E(kind)}</b>", ss["Cell"]),
+                          Paragraph(f"{_E(name)} {_E(note)}".strip(), ss["Cell"])] for n, (name, kind, note) in enumerate(index, 1)]
+        tbl = Table(data, colWidths=[12 * mm, 80 * mm, _CONTENT_W - 92 * mm], repeatRows=1)
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), _LABEL_BG), ("BOX", (0, 0), (-1, -1), 0.6, _RULE),
+            ("LINEBELOW", (0, 0), (-1, -2), 0.4, _RULE), ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, _ZEBRA]),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(tbl)
     else:
         story.append(Paragraph("No scans on file.", ss["Body"]))
-    dg._build(front, story)
-    dg._build(back, _rules_story(ss, ctx, plan, tenant_name))
+    _build_doc(front, story, meta)
+    _build_doc(back, _rules_story(ss, ctx, plan, tenant_name), meta)
 
     writer = PdfWriter()
     wording = []
@@ -545,6 +738,7 @@ async def build(session: AsyncSession, policy: Policy) -> Optional[str]:
         reader = PdfReader(path_or_blob if isinstance(path_or_blob, str) else io.BytesIO(path_or_blob))
         for page in reader.pages:
             writer.add_page(page)
+    _number_pages(writer)
     final = os.path.join(out_dir, "application_dossier.pdf")
     with open(final, "wb") as f:
         writer.write(f)
@@ -569,7 +763,7 @@ async def generate_and_store(session: AsyncSession, policy: Policy, version_id=N
     doc = PolicyDocument(
         policy_id=policy.id, policy_version_id=version_id,
         document_type=PolicyDocumentTypeEnum.APPLICATION_DOSSIER,
-        document_name=f"Application Dossier – {policy.policy_number or 'Draft'}",
+        document_name=f"{DOCUMENT_TITLE} – {policy.policy_number or 'Draft'}",
         storage_url=path, stub_content=None, is_stub=False,
     )
     session.add(doc)
