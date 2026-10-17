@@ -343,7 +343,7 @@ async def chat_execute_tool(body: ExecuteToolRequest, x_tenant_id: str = Header(
     if not is_role_allowed(body.name, role, body.platform):
         return {"success": False, "error": "Currently, you have no access to do this, ask your manager."}
     jwt_token = authorization.replace("Bearer ", "") if authorization else ""
-    ctx = ExecCtx(tenant_id=x_tenant_id, jwt_token=jwt_token, role=role)
+    ctx = ExecCtx(tenant_id=x_tenant_id, jwt_token=jwt_token, role=role, platform=body.platform)
     return await execute_tool(body.name, body.args, ctx)
 
 

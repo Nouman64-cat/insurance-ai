@@ -1,0 +1,59 @@
+{
+  "id": "failure-recovery",
+  "purpose": "Inspect interrupted operations and safely resume only unresolved steps.",
+  "intents": [
+    "retry",
+    "failure",
+    "resume",
+    "interrupted",
+    "unavailable",
+    "connection",
+    "health"
+  ],
+  "capabilities": [
+    "diagnose_connection",
+    "get_operation_status",
+    "get_service_health",
+    "resume_operation"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "Agent",
+    "Underwriter",
+    "ClaimsManager",
+    "ClaimsAdjuster",
+    "CustomerService",
+    "Viewer",
+    "CustomBroker"
+  ],
+  "prerequisites": [
+    "Authenticated JWT and tenant scope",
+    "Existing role/platform allow-list",
+    "Live owning-service state and required record identifiers"
+  ],
+  "business_rules": [
+    "Preserve completed operations from operations.py and checkpoint history. A timeout after a mutation has unknown outcome: verify the owning record before any retry. Do not replay earlier successful steps. Only bounded read retries are automatic.",
+    "A skill never adds permissions or simulates success."
+  ],
+  "lifecycle_source": "lifecycle.py; tenant-service/routers/cases.py",
+  "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",
+  "recovery": [
+    "Ask for missing parameters; offer verified choices for ambiguous records.",
+    "Preserve completed steps; verify unknown mutation outcomes before retry.",
+    "Explain unsupported operations and route to the appropriate workspace or authorized staff."
+  ],
+  "verification": "Report completion only from confirmed backend success. Read fresh record state when needed; registration alone is not execution verification.",
+  "tests": [
+    "test_skills.py::test_all_skills_validate_and_cover_inventory",
+    "test_skills.py::test_generated_role_scenarios"
+  ],
+  "steps": [
+    {
+      "id": "step_1",
+      "capability": "get_operation_status",
+      "depends_on": []
+    }
+  ],
+  "unsupported": []
+}

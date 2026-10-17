@@ -1,0 +1,19 @@
+{
+  "chat_regression": {
+    "tests": 3881,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "owning_service_initial_premium": {
+    "passed": 7,
+    "failed": 0
+  },
+  "owning_service_underwriting_tracks": {
+    "passed": 23,
+    "failed": 2,
+    "note": "Existing unmet evidence requirements in unchanged backend test fixtures."
+  },
+  "real_provider_demo_completion": "not_evaluated",
+  "customer_service_live_role": "not_configured_locally"
+}

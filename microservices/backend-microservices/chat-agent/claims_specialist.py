@@ -95,6 +95,7 @@ This is claims, not agent commission. Commission agreements/disbursement batches
 customer creation, policy issuance, premium collection and general underwriting are
 handled outside your scope. Do not invent their tool calls.
 """
+    prompt += "\nClaims managers authorize settlements; only Finance executes payments. Finance cannot decide or approve claims. Backend delegated limits are authoritative.\n"
     if role == 'ClaimsManager':
         prompt += _CLAIMS_ONLY
     instructions = {

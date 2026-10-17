@@ -9,6 +9,9 @@ the graph checks before a tool ever runs.
 from env_mode import is_demo
 
 MUTATING_TOOLS = {
+    "issue_claim_payout",
+    "create_platform_tenant", "manage_platform_role", "configure_platform_model",
+    "request_initial_premium", "review_initial_premium_proof", "transition_proposal",
     # Specialist underwriting (specialist_review_tools.py)
     "start_my_review",
     "send_e_application_questionnaire",
@@ -73,7 +76,6 @@ MUTATING_TOOLS = {
     "register_claim",
     "update_claim_status",
     "adjudicate_claim",
-    "issue_claim_payout",
     "refer_claim_to_reinsurance",
     "refer_claim_to_underwriting",
     "resolve_claim_underwriting",
@@ -170,6 +172,8 @@ MUTATING_TOOLS = {
 # Read-only + navigation. Never gated, never confirmed — asking "shall I open
 # the cases page?" before every navigation makes the agent unusable.
 SAFE_TOOLS = {
+    "get_platform_configuration", "get_platform_token_usage", "get_initial_premium_status",
+    "search_capabilities", "get_capability_schema",
     # Specialist underwriting reads — scoped further by ROLE_SCOPED_READS below.
     "list_my_underwriting_reviews",
     "get_underwriting_review",
@@ -403,6 +407,17 @@ REQUIRED_ARGS: dict[str, list[str]] = {
 # Tools that emit progress steps worth showing in the UI's process graph, with
 # the label each step gets. Everything else falls back to a humanised tool name.
 STEP_LABELS: dict[str, str] = {
+    "get_platform_configuration": "Read platform configuration",
+    "get_platform_token_usage": "Read token usage",
+    "create_platform_tenant": "Create tenant",
+    "manage_platform_role": "Manage role",
+    "configure_platform_model": "Configure model",
+    "get_initial_premium_status": "Read initial premium",
+    "request_initial_premium": "Request initial premium",
+    "review_initial_premium_proof": "Review payment proof",
+    "transition_proposal": "Update proposal stage",
+    "search_capabilities": "Find available capabilities",
+    "get_capability_schema": "Load capability",
     "list_my_underwriting_reviews": "Loading your reviews",
     "get_underwriting_review": "Reading the review workspace",
     "start_my_review": "Starting your review",
@@ -836,13 +851,11 @@ CLAIMS_READ_TOOLS = {
 # Disbursement and reinsurance recovery are the two claims actions that move
 # money or bind the reinsurer. Adjusters prepare them; managers release them.
 CLAIMS_MANAGER_ONLY_TOOLS = {
-    "issue_claim_payout",
     "refer_claim_to_reinsurance",
     # Workflow equivalents: releasing and paying the settlement, and letting an
     # ineligible claim through. (The API lets an adjuster authorise up to the
     # manager limit; the chat keeps money release with managers, as above.)
     "authorize_claim_disbursement",
-    "disburse_claim_settlement",
     "override_claim_eligibility",
 }
 
@@ -1031,6 +1044,34 @@ ROLE_SCOPED_READS: dict[str, set[str]] = {
 }
 
 
+# Mirrored from tenant-service/services/claim_authority.py. These restrictions
+# precede the legacy Admin fast path: platform administration is not claims authority.
+CLAIM_AUTHORITY_ROLES = {
+    "register_claim": {"ClaimsAdjuster", "ClaimsManager"},
+    "adjudicate_claim": {"ClaimsAdjuster", "ClaimsManager"},
+    "decide_claim": {"ClaimsAdjuster", "ClaimsManager"},
+    "authorize_claim_disbursement": {"ClaimsManager"},
+    "override_claim_eligibility": {"ClaimsManager"},
+    "issue_claim_payout": {"Finance"},
+    "disburse_claim_settlement": {"Finance"},
+    "reconcile_claim_settlement": {"Finance", "ClaimsManager"},
+}
+CLAIM_PROCESS_TOOLS = {
+    "intimate_claim", "adopt_claim_into_workflow", "verify_claim_eligibility",
+    "update_claim_document", "record_claim_investigation", "assess_claim_benefit",
+    "verify_claim_payees", "close_claim_file", "update_claim_status",
+    "refer_claim_to_reinsurance", "refer_claim_to_underwriting",
+}
+CLAIM_AUTHORITY_ROLES.update({name: {"ClaimsAdjuster", "ClaimsManager", "Underwriter"} for name in CLAIM_PROCESS_TOOLS})
+CLAIM_AUTHORITY_ROLES.update({name: {"ClaimsAdjuster", "ClaimsManager"} for name in
+                              {"start_claim_journey", "continue_claim_journey"}})
+
+FINANCE_ALLOWED_TOOLS = CLAIMS_READ_TOOLS | SPECIALIST_NAVIGATION | {
+    "issue_claim_payout", "disburse_claim_settlement", "reconcile_claim_settlement",
+    "resolve_insurance_record", "get_claim_blockers", "get_workflow_timeline",
+}
+
+
 def is_role_allowed(tool_name: str, role: str, platform: str = "web") -> bool:
     """Whether `role` may run `tool_name`.
 
@@ -1039,6 +1080,20 @@ def is_role_allowed(tool_name: str, role: str, platform: str = "web") -> bool:
     registries above defaulted to *permitted* for unrecognised roles, and
     Underwriter was a deny-list that auto-granted anything newly added.
     """
+    if tool_name in {"search_capabilities", "get_capability_schema"}:
+        from skills import enabled
+        return enabled()
+    from capability_tools import PLATFORM_TOOLS, PROPOSAL_TOOLS
+    if tool_name in PLATFORM_TOOLS:
+        return role == "SuperAdmin"
+    if tool_name in PROPOSAL_TOOLS:
+        if tool_name == "review_initial_premium_proof":
+            return role in {"SuperAdmin", "Admin", "Underwriter"}
+        return role in {"SuperAdmin", "Admin", "Underwriter", "Agent"}
+    if tool_name in CLAIM_AUTHORITY_ROLES and role not in CLAIM_AUTHORITY_ROLES[tool_name]:
+        return False
+    if role == "Finance":
+        return tool_name in FINANCE_ALLOWED_TOOLS
     if tool_name in ROLE_SCOPED_READS and role not in ROLE_SCOPED_READS[tool_name]:
         return False
     if role in ADMIN_ROLES:

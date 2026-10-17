@@ -12,7 +12,7 @@ from track_specialists import select_final_underwriting, select_track_specialist
 # Roles whose whole job is one domain: every message goes to that domain's specialist, whatever it asks about —
 # keyword routing would hand an off-topic question ("can you do customer acquisition?") to the broad planner,
 # whose prompt describes onboarding the role can't do.
-PINNED_SPECIALIST = {"ClaimsManager": "claims"}
+PINNED_SPECIALIST = {"ClaimsManager": "claims", "Finance": "claims"}
 
 # Managing staff accounts ("add a Medical Underwriter", "deactivate Ali's account", "make Sana an Admin") is the main
 # assistant's job: only it carries the user tools. Without this, "underwriter" or "claims" in the request would hand
@@ -27,7 +27,7 @@ _USER_ADMIN = re.compile(
 ADMIN_ROLES = ("Admin", "SuperAdmin")
 
 
-def coordinator_node(state):
+def _specialist_selection(state):
     # A Medical or Financial Underwriter's role is one track: their own subagent handles every message,
     # and a Claims Manager's every message goes to the claims specialist.
     track = select_track_specialist(state) or PINNED_SPECIALIST.get(state.get('user_role') or '')
@@ -72,3 +72,18 @@ def route_coordinator(state):
     return {'commission':'commission_agent','claims':'claims_agent','underwriting':'underwriting_agent','servicing':'servicing_agent','group':'group_agent',
             'medical_underwriting':'medical_underwriting_agent','financial_underwriting':'financial_underwriting_agent',
             'final_underwriting':'final_underwriting_agent'}.get(state.get('active_specialist'), 'general_agent')
+
+
+def coordinator_node(state):
+    result = _specialist_selection(state)
+    from skills import enabled
+    if not enabled():
+        return result
+    from skills.selector import select
+    latest = next((m for m in reversed(state.get("messages") or []) if isinstance(m, HumanMessage)), None)
+    content = latest.content if latest else ""
+    text = content if isinstance(content, str) else " ".join(b.get("text", "") for b in content if isinstance(b, dict))
+    selected = select(text, state.get("user_role") or "", state.get("platform") or "web", state.get("selected_skills") or (), specialist=result.get("active_specialist"))
+    import logging
+    logging.getLogger(__name__).info("skill_selection skills=%s specialist=%s", selected, result.get("active_specialist") or "general")
+    return {**result, "selected_skills": selected}

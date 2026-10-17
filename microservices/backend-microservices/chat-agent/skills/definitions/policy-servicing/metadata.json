@@ -1,0 +1,74 @@
+{
+  "id": "policy-servicing",
+  "purpose": "Deliver and service issued policies, renewals, reinstatement and exits.",
+  "intents": [
+    "servicing",
+    "renewal",
+    "endorsement",
+    "surrender",
+    "maturity",
+    "reinstatement",
+    "welcome kit",
+    "portal invitation"
+  ],
+  "capabilities": [
+    "get_endorsement_status",
+    "get_exit_status",
+    "get_onboarding_status",
+    "get_payment_receipt",
+    "get_policy_delivery_status",
+    "get_premium_schedule",
+    "get_reinstatement_requirements",
+    "get_reinstatement_status",
+    "get_renewal_readiness",
+    "preview_policy_endorsement",
+    "preview_policy_exit",
+    "preview_policy_renewal",
+    "provision_portal_access",
+    "retry_failed_delivery",
+    "send_portal_invitation",
+    "send_premium_reminder",
+    "submit_policy_endorsement",
+    "submit_policy_exit_request",
+    "submit_policy_renewal",
+    "submit_reinstatement_request"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "Agent",
+    "Underwriter",
+    "CustomerService",
+    "Viewer",
+    "CustomBroker"
+  ],
+  "prerequisites": [
+    "Authenticated JWT and tenant scope",
+    "Existing role/platform allow-list",
+    "Live owning-service state and required record identifiers"
+  ],
+  "business_rules": [
+    "Preserve backend lifecycle rules, record ownership and approval requirements.",
+    "A skill never adds permissions or simulates success."
+  ],
+  "lifecycle_source": "lifecycle.py; tenant-service/routers/cases.py",
+  "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",
+  "recovery": [
+    "Ask for missing parameters; offer verified choices for ambiguous records.",
+    "Preserve completed steps; verify unknown mutation outcomes before retry.",
+    "Explain unsupported operations and route to the appropriate workspace or authorized staff."
+  ],
+  "verification": "Report completion only from confirmed backend success. Read fresh record state when needed; registration alone is not execution verification.",
+  "tests": [
+    "test_skills.py::test_all_skills_validate_and_cover_inventory",
+    "test_skills.py::test_generated_role_scenarios"
+  ],
+  "steps": [
+    {
+      "id": "step_1",
+      "capability": "get_policy_delivery_status",
+      "depends_on": []
+    }
+  ],
+  "unsupported": []
+}

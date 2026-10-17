@@ -1,0 +1,129 @@
+[
+  {
+    "surface": "microservices/frontend-microservices/automation-chat",
+    "package": "insurance-ai-automation-chat",
+    "scripts": [
+      "build",
+      "dev",
+      "start",
+      "typecheck"
+    ],
+    "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+  },
+  {
+    "surface": "microservices/frontend-microservices/claims-manager-app",
+    "package": "insurance-ai-claims-manager-app",
+    "scripts": [
+      "build",
+      "dev",
+      "start",
+      "typecheck"
+    ],
+    "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+  },
+  {
+    "surface": "microservices/frontend-microservices/customer-portal",
+    "package": "insurance-ai-customer-portal",
+    "scripts": [
+      "build",
+      "dev",
+      "start",
+      "test",
+      "typecheck"
+    ],
+    "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+  },
+  {
+    "surface": "microservices/frontend-microservices/customer-service-app",
+    "package": "insurance-ai-customer-service-app",
+    "scripts": [
+      "build",
+      "dev",
+      "start",
+      "typecheck"
+    ],
+    "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+  },
+  {
+    "surface": "microservices/frontend-microservices/docs",
+    "package": "insurance-ai-docs",
+    "scripts": [
+      "build",
+      "clear",
+      "deploy",
+      "docusaurus",
+      "serve",
+      "start"
+    ],
+    "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+  },
+  {
+    "surface": "microservices/frontend-microservices/frontend",
+    "package": "insurance-ai-frontend",
+    "scripts": [
+      "build",
+      "dev",
+      "lint",
+      "start"
+    ],
+    "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+  },
+  {
+    "surface": "microservices/frontend-microservices/marketing-site",
+    "package": "insurance-ai-marketing-site",
+    "scripts": [
+      "build",
+      "dev",
+      "lint",
+      "start",
+      "typecheck"
+    ],
+    "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+  },
+  {
+    "surface": "microservices/frontend-microservices/request-management-app",
+    "package": "insurance-ai-request-management-app",
+    "scripts": [
+      "build",
+      "dev",
+      "start",
+      "typecheck"
+    ],
+    "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+  },
+  {
+    "surface": "microservices/frontend-microservices/underwriting-app",
+    "package": "insurance-ai-underwriting-app",
+    "scripts": [
+      "build",
+      "dev",
+      "start",
+      "test",
+      "typecheck"
+    ],
+    "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+  },
+  {
+    "surface": "mobile-apps/agent-app",
+    "package": "agent-app",
+    "scripts": [
+      "android",
+      "ios",
+      "start",
+      "typecheck",
+      "web"
+    ],
+    "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+  },
+  {
+    "surface": "mobile-apps/customer-app",
+    "package": "customer-app",
+    "scripts": [
+      "android",
+      "ios",
+      "start",
+      "typecheck"
+    ],
+    "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+  }
+]

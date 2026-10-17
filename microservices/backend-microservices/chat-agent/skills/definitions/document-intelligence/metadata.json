@@ -1,0 +1,63 @@
+{
+  "id": "document-intelligence",
+  "purpose": "Find document requirements, request evidence and review available reports.",
+  "intents": [
+    "document",
+    "evidence",
+    "OCR",
+    "upload",
+    "report",
+    "missing documents"
+  ],
+  "capabilities": [
+    "get_document_checklist",
+    "get_medical_report_status",
+    "link_document_to_requirement",
+    "list_artifacts",
+    "read_medical_reports",
+    "record_medical_review",
+    "request_missing_documents",
+    "upload_document"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "Agent",
+    "Underwriter",
+    "Medical Underwriter",
+    "ClaimsManager",
+    "ClaimsAdjuster",
+    "CustomerService",
+    "Viewer",
+    "CustomBroker"
+  ],
+  "prerequisites": [
+    "Authenticated JWT and tenant scope",
+    "Existing role/platform allow-list",
+    "Live owning-service state and required record identifiers"
+  ],
+  "business_rules": [
+    "Preserve backend lifecycle rules, record ownership and approval requirements.",
+    "A skill never adds permissions or simulates success."
+  ],
+  "lifecycle_source": "lifecycle.py; tenant-service/routers/cases.py",
+  "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",
+  "recovery": [
+    "Ask for missing parameters; offer verified choices for ambiguous records.",
+    "Preserve completed steps; verify unknown mutation outcomes before retry.",
+    "Explain unsupported operations and route to the appropriate workspace or authorized staff."
+  ],
+  "verification": "Report completion only from confirmed backend success. Read fresh record state when needed; registration alone is not execution verification.",
+  "tests": [
+    "test_skills.py::test_all_skills_validate_and_cover_inventory",
+    "test_skills.py::test_generated_role_scenarios"
+  ],
+  "steps": [
+    {
+      "id": "step_1",
+      "capability": "get_document_checklist",
+      "depends_on": []
+    }
+  ],
+  "unsupported": []
+}

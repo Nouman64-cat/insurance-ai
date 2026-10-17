@@ -34,6 +34,7 @@ from typing import Iterable
 
 # ── Always bound ─────────────────────────────────────────────────────────────
 CORE_TOOLS: set[str] = {
+    "search_capabilities", "get_capability_schema", "list_customers",
     # navigation & discovery
     "navigate_to_page",
     "show_record",
@@ -516,3 +517,11 @@ def unrouted_tools(all_tool_names: Iterable[str]) -> set[str]:
     for names in DOMAIN_TOOLS.values():
         routed |= names
     return set(all_tool_names) - routed
+
+
+# Verified adapters for previously unreachable platform and proposal operations.
+from capability_tools import PLATFORM_TOOLS, PROPOSAL_TOOLS
+DOMAIN_TOOLS["platform"] = set(PLATFORM_TOOLS)
+DOMAIN_TOOLS["proposal_payment"] = set(PROPOSAL_TOOLS)
+DOMAIN_KEYWORDS["platform"] = ("tenant", "platform", "llm", "model", "token usage", "global role")
+DOMAIN_KEYWORDS["proposal_payment"] = ("initial premium", "payment proof", "payment link", "submit proposal", "proposal review")

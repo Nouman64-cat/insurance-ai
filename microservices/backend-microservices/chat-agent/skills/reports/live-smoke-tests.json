@@ -1,0 +1,100 @@
+{
+  "synthetic": true,
+  "completed": true,
+  "fixtures_removed": true,
+  "checks": [
+    {
+      "case": "authenticated_discovery",
+      "role": "SuperAdmin",
+      "passed": true
+    },
+    {
+      "case": "authenticated_discovery",
+      "role": "Admin",
+      "passed": true
+    },
+    {
+      "case": "authenticated_discovery",
+      "role": "Agent",
+      "passed": true
+    },
+    {
+      "case": "authenticated_discovery",
+      "role": "Underwriter",
+      "passed": true
+    },
+    {
+      "case": "authenticated_discovery",
+      "role": "Medical Underwriter",
+      "passed": true
+    },
+    {
+      "case": "authenticated_discovery",
+      "role": "Financial Underwriter",
+      "passed": true
+    },
+    {
+      "case": "authenticated_discovery",
+      "role": "ClaimsManager",
+      "passed": true
+    },
+    {
+      "case": "authenticated_discovery",
+      "role": "ClaimsAdjuster",
+      "passed": true
+    },
+    {
+      "case": "authenticated_discovery",
+      "role": "Viewer",
+      "passed": true
+    },
+    {
+      "case": "authenticated_discovery",
+      "role": "Finance",
+      "passed": true
+    },
+    {
+      "case": "proposal_payment_read_owning_service",
+      "role": "Admin",
+      "passed": true
+    },
+    {
+      "case": "proposal_payment_read_owning_service",
+      "role": "Agent",
+      "passed": true
+    },
+    {
+      "case": "proposal_payment_read_owning_service",
+      "role": "Underwriter",
+      "passed": true
+    },
+    {
+      "case": "cross_tenant_policy_not_found",
+      "passed": true
+    },
+    {
+      "case": "viewer_platform_mutation_denied",
+      "passed": true
+    },
+    {
+      "case": "claims_manager_cannot_execute_finance_payment",
+      "passed": true
+    },
+    {
+      "case": "tenant_creation_owning_service",
+      "passed": true
+    },
+    {
+      "case": "global_role_creation_owning_service",
+      "passed": true
+    }
+  ],
+  "missing_configured_roles": [
+    "CustomerService"
+  ],
+  "limitations": [
+    "No real-provider natural-language completion test.",
+    "No real financial activity.",
+    "Model configuration writes and evidence acceptance are tested with isolated HTTP mocks."
+  ]
+}

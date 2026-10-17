@@ -1,0 +1,60 @@
+{
+  "id": "user-and-role-management",
+  "purpose": "Manage existing tenant users using configured backend roles.",
+  "intents": [
+    "user",
+    "staff",
+    "role",
+    "account",
+    "colleague",
+    "deactivate"
+  ],
+  "capabilities": [
+    "add_user",
+    "delete_user",
+    "list_users",
+    "set_user_active",
+    "update_user_role",
+    "get_platform_configuration",
+    "manage_platform_role"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "ClaimsManager",
+    "CustomerService",
+    "Viewer",
+    "CustomBroker"
+  ],
+  "prerequisites": [
+    "Authenticated JWT and tenant scope",
+    "Existing role/platform allow-list",
+    "Live owning-service state and required record identifiers"
+  ],
+  "business_rules": [
+    "Fetch actual configured roles and users. Custom roles keep permission.py fallback behavior; never infer privileges from a role name. Global role CRUD and tenant/LLM configuration require separate capabilities and SuperAdmin authority.",
+    "A skill never adds permissions or simulates success."
+  ],
+  "lifecycle_source": "lifecycle.py; tenant-service/routers/cases.py",
+  "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",
+  "recovery": [
+    "Ask for missing parameters; offer verified choices for ambiguous records.",
+    "Preserve completed steps; verify unknown mutation outcomes before retry.",
+    "Explain unsupported operations and route to the appropriate workspace or authorized staff."
+  ],
+  "verification": "Report completion only from confirmed backend success. Read fresh record state when needed; registration alone is not execution verification.",
+  "tests": [
+    "test_skills.py::test_all_skills_validate_and_cover_inventory",
+    "test_skills.py::test_generated_role_scenarios"
+  ],
+  "steps": [
+    {
+      "id": "step_1",
+      "capability": "list_users",
+      "depends_on": []
+    }
+  ],
+  "unsupported": [
+    "Global role deletion must use the platform console."
+  ]
+}

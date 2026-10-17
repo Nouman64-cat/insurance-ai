@@ -1,0 +1,80 @@
+{
+  "id": "commissions",
+  "purpose": "Inspect commission rules, agreements, earnings and authorized payout runs.",
+  "intents": [
+    "commission",
+    "brokerage",
+    "producer",
+    "earning",
+    "payee",
+    "incentive",
+    "commission payout"
+  ],
+  "capabilities": [
+    "approve_commission_agreement",
+    "approve_payout_run",
+    "assign_policy_producers",
+    "calculate_commission",
+    "create_commission_agreement",
+    "create_commission_rule",
+    "create_incentive_scheme",
+    "create_payout_run",
+    "delete_commission_rule",
+    "delete_incentive_scheme",
+    "explain_commission_earning",
+    "get_agent_statement",
+    "get_commission_ledger",
+    "get_commission_rate_card",
+    "get_commission_summary",
+    "get_customer_commission_setup",
+    "get_policy_commission_split",
+    "list_commission_agreements",
+    "list_commission_exceptions",
+    "list_commission_payees",
+    "list_commission_rules",
+    "list_incentive_schemes",
+    "reconcile_commission_receipts",
+    "toggle_commission_rule_active",
+    "toggle_incentive_scheme_active",
+    "update_commission_rule",
+    "update_incentive_scheme"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "Agent",
+    "Underwriter",
+    "CustomerService",
+    "Viewer",
+    "CustomBroker"
+  ],
+  "prerequisites": [
+    "Authenticated JWT and tenant scope",
+    "Existing role/platform allow-list",
+    "Live owning-service state and required record identifiers"
+  ],
+  "business_rules": [
+    "Preserve backend lifecycle rules, record ownership and approval requirements.",
+    "A skill never adds permissions or simulates success."
+  ],
+  "lifecycle_source": "lifecycle.py; tenant-service/routers/cases.py",
+  "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",
+  "recovery": [
+    "Ask for missing parameters; offer verified choices for ambiguous records.",
+    "Preserve completed steps; verify unknown mutation outcomes before retry.",
+    "Explain unsupported operations and route to the appropriate workspace or authorized staff."
+  ],
+  "verification": "Report completion only from confirmed backend success. Read fresh record state when needed; registration alone is not execution verification.",
+  "tests": [
+    "test_skills.py::test_all_skills_validate_and_cover_inventory",
+    "test_skills.py::test_generated_role_scenarios"
+  ],
+  "steps": [
+    {
+      "id": "step_1",
+      "capability": "get_customer_commission_setup",
+      "depends_on": []
+    }
+  ],
+  "unsupported": []
+}

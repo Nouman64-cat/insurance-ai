@@ -19,15 +19,15 @@ from state import ChatState
 
 # node -> every node it may hand off to (conditional ends + static edges).
 UNDERWRITING_TRANSITIONS = {
-    "j_intake": {"j_case", "j_finish"},
-    "j_case": {"j_proposal", "j_finish"},
-    "j_proposal": {"j_pre_underwriting", "j_finish"},
+    "j_intake": {"j_proposal", "j_finish"},
+    "j_case": {"j_pre_underwriting", "j_finish"},
+    "j_proposal": {"j_case", "j_finish"},
     "j_pre_underwriting": {"j_audit", "j_finish"},
     "j_audit": {"j_risk", "j_finish"},
     "j_risk": {"j_decide", "j_finish"},
     "j_decide": {"j_close", "j_finish"},
     "j_close": {"j_finish"},
-    "j_resume": {"j_intake", "j_pre_underwriting", "j_audit", "j_decide", "j_close"},
+    "j_resume": {"j_intake", "j_proposal", "j_pre_underwriting", "j_audit", "j_decide", "j_close"},
     "j_finish": {"agent"},
 }
 
@@ -79,7 +79,7 @@ def _transitions(node: str) -> set[str]:
     return targets
 
 
-def test_underwriting_journey_shape_unchanged():
+def test_underwriting_journey_creates_proposal_before_case():
     for node, expected in UNDERWRITING_TRANSITIONS.items():
         assert node in graph._graph_builder.nodes, f"{node} missing from graph"
         assert _transitions(node) == expected, f"{node} transitions changed: {_transitions(node)}"

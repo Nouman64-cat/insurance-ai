@@ -127,11 +127,13 @@ ROLE_PAGES: dict[str, frozenset[str]] = {
     "Medical Underwriter": frozenset({"underwriting", "case", "profile"}),
     "Financial Underwriter": frozenset({"underwriting", "case", "profile"}),
     "ClaimsManager": frozenset({"claims", "claims/dashboard", "claims/register", "profile"}),
+    "Finance": frozenset({"claims", "claims/dashboard", "profile"}),
 }
 ROLE_RECORDS: dict[str, frozenset[str]] = {
     "Medical Underwriter": frozenset({"case"}),
     "Financial Underwriter": frozenset({"case"}),
     "ClaimsManager": frozenset({"claim"}),
+    "Finance": frozenset({"claim"}),
 }
 
 

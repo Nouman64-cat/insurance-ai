@@ -1,0 +1,59 @@
+{
+  "id": "premium-management",
+  "purpose": "Inspect premium schedules and receipts, send reminders and confirm authorized payments.",
+  "intents": [
+    "premium",
+    "payment",
+    "receipt",
+    "arrears",
+    "billing",
+    "reminder"
+  ],
+  "capabilities": [
+    "confirm_policy_payment",
+    "get_payment_receipt",
+    "get_premium_schedule",
+    "send_premium_reminder",
+    "get_initial_premium_status",
+    "request_initial_premium",
+    "review_initial_premium_proof"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "Agent",
+    "Underwriter",
+    "CustomerService",
+    "Viewer",
+    "CustomBroker"
+  ],
+  "prerequisites": [
+    "Authenticated JWT and tenant scope",
+    "Existing role/platform allow-list",
+    "Live owning-service state and required record identifiers"
+  ],
+  "business_rules": [
+    "Proposal initial premium and final issuance balance are distinct. confirm_policy_payment is an issuance tool, not proposal payment confirmation. Read receipts and actual received payments; never generate a payment reference or claim funds arrived. Use the dedicated proposal initial-premium tools for status, request links and explicit evidence review.",
+    "A skill never adds permissions or simulates success."
+  ],
+  "lifecycle_source": "lifecycle.py; tenant-service/routers/cases.py",
+  "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",
+  "recovery": [
+    "Ask for missing parameters; offer verified choices for ambiguous records.",
+    "Preserve completed steps; verify unknown mutation outcomes before retry.",
+    "Explain unsupported operations and route to the appropriate workspace or authorized staff."
+  ],
+  "verification": "Report completion only from confirmed backend success. Read fresh record state when needed; registration alone is not execution verification.",
+  "tests": [
+    "test_skills.py::test_all_skills_validate_and_cover_inventory",
+    "test_skills.py::test_generated_role_scenarios"
+  ],
+  "steps": [
+    {
+      "id": "step_1",
+      "capability": "get_initial_premium_status",
+      "depends_on": []
+    }
+  ],
+  "unsupported": []
+}

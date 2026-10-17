@@ -1,0 +1,189 @@
+{
+  "backend_routes": 719,
+  "services": [
+    "api-gateway",
+    "chat-agent",
+    "customer-management",
+    "customer-service",
+    "decision-engine",
+    "ocr-engine",
+    "request-management-service",
+    "risk-engine",
+    "tenant-service",
+    "text-summarizer"
+  ],
+  "seed_roles": [
+    [
+      "SuperAdmin",
+      "Platform-level access \u2014 create tenants and bootstrap their first Admin."
+    ],
+    [
+      "Admin",
+      "Full tenant access \u2014 manage that tenant's users and configuration. Claims: configuration and oversight only, no claim decisions or payments."
+    ],
+    [
+      "Underwriter",
+      "Evaluate proposals, review risk assessments, and make decisions."
+    ],
+    [
+      "ClaimsAdjuster",
+      "Triage claims, verify documentation, evaluate benefit eligibility and issue payouts."
+    ],
+    [
+      "ClaimsManager",
+      "Run the claims department: register and assign claims, approve and authorise settlements within delegated authority, manage referrals."
+    ],
+    [
+      "Finance",
+      "Verify payment details and execute approved claim payments. Cannot approve claims."
+    ],
+    [
+      "Agent",
+      "Submit proposals and track their status."
+    ],
+    [
+      "Viewer",
+      "Read-only access to dashboards and reports."
+    ]
+  ],
+  "additional_chat_roles": [
+    "Medical Underwriter",
+    "Financial Underwriter",
+    "CustomerService"
+  ],
+  "clients": [
+    {
+      "surface": "microservices/frontend-microservices/automation-chat",
+      "package": "insurance-ai-automation-chat",
+      "scripts": [
+        "build",
+        "dev",
+        "start",
+        "typecheck"
+      ],
+      "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+    },
+    {
+      "surface": "microservices/frontend-microservices/claims-manager-app",
+      "package": "insurance-ai-claims-manager-app",
+      "scripts": [
+        "build",
+        "dev",
+        "start",
+        "typecheck"
+      ],
+      "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+    },
+    {
+      "surface": "microservices/frontend-microservices/customer-portal",
+      "package": "insurance-ai-customer-portal",
+      "scripts": [
+        "build",
+        "dev",
+        "start",
+        "test",
+        "typecheck"
+      ],
+      "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+    },
+    {
+      "surface": "microservices/frontend-microservices/customer-service-app",
+      "package": "insurance-ai-customer-service-app",
+      "scripts": [
+        "build",
+        "dev",
+        "start",
+        "typecheck"
+      ],
+      "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+    },
+    {
+      "surface": "microservices/frontend-microservices/docs",
+      "package": "insurance-ai-docs",
+      "scripts": [
+        "build",
+        "clear",
+        "deploy",
+        "docusaurus",
+        "serve",
+        "start"
+      ],
+      "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+    },
+    {
+      "surface": "microservices/frontend-microservices/frontend",
+      "package": "insurance-ai-frontend",
+      "scripts": [
+        "build",
+        "dev",
+        "lint",
+        "start"
+      ],
+      "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+    },
+    {
+      "surface": "microservices/frontend-microservices/marketing-site",
+      "package": "insurance-ai-marketing-site",
+      "scripts": [
+        "build",
+        "dev",
+        "lint",
+        "start",
+        "typecheck"
+      ],
+      "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+    },
+    {
+      "surface": "microservices/frontend-microservices/request-management-app",
+      "package": "insurance-ai-request-management-app",
+      "scripts": [
+        "build",
+        "dev",
+        "start",
+        "typecheck"
+      ],
+      "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+    },
+    {
+      "surface": "microservices/frontend-microservices/underwriting-app",
+      "package": "insurance-ai-underwriting-app",
+      "scripts": [
+        "build",
+        "dev",
+        "start",
+        "test",
+        "typecheck"
+      ],
+      "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+    },
+    {
+      "surface": "mobile-apps/agent-app",
+      "package": "agent-app",
+      "scripts": [
+        "android",
+        "ios",
+        "start",
+        "typecheck",
+        "web"
+      ],
+      "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+    },
+    {
+      "surface": "mobile-apps/customer-app",
+      "package": "customer-app",
+      "scripts": [
+        "android",
+        "ios",
+        "start",
+        "typecheck"
+      ],
+      "integration": "Existing SSE/tool results and navigation protocol retained; no client API changes required."
+    }
+  ],
+  "methodology": "Route declarations and handlers are implementation evidence; no README or UI was treated as an executable capability.",
+  "known_gaps": [
+    "Some internal/backend routes are deliberately not exposed to chat.",
+    "Tenant deletion, role deletion, API-key editing and unsupported lifecycle operations require the owning UI.",
+    "Every route-to-adapter contract has not been live-validated; unmatched routes are not automatically exposed."
+  ]
+}

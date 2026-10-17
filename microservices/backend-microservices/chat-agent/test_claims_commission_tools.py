@@ -270,8 +270,10 @@ def test_earning_explanation_shows_the_arithmetic_and_never_says_paid():
 
 # ── Role gates ───────────────────────────────────────────────────────────────
 
-def test_money_release_stays_with_claims_managers():
-    for tool in ("authorize_claim_disbursement", "disburse_claim_settlement", "override_claim_eligibility"):
+def test_settlement_authority_matches_backend_separation_of_duties():
+    assert is_role_allowed("disburse_claim_settlement", "Finance")
+    assert not is_role_allowed("disburse_claim_settlement", "ClaimsManager")
+    for tool in ("authorize_claim_disbursement", "override_claim_eligibility"):
         assert not is_role_allowed(tool, "ClaimsAdjuster") and is_role_allowed(tool, "ClaimsManager")
     for tool in ("intimate_claim", "assess_claim_benefit", "decide_claim", "verify_claim_payees"):
         assert is_role_allowed(tool, "ClaimsAdjuster")

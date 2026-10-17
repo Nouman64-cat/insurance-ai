@@ -1,0 +1,76 @@
+{
+  "id": "final-underwriting",
+  "purpose": "Coordinate specialist reviews and compile authorized final decisions.",
+  "intents": [
+    "final underwriting",
+    "compile",
+    "risk",
+    "approve application",
+    "decision",
+    "refer"
+  ],
+  "capabilities": [
+    "add_case_comment",
+    "approve_case",
+    "assign_case",
+    "assign_underwriting_track",
+    "compile_final_underwriting",
+    "delete_case",
+    "get_risk_assessment",
+    "get_specialist_reviews",
+    "list_cases",
+    "list_track_underwriters",
+    "preview_application_transition",
+    "refer_underwriting_review",
+    "request_additional_evidence",
+    "run_risk_assessment",
+    "update_case_status"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "Agent",
+    "Underwriter",
+    "ClaimsManager",
+    "ClaimsAdjuster",
+    "CustomerService",
+    "Viewer",
+    "CustomBroker"
+  ],
+  "prerequisites": [
+    "Authenticated JWT and tenant scope",
+    "Existing role/platform allow-list",
+    "Live owning-service state and required record identifiers"
+  ],
+  "business_rules": [
+    "Read specialist reviews and live lifecycle blockers before compiling or approving. Do not treat an AI recommendation as a recorded human decision.",
+    "A skill never adds permissions or simulates success."
+  ],
+  "lifecycle_source": "lifecycle.py; tenant-service/routers/cases.py",
+  "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",
+  "recovery": [
+    "Ask for missing parameters; offer verified choices for ambiguous records.",
+    "Preserve completed steps; verify unknown mutation outcomes before retry.",
+    "Explain unsupported operations and route to the appropriate workspace or authorized staff."
+  ],
+  "verification": "Report completion only from confirmed backend success. Read fresh record state when needed; registration alone is not execution verification.",
+  "tests": [
+    "test_skills.py::test_all_skills_validate_and_cover_inventory",
+    "test_skills.py::test_generated_role_scenarios"
+  ],
+  "steps": [
+    {
+      "id": "step_1",
+      "capability": "get_specialist_reviews",
+      "depends_on": []
+    },
+    {
+      "id": "step_2",
+      "capability": "compile_final_underwriting",
+      "depends_on": [
+        "step_1"
+      ]
+    }
+  ],
+  "unsupported": []
+}

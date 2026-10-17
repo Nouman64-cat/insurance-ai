@@ -37,8 +37,8 @@ from env_mode import is_demo
 # "what comes next" markers.
 STAGES: dict[str, tuple[str, str]] = {
     "j_intake":             ("lead_intake",                 "Stage 1 · Lead Intake"),
-    "j_case":               ("case_creation",               "Stage 2 · Case Creation"),
-    "j_proposal":           ("proposal_structuring",        "Stage 3 · Proposal Structuring"),
+    "j_case":               ("case_creation",               "Stage 3 · Case Creation"),
+    "j_proposal":           ("proposal_structuring",        "Stage 2 · Proposal Structuring"),
     # Same stage id the UI keys on; the stage is now the specialist reviews plus ACR & PEP.
     "j_pre_underwriting":   ("pre_underwriting_clearance",  "Stage 4 · Specialist Reviews, ACR & PEP"),
     "j_audit":              ("document_audit",              "Stage 5 · Document Audit"),
@@ -102,11 +102,11 @@ async def j_intake(state: ChatState) -> dict:
         c = customers[0]
         cnic = c.get("cnic")
         return {
-            "journey_stage": "case_creation",
+            "journey_stage": "proposal_structuring",
             "journey_cnic": cnic,
             "journey_customer_id": c.get("id"),
             "journey_audit": _log(state, f"Applicant resolved: {c.get('first_name', '')} {c.get('last_name', '')} ({cnic})"),
-            **_mark("j_intake", next_node="j_case"),
+            **_mark("j_intake", next_node="j_proposal"),
         }
 
     # No match — register from provided fields if we have the essentials.
@@ -130,11 +130,11 @@ async def j_intake(state: ChatState) -> dict:
         if not res.get("success"):
             return _fail(state, "j_intake", res.get("error") or res.get("message") or "Could not register the applicant.")
         return {
-            "journey_stage": "case_creation",
+            "journey_stage": "proposal_structuring",
             "journey_cnic": args["cnic"],
             "journey_customer_id": res.get("customer_id"),
             "journey_audit": _log(state, f"Applicant registered: {args['first_name']} {args['last_name']} ({args['cnic']})"),
-            **_mark("j_intake", next_node="j_case"),
+            **_mark("j_intake", next_node="j_proposal"),
         }
 
     hint = args.get("applicant_name") or args.get("cnic") or "the applicant"
@@ -146,7 +146,7 @@ async def j_intake(state: ChatState) -> dict:
 
 
 async def j_case(state: ChatState) -> dict:
-    """Stage 2 — open the underwriting case (reuses one if already open)."""
+    """Stage 3 — open the underwriting case (reuses one if already open)."""
     ctx = _ctx(state)
     cnic = state.get("journey_cnic")
 
@@ -155,11 +155,11 @@ async def j_case(state: ChatState) -> dict:
     for c in existing.get("cases") or []:
         if c.get("customer_cnic") == cnic and c.get("caseStatus") not in ("Closed", "Rejected"):
             return {
-                "journey_stage": "proposal_structuring",
+                "journey_stage": "pre_underwriting_clearance",
                 "journey_case_id": c.get("caseld") or c.get("id"),
                 "journey_case_number": c.get("caseNumber"),
                 "journey_audit": _log(state, f"Reusing open case {c.get('caseNumber')}"),
-                **_mark("j_case", next_node="j_proposal"),
+                **_mark("j_case", next_node="j_pre_underwriting"),
             }
 
     res = await execute_tool("create_case", {"cnic": cnic}, ctx)
@@ -168,31 +168,31 @@ async def j_case(state: ChatState) -> dict:
     case_number = (res.get("message") or "").split("**")
     number = case_number[1] if len(case_number) > 1 else res.get("case_id", "")
     return {
-        "journey_stage": "proposal_structuring",
+        "journey_stage": "pre_underwriting_clearance",
         "journey_case_id": res.get("case_id"),
         "journey_case_number": number,
         "journey_audit": _log(state, f"Case opened: {number} [New]"),
-        **_mark("j_case", next_node="j_proposal"),
+        **_mark("j_case", next_node="j_pre_underwriting"),
     }
 
 
 async def j_proposal(state: ChatState) -> dict:
-    """Stage 3 — structure the proposal from requested or default product terms."""
+    """Stage 2 — structure the proposal from requested or default product terms."""
     ctx = _ctx(state)
     args = (state.get("pending_call") or {}).get("args", {})
     cnic = state.get("journey_cnic")
 
     # If the case already carries a policy, keep it — progression, not churn.
     detail = await execute_tool("get_case_details", {"cnic": cnic}, ctx)
-    policy = ((detail.get("case") or {}).get("policy")) if detail.get("success") else None
+    policy = (detail.get("plan") or (detail.get("case") or {}).get("policy")) if detail.get("success") else None
     if policy:
         product = {"product_name": policy.get("product_name"), "coverage_amount": policy.get("coverage_amount"),
                    "term_years": policy.get("term_years")}
         return {
-            "journey_stage": "pre_underwriting_clearance",
+            "journey_stage": "case_creation",
             "journey_product": product,
             "journey_audit": _log(state, f"Existing proposal kept: {policy.get('product_name')}"),
-            **_mark("j_proposal", next_node="j_pre_underwriting"),
+            **_mark("j_proposal", next_node="j_case"),
         }
 
     proposal_args = {
@@ -211,13 +211,13 @@ async def j_proposal(state: ChatState) -> dict:
         "term_years": args.get("term_years") or 10,
     }
     return {
-        "journey_stage": "pre_underwriting_clearance",
+        "journey_stage": "case_creation",
         "journey_product": product,
         "journey_audit": _log(
             state,
             f"Proposal structured: {product['product_name']}, PKR {product['coverage_amount']:,.0f} × {product['term_years']}y",
         ),
-        **_mark("j_proposal", next_node="j_pre_underwriting"),
+        **_mark("j_proposal", next_node="j_case"),
     }
 
 
@@ -543,7 +543,7 @@ def route_resume(state: ChatState) -> str:
     if state.get("requires_human_intervention"):
         return "j_decide"  # re-read the case; status may have changed
     if not state.get("journey_case_id"):
-        return "j_intake"
+        return "j_proposal" if state.get("journey_customer_id") else "j_intake"
     if not state.get("journey_pre_underwriting"):
         return "j_pre_underwriting"
     return "j_audit"
@@ -580,6 +580,9 @@ async def j_finish(state: ChatState) -> dict:
                 {"label": "View document checklist", "actionType": "submit",
                  "payload": f"Show me the document checklist for {case_no or cnic}"},
             ]
+        elif state.get("journey_stage") in {"case_creation", "proposal_structuring"}:
+            result["quick_actions"] = [{"label": "Open Proposals", "actionType": "navigate", "payload": "proposal"},
+                                       {"label": "Resume journey", "actionType": "submit", "payload": "Continue the underwriting journey"}]
         elif state.get("journey_stage") == "pre_underwriting_clearance":
             # run_pre_underwriting_clearance is all-or-nothing (no mid-gate
             # pause), so a flagged/blocked gate surfaces here as a plain
@@ -716,9 +719,9 @@ def register_journey(builder) -> None:
     ]:
         builder.add_node(node_name, fn)
 
-    builder.add_conditional_edges("j_intake", route_error("j_case"), {"j_case": "j_case", "j_finish": "j_finish"})
-    builder.add_conditional_edges("j_case", route_error("j_proposal"), {"j_proposal": "j_proposal", "j_finish": "j_finish"})
-    builder.add_conditional_edges("j_proposal", route_error("j_pre_underwriting"), {"j_pre_underwriting": "j_pre_underwriting", "j_finish": "j_finish"})
+    builder.add_conditional_edges("j_intake", route_error("j_proposal"), {"j_proposal": "j_proposal", "j_finish": "j_finish"})
+    builder.add_conditional_edges("j_case", route_error("j_pre_underwriting"), {"j_pre_underwriting": "j_pre_underwriting", "j_finish": "j_finish"})
+    builder.add_conditional_edges("j_proposal", route_error("j_case"), {"j_case": "j_case", "j_finish": "j_finish"})
     builder.add_conditional_edges("j_pre_underwriting", route_after_specialists, {"j_audit": "j_audit", "j_finish": "j_finish"})
     builder.add_conditional_edges("j_audit", route_after_audit, {"j_risk": "j_risk", "j_finish": "j_finish"})
     builder.add_conditional_edges("j_risk", route_error("j_decide"), {"j_decide": "j_decide", "j_finish": "j_finish"})
@@ -726,6 +729,6 @@ def register_journey(builder) -> None:
     builder.add_edge("j_close", "j_finish")
     builder.add_conditional_edges(
         "j_resume", route_resume,
-        {"j_intake": "j_intake", "j_pre_underwriting": "j_pre_underwriting", "j_audit": "j_audit", "j_decide": "j_decide", "j_close": "j_close"},
+        {"j_intake": "j_intake", "j_proposal": "j_proposal", "j_pre_underwriting": "j_pre_underwriting", "j_audit": "j_audit", "j_decide": "j_decide", "j_close": "j_close"},
     )
     builder.add_edge("j_finish", "agent")

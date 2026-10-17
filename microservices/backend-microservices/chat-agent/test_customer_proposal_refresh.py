@@ -71,6 +71,7 @@ class CaseClient:
         elif url.endswith('/cases'): data=self.cases
         elif url.endswith('/policies'): data=self.policies
         elif url.endswith('/underwriting-tracks'): data=getattr(self,'tracks',{})
+        elif url.endswith('/ipp'): data=getattr(self,'ipp',{'status':'NotStarted'})
         else: data=next((c for c in self.customers if url.endswith('/'+c['id'])),{})
         return httpx.Response(200,json=data,request=httpx.Request('GET',url))
     async def post(self,url,json=None,**kw):
@@ -91,13 +92,13 @@ def test_cnic_without_a_case_never_falls_back_to_a_namesakes_case():
     assert _find_case(client.cases, cnic='3310020940147')['id']=='case-teacher'  # dashes optional
     assert _find_customer(client.customers, '99999-9999999-9', 'Usman Khan') is None
 
-def test_proposal_opens_its_own_case_and_links_to_it():
+def test_proposal_stays_draft_until_submission_and_initial_premium():
     client=CaseClient()
     result=asyncio.run(_HANDLERS['create_proposal']({'cnic':'36302-0072138-8','product_name':'Apna Savings'},_ctx(client)))
-    assert [u.rsplit('/',1)[-1] for u,_ in client.posts]==['policies','cases']
-    assert result['case_id']=='case-new' and result['navigate']['route']=='case/case-new'
-    assert client.posts[1][1]['policy_id']=='pol-new'  # the case is linked to its proposal
-    assert 'APP-NEW' in result['message']
+    assert [u.rsplit('/',1)[-1] for u,_ in client.posts]==['policies']
+    assert result['policy_id']=='pol-new' and 'case_id' not in result and 'navigate' not in result
+    assert result['proposal_journey']['customer_id']=='doc'
+    assert 'initial premium' in result['message']
 
 def test_proposal_replaces_the_leads_form_plan_so_it_is_not_created_twice():
     # Zainab Khan: Sehat Zamanat picked on the form, then "change it to Salary Protection" in the chat.
@@ -115,20 +116,25 @@ def test_switching_plan_never_opens_a_second_open_proposal():
     result=asyncio.run(_HANDLERS['create_proposal']({'cnic':'36302-0072138-8','product_name':'Salary Protection Plan','additional_proposal':True},_ctx(client)))
     assert not result.get('skipped') and client.posts[0][1]['product_name']=='Salary Protection Plan'
 
-def test_new_proposal_asks_for_both_underwriters_before_the_e_application():
+def test_draft_proposal_offers_proposal_ui_instead_of_underwriting_gates():
     client=CaseClient()
-    client.tracks={'medical':{'status':'PENDING','reviewer':None},'financial':{'status':'PENDING','reviewer':None}}
     result=asyncio.run(_HANDLERS['create_proposal']({'cnic':'36302-0072138-8','product_name':'Apna Savings'},_ctx(client)))
     labels=[q['label'] for q in result['quick_actions']]
-    assert labels[:2]==['Assign Medical Underwriter','Assign Financial Underwriter'] and not any('E-App' in l for l in labels)
-    assert 'Assign the **Medical Underwriter and Financial Underwriter** first' in result['message']
+    assert 'Open Proposals' in labels
+    assert not any('E-App' in label or 'Underwriter' in label for label in labels)
 
-def test_e_application_opens_the_missing_case_for_an_open_proposal():
-    from tool_executor import _case_for_open_proposal
-    client=CaseClient(policies=[{'status':'Proposed','product_name':'Apna Savings'}])
+def test_e_application_requires_submitted_proposal_and_received_initial_premium():
+    import pytest
+    from tool_executor import _case_for_open_proposal, PrerequisiteMissing
+    client=CaseClient(policies=[{'id':'pol-old','status':'Proposed','product_name':'Apna Savings'}])
+    with pytest.raises(PrerequisiteMissing, match='initial premium'):
+        asyncio.run(_case_for_open_proposal({'cnic':'36302-0072138-8'},_ctx(client)))
+    assert not client.posts
+    client.ipp={'status':'Realized'}
     case=asyncio.run(_case_for_open_proposal({'cnic':'36302-0072138-8'},_ctx(client)))
     assert case['id']=='case-new'
-    assert asyncio.run(_case_for_open_proposal({'cnic':'36302-0072138-8'},_ctx(CaseClient()))) is None  # no proposal, no case
+    assert client.posts[0][1]['policy_id']=='pol-old'
+    assert asyncio.run(_case_for_open_proposal({'cnic':'36302-0072138-8'},_ctx(CaseClient()))) is None
 
 def test_create_case_reuses_the_open_case_and_offers_gate_one():
     client=CaseClient(policies=[{'status':'Proposed'}])
