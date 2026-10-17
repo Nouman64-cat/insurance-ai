@@ -1,0 +1,14 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),ts=require('typescript');
+const source=fs.readFileSync(require('node:path').join(__dirname,'../lib/agent/documentTarget.ts'),'utf8');
+const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
+const out={};new Function('exports',compiled)(out);
+const {uploadTargetFromText,resolveUploadCase}=out;
+const cases=[{caseld:'application-uuid',caseNumber:'APP-2026-6DF236',customer_cnic:'12345-1234567-1',customer_name:'Applicant'}];
+test('physician upload action retains the application reference in the response',()=>assert.deepEqual(uploadTargetFromText('Risk assessment is on hold for case APP-2026-6DF236 — physician report required. Please upload the missing document.'),{case_number:'APP-2026-6DF236'}));
+test('repeated same reference is unambiguous; different applications are not',()=>{assert.deepEqual(uploadTargetFromText('APP-2026-6DF236, APP-2026-6DF236'),{case_number:'APP-2026-6DF236'});assert.equal(uploadTargetFromText('APP-2026-6DF236 and APP-2026-123ABC'),null)});
+test('unidentified upload response never produces a guessed applicant',()=>assert.equal(uploadTargetFromText('Upload the physician report.'),null));
+test('correct UUID and reference resolve the existing application',()=>{assert.equal(resolveUploadCase(cases,{case_id:'application-uuid'}),cases[0]);assert.equal(resolveUploadCase(cases,{case_number:'app-2026-6df236'}),cases[0])});
+test('legacy CASE reference and alternative ID fields work',()=>{assert.equal(resolveUploadCase(cases,{case_number:'CASE-2026-6DF236'}),cases[0]);assert.equal(resolveUploadCase([{id:'alternate'}],{case_id:'alternate'}).id,'alternate')});
+test('explicit wrong reference never falls back to an unrelated applicant',()=>assert.throws(()=>resolveUploadCase(cases,{case_number:'APP-2026-000000',cnic:'12345-1234567-1'}),/could not be found/));
+test('multiple applications belonging to a customer require a reference',()=>assert.throws(()=>resolveUploadCase([...cases,{...cases[0],caseld:'second'}],{cnic:'1234512345671'}),/More than one/));
+test('missing target gives an actionable error',()=>assert.throws(()=>resolveUploadCase(cases,{}),/does not identify an application/));

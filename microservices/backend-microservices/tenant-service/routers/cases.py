@@ -1,0 +1,1443 @@
+import os
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy.orm import selectinload
+from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlmodel import select, delete
+from typing import List, Literal, Optional
+from uuid import UUID
+from datetime import date, datetime
+from pydantic import BaseModel
+
+from database import get_session
+from document_requirements import get_required_documents
+from services import document_requests as docreq
+from routers.auth import oauth2_scheme, optional_oauth2_scheme, source_scope, _get_current_user, _role_name
+from services import compliance_engine, plan_change, underwriting_gate
+from shared.models.core import (
+    Customer,
+    Artifact,
+    Case,
+    CaseHistory,
+    CaseAssignment,
+    CaseComment,
+    CaseRequirement,
+    CaseRequirementStatusEnum,
+    CaseStatusEnum,
+    CaseTypeEnum,
+    CaseWorkflow,
+    ActionTypeEnum,
+    InitialPremiumPayment,
+    IPPStatusEnum,
+    CaseAuditTrail,
+    AssignmentTypeEnum,
+    AssignmentStatusEnum,
+    ComplianceStatusEnum,
+    Policy,
+    PolicyStatusEnum,
+    RiskAssessment,
+    User,
+    InsurancePlan,
+    VerificationFinding,
+    WorkflowStateEnum,
+)
+from schemas import (
+    CustomerRead,
+    CaseCreate,
+    CaseRead,
+    CaseUpdate,
+    CaseStatusUpdate,
+    CaseHoldBody,
+    CaseReleaseBody,
+    CaseAssignmentCreate,
+    CaseCommentCreate,
+    CaseRequirementWaiveBody,
+    WorkflowAdvanceBody,
+    PolicyRead,
+)
+from shared.services.policy_state_machine import IllegalStateTransition, apply_transition, record_event
+from family_approval import head_case_ids, owner_case_id, pending_insured_members
+
+router = APIRouter(prefix="/tenants/{tenant_id}/cases", tags=["Cases"])
+
+# Case decisions (Approved/Rejected) drive the linked Policy's status and are
+# reserved for whoever is allowed to make an underwriting call; everything
+# else about managing a case (opening it, moving it through review) is also
+# something the submitting Agent can do. Mirrors the same split applied to
+# the Proposal page's PATCH /quotes/{id} in api-gateway/routers/quote.py.
+_CASE_DECISION_ROLES = {"Underwriter", "Admin", "SuperAdmin"}
+_CASE_SUBMISSION_ROLES = {"Agent", "Underwriter", "Admin", "SuperAdmin"}
+
+async def _case_in_scope(case: Case, scope: Optional[set[UUID]], session: AsyncSession) -> bool:
+    if scope is None:
+        return True
+    customer = await session.get(Customer, case.customer_id)
+    return customer is not None and customer.acquisition_source_id in scope
+
+def _acr_status(status, requested_at, waived_at=None) -> str:
+    """ACR gate status, with "Requested" for one sent to the acquisition source
+    that they haven't started yet (the stored status is still NotStarted), and
+    "Waived" when an underwriter bypassed the gate without a submitted report.
+    A report the agent has actually submitted always reads "Submitted"."""
+    value = status.value if hasattr(status, "value") else str(status)
+    if value == "Submitted":
+        return value
+    if waived_at:
+        return "Waived"
+    return "Requested" if value == "NotStarted" and requested_at else value
+
+
+def generate_case_number() -> str:
+    # Generate the user-facing application reference: APP-YYYY-XXXXXX
+    import uuid
+    random_hex = uuid.uuid4().hex[:6].upper()
+    return f"APP-{datetime.utcnow().year}-{random_hex}"
+
+
+def _initial_premium_required(policy: Policy) -> bool:
+    """An individual application must have its initial premium cleared on the proposal before an underwriting case opens
+    (Section 30, "no premium, no risk"). Family and group policies follow their own approval flows and are not held here.
+    Switch off with REQUIRE_INITIAL_PREMIUM_BEFORE_UNDERWRITING=false."""
+    if os.environ.get("REQUIRE_INITIAL_PREMIUM_BEFORE_UNDERWRITING", "true").lower() != "true":
+        return False
+    return policy.family_policy_id is None and policy.master_policy_id is None
+
+
+async def _attach_initial_payment(session: AsyncSession, policy_id: Optional[UUID], case_id: UUID) -> None:
+    """The payment taken on the proposal had no case yet: it belongs to this one from now on."""
+    if policy_id is None:
+        return
+    ipp = (await session.exec(select(InitialPremiumPayment).where(
+        InitialPremiumPayment.policy_id == policy_id, InitialPremiumPayment.case_id.is_(None)))).first()
+    if ipp is not None:
+        ipp.case_id = case_id
+        session.add(ipp)
+        await session.commit()
+
+
+@router.post("", response_model=CaseRead, status_code=201)
+async def create_case(
+    tenant_id: UUID,
+    body: CaseCreate,
+    session: AsyncSession = Depends(get_session),
+    token: str = Depends(oauth2_scheme),
+):
+    user = await _get_current_user(token, session)
+    role_name = await _role_name(user, session)
+    if role_name not in _CASE_SUBMISSION_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Opening a case requires one of: {', '.join(sorted(_CASE_SUBMISSION_ROLES))} (you are {role_name}).",
+        )
+
+    # If a policy is named, it must belong to this tenant + customer — a case
+    # opens formal underwriting on one specific quote, not just any policy.
+    policy: Optional[Policy] = None
+    if body.policy_id is not None:
+        policy = await session.get(Policy, body.policy_id)
+        if not policy or policy.tenant_id != tenant_id or policy.customer_id != body.customer_id:
+            raise HTTPException(status_code=404, detail="Policy not found for this customer.")
+        
+        # Prevent creating multiple cases for the same policy (of the same type)
+        existing_case = (await session.execute(
+            select(Case).where(
+                Case.policy_id == body.policy_id, 
+                Case.tenant_id == tenant_id,
+                Case.caseType == body.caseType
+            )
+        )).scalars().first()
+        if existing_case:
+            await _attach_initial_payment(session, policy.id, existing_case.caseld)
+            return existing_case
+
+        if body.caseType == CaseTypeEnum.UNDERWRITING and _initial_premium_required(policy):
+            paid = (await session.exec(select(InitialPremiumPayment.id).where(
+                InitialPremiumPayment.policy_id == policy.id, InitialPremiumPayment.status == IPPStatusEnum.REALIZED))).first()
+            if paid is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="The initial premium must be paid before this application goes to underwriting.",
+                )
+
+    # Falls back to the customer's own assigned agent when the caller doesn't
+    # name one explicitly (e.g. the chatbot's create_case tool never has —
+    # only add_customer resolves an agent) — otherwise the case is born
+    # unassigned and silently drops out of that agent's scoped case list.
+    assigned_agent_id = body.assignedAgentId
+    if assigned_agent_id is None:
+        customer = await session.get(Customer, body.customer_id)
+        if customer:
+            assigned_agent_id = customer.assigned_agent_id
+
+    case = Case(
+        tenant_id=tenant_id,
+        customer_id=body.customer_id,
+        policy_id=body.policy_id,
+        caseNumber=generate_case_number(),
+        caseType=body.caseType,
+        caseStatus=CaseStatusEnum.NEW,
+        priorityLevel=body.priorityLevel,
+        sourceChannel=body.sourceChannel,
+        assignedTeamld=body.assignedTeamld,
+        assignedAgentId=assigned_agent_id,
+        createdAt=datetime.utcnow(),
+        updatedAt=datetime.utcnow()
+    )
+    session.add(case)
+
+    # Opening an Underwriting case on a quote moves it from indicative
+    # ("Quoted") to formally in-flight ("Proposed") — the customer has
+    # committed to this specific offer.
+    if policy is not None and policy.status == PolicyStatusEnum.QUOTED:
+        try:
+            apply_transition(
+                session, policy, PolicyStatusEnum.PROPOSED,
+                event_type="case_opened", actor=str(user.id),
+            )
+        except IllegalStateTransition as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+
+    await session.commit()
+    await session.refresh(case)
+    await _attach_initial_payment(session, case.policy_id, case.caseld)
+
+    # Documents the customer already uploaded through the proposal's document link join this case.
+    await docreq.adopt_documents(session, case)
+
+    # Generate Audit Trail
+    audit = CaseAuditTrail(
+        caseld=case.caseld,
+        actionPerformed="Created new case",
+        entityChanged="Case",
+        newValue=case.caseStatus,
+        performedBy=user.id,
+        timestamp=datetime.utcnow()
+    )
+    session.add(audit)
+    await session.commit()
+
+    return case
+
+
+@router.get("", response_model=List[CaseRead])
+async def list_cases(
+    tenant_id: UUID,
+    customer_id: UUID = Query(None, description="Filter by customer"),
+    status: CaseStatusEnum = Query(None, description="Filter by status"),
+    assigned_user: UUID = Query(None, description="Filter by assignee"),
+    case_type: CaseTypeEnum = Query(None, description="Filter by case type"),
+    segment: Optional[Literal["individual", "family", "organization"]] = Query(
+        None, description="Filter by customer segment: individual | family | organization"
+    ),
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    """Enriched case list — the data source for the Underwriting queue page.
+
+    Distinct from GET /assessments (api-gateway): that endpoint lists AI
+    RiskAssessment runs (an append-only evaluation log — a case can have
+    several as it gets re-evaluated); this lists Cases (the work items an
+    underwriter actually tracks — status, assignment, documents) enriched
+    with just the *latest* assessment's headline numbers for at-a-glance
+    triage.
+    """
+    if case_type == CaseTypeEnum.UNDERWRITING:
+        # Claims referred before Claim UW cases existed get theirs now, so every referred claim is in this queue.
+        from routers.claims import open_claim_uw_case
+        from shared.models.core import Claim, ClaimStatusEnum
+        referred = (await session.execute(select(Claim).where(
+            Claim.tenant_id == tenant_id, Claim.status == ClaimStatusEnum.REUNDERWRITING_REQUIRED))).scalars().all()
+        for referred_claim in referred:
+            await open_claim_uw_case(session, referred_claim)
+        if referred:
+            await session.commit()
+
+    stmt = select(Case).where(Case.tenant_id == tenant_id)
+    scope = await source_scope(token, session)
+    if scope is not None:
+        stmt = stmt.join(Customer, Customer.id == Case.customer_id).where(
+            Customer.acquisition_source_id.in_(scope)
+        )
+    if customer_id:
+        stmt = stmt.where(Case.customer_id == customer_id)
+    if status:
+        stmt = stmt.where(Case.caseStatus == status)
+    # A source login is already limited to its source's cases above, and those cases
+    # usually have no assigned agent — its own "assigned to me" filter would hide them.
+    if assigned_user and scope is None:
+        stmt = stmt.where(Case.assignedAgentId == assigned_user)
+    if case_type:
+        stmt = stmt.where(Case.caseType == case_type)
+    stmt = stmt.order_by(Case.createdAt.desc())
+
+    cases = (await session.execute(stmt)).scalars().all()
+    if not cases:
+        return []
+
+    customer_ids = list({c.customer_id for c in cases})
+    customers = {
+        a.id: a for a in (await session.execute(
+            select(Customer).where(Customer.id.in_(customer_ids))
+        )).scalars().all()
+    }
+
+    if segment:
+        def _segment_of(customer: Optional[Customer]) -> str:
+            if customer and customer.organization_id:
+                return "organization"
+            if customer and customer.family_group_id:
+                return "family"
+            return "individual"
+
+        cases = [c for c in cases if _segment_of(customers.get(c.customer_id)) == segment]
+        if not cases:
+            return []
+
+    policy_ids = list({c.policy_id for c in cases if c.policy_id})
+    policies = {}
+    if policy_ids:
+        policies = {
+            p.id: p for p in (await session.execute(
+                select(Policy).where(Policy.id.in_(policy_ids))
+            )).scalars().all()
+        }
+
+    # Latest assessment per case — assessments ordered newest-first, so the
+    # first one seen per case_id in this loop is the latest.
+    case_ids = [c.caseld for c in cases]
+    assessments_stmt = (
+        select(RiskAssessment)
+        .where(RiskAssessment.case_id.in_(case_ids), RiskAssessment.superseded_at.is_(None))
+        .order_by(RiskAssessment.created_at.desc())
+    )
+    latest_by_case: dict = {}
+    for a in (await session.execute(assessments_stmt)).scalars().all():
+        latest_by_case.setdefault(a.case_id, a)
+
+    # "Claim UW": underwriting cases opened by a claim referral carry the claim's number and type.
+    from shared.models.core import Claim
+    claim_ids = [c.claim_id for c in cases if c.claim_id]
+    claims_by_id = {}
+    if claim_ids:
+        claims_by_id = {cl.id: cl for cl in (await session.execute(select(Claim).where(Claim.id.in_(claim_ids)))).scalars().all()}
+
+    # Pre-Underwriting status — E-Application / Agent's Confidential Report / Compliance Screening /
+    # IPP / Insurance History / Panel Medical, bulk-fetched by case_id like everything else above
+    # (avoids N+1 on the queue).
+    from shared.models.core import (
+        AgentConfidentialReport, CustomerEApplication, InitialPremiumPayment, ComplianceCheck,
+        ComplianceStatusEnum, InsuranceHistoryCheck, MedicalExamOrder,
+    )
+    history_status_by_case = {
+        row[0]: row[1] for row in (await session.execute(
+            select(InsuranceHistoryCheck.case_id, InsuranceHistoryCheck.status)
+            .where(InsuranceHistoryCheck.case_id.in_(case_ids))
+        )).all()
+    }
+    medical_status_by_case = {
+        row[0]: row[1] for row in (await session.execute(
+            select(MedicalExamOrder.case_id, MedicalExamOrder.status)
+            .where(MedicalExamOrder.case_id.in_(case_ids))
+        )).all()
+    }
+    e_app_status_by_case = {
+        row[0]: row[1] for row in (await session.execute(
+            select(CustomerEApplication.case_id, CustomerEApplication.status)
+            .where(CustomerEApplication.case_id.in_(case_ids))
+        )).all()
+    }
+    acr_status_by_case = {
+        row[0]: _acr_status(row[1], row[2], row[3]) for row in (await session.execute(
+            select(
+                AgentConfidentialReport.case_id, AgentConfidentialReport.status,
+                AgentConfidentialReport.requested_at, AgentConfidentialReport.waived_at,
+            )
+            .where(AgentConfidentialReport.case_id.in_(case_ids))
+        )).all()
+    }
+    ipp_status_by_case = {
+        row[0]: row[1] for row in (await session.execute(
+            select(InitialPremiumPayment.case_id, InitialPremiumPayment.status)
+            .where(InitialPremiumPayment.case_id.in_(case_ids))
+        )).all()
+    }
+
+    # Fetch ComplianceCheck status by policy_id and customer_id
+    policy_ids_for_cc = [p_id for p_id in policy_ids if p_id]
+    customer_ids_for_cc = [c.customer_id for c in cases if c.customer_id]
+    compliance_checks_by_policy = {}
+    compliance_checks_by_customer = {}
+    if policy_ids_for_cc or customer_ids_for_cc:
+        stmt_cc = select(ComplianceCheck).where(
+            (ComplianceCheck.policy_id.in_(policy_ids_for_cc)) |
+            (ComplianceCheck.customer_id.in_(customer_ids_for_cc))
+        )
+        cc_rows = (await session.execute(stmt_cc)).scalars().all()
+        for cc in cc_rows:
+            if cc.policy_id:
+                compliance_checks_by_policy.setdefault(cc.policy_id, []).append(cc)
+            if cc.customer_id:
+                compliance_checks_by_customer.setdefault(cc.customer_id, []).append(cc)
+
+    # Fetch Family groups to include the true group name
+    family_group_ids = list({c.family_group_id for c in customers.values() if c.family_group_id})
+    family_groups = {}
+    if family_group_ids:
+        from shared.models.core import FamilyGroup
+        family_groups = {
+            f.id: f for f in (await session.execute(
+                select(FamilyGroup).where(FamilyGroup.id.in_(family_group_ids))
+            )).scalars().all()
+        }
+
+    # An insured spouse's case shows the head's Agent report / initial premium (one proposer, one premium).
+    for spouse_case_id, head_id in (await head_case_ids(session, list(cases))).items():
+        if head_id in acr_status_by_case:
+            acr_status_by_case[spouse_case_id] = acr_status_by_case[head_id]
+        if head_id in ipp_status_by_case:
+            ipp_status_by_case[spouse_case_id] = ipp_status_by_case[head_id]
+
+    from routers.underwriting_tracks import reviews_by_case
+    reviews = await reviews_by_case(session, case_ids)
+
+    out = []
+    for c in cases:
+        customer = customers.get(c.customer_id)
+        policy = policies.get(c.policy_id) if c.policy_id else None
+        latest = latest_by_case.get(c.caseld)
+        row = CaseRead.model_validate(c).model_dump()
+        claim = claims_by_id.get(c.claim_id) if c.claim_id else None
+        if claim:
+            row["claim_number"] = claim.claim_number or f"CLM-{claim.created_at.year}-{str(claim.id)[:6].upper()}"
+            row["claim_type"] = claim.claim_type
+        row["customer_name"] = customer.name if customer else None
+        row["customer_cnic"] = customer.cnic if customer else None
+        if customer and customer.organization_id:
+            row["customer_segment"] = "organization"
+            row["organization_id"] = str(customer.organization_id)
+        elif customer and customer.family_group_id:
+            row["customer_segment"] = "family"
+            row["family_group_id"] = str(customer.family_group_id)
+            if customer.family_group_id in family_groups:
+                row["family_group_name"] = family_groups[customer.family_group_id].name
+        else:
+            row["customer_segment"] = "individual"
+        row["product_name"] = policy.product_name if policy else None
+        row["coverage_amount"] = policy.coverage_amount if policy else None
+        # Lets the queues tell a case that has moved on to issuance (or been issued) from one still in underwriting.
+        row["policy_status"] = (policy.status.value if hasattr(policy.status, "value") else policy.status) if policy else None
+        row["latest_ai_decision"] = latest.ai_decision.value if latest else None
+        row["latest_composite_score"] = latest.composite_risk_score if latest else None
+        e_app_status = e_app_status_by_case.get(c.caseld)
+        row["e_application_status"] = e_app_status.value if e_app_status else "NotSent"
+        row["acr_status"] = acr_status_by_case.get(c.caseld) or "NotStarted"
+        
+        cc_list = (
+            compliance_checks_by_policy.get(c.policy_id, []) if c.policy_id else []
+        ) or compliance_checks_by_customer.get(c.customer_id, [])
+        # Derived from compliance_engine.effective_status — the same rule the
+        # Stage A panel and the issuance gate apply. These used to differ: this
+        # queue read a stored Passed row as "Passed" while Stage A displayed the
+        # very same row as "Flagged".
+        cc_effective = [compliance_engine.effective_status(chk) for chk in cc_list]
+        if not cc_list:
+            comp_status = "NotStarted"
+        elif any(s == ComplianceStatusEnum.FAILED for s in cc_effective):
+            comp_status = "Failed"
+        elif any(s == ComplianceStatusEnum.FLAGGED for s in cc_effective):
+            comp_status = "Flagged"
+        else:
+            comp_status = "Passed"
+        row["compliance_status"] = comp_status
+
+        ipp_status = ipp_status_by_case.get(c.caseld)
+        row["ipp_status"] = ipp_status.value if ipp_status else "NotStarted"
+
+        hist_status = history_status_by_case.get(c.caseld)
+        row["insurance_history_status"] = hist_status.value if hist_status else "NotStarted"
+        med_status = medical_status_by_case.get(c.caseld)
+        row["medical_exam_status"] = med_status.value if med_status else "NotAssessed"
+        row["medical_review"] = reviews[c.caseld]["MEDICAL"]
+        row["financial_review"] = reviews[c.caseld]["FINANCIAL"]
+
+        out.append(row)
+    return out
+
+
+@router.get("/{case_id}", response_model=CaseRead)
+async def get_case(
+    tenant_id: UUID,
+    case_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    stmt = select(Case).where(Case.tenant_id == tenant_id, Case.caseld == case_id)
+    result = await session.execute(stmt)
+    case = result.scalar_one_or_none()
+    if not case or not await _case_in_scope(case, await source_scope(token, session), session):
+        raise HTTPException(status_code=404, detail="Case not found")
+    return case
+
+
+
+
+async def _family_ref(session, customer, policy) -> Optional[dict]:
+    if customer is None or customer.family_group_id is None:
+        return None
+    from shared.models.core import FamilyGroup
+    group = await session.get(FamilyGroup, customer.family_group_id)
+    return {
+        "group_id": str(customer.family_group_id),
+        "policy_id": str(policy.family_policy_id) if policy is not None and getattr(policy, "family_policy_id", None) else None,
+        "name": group.name if group is not None else None,
+    }
+
+
+async def _family_head_case(session, policy, case) -> Optional[dict]:
+    """The head's case on a shared family policy, when `case` belongs to someone else (the insured spouse).
+    The policy is issued to the head — against the head's case — never against the spouse's."""
+    if policy is None or getattr(policy, "family_policy_id", None) is None or case.customer_id == policy.customer_id:
+        return None
+    head_case = (await session.execute(
+        select(Case).where(Case.policy_id == policy.id, Case.customer_id == policy.customer_id).order_by(Case.createdAt.desc())
+    )).scalars().first()
+    head = await session.get(Customer, policy.customer_id)
+    if head_case is None or head is None:
+        return None
+    return {"case_id": str(head_case.caseld), "case_number": head_case.caseNumber, "name": head.name, "case_status": head_case.caseStatus.value}
+
+
+@router.get("/{case_id}/detail")
+async def get_case_detail(
+    tenant_id: UUID,
+    case_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    """Bundled Case 360 view: case + customer + policy + document checklist +
+    latest risk assessment, in one round trip — the data source for the
+    frontend's single-page underwriting workbench (case/[id])."""
+    stmt = select(Case).where(Case.tenant_id == tenant_id, Case.caseld == case_id)
+    case = (await session.execute(stmt)).scalar_one_or_none()
+    if not case or not await _case_in_scope(case, await source_scope(token, session), session):
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    customer_res = await session.execute(
+        select(Customer)
+        .where(Customer.id == case.customer_id)
+        .options(selectinload(Customer.acquisition_source))
+    )
+    customer = customer_res.scalar_one_or_none()
+
+    # Prefer the case's explicitly linked policy; fall back to the
+    # customer's most recent policy for cases created before policy_id
+    # existed (same fallback document-checklist already uses).
+    policy: Optional[Policy] = None
+    if case.policy_id is not None:
+        policy = await session.get(Policy, case.policy_id)
+    if policy is None:
+        policy_stmt = (
+            select(Policy)
+            .where(Policy.tenant_id == tenant_id, Policy.customer_id == case.customer_id)
+            .order_by(Policy.created_at.desc())
+        )
+        policy = (await session.execute(policy_stmt)).scalars().first()
+
+    insurance_type = policy.insurance_type.value if policy else None
+
+    required = None
+    if case.caseType.value == "Underwriting" and policy:
+        plan_stmt = select(InsurancePlan).where(
+            InsurancePlan.tenant_id == tenant_id,
+            InsurancePlan.insurance_type == policy.insurance_type,
+            InsurancePlan.label == policy.product_name
+        )
+        plan = (await session.execute(plan_stmt)).scalars().first()
+        if plan:
+            required = plan.required_documents
+
+    if required is None:
+        required = get_required_documents(insurance_type, case.caseType.value)
+
+    artifacts_stmt = select(Artifact.document_type).where(Artifact.customer_id == case.customer_id, Artifact.tenant_id == tenant_id)
+    received = _received_document_types(row[0] for row in (await session.execute(artifacts_stmt)).all())
+    missing = [doc for doc in required if doc not in received]
+
+    assessments_stmt = (
+        select(RiskAssessment)
+        .where(RiskAssessment.tenant_id == tenant_id, RiskAssessment.case_id == case_id)
+        .order_by(RiskAssessment.created_at.desc())
+    )
+    assessments = (await session.execute(assessments_stmt)).scalars().all()
+    # A run made on a plan the case has since moved off is history, not the current result.
+    current = [a for a in assessments if a.superseded_at is None]
+    latest = current[0] if current else None
+
+    principal_participant_name = None
+    is_principal_participant = False
+    family_relationship = None
+
+    if customer and customer.family_group_id:
+        family_relationship = customer.family_relationship.value if customer.family_relationship else None
+        from shared.models.core import FamilyGroup
+        family_group = await session.get(FamilyGroup, customer.family_group_id)
+        if family_group and family_group.primary_member_customer_id:
+            if family_group.primary_member_customer_id == customer.id:
+                is_principal_participant = True
+            else:
+                pp = await session.get(Customer, family_group.primary_member_customer_id)
+                if pp:
+                    principal_participant_name = pp.name
+                    
+    family_members: List[dict] = []
+    if customer and customer.family_group_id:
+        family_peers = (await session.execute(
+            select(Customer).where(
+                Customer.tenant_id == tenant_id,
+                Customer.family_group_id == customer.family_group_id,
+            )
+        )).scalars().all()
+        family_peer_ids = [p.id for p in family_peers]
+        
+        latest_case_by_family_customer: dict = {}
+        if family_peer_ids:
+            family_peer_cases = (await session.execute(
+                select(Case)
+                .where(Case.tenant_id == tenant_id, Case.customer_id.in_(family_peer_ids))
+                .order_by(Case.createdAt.desc())
+            )).scalars().all()
+            for c in family_peer_cases:
+                latest_case_by_family_customer.setdefault(c.customer_id, c)
+                
+        for p in family_peers:
+            peer_case = latest_case_by_family_customer.get(p.id)
+            if not peer_case:
+                continue
+            family_members.append({
+                "customer_id": str(p.id),
+                "name": p.name,
+                "cnic": p.cnic,
+                "relationship": getattr(p.family_relationship, "value", p.family_relationship),
+                "case_id": str(peer_case.caseld),
+                "case_number": peer_case.caseNumber,
+                "case_status": peer_case.caseStatus.value,
+                "is_current": peer_case.caseld == case.caseld,
+            })
+
+    organization_name = None
+    organization_members: List[dict] = []
+
+    if customer and customer.organization_id:
+        from shared.models.core import Organization
+        org = await session.get(Organization, customer.organization_id)
+        organization_name = org.name if org else None
+
+        peers = (await session.execute(
+            select(Customer).where(
+                Customer.tenant_id == tenant_id,
+                Customer.organization_id == customer.organization_id,
+            )
+        )).scalars().all()
+        peer_ids = [p.id for p in peers]
+
+        # Guaranteed-issue employees (at/under the Free Cover Limit) never get
+        # a Case, so only peers routed through underwriting show up here —
+        # this list powers the "switch to another member of this company"
+        # dropdown on the case page, and there's nothing to switch *to* for
+        # a peer without a case.
+        latest_case_by_customer: dict = {}
+        if peer_ids:
+            peer_cases = (await session.execute(
+                select(Case)
+                .where(Case.tenant_id == tenant_id, Case.customer_id.in_(peer_ids))
+                .order_by(Case.createdAt.desc())
+            )).scalars().all()
+            for c in peer_cases:
+                latest_case_by_customer.setdefault(c.customer_id, c)
+
+        for p in peers:
+            peer_case = latest_case_by_customer.get(p.id)
+            if not peer_case:
+                continue
+            organization_members.append({
+                "customer_id": str(p.id),
+                "name": p.name,
+                "cnic": p.cnic,
+                "case_id": str(peer_case.caseld),
+                "case_number": peer_case.caseNumber,
+                "case_status": peer_case.caseStatus.value,
+                "is_current": peer_case.caseld == case.caseld,
+            })
+
+    # Pre-underwriting statuses calculation
+    from shared.models.core import (
+        AgentConfidentialReport, CustomerEApplication, InitialPremiumPayment, ComplianceCheck,
+        ComplianceStatusEnum, InsuranceHistoryCheck, MedicalExamOrder,
+    )
+    e_app = (await session.execute(select(CustomerEApplication).where(CustomerEApplication.case_id == case_id))).scalars().first()
+    # An insured spouse's case reads the Agent's report and the initial premium from the head's case (see family_approval).
+    acr = (await session.execute(select(AgentConfidentialReport).where(AgentConfidentialReport.case_id == await owner_case_id(session, case, "acr")))).scalars().first()
+    ipp = (await session.execute(select(InitialPremiumPayment).where(InitialPremiumPayment.case_id == await owner_case_id(session, case, "ipp")))).scalars().first()
+    hist = (await session.execute(select(InsuranceHistoryCheck).where(InsuranceHistoryCheck.case_id == case_id))).scalars().first()
+    medical = (await session.execute(select(MedicalExamOrder).where(MedicalExamOrder.case_id == case_id))).scalars().first()
+
+    comp_checks = []
+    if policy:
+        comp_checks = (await session.execute(select(ComplianceCheck).where(ComplianceCheck.policy_id == policy.id))).scalars().all()
+    if not comp_checks and case.customer_id:
+        comp_checks = (await session.execute(select(ComplianceCheck).where(ComplianceCheck.customer_id == case.customer_id))).scalars().all()
+        
+    e_app_status_val = e_app.status.value if e_app else "NotSent"
+    acr_status_val = _acr_status(acr.status, acr.requested_at, acr.waived_at) if acr else "NotStarted"
+    ipp_status_val = ipp.status.value if ipp else "NotStarted"
+    
+    # Derived from compliance_engine.effective_status — the same rule the case
+    # list, the Stage A panel, and /compliance/run apply. This used to use its
+    # own looser inline check (raw .status instead of effective_status), so a
+    # fresh engine PASS with no officer cleared_by read as "Passed" here while
+    # every other view of the same rows still showed "Flagged".
+    cc_effective = [compliance_engine.effective_status(c) for c in comp_checks]
+    if not comp_checks:
+        comp_status_val = "NotStarted"
+    elif any(s == ComplianceStatusEnum.FAILED for s in cc_effective):
+        comp_status_val = "Failed"
+    elif any(s == ComplianceStatusEnum.FLAGGED for s in cc_effective):
+        comp_status_val = "Flagged"
+    else:
+        comp_status_val = "Passed"
+        
+    # Gate 5 — insurance history. NotStarted is not a pass: an unscreened case
+    # has simply never been checked for over-insurance or non-disclosure.
+    hist_status_val = (
+        (hist.status.value if hasattr(hist.status, "value") else str(hist.status))
+        if hist else "NotStarted"
+    )
+    # Gate 6 — panel medical. Cleared when the grid says none is needed, when
+    # the results are in, or when an underwriter has waived it.
+    med_status_val = (
+        (medical.status.value if hasattr(medical.status, "value") else str(medical.status))
+        if medical else "NotAssessed"
+    )
+    medical_cleared = med_status_val in ("NotRequired", "Completed", "Waived")
+
+    # The initial premium is collected at issuance (Pending Payment), so it is
+    # reported below for reference but is not a pre-underwriting gate.
+    is_pre_underwriting_ready = (
+        e_app_status_val == "Verified" and
+        acr_status_val in ("Submitted", "Waived") and
+        comp_status_val == "Passed" and
+        hist_status_val == "Clear" and
+        medical_cleared
+    )
+
+    return {
+        "case": CaseRead.model_validate(case),
+        "customer": CustomerRead.model_validate(customer) if customer else None,
+        "principal_participant_name": principal_participant_name,
+        "is_principal_participant": is_principal_participant,
+        "family_relationship": family_relationship,
+        "family_members": family_members,
+        # The family this case belongs to — what a family report needs to list the nominees and name the household.
+        "family": await _family_ref(session, customer, policy),
+        # On a family floater the policy is issued to the head, on the head's case — set when this case is NOT the head's.
+        "family_head_case": await _family_head_case(session, policy, case),
+        # Insured lives on this family policy whose own underwriting isn't approved yet (the policy waits for them).
+        "family_underwriting_pending": await pending_insured_members(session, policy, exclude_case_id=case.caseld) if policy else [],
+        "organization_name": organization_name,
+        "organization_members": organization_members,
+        "policy": PolicyRead.model_validate(policy) if policy else None,
+        "document_checklist": {
+            "insurance_type": insurance_type,
+            "required": required,
+            "received": received,
+            "missing": missing,
+        },
+        "pre_underwriting_status": {
+            "e_application": e_app_status_val,
+            "acr": acr_status_val,
+            "compliance": comp_status_val,
+            "ipp": ipp_status_val,
+            "insurance_history": hist_status_val,
+            "medical_exam": med_status_val,
+            "is_ready": is_pre_underwriting_ready,
+        },
+        "latest_assessment": (
+            {
+                "id": str(latest.id),
+                "medical_score": latest.medical_score,
+                "financial_score": latest.financial_score,
+                "fraud_probability": latest.fraud_probability,
+                "composite_risk_score": latest.composite_risk_score,
+                "ai_decision": latest.ai_decision.value,
+                "suggested_loading": latest.suggested_loading,
+                "reasons": latest.reasons or [],
+                "medical_reasons": latest.medical_reasons or [],
+                "financial_reasons": latest.financial_reasons or [],
+                "fraud_reasons": latest.fraud_reasons or [],
+                "ai_summary": latest.ai_summary,
+                "underwriting_results": latest.underwriting_results,
+                "created_at": latest.created_at.isoformat(),
+            }
+            if latest else None
+        ),
+        "assessments_count": len(assessments),
+    }
+
+
+@router.post("/{case_id}/compliance/run")
+async def run_case_compliance(
+    tenant_id: UUID,
+    case_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    """Run PEP, Sanctions, AML, SECP compliance screening for a pre-underwriting case."""
+    from services import compliance_engine
+    from shared.models.core import ComplianceCheck, ComplianceCheckTypeEnum, ComplianceStatusEnum, Customer, Policy
+    
+    stmt = select(Case).where(Case.tenant_id == tenant_id, Case.caseld == case_id)
+    case = (await session.execute(stmt)).scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+        
+    customer = await session.get(Customer, case.customer_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+        
+    policy = None
+    if case.policy_id:
+        policy = await session.get(Policy, case.policy_id)
+    if not policy:
+        policy_stmt = select(Policy).where(Policy.tenant_id == tenant_id, Policy.customer_id == case.customer_id).order_by(Policy.created_at.desc())
+        policy = (await session.execute(policy_stmt)).scalars().first()
+        if policy:
+            case.policy_id = policy.id
+            session.add(case)
+        
+    if not policy:
+        raise HTTPException(status_code=409, detail="Case has no linked policy for compliance screening.")
+
+    # Shares compliance_engine.screen_and_store with the Stage A panel
+    # (routers/pre_issuance.py). Both screen the SAME policy and write the SAME
+    # rows, each replacing the other's — so they must agree on what gets stored,
+    # or running one silently un-clears the other's gate.
+    created = await compliance_engine.screen_and_store(session, tenant_id, customer, policy)
+    await session.commit()
+    for c in created:
+        await session.refresh(c)
+
+    # Reported on the shared effective status, not the raw stored one, so this
+    # queue and the Stage A panel never describe the same check differently.
+    effective = {c.id: compliance_engine.effective_status(c) for c in created}
+    has_failed = any(s == ComplianceStatusEnum.FAILED for s in effective.values())
+    has_flagged = any(s == ComplianceStatusEnum.FLAGGED for s in effective.values())
+    overall_status = "Failed" if has_failed else ("Flagged" if has_flagged else "Passed")
+
+    return {
+        "case_id": str(case_id),
+        "overall_status": overall_status,
+        "checks": [
+            {
+                "id": str(c.id),
+                "check_type": c.check_type.value if hasattr(c.check_type, "value") else str(c.check_type),
+                "status": effective[c.id].value,
+                "raw_status": c.status.value if hasattr(c.status, "value") else str(c.status),
+                "score": c.score,
+                "details": c.details_json,
+                "screened_at": c.screened_at.isoformat() if c.screened_at else None,
+            }
+            for c in created
+        ]
+    }
+
+
+@router.put("/{case_id}", response_model=CaseRead)
+async def update_case(
+    tenant_id: UUID,
+    case_id: UUID,
+    body: CaseUpdate,
+    session: AsyncSession = Depends(get_session)
+):
+    stmt = select(Case).where(Case.tenant_id == tenant_id, Case.caseld == case_id)
+    result = await session.execute(stmt)
+    case = result.scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    
+    update_data = body.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(case, key, value)
+        
+    case.updatedAt = datetime.utcnow()
+    session.add(case)
+    await session.commit()
+    await session.refresh(case)
+    return case
+
+
+@router.delete("/{case_id}", status_code=204)
+async def delete_case(
+    tenant_id: UUID,
+    case_id: UUID,
+    session: AsyncSession = Depends(get_session)
+):
+    stmt = select(Case).where(Case.tenant_id == tenant_id, Case.caseld == case_id)
+    result = await session.execute(stmt)
+    case = result.scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    
+    # Delete all child dependencies manually to avoid NotNullViolationError
+    await session.execute(delete(CaseHistory).where(CaseHistory.caseld == case_id))
+    await session.execute(delete(CaseAuditTrail).where(CaseAuditTrail.caseld == case_id))
+    await session.execute(delete(CaseComment).where(CaseComment.caseld == case_id))
+    await session.execute(delete(CaseAssignment).where(CaseAssignment.caseld == case_id))
+    await session.execute(delete(RiskAssessment).where(RiskAssessment.case_id == case_id))
+    await session.execute(delete(Artifact).where(Artifact.case_id == case_id))
+    # Case-driven underwriting workflow tables (brief §4/§5) — also FK'd to
+    # cases.caseld, so they must be cleared before the case row itself.
+    await session.execute(delete(CaseRequirement).where(CaseRequirement.case_id == case_id))
+    await session.execute(delete(VerificationFinding).where(VerificationFinding.case_id == case_id))
+    await session.execute(delete(CaseWorkflow).where(CaseWorkflow.caseld == case_id))
+
+    await session.delete(case)
+    await session.commit()
+    return None
+
+
+# ── Underwriting hold ─────────────────────────────────────────────────────────
+# "On hold" freezes the whole underwriting process exactly where it stands. The case keeps its status and every step already
+# done; while it is held every write to the case is refused (the guard in main.py), so nothing moves — not the AI run, a
+# decision, requirements, medicals, the e-application, ACR, premium or comments-as-process. Releasing clears the flag and the
+# process carries on from the same step, because nothing was reset.
+
+_HOLDABLE = (CaseStatusEnum.NEW, CaseStatusEnum.IN_PROGRESS, CaseStatusEnum.PENDING_DOCUMENTS, CaseStatusEnum.UNDER_REVIEW)
+
+
+async def _hold_actor(session: AsyncSession, token: str):
+    user = await _get_current_user(token, session)
+    role_name = await _role_name(user, session)
+    if role_name not in _CASE_DECISION_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=f"Holding or releasing a case requires one of: {', '.join(sorted(_CASE_DECISION_ROLES))} (you are {role_name}).")
+    return user
+
+
+async def _hold_audit(session: AsyncSession, case: Case, user, event_type: str, detail: dict) -> None:
+    session.add(CaseHistory(caseld=case.caseld, actionType=ActionTypeEnum.COMMENT, fromStatus=case.caseStatus.value,
+                            toStatus=case.caseStatus.value, changedBy=user.id, changeTimestamp=datetime.utcnow()))
+    if case.policy_id:
+        policy = await session.get(Policy, case.policy_id)
+        if policy is not None:
+            record_event(session, policy, event_type=event_type, actor=str(user.id), detail={"case": case.caseNumber, **detail})
+
+
+@router.post("/{case_id}/hold", response_model=CaseRead)
+async def hold_case(
+    tenant_id: UUID, case_id: UUID, body: CaseHoldBody,
+    session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme),
+):
+    user = await _hold_actor(session, token)
+    case = (await session.execute(select(Case).where(Case.tenant_id == tenant_id, Case.caseld == case_id).with_for_update())).scalar_one_or_none()
+    if not case:
+        raise HTTPException(404, "Case not found")
+    if case.on_hold:
+        raise HTTPException(409, detail={"code": "CASE_ALREADY_ON_HOLD", "message": "This case is already on hold."})
+    if case.caseStatus not in _HOLDABLE:
+        raise HTTPException(409, detail={"code": "CASE_NOT_HOLDABLE", "message": f"A case that is {case.caseStatus.value} cannot be put on hold."})
+    case.on_hold, case.hold_reason = True, body.reason.strip()
+    case.held_at, case.held_by, case.held_from_status = datetime.utcnow(), (getattr(user, "email", None) or str(user.id)), case.caseStatus.value
+    case.updatedAt = datetime.utcnow()
+    session.add(case)
+    await _hold_audit(session, case, user, "UnderwritingHeld", {"reason": case.hold_reason, "at_status": case.caseStatus.value})
+    await session.commit()
+    await session.refresh(case)
+    return case
+
+
+@router.post("/{case_id}/release", response_model=CaseRead)
+async def release_case(
+    tenant_id: UUID, case_id: UUID, body: CaseReleaseBody,
+    session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme),
+):
+    user = await _hold_actor(session, token)
+    case = (await session.execute(select(Case).where(Case.tenant_id == tenant_id, Case.caseld == case_id).with_for_update())).scalar_one_or_none()
+    if not case:
+        raise HTTPException(404, "Case not found")
+    if not case.on_hold:
+        raise HTTPException(409, detail={"code": "CASE_NOT_ON_HOLD", "message": "This case is not on hold."})
+    held_for = case.hold_reason
+    case.on_hold, case.hold_reason, case.held_at, case.held_by = False, None, None, None
+    resumed_at = case.held_from_status
+    case.held_from_status = None
+    case.updatedAt = datetime.utcnow()
+    session.add(case)
+    await _hold_audit(session, case, user, "UnderwritingResumed", {"resumed_at": resumed_at or case.caseStatus.value, "was_held_for": held_for, "note": body.note})
+    await session.commit()
+    await session.refresh(case)
+    return case
+
+
+@router.patch("/{case_id}/status", response_model=CaseRead)
+async def update_case_status(
+    tenant_id: UUID,
+    case_id: UUID,
+    body: CaseStatusUpdate,
+    session: AsyncSession = Depends(get_session),
+    token: str = Depends(oauth2_scheme),
+):
+    user = await _get_current_user(token, session)
+    role_name = await _role_name(user, session)
+
+    is_decision = body.status in (CaseStatusEnum.APPROVED, CaseStatusEnum.REJECTED)
+    required_roles = _CASE_DECISION_ROLES if is_decision else _CASE_SUBMISSION_ROLES
+    if role_name not in required_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Setting case status to '{body.status.value}' requires one of: {', '.join(sorted(required_roles))} (you are {role_name}).",
+        )
+
+    stmt = select(Case).where(Case.tenant_id == tenant_id, Case.caseld == case_id)
+    result = await session.execute(stmt)
+    case = result.scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    old_status = case.caseStatus
+    case.caseStatus = body.status
+    case.updatedAt = datetime.utcnow()
+
+    history = CaseHistory(
+        caseld=case.caseld,
+        actionType=ActionTypeEnum.STATUS_CHANGE,
+        fromStatus=old_status,
+        toStatus=case.caseStatus,
+        changedBy=user.id,
+        changeTimestamp=datetime.utcnow()
+    )
+    session.add(history)
+    session.add(case)
+
+    # A case decision (Approved/Rejected) drives the linked Policy's own
+    # lifecycle status — this is the *only* legitimate place a proposal
+    # reaches Approved/Declined; the Proposal page's PATCH /quotes/{id}
+    # (api-gateway/routers/quote.py) no longer allows jumping there directly.
+    if case.caseStatus in (CaseStatusEnum.APPROVED, CaseStatusEnum.REJECTED):
+        policy_to_update = None
+        if case.policy_id:
+            policy_to_update = await session.get(Policy, case.policy_id)
+        if not policy_to_update:
+            # Fallback: find the most-recent non-issued policy for THIS specific
+            # customer only. Explicitly exclude already-Active/Issued policies so
+            # we never accidentally link this case to an already-bound contract.
+            from sqlalchemy import cast, String as SAString
+            _excluded = [
+                "ACTIVE", "Active", "ISSUED", "Issued",
+                "LAPSED", "Lapsed", "CANCELLED", "Cancelled",
+                "DECLINED", "Declined",
+            ]
+            policy_stmt = (
+                select(Policy)
+                .where(
+                    Policy.tenant_id == tenant_id,
+                    Policy.customer_id == case.customer_id,
+                    cast(Policy.status, SAString).notin_(_excluded),
+                )
+                .order_by(Policy.created_at.desc())
+            )
+            policy_to_update = (await session.execute(policy_stmt)).scalars().first()
+            # Stitch the case → policy FK so the issuance endpoint can find this
+            # case when it closes all APPROVED cases after issuing the policy.
+            if policy_to_update and case.policy_id is None:
+                case.policy_id = policy_to_update.id
+                session.add(case)
+
+        if policy_to_update:
+            # A policy can still be sitting in Quoted — e.g. the case was linked
+            # directly via case.policy_id rather than discovered by the fallback
+            # lookup above, or the fallback found one that was never bumped past
+            # Quoted — so bump it to Proposed first; Quoted can't jump straight
+            # to Approved/Declined per the state machine.
+            st_early = policy_to_update.status.value if hasattr(policy_to_update.status, "value") else str(policy_to_update.status)
+            if st_early == PolicyStatusEnum.QUOTED.value:
+                apply_transition(
+                    session, policy_to_update, PolicyStatusEnum.PROPOSED,
+                    event_type="case_linked_retroactively", actor=str(user.id)
+                )
+            target_status = (
+                PolicyStatusEnum.APPROVED if case.caseStatus == CaseStatusEnum.APPROVED
+                else PolicyStatusEnum.DECLINED
+            )
+            st_val = policy_to_update.status.value if hasattr(policy_to_update.status, "value") else str(policy_to_update.status)
+            if st_val.upper() in ("ACTIVE", "ISSUED"):
+                raise HTTPException(400, "Cannot decide this case: the associated policy is already Active/Issued.")
+            # A family floater is one policy for several insured lives (the head and a fully insured
+            # spouse): approving one case alone must not approve the policy. The case itself is approved;
+            # the policy stays where it is until every other insured life's case is approved too.
+            if target_status == PolicyStatusEnum.APPROVED and await pending_insured_members(session, policy_to_update, exclude_case_id=case.caseld):
+                await session.commit()
+                await session.refresh(case)
+                return case
+            # Idempotent no-op if the policy is already in the target status — the
+            # AI's auto-decision (routers/evaluate.py) may have already applied it
+            # before an underwriter's manual "Override: Approve/Decline" click
+            # lands, and re-asserting the same status is not a real transition.
+            if st_val != target_status.value:
+                try:
+                    apply_transition(
+                        session, policy_to_update, target_status,
+                        event_type="case_decision", actor=str(user.id),
+                    )
+                except IllegalStateTransition as exc:
+                    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+
+        # NOTE: Do NOT promote customer to POLICYHOLDER here.
+        # A customer only becomes a policyholder when the policy is actually
+        # issued and goes Active. Promoting at Approved is premature and causes
+        # them to appear on the Policyholders page before coverage exists.
+        # This transition is handled in routers/policies.py → issue_policy().
+
+    await session.commit()
+    await session.refresh(case)
+
+    return case
+
+
+@router.post("/{case_id}/assignments", status_code=201)
+async def assign_case(
+    tenant_id: UUID,
+    case_id: UUID,
+    body: CaseAssignmentCreate,
+    session: AsyncSession = Depends(get_session)
+):
+    stmt = select(Case).where(Case.tenant_id == tenant_id, Case.caseld == case_id)
+    result = await session.execute(stmt)
+    case = result.scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    
+    case.assignedAgentId = body.assignedToUserld
+    case.updatedAt = datetime.utcnow()
+
+    assignment = CaseAssignment(
+        caseld=case.caseld,
+        assignedToUserld=body.assignedToUserld,
+        assignedRole=body.assignedRole,
+        assignmentType=AssignmentTypeEnum.PRIMARY,
+        assignmentStatus=AssignmentStatusEnum.ACTIVE,
+        assignedAt=datetime.utcnow()
+    )
+    session.add(assignment)
+    session.add(case)
+    await session.commit()
+    
+    return {"status": "assigned"}
+
+
+@router.get("/{case_id}/document-checklist")
+async def get_document_checklist(
+    tenant_id: UUID,
+    case_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    stmt = select(Case).where(Case.tenant_id == tenant_id, Case.caseld == case_id)
+    result = await session.execute(stmt)
+    case = result.scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    policy: Optional[Policy] = None
+    if case.policy_id is not None:
+        policy = await session.get(Policy, case.policy_id)
+    if policy is None:
+        policy_stmt = (
+            select(Policy)
+            .where(Policy.tenant_id == tenant_id, Policy.customer_id == case.customer_id)
+            .order_by(Policy.created_at.desc())
+        )
+        policy = (await session.execute(policy_stmt)).scalars().first()
+        
+    insurance_type = policy.insurance_type.value if policy else None
+
+    required = None
+    if case.caseType.value == "Underwriting" and policy:
+        plan_stmt = select(InsurancePlan).where(
+            InsurancePlan.tenant_id == tenant_id,
+            InsurancePlan.insurance_type == policy.insurance_type,
+            InsurancePlan.label == policy.product_name
+        )
+        plan = (await session.execute(plan_stmt)).scalars().first()
+        if plan:
+            required = plan.required_documents
+
+    if required is None:
+        required = get_required_documents(insurance_type, case.caseType.value)
+
+
+    artifacts_stmt = select(Artifact.document_type).where(Artifact.customer_id == case.customer_id, Artifact.tenant_id == tenant_id)
+    received = _received_document_types(row[0] for row in (await session.execute(artifacts_stmt)).all())
+
+    missing = [doc for doc in required if doc not in received]
+
+    return {
+        "insurance_type": insurance_type,
+        "case_type": case.caseType.value,
+        "required": required,
+        "received": received,
+        "missing": missing,
+    }
+
+
+@router.post("/{case_id}/comments", status_code=201)
+async def add_case_comment(
+    tenant_id: UUID,
+    case_id: UUID,
+    body: CaseCommentCreate,
+    session: AsyncSession = Depends(get_session)
+):
+    user = (await session.execute(select(User).where(User.tenant_id == tenant_id))).scalars().first()
+    if not user:
+        raise HTTPException(status_code=400, detail="Tenant has no users.")
+
+    stmt = select(Case).where(Case.tenant_id == tenant_id, Case.caseld == case_id)
+    result = await session.execute(stmt)
+    case = result.scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    
+    comment = CaseComment(
+        caseld=case.caseld,
+        authorld=user.id,
+        commentText=body.commentText,
+        commentType=body.commentType,
+        visibilityLevel=body.visibilityLevel,
+        createdAt=datetime.utcnow()
+    )
+    session.add(comment)
+    await session.commit()
+
+    return {"status": "comment added"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Underwriting Requirements / Verification / Workflow
+#
+# This is the case-driven underwriting workflow's control surface: api-gateway
+# calls `requirements/determine` before ever invoking risk-engine, and only
+# calls `underwriting/evidence` (which also re-runs verification) once that
+# comes back satisfied=true. See services/underwriting_gate.py for the logic.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _requirement_to_dict(row: CaseRequirement) -> dict:
+    return {
+        "id": str(row.id),
+        "code": row.code,
+        "category": row.category,
+        "required": row.required,
+        "status": row.status.value,
+        "reason": row.reason,
+        "satisfied_by_artifact_id": str(row.satisfied_by_artifact_id) if row.satisfied_by_artifact_id else None,
+        "updated_at": row.updated_at.isoformat(),
+    }
+
+
+def _finding_to_dict(row: VerificationFinding) -> dict:
+    return {
+        "id": str(row.id),
+        "field": row.field,
+        "severity": row.severity.value,
+        "declared_value": row.declared_value,
+        "observed_value": row.observed_value,
+        "source_artifact_id": str(row.source_artifact_id) if row.source_artifact_id else None,
+        "explanation": row.explanation,
+        "created_at": row.created_at.isoformat(),
+    }
+
+
+async def _get_case_or_404(session: AsyncSession, tenant_id: UUID, case_id: UUID) -> Case:
+    case = (await session.execute(
+        select(Case).where(Case.tenant_id == tenant_id, Case.caseld == case_id)
+    )).scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return case
+
+
+def _received_document_types(types) -> list[str]:
+    """The document types on file. A medical examination files each test's report as
+    "Medical Report: <test>" — those count as the plan's "Medical Report" too."""
+    out = set()
+    for t in types:
+        out.add(t)
+        if t and t.startswith("Medical Report: "):
+            out.add("Medical Report")
+    return sorted(out)
+
+
+@router.post("/{case_id}/requirements/determine")
+async def determine_case_requirements(
+    tenant_id: UUID,
+    case_id: UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    case = await _get_case_or_404(session, tenant_id, case_id)
+    rows, satisfied = await underwriting_gate.compute_requirements(session, tenant_id, case, request=request)
+    await session.commit()
+    for row in rows:
+        await session.refresh(row)
+    await session.refresh(case)
+    return {
+        "requirements": [_requirement_to_dict(r) for r in rows],
+        "satisfied": satisfied,
+        "case_status": case.caseStatus.value,
+    }
+
+
+@router.get("/{case_id}/requirements")
+async def list_case_requirements(
+    tenant_id: UUID,
+    case_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    await _get_case_or_404(session, tenant_id, case_id)
+    rows = (await session.exec(
+        select(CaseRequirement).where(CaseRequirement.case_id == case_id)
+    )).all()
+    return {"requirements": [_requirement_to_dict(r) for r in rows]}
+
+
+@router.post("/{case_id}/requirements/{requirement_id}/waive")
+async def waive_case_requirement(
+    tenant_id: UUID,
+    case_id: UUID,
+    requirement_id: UUID,
+    body: CaseRequirementWaiveBody,
+    session: AsyncSession = Depends(get_session),
+    token: str = Depends(oauth2_scheme),
+):
+    user = await _get_current_user(token, session)
+    role_name = await _role_name(user, session)
+    if role_name not in _CASE_DECISION_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Waiving a requirement requires one of: {', '.join(sorted(_CASE_DECISION_ROLES))} (you are {role_name}).",
+        )
+    await _get_case_or_404(session, tenant_id, case_id)
+    requirement = (await session.execute(
+        select(CaseRequirement).where(
+            CaseRequirement.id == requirement_id, CaseRequirement.case_id == case_id,
+            CaseRequirement.tenant_id == tenant_id,
+        )
+    )).scalar_one_or_none()
+    if not requirement:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+    await underwriting_gate.waive_requirement(session, requirement, note=body.note)
+    await session.commit()
+    await session.refresh(requirement)
+    return _requirement_to_dict(requirement)
+
+
+@router.get("/{case_id}/verification-findings")
+async def list_verification_findings(
+    tenant_id: UUID,
+    case_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    await _get_case_or_404(session, tenant_id, case_id)
+    rows = (await session.exec(
+        select(VerificationFinding).where(VerificationFinding.case_id == case_id)
+    )).all()
+    return {"findings": [_finding_to_dict(r) for r in rows]}
+
+
+@router.post("/{case_id}/underwriting/evidence")
+async def get_underwriting_evidence(
+    tenant_id: UUID,
+    case_id: UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """Re-runs verification against current evidence and returns the full
+    bundle api-gateway forwards to risk-engine (document_evidence/
+    e_application/acr/verified_facts) plus whether mandatory requirements
+    are satisfied — api-gateway must not call risk-engine when they are not."""
+    case = await _get_case_or_404(session, tenant_id, case_id)
+    bundle = await underwriting_gate.build_evidence_bundle(session, tenant_id, case, request=request)
+    await session.commit()
+    return bundle
+
+
+@router.get("/{case_id}/workflow")
+async def get_case_workflow(
+    tenant_id: UUID,
+    case_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    await _get_case_or_404(session, tenant_id, case_id)
+    workflow = (await session.exec(
+        select(CaseWorkflow).where(CaseWorkflow.caseld == case_id)
+    )).first()
+    if not workflow:
+        return {"workflow": None}
+    return {
+        "workflow": {
+            "currentStep": workflow.currentStep,
+            "previousStep": workflow.previousStep,
+            "workflowState": workflow.workflowState.value,
+            "lastUpdatedAt": workflow.lastUpdatedAt.isoformat(),
+            "workflowVersion": workflow.workflowVersion,
+        }
+    }
+
+
+@router.post("/{case_id}/workflow/advance")
+async def advance_case_workflow(
+    tenant_id: UUID,
+    case_id: UUID,
+    body: WorkflowAdvanceBody,
+    session: AsyncSession = Depends(get_session),
+):
+    """Internal, service-to-service step: api-gateway calls this after
+    persisting a RiskAssessment to move the case to `decision`/`human_review`.
+    Not role-gated — mirrors the existing system-driven case-status mutation
+    already performed by risk_persistence.py, which also has no user context."""
+    case = await _get_case_or_404(session, tenant_id, case_id)
+    state = WorkflowStateEnum(body.state) if body.state else WorkflowStateEnum.RUNNING
+    workflow = await underwriting_gate.advance_workflow(session, case, body.step, state=state)
+    await session.commit()
+    await session.refresh(workflow)
+    return {
+        "currentStep": workflow.currentStep,
+        "previousStep": workflow.previousStep,
+        "workflowState": workflow.workflowState.value,
+    }
+
+
+class ChangePlanBody(BaseModel):
+    plan_id: UUID
+    coverage_amount: float
+    term_years: int
+    dependent_name: Optional[str] = None
+    dependent_dob: Optional[date] = None
+    reason: Optional[str] = None
+    dry_run: bool = False
+
+
+_PLAN_CHANGE_ROLES = {"Underwriter", "Admin", "SuperAdmin"}
+
+
+@router.post("/{case_id}/change-plan")
+async def change_case_plan(
+    tenant_id: UUID,
+    case_id: UUID,
+    body: ChangePlanBody,
+    session: AsyncSession = Depends(get_session),
+    token: str = Depends(oauth2_scheme),
+):
+    """Move the proposal on this case to another plan. dry_run=true previews the impact without changing anything."""
+    user = await _get_current_user(token, session)
+    role_name = await _role_name(user, session)
+    if role_name not in _PLAN_CHANGE_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Changing the plan requires one of: {', '.join(sorted(_PLAN_CHANGE_ROLES))} (you are {role_name}).",
+        )
+    return await plan_change.run(session, tenant_id, case_id, body, user)

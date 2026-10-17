@@ -13,7 +13,7 @@ export default {
     'scope-case': [2, 'always', 'kebab-case'],
     'subject-empty': [2, 'never'],
     'subject-full-stop': [2, 'never', '.'],
-    'header-max-length': [2, 'always', 72],
+    'header-max-length': [2, 'always', 100],
   },
   helpUrl:
     'https://doc.clickup.com/90182858897/d/2kzn2e4h-818/git-branchand-commit-naming-convention',

@@ -31,11 +31,13 @@ log = logging.getLogger(__name__)
 # ── Legal transition map ──────────────────────────────────────────────────────
 # Keys are the *from* status; values are the set of statuses reachable in one
 # step. Terminal states (Declined, Lapsed, Cancelled) map to an empty set here;
-# note that Lapsed → Active (reinstatement) and the exit states arrive in later
-# lifecycle phases and will be added to this single map — nowhere else.
+# Lapsed → Active (reinstatement, routers/reinstatement.py) is now live; the exit
+# states arrive in later lifecycle phases and will be added to this single map —
+# nowhere else.
 
 _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
     PolicyStatusEnum.QUOTED: {
+        PolicyStatusEnum.ON_HOLD,   # staff can pause it from the Proposals page
         PolicyStatusEnum.PROPOSED,
         # A Draft is auto-generated with no form filled in — basic KYC fields
         # (DOB, gender, occupation, income) may still be missing, so it must
@@ -44,6 +46,7 @@ _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
         PolicyStatusEnum.DECLINED,
     },
     PolicyStatusEnum.PROPOSED: {
+        PolicyStatusEnum.ON_HOLD,   # staff can pause it from the Proposals page
         PolicyStatusEnum.UNDER_REVIEW,
         PolicyStatusEnum.INFORMATION_REQUESTED,
         PolicyStatusEnum.COUNTER_OFFER,
@@ -54,6 +57,7 @@ _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
         PolicyStatusEnum.QUOTED,
     },
     PolicyStatusEnum.UNDER_REVIEW: {
+        PolicyStatusEnum.ON_HOLD,   # staff can pause it from the Proposals page
         PolicyStatusEnum.INFORMATION_REQUESTED,
         PolicyStatusEnum.COUNTER_OFFER,
         PolicyStatusEnum.APPROVED,
@@ -84,6 +88,7 @@ _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
         PolicyStatusEnum.DECLINED,
     },
     PolicyStatusEnum.INFORMATION_REQUESTED: {
+        PolicyStatusEnum.ON_HOLD,   # staff can pause it from the Proposals page
         # Once the missing info is supplied, resume wherever the proposal
         # would naturally sit next — Proposed if this pause happened before
         # formal review even started (the common case: a Draft missing basic
@@ -141,14 +146,24 @@ _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
         PolicyStatusEnum.GRACE_PERIOD,
         PolicyStatusEnum.LAPSED,
         PolicyStatusEnum.CANCELLED,
+        # Stage B step 9 — the three ways a policy ends on its own terms.
+        PolicyStatusEnum.MATURED,
+        PolicyStatusEnum.SURRENDERED,
+        PolicyStatusEnum.EXPIRED,
     },
     PolicyStatusEnum.GRACE_PERIOD: {
         PolicyStatusEnum.ACTIVE,          # renewal / arrears paid
         PolicyStatusEnum.LAPSED,
         PolicyStatusEnum.CANCELLED,
+        PolicyStatusEnum.MATURED,
+        PolicyStatusEnum.SURRENDERED,
+        PolicyStatusEnum.EXPIRED,
     },
-    # Reinstatement (Step 5) and the demo reset both revive a lapsed policy.
-    PolicyStatusEnum.LAPSED: {PolicyStatusEnum.ACTIVE},
+    # Reinstatement (Stage B step 6) and the demo reset both revive a lapsed policy.
+    # A lapsed policy can still owe a valid claim for an event inside its in-force
+    # period; paying out a death benefit terminates it (Lapsed → Cancelled).
+    PolicyStatusEnum.LAPSED: {PolicyStatusEnum.ACTIVE, PolicyStatusEnum.CANCELLED,
+                              PolicyStatusEnum.EXPIRED},   # a lapsed term policy still reaches the end of its term
     PolicyStatusEnum.CANCELLED: set(),
     PolicyStatusEnum.DECLINED: {
         # Allow underwriters to override a previous decline decision (AI or manual)
@@ -156,7 +171,18 @@ _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
         PolicyStatusEnum.APPROVED,
         PolicyStatusEnum.ACCEPTED_WITH_LOADINGS,
     },
+    # Resume goes back to wherever it was held from (the quote detail reports it as held_from_status).
+    PolicyStatusEnum.ON_HOLD: {
+        PolicyStatusEnum.QUOTED,
+        PolicyStatusEnum.PROPOSED,
+        PolicyStatusEnum.UNDER_REVIEW,
+        PolicyStatusEnum.INFORMATION_REQUESTED,
+        PolicyStatusEnum.DECLINED,
+    },
     PolicyStatusEnum.NOT_TAKEN_UP: set(),
+    PolicyStatusEnum.MATURED: set(),
+    PolicyStatusEnum.SURRENDERED: set(),
+    PolicyStatusEnum.EXPIRED: set(),
 }
 
 

@@ -12,6 +12,7 @@ networks:
 volumes:
   memgraph-data:
   kafka-data:
+  request-attachments:
 
     # ─────────────────────────────────────────────────────────────────────────────
     # Re-usable FastAPI service defaults
@@ -74,6 +75,7 @@ services:
     volumes:
       - kafka-data:/var/lib/kafka/data
     environment:
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
@@ -111,7 +113,7 @@ services:
   api-gateway:
     <<: *fastapi-defaults
     build:
-      context: ./services/api-gateway
+      context: ./microservices/backend-microservices/api-gateway
       dockerfile: Dockerfile
     container_name: insurance-api-gateway
     # Browsers hold /events/stream (SSE) open indefinitely, so a --reload would
@@ -120,12 +122,14 @@ services:
     ports:
       - "8010:8000"
     volumes:
-      - ./services/api-gateway:/app
+      - ./microservices/backend-microservices/api-gateway:/app
       - ./shared:/app/shared
     environment:
       PYTHONPATH: /app
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       CHAT_AGENT_URL: http://chat-agent:8006
+      REQUEST_MANAGEMENT_SERVICE_URL: http://request-management-service:8007 # /request-management/* is proxied there
+      CUSTOMER_MANAGEMENT_URL: http://customer-management:8009 # /customer-management/v1/* is proxied there
     depends_on:
       kafka:
         condition: service_healthy
@@ -137,13 +141,13 @@ services:
   tenant-service:
     <<: *fastapi-defaults
     build:
-      context: ./services/tenant-service
+      context: ./microservices/backend-microservices/tenant-service
       dockerfile: Dockerfile
     container_name: insurance-tenant-service
     ports:
       - "8011:8001"
     volumes:
-      - ./services/tenant-service:/app
+      - ./microservices/backend-microservices/tenant-service:/app
       - ./shared:/app/shared
     environment:
       PYTHONPATH: /app
@@ -156,6 +160,12 @@ services:
       RISK_ENGINE_URL: http://risk-engine:8002
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       OPENSANCTIONS_API_KEY: ${OPENSANCTIONS_API_KEY}
+      # Customer portal: provisioning hands accounts to Customer Management (PORTAL_PROVISIONING_MODE=legacy turns that off).
+      CUSTOMER_MANAGEMENT_URL: http://customer-management:8009
+      CUSTOMER_PORTAL_URL: ${CUSTOMER_PORTAL_URL:-http://localhost:3009/login}
+      PORTAL_PROVISIONING_MODE: ${PORTAL_PROVISIONING_MODE:-dual}
+      # Public origin of the pages customers open from emailed links (/e-application, /medical-exam).
+      PORTAL_PUBLIC_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000}
     depends_on:
       kafka:
         condition: service_healthy
@@ -163,13 +173,13 @@ services:
   risk-engine:
     <<: *fastapi-defaults
     build:
-      context: ./services/risk-engine
+      context: ./microservices/backend-microservices/risk-engine
       dockerfile: Dockerfile
     container_name: insurance-risk-engine
     ports:
       - "8012:8002"
     volumes:
-      - ./services/risk-engine:/app
+      - ./microservices/backend-microservices/risk-engine:/app
       - ./shared:/app/shared
     environment:
       PYTHONPATH: /app
@@ -189,19 +199,24 @@ services:
   chat-agent:
     <<: *fastapi-defaults
     build:
-      context: ./services/chat-agent
+      context: ./microservices/backend-microservices/chat-agent
       dockerfile: Dockerfile
     container_name: insurance-chat-agent
     ports:
       - "8016:8006"
     volumes:
-      - ./services/chat-agent:/app
+      - ./microservices/backend-microservices/chat-agent:/app
       - ./shared:/app/shared
     environment:
       PYTHONPATH: /app
       DATABASE_URL: ${DATABASE_URL}
       TENANT_SERVICE_URL: http://tenant-service:8001
       API_GATEWAY_URL: http://api-gateway:8000
+      COMMISSION_SPECIALIST_ENABLED: ${COMMISSION_SPECIALIST_ENABLED:-true}
+      GROUP_SPECIALIST_ENABLED: ${GROUP_SPECIALIST_ENABLED:-true}
+      SERVICING_SPECIALIST_ENABLED: ${SERVICING_SPECIALIST_ENABLED:-true}
+      UNDERWRITING_SPECIALIST_ENABLED: ${UNDERWRITING_SPECIALIST_ENABLED:-true}
+      CLAIMS_SPECIALIST_ENABLED: ${CLAIMS_SPECIALIST_ENABLED:-true}
       # LLM provider keys/models come from the SuperAdmin config in
       # tenant-service (Platform → LLM Configuration), not env vars.
     healthcheck:
@@ -214,37 +229,289 @@ services:
   decision-engine:
     <<: *fastapi-defaults
     build:
-      context: ./services/decision-engine
+      context: ./microservices/backend-microservices/decision-engine
       dockerfile: Dockerfile
     container_name: insurance-decision-engine
     ports:
       - "8013:8003"
     volumes:
-      - ./services/decision-engine:/app
+      - ./microservices/backend-microservices/decision-engine:/app
 
   ocr-engine:
     <<: *fastapi-defaults
     build:
-      context: ./services/ocr-engine
+      context: ./microservices/backend-microservices/ocr-engine
       dockerfile: Dockerfile
     container_name: insurance-ocr-engine
     ports:
       - "8014:8004"
     volumes:
-      - ./services/ocr-engine:/app
+      - ./microservices/backend-microservices/ocr-engine:/app
       - ./shared/documents:/data # Required for the /extract-from-path endpoint
 
   # khalid
   text-summarizer:
     <<: *fastapi-defaults
     build:
-      context: ./services/text-summarizer
+      context: ./microservices/backend-microservices/text-summarizer
       dockerfile: Dockerfile
     container_name: insurance-text-summarizer
     ports:
       - "8015:8005"
     volumes:
-      - ./services/text-summarizer:/app
+      - ./microservices/backend-microservices/text-summarizer:/app
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Request Management — requests, routing, review decisions and approved-action execution.
+  # Own schema (request_management) and least-privilege database role in the shared Postgres; see
+  # services/request-management-service/README.md. First time only, create the roles and schema:
+  #   docker compose --profile tools run --rm request-management-provision
+  # ───────────────────────────────────────────────────────────────────────────
+  request-management-service:
+    <<: *fastapi-defaults
+    build:
+      context: . # repository root: the image also carries shared/ (event, signing and allowlist contracts)
+      dockerfile: microservices/backend-microservices/request-management-service/Dockerfile
+    container_name: insurance-request-management
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8007", "--reload"]
+    ports:
+      - "8017:8007"
+    volumes:
+      - ./microservices/backend-microservices/request-management-service:/app
+      - ./shared:/app/shared
+      - request-attachments:/data/request-attachments # local attachment store when S3 isn't configured
+    environment:
+      PYTHONPATH: /app
+      WATCHFILES_FORCE_POLLING: "true"
+      # The service connects as the application role (rows in request_management only) ...
+      REQUEST_MGMT_DATABASE_URL: postgresql+asyncpg://request_mgmt_app:${REQUEST_MGMT_DB_APP_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+      # ... and migrates as the schema owner.
+      REQUEST_MGMT_MIGRATION_DATABASE_URL: postgresql+asyncpg://request_mgmt_owner:${REQUEST_MGMT_DB_OWNER_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+      TENANT_SERVICE_URL: http://tenant-service:8001
+      REQUEST_MGMT_SERVICE_KEY: ${REQUEST_MGMT_SERVICE_KEY:-}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+      tenant-service:
+        condition: service_started
+    healthcheck:
+      test: [ "CMD-SHELL", 'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8007/v1/healthz'')"' ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # One-off: create the request_management schema and its two database roles (needs Postgres admin credentials).
+  request-management-provision:
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: microservices/backend-microservices/request-management-service/Dockerfile
+    networks:
+      - insurance-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["python", "-m", "app.provision"]
+    environment:
+      REQUEST_MGMT_PROVISION_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+      REQUEST_MGMT_DB_OWNER_PASSWORD: ${REQUEST_MGMT_DB_OWNER_PASSWORD:-}
+      REQUEST_MGMT_DB_APP_PASSWORD: ${REQUEST_MGMT_DB_APP_PASSWORD:-}
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Customer Management — the individual customer portal's back end (services/customer-management)
+  # Schema customer_management in the shared Postgres, least-privilege roles, signed calls to tenant-service.
+  # Public API (via the gateway): /customer-management/v1/...  ·  Direct (dev): http://localhost:8019/v1/healthz
+  # ───────────────────────────────────────────────────────────────────────────
+  # Creates the customer_management schema and its two database roles, then exits. Safe to repeat.
+  customer-management-provision:
+    build:
+      context: .
+      dockerfile: microservices/backend-microservices/customer-management/Dockerfile
+    restart: "no"
+    networks: [insurance-net]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    env_file: [.env]
+    command: ["python", "-m", "app.provision"]
+    environment:
+      CM_PROVISION_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+
+  customer-management:
+    <<: *fastapi-defaults
+    build:
+      context: .
+      dockerfile: microservices/backend-microservices/customer-management/Dockerfile
+    container_name: insurance-customer-management
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8009", "--reload"]
+    ports:
+      - "8019:8009"
+    volumes:
+      - ./microservices/backend-microservices/customer-management:/app
+      - ./shared:/app/shared
+    environment:
+      PYTHONPATH: /app
+      WATCHFILES_FORCE_POLLING: "true"
+      CM_DATABASE_URL: postgresql+asyncpg://customer_management_app:${CM_DB_APP_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+      CM_MIGRATION_DATABASE_URL: postgresql+asyncpg://customer_management_owner:${CM_DB_OWNER_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+      TENANT_SERVICE_URL: http://tenant-service:8001
+      CM_WALKIN_TENANT_CODE: ${CM_WALKIN_TENANT_CODE:-}
+      CS_PORTAL_KEY: ${CS_PORTAL_KEY:-}
+      CUSTOMER_SERVICE_URL: http://customer-service:8008
+      ENV_VAR: ${ENV_VAR:-}   # demo: walk-ins skip the email code
+      CM_WALKIN_DEV_OTP: ${CM_WALKIN_DEV_OTP:-}   # development only; ignored when CM_ENV=production
+    depends_on:
+      tenant-service:
+        condition: service_started
+      customer-management-provision:
+        condition: service_completed_successfully # schema and roles exist before migrations run
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8009/v1/healthz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+
+  # Customer portal (individual policyholders) — http://localhost:3009
+  # Self-contained Next.js app (it imports nothing from the staff app). The browser talks only to this app; it holds the
+  # session in httpOnly cookies and calls Customer Management through the API gateway, server-to-server.
+  customer-portal:
+    build:
+      context: ./microservices/frontend-microservices/customer-portal
+      dockerfile: Dockerfile
+      target: dev
+    container_name: insurance-customer-portal
+    restart: unless-stopped
+    networks: [insurance-net]
+    ports:
+      - "3009:3009"
+    volumes:
+      - ./microservices/frontend-microservices/customer-portal:/workspace/customer-portal
+      - /workspace/customer-portal/node_modules
+      - /workspace/customer-portal/.next
+    environment:
+      CM_STREAM_URL: http://customer-management:8009   # live updates connect straight to Customer Management (the gateway buffers responses)
+      CM_API_URL: http://api-gateway:8000/customer-management
+      COOKIE_SECURE: ${PORTAL_COOKIE_SECURE:-false} # set to true behind HTTPS
+      WATCHPACK_POLLING: "true"
+    depends_on: [api-gateway, customer-management]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3009/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  customer-service:
+    <<: *fastapi-defaults
+    build: ./microservices/backend-microservices/customer-service
+    ports:
+      - "8018:8008"
+    volumes:
+      - ./microservices/backend-microservices/customer-service:/app
+    environment:
+      CS_DATABASE_URL: postgresql+asyncpg://customer_service_app:${CS_DB_APP_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+      CS_MIGRATION_DATABASE_URL: postgresql+asyncpg://customer_service_owner:${CS_DB_OWNER_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+      TENANT_SERVICE_URL: http://tenant-service:8001
+      CS_PORTAL_KEY: ${CS_PORTAL_KEY:-}
+      CS_OPEN_DESK: ${CS_OPEN_DESK:-}
+      CS_OPEN_DESK_TENANT_ID: ${CS_OPEN_DESK_TENANT_ID:-}
+      CS_ENV: ${CS_ENV:-development}
+    depends_on:
+      tenant-service:
+        condition: service_started
+      customer-service-provision:
+        condition: service_completed_successfully # schema and users exist before migrations run
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8008/v1/healthz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # Creates the customer_service schema and its two database users in the existing database, then exits. Runs on
+  # every `docker compose up` (it is safe to repeat) and customer-service waits for it to finish.
+  customer-service-provision:
+    build: ./microservices/backend-microservices/customer-service
+    restart: "no"
+    networks: [insurance-net]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    env_file: [.env]
+    command: ["python", "provision.py"]
+    environment:
+      CS_PROVISION_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+      CS_DB_OWNER_PASSWORD: ${CS_DB_OWNER_PASSWORD:-69d600fc74731edaf89834f7bebce346}
+      CS_DB_APP_PASSWORD: ${CS_DB_APP_PASSWORD:-5a511f3af5bb1c398d10b628d70bfef4}
+
+  customer-service-app:
+    build:
+      context: ./microservices/frontend-microservices # holds this app and the portal code it shares (frontend/app/services, components, lib)
+      dockerfile: customer-service-app/Dockerfile
+      target: dev
+    restart: unless-stopped
+    networks: [insurance-net]
+    ports:
+      - "3008:3008"
+    volumes:
+      - ./microservices/frontend-microservices/customer-service-app:/workspace/customer-service-app
+      - ./microservices/frontend-microservices/frontend/components:/workspace/frontend/components
+      - ./microservices/frontend-microservices/frontend/lib:/workspace/frontend/lib
+      - ./microservices/frontend-microservices/frontend/app/services:/workspace/frontend/app/services
+      - ./microservices/frontend-microservices/frontend/app/globals.css:/workspace/frontend/app/globals.css
+      - /workspace/customer-service-app/node_modules
+      - /workspace/customer-service-app/.next
+    environment:
+      ENV_VAR: ${ENV_VAR:-}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010}
+      NEXT_PUBLIC_PORTAL_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000}
+      NEXT_PUBLIC_CUSTOMER_SERVICE_URL: ${NEXT_PUBLIC_CUSTOMER_SERVICE_URL:-http://localhost:3008}
+      API_GATEWAY_INTERNAL_URL: http://api-gateway:8000
+      SSO_COOKIE_NAME: ${SSO_COOKIE_NAME:-insurance_sso}
+      SSO_COOKIE_DOMAIN: ${SSO_COOKIE_DOMAIN:-}
+      WATCHPACK_POLLING: "true"
+    depends_on: [api-gateway, customer-service]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3008/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+
+  # The same desk app as above, deployed WITHOUT a sign-in: http://localhost:3010. For the service team in development; it acts as one
+  # fixed tenant and the service refuses it when CS_ENV=production. Admins use the signed-in desk (3008) to view tickets.
+  customer-service-desk:
+    build:
+      context: ./microservices/frontend-microservices # holds this app and the portal code it shares (frontend/app/services, components, lib)
+      dockerfile: customer-service-app/Dockerfile
+      target: dev
+    restart: unless-stopped
+    networks: [insurance-net]
+    ports:
+      - "3010:3008"
+    volumes:
+      - ./microservices/frontend-microservices/customer-service-app:/workspace/customer-service-app
+      - ./microservices/frontend-microservices/frontend/components:/workspace/frontend/components
+      - ./microservices/frontend-microservices/frontend/lib:/workspace/frontend/lib
+      - ./microservices/frontend-microservices/frontend/app/services:/workspace/frontend/app/services
+      - ./microservices/frontend-microservices/frontend/app/globals.css:/workspace/frontend/app/globals.css
+      - /workspace/customer-service-app/node_modules
+      - /workspace/customer-service-app/.next
+    environment:
+      ENV_VAR: ${ENV_VAR:-}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010}
+      NEXT_PUBLIC_PORTAL_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000}
+      NEXT_PUBLIC_CUSTOMER_SERVICE_URL: http://localhost:3010
+      NEXT_PUBLIC_OPEN_DESK: "true"
+      API_GATEWAY_INTERNAL_URL: http://api-gateway:8000
+      SSO_COOKIE_NAME: ${SSO_COOKIE_NAME:-insurance_sso}
+      SSO_COOKIE_DOMAIN: ${SSO_COOKIE_DOMAIN:-}
+      WATCHPACK_POLLING: "true"
+    depends_on: [api-gateway, customer-service]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3008/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
 
   # ───────────────────────────────────────────────────────────────────────────
   # Docs (Docusaurus) — http://localhost:4991
@@ -259,7 +526,7 @@ services:
     ports:
       - "4991:4991"
     volumes:
-      - ./docs:/app
+      - ./microservices/frontend-microservices/docs:/app
       - /app/node_modules # prevent host node_modules from being used inside container
     command: sh -c "npm install && npm start"
 
@@ -268,7 +535,7 @@ services:
   # ───────────────────────────────────────────────────────────────────────────
   frontend:
     build:
-      context: ./frontend
+      context: ./microservices/frontend-microservices/frontend
       dockerfile: Dockerfile
       target: dev # use the dev stage for hot-reload during development
     container_name: insurance-frontend
@@ -280,22 +547,197 @@ services:
     env_file:
       - .env
     volumes:
-      - ./frontend:/app # hot-reload source files
+      - ./microservices/frontend-microservices/frontend:/app # hot-reload source files
       - /app/node_modules # prevent host node_modules from overwriting container's
       - /app/.next # preserve Next.js build cache between restarts
     environment:
+      NEXT_PUBLIC_CUSTOMER_SERVICE_URL: ${NEXT_PUBLIC_CUSTOMER_SERVICE_URL:-http://localhost:3008}
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010} # browser-side; host port that maps to gateway container port 8000
       NEXT_PUBLIC_OCR_URL: ${NEXT_PUBLIC_OCR_URL:-http://localhost:8014} # browser-side; host port mapping to ocr-engine
       NEXT_PUBLIC_SUMMARIZER_URL: ${NEXT_PUBLIC_SUMMARIZER_URL:-http://localhost:8015} # browser-side; host port mapping to text-summarizer
       API_GATEWAY_INTERNAL_URL: http://api-gateway:8000 # server-side (Next.js API routes); internal docker network
       CHOKIDAR_USEPOLLING: "true" # macOS Docker Desktop: FSEvents don't reach chokidar via inotify
+      NEXT_PUBLIC_AUTOMATION_URL: ${NEXT_PUBLIC_AUTOMATION_URL:-http://localhost:3004} # the Automation Chat app (the "Automation" button opens it)
+      NEXT_PUBLIC_UNDERWRITING_URL: ${NEXT_PUBLIC_UNDERWRITING_URL:-http://localhost:3005} # the Underwriting Workbench: underwriting links and old-URL redirects go there
+      NEXT_PUBLIC_PORTAL_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000} # this app's own public URL (trusted sign-in return, redirect-loop guard)
+      SSO_COOKIE_NAME: ${SSO_COOKIE_NAME:-insurance_sso} # single sign-on cookie shared with the Automation Chat and Underwriting Workbench
+      SSO_COOKIE_DOMAIN: ${SSO_COOKIE_DOMAIN:-} # empty on localhost; a shared parent domain (.example.com) across subdomains
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Automation Chat (Next.js) — the AI copilot as its own app, http://localhost:3004
+  # Signs in from the dashboard's session (single sign-on cookie), see automation-chat/README.md
+  # ───────────────────────────────────────────────────────────────────────────
+  automation-chat:
+    build:
+      context: ./microservices/frontend-microservices/automation-chat
+      dockerfile: Dockerfile
+      target: dev
+    container_name: insurance-automation-chat
+    restart: unless-stopped
+    networks:
+      - insurance-net
+    ports:
+      - "3004:3000"
+    env_file:
+      - .env
+      - ./microservices/frontend-microservices/frontend/.env.local # voice keys (STT/TTS) live with the dashboard's local env
+    volumes:
+      - ./microservices/frontend-microservices/automation-chat:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010}
+      NEXT_PUBLIC_OCR_URL: ${NEXT_PUBLIC_OCR_URL:-http://localhost:8014}
+      NEXT_PUBLIC_SUMMARIZER_URL: ${NEXT_PUBLIC_SUMMARIZER_URL:-http://localhost:8015}
+      NEXT_PUBLIC_PORTAL_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000} # the dashboard: embedded pages and the sign-in redirect
+      NEXT_PUBLIC_UNDERWRITING_URL: ${NEXT_PUBLIC_UNDERWRITING_URL:-http://localhost:3005} # case views and other underwriting pages it opens or embeds
+      NEXT_PUBLIC_CLAIMS_URL: ${NEXT_PUBLIC_CLAIMS_URL:-http://localhost:3011} # the Claims Manager app, which hosts the Copilot window
+      API_GATEWAY_INTERNAL_URL: http://api-gateway:8000
+      SSO_COOKIE_NAME: ${SSO_COOKIE_NAME:-insurance_sso}
+      SSO_COOKIE_DOMAIN: ${SSO_COOKIE_DOMAIN:-}
+      CHOKIDAR_USEPOLLING: "true"
+    depends_on:
+      - api-gateway
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Underwriting Workbench (Next.js) — the underwriting queue and case workspace as their own app,
+  # http://localhost:3005. Signs in from the portal's session (single sign-on cookie); see underwriting-app/README.md.
+  # Start it with just its backend:   docker compose up -d --build underwriting-app
+  # (pulls in api-gateway and tenant-service; sign-in still happens on the portal: add `frontend` if it isn't running)
+  # ───────────────────────────────────────────────────────────────────────────
+  underwriting-app:
+    build:
+      context: ./microservices/frontend-microservices # holds this app and the portal code it shares (frontend/app/services, components, lib)
+      dockerfile: underwriting-app/Dockerfile
+      target: dev
+    container_name: insurance-underwriting-app
+    restart: unless-stopped
+    networks:
+      - insurance-net
+    ports:
+      - "3005:3005"
+    volumes:
+      - ./microservices/frontend-microservices/underwriting-app:/repo/underwriting-app # hot-reload source files
+      - /repo/underwriting-app/node_modules # keep the container's node_modules
+      - /repo/underwriting-app/.next # preserve the build cache between restarts
+      # The portal code the workbench shares, read-only, so edits to it reload here too.
+      - ./microservices/frontend-microservices/frontend/app/services:/repo/frontend/app/services:ro
+      - ./microservices/frontend-microservices/frontend/app/globals.css:/repo/frontend/app/globals.css:ro
+      - ./microservices/frontend-microservices/frontend/components:/repo/frontend/components:ro
+      - ./microservices/frontend-microservices/frontend/lib:/repo/frontend/lib:ro
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010} # browser-side API gateway
+      NEXT_PUBLIC_OCR_URL: ${NEXT_PUBLIC_OCR_URL:-http://localhost:8014}
+      NEXT_PUBLIC_SUMMARIZER_URL: ${NEXT_PUBLIC_SUMMARIZER_URL:-http://localhost:8015}
+      NEXT_PUBLIC_PORTAL_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000} # sign-in, "Back to the portal", portal pages
+      NEXT_PUBLIC_UNDERWRITING_URL: ${NEXT_PUBLIC_UNDERWRITING_URL:-http://localhost:3005} # this app's own public URL
+      NEXT_PUBLIC_AUTOMATION_URL: ${NEXT_PUBLIC_AUTOMATION_URL:-http://localhost:3004} # the chat that embeds case views
+      API_GATEWAY_INTERNAL_URL: http://api-gateway:8000 # server-side: session check and the live-event stream
+      SSO_COOKIE_NAME: ${SSO_COOKIE_NAME:-insurance_sso}
+      SSO_COOKIE_DOMAIN: ${SSO_COOKIE_DOMAIN:-}
+      ENV_VAR: ${ENV_VAR:-}
+      CHOKIDAR_USEPOLLING: "true" # macOS Docker Desktop: file events don't reach the container
+      WATCHPACK_POLLING: "true"
+    depends_on:
+      - api-gateway
+      - tenant-service
+    healthcheck:
+      test: [ "CMD", "node", "-e", "fetch('http://localhost:3005/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s # first compile in dev
+
+  # Claims Manager portal (Next.js) — approvals, workload, risk flags and settlement oversight for claims managers,
+  # http://localhost:3011. Signs in from the portal's session (single sign-on cookie), like the Underwriting Workbench.
+  # Start it with:   docker compose up -d --build claims-manager-app
+  # ───────────────────────────────────────────────────────────────────────────
+  claims-manager-app:
+    build:
+      context: ./microservices/frontend-microservices # holds this app and the portal code it shares (frontend/app/services, components, lib)
+      dockerfile: claims-manager-app/Dockerfile
+      target: dev
+    container_name: insurance-claims-manager-app
+    restart: unless-stopped
+    networks:
+      - insurance-net
+    ports:
+      - "3011:3011"
+    volumes:
+      - ./microservices/frontend-microservices/claims-manager-app:/repo/claims-manager-app # hot-reload source files
+      - /repo/claims-manager-app/node_modules # keep the container's node_modules
+      - /repo/claims-manager-app/.next # preserve the build cache between restarts
+      - ./microservices/frontend-microservices/frontend/app/services:/repo/frontend/app/services:ro
+      - ./microservices/frontend-microservices/frontend/app/claims:/repo/frontend/app/claims:ro # the claims pages, shared with the main portal
+      - ./microservices/frontend-microservices/frontend/app/globals.css:/repo/frontend/app/globals.css:ro
+      - ./microservices/frontend-microservices/frontend/components:/repo/frontend/components:ro
+      - ./microservices/frontend-microservices/frontend/lib:/repo/frontend/lib:ro
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010} # browser-side API gateway
+      NEXT_PUBLIC_PORTAL_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000} # sign-in, "Back to the portal"
+      NEXT_PUBLIC_CLAIMS_URL: ${NEXT_PUBLIC_CLAIMS_URL:-http://localhost:3011} # this app's own public URL
+      NEXT_PUBLIC_UNDERWRITING_URL: ${NEXT_PUBLIC_UNDERWRITING_URL:-http://localhost:3005}
+      NEXT_PUBLIC_AUTOMATION_URL: ${NEXT_PUBLIC_AUTOMATION_URL:-http://localhost:3004}
+      API_GATEWAY_INTERNAL_URL: http://api-gateway:8000 # server-side: the session check
+      SSO_COOKIE_NAME: ${SSO_COOKIE_NAME:-insurance_sso}
+      CLAIMS_COOKIE_NAME: ${CLAIMS_COOKIE_NAME:-claims_manager_session}
+      SSO_COOKIE_DOMAIN: ${SSO_COOKIE_DOMAIN:-}
+      ENV_VAR: ${ENV_VAR:-}
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    depends_on:
+      - api-gateway
+      - tenant-service
+    healthcheck:
+      test: [ "CMD", "node", "-e", "fetch('http://localhost:3011/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s # first compile in dev
+
+  # Production build of the workbench, for measuring real speed (the dev service compiles pages on first visit and
+  # runs unminified React). Runs beside the dev service:
+  #   docker compose --profile prod up --build -d underwriting-app-prod   ->  http://localhost:3006
+  underwriting-app-prod:
+    profiles: ["prod"]
+    build:
+      context: ./microservices/frontend-microservices # holds this app and the portal code it shares (frontend/app/services, components, lib)
+      dockerfile: underwriting-app/Dockerfile
+      target: runner
+      args: # compiled into the browser bundle
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010}
+        NEXT_PUBLIC_OCR_URL: ${NEXT_PUBLIC_OCR_URL:-http://localhost:8014}
+        NEXT_PUBLIC_SUMMARIZER_URL: ${NEXT_PUBLIC_SUMMARIZER_URL:-http://localhost:8015}
+        NEXT_PUBLIC_PORTAL_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000}
+        NEXT_PUBLIC_UNDERWRITING_URL: ${UNDERWRITING_PROD_URL:-http://localhost:3006}
+        NEXT_PUBLIC_AUTOMATION_URL: ${NEXT_PUBLIC_AUTOMATION_URL:-http://localhost:3004}
+        ENV_VAR: ${ENV_VAR:-}
+    container_name: insurance-underwriting-app-prod
+    restart: unless-stopped
+    networks:
+      - insurance-net
+    ports:
+      - "3006:3005"
+    environment:
+      API_GATEWAY_INTERNAL_URL: http://api-gateway:8000
+      SSO_COOKIE_NAME: ${SSO_COOKIE_NAME:-insurance_sso}
+      SSO_COOKIE_DOMAIN: ${SSO_COOKIE_DOMAIN:-}
+    depends_on:
+      - api-gateway
+      - tenant-service
+    healthcheck:
+      test: [ "CMD", "node", "-e", "fetch('http://localhost:3005/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   # ───────────────────────────────────────────────────────────────────────────
   # Marketing site (Next.js App Router) — public site at http://localhost:3002
   # ───────────────────────────────────────────────────────────────────────────
   marketing-site:
     build:
-      context: ./marketing-site
+      context: ./microservices/frontend-microservices/marketing-site
       dockerfile: Dockerfile
       target: dev
     container_name: insurance-marketing-site
@@ -305,7 +747,7 @@ services:
     ports:
       - "3002:3000"
     volumes:
-      - ./marketing-site:/app
+      - ./microservices/frontend-microservices/marketing-site:/app
       - /app/node_modules
       - /app/.next
     environment:
@@ -319,7 +761,7 @@ services:
   marketing-site-prod:
     profiles: ["prod"]
     build:
-      context: ./marketing-site
+      context: ./microservices/frontend-microservices/marketing-site
       dockerfile: Dockerfile
       target: runner
     container_name: insurance-marketing-site-prod

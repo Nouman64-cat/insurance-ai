@@ -133,6 +133,7 @@ def build_profile(
     employer_from_evidence = None
     identity_evidence: Dict[str, Any] = {}
     medical_findings: List[Any] = []
+    medical_reports: List[Any] = []
     has_medical_document = False
     has_financial_document = False
     has_identity_document = False
@@ -142,6 +143,10 @@ def build_profile(
         metadata = doc.get("extracted_metadata") or {}
         if kind == "medical":
             has_medical_document = True
+            medical_reports.append({"artifact_id": doc.get("artifact_id"),
+                                    "document_type": doc.get("document_type"),
+                                    "extracted_metadata": metadata,
+                                    "ocr_text": doc.get("ocr_text") or ""})
             if metadata.get("conditions"):
                 medical_findings.append(metadata)
         elif kind == "financial":
@@ -157,6 +162,8 @@ def build_profile(
 
     occupation = customer.get("occupation")
     hazard_level = classify_occupation_hazard(occupation)
+    occupation_details = (customer.get("details") or {}).get("occupation_details") or {}
+    employer_declared = (occupation_details.get("employer_name") or "").strip() or None
 
     lifestyle_habits = e_application.get("lifestyle_habits") or {}
     is_smoker = customer.get("is_smoker")
@@ -199,13 +206,14 @@ def build_profile(
             "declared_conditions": (e_application.get("medical_questionnaire") or {}),
             "family_history": e_application.get("family_history") or {},
             "document_findings": medical_findings,
+            "report_evidence": medical_reports,
         },
         financial={
             "declared_income": declared_income,
             "verified_income": verified_income,
             "coverage_amount": coverage_amount,
             "coverage_to_income_ratio": coverage_to_income_ratio,
-            "employer_declared": None,
+            "employer_declared": employer_declared,
             "employer_evidence": employer_from_evidence,
             "agent_income_opinion": acr.get("estimated_income_opinion"),
         },

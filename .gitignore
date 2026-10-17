@@ -57,7 +57,7 @@ build/
 .eggs/
 __pypackages__/
 
-insurance-ai/mortality-risk-assesment-model/project/data
+ml/mortality-risk-assesment-model/project/data
 *.parquet
 *.dta
 *.log
@@ -134,8 +134,12 @@ local-tests
 
 *.tsbuildinfo
 # Generated policy document PDFs
-services/tenant-service/media/
+microservices/backend-microservices/tenant-service/media/
 *.pdf
 
 
+test images/
+output
+tmp
+medical-reports
 test-data

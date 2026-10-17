@@ -1,0 +1,1053 @@
+import logging
+import re
+from datetime import date, datetime, timedelta
+from datetime import date
+from typing import Literal, Optional
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import func, or_, cast, String
+from sqlalchemy.orm import selectinload
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from database import get_session
+from schemas import CustomerCreate, CustomerRead, CustomerStatsRead, CustomerUpdate, PolicyCreate, PolicyRead, PolicyUpdate
+from shared.events.kafka_events import CUSTOMER_CREATED_TOPIC, CustomerCreatedEvent, CustomerCreatedPayload
+from shared.models.core import (
+    AcquisitionSource, Beneficiary, Case, ComplianceCheck, CounterOffer,
+    Customer, DocumentRequest, Policy, PolicyDocument, PolicyEvent, PolicyRequirement,
+    PolicyExit, PolicyVersion, PremiumQuote, PremiumSchedule, Tenant,
+    ProfileStatusEnum, PolicyStatusEnum, InsurancePlan,
+)
+from services import document_requests as docreq
+from shared.pricing.calculator import calculate_premium
+from routers.auth import optional_oauth2_scheme, source_scope
+from routers.users import verify_admin   # reuse existing Admin guard
+
+# A customer counts as a policyholder only once a policy is actually bound and in-force.
+# APPROVED is intentionally excluded — it means "approved by underwriting but not yet issued",
+# i.e. still sitting in the Policy Issuance queue. Including it caused customers to appear
+# in the Policyholders page before they had any real coverage.
+ACTIVE_POLICY_STATUSES = (PolicyStatusEnum.ACTIVE,)
+# A customer whose policy has since left (matured, surrendered, expired) stays on the Policyholders page, shown with that
+# status, rather than vanishing as if they had never held a policy.
+POLICYHOLDER_STATUSES = ACTIVE_POLICY_STATUSES + (PolicyStatusEnum.MATURED, PolicyStatusEnum.SURRENDERED, PolicyStatusEnum.EXPIRED)
+
+CustomerCategory = Literal["active", "full_details", "quick_lead", "not_interested"]
+
+
+def _active_policy_exists(tenant_id: UUID):
+    return (
+        select(Policy.id)
+        .where(
+            Policy.tenant_id == tenant_id,
+            Policy.customer_id == Customer.id,
+            func.upper(cast(Policy.status, String)).in_([status.value.upper() for status in POLICYHOLDER_STATUSES]),
+        )
+        .exists()
+    )
+
+logger = logging.getLogger("tenant-service.customers")
+
+router = APIRouter(prefix="/tenants", tags=["Customers"])
+
+
+async def _publish_customer_created(request: Request, tenant_id: UUID, customer: Customer) -> None:
+    """Fire-and-forget: a failed publish must never fail customer creation
+    itself — the quote worker is a background enhancement, not the source of
+    truth for the customer record."""
+    if not request or not hasattr(request, "app") or not hasattr(request.app, "state"):
+        return
+
+    gender_val = customer.gender.value if customer.gender and hasattr(customer.gender, "value") else (str(customer.gender) if customer.gender else None)
+    marital_val = customer.marital_status.value if customer.marital_status and hasattr(customer.marital_status, "value") else (str(customer.marital_status) if customer.marital_status else None)
+
+    event = CustomerCreatedEvent(
+        tenant_id=tenant_id,
+        payload=CustomerCreatedPayload(
+            customer_id=customer.id,
+            cnic=customer.cnic,
+            name=customer.name,
+            dob=str(customer.dob) if customer.dob else None,
+            gender=gender_val,
+            marital_status=marital_val,
+            occupation=customer.occupation,
+            declared_income=customer.declared_income,
+            is_smoker=customer.is_smoker,
+            height_cm=customer.height_cm,
+            weight_kg=customer.weight_kg,
+        ),
+    )
+    try:
+        producer = getattr(request.app.state, "kafka_producer", None)
+        if producer:
+            await producer.send_and_wait(
+                CUSTOMER_CREATED_TOPIC,
+                value=event.model_dump_json(),
+                key=str(tenant_id),
+            )
+    except Exception as err:
+        logger.warning(f"Failed to publish customer created event: {err}")
+        logger.exception("Failed to publish CustomerCreated event | customer_id=%s", customer.id)
+
+_KNOCKOUT_OVERRIDE_ROLES = {"Underwriter", "Admin", "SuperAdmin"}
+
+
+async def _enforce_early_knockout(
+    session: AsyncSession, tenant_id: UUID, customer: Customer,
+    override_reason: Optional[str] = None, token: Optional[str] = None,
+) -> None:
+    """Stop a lead from reaching a plan / proposal when the early-knockout rules decline them. An
+    underwriter or admin can move them anyway with a reason; the override is kept on the customer."""
+    from services.early_knockout import early_check
+    verdict = await early_check(
+        session, tenant_id, occupation=customer.occupation, dob=customer.dob, proposal_id=str(customer.id),
+    )
+    if verdict["decision"] != "DECLINE":
+        return
+    reason = (override_reason or "").strip()
+    if reason:
+        from routers.auth import _get_current_user, _role_name
+        if not token:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sign in to override an eligibility decline.")
+        user = await _get_current_user(token, session)
+        role = await _role_name(user, session)
+        if role not in _KNOCKOUT_OVERRIDE_ROLES:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only an underwriter or admin can move a lead past an eligibility decline.",
+            )
+        details = dict(customer.details or {})
+        details["knockout_override"] = {
+            "by": user.email, "role": role, "reason": reason[:500],
+            "declined_for": verdict["reasons"], "at": datetime.utcnow().isoformat(),
+        }
+        customer.details = details
+        session.add(customer)
+        logger.warning("Early-knockout override | customer=%s by=%s reasons=%s", customer.id, user.email, verdict["reasons"])
+        return
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail="Not eligible for cover: " + "; ".join(verdict["reasons"]),
+    )
+
+
+@router.post(
+    "/{tenant_id}/customers",
+    response_model=CustomerRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(verify_admin)],
+)
+async def create_customer(
+    tenant_id: UUID,
+    body: CustomerCreate,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+) -> Customer:
+    # 1. Verify tenant exists and is active
+    tenant = await session.get(Tenant, tenant_id)
+    if not tenant or not tenant.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tenant not found or inactive"
+        )
+
+    # 2. Duplicate CNIC guard (per-tenant unique constraint, only if CNIC provided)
+    if body.cnic:
+        existing = (
+            await session.exec(
+                select(Customer).where(
+                    Customer.tenant_id == tenant_id,
+                    Customer.cnic == body.cnic,
+                )
+            )
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"CNIC '{body.cnic}' already registered for this tenant"
+            )
+
+    # Determine initial profile status
+    status_val = body.profile_status
+    if not status_val:
+        if body.cnic and body.date_of_birth and body.declared_income and body.occupation:
+            status_val = ProfileStatusEnum.UNDERWRITING_READY
+        elif body.date_of_birth or body.declared_income or body.occupation:
+            status_val = ProfileStatusEnum.PROSPECT
+        else:
+            status_val = ProfileStatusEnum.LEAD
+
+    # Resolve branch_id if not explicitly provided
+    resolved_branch_id = body.branch_id
+    if not resolved_branch_id:
+        from shared.models.core import Branch
+        b_query = select(Branch).where(Branch.tenant_id == tenant_id)
+        if body.city:
+            b_query = b_query.where(func.lower(Branch.city) == body.city.lower())
+        branches = (await session.exec(b_query)).all()
+        if branches:
+            resolved_branch_id = branches[0].id
+        else:
+            # Fallback to any branch for the tenant
+            all_b = (await session.exec(select(Branch).where(Branch.tenant_id == tenant_id))).all()
+            if all_b:
+                resolved_branch_id = all_b[0].id
+
+    # A source's own login can only bring in customers under its own source.
+    acquisition_source_id = body.acquisition_source_id
+    scope = await source_scope(token, session)
+    if scope is not None and acquisition_source_id not in scope:
+        acquisition_source_id = next(iter(scope))
+
+    # 3. Persist — tenant_id is always taken from the path (JWT-scoped)
+    customer = Customer(
+        tenant_id       = tenant_id,
+        cnic            = body.cnic,
+        name            = f"{body.first_name} {body.last_name or ''}".strip(),
+        dob             = body.date_of_birth,
+        gender          = body.gender,
+        marital_status  = body.marital_status,
+        occupation      = body.occupation,
+        declared_income = body.declared_income,
+        is_smoker       = body.is_smoker if body.is_smoker is not None else False,
+        height_cm       = body.height_cm if body.height_cm is not None else 170.0,
+        weight_kg       = body.weight_kg if body.weight_kg is not None else 70.0,
+        profile_status  = status_val,
+        acquisition_source_id = acquisition_source_id,
+        branch_id       = resolved_branch_id,
+        assigned_agent_id = body.assigned_agent_id,
+        city            = body.city,
+        province        = body.province,
+        details         = body.details,
+    )
+    session.add(customer)
+    await session.commit()
+    await session.refresh(customer)
+    if customer.acquisition_source_id:
+        await session.refresh(customer, ["acquisition_source"])
+
+    # No quotation is generated here: a new customer stays a lead on the Leads
+    # board and only reaches Proposals when an agent sends it as a Draft — see
+    # update_customer, which publishes CustomerCreated at that point.
+    return customer
+
+@router.get(
+    "/{tenant_id}/customers",
+    response_model=list[CustomerRead],
+    dependencies=[Depends(verify_admin)],
+)
+async def list_customers(
+    tenant_id: UUID,
+    search: Optional[str] = Query(None, description="Matches name, CNIC, or acquisition source name"),
+    category: Optional[CustomerCategory] = Query(None, description="active | full_details | quick_lead | not_interested"),
+    acquisition_source_id: Optional[UUID] = None,
+    branch_id: Optional[UUID] = None,
+    assigned_agent_id: Optional[UUID] = None,
+    city: Optional[str] = None,
+    province: Optional[str] = None,
+    created_from: Optional[date] = None,
+    created_to: Optional[date] = None,
+    include_group_members: bool = Query(
+        False, description="Also list family members and corporate employees (the Cases page needs their folders)"
+    ),
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    query = (
+        select(Customer)
+        .where(Customer.tenant_id == tenant_id)
+        .options(selectinload(Customer.acquisition_source))
+    )
+    if not include_group_members:
+        # Members enrolled under a family group or a corporate organization are
+        # surfaced through their FamilyGroup / Organization lead on the Leads
+        # board, not as standalone individuals — excluding them here keeps a
+        # family/corporate member from also appearing as its own INDIVIDUAL lead.
+        query = query.where(Customer.organization_id.is_(None)).where(Customer.family_group_id.is_(None))
+    scope = await source_scope(token, session)
+    if scope is not None:
+        query = query.where(Customer.acquisition_source_id.in_(scope))
+
+    term = (search or "").strip()
+    if term:
+        digits = re.sub(r"\D", "", term)
+        conditions = [Customer.name.ilike(f"%{term}%")]
+        conditions.append(
+            func.replace(Customer.cnic, "-", "").ilike(f"%{digits}%") if digits else Customer.cnic.ilike(f"%{term}%")
+        )
+        query = query.outerjoin(AcquisitionSource, Customer.acquisition_source_id == AcquisitionSource.id).where(
+            or_(*conditions, AcquisitionSource.name.ilike(f"%{term}%"))
+        )
+
+    if acquisition_source_id:
+        query = query.where(Customer.acquisition_source_id == acquisition_source_id)
+    if branch_id:
+        query = query.where(Customer.branch_id == branch_id)
+    # A source login (broker, bank desk…) is already limited to its source's book
+    # above, and leads it brings in usually have no assigned agent — so its own
+    # "assigned to me" filter would hide them. Only staff logins filter by agent.
+    if assigned_agent_id and scope is None:
+        query = query.where(Customer.assigned_agent_id == assigned_agent_id)
+    if city:
+        query = query.where(Customer.city.ilike(f"%{city}%"))
+    if province:
+        query = query.where(Customer.province.ilike(f"%{province}%"))
+    if created_from:
+        query = query.where(Customer.created_at >= created_from)
+    if created_to:
+        query = query.where(Customer.created_at < created_to + timedelta(days=1))
+
+    active_exists = _active_policy_exists(tenant_id)
+    if category == "active":
+        query = query.where(active_exists)
+    elif category == "not_interested":
+        # An active policyholder always wins the "active" bucket even if flagged
+        # NOT_INTERESTED at some earlier point — keeps the four categories disjoint.
+        query = query.where(cast(Customer.profile_status, String) == ProfileStatusEnum.NOT_INTERESTED.value, ~active_exists)
+    elif category == "quick_lead":
+        query = query.where(cast(Customer.profile_status, String) == ProfileStatusEnum.LEAD.value, ~active_exists)
+    elif category == "full_details":
+        query = query.where(
+            cast(Customer.profile_status, String).in_([ProfileStatusEnum.PROSPECT.value, ProfileStatusEnum.UNDERWRITING_READY.value, ProfileStatusEnum.DRAFT.value]),
+            ~active_exists,
+        )
+
+    query = query.order_by(Customer.created_at.desc())
+    result = await session.exec(query)
+    customers = list(result.all())
+
+    if category == "active" and customers:
+        from schemas import CustomerRead
+        c_ids = [c.id for c in customers]
+        policy_res = await session.exec(
+            select(Policy)
+            .where(Policy.customer_id.in_(c_ids))
+            .where(func.upper(cast(Policy.status, String)).in_([s.value.upper() for s in POLICYHOLDER_STATUSES]))
+            .order_by(Policy.created_at.desc())
+        )
+        active_val = PolicyStatusEnum.ACTIVE.value.upper()
+        policy_map: dict = {}
+        for p in policy_res.all():
+            if not p.policy_number:
+                continue
+            st = (p.status.value if hasattr(p.status, "value") else str(p.status))
+            cur = policy_map.get(p.customer_id)
+            # a live policy is what the row shows; otherwise the most recent one that ended
+            if cur is None or (st.upper() == active_val and cur[1].upper() != active_val):
+                policy_map[p.customer_id] = (p.policy_number, st)
+
+        out = []
+        for c in customers:
+            dto = CustomerRead.model_validate(c)
+            dto.active_policy_number, dto.policy_status = policy_map.get(c.id, (None, None))
+            out.append(dto)
+        return out
+
+    return customers
+
+
+@router.get(
+    "/{tenant_id}/customers/stats",
+    response_model=CustomerStatsRead,
+    dependencies=[Depends(verify_admin)],
+)
+async def get_customer_stats(
+    tenant_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    active_exists = _active_policy_exists(tenant_id)
+    scope = await source_scope(token, session)
+    scope_conditions = () if scope is None else (Customer.acquisition_source_id.in_(scope),)
+
+    async def _count(*conditions) -> int:
+        result = await session.execute(
+            select(func.count()).select_from(Customer).where(Customer.tenant_id == tenant_id, *scope_conditions, *conditions)
+        )
+        return result.scalar_one()
+
+    total = await _count()
+    active = await _count(active_exists)
+    not_interested = await _count(cast(Customer.profile_status, String) == ProfileStatusEnum.NOT_INTERESTED.value, ~active_exists)
+    quick_leads = await _count(cast(Customer.profile_status, String) == ProfileStatusEnum.LEAD.value, ~active_exists)
+    full_details = await _count(
+        cast(Customer.profile_status, String).in_([ProfileStatusEnum.PROSPECT.value, ProfileStatusEnum.UNDERWRITING_READY.value, ProfileStatusEnum.DRAFT.value]),
+        ~active_exists,
+    )
+
+    return CustomerStatsRead(
+        total_customers=total,
+        active_policyholders=active,
+        full_details=full_details,
+        quick_leads=quick_leads,
+        not_interested=not_interested,
+    )
+
+@router.get(
+    "/{tenant_id}/customers/{customer_id}",
+    response_model=CustomerRead,
+    dependencies=[Depends(verify_admin)],
+)
+async def get_customer(
+    tenant_id: UUID,
+    customer_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    result = await session.exec(
+        select(Customer)
+        .where(Customer.id == customer_id)
+        .options(selectinload(Customer.acquisition_source))
+    )
+    customer = result.first()
+    scope = await source_scope(token, session)
+    if not customer or customer.tenant_id != tenant_id or (scope is not None and customer.acquisition_source_id not in scope):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Customer not found"
+        )
+    return await _with_exited_policy(session, customer)
+
+
+async def _with_exited_policy(session: AsyncSession, customer: Customer):
+    """A customer whose policy has left (surrendered / matured / expired) and who has nothing in force gets that policy's
+    details attached, so the profile can show what they held instead of an underwriting workspace."""
+    from schemas import CustomerRead
+    dto = CustomerRead.model_validate(customer)
+    rows = (await session.exec(select(Policy).where(Policy.customer_id == customer.id).order_by(Policy.created_at.desc()))).all()
+    stat = lambda p: (p.status.value if hasattr(p.status, "value") else str(p.status))
+    if any(stat(p) == PolicyStatusEnum.ACTIVE.value for p in rows):
+        return dto
+    left = next((p for p in rows if stat(p) in (PolicyStatusEnum.SURRENDERED.value, PolicyStatusEnum.MATURED.value, PolicyStatusEnum.EXPIRED.value)), None)
+    if left is None:
+        return dto
+    ex = (await session.exec(select(PolicyExit).where(PolicyExit.policy_id == left.id, PolicyExit.status == "Completed")
+                             .order_by(PolicyExit.created_at.desc()))).first()
+    ended = (ex.closed_at.date() if ex and ex.closed_at else None)
+    start, end = left.effective_date, left.maturity_date
+    held_years = None
+    if start:
+        until = ended or date.today()
+        held_years = round((until - start).days / 365.25, 1)
+    dto.exited_policy = {
+        "policy_number": left.policy_number, "product_name": left.product_name, "status": stat(left),
+        "sum_assured": left.coverage_amount, "effective_date": start.isoformat() if start else None,
+        "maturity_date": end.isoformat() if end else None, "ended_on": ended.isoformat() if ended else None,
+        "term_years": round((end - start).days / 365.25) if start and end else None, "held_years": held_years,
+        "net_paid_out": ex.net_payable if ex else None,
+    }
+    return dto
+
+
+def _facts_signature(facts: dict) -> str:
+    import hashlib, json as _json
+    return hashlib.sha256(_json.dumps(facts, sort_keys=True, default=str).encode()).hexdigest()[:16]
+
+
+async def _risk_profile_inputs(session: AsyncSession, tenant_id: UUID, customer_id: UUID, token: Optional[str],
+                               coverage: Optional[float]):
+    """(customer, profile dict for services.profile_risk, cover considered, plan name)."""
+    customer = await session.get(Customer, customer_id)
+    scope = await source_scope(token, session)
+    if not customer or customer.tenant_id != tenant_id or (scope is not None and customer.acquisition_source_id not in scope):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+    details = customer.details or {}
+    plan_name = None
+    if coverage is None and (details.get("pending_plan") or {}).get("coverage_amount"):
+        coverage = float(details["pending_plan"]["coverage_amount"])
+        plan_name = details["pending_plan"].get("product_name")
+    if coverage is None:
+        latest = (await session.exec(
+            select(Policy).where(Policy.customer_id == customer_id).order_by(Policy.created_at.desc())
+        )).first()
+        if latest:
+            coverage, plan_name = latest.coverage_amount, latest.product_name
+    profile = {
+        "dob": customer.dob, "is_smoker": customer.is_smoker,
+        "declared_income": customer.declared_income, "occupation": customer.occupation,
+        "details": details,
+    }
+    return customer, profile, coverage, plan_name
+
+
+async def _run_risk_profile(session: AsyncSession, tenant_id: UUID, customer_id: UUID, token: Optional[str],
+                            coverage: Optional[float]) -> tuple[Customer, dict]:
+    from rule_evaluator import evaluate_rule_set
+    from services.profile_risk import RISK_RULE_SET_CODE, assess_profile, profile_facts
+
+    customer, profile, coverage, plan_name = await _risk_profile_inputs(session, tenant_id, customer_id, token, coverage)
+    # The rule engine decides what is a risk and why (RS-RISK-001, editable in the rule-engine admin);
+    # every run is written to the rule evaluation log. The built-in baseline only covers an undeployed set.
+    facts, _ = profile_facts(profile, coverage)
+    evaluation = await evaluate_rule_set(
+        session=session, rule_set_code=RISK_RULE_SET_CODE,
+        context={**facts, "customer_cnic": customer.cnic}, tenant_id=tenant_id, actor="Profile Risk Assessment",
+    )
+    if evaluation.get("status") in ("SUCCESS", "NO_MATCH"):
+        result = assess_profile(profile, cover=coverage, matched_rules=evaluation.get("matched_impacts") or [],
+                                rule_set={"code": RISK_RULE_SET_CODE, "version": evaluation.get("version_number"),
+                                          "source": "rule engine"})
+    else:
+        result = assess_profile(profile, cover=coverage)
+    return customer, {"customer_id": str(customer.id), "name": customer.name, "plan_considered": plan_name,
+                      "facts_signature": _facts_signature(result.get("facts") or {}), **result}
+
+
+@router.get(
+    "/{tenant_id}/customers/{customer_id}/risk-profile",
+    dependencies=[Depends(verify_admin)],
+)
+async def get_customer_risk_profile(
+    tenant_id: UUID,
+    customer_id: UUID,
+    coverage: Optional[float] = Query(default=None, gt=0),
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    """Explainable pre-proposal risk view: safe and adverse factors whose shares total 100%. Not saved."""
+    _, result = await _run_risk_profile(session, tenant_id, customer_id, token, coverage)
+    return result
+
+
+@router.post(
+    "/{tenant_id}/customers/{customer_id}/risk-profile",
+    dependencies=[Depends(verify_admin)],
+)
+async def run_customer_risk_profile(
+    tenant_id: UUID,
+    customer_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    """Run the risk assessment and keep it on the customer as the latest result."""
+    from sqlalchemy.orm.attributes import flag_modified
+
+    customer, result = await _run_risk_profile(session, tenant_id, customer_id, token, None)
+    actor = None
+    if token:
+        try:
+            from routers.auth import decode_access_token
+            actor = decode_access_token(token).get("email")
+        except Exception:
+            actor = None
+    saved = {**result, "assessed_at": datetime.utcnow().isoformat() + "Z", "assessed_by": actor}
+    customer.details = {**(customer.details or {}), "risk_assessment": saved}
+    flag_modified(customer, "details")
+    session.add(customer)
+    await session.commit()
+    return {**saved, "stale": False}
+
+
+@router.get(
+    "/{tenant_id}/customers/{customer_id}/risk-profile/latest",
+    dependencies=[Depends(verify_admin)],
+)
+async def latest_customer_risk_profile(
+    tenant_id: UUID,
+    customer_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    """The last saved assessment (or null), flagged `stale` when the profile, cover or live rule
+    version has changed since it was run."""
+    from services.profile_risk import RISK_RULE_SET_CODE, profile_facts
+    from shared.models.core import RuleSet, RuleVersion, RuleVersionStatusEnum
+
+    customer, profile, coverage, _ = await _risk_profile_inputs(session, tenant_id, customer_id, token, None)
+    saved = (customer.details or {}).get("risk_assessment")
+    if not saved:
+        return {"assessment": None}
+    facts, _ = profile_facts(profile, coverage)
+    stale_reasons = []
+    if saved.get("facts_signature") != _facts_signature(facts):
+        stale_reasons.append("The profile or cover has changed since this assessment.")
+    live = (await session.exec(
+        select(RuleVersion.version_number).join(RuleSet, RuleSet.id == RuleVersion.rule_set_id)
+        .where(RuleSet.rule_code == RISK_RULE_SET_CODE, RuleVersion.status == RuleVersionStatusEnum.ACTIVE)
+    )).first()
+    if live and (saved.get("rule_set") or {}).get("source") == "rule engine" and (saved.get("rule_set") or {}).get("version") != live:
+        stale_reasons.append(f"The risk rules have been updated (now version {live}).")
+    return {"assessment": {**saved, "stale": bool(stale_reasons), "stale_reasons": stale_reasons}}
+
+
+@router.get(
+    "/{tenant_id}/customers/{customer_id}/policies",
+    response_model=list[PolicyRead],
+    dependencies=[Depends(verify_admin)],
+)
+async def list_customer_policies(
+    tenant_id: UUID,
+    customer_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    customer = await session.get(Customer, customer_id)
+    scope = await source_scope(token, session)
+    if not customer or customer.tenant_id != tenant_id or (scope is not None and customer.acquisition_source_id not in scope):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Customer not found"
+        )
+
+    result = await session.exec(
+        select(Policy)
+        .where(Policy.tenant_id == tenant_id, Policy.customer_id == customer_id)
+        .order_by(Policy.created_at.desc())
+    )
+    return list(result.all())
+
+
+async def sync_policy_premium_quote(policy: Policy, customer: Customer, session: AsyncSession):
+    if not customer.dob:
+        return
+    
+    today = date.today()
+    age = (today - customer.dob).days // 365
+    
+    plan_stmt = select(InsurancePlan).where(
+        InsurancePlan.tenant_id == policy.tenant_id,
+        InsurancePlan.label == policy.product_name
+    )
+    plan = (await session.exec(plan_stmt)).first()
+    
+    if not plan:
+        plan_stmt = select(InsurancePlan).where(
+            InsurancePlan.tenant_id == policy.tenant_id,
+            InsurancePlan.insurance_type == policy.insurance_type
+        )
+        plan = (await session.exec(plan_stmt)).first()
+        
+    if not plan:
+        base_premium = policy.coverage_amount * 0.01
+        total_premium = base_premium
+        loading_applied = 0.0
+        rate_version = "v1"
+    else:
+        breakdown = calculate_premium(
+            coverage_amount=policy.coverage_amount,
+            base_premium_rate=plan.base_premium_rate,
+            smoker_factor=plan.smoker_factor,
+            age=age,
+            is_smoker=customer.is_smoker or False,
+            height_cm=customer.height_cm or 170.0,
+            weight_kg=customer.weight_kg or 70.0,
+        )
+        base_premium = breakdown.base_premium
+        total_premium = breakdown.total_premium
+        loading_applied = breakdown.loading_applied
+        rate_version = plan.rate_version
+
+    quote_stmt = select(PremiumQuote).where(PremiumQuote.policy_id == policy.id)
+    quote = (await session.exec(quote_stmt)).first()
+    
+    if quote:
+        quote.base_premium = base_premium
+        quote.total_premium = total_premium
+        quote.loading_applied = loading_applied
+        quote.rate_version = rate_version
+        session.add(quote)
+    else:
+        quote = PremiumQuote(
+            tenant_id=policy.tenant_id,
+            policy_id=policy.id,
+            base_premium=base_premium,
+            total_premium=total_premium,
+            loading_applied=loading_applied,
+            rate_version=rate_version
+        )
+        session.add(quote)
+
+
+
+@router.post(
+    "/{tenant_id}/customers/{customer_id}/policies",
+    response_model=PolicyRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(verify_admin)],
+)
+async def create_customer_policy(
+    tenant_id: UUID,
+    customer_id: UUID,
+    body: PolicyCreate,
+    override_knockout_reason: Optional[str] = Query(None),
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    customer = await session.get(Customer, customer_id)
+    if not customer or customer.tenant_id != tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Customer not found"
+        )
+
+    await _enforce_early_knockout(session, tenant_id, customer, override_knockout_reason, token)
+
+    policy = Policy(
+        tenant_id=tenant_id,
+        customer_id=customer_id,
+        product_name=body.product_name,
+        insurance_type=body.insurance_type,
+        coverage_amount=body.coverage_amount,
+        term_years=body.term_years,
+        dependent_name=body.dependent_name,
+        dependent_dob=body.dependent_dob,
+        nominee_name=body.nominee_name,
+        nominee_relationship=body.nominee_relationship,
+        status=PolicyStatusEnum.QUOTED,
+    )
+    session.add(policy)
+    await session.flush()
+    await sync_policy_premium_quote(policy, customer, session)
+    await session.commit()
+    await session.refresh(policy)
+
+    # A plan is now attached: set up the document-submission link for the documents that plan requires.
+    try:
+        await docreq.ensure_document_request(session, policy)
+    except Exception:
+        logger.exception("could not create the document request for policy %s", policy.id)
+    return policy
+
+
+
+@router.delete(
+    "/{tenant_id}/customers/{customer_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(verify_admin)],
+)
+async def delete_customer(
+    tenant_id: UUID,
+    customer_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    customer = await session.get(Customer, customer_id)
+    if not customer or customer.tenant_id != tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Customer not found"
+        )
+
+    # Cascade-delete all child records manually in dependency order
+    # so we don't hit FK violations on tables without ON DELETE CASCADE.
+    policies = (await session.exec(select(Policy).where(Policy.customer_id == customer_id))).all()
+    for policy in policies:
+        pid = policy.id
+        # Level-3 children (depend on policy)
+        for model in (
+            PolicyEvent, PolicyDocument, PolicyVersion, PremiumSchedule,
+            PremiumQuote, PolicyRequirement, ComplianceCheck, CounterOffer,
+            Beneficiary, DocumentRequest,
+        ):
+            for row in (await session.exec(select(model).where(model.policy_id == pid))).all():  # type: ignore[attr-defined]
+                await session.delete(row)
+        # Cases reference policy but may be shared; delete only this policy's cases
+        for row in (await session.exec(select(Case).where(Case.policy_id == pid))).all():
+            await session.delete(row)
+        await session.delete(policy)
+
+    await session.delete(customer)
+    await session.commit()
+    return None
+
+
+@router.delete(
+    "/{tenant_id}/customers/{customer_id}/policies/{policy_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(verify_admin)],
+)
+async def delete_customer_policy(
+    tenant_id: UUID,
+    customer_id: UUID,
+    policy_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    policy = await session.get(Policy, policy_id)
+    if not policy or policy.tenant_id != tenant_id or policy.customer_id != customer_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Policy not found"
+        )
+    for request_row in (await session.exec(select(DocumentRequest).where(DocumentRequest.policy_id == policy_id))).all():
+        await session.delete(request_row)
+    await session.delete(policy)
+    await session.commit()
+    return None
+
+
+@router.put(
+    "/{tenant_id}/customers/{customer_id}/policies/{policy_id}",
+    response_model=PolicyRead,
+    dependencies=[Depends(verify_admin)],
+)
+async def update_customer_policy(
+    tenant_id: UUID,
+    customer_id: UUID,
+    policy_id: UUID,
+    payload: PolicyUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    policy = await session.get(Policy, policy_id)
+    if not policy or policy.tenant_id != tenant_id or policy.customer_id != customer_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Policy not found"
+        )
+    
+    update_data = payload.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(policy, key, value)
+        
+    session.add(policy)
+    await session.flush()
+    
+    customer = await session.get(Customer, customer_id)
+    if customer:
+        await sync_policy_premium_quote(policy, customer, session)
+        
+    await session.commit()
+    await session.refresh(policy)
+
+    # The plan (and so the documents it requires) may have changed.
+    try:
+        await docreq.ensure_document_request(session, policy)
+    except Exception:
+        logger.exception("could not refresh the document request for policy %s", policy.id)
+    return policy
+
+
+@router.get(
+    "/{tenant_id}/customers/{customer_id}/policies/{policy_id}/document-request",
+    dependencies=[Depends(verify_admin)],
+)
+async def get_policy_document_request(
+    tenant_id: UUID,
+    customer_id: UUID,
+    policy_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    """The documents this proposal's plan requires, which have arrived, and the link the customer uploads them
+    through. Created on first request for policies that were made some other way (e.g. generated quotes)."""
+    policy = await _policy_in_scope(session, tenant_id, customer_id, policy_id, token)
+    req = await docreq.ensure_document_request(session, policy)
+    return {**(await docreq.summary(session, req)), "link_path": f"/documents/{docreq.make_token(req)}"}
+
+
+@router.post(
+    "/{tenant_id}/customers/{customer_id}/policies/{policy_id}/document-request/renew",
+    dependencies=[Depends(verify_admin)],
+)
+async def renew_policy_document_request(
+    tenant_id: UUID,
+    customer_id: UUID,
+    policy_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    """A new link with a fresh expiry. The previous link stops working."""
+    policy = await _policy_in_scope(session, tenant_id, customer_id, policy_id, token)
+    req = await docreq.ensure_document_request(session, policy)
+    req = await docreq.renew_link(session, req)
+    return {**(await docreq.summary(session, req)), "link_path": f"/documents/{docreq.make_token(req)}"}
+
+
+@router.post(
+    "/{tenant_id}/customers/{customer_id}/policies/{policy_id}/document-request/send",
+    dependencies=[Depends(verify_admin)],
+)
+async def send_policy_document_request(
+    tenant_id: UUID,
+    customer_id: UUID,
+    policy_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    """Email the customer their upload link, listing what is still outstanding. An expired link is renewed first.
+    Best-effort like every customer email: the link is returned either way, and email_status says honestly whether
+    it went ("sent"), failed ("failed") or had nowhere to go ("no_email")."""
+    import email_utils
+    from services.customer_links import PORTAL_PUBLIC_URL, customer_email
+    from services.email_templates import customer_action_link_email
+
+    policy = await _policy_in_scope(session, tenant_id, customer_id, policy_id, token)
+    req = await docreq.ensure_document_request(session, policy)
+    if req.expires_at < datetime.utcnow():
+        req = await docreq.renew_link(session, req)
+    summary = await docreq.summary(session, req)
+    link_path = f"/documents/{docreq.make_token(req)}"
+    url = f"{PORTAL_PUBLIC_URL}{link_path}"
+    outstanding = [i["document_type"] for i in summary["requirements"] if i["state"] != "received"]
+
+    customer = await session.get(Customer, customer_id)
+    to = customer_email(customer)
+    email_status = "no_email"
+    if to:
+        tenant = await session.get(Tenant, tenant_id)
+        case = await docreq.latest_case(session, req)
+        subject, text, html = customer_action_link_email(
+            kind="documents",
+            customer_name=customer.name if customer else "",
+            tenant_name=(tenant.name if tenant else None) or "Your insurer",
+            url=url,
+            expires_on=req.expires_at.strftime("%d %b %Y"),
+            case_number=case.caseNumber if case else None,
+            tests=outstanding,
+            tenant_phone=getattr(tenant, "contact_phone", None),
+            tenant_email=getattr(tenant, "contact_email", None),
+        )
+        email_status = "sent" if await email_utils.send_email(to, subject, text, html) else "failed"
+    return {**summary, "link_path": link_path, "url": url, "outstanding": outstanding,
+            "emailed_to": to, "email_status": email_status}
+
+
+async def _policy_in_scope(
+    session: AsyncSession, tenant_id: UUID, customer_id: UUID, policy_id: UUID, token: Optional[str],
+) -> Policy:
+    policy = await session.get(Policy, policy_id)
+    customer = await session.get(Customer, customer_id)
+    scope = await source_scope(token, session)
+    if (
+        not policy or policy.tenant_id != tenant_id or policy.customer_id != customer_id
+        or not customer or (scope is not None and customer.acquisition_source_id not in scope)
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Policy not found")
+    return policy
+
+
+
+@router.put(
+    "/{tenant_id}/customers/{customer_id}",
+    response_model=CustomerRead,
+    dependencies=[Depends(verify_admin)],
+)
+async def update_customer(
+    tenant_id: UUID,
+    customer_id: UUID,
+    body: CustomerUpdate,
+    request: Request,
+    override_knockout_reason: Optional[str] = Query(None),
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+) -> Customer:
+    customer = await session.get(Customer, customer_id)
+    if not customer or customer.tenant_id != tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Customer not found"
+        )
+    was_draft = customer.profile_status == ProfileStatusEnum.DRAFT
+
+    # Moving a lead to another source (or back to Direct) changes who can see it, so a login that is itself
+    # an acquisition source (agent, broker, bank desk) can't do it. Re-saving the current source is fine —
+    # the edit form always sends it.
+    changing_source = body.clear_acquisition_source or (
+        body.acquisition_source_id is not None and body.acquisition_source_id != customer.acquisition_source_id
+    )
+    if changing_source:
+        if await source_scope(token, session) is not None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Changing a lead's acquisition source is limited to staff accounts.",
+            )
+        if body.acquisition_source_id is not None and not body.clear_acquisition_source:
+            new_source = await session.get(AcquisitionSource, body.acquisition_source_id)
+            if new_source is None or new_source.tenant_id != tenant_id:
+                raise HTTPException(status_code=404, detail="Acquisition source not found")
+
+    # Update identity fields
+    if body.cnic is not None:
+        if body.cnic != customer.cnic:
+            existing = (
+                await session.exec(
+                    select(Customer).where(
+                        Customer.tenant_id == tenant_id,
+                        Customer.cnic == body.cnic,
+                        Customer.id != customer_id
+                    )
+                )
+            ).first()
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"CNIC '{body.cnic}' already registered for this tenant"
+                )
+        customer.cnic = body.cnic
+
+    if body.first_name is not None or body.last_name is not None:
+        parts = customer.name.split(" ", 1)
+        existing_first = parts[0] if len(parts) > 0 else ""
+        existing_last = parts[1] if len(parts) > 1 else ""
+        
+        fname = body.first_name if body.first_name is not None else existing_first
+        lname = body.last_name if body.last_name is not None else existing_last
+        customer.name = f"{fname} {lname}".strip()
+
+    dob_val = body.date_of_birth if body.date_of_birth is not None else getattr(body, "dob", None)
+    if dob_val is not None:
+        customer.dob = dob_val
+    if body.gender is not None:
+        customer.gender = body.gender
+    if body.marital_status is not None:
+        customer.marital_status = body.marital_status
+    if body.occupation is not None:
+        customer.occupation = body.occupation
+    if body.declared_income is not None:
+        customer.declared_income = body.declared_income
+    if body.is_smoker is not None:
+        customer.is_smoker = body.is_smoker
+    if body.height_cm is not None:
+        customer.height_cm = body.height_cm
+    if body.weight_kg is not None:
+        customer.weight_kg = body.weight_kg
+    if body.acquisition_source_id is not None:
+        customer.acquisition_source_id = body.acquisition_source_id
+    if body.branch_id is not None:
+        customer.branch_id = body.branch_id
+    if body.assigned_agent_id is not None:
+        customer.assigned_agent_id = body.assigned_agent_id
+    if body.clear_acquisition_source:
+        customer.acquisition_source_id = None
+        customer.assigned_agent_id = None
+    if body.city is not None:
+        customer.city = body.city
+    if body.province is not None:
+        customer.province = body.province
+    if body.details is not None:
+        customer.details = body.details
+
+    # Auto-promote profile status if all required underwriting attributes are present.
+    # Skip auto-promotion once a customer has been explicitly marked NOT_INTERESTED —
+    # that's a sticky terminal state an unrelated field edit shouldn't silently clear;
+    # only an explicit profile_status in the request (a manual "Reactivate") can move it.
+    # DRAFT is the same: it means "sent to Proposal" by an explicit click, so a later
+    # edit must not silently pull the lead back out of the proposal list. And a POLICYHOLDER
+    # already holds a policy: correcting their email or address must not demote them to a lead stage.
+    if body.profile_status == ProfileStatusEnum.DRAFT and not was_draft:
+        await _enforce_early_knockout(session, tenant_id, customer, override_knockout_reason, token)
+    if body.profile_status is not None:
+        customer.profile_status = body.profile_status
+    elif customer.profile_status not in (ProfileStatusEnum.NOT_INTERESTED, ProfileStatusEnum.DRAFT, ProfileStatusEnum.POLICYHOLDER):
+        if customer.cnic and customer.dob and customer.declared_income and customer.occupation:
+            customer.profile_status = ProfileStatusEnum.UNDERWRITING_READY
+        elif customer.dob or customer.declared_income or customer.occupation or customer.cnic:
+            if customer.profile_status == ProfileStatusEnum.LEAD:
+                customer.profile_status = ProfileStatusEnum.PROSPECT
+
+    session.add(customer)
+    await session.commit()
+    await session.refresh(customer)
+    if customer.acquisition_source_id:
+        await session.refresh(customer, ["acquisition_source"])
+
+    # First time this customer is sent to Draft: have the quote worker generate
+    # offers — unless a policy already exists (e.g. the plan chosen at entry was
+    # just created from "Send Draft"), so nothing is duplicated.
+    if customer.profile_status == ProfileStatusEnum.DRAFT and not was_draft:
+        has_policy = (
+            await session.exec(select(Policy.id).where(Policy.customer_id == customer.id).limit(1))
+        ).first()
+        if has_policy is None:
+            await _publish_customer_created(request, tenant_id, customer)
+    return customer

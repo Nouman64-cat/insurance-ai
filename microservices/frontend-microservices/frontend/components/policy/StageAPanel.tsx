@@ -1,0 +1,727 @@
+"use client";
+
+import { displayDate } from '../../lib/dateDisplay';
+import { useCallback, useEffect, useState } from "react";
+import {
+  getReadiness,
+  getCounterOffer,
+  acceptCounterOffer,
+  declineCounterOffer,
+  getRequirements,
+  seedRequirements,
+  actOnRequirement,
+  getCompliance,
+  runCompliance,
+  clearCompliance,
+  failCompliance,
+  getBeneficiaries,
+  replaceBeneficiaries,
+  getBeneficiaryHistory,
+  generateDocuments,
+  documentDownloadUrl,
+  type Readiness,
+  type CounterOffer,
+  type RequirementItem,
+  type ComplianceCheck,
+  type Beneficiary,
+  type BeneficiaryVersion,
+} from "@/app/services/preIssuance";
+import { getPolicyDetail, type PolicyDocument } from "@/app/services/policies";
+import {
+  getReinsurance,
+  referToReinsurer,
+  recordReinsurerResponse,
+  applyReinsurerTerms,
+  withdrawReferral,
+  type ReinsuranceView,
+  type ReinsurerDecision,
+} from "@/app/services/reinsurance";
+import { ReinsurancePanel } from "@/components/policy/ReinsurancePanel";
+import { tx } from "@/lib/i18n/tx";
+
+// Statuses during which Stage A mutations are legal (mirrors the backend
+// PRE_ISSUANCE_STATUSES guard). Outside this set the contract is drafted/bound
+// and Stage A is read-only - changes go through a Stage B endorsement.
+const PRE_ISSUANCE_STATUSES = new Set([
+  "Proposed",
+  "UnderReview",
+  "InformationRequested",
+  "CounterOffer",
+  "Approved",
+  "AcceptedWithLoadings",
+]);
+
+const fmtPKR = (n: number | null | undefined) =>
+  n == null ? "-" : `PKR ${Math.round(n).toLocaleString()}`;
+
+const PILL: Record<string, string> = {
+  done: "bg-blue-50 text-blue-700 border-blue-200",
+  blocked: "bg-red-50 text-red-700 border-red-200",
+  current: "bg-amber-50 text-amber-700 border-amber-200",
+  idle: "bg-slate-100 text-slate-500 border-slate-200",
+};
+
+interface StepShellProps {
+  n: number;
+  title: string;
+  state: "done" | "blocked" | "current" | "idle";
+  hint: string;
+  children?: React.ReactNode;
+}
+
+function StepShell({ n, title, state, hint, children }: StepShellProps) {
+  return (
+    <div className="relative pl-9">
+      <span
+        className={`absolute left-0 top-0 flex items-center justify-center w-6 h-6 rounded-full border text-[11px] font-bold ${PILL[state]}`}
+      >
+        {n}
+      </span>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-slate-800">
+          {title}{" "}
+          {state === "done" && <span className="text-blue-500 ml-1">✓</span>}
+        </p>
+        <span
+          className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full border ${PILL[state]}`}
+        >
+          {hint}
+        </span>
+      </div>
+      {children && <div className="mt-2">{children}</div>}
+    </div>
+  );
+}
+
+interface BtnProps {
+  onClick: () => void;
+  children: React.ReactNode;
+  tone?: "slate" | "emerald" | "red" | "amber";
+  disabled?: boolean;
+}
+
+const Btn = ({ onClick, children, tone = "slate", disabled }: BtnProps) => {
+  const tones: Record<string, string> = {
+    slate: "bg-slate-800 hover:bg-slate-900 text-white",
+    emerald: "bg-blue-600 hover:bg-blue-700 text-white",
+    red: "bg-white border border-red-200 text-red-700 hover:bg-red-50",
+    amber: "bg-amber-500 hover:bg-amber-600 text-white",
+  };
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors disabled:opacity-40 ${tones[tone]}`}
+    >
+      {children}
+    </button>
+  );
+};
+
+interface StageAPanelProps {
+  policyId: string;
+  onChanged?: () => void;
+}
+
+export function StageAPanel({ policyId, onChanged }: StageAPanelProps) {
+  const [readiness, setReadiness] = useState<Readiness | null>(null);
+  const [offer, setOffer] = useState<CounterOffer | null>(null);
+  const [reqs, setReqs] = useState<RequirementItem[]>([]);
+  const [checks, setChecks] = useState<ComplianceCheck[]>([]);
+  const [bens, setBens] = useState<Beneficiary[]>([]);
+  const [docs, setDocs] = useState<PolicyDocument[]>([]);
+  const [history, setHistory] = useState<BeneficiaryVersion[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [freeLookEnd, setFreeLookEnd] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setUserRole(localStorage.getItem("user_role"));
+    }
+  }, []);
+
+  const load = useCallback(async () => {
+    try {
+      const [r, o, rq, c, b, d, h] = await Promise.all([
+        getReadiness(policyId),
+        getCounterOffer(policyId).catch(() => null),
+        getRequirements(policyId).catch(() => []),
+        getCompliance(policyId).catch(() => []),
+        getBeneficiaries(policyId).catch(() => ({
+          beneficiaries: [],
+          total_share: 0,
+        })),
+        getPolicyDetail(policyId).catch(() => null),
+        getBeneficiaryHistory(policyId).catch(() => []),
+      ]);
+      setReadiness(r);
+      setOffer(o);
+      setReqs(rq);
+      setChecks(c);
+      setBens(b.beneficiaries.length ? b.beneficiaries : []);
+      setDocs(d?.documents ?? []);
+      setFreeLookEnd(d?.free_look_end_date ?? null);
+      setHistory(h);
+    } catch (e: any) {
+      setErr(e?.message ?? "Failed to load pre-issuance status");
+    }
+  }, [policyId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const run = async (fn: () => Promise<any>) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await fn();
+      await load();
+      onChanged?.();
+    } catch (e: any) {
+      setErr(e?.message ?? "Action failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!readiness) {
+    return (
+      <div className="py-6 flex justify-center">
+        <div className="animate-spin h-5 w-5 rounded-full border-2 border-slate-100 border-t-blue-500" />
+      </div>
+    );
+  }
+  const s = readiness.steps;
+
+  // Once the policy leaves the pre-issuance statuses it is drafted/bound - Stage A
+  // mutations are locked (backend enforces the same via _assert_stage_a).
+  const stageALocked = !PRE_ISSUANCE_STATUSES.has(readiness.status);
+  const locked = busy || stageALocked || userRole === "Agent";
+  const reqState =
+    s.requirements.status === "complete"
+      ? "done"
+      : s.requirements.status === "none"
+        ? "idle"
+        : "blocked";
+  const compState =
+    s.compliance.status === "clear"
+      ? "done"
+      : s.compliance.status === "not_run"
+        ? "idle"
+        : "blocked";
+  const benState = s.beneficiaries.status === "valid" ? "done" : "blocked";
+  const termState =
+    s.revised_terms.status === "pending"
+      ? "blocked"
+      : s.revised_terms.status === "accepted" ||
+          s.revised_terms.status === "not_required"
+        ? "done"
+        : "idle";
+  const premState =
+    s.premium.status === "paid" || s.premium.status === "prepaid"
+      ? "done"
+      : s.premium.status === "pending"
+        ? "current"
+        : "idle";
+  const docState = s.documents.status === "ready" ? "done" : "idle";
+
+  const benTotal =
+    Math.round(bens.reduce((a, b) => a + (Number(b.share_pct) || 0), 0) * 100) /
+    100;
+
+  return (
+    <div className="space-y-5">
+      {stageALocked ? (
+        <div className="rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-xs text-slate-600 space-y-1">
+          <p className="font-semibold flex items-center gap-2">
+            <span aria-hidden>🔒</span>
+            {tx("Stage A is finalized (policy is")} <b>{readiness.status}</b>
+            {tx(
+              "). These steps are read-only - mid-term changes now go through a Stage B endorsement.",
+            )}
+          </p>
+          {freeLookEnd && (
+            <p className="text-[11px] text-slate-500 pl-6">
+              {tx("Free-look period ends")}{" "}
+              <b className="text-slate-700">{freeLookEnd}</b>{" "}
+              {tx("- cancel by then for a full refund.")}
+            </p>
+          )}
+        </div>
+      ) : (
+        <div
+          className={`rounded-lg border px-3 py-2 text-xs font-semibold ${readiness.ready_to_issue ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-amber-50 border-amber-200 text-amber-800"}`}
+        >
+          {readiness.ready_to_issue
+            ? tx("✓ All pre-issuance gates cleared - ready to issue.")
+            : tx("{0} gate(s) remaining before issuance.", {
+                0: readiness.blockers.length,
+              })}
+        </div>
+      )}
+
+      {err && (
+        <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2">
+          {err}
+        </div>
+      )}
+
+      <div className="space-y-5">
+        {/* 1 - Revised terms */}
+        <StepShell
+          n={1}
+          title={tx("Accept Revised Terms")}
+          state={termState}
+          hint={s.revised_terms.status.replace("_", " ")}
+        >
+          {offer && offer.status === "Pending" ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 space-y-2">
+              <p className="text-xs text-slate-600">{offer.reason}</p>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="bg-white rounded p-2 border border-slate-100">
+                  <p className="text-[10px] uppercase text-slate-400 font-semibold">
+                    {tx("Original")}
+                  </p>
+                  <p className="font-semibold text-slate-700">
+                    {fmtPKR(offer.original_premium)}
+                    {tx("/yr")}
+                  </p>
+                  <p className="text-slate-500">
+                    {fmtPKR(offer.original_coverage_amount)} {tx("cover")}
+                  </p>
+                </div>
+                <div className="bg-white rounded p-2 border border-blue-200">
+                  <p className="text-[10px] uppercase text-blue-500 font-semibold">
+                    {tx("Revised")}
+                  </p>
+                  <p className="font-semibold text-slate-800">
+                    {fmtPKR(offer.revised_premium)}
+                    {tx("/yr")}
+                  </p>
+                  <p className="text-slate-500">
+                    {offer.offer_type === "Loading" &&
+                      tx("+{0}% loading", { 0: offer.revised_loading_pct })}
+                    {offer.offer_type === "ReducedSumAssured" &&
+                      tx("{0} cover", {
+                        0: fmtPKR(offer.revised_coverage_amount),
+                      })}
+                    {offer.offer_type === "PlanSubstitution" &&
+                      offer.revised_product_name}
+                    {offer.offer_type === "Exclusion" &&
+                      (offer.exclusions?.join(", ") ?? tx("exclusions"))}
+                  </p>
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-400">
+                {tx("Valid until")} {offer.valid_until}
+              </p>
+              <div className="flex gap-2">
+                <Btn
+                  tone="emerald"
+                  disabled={locked}
+                  onClick={() => run(() => acceptCounterOffer(policyId))}
+                >
+                  {tx("Accept terms")}
+                </Btn>
+                <Btn
+                  tone="red"
+                  disabled={locked}
+                  onClick={() => run(() => declineCounterOffer(policyId))}
+                >
+                  {tx("Decline")}
+                </Btn>
+              </div>
+            </div>
+          ) : offer ? (
+            <p className="text-xs text-slate-500">
+              {tx("Counter-offer")} <b>{offer.status.toLowerCase()}</b>
+              {offer.responded_at
+                ? " " + tx("on {0}", { 0: offer.responded_at.slice(0, 10) })
+                : ""}
+              .
+            </p>
+          ) : (
+            <p className="text-xs text-slate-400 italic">
+              {tx("Clean approval - no revised terms to accept.")}
+            </p>
+          )}
+        </StepShell>
+
+        {/* 2 - Requirements */}
+        <StepShell
+          n={2}
+          title={tx("Clear Pending Requirements")}
+          state={reqState}
+          hint={
+            reqs.length
+              ? `${s.requirements.cleared}/${s.requirements.total}`
+              : tx("none")
+          }
+        >
+          {reqs.length === 0 ? (
+            <Btn
+              disabled={locked}
+              onClick={() => run(() => seedRequirements(policyId))}
+            >
+              {tx("Create requirement checklist")}
+            </Btn>
+          ) : (
+            <div className="space-y-1.5">
+              {reqs.map((r) => (
+                <div
+                  key={r.id}
+                  className="flex items-center justify-between gap-2 bg-slate-50 rounded-md px-2.5 py-1.5"
+                >
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-slate-700 truncate">
+                      {tx(r.label)}
+                    </p>
+                    <p className="text-[10px] text-slate-400">{r.status}</p>
+                  </div>
+                  {r.status !== "Verified" && r.status !== "Waived" && (
+                    <div className="flex gap-1.5 flex-shrink-0">
+                      <Btn
+                        tone="emerald"
+                        disabled={locked}
+                        onClick={() =>
+                          run(() => actOnRequirement(r.id, "verify", "officer"))
+                        }
+                      >
+                        {tx("Verify")}
+                      </Btn>
+                      <Btn
+                        tone="slate"
+                        disabled={locked}
+                        onClick={() =>
+                          run(() => actOnRequirement(r.id, "waive", "officer"))
+                        }
+                      >
+                        {tx("Waive")}
+                      </Btn>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </StepShell>
+
+        {/* 3 - First premium */}
+        <StepShell
+          n={3}
+          title={tx("Collect First Premium")}
+          state={premState}
+          hint={s.premium.status}
+        >
+          {s.premium.status === "prepaid" && (
+            <p className="text-xs text-slate-600">
+              {tx("Already received at the proposal stage")}{s.premium.prepaid_amount ? `: PKR ${Math.round(s.premium.prepaid_amount).toLocaleString()}` : ""}{s.premium.prepaid_reference ? ` (${s.premium.prepaid_reference})` : ""}.{" "}
+              {tx("It is credited when the policy is issued, so you are not asked to pay again. Only a balance, if the final premium is higher, would be collected.")}
+            </p>
+          )}
+          <p className={`text-xs text-slate-400 italic ${s.premium.status === "prepaid" ? "hidden" : ""}`}>
+            {s.premium.status === "none"
+              ? tx(
+                  "Created when the policy is drafted; collected via Confirm Payment after issuance.",
+                )
+              : tx("{0}/{1} installment(s) paid.", {
+                  0: s.premium.paid,
+                  1: s.premium.total,
+                })}
+          </p>
+        </StepShell>
+
+        {/* 4 - Compliance */}
+        <StepShell
+          n={4}
+          title={tx("Compliance Checks")}
+          state={compState}
+          hint={s.compliance.status.replace("_", " ")}
+        >
+          <div className="space-y-1.5">
+            {checks.length === 0 ? (
+              <Btn
+                disabled={locked}
+                onClick={() => run(() => runCompliance(policyId))}
+              >
+                {tx("Run AML / Sanctions / SECP")}
+              </Btn>
+            ) : (
+              <>
+                {checks.map((c) => {
+                  const tone =
+                    c.status === "Passed"
+                      ? "text-blue-700 bg-blue-50 border-blue-200"
+                      : c.status === "Flagged"
+                        ? "text-amber-700 bg-amber-50 border-amber-200"
+                        : c.status === "Failed"
+                          ? "text-red-700 bg-red-50 border-red-200"
+                          : "text-slate-500 bg-slate-50 border-slate-200";
+                  const details = (c.details ?? {}) as {
+                    matched?: any[];
+                    list?: string;
+                    note?: string;
+                    source?: string;
+                  };
+                  const isLive = details.source === "opensanctions";
+                  return (
+                    <div
+                      key={c.id}
+                      className="rounded-md px-2.5 py-1.5 bg-slate-50 space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-medium text-slate-700">
+                            {c.check_type}
+                            <span
+                              className={`ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded border ${tone}`}
+                            >
+                              {c.status === "Flagged"
+                                ? tx("Pending")
+                                : c.status}
+                            </span>
+                            {c.check_type === "Sanctions" && (
+                              <span
+                                className={`ml-1.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${isLive ? "bg-blue-100 text-blue-700" : "bg-slate-200 text-slate-500"}`}
+                                title={
+                                  isLive
+                                    ? tx(
+                                        "Screened against OpenSanctions (PEP + NACTA + global sanctions)",
+                                      )
+                                    : tx(
+                                        "OPENSANCTIONS_API_KEY not configured — internal watchlist only",
+                                      )
+                                }
+                              >
+                                {isLive
+                                  ? tx("Live PEP/Sanctions")
+                                  : tx("Internal only")}
+                              </span>
+                            )}
+                          </p>
+                          {c.score != null && (
+                            <p className="text-[10px] text-slate-400">
+                              {tx("score")} {c.score}
+                            </p>
+                          )}
+                        </div>
+                        {c.status === "Flagged" && (
+                          <div className="flex gap-1.5 flex-shrink-0">
+                            <Btn
+                              tone="emerald"
+                              disabled={busy}
+                              onClick={() =>
+                                run(() =>
+                                  clearCompliance(
+                                    c.id,
+                                    "Cleared after review — false positive",
+                                    "officer",
+                                  ),
+                                )
+                              }
+                            >
+                              {tx("Approve")}
+                            </Btn>
+                            <Btn
+                              tone="red"
+                              disabled={busy}
+                              onClick={() =>
+                                run(() =>
+                                  failCompliance(
+                                    c.id,
+                                    "Failed after review — confirmed match",
+                                    "officer",
+                                  ),
+                                )
+                              }
+                            >
+                              {tx("Reject")}
+                            </Btn>
+                          </div>
+                        )}
+                      </div>
+                      {c.check_type === "Sanctions" &&
+                        details.matched &&
+                        details.matched.length > 0 && (
+                          <div className="space-y-1 pl-0.5">
+                            {details.matched.map((m: any, i: number) => (
+                              <div
+                                key={i}
+                                className="text-[10px] text-slate-500 border-l-2 border-amber-300 pl-2"
+                              >
+                                <span className="font-semibold text-slate-700">
+                                  {m.matched_name ?? m}
+                                </span>
+                                {m.score != null && (
+                                  <span className="ml-1">
+                                    · {m.score}
+                                    {tx("% match")}
+                                  </span>
+                                )}
+                                {m.topics && m.topics.length > 0 && (
+                                  <span className="ml-1">
+                                    · {m.topics.join(", ")}
+                                  </span>
+                                )}
+                                {m.datasets && m.datasets.length > 0 && (
+                                  <span className="ml-1 text-slate-400">
+                                    ({m.datasets.join(", ")})
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                    </div>
+                  );
+                })}
+                <button
+                  onClick={() => run(() => runCompliance(policyId))}
+                  disabled={locked}
+                  className="text-[11px] text-slate-500 hover:text-slate-700 underline"
+                >
+                  {tx("Re-run screening")}
+                </button>
+              </>
+            )}
+          </div>
+        </StepShell>
+
+        {/* 5 — Beneficiaries
+        <StepShell n={5} title="Capture Beneficiaries" state={benState}
+          hint={bens.length ? `${benTotal}%` : "none"}>
+          <div className="space-y-1.5">
+            {history.length > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5">
+                  v{history[0].version_sequence} · {history.length} revision{history.length > 1 ? "s" : ""}
+                </span>
+                <button onClick={() => setShowHistory((v) => !v)}
+                  className="text-[11px] text-slate-500 hover:text-slate-700 underline">
+                  {showHistory ? "Hide history" : "View history"}
+                </button>
+              </div>
+            )}
+            {showHistory && history.length > 0 && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 divide-y divide-slate-200 max-h-52 overflow-y-auto">
+                {history.map((v) => (
+                  <div key={v.version_sequence} className="px-2.5 py-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-slate-700">
+                        v{v.version_sequence}
+                        <span className="ml-1.5 font-normal text-slate-400">{v.change_reason ?? "—"}</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        {v.changed_by ?? "system"} · {displayDate(v.created_at)}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 text-[10px] text-slate-500">
+                      {v.beneficiaries.map((b) => `${b.name} (${b.share_pct}%)`).join(", ")}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {bens.map((b, i) => (
+              <div key={i} className="flex gap-1.5 items-center">
+                <input value={b.name} placeholder="Name"
+                  onChange={(e) => setBens((p) => p.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+                  className="flex-1 min-w-0 text-xs border border-slate-200 rounded px-2 py-1" />
+                <input value={b.relationship} placeholder="Relation"
+                  onChange={(e) => setBens((p) => p.map((x, j) => j === i ? { ...x, relationship: e.target.value } : x))}
+                  className="w-20 text-xs border border-slate-200 rounded px-2 py-1" />
+                <input type="number" value={b.share_pct === 0 ? "" : b.share_pct}
+                  onChange={(e) => setBens((p) => p.map((x, j) => j === i ? { ...x, share_pct: e.target.value === "" ? 0 : Number(e.target.value) } : x))}
+                  className="w-14 text-xs border border-slate-200 rounded px-2 py-1" />
+                <button onClick={() => setBens((p) => p.filter((_, j) => j !== i))}
+                  className="text-slate-300 hover:text-red-500 text-sm px-1">×</button>
+              </div>
+            ))}
+            <div className="flex items-center justify-between pt-1">
+              <button onClick={() => setBens((p) => [...p, { name: "", relationship: "", share_pct: 0 }])}
+                className="text-[11px] text-blue-600 hover:text-blue-700 font-semibold">+ Add beneficiary</button>
+              <span className={`text-[11px] font-semibold ${Math.abs(benTotal - 100) < 0.01 ? "text-blue-600" : "text-amber-600"}`}>Σ {benTotal}%</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Btn tone="emerald" disabled={locked || Math.abs(benTotal - 100) > 0.01 || bens.some((b) => !b.name || !b.relationship)}
+                onClick={() => run(() => replaceBeneficiaries(policyId, bens))}>Save beneficiaries</Btn>
+              {Math.abs(benTotal - 100) > 0.01 && bens.length > 0 && (
+                <span className="text-[10px] text-amber-600">Total share must equal 100% to save</span>
+              )}
+            </div>
+          </div>
+        </StepShell> */}
+
+        {/* 6 - Documents */}
+        <StepShell
+          n={5}
+          title={tx("Generate & Validate Documents")}
+          state={docState}
+          hint={
+            docs.length
+              ? `${s.documents.generated}/${s.documents.total}`
+              : tx("none")
+          }
+        >
+          <div className="space-y-1.5">
+            {docs.length === 0 ? (
+              <p className="text-xs text-slate-400 italic">
+                {tx("Generated automatically when the policy is issued.")}
+              </p>
+            ) : (
+              docs.map((d) => (
+                <div
+                  key={d.id}
+                  className="flex items-center justify-between gap-2 bg-slate-50 rounded-md px-2.5 py-1.5"
+                >
+                  <p className="text-xs font-medium text-slate-700 truncate">
+                    {d.document_name}
+                  </p>
+                  {d.is_stub ? (
+                    <span className="text-[10px] text-amber-600 font-semibold">
+                      {tx("stub")}
+                    </span>
+                  ) : (
+                    <a
+                      href={documentDownloadUrl(policyId, d.id)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] font-semibold text-blue-600 hover:text-blue-700"
+                    >
+                      {tx("Download PDF")}
+                    </a>
+                  )}
+                </div>
+              ))
+            )}
+            {docs.length > 0 && (
+              <button
+                onClick={() => run(() => generateDocuments(policyId))}
+                disabled={locked}
+                className="text-[11px] text-slate-500 hover:text-slate-700 underline"
+              >
+                {tx("Regenerate documents")}
+              </button>
+            )}
+          </div>
+        </StepShell>
+
+        {/* 7 - Facultative Reinsurance Referral */}
+        <StepShell
+          n={6}
+          title={tx("Facultative Reinsurance Referral")}
+          state="idle"
+          hint={tx("reinsurance panel")}
+        >
+          <div className="mt-2">
+            <ReinsurancePanel policyId={policyId} onChanged={load} />
+          </div>
+        </StepShell>
+      </div>
+    </div>
+  );
+}

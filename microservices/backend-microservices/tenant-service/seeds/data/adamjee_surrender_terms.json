@@ -1,0 +1,2489 @@
+{
+  "schema_version": 1,
+  "researched_on": "2026-10-15",
+  "catalog_sources": [
+    "https://www.adamjeelife.com/en/individual-life",
+    "https://www.adamjeelife.com/en/downloads/customer-servicing-forms-download",
+    "https://www.adamjeelife.com/en/individual-life?subtype=individual-life&type=takaful"
+  ],
+  "plans": {
+    "ROSHAN_AAJ_AUR_KAL": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "verified",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "policy_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": 1,
+          "charge_pct": 100
+        },
+        {
+          "from": 2,
+          "through": 2,
+          "charge_pct": 50
+        },
+        {
+          "from": 3,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 500,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": 24,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 20000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": {
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "eligibility_text": "After the third policy year."
+      },
+      "free_look_days": 14,
+      "zero_charge_conditions": null,
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/products/individual/Conventional/2024/New-Adamjee-Life-Roshan-Aaj-Aur-Kal-Plan.pdf",
+          "title": "New Adamjee Life Roshan Aaj Aur Kal Plan",
+          "pages": [
+            1
+          ],
+          "sha256": "ec8e5cf9e9dd23c012843f83faebd580fd59bcdd3141fd63c966421d099c2924"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+          "title": "Surrender Requistion Form 1",
+          "pages": [
+            1
+          ],
+          "sha256": "8e27e2e561bab4708ab33d82eedf07c7ebc4ea98e9c98ddeac6be6f52d382b7a"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value."
+      ],
+      "servicing": {
+        "form_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+        "form_version": "V28092026",
+        "required_documents": [
+          "Complete original policy documents",
+          "Copy of active CNIC"
+        ],
+        "conditional_documents": [
+          {
+            "document": "Verified Zakat declaration on stamp paper",
+            "condition": "When the policyholder requests no Zakat deduction."
+          }
+        ],
+        "payout_methods": [
+          "IBFT",
+          "Cheque"
+        ],
+        "payout_target_working_days_after_complete_requirements": 10,
+        "fee_rule": "As per product specification."
+      },
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "SALARY_PROTECTION_PLAN": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "not_applicable",
+      "has_surrender_value": false,
+      "charge_basis": null,
+      "schedule_unit": null,
+      "charge_schedule": null,
+      "processing_fee_pkr": null,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": null,
+      "loan": null,
+      "free_look_days": 14,
+      "zero_charge_conditions": null,
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/Salary-Protection.pdf",
+          "title": "Salary Protection",
+          "pages": [
+            1
+          ],
+          "sha256": "0ed0c051e24fc6540513b9ef0c17021a1292f32fc35305e1dde0a92885bb9b3e"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value.",
+        "The reviewed protection/health brochure does not publish a surrender-value schedule. Unknown rates are not zero rates.",
+        "The brochure explicitly excludes cash, surrender, partial withdrawal, loan and maturity values for this term-life product."
+      ],
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "APNA_SAVINGS": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "verified",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "policy_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": 1,
+          "charge_pct": 100
+        },
+        {
+          "from": 2,
+          "through": 2,
+          "charge_pct": 100
+        },
+        {
+          "from": 3,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 350,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": 36,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 10000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": {
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "eligibility_text": "After the third policy year."
+      },
+      "free_look_days": 14,
+      "zero_charge_conditions": null,
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/products/individual/Conventional/2024/New-Adamjee-Life-Apna-Savings-Plan.pdf",
+          "title": "New Adamjee Life Apna Savings Plan",
+          "pages": [
+            1
+          ],
+          "sha256": "b208371a830d6b5f36278bfad3269d04f56b095c89c399f8a026d52e6e3c6ec6"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+          "title": "Surrender Requistion Form 1",
+          "pages": [
+            1
+          ],
+          "sha256": "8e27e2e561bab4708ab33d82eedf07c7ebc4ea98e9c98ddeac6be6f52d382b7a"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value."
+      ],
+      "servicing": {
+        "form_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+        "form_version": "V28092026",
+        "required_documents": [
+          "Complete original policy documents",
+          "Copy of active CNIC"
+        ],
+        "conditional_documents": [
+          {
+            "document": "Verified Zakat declaration on stamp paper",
+            "condition": "When the policyholder requests no Zakat deduction."
+          }
+        ],
+        "payout_methods": [
+          "IBFT",
+          "Cheque"
+        ],
+        "payout_target_working_days_after_complete_requirements": 10,
+        "fee_rule": "As per product specification."
+      },
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "PAY_SMART_PLAN": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "verified",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "policy_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": 1,
+          "charge_pct": 100
+        },
+        {
+          "from": 2,
+          "through": 2,
+          "charge_pct": 50
+        },
+        {
+          "from": 3,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 500,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": 36,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 200000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": {
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "eligibility_text": "After the third policy year."
+      },
+      "free_look_days": 14,
+      "zero_charge_conditions": null,
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/products/individual/Conventional/2024/New-Adamjee-Life-Pay-Smart-Plan.pdf",
+          "title": "New Adamjee Life Pay Smart Plan",
+          "pages": [
+            1
+          ],
+          "sha256": "ee806b02d2137a3f991c65a432609d07cc33bd09dea82da112738924c6060567"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+          "title": "Surrender Requistion Form 1",
+          "pages": [
+            1
+          ],
+          "sha256": "8e27e2e561bab4708ab33d82eedf07c7ebc4ea98e9c98ddeac6be6f52d382b7a"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value."
+      ],
+      "servicing": {
+        "form_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+        "form_version": "V28092026",
+        "required_documents": [
+          "Complete original policy documents",
+          "Copy of active CNIC"
+        ],
+        "conditional_documents": [
+          {
+            "document": "Verified Zakat declaration on stamp paper",
+            "condition": "When the policyholder requests no Zakat deduction."
+          }
+        ],
+        "payout_methods": [
+          "IBFT",
+          "Cheque"
+        ],
+        "payout_target_working_days_after_complete_requirements": 10,
+        "fee_rule": "As per product specification."
+      },
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "SHANDAR_SARMAYA": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "conflicting_sources",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "policy_month",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": 12,
+          "charge_pct": 3
+        },
+        {
+          "from": 13,
+          "through": 24,
+          "charge_pct": 2
+        },
+        {
+          "from": 25,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 500,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": 6,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 100000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": null,
+      "free_look_days": 14,
+      "zero_charge_conditions": null,
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/products/individual/Conventional/2024/New-Adamjee-Life-Shandar-Sarmaya-Plan.pdf",
+          "title": "New Adamjee Life Shandar Sarmaya Plan",
+          "pages": [
+            1
+          ],
+          "sha256": "765408ed71f6ff5855f0ff38c94598ea9f55ac494521a1afd9436c74c4c98d99"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+          "title": "Surrender Requistion Form 1",
+          "pages": [
+            1
+          ],
+          "sha256": "8e27e2e561bab4708ab33d82eedf07c7ebc4ea98e9c98ddeac6be6f52d382b7a"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Conventional-Form.pdf",
+          "title": "surrender conventional",
+          "pages": [
+            4
+          ],
+          "sha256": "8b06c6ba4c5cef7f9fdb25b5e567fc19fc8c88fb7220da0c39779805e1bcc707"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value."
+      ],
+      "servicing": {
+        "form_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+        "form_version": "V28092026",
+        "required_documents": [
+          "Complete original policy documents",
+          "Copy of active CNIC"
+        ],
+        "conditional_documents": [
+          {
+            "document": "Verified Zakat declaration on stamp paper",
+            "condition": "When the policyholder requests no Zakat deduction."
+          }
+        ],
+        "payout_methods": [
+          "IBFT",
+          "Cheque"
+        ],
+        "payout_target_working_days_after_complete_requirements": 10,
+        "fee_rule": "As per product specification."
+      },
+      "alternative_published_schedules": [
+        {
+          "source_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Conventional-Form.pdf",
+          "source_pages": [
+            4
+          ],
+          "schedule_unit": "policy_month",
+          "charge_schedule": [
+            {
+              "from": 1,
+              "through": 11,
+              "charge_pct": 3
+            },
+            {
+              "from": 12,
+              "through": 23,
+              "charge_pct": 2
+            },
+            {
+              "from": 24,
+              "through": 30,
+              "charge_pct": 1
+            },
+            {
+              "from": 31,
+              "through": null,
+              "charge_pct": 0
+            }
+          ]
+        }
+      ],
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "MUSTAKIL_YAQEEN": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "conflicting_sources",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "policy_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": 1,
+          "charge_pct": 100
+        },
+        {
+          "from": 2,
+          "through": 2,
+          "charge_pct": 50
+        },
+        {
+          "from": 3,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 500,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": 36,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 20000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": {
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "eligibility_text": "After the third policy year."
+      },
+      "free_look_days": 14,
+      "zero_charge_conditions": null,
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/products/individual/Conventional/2024/New-Adamjee-Life-Mustakil-Yaqeen-Plan.pdf",
+          "title": "New Adamjee Life Mustakil Yaqeen Plan",
+          "pages": [
+            1
+          ],
+          "sha256": "a3c296889562ca648b7a8280140e104fc62fadf78a7902313a342c2802398019"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+          "title": "Surrender Requistion Form 1",
+          "pages": [
+            1
+          ],
+          "sha256": "8e27e2e561bab4708ab33d82eedf07c7ebc4ea98e9c98ddeac6be6f52d382b7a"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Conventional-Form.pdf",
+          "title": "surrender conventional",
+          "pages": [
+            4
+          ],
+          "sha256": "8b06c6ba4c5cef7f9fdb25b5e567fc19fc8c88fb7220da0c39779805e1bcc707"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value.",
+        "The linked product brochure and the separately published servicing charge sheet disagree; applicability depends on the issued product version."
+      ],
+      "servicing": {
+        "form_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+        "form_version": "V28092026",
+        "required_documents": [
+          "Complete original policy documents",
+          "Copy of active CNIC"
+        ],
+        "conditional_documents": [
+          {
+            "document": "Verified Zakat declaration on stamp paper",
+            "condition": "When the policyholder requests no Zakat deduction."
+          }
+        ],
+        "payout_methods": [
+          "IBFT",
+          "Cheque"
+        ],
+        "payout_target_working_days_after_complete_requirements": 10,
+        "fee_rule": "As per product specification."
+      },
+      "alternative_published_schedules": [
+        {
+          "source_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Conventional-Form.pdf",
+          "source_pages": [
+            4
+          ],
+          "schedule_unit": "policy_year",
+          "charge_schedule": [
+            {
+              "from": 1,
+              "through": 1,
+              "charge_pct": 100
+            },
+            {
+              "from": 2,
+              "through": 2,
+              "charge_pct": 50
+            },
+            {
+              "from": 3,
+              "through": 3,
+              "charge_pct": 25
+            },
+            {
+              "from": 4,
+              "through": null,
+              "charge_pct": 0
+            }
+          ]
+        }
+      ],
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "MEHFOOZ_MUNAFA": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "verified",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "policy_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": 1,
+          "charge_pct": 100
+        },
+        {
+          "from": 2,
+          "through": 2,
+          "charge_pct": 50
+        },
+        {
+          "from": 3,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 500,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": 24,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 50000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": {
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "eligibility_text": "After the third policy year."
+      },
+      "free_look_days": 14,
+      "zero_charge_conditions": null,
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/products/individual/Conventional/2024/New-Adamjee-Life-Mehfooz-Munafa-Plan.pdf",
+          "title": "New Adamjee Life Mehfooz Munafa Plan",
+          "pages": [
+            1
+          ],
+          "sha256": "f04bbc4047aeb1ecca9d3f1587921c8e898f569422da96fe41a0b13acacd6d4b"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+          "title": "Surrender Requistion Form 1",
+          "pages": [
+            1
+          ],
+          "sha256": "8e27e2e561bab4708ab33d82eedf07c7ebc4ea98e9c98ddeac6be6f52d382b7a"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value."
+      ],
+      "servicing": {
+        "form_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+        "form_version": "V28092026",
+        "required_documents": [
+          "Complete original policy documents",
+          "Copy of active CNIC"
+        ],
+        "conditional_documents": [
+          {
+            "document": "Verified Zakat declaration on stamp paper",
+            "condition": "When the policyholder requests no Zakat deduction."
+          }
+        ],
+        "payout_methods": [
+          "IBFT",
+          "Cheque"
+        ],
+        "payout_target_working_days_after_complete_requirements": 10,
+        "fee_rule": "As per product specification."
+      },
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "TAHAFUZZ_PLAN": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "verified",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "policy_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": 1,
+          "charge_pct": 50
+        },
+        {
+          "from": 2,
+          "through": 2,
+          "charge_pct": 25
+        },
+        {
+          "from": 3,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 500,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": 36,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 20000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": {
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "eligibility_text": "After the third policy year."
+      },
+      "free_look_days": 14,
+      "zero_charge_conditions": {
+        "minimum_completed_months": 24,
+        "minimum_full_years_premiums_paid": 2,
+        "note": "The brochure conditions its third-policy-year nil charge on both requirements."
+      },
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Adamjee-Life-Tahaffuz-Plan-CTP.pdf",
+          "title": "Adamjee Life Tahaffuz Plan CTP",
+          "pages": [
+            1
+          ],
+          "sha256": "c8f2524a37f9738065056fc5b5f3e36809bb314576fa2ade3031cdde524f1c29"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+          "title": "Surrender Requistion Form 1",
+          "pages": [
+            1
+          ],
+          "sha256": "8e27e2e561bab4708ab33d82eedf07c7ebc4ea98e9c98ddeac6be6f52d382b7a"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value."
+      ],
+      "servicing": {
+        "form_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+        "form_version": "V28092026",
+        "required_documents": [
+          "Complete original policy documents",
+          "Copy of active CNIC"
+        ],
+        "conditional_documents": [
+          {
+            "document": "Verified Zakat declaration on stamp paper",
+            "condition": "When the policyholder requests no Zakat deduction."
+          }
+        ],
+        "payout_methods": [
+          "IBFT",
+          "Cheque"
+        ],
+        "payout_target_working_days_after_complete_requirements": 10,
+        "fee_rule": "As per product specification."
+      },
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "SEHAT_ZAMANAT": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "not_disclosed",
+      "has_surrender_value": null,
+      "charge_basis": null,
+      "schedule_unit": null,
+      "charge_schedule": null,
+      "processing_fee_pkr": null,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": null,
+      "loan": null,
+      "free_look_days": 14,
+      "zero_charge_conditions": null,
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Adamjee-Life-Sehat-Zamanat-Plan.pdf",
+          "title": "Adamjee Life Sehat Zamanat Plan",
+          "pages": [
+            1
+          ],
+          "sha256": "be9c732e88151b1bc3a7b14285e991ec0af9bf5682559e7502340ee06e54fdd4"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value.",
+        "The reviewed protection/health brochure does not publish a surrender-value schedule. Unknown rates are not zero rates."
+      ],
+      "free_look_medical_expense_deduction_disclosed": null
+    },
+    "SEHAT_KAFALAT": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "not_disclosed",
+      "has_surrender_value": null,
+      "charge_basis": null,
+      "schedule_unit": null,
+      "charge_schedule": null,
+      "processing_fee_pkr": null,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": null,
+      "loan": null,
+      "free_look_days": 14,
+      "zero_charge_conditions": null,
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Sehat-Kafalat.pdf",
+          "title": "Sehat Kafalat",
+          "pages": [
+            1
+          ],
+          "sha256": "72cd1522e07855892206950f0aefef0a55a757e7f16f86ee8d0d3fe5a03f2d22"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value.",
+        "The reviewed protection/health brochure does not publish a surrender-value schedule. Unknown rates are not zero rates."
+      ],
+      "free_look_medical_expense_deduction_disclosed": null
+    },
+    "PROTECT_PLAN": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "not_disclosed",
+      "has_surrender_value": null,
+      "charge_basis": null,
+      "schedule_unit": null,
+      "charge_schedule": null,
+      "processing_fee_pkr": null,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": null,
+      "loan": null,
+      "free_look_days": 14,
+      "zero_charge_conditions": null,
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Adamjee-Life-Protect-Plan-CTP.pdf",
+          "title": "Adamjee Life Protect Plan CTP",
+          "pages": [
+            1
+          ],
+          "sha256": "f78a77d04da53dd3b08b435d668c543802e86871bece0490dacea9807fec3a14"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value.",
+        "The reviewed protection/health brochure does not publish a surrender-value schedule. Unknown rates are not zero rates."
+      ],
+      "free_look_medical_expense_deduction_disclosed": null
+    },
+    "COVID19_PROTECTION_PLAN": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "not_disclosed",
+      "has_surrender_value": null,
+      "charge_basis": null,
+      "schedule_unit": null,
+      "charge_schedule": null,
+      "processing_fee_pkr": null,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": null,
+      "loan": null,
+      "free_look_days": 14,
+      "zero_charge_conditions": null,
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Adamjee-Life-Covid-Plan-Bilingual.pdf",
+          "title": "Adamjee Life Covid Plan Bilingual",
+          "pages": [
+            1
+          ],
+          "sha256": "4e6985c414b6a1b515d1059867d2bd0a2b3632b1f32b61427778719e6a378792"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value.",
+        "The reviewed protection/health brochure does not publish a surrender-value schedule. Unknown rates are not zero rates."
+      ],
+      "free_look_medical_expense_deduction_disclosed": null
+    },
+    "NIBAH": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "verified",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "membership_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 500,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": null,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 20000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": null,
+      "free_look_days": 14,
+      "zero_charge_conditions": null,
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/products/individual/Takaful/2024/New-Nibah-Plan.pdf",
+          "title": "New Nibah Plan",
+          "pages": [
+            1
+          ],
+          "sha256": "bcb6899e731a616e1d502278de51a22a5ce8c135a600ffb1de9278d0257abfdb"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value.",
+        "The Charges section explicitly states nil early-surrender Wakala fee as a percentage of unit account value; the fixed processing fee remains payable."
+      ],
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "ZORAIZ_SAVINGS_TAKAFUL": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "verified",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "membership_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": 1,
+          "charge_pct": 25
+        },
+        {
+          "from": 2,
+          "through": 2,
+          "charge_pct": 25
+        },
+        {
+          "from": 3,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 500,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": 24,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 20000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer.",
+          "At least two full years of contributions must have been paid."
+        ]
+      },
+      "loan": null,
+      "free_look_days": 14,
+      "zero_charge_conditions": {
+        "minimum_completed_months": 24,
+        "minimum_full_years_contributions_paid": 2
+      },
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/download/Zoraiz Takaful Savings Plan.pdf",
+          "title": "Zoraiz Takaful Savings Plan",
+          "pages": [
+            1
+          ],
+          "sha256": "f0ad0c839cd586a72f3f78b32e8eac86e3ccddcb820c31dae9d1cfa9da9bbc80"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value."
+      ],
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "SALSABIL_PLUS_FAMILY_TAKAFUL": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "verified",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "membership_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 500,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": null,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 50000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": null,
+      "free_look_days": 14,
+      "zero_charge_conditions": null,
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/products/individual/Takaful/2024/New-Salsabil-Plus-Plan.pdf",
+          "title": "New Salsabil Plus Plan",
+          "pages": [
+            1
+          ],
+          "sha256": "1cd5d56f0b8ffbdaaadb389394fe2900588f73cb752a88facd77416e48719b77"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value.",
+        "The Charges section explicitly states nil early-surrender Wakala fee as a percentage of unit account value; the fixed processing fee remains payable."
+      ],
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "BARAKAH_PLAN": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "verified",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "membership_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 500,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": null,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 20000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": null,
+      "free_look_days": 14,
+      "zero_charge_conditions": null,
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/products/individual/Takaful/2024/New-Adamjee-Barakah-Plan.pdf",
+          "title": "New Adamjee Barakah Plan",
+          "pages": [
+            1
+          ],
+          "sha256": "2dca2b9066e8d6ad19f7ecb5c7af7425dfde3459327f89c7a0d1ff981b856ea1"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value.",
+        "The Charges section explicitly states nil early-surrender Wakala fee as a percentage of unit account value; the fixed processing fee remains payable."
+      ],
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "KEFAYAT_PLAN": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "verified",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "membership_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 350,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": null,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 10000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": null,
+      "free_look_days": 14,
+      "zero_charge_conditions": null,
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/products/individual/Takaful/2024/New-Adamjee-Kefayat-Plan.pdf",
+          "title": "New Adamjee Kefayat Plan",
+          "pages": [
+            1
+          ],
+          "sha256": "ee409a4cee9e752b02a969f34047d4f36a8bc00649c5a58513098cd4b48fcdcf"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value.",
+        "The Charges section explicitly states nil early-surrender Wakala fee as a percentage of unit account value; the fixed processing fee remains payable."
+      ],
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "ASAAN_TAKAFUL": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "verified",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "membership_month",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": 12,
+          "charge_pct": 3
+        },
+        {
+          "from": 13,
+          "through": 24,
+          "charge_pct": 2
+        },
+        {
+          "from": 25,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 500,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": 6,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 100000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": null,
+      "free_look_days": 14,
+      "zero_charge_conditions": null,
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/products/individual/Takaful/2024/New-Asaan-Takaful-Plan.pdf",
+          "title": "New Asaan Takaful Plan",
+          "pages": [
+            1
+          ],
+          "sha256": "28079994426806b3c0ae9d00aa64398cb3bb629be0de0685f95630b88aa5bdee"
+        },
+        {
+          "url": "https://www.adamjeelife.com/en/individual-life?subtype=individual-life&type=takaful",
+          "title": "Adamjee individual Takaful catalog",
+          "format": "html",
+          "section": "Asaan Takaful",
+          "sha256": "cbaea6d139d217862d70c887e87e8fb5892fc56bc6211ba4637bdaea4c50a6ca"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value."
+      ],
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "ZAYED_SAVINGS_TAKAFUL": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "verified",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "membership_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 500,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": null,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 200000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": null,
+      "free_look_days": 14,
+      "zero_charge_conditions": null,
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/products/individual/Takaful/2024/New-Zayed-Savings-Takaful-Plan.pdf",
+          "title": "New Zayed Savings Takaful Plan",
+          "pages": [
+            1
+          ],
+          "sha256": "35a30b5e930c698eaed2a610d37e96f0bdd46603f744a98943153fc79234c6ae"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value.",
+        "The Charges section explicitly states nil early-surrender Wakala fee as a percentage of unit account value; the fixed processing fee remains payable."
+      ],
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "LIFE_PROTECTION_PLUS": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "not_disclosed",
+      "has_surrender_value": null,
+      "charge_basis": null,
+      "schedule_unit": null,
+      "charge_schedule": null,
+      "processing_fee_pkr": null,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": null,
+      "loan": null,
+      "free_look_days": 14,
+      "zero_charge_conditions": null,
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/products/bancassurance/Adamjee-Life-Protection-Plus-Plan-2023.pdf",
+          "title": "Adamjee Life Protection Plus Plan 2023",
+          "pages": [
+            1
+          ],
+          "sha256": "294d6c9892306d5b97d203962150c37ac39fddb7e0d745f8af6b5656701e9f07"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value.",
+        "The reviewed protection/health brochure does not publish a surrender-value schedule. Unknown rates are not zero rates."
+      ],
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "LIFE_SIGNATURE_PLUS": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "verified",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "policy_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": 1,
+          "charge_pct": 10
+        },
+        {
+          "from": 2,
+          "through": 2,
+          "charge_pct": 5
+        },
+        {
+          "from": 3,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 500,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": 24,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 1000000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": null,
+      "free_look_days": 14,
+      "zero_charge_conditions": {
+        "minimum_completed_months": 24,
+        "minimum_full_years_premiums_paid": 2,
+        "note": "The brochure conditions its third-policy-year nil charge on both requirements."
+      },
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/Adamjee-Life-Signature-Plus-Plan.pdf",
+          "title": "Adamjee Life Signature Plus Plan",
+          "pages": [
+            1
+          ],
+          "sha256": "5928879ffe263ff2ac96d3edb4ed18213a7911556e591e5144c5eff7f6f16162"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+          "title": "Surrender Requistion Form 1",
+          "pages": [
+            1
+          ],
+          "sha256": "8e27e2e561bab4708ab33d82eedf07c7ebc4ea98e9c98ddeac6be6f52d382b7a"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value."
+      ],
+      "servicing": {
+        "form_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+        "form_version": "V28092026",
+        "required_documents": [
+          "Complete original policy documents",
+          "Copy of active CNIC"
+        ],
+        "conditional_documents": [
+          {
+            "document": "Verified Zakat declaration on stamp paper",
+            "condition": "When the policyholder requests no Zakat deduction."
+          }
+        ],
+        "payout_methods": [
+          "IBFT",
+          "Cheque"
+        ],
+        "payout_target_working_days_after_complete_requirements": 10,
+        "fee_rule": "As per product specification."
+      },
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "LIFE_MAYMAR_MUSTAKBIL": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "verified",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "policy_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": 1,
+          "charge_pct": 100
+        },
+        {
+          "from": 2,
+          "through": 2,
+          "charge_pct": 50
+        },
+        {
+          "from": 3,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 500,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": 24,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 25000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": {
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "eligibility_text": "After the third policy year."
+      },
+      "free_look_days": 14,
+      "zero_charge_conditions": {
+        "minimum_completed_months": 24,
+        "minimum_full_years_premiums_paid": 2,
+        "note": "The brochure conditions its third-policy-year nil charge on both requirements."
+      },
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/Individual%20life%20brouchers/Adamjee%20Life%20Maymar%20Mustakbil%20Plan%202023.pdf",
+          "title": "Adamjee Life Maymar Mustakbil Plan 2023",
+          "pages": [
+            1
+          ],
+          "sha256": "8f8a8508f82b432394966c79549b832abbc40963efc14eb45d760acadddbf14b"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+          "title": "Surrender Requistion Form 1",
+          "pages": [
+            1
+          ],
+          "sha256": "8e27e2e561bab4708ab33d82eedf07c7ebc4ea98e9c98ddeac6be6f52d382b7a"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value."
+      ],
+      "servicing": {
+        "form_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+        "form_version": "V28092026",
+        "required_documents": [
+          "Complete original policy documents",
+          "Copy of active CNIC"
+        ],
+        "conditional_documents": [
+          {
+            "document": "Verified Zakat declaration on stamp paper",
+            "condition": "When the policyholder requests no Zakat deduction."
+          }
+        ],
+        "payout_methods": [
+          "IBFT",
+          "Cheque"
+        ],
+        "payout_target_working_days_after_complete_requirements": 10,
+        "fee_rule": "As per product specification."
+      },
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "LIFE_SAVE_AND_ASSURE": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "verified",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "policy_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": 1,
+          "charge_pct": 100
+        },
+        {
+          "from": 2,
+          "through": 2,
+          "charge_pct": 50
+        },
+        {
+          "from": 3,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 500,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": 36,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 20000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": {
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "eligibility_text": "After the third policy year."
+      },
+      "free_look_days": 14,
+      "zero_charge_conditions": {
+        "minimum_completed_months": 24,
+        "minimum_full_years_premiums_paid": 2,
+        "note": "The brochure conditions its third-policy-year nil charge on both requirements."
+      },
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Adamjee-Life-Save-and-Assure-2023-CTP.pdf",
+          "title": "Adamjee Life Save and Assure 2023 CTP",
+          "pages": [
+            1
+          ],
+          "sha256": "8198d10d5c849b99523af830df0432bdd03d9cd083fce93e5b42deaf6de31516"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+          "title": "Surrender Requistion Form 1",
+          "pages": [
+            1
+          ],
+          "sha256": "8e27e2e561bab4708ab33d82eedf07c7ebc4ea98e9c98ddeac6be6f52d382b7a"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value."
+      ],
+      "servicing": {
+        "form_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+        "form_version": "V28092026",
+        "required_documents": [
+          "Complete original policy documents",
+          "Copy of active CNIC"
+        ],
+        "conditional_documents": [
+          {
+            "document": "Verified Zakat declaration on stamp paper",
+            "condition": "When the policyholder requests no Zakat deduction."
+          }
+        ],
+        "payout_methods": [
+          "IBFT",
+          "Cheque"
+        ],
+        "payout_target_working_days_after_complete_requirements": 10,
+        "fee_rule": "As per product specification."
+      },
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "LIFE_TAMEER_EDUCATION": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "verified",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "policy_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": 1,
+          "charge_pct": 100
+        },
+        {
+          "from": 2,
+          "through": 2,
+          "charge_pct": 50
+        },
+        {
+          "from": 3,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 500,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": 24,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 20000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": {
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "eligibility_text": null
+      },
+      "free_look_days": 14,
+      "zero_charge_conditions": {
+        "minimum_completed_months": 24,
+        "minimum_full_years_premiums_paid": 2,
+        "note": "The brochure conditions its third-policy-year nil charge on both requirements."
+      },
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Adamjee-Life-Tameer-Education-Plan-CTP.pdf",
+          "title": "Adamjee Life Tameer Education Plan CTP",
+          "pages": [
+            1
+          ],
+          "sha256": "88a59cb0b81ad1b0b63e37dabd391db8871a0f9d79430c166ae533b5818f24e3"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+          "title": "Surrender Requistion Form 1",
+          "pages": [
+            1
+          ],
+          "sha256": "8e27e2e561bab4708ab33d82eedf07c7ebc4ea98e9c98ddeac6be6f52d382b7a"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value."
+      ],
+      "servicing": {
+        "form_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+        "form_version": "V28092026",
+        "required_documents": [
+          "Complete original policy documents",
+          "Copy of active CNIC"
+        ],
+        "conditional_documents": [
+          {
+            "document": "Verified Zakat declaration on stamp paper",
+            "condition": "When the policyholder requests no Zakat deduction."
+          }
+        ],
+        "payout_methods": [
+          "IBFT",
+          "Cheque"
+        ],
+        "payout_target_working_days_after_complete_requirements": 10,
+        "fee_rule": "As per product specification."
+      },
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "LIFE_PARVAAZ_SAVINGS": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "verified",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "policy_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": 1,
+          "charge_pct": 100
+        },
+        {
+          "from": 2,
+          "through": 2,
+          "charge_pct": 50
+        },
+        {
+          "from": 3,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 500,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": 24,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": null,
+        "minimum_remaining_net_cash_surrender_value_pkr": 20000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": {
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "eligibility_text": null
+      },
+      "free_look_days": 14,
+      "zero_charge_conditions": {
+        "minimum_completed_months": 24,
+        "minimum_full_years_premiums_paid": 2,
+        "note": "The brochure conditions its third-policy-year nil charge on both requirements."
+      },
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Adamjee-Life-Parvaaz-Savings.pdf",
+          "title": "Adamjee Life Parvaaz Savings",
+          "pages": [
+            1
+          ],
+          "sha256": "09e95f8d485a0e748e21923258ddf0ac7bfa26c493a0c1c3063e21e484af8191"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+          "title": "Surrender Requistion Form 1",
+          "pages": [
+            1
+          ],
+          "sha256": "8e27e2e561bab4708ab33d82eedf07c7ebc4ea98e9c98ddeac6be6f52d382b7a"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value."
+      ],
+      "servicing": {
+        "form_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+        "form_version": "V28092026",
+        "required_documents": [
+          "Complete original policy documents",
+          "Copy of active CNIC"
+        ],
+        "conditional_documents": [
+          {
+            "document": "Verified Zakat declaration on stamp paper",
+            "condition": "When the policyholder requests no Zakat deduction."
+          }
+        ],
+        "payout_methods": [
+          "IBFT",
+          "Cheque"
+        ],
+        "payout_target_working_days_after_complete_requirements": 10,
+        "fee_rule": "As per product specification."
+      },
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "LIFE_PARVAAZ_HEALTH": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "verified",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "policy_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": 1,
+          "charge_pct": 100
+        },
+        {
+          "from": 2,
+          "through": 2,
+          "charge_pct": 50
+        },
+        {
+          "from": 3,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 500,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": 24,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": null,
+        "minimum_remaining_net_cash_surrender_value_pkr": 20000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": null,
+      "free_look_days": 14,
+      "zero_charge_conditions": {
+        "minimum_completed_months": 24,
+        "minimum_full_years_premiums_paid": 2,
+        "note": "The brochure conditions its third-policy-year nil charge on both requirements."
+      },
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Adamjee-Life-Parvaaz-Savings-and-Health-CTP-1.pdf",
+          "title": "Adamjee Life Parvaaz Savings and Health CTP 1",
+          "pages": [
+            1
+          ],
+          "sha256": "511ff13afc41cfbc98057479c2e7e2d5957bdf7ac8fc93032146954a94b3ae3b"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+          "title": "Surrender Requistion Form 1",
+          "pages": [
+            1
+          ],
+          "sha256": "8e27e2e561bab4708ab33d82eedf07c7ebc4ea98e9c98ddeac6be6f52d382b7a"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value."
+      ],
+      "servicing": {
+        "form_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+        "form_version": "V28092026",
+        "required_documents": [
+          "Complete original policy documents",
+          "Copy of active CNIC"
+        ],
+        "conditional_documents": [
+          {
+            "document": "Verified Zakat declaration on stamp paper",
+            "condition": "When the policyholder requests no Zakat deduction."
+          }
+        ],
+        "payout_methods": [
+          "IBFT",
+          "Cheque"
+        ],
+        "payout_target_working_days_after_complete_requirements": 10,
+        "fee_rule": "As per product specification."
+      },
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "LIFE_PARVAAZ_EDUCATION_MARRIAGE": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "verified",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "policy_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": 1,
+          "charge_pct": 100
+        },
+        {
+          "from": 2,
+          "through": 2,
+          "charge_pct": 50
+        },
+        {
+          "from": 3,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 500,
+      "minimum_full_surrender_months": 0,
+      "partial_withdrawal": {
+        "minimum_inforce_months": 24,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": null,
+        "minimum_remaining_net_cash_surrender_value_pkr": 20000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": null,
+      "free_look_days": 14,
+      "zero_charge_conditions": {
+        "minimum_completed_months": 24,
+        "minimum_full_years_premiums_paid": 2,
+        "note": "The brochure conditions its third-policy-year nil charge on both requirements."
+      },
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/AL-Parvaaz-Edu-Mar-Plan.pdf",
+          "title": "AL Parvaaz Edu Mar Plan",
+          "pages": [
+            1
+          ],
+          "sha256": "54b7fe44b483fc060380f883c0508b1712f420eebadf1f1060bb100dc087d515"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+          "title": "Surrender Requistion Form 1",
+          "pages": [
+            1
+          ],
+          "sha256": "8e27e2e561bab4708ab33d82eedf07c7ebc4ea98e9c98ddeac6be6f52d382b7a"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value.",
+        "The brochure permits surrender on any date upon the policyholder written request; available units are valued at the bid price on the next day after receipt, less surrender charges and fees."
+      ],
+      "servicing": {
+        "form_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+        "form_version": "V28092026",
+        "required_documents": [
+          "Complete original policy documents",
+          "Copy of active CNIC"
+        ],
+        "conditional_documents": [
+          {
+            "document": "Verified Zakat declaration on stamp paper",
+            "condition": "When the policyholder requests no Zakat deduction."
+          }
+        ],
+        "payout_methods": [
+          "IBFT",
+          "Cheque"
+        ],
+        "payout_target_working_days_after_complete_requirements": 10,
+        "fee_rule": "As per product specification."
+      },
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "PASBAAN_PROTECTION_PLAN": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "verified",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "policy_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": 1,
+          "charge_pct": 100
+        },
+        {
+          "from": 2,
+          "through": 2,
+          "charge_pct": 50
+        },
+        {
+          "from": 3,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 500,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": 36,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 20000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": {
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "eligibility_text": "After the third policy year."
+      },
+      "free_look_days": 14,
+      "zero_charge_conditions": {
+        "minimum_completed_months": 24,
+        "minimum_full_years_premiums_paid": 2,
+        "note": "The brochure conditions its third-policy-year nil charge on both requirements."
+      },
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Adamjee-Life-Pasbaan-Protection-Plan-CTP.pdf",
+          "title": "Adamjee Life Pasbaan Protection Plan CTP",
+          "pages": [
+            1
+          ],
+          "sha256": "356816439da08eeb6e6ea2347527282e6587a2fd3643bc2811053acf531ab512"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+          "title": "Surrender Requistion Form 1",
+          "pages": [
+            1
+          ],
+          "sha256": "8e27e2e561bab4708ab33d82eedf07c7ebc4ea98e9c98ddeac6be6f52d382b7a"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value."
+      ],
+      "servicing": {
+        "form_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+        "form_version": "V28092026",
+        "required_documents": [
+          "Complete original policy documents",
+          "Copy of active CNIC"
+        ],
+        "conditional_documents": [
+          {
+            "document": "Verified Zakat declaration on stamp paper",
+            "condition": "When the policyholder requests no Zakat deduction."
+          }
+        ],
+        "payout_methods": [
+          "IBFT",
+          "Cheque"
+        ],
+        "payout_target_working_days_after_complete_requirements": 10,
+        "fee_rule": "As per product specification."
+      },
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "WASEELA_ZINDAGI": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "conflicting_sources",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "policy_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": 1,
+          "charge_pct": 100
+        },
+        {
+          "from": 2,
+          "through": 2,
+          "charge_pct": 50
+        },
+        {
+          "from": 3,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 350,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": 36,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 20000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": {
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "eligibility_text": "After the third policy year."
+      },
+      "free_look_days": 14,
+      "zero_charge_conditions": {
+        "minimum_completed_months": 24,
+        "minimum_full_years_premiums_paid": 2,
+        "note": "The brochure conditions its third-policy-year nil charge on both requirements."
+      },
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Adamjee-Life-Waseela-e-Zindagi-Plan-CTP.pdf",
+          "title": "Adamjee Life Waseela e Zindagi Plan CTP",
+          "pages": [
+            1
+          ],
+          "sha256": "643b25ef05b4e1bea7a0b0b696bbdc394b0c93e49011a972b0d51504088eabdc"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+          "title": "Surrender Requistion Form 1",
+          "pages": [
+            1
+          ],
+          "sha256": "8e27e2e561bab4708ab33d82eedf07c7ebc4ea98e9c98ddeac6be6f52d382b7a"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Conventional-Form.pdf",
+          "title": "surrender conventional",
+          "pages": [
+            2
+          ],
+          "sha256": "8b06c6ba4c5cef7f9fdb25b5e567fc19fc8c88fb7220da0c39779805e1bcc707"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value.",
+        "The linked product brochure and the separately published servicing charge sheet disagree; applicability depends on the issued product version."
+      ],
+      "servicing": {
+        "form_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+        "form_version": "V28092026",
+        "required_documents": [
+          "Complete original policy documents",
+          "Copy of active CNIC"
+        ],
+        "conditional_documents": [
+          {
+            "document": "Verified Zakat declaration on stamp paper",
+            "condition": "When the policyholder requests no Zakat deduction."
+          }
+        ],
+        "payout_methods": [
+          "IBFT",
+          "Cheque"
+        ],
+        "payout_target_working_days_after_complete_requirements": 10,
+        "fee_rule": "As per product specification."
+      },
+      "alternative_published_schedules": [
+        {
+          "source_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Conventional-Form.pdf",
+          "source_pages": [
+            2
+          ],
+          "schedule_unit": "policy_year",
+          "charge_schedule": [
+            {
+              "from": 1,
+              "through": 1,
+              "charge_pct": 100
+            },
+            {
+              "from": 2,
+              "through": 2,
+              "charge_pct": 50
+            },
+            {
+              "from": 3,
+              "through": 3,
+              "charge_pct": 25
+            },
+            {
+              "from": 4,
+              "through": null,
+              "charge_pct": 0
+            }
+          ]
+        }
+      ],
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "WASEELA_ZINDAGI_PLUS": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "verified",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "policy_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": 1,
+          "charge_pct": 100
+        },
+        {
+          "from": 2,
+          "through": 2,
+          "charge_pct": 50
+        },
+        {
+          "from": 3,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 350,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": 36,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 20000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": {
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "eligibility_text": "After the third policy year."
+      },
+      "free_look_days": 14,
+      "zero_charge_conditions": {
+        "minimum_completed_months": 24,
+        "minimum_full_years_premiums_paid": 2,
+        "note": "The brochure conditions its third-policy-year nil charge on both requirements."
+      },
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Adamjee-Life-Waseela-e-Zindagi-Plus-Plan-CTP.pdf",
+          "title": "Adamjee Life Waseela e Zindagi Plus Plan CTP",
+          "pages": [
+            1
+          ],
+          "sha256": "17246932f880473c034aa173e65dc86b22b7958f6ad268334310622250bb1e61"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+          "title": "Surrender Requistion Form 1",
+          "pages": [
+            1
+          ],
+          "sha256": "8e27e2e561bab4708ab33d82eedf07c7ebc4ea98e9c98ddeac6be6f52d382b7a"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value."
+      ],
+      "servicing": {
+        "form_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+        "form_version": "V28092026",
+        "required_documents": [
+          "Complete original policy documents",
+          "Copy of active CNIC"
+        ],
+        "conditional_documents": [
+          {
+            "document": "Verified Zakat declaration on stamp paper",
+            "condition": "When the policyholder requests no Zakat deduction."
+          }
+        ],
+        "payout_methods": [
+          "IBFT",
+          "Cheque"
+        ],
+        "payout_target_working_days_after_complete_requirements": 10,
+        "fee_rule": "As per product specification."
+      },
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "ZAMANAT_SAVINGS_PLAN": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "conflicting_sources",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "policy_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": 1,
+          "charge_pct": 100
+        },
+        {
+          "from": 2,
+          "through": 2,
+          "charge_pct": 50
+        },
+        {
+          "from": 3,
+          "through": 3,
+          "charge_pct": 25
+        },
+        {
+          "from": 4,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 350,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": 36,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 20000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": {
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "eligibility_text": "After the third policy year."
+      },
+      "free_look_days": 14,
+      "zero_charge_conditions": null,
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Adamjee-Life-Zamanat-Saving-Plan-1.pdf",
+          "title": "Adamjee Life Zamanat Saving Plan 1",
+          "pages": [
+            1
+          ],
+          "sha256": "f765cb739c15becd7d8331cc10ac61ac91cfab34a49d6d5e56ffe1585755a627"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+          "title": "Surrender Requistion Form 1",
+          "pages": [
+            1
+          ],
+          "sha256": "8e27e2e561bab4708ab33d82eedf07c7ebc4ea98e9c98ddeac6be6f52d382b7a"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value.",
+        "Internal brochure conflict: the table charges 25% in year 3 and nil from year 4, while its footnote states nil from year 3 after two full years premiums and 24 months. No single schedule can be applied without confirmation."
+      ],
+      "servicing": {
+        "form_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+        "form_version": "V28092026",
+        "required_documents": [
+          "Complete original policy documents",
+          "Copy of active CNIC"
+        ],
+        "conditional_documents": [
+          {
+            "document": "Verified Zakat declaration on stamp paper",
+            "condition": "When the policyholder requests no Zakat deduction."
+          }
+        ],
+        "payout_methods": [
+          "IBFT",
+          "Cheque"
+        ],
+        "payout_target_working_days_after_complete_requirements": 10,
+        "fee_rule": "As per product specification."
+      },
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "KHIDMAT_EDUCATION_AND_MARRIAGE_PLAN": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "conflicting_sources",
+      "has_surrender_value": true,
+      "charge_basis": "unit_account_value",
+      "schedule_unit": "policy_year",
+      "charge_schedule": [
+        {
+          "from": 1,
+          "through": 1,
+          "charge_pct": 100
+        },
+        {
+          "from": 2,
+          "through": 2,
+          "charge_pct": 50
+        },
+        {
+          "from": 3,
+          "through": null,
+          "charge_pct": 0
+        }
+      ],
+      "processing_fee_pkr": 500,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": {
+        "minimum_inforce_months": 36,
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "maximum_per_year": 4,
+        "minimum_remaining_net_cash_surrender_value_pkr": 20000,
+        "conditions": [
+          "The minimum retained cash value may be revised by the insurer."
+        ]
+      },
+      "loan": {
+        "maximum_pct_of_net_cash_surrender_value": 50,
+        "eligibility_text": "After the third policy year."
+      },
+      "free_look_days": 14,
+      "zero_charge_conditions": {
+        "minimum_completed_months": 24,
+        "minimum_full_years_premiums_paid": 2,
+        "note": "The brochure conditions its third-policy-year nil charge on both requirements."
+      },
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Adamjee-Life-Khidmat-and-Education-Plan-CTP.pdf",
+          "title": "Adamjee Life Khidmat and Education Plan CTP",
+          "pages": [
+            1
+          ],
+          "sha256": "674eb3a65b10d2c36584c1a084bf9c6aff9a2a6f1fb6b1ad90ef5838421931dd"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+          "title": "Surrender Requistion Form 1",
+          "pages": [
+            1
+          ],
+          "sha256": "8e27e2e561bab4708ab33d82eedf07c7ebc4ea98e9c98ddeac6be6f52d382b7a"
+        },
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Conventional-Form.pdf",
+          "title": "surrender conventional",
+          "pages": [
+            3
+          ],
+          "sha256": "8b06c6ba4c5cef7f9fdb25b5e567fc19fc8c88fb7220da0c39779805e1bcc707"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value.",
+        "The linked product brochure and the separately published servicing charge sheet disagree; applicability depends on the issued product version."
+      ],
+      "servicing": {
+        "form_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Requistion-Form-1.pdf",
+        "form_version": "V28092026",
+        "required_documents": [
+          "Complete original policy documents",
+          "Copy of active CNIC"
+        ],
+        "conditional_documents": [
+          {
+            "document": "Verified Zakat declaration on stamp paper",
+            "condition": "When the policyholder requests no Zakat deduction."
+          }
+        ],
+        "payout_methods": [
+          "IBFT",
+          "Cheque"
+        ],
+        "payout_target_working_days_after_complete_requirements": 10,
+        "fee_rule": "As per product specification."
+      },
+      "alternative_published_schedules": [
+        {
+          "source_url": "https://www.adamjeelife.com/public/source/pdf/Surrender-Conventional-Form.pdf",
+          "source_pages": [
+            3
+          ],
+          "schedule_unit": "policy_year",
+          "charge_schedule": [
+            {
+              "from": 1,
+              "through": 1,
+              "charge_pct": 100
+            },
+            {
+              "from": 2,
+              "through": 2,
+              "charge_pct": 50
+            },
+            {
+              "from": 3,
+              "through": 3,
+              "charge_pct": 25
+            },
+            {
+              "from": 4,
+              "through": null,
+              "charge_pct": 0
+            }
+          ]
+        }
+      ],
+      "free_look_medical_expense_deduction_disclosed": true
+    },
+    "MUSTAQBIL_KI_ZAMANAT_PLAN": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "not_disclosed",
+      "has_surrender_value": null,
+      "charge_basis": null,
+      "schedule_unit": null,
+      "charge_schedule": null,
+      "processing_fee_pkr": null,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": null,
+      "loan": null,
+      "free_look_days": 14,
+      "zero_charge_conditions": null,
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Mustaqbil-ki-Zamanat.pdf",
+          "title": "Mustaqbil ki Zamanat",
+          "pages": [
+            1
+          ],
+          "sha256": "eafd427d1abdd29387189c32ad61585ae93ef5e9d4dca962232dc437394cdc49"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value.",
+        "The reviewed protection/health brochure does not publish a surrender-value schedule. Unknown rates are not zero rates."
+      ],
+      "free_look_medical_expense_deduction_disclosed": null
+    },
+    "NIGRAAN": {
+      "schema_version": 1,
+      "insurer": "Adamjee Life Assurance Co. Ltd.",
+      "researched_on": "2026-10-15",
+      "status": "not_disclosed",
+      "has_surrender_value": null,
+      "charge_basis": null,
+      "schedule_unit": null,
+      "charge_schedule": null,
+      "processing_fee_pkr": null,
+      "minimum_full_surrender_months": null,
+      "partial_withdrawal": null,
+      "loan": null,
+      "free_look_days": 14,
+      "zero_charge_conditions": null,
+      "requires_policy_version_confirmation": true,
+      "operational_calculation_enabled": false,
+      "sources": [
+        {
+          "url": "https://www.adamjeelife.com/public/source/pdf/Adamjee-Life-Nigran.pdf",
+          "title": "Adamjee Life Nigran",
+          "pages": [
+            1
+          ],
+          "sha256": "03506f585a75018cb503ce415920177e66199bbb8ddcc84bf7301e02a6466e80"
+        }
+      ],
+      "notes": [
+        "Brochure reference only: confirm the issued policy or membership version before applying financial terms. Actual cash value requires the insurer unit balance and price; premiums paid are not surrender value.",
+        "The reviewed protection/health brochure does not publish a surrender-value schedule. Unknown rates are not zero rates."
+      ],
+      "free_look_medical_expense_deduction_disclosed": null
+    }
+  }
+}

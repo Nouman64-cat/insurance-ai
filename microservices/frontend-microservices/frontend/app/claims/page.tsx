@@ -1,0 +1,894 @@
+"use client";
+
+import { displayDate } from "@/lib/dateDisplay";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { listClaims, createClaim, Claim, CreateClaimRequest } from "@/app/services/claims";
+import { listPolicies, getPolicyDetail, PolicyListItem, PolicyDetail } from "@/app/services/policies";
+import { formatCnic } from "@/lib/cnic";
+import { DateRangeFilter, resolvePreset, type DatePreset, type DateRange } from "@/components/commissions/DateRangeFilter";
+import { Pagination, usePagination } from "@/components/Pagination";
+import { tx } from "@/lib/i18n/tx";
+import { PolicyPicker, usePolicyFilters } from "@/components/claims/PolicyPicker";
+
+function getEligibleClaimTypes(policy?: PolicyListItem): string[] {
+  if (!policy) {
+    return ["Hospitalization", "Surgery", "Death Claim", "OPD Reimbursement"];
+  }
+
+  const pType = (policy.insurance_type || "").toUpperCase();
+  const pName = (policy.product_name || "").toLowerCase();
+
+  if (
+    pType.includes("LIFE") ||
+    pType.includes("ENDOWMENT") ||
+    pType.includes("SAVINGS") ||
+    pType.includes("SINGLE_PREMIUM") ||
+    pName.includes("life") ||
+    pName.includes("term") ||
+    pName.includes("endowment")
+  ) {
+    return [
+      "Death Claim",
+      "Accidental Death Benefit",
+      "Total & Permanent Disability (TPD)",
+      "Terminal Illness Benefit",
+      "Maturity Claim",
+    ];
+  }
+
+  if (
+    pType.includes("HEALTH") ||
+    pType.includes("FLOATER") ||
+    pName.includes("health") ||
+    pName.includes("floater") ||
+    pName.includes("medical") ||
+    pName.includes("care")
+  ) {
+    return [
+      "Hospitalization",
+      "Surgery",
+      "OPD Reimbursement",
+      "Maternity Benefit",
+      "Critical Illness Benefit",
+    ];
+  }
+
+  if (
+    pName.includes("salary") ||
+    pName.includes("income") ||
+    pName.includes("disability") ||
+    pName.includes("protection")
+  ) {
+    return [
+      "Total Permanent Disability (TPD)",
+      "Temporary Total Disability / Salary Protection",
+      "Critical Illness Lump Sum",
+      "Death Claim",
+    ];
+  }
+
+  if (
+    pType.includes("CHILD") ||
+    pName.includes("education") ||
+    pName.includes("child") ||
+    pName.includes("marriage")
+  ) {
+    return [
+      "Payer Death / Premium Waiver Claim",
+      "Education Benefit Drawdown",
+      "Milestone Maturity Benefit",
+    ];
+  }
+
+  return [
+    "Hospitalization",
+    "Surgery",
+    "Death Claim",
+    "OPD Reimbursement",
+    "Total & Permanent Disability (TPD)",
+  ];
+}
+
+const STATUS_STYLE: Record<string, string> = {
+  "New": "bg-slate-100 text-slate-700",
+  "Triaged": "bg-blue-50 text-blue-800",
+  "Under Investigation": "bg-amber-50 text-amber-800",
+  "Pending Documents": "bg-orange-50 text-orange-800",
+  "Approved": "bg-emerald-50 text-emerald-800",
+  "Partial Approval": "bg-teal-50 text-teal-800",
+  "Declined": "bg-rose-50 text-rose-800",
+  "Referred to Manager": "bg-blue-50 text-blue-800",
+  "Settled": "bg-slate-100 text-slate-800",
+  "Closed": "bg-slate-100 text-slate-500",
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const style = STATUS_STYLE[status] ?? "bg-slate-100 text-slate-600";
+  return (
+    <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-medium ${style}`}>
+      {status}
+    </span>
+  );
+}
+
+function RiskBadge({ prob, flag }: { prob: number; flag: boolean }) {
+  const pct = Math.round(prob * 100);
+  if (flag) {
+    return <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-50 text-rose-700">{tx("Duplicate")}</span>;
+  }
+  if (pct >= 70) {
+    return <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-50 text-rose-700">{tx("High (")}{pct}%)</span>;
+  }
+  if (pct >= 30) {
+    return <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700">{tx("Medium (")}{pct}%)</span>;
+  }
+  return <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700">{tx("Low (")}{pct}%)</span>;
+}
+
+export default function ClaimsPage() {
+  const router = useRouter();
+  const [claims, setClaims] = useState<Claim[]>([]);
+  const [policies, setPolicies] = useState<PolicyListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [typeFilter, setTypeFilter] = useState("ALL");
+  const [riskFilter, setRiskFilter] = useState("ALL");
+  const [amountFilter, setAmountFilter] = useState("ALL");
+  const [datePreset, setDatePreset] = useState<DatePreset>("all");
+  const [dateRange, setDateRange] = useState<DateRange>(() => resolvePreset("all"));
+  const [dateField, setDateField] = useState("incident_date");
+  const [search, setSearch] = useState("");
+  const [showModal, setShowModal] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [step, setStep] = useState(1);
+  const policyFilters = usePolicyFilters();
+  const [policyDropdownOpen, setPolicyDropdownOpen] = useState(false);
+  const policyDropdownRef = useRef<HTMLDivElement>(null);
+
+  const [form, setForm] = useState<CreateClaimRequest>({
+    policy_id: "",
+    claim_type: "Hospitalization",
+    submitted_amount: 50000,
+    incident_date: new Date().toISOString().split("T")[0],
+    notes: "",
+  });
+
+  const [selectedPolicyDetail, setSelectedPolicyDetail] = useState<PolicyDetail | null>(null);
+  const [claimantType, setClaimantType] = useState<"SELF" | "NOMINEE_BENEFICIARY" | "LEGAL_HEIR" | "GUARDIAN">("SELF");
+  const [claimantName, setClaimantName] = useState("");
+  const [claimantCnic, setClaimantCnic] = useState("");
+  const [claimantRelationship, setClaimantRelationship] = useState("Spouse");
+  const [claimantPhone, setClaimantPhone] = useState("");
+
+  const selectPolicy = async (p: PolicyListItem) => {
+    const options = getEligibleClaimTypes(p);
+    const nextClaimType = options.includes(form.claim_type) ? form.claim_type : options[0];
+    setForm({ ...form, policy_id: p.id, claim_type: nextClaimType });
+    setPolicyDropdownOpen(false);
+
+    if (nextClaimType.includes("Death")) {
+      setClaimantType("NOMINEE_BENEFICIARY");
+    } else {
+      setClaimantType("SELF");
+    }
+
+    try {
+      const detail = await getPolicyDetail(p.id);
+      setSelectedPolicyDetail(detail);
+      if (detail.nominee_name) {
+        if (nextClaimType.includes("Death") || claimantType === "NOMINEE_BENEFICIARY") {
+          setClaimantName(detail.nominee_name);
+          setClaimantRelationship(detail.nominee_relationship || "Spouse");
+        }
+      }
+    } catch {
+      setSelectedPolicyDetail(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!policyDropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (policyDropdownRef.current && !policyDropdownRef.current.contains(e.target as Node)) {
+        setPolicyDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [policyDropdownOpen]);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      let min_amount: number | undefined;
+      let max_amount: number | undefined;
+      if (amountFilter === "UNDER_50K") { max_amount = 50000; }
+      else if (amountFilter === "50K_200K") { min_amount = 50000; max_amount = 200000; }
+      else if (amountFilter === "OVER_200K") { min_amount = 200000; }
+
+      const data = await listClaims({
+        status: statusFilter !== "ALL" ? statusFilter : undefined,
+        claim_type: typeFilter !== "ALL" ? typeFilter : undefined,
+        risk_level: riskFilter !== "ALL" ? riskFilter : undefined,
+        min_amount,
+        max_amount,
+        start_date: dateRange.from || undefined,
+        end_date: dateRange.to || undefined,
+        date_field: dateField,
+        search: search.trim() || undefined,
+      });
+      setClaims(data);
+    } catch (err) {
+      console.error("Failed to fetch claims:", err);
+      setClaims([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, [statusFilter, typeFilter, riskFilter, amountFilter, datePreset, dateRange, dateField, search]);
+
+  useEffect(() => { listPolicies().then(setPolicies).catch(() => { }); }, []);
+
+  const handleResetFilters = () => {
+    setStatusFilter("ALL");
+    setTypeFilter("ALL");
+    setRiskFilter("ALL");
+    setAmountFilter("ALL");
+    setDatePreset("all");
+    setDateRange(resolvePreset("all"));
+    setDateField("incident_date");
+    setSearch("");
+  };
+
+  const isFiltered =
+    statusFilter !== "ALL" ||
+    typeFilter !== "ALL" ||
+    riskFilter !== "ALL" ||
+    amountFilter !== "ALL" ||
+    datePreset !== "all" ||
+    dateRange.from !== "" ||
+    dateRange.to !== "" ||
+    search.trim() !== "";
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.policy_id) { setErrorMsg(tx("Please select an active policy.")); return; }
+
+    const selectedP = policies.find(p => p.id === form.policy_id);
+    if (claimantType !== "SELF" && !claimantName.trim()) {
+      setErrorMsg(tx("Claimant / Beneficiary Name is required for Death or Representative claims."));
+      return;
+    }
+
+    setSubmitting(true); setErrorMsg("");
+    try {
+      const finalClaimantName = claimantType === "SELF"
+        ? (selectedP?.customer_name || "Self")
+        : claimantName.trim();
+
+      const created = await createClaim({
+        ...form,
+        claimant_type: claimantType,
+        claimant_name: finalClaimantName,
+        claimant_cnic: claimantCnic.trim() || undefined,
+        claimant_relationship: claimantType === "SELF" ? "Self" : claimantRelationship,
+        claimant_phone: claimantPhone.trim() || undefined,
+      });
+
+      if (created?.id) {
+        setHighlightId(created.id);
+        setTimeout(() => {
+          setHighlightId(null);
+        }, 2500);
+      }
+
+      setShowModal(false); setStep(1);
+      setForm({ policy_id: "", claim_type: "Hospitalization", submitted_amount: 50000, incident_date: new Date().toISOString().split("T")[0], notes: "" });
+      setClaimantType("SELF"); setClaimantName(""); setClaimantCnic(""); setClaimantRelationship("Spouse"); setClaimantPhone(""); setSelectedPolicyDetail(null);
+      fetchData();
+    } catch (err: any) {
+      setErrorMsg(err.response?.data?.detail || tx("Failed to submit claim FNOL."));
+    } finally { setSubmitting(false); }
+  };
+
+  const openModal = () => {
+    policyFilters.reset(); setShowModal(true); setStep(1); setErrorMsg("");
+    setSelectedPolicyDetail(null); setClaimantType("SELF"); setClaimantName(""); setClaimantCnic(""); setClaimantRelationship("Spouse"); setClaimantPhone("");
+  };
+
+  // KPIs
+  const total = claims.length;
+  const { pageItems: pagedClaims, pagination } = usePagination(claims);
+
+  const inProgress = claims.filter(c => ["New", "Triaged", "Under Investigation", "Pending Documents"].includes(c.status)).length;
+  const totalApproved = claims.filter(c => ["Approved", "Partial Approval", "Settled"].includes(c.status)).reduce((s, c) => s + (c.approved_amount || 0), 0);
+  const highRisk = claims.filter(c => c.fraud_probability >= 0.5 || c.duplicate_flag).length;
+
+  const selectedPolicy = policies.find(p => p.id === form.policy_id);
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 p-6 space-y-6">
+      {/* Header */}
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">{tx("Claims Register")}</h1>
+          <p className="mt-1 text-sm text-slate-500">{tx("Every claim in one place. Open a claim to work it.")}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link href="/claims/dashboard" className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
+            {tx("Dashboard")}
+          </Link>
+          <button onClick={openModal} className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700">
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+            {tx("File new claim")}
+          </button>
+        </div>
+      </div>
+
+      {/* Register & Filters Card */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-visible relative">
+        <div className="p-4 border-b border-slate-100 bg-slate-50/50 space-y-3 rounded-t-xl">
+          {/* Primary Filter Control Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {/* Search Input */}
+            <div className="flex items-center gap-2 flex-1 min-w-[260px] max-w-md">
+              <div className="relative w-full">
+                <input
+                  type="text"
+                  placeholder={tx("Search Claim #, Policy #, or Claimant...")}
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && fetchData()}
+                  className="w-full h-9 text-xs pl-9 pr-8 rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-900/5 shadow-2xs text-slate-800 placeholder-slate-400 transition-all"
+                />
+                <svg className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                {search && (
+                  <button
+                    onClick={() => setSearch("")}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                  >
+                    {tx("×")}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Filter Dropdowns & Buttons */}
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Date Range Filter */}
+              <DateRangeFilter
+                preset={datePreset}
+                range={dateRange}
+                onPresetChange={(p, r) => {
+                  setDatePreset(p);
+                  setDateRange(r);
+                }}
+                size="sm"
+                align="left"
+              />
+
+              {/* Status */}
+              <select
+                value={statusFilter}
+                onChange={e => setStatusFilter(e.target.value)}
+                className="h-9 text-xs px-3 rounded-lg border border-slate-200 bg-white text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-slate-900/5 hover:border-slate-300 transition-all shadow-2xs cursor-pointer"
+              >
+                <option value="ALL">{tx("All Statuses")}</option>
+                <option value="New">{tx("New")}</option>
+                <option value="Triaged">{tx("Triaged")}</option>
+                <option value="Under Investigation">{tx("Under Investigation")}</option>
+                <option value="Pending Documents">{tx("Pending Documents")}</option>
+                <option value="Approved">{tx("Approved")}</option>
+                <option value="Partial Approval">{tx("Partial Approval")}</option>
+                <option value="Declined">{tx("Declined")}</option>
+                <option value="Referred to Manager">{tx("Referred to Manager")}</option>
+                <option value="Settled">{tx("Settled")}</option>
+                <option value="Closed">{tx("Closed")}</option>
+              </select>
+
+              {/* Type */}
+              <select
+                value={typeFilter}
+                onChange={e => setTypeFilter(e.target.value)}
+                className="h-9 text-xs px-3 rounded-lg border border-slate-200 bg-white text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-slate-900/5 hover:border-slate-300 transition-all shadow-2xs cursor-pointer"
+              >
+                <option value="ALL">{tx("All Claim Types")}</option>
+                <option value="Hospitalization">{tx("Hospitalization")}</option>
+                <option value="Surgery">{tx("Surgery")}</option>
+                <option value="Death Claim">{tx("Death Claim")}</option>
+                <option value="Reimbursement">{tx("Reimbursement")}</option>
+              </select>
+
+              {/* Risk Level */}
+              <select
+                value={riskFilter}
+                onChange={e => setRiskFilter(e.target.value)}
+                className="h-9 text-xs px-3 rounded-lg border border-slate-200 bg-white text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-slate-900/5 hover:border-slate-300 transition-all shadow-2xs cursor-pointer"
+              >
+                <option value="ALL">{tx("All Risk Levels")}</option>
+                <option value="LOW">{tx("Low Risk (<30%)")}</option>
+                <option value="MEDIUM">{tx("Medium Risk (30–69%)")}</option>
+                <option value="HIGH">{tx("High Risk (70%+)")}</option>
+                <option value="DUPLICATE">{tx("Duplicate Flagged")}</option>
+              </select>
+
+              {/* Amount Range */}
+              <select
+                value={amountFilter}
+                onChange={e => setAmountFilter(e.target.value)}
+                className="h-9 text-xs px-3 rounded-lg border border-slate-200 bg-white text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-slate-900/5 hover:border-slate-300 transition-all shadow-2xs cursor-pointer"
+              >
+                <option value="ALL">{tx("All Amounts")}</option>
+                <option value="UNDER_50K">{tx("< PKR 50,000")}</option>
+                <option value="50K_200K">{tx("PKR 50k – 200k")}</option>
+                <option value="OVER_200K">{tx("> PKR 200,000")}</option>
+              </select>
+
+              <button
+                onClick={fetchData}
+                className="h-9 text-xs font-semibold px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <span>{tx("Search")}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Active Filter Badges */}
+          {isFiltered && (
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/60">
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <span className="text-slate-400 font-medium mr-1 flex items-center gap-1 text-[11px]">
+                  <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                  </svg>
+                  {tx("Active Filters:")}
+                </span>
+                {search && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium flex items-center gap-1.5 border border-slate-200 text-[11px] shadow-2xs">
+                    {tx("Search: \"")}{search}"
+                    <button onClick={() => setSearch("")} className="text-slate-400 hover:text-slate-700 font-bold">{tx("×")}</button>
+                  </span>
+                )}
+                {statusFilter !== "ALL" && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium flex items-center gap-1.5 border border-blue-200/80 text-[11px] shadow-2xs">
+                    {tx("Status:")}{" "}{statusFilter}
+                    <button onClick={() => setStatusFilter("ALL")} className="text-blue-400 hover:text-blue-700 font-bold">{tx("×")}</button>
+                  </span>
+                )}
+                {typeFilter !== "ALL" && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium flex items-center gap-1.5 border border-blue-200/80 text-[11px] shadow-2xs">
+                    {tx("Type:")}{" "}{typeFilter}
+                    <button onClick={() => setTypeFilter("ALL")} className="text-blue-400 hover:text-blue-700 font-bold">{tx("×")}</button>
+                  </span>
+                )}
+                {riskFilter !== "ALL" && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 font-medium flex items-center gap-1.5 border border-amber-200/80 text-[11px] shadow-2xs">
+                    {tx("Risk:")}{" "}{riskFilter === "LOW" ? tx("Low (<30%)") : riskFilter === "MEDIUM" ? tx("Medium (30-69%)") : riskFilter === "HIGH" ? tx("High (70%+)") : tx("Duplicate")}
+                    <button onClick={() => setRiskFilter("ALL")} className="text-amber-500 hover:text-amber-800 font-bold">{tx("×")}</button>
+                  </span>
+                )}
+                {amountFilter !== "ALL" && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-medium flex items-center gap-1.5 border border-emerald-200/80 text-[11px] shadow-2xs">
+                    {tx("Amount:")}{" "}{amountFilter === "UNDER_50K" ? "< 50k" : amountFilter === "50K_200K" ? "50k-200k" : "> 200k"}
+                    <button onClick={() => setAmountFilter("ALL")} className="text-emerald-500 hover:text-emerald-800 font-bold">{tx("×")}</button>
+                  </span>
+                )}
+                {(dateRange.from || dateRange.to) && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium flex items-center gap-1.5 border border-blue-200/80 text-[11px] shadow-2xs">
+                    {tx("Incident Date:")}{" "}{dateRange.from ? displayDate(dateRange.from) : tx("Start")}{" "}{tx("to")}{" "}{dateRange.to ? displayDate(dateRange.to) : tx("Today")}
+                    <button onClick={() => { setDatePreset("all"); setDateRange(resolvePreset("all")); }} className="text-blue-400 hover:text-blue-700 font-bold">{tx("×")}</button>
+                  </span>
+                )}
+              </div>
+
+              <button
+                onClick={handleResetFilters}
+                className="text-[11px] font-semibold text-slate-500 hover:text-rose-600 transition-colors flex items-center gap-1 cursor-pointer"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {tx("Reset Filters")}
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="overflow-x-auto rounded-b-xl">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                <th className="py-3 pl-5 pr-3">{tx("Claim")}</th>
+                <th className="px-3 py-3">{tx("Policyholder")}</th>
+                <th className="px-3 py-3">{tx("Policy")}</th>
+                <th className="px-3 py-3">{tx("Incident")}</th>
+                <th className="px-3 py-3 text-right">{tx("Claimed")}</th>
+                <th className="px-3 py-3 text-right">{tx("Approved")}</th>
+                <th className="px-3 py-3">{tx("Risk")}</th>
+                <th className="py-3 pl-3 pr-5">{tx("Status")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={8} className="px-5 py-12 text-center text-sm text-slate-400">{tx("Loading claims…")}</td></tr>
+              ) : claims.length === 0 ? (
+                <tr><td colSpan={8} className="px-5 py-12 text-center">
+                  <p className="text-sm font-semibold text-slate-700">{tx("No claims match.")}</p>
+                  <p className="mt-1 text-xs text-slate-400">{tx("Try another filter or search.")}</p>
+                </td></tr>
+              ) : (
+                pagedClaims.map((c) => {
+                  const others = c.claimant_name && c.customer_name && c.claimant_name !== c.customer_name;
+                  return (
+                    <tr
+                      key={c.id}
+                      onClick={() => router.push(`/claims/${c.id}`)}
+                      className={`cursor-pointer border-b border-slate-100 transition-colors duration-1000 ${
+                        highlightId === c.id || highlightId === c.claim_number ? "bg-blue-100/80" : "hover:bg-slate-50"}`}
+                    >
+                      <td className="py-3 pl-5 pr-3">
+                        <p className="font-semibold text-slate-900">{c.claim_number}</p>
+                        <p className="text-xs text-slate-500">{c.claim_type}</p>
+                      </td>
+                      <td className="px-3 py-3">
+                        <p className="font-medium text-slate-900">{c.customer_name || "—"}</p>
+                        {others && <p className="text-xs text-slate-500">{tx("Claimant")}: {c.claimant_name}{c.claimant_relationship ? ` (${c.claimant_relationship})` : ""}</p>}
+                      </td>
+                      <td className="px-3 py-3 font-mono text-xs text-slate-500">{c.policy_number ?? "—"}</td>
+                      <td className="px-3 py-3 text-xs text-slate-600">{c.incident_date ? displayDate(c.incident_date) : "—"}</td>
+                      <td className="px-3 py-3 text-right font-medium text-slate-900">{tx("PKR")} {c.submitted_amount.toLocaleString()}</td>
+                      <td className="px-3 py-3 text-right font-semibold text-slate-900">{c.approved_amount ? `${tx("PKR")} ${c.approved_amount.toLocaleString()}` : <span className="text-slate-300">—</span>}</td>
+                      <td className="px-3 py-3"><RiskBadge prob={c.fraud_probability} flag={c.duplicate_flag} /></td>
+                      <td className="py-3 pl-3 pr-5"><StatusBadge status={c.status} /></td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+          <Pagination pagination={pagination} noun={tx("claims")} inline />
+      </div>
+
+      {/* Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className={`bg-white rounded-2xl shadow-2xl border border-slate-200 w-full ${step === 1 ? "max-w-4xl" : "max-w-2xl"} max-h-[90vh] flex flex-col relative my-auto transition-[max-width]`}>
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/90 rounded-t-2xl shrink-0">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">{tx("File First Notice of Loss (FNOL)")}</h3>
+                <p className="text-[11px] text-slate-500">{tx("Step")}{" "}{step}{" "}{tx("of 2 —")}{" "}{step === 1 ? tx("Select Policy") : tx("Claim & Beneficiary Details")}</p>
+              </div>
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 text-lg font-bold">{tx("×")}</button>
+            </div>
+
+            <form onSubmit={handleCreate} className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
+              {errorMsg && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-xs font-medium">
+                  {errorMsg}
+                </div>
+              )}
+
+              {step === 1 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
+                      {tx("Select Policy (")}{policies.length}{" "}{tx("Available)")}
+                    </label>
+                    {selectedPolicy && (
+                      <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200/80">
+                        {tx("Selected:")}{" "}{selectedPolicy.customer_name}
+                      </span>
+                    )}
+                  </div>
+
+                  <PolicyPicker
+                    policies={policies}
+                    filters={policyFilters}
+                    selectedId={form.policy_id}
+                    onSelect={selectPolicy}
+                  />
+
+                  {selectedPolicyDetail?.nominee_name && (
+                    <div className="p-2.5 bg-slate-50 border border-slate-200/80 rounded-lg text-[11px] text-slate-600 flex items-center justify-between">
+                      <span className="font-medium">{tx("Nominee on file:")}{" "}<strong className="text-slate-800">{selectedPolicyDetail.nominee_name}</strong> ({selectedPolicyDetail.nominee_relationship || tx("Nominee")})</span>
+                      <span className="text-slate-400 text-[10px]">{tx("Auto-populates in Step 2")}</span>
+                    </div>
+                  )}
+
+                  <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setShowModal(false)}
+                      className="px-3.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium hover:bg-slate-50"
+                    >
+                      {tx("Cancel")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!form.policy_id) { setErrorMsg("Please select a policy first."); return; }
+                        setErrorMsg(""); setStep(2);
+                      }}
+                      className="px-4 py-1.5 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700"
+                    >
+                      {tx("Next Step →")}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {step === 2 && (() => {
+                const eligibleClaimTypes = getEligibleClaimTypes(selectedPolicy);
+                const isDeathClaim = form.claim_type.includes("Death");
+
+                return (
+                  <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
+                    {/* Distinct Policy Banner */}
+                    <div className="p-4 bg-gradient-to-r from-blue-100/70 to-blue-50/40 border border-blue-200/80 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs shadow-sm relative overflow-hidden">
+                      <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-600" />
+
+                      <div className="space-y-1.5 min-w-0 pl-2">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className="font-extrabold text-blue-950 text-[14px] tracking-tight drop-shadow-xs">{selectedPolicy?.customer_name}</span>
+                          <span className="px-2.5 py-0.5 rounded-full bg-white border border-blue-200 text-blue-800 font-bold shadow-xs">
+                            {selectedPolicy?.product_name}
+                          </span>
+                          <span className="font-bold text-blue-800 uppercase tracking-widest text-[10px] bg-blue-100/80 px-2 py-0.5 rounded">
+                            {selectedPolicy?.insurance_type.replace("_", " ")}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-blue-900/80 font-medium">
+                          <span>{tx("Policy #:")}{" "}<strong className="text-blue-950 font-mono tracking-wide">{selectedPolicy?.policy_number}</strong></span>
+                          <span className="hidden sm:inline text-blue-300 font-bold">•</span>
+                          <span>{tx("Coverage Limit:")}{" "}<strong className="text-blue-950 font-bold">{tx("PKR")}{" "}{selectedPolicy?.coverage_amount.toLocaleString()}</strong></span>
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 relative z-10 pl-2">
+                        <span className="flex items-center gap-1.5 bg-emerald-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider shadow-xs shadow-emerald-500/20">
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                          {tx("Verified")}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Claim Type & Amount Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          {tx("Eligible Claim Type")}{" "}<span className="text-slate-400 font-normal">({eligibleClaimTypes.length}{" "}{tx("available)")}</span>
+                        </label>
+                        <select
+                          value={form.claim_type}
+                          onChange={e => {
+                            const newType = e.target.value;
+                            setForm({ ...form, claim_type: newType });
+                            if (newType.includes("Death")) {
+                              setClaimantType("NOMINEE_BENEFICIARY");
+                              if (selectedPolicyDetail?.nominee_name && !claimantName) {
+                                setClaimantName(selectedPolicyDetail.nominee_name);
+                                setClaimantRelationship(selectedPolicyDetail.nominee_relationship || "Spouse");
+                              }
+                            } else {
+                              setClaimantType("SELF");
+                            }
+                          }}
+                          className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 bg-white font-semibold text-slate-800"
+                        >
+                          {eligibleClaimTypes.map(opt => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          {tx("Claim Amount (PKR)")}
+                        </label>
+                        <input
+                          type="number"
+                          required
+                          min="1"
+                          max={selectedPolicy?.coverage_amount}
+                          value={form.submitted_amount || ""}
+                          onChange={e => setForm({ ...form, submitted_amount: parseInt(e.target.value) || 0 })}
+                          className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:border-blue-500 font-medium"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Claimant & Beneficiary Intake Box */}
+                    <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-3">
+                      {/* <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                          Claimant & Beneficiary Intake
+                        </label>
+                        {isDeathClaim && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                            DEATH CLAIM MANDATE
+                          </span>
+                        )}
+                      </div> */}
+
+                      {/* Claimant Role Selection */}
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <button
+                          type="button"
+                          disabled={isDeathClaim}
+                          onClick={() => setClaimantType("SELF")}
+                          className={`p-2 rounded-lg border text-left flex items-center justify-between transition-all ${claimantType === "SELF"
+                              ? "bg-blue-50 border-blue-300 text-blue-900 font-semibold shadow-xs"
+                              : "bg-white border-slate-200 text-slate-600 hover:bg-slate-100"
+                            } ${isDeathClaim ? "opacity-40 cursor-not-allowed bg-slate-100/50" : ""}`}
+                        >
+                          <span>{tx("Self (Policyholder)")}</span>
+                          {claimantType === "SELF" && <span className="text-blue-600 font-bold text-xs">✓</span>}
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={!isDeathClaim}
+                          onClick={() => {
+                            setClaimantType("NOMINEE_BENEFICIARY");
+                            if (selectedPolicyDetail?.nominee_name && !claimantName) {
+                              setClaimantName(selectedPolicyDetail.nominee_name);
+                              setClaimantRelationship(selectedPolicyDetail.nominee_relationship || "Spouse");
+                            }
+                          }}
+                          className={`p-2 rounded-lg border text-left flex items-center justify-between transition-all ${claimantType !== "SELF"
+                              ? "bg-blue-50 border-blue-300 text-blue-900 font-semibold shadow-xs"
+                              : "bg-white border-slate-200 text-slate-600 hover:bg-slate-100"
+                            } ${!isDeathClaim ? "opacity-40 cursor-not-allowed bg-slate-100/50" : ""}`}
+                        >
+                          <span>{tx("Nominee / Beneficiary / Heir")}</span>
+                          {claimantType !== "SELF" && <span className="text-blue-600 font-bold text-xs">✓</span>}
+                        </button>
+                      </div>
+
+                      {/* Beneficiary Inputs if Filing as Nominee/Representative */}
+                      {claimantType !== "SELF" && (
+                        <div className="p-3.5 bg-white border border-slate-200 shadow-2xs rounded-lg space-y-3 mt-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                          {selectedPolicyDetail?.nominee_name && (
+                            <div className="flex items-center justify-between p-2 bg-white border border-slate-200 rounded-lg text-xs">
+                              <div>
+                                <span className="text-slate-400 text-[10px] uppercase font-bold">{tx("Policy Recorded Nominee:")}</span>
+                                <div className="font-semibold text-slate-900">{selectedPolicyDetail.nominee_name} ({selectedPolicyDetail.nominee_relationship || tx("Nominee")})</div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setClaimantName(selectedPolicyDetail.nominee_name || "");
+                                  setClaimantRelationship(selectedPolicyDetail.nominee_relationship || "Spouse");
+                                }}
+                                className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold rounded"
+                              >
+                                {tx("Pre-fill")}
+                              </button>
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">{tx("Claimant Full Name *")}</label>
+                              <input
+                                type="text"
+                                required
+                                placeholder={tx("e.g. Fatima Ahmed")}
+                                value={claimantName}
+                                onChange={e => setClaimantName(e.target.value)}
+                                className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">{tx("Relationship to Insured")}</label>
+                              <select
+                                value={claimantRelationship}
+                                onChange={e => setClaimantRelationship(e.target.value)}
+                                className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white"
+                              >
+                                <option value="Spouse">{tx("Spouse")}</option>
+                                <option value="Child">{tx("Child")}</option>
+                                <option value="Parent">{tx("Parent")}</option>
+                                <option value="Legal Heir">{tx("Legal Heir")}</option>
+                                <option value="Executor">{tx("Executor / Legal Representative")}</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">{tx("Claimant CNIC / Govt ID")}</label>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                maxLength={15}
+                                placeholder="42101-1234567-1"
+                                value={claimantCnic}
+                                onChange={e => setClaimantCnic(formatCnic(e.target.value))}
+                                className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 font-mono"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">{tx("Claimant Phone Number")}</label>
+                              <input
+                                type="text"
+                                placeholder={tx("+92 300 XXXXXXX")}
+                                value={claimantPhone}
+                                onChange={e => setClaimantPhone(e.target.value)}
+                                className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Incident Date & Description */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">{tx("Incident Date")}</label>
+                        <input
+                          type="date"
+                          value={form.incident_date}
+                          onChange={e => setForm({ ...form, incident_date: e.target.value })}
+                          className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          {tx("Description / Intake Notes")}{" "}<span className="text-[10px] font-normal text-slate-400">{tx("(Optional)")}</span>
+                        </label>
+                        <textarea
+                          rows={2}
+                          placeholder={tx("Describe the claim event (optional)...")}
+                          value={form.notes}
+                          onChange={e => setForm({ ...form, notes: e.target.value })}
+                          className="w-full text-xs p-2 rounded-lg border border-slate-200"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setStep(1)}
+                        className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium"
+                      >
+                        {tx("Back")}
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={submitting}
+                        className="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {submitting ? tx("Submitting FNOL...") : tx("Submit Claim FNOL")}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

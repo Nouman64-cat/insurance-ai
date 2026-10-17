@@ -1,0 +1,936 @@
+"use client";
+
+import { useState, useEffect, Suspense } from "react";
+import api from "@/app/services/api";
+import { tx } from "@/lib/i18n/tx";
+
+// ── Types ────────────────────────────────────────────────────────────────────
+type Role = "primary" | "fallback" | "disabled";
+
+interface ProviderStatus {
+  provider: string;
+  model_name: string;
+  role: Role;
+  has_key: boolean;
+  api_key_last4: string | null;
+  updated_at: string;
+}
+
+interface TaskModel {
+  provider: string;
+  model_name: string;
+  has_key: boolean;
+}
+
+interface TaskConfig {
+  primary: TaskModel | null;
+  fallback: TaskModel | null;
+}
+
+interface LiveVoiceConfig {
+  configured: boolean;
+  model_name: string;
+  voice: string;
+  transcription_model: string;
+  has_key: boolean;
+}
+
+interface ConfigResponse {
+  encryption_available: boolean;
+  providers: ProviderStatus[];
+  ocr: TaskConfig;
+  live_voice?: LiveVoiceConfig | null;
+}
+
+interface TestResult {
+  ok: boolean;
+  status?:
+    | "responding"
+    | "no_credits"
+    | "rate_limited"
+    | "invalid_key"
+    | "bad_model"
+    | "error";
+  detail: string;
+  latency_ms: number;
+}
+
+const PROVIDER_META: Record<
+  string,
+  { label: string; blurb: string; keyHint: string; docs: string }
+> = {
+  gemini: {
+    label: "Google Gemini",
+    blurb: "Google AI Studio / Generative Language API",
+    keyHint: "AIza… or AQ.…",
+    docs: "https://aistudio.google.com/apikey",
+  },
+  openai: {
+    label: "OpenAI",
+    blurb: "GPT-4o / GPT-4o-mini via the OpenAI API",
+    keyHint: "sk-…",
+    docs: "https://platform.openai.com/api-keys",
+  },
+  anthropic: {
+    label: "Anthropic Claude",
+    blurb: "Claude models via the Anthropic API",
+    keyHint: "sk-ant-…",
+    docs: "https://console.anthropic.com/settings/keys",
+  },
+};
+
+const ROLE_LABEL: Record<Role, string> = {
+  primary: "Primary",
+  fallback: "Fallback",
+  disabled: "Disabled",
+};
+
+// ── Per-provider card ────────────────────────────────────────────────────────
+function ProviderCard({
+  status,
+  otherRoles,
+  onSaved,
+}: {
+  status: ProviderStatus;
+  otherRoles: Record<string, Role>;
+  onSaved: (next: ProviderStatus) => void;
+}) {
+  const meta = PROVIDER_META[status.provider] ?? {
+    label: status.provider,
+    blurb: "",
+    keyHint: "",
+    docs: "",
+  };
+
+  const [model, setModel] = useState(status.model_name);
+  const [role, setRole] = useState<Role>(status.role);
+  const [newKey, setNewKey] = useState("");
+  const [editingKey, setEditingKey] = useState(!status.has_key);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [test, setTest] = useState<TestResult | null>(null);
+  const [err, setErr] = useState("");
+  const [savedNote, setSavedNote] = useState("");
+
+  useEffect(() => {
+    setModel(status.model_name);
+    setRole(status.role);
+    setEditingKey(!status.has_key);
+    setNewKey("");
+  }, [status]);
+
+  const dirty =
+    model !== status.model_name ||
+    role !== status.role ||
+    (editingKey && newKey.trim() !== "");
+
+  const roleTaken = (r: Role) =>
+    (r === "primary" || r === "fallback") &&
+    Object.entries(otherRoles).some(
+      ([p, pr]) => p !== status.provider && pr === r,
+    );
+
+  const save = async () => {
+    setErr("");
+    setSavedNote("");
+    setSaving(true);
+    try {
+      const body: Record<string, unknown> = {};
+      if (model !== status.model_name) body.model_name = model.trim();
+      if (role !== status.role) body.role = role;
+      if (editingKey && newKey.trim() !== "") body.api_key = newKey.trim();
+      const resp = await api.put<ProviderStatus>(
+        `/platform/llm-config/${status.provider}`,
+        body,
+      );
+      onSaved(resp.data);
+      setSavedNote("Saved.");
+      setTest(null);
+    } catch (e: any) {
+      setErr(e.message ?? "Save failed.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const runTest = async () => {
+    setErr("");
+    setTesting(true);
+    setTest(null);
+    try {
+      const body: Record<string, unknown> = {};
+      if (editingKey && newKey.trim() !== "") body.api_key = newKey.trim();
+      if (model.trim()) body.model_name = model.trim();
+      const resp = await api.post<TestResult>(
+        `/platform/llm-config/${status.provider}/test`,
+        body,
+      );
+      setTest(resp.data);
+    } catch (e: any) {
+      setTest({ ok: false, detail: e.message ?? "Test failed.", latency_ms: 0 });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const roleBadge =
+    status.role === "primary"
+      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+      : status.role === "fallback"
+        ? "bg-amber-50 text-amber-700 border-amber-200"
+        : "bg-slate-100 text-slate-500 border-slate-200";
+
+  const accent =
+    status.role === "primary"
+      ? "bg-emerald-500"
+      : status.role === "fallback"
+        ? "bg-amber-400"
+        : "bg-slate-200";
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full">
+      <div className={`h-1 ${accent}`} />
+      <div className="px-5 pt-5 pb-4 border-b border-slate-100">
+        <div className="flex items-start justify-between gap-3">
+          <div className="h-10 w-10 rounded-lg bg-slate-900 text-white flex items-center justify-center text-sm font-bold shrink-0">
+            {meta.label.charAt(0).toUpperCase()}
+          </div>
+          <span
+            className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded border ${roleBadge}`}
+          >
+            {tx(ROLE_LABEL[status.role])}
+          </span>
+        </div>
+        <h3 className="text-base font-bold text-slate-900 mt-3">{tx(meta.label)}</h3>
+        <p className="text-xs text-slate-500 mt-0.5 min-h-[2rem]">{meta.blurb}</p>
+        <span
+          className={`inline-block mt-2 text-[11px] font-medium px-2 py-0.5 rounded-full ${
+            status.has_key
+              ? "bg-slate-100 text-slate-600"
+              : "bg-red-50 text-red-500"
+          }`}
+        >
+          {status.has_key ? tx("key ••••{0}", { 0: status.api_key_last4 }) : tx("no key")}
+        </span>
+      </div>
+
+      <div className="px-5 py-4 space-y-4 flex-1">
+        {/* Role */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+            {tx("Role")}
+          </label>
+          <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-lg">
+            {(["primary", "fallback", "disabled"] as Role[]).map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setRole(r)}
+                title={
+                  roleTaken(r) && role !== r
+                    ? tx("Reassigns {0} from another provider", { 0: ROLE_LABEL[r].toLowerCase() })
+                    : undefined
+                }
+                className={`py-1.5 text-xs font-semibold rounded-md transition-all ${
+                  role === r
+                    ? "bg-white text-blue-600 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                {tx(ROLE_LABEL[r])}
+                {roleTaken(r) && role !== r && (
+                  <span className="ml-0.5 text-[10px] opacity-60">*</span>
+                )}
+              </button>
+            ))}
+          </div>
+          {roleTaken(role) && role !== status.role && (
+            <p className="text-[11px] text-amber-600 mt-1">
+              {tx("Another provider is currently")}{" "}{ROLE_LABEL[role].toLowerCase()}{" "}{tx("— saving moves it here.")}
+            </p>
+          )}
+        </div>
+
+        {/* Model */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+            {tx("Model")}
+          </label>
+          <input
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            placeholder={tx("model id")}
+          />
+        </div>
+
+        {/* API key */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+            {tx("API key")}
+          </label>
+          {editingKey ? (
+            <input
+              type="password"
+              value={newKey}
+              onChange={(e) => setNewKey(e.target.value)}
+              autoComplete="off"
+              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              placeholder={meta.keyHint || tx("paste key")}
+            />
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-500 font-mono">
+                ••••••••••••{status.api_key_last4}
+              </span>
+              <button
+                type="button"
+                onClick={() => setEditingKey(true)}
+                className="px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-lg"
+              >
+                {tx("Replace")}
+              </button>
+            </div>
+          )}
+          <div className="flex items-center justify-between mt-1">
+            {editingKey && status.has_key ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingKey(false);
+                  setNewKey("");
+                }}
+                className="text-[11px] text-slate-400 hover:text-slate-600"
+              >
+                {tx("Cancel key change")}
+              </button>
+            ) : (
+              <span />
+            )}
+            {meta.docs && (
+              <a
+                href={meta.docs}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] text-blue-500 hover:underline"
+              >
+                {tx("Where to get a key ↗")}
+              </a>
+            )}
+          </div>
+        </div>
+
+        {/* Test result */}
+        {test && (
+          <div
+            className={`text-xs rounded-lg px-3 py-2 border ${
+              test.ok
+                ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                : test.status === "no_credits" || test.status === "rate_limited"
+                  ? "bg-amber-50 border-amber-200 text-amber-700"
+                  : "bg-red-50 border-red-200 text-red-600"
+            }`}
+          >
+            <span className="font-semibold">
+              {test.ok
+                ? tx("✓ Responding")
+                : test.status === "no_credits"
+                  ? tx("⚠ 429 · No credits")
+                  : test.status === "rate_limited"
+                    ? tx("⚠ 429 · Rate limited")
+                    : test.status === "invalid_key"
+                      ? tx("✕ Invalid key")
+                      : test.status === "bad_model"
+                        ? tx("✕ Model not found")
+                        : tx("✕ Failed")}
+            </span>
+            {" — "}
+            {test.detail}
+            {test.latency_ms > 0 && (
+              <span className="opacity-60"> ({test.latency_ms}{" "}{tx("ms)")}</span>
+            )}
+          </div>
+        )}
+        {err && (
+          <div className="text-xs rounded-lg px-3 py-2 border bg-red-50 border-red-200 text-red-600">
+            {err}
+          </div>
+        )}
+        {savedNote && !dirty && (
+          <div className="text-xs text-emerald-600 font-medium">{savedNote}</div>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/60 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={runTest}
+          disabled={testing || (!status.has_key && newKey.trim() === "")}
+          className="py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:border-slate-300 transition-all disabled:opacity-40"
+        >
+          {testing ? tx("Testing…") : tx("Test key")}
+        </button>
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving || !dirty}
+          className="py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all disabled:opacity-40"
+        >
+          {saving ? tx("Saving…") : tx("Save")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── OCR model card ───────────────────────────────────────────────────────────
+// Providers that can read a PDF; OpenAI chat models take images only.
+const PDF_CAPABLE = new Set(["gemini", "anthropic"]);
+
+type Slot = { provider: string; model: string };
+
+function OcrRow({
+  label,
+  emptyLabel,
+  slot,
+  providers,
+  onChange,
+}: {
+  label: string;
+  emptyLabel: string;
+  slot: Slot;
+  providers: ProviderStatus[];
+  onChange: (next: Slot) => void;
+}) {
+  const [testing, setTesting] = useState(false);
+  const [test, setTest] = useState<TestResult | null>(null);
+
+  useEffect(() => setTest(null), [slot.provider, slot.model]);
+
+  const runTest = async () => {
+    setTesting(true);
+    setTest(null);
+    try {
+      const resp = await api.post<TestResult>(`/platform/llm-config/${slot.provider}/test`, {
+        model_name: slot.model.trim(),
+      });
+      setTest(resp.data);
+    } catch (e: any) {
+      setTest({ ok: false, detail: e.message ?? "Test failed.", latency_ms: 0 });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-xs font-semibold text-slate-600">{tx(label)}</label>
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_auto]">
+        <select
+          value={slot.provider}
+          onChange={(e) => {
+            const provider = e.target.value;
+            const current = providers.find((p) => p.provider === provider);
+            onChange({ provider, model: provider ? current?.model_name ?? "" : "" });
+          }}
+          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+        >
+          <option value="">{tx(emptyLabel)}</option>
+          {providers.map((p) => (
+            <option key={p.provider} value={p.provider}>
+              {PROVIDER_META[p.provider]?.label ?? p.provider}
+            </option>
+          ))}
+        </select>
+        <input
+          value={slot.model}
+          onChange={(e) => onChange({ ...slot, model: e.target.value })}
+          disabled={!slot.provider}
+          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-400"
+          placeholder={tx("model id")}
+        />
+        <button
+          type="button"
+          onClick={runTest}
+          disabled={!slot.provider || !slot.model.trim() || testing}
+          className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:border-slate-300 transition-all disabled:opacity-40"
+        >
+          {testing ? tx("Testing…") : tx("Test model")}
+        </button>
+      </div>
+      {slot.provider && !PDF_CAPABLE.has(slot.provider) && (
+        <p className="text-[11px] text-amber-600">
+          {tx("OpenAI models read images only — PDF uploads will skip this model.")}
+        </p>
+      )}
+      {test && (
+        <div
+          className={`text-xs rounded-lg px-3 py-2 border ${
+            test.ok
+              ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+              : "bg-red-50 border-red-200 text-red-600"
+          }`}
+        >
+          <span className="font-semibold">{test.ok ? tx("✓ Responding") : tx("✕ Failed")}</span>
+          {" — "}
+          {test.detail}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OcrModelCard({
+  ocr,
+  providers,
+  platformPrimary,
+  onSaved,
+}: {
+  ocr: TaskConfig;
+  providers: ProviderStatus[];
+  platformPrimary: ProviderStatus | undefined;
+  onSaved: () => void;
+}) {
+  const toSlot = (m: TaskModel | null): Slot => ({ provider: m?.provider ?? "", model: m?.model_name ?? "" });
+  const [primary, setPrimary] = useState<Slot>(toSlot(ocr.primary));
+  const [fallback, setFallback] = useState<Slot>(toSlot(ocr.fallback));
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const [savedNote, setSavedNote] = useState("");
+
+  useEffect(() => {
+    setPrimary(toSlot(ocr.primary));
+    setFallback(toSlot(ocr.fallback));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ocr]);
+
+  // Only providers with a stored key can serve OCR; a saved choice whose key was removed stays listed so it shows.
+  const usable = providers.filter(
+    (p) => p.has_key || p.provider === ocr.primary?.provider || p.provider === ocr.fallback?.provider,
+  );
+  const same = (a: Slot, m: TaskModel | null) => a.provider === (m?.provider ?? "") && a.model.trim() === (m?.model_name ?? "");
+  const dirty = !same(primary, ocr.primary) || (!!primary.provider && !same(fallback, ocr.fallback));
+  const missingKey = [ocr.primary, ocr.fallback].filter((m) => m && !m.has_key);
+
+  const save = async () => {
+    setErr("");
+    setSavedNote("");
+    setSaving(true);
+    try {
+      const pick = (s: Slot) => (s.provider ? { provider: s.provider, model_name: s.model.trim() } : null);
+      await api.put("/platform/llm-config/tasks/ocr", {
+        primary: pick(primary),
+        fallback: primary.provider ? pick(fallback) : null,
+      });
+      setSavedNote(tx("Saved."));
+      onSaved();
+    } catch (e: any) {
+      setErr(e.message ?? "Save failed.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className={`h-1 ${ocr.primary ? "bg-blue-500" : "bg-slate-200"}`} />
+      <div className="px-5 pt-5 pb-4 border-b border-slate-100 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-bold text-slate-900">{tx("OCR model")}</h2>
+          <p className="text-xs text-slate-500 mt-0.5 max-w-2xl">
+            {tx("The model the OCR engine uses to read uploaded documents (CNICs, salary slips, medical reports, scheme files). It uses the API key saved for that provider above. Leave it on the platform models to use the primary and fallback above.")}
+          </p>
+        </div>
+        <span
+          className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded border ${
+            ocr.primary
+              ? "bg-blue-50 text-blue-700 border-blue-200"
+              : "bg-slate-100 text-slate-500 border-slate-200"
+          }`}
+        >
+          {ocr.primary ? tx("Own model") : tx("Platform models")}
+        </span>
+      </div>
+
+      <div className="px-5 py-4 space-y-4">
+        <OcrRow
+          label="OCR primary"
+          emptyLabel="Use the platform models"
+          slot={primary}
+          providers={usable}
+          onChange={setPrimary}
+        />
+        {primary.provider ? (
+          <OcrRow
+            label="OCR fallback (optional)"
+            emptyLabel="No fallback"
+            slot={fallback}
+            providers={usable}
+            onChange={setFallback}
+          />
+        ) : (
+          <p className="text-xs text-slate-500">
+            {tx("OCR currently uses")}{" "}
+            <span className="font-mono">
+              {platformPrimary
+                ? `${PROVIDER_META[platformPrimary.provider]?.label ?? platformPrimary.provider} · ${platformPrimary.model_name}`
+                : tx("the env-var keys (no platform primary set)")}
+            </span>
+          </p>
+        )}
+        {missingKey.length > 0 && (
+          <div className="text-xs rounded-lg px-3 py-2 border bg-amber-50 border-amber-200 text-amber-700">
+            {tx("The key for a chosen OCR provider was removed, so OCR skips that model until a key is set again.")}
+          </div>
+        )}
+        {err && (
+          <div className="text-xs rounded-lg px-3 py-2 border bg-red-50 border-red-200 text-red-600">{err}</div>
+        )}
+        {savedNote && !dirty && <div className="text-xs text-emerald-600 font-medium">{savedNote}</div>}
+      </div>
+
+      <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/60 flex justify-end">
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving || !dirty || (!!primary.provider && !primary.model.trim()) || (!!fallback.provider && !fallback.model.trim())}
+          className="px-6 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all disabled:opacity-40"
+        >
+          {saving ? tx("Saving…") : tx("Save OCR model")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Live voice card ──────────────────────────────────────────────────────────
+// OpenAI's realtime voices. A voice outside this list can still be typed into the API, but these are the ones
+// the Realtime API offers today.
+const REALTIME_VOICES = ["alloy", "ash", "ballad", "cedar", "coral", "echo", "marin", "sage", "shimmer", "verse"];
+const REALTIME_MODEL_HINTS = ["gpt-realtime-2.1-mini", "gpt-realtime-2.1", "gpt-realtime-mini", "gpt-realtime"];
+const TRANSCRIBE_MODEL_HINTS = ["gpt-transcribe", "gpt-4o-transcribe", "gpt-4o-mini-transcribe", "whisper-1"];
+
+function LiveVoiceCard({ config, onSaved }: { config: LiveVoiceConfig; onSaved: () => void }) {
+  const [model, setModel] = useState(config.model_name);
+  const [voice, setVoice] = useState(config.voice);
+  const [transcription, setTranscription] = useState(config.transcription_model);
+  const [busy, setBusy] = useState<"" | "save" | "reset" | "test">("");
+  const [test, setTest] = useState<TestResult | null>(null);
+  const [err, setErr] = useState("");
+  const [savedNote, setSavedNote] = useState("");
+
+  useEffect(() => {
+    setModel(config.model_name);
+    setVoice(config.voice);
+    setTranscription(config.transcription_model);
+  }, [config]);
+  useEffect(() => setTest(null), [model, voice, transcription]);
+
+  const dirty =
+    model.trim() !== config.model_name || voice !== config.voice || transcription.trim() !== config.transcription_model;
+  const complete = !!model.trim() && !!voice && !!transcription.trim();
+  const body = { model_name: model.trim(), voice, transcription_model: transcription.trim() };
+
+  const run = async (kind: "save" | "reset" | "test") => {
+    setErr("");
+    setSavedNote("");
+    setBusy(kind);
+    try {
+      if (kind === "test") {
+        setTest((await api.post<TestResult>("/platform/llm-config/tasks/live-voice/test", body)).data);
+        return;
+      }
+      await api.put("/platform/llm-config/tasks/live-voice", kind === "save" ? body : null);
+      setSavedNote(kind === "save" ? tx("Saved.") : tx("Back on the built-in defaults."));
+      onSaved();
+    } catch (e: any) {
+      if (kind === "test") setTest({ ok: false, detail: e.message ?? "Test failed.", latency_ms: 0 });
+      else setErr(e.message ?? "Save failed.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const inputClass =
+    "w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-slate-50";
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className={`h-1 ${config.configured ? "bg-violet-500" : "bg-slate-200"}`} />
+      <div className="px-5 pt-5 pb-4 border-b border-slate-100 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-bold text-slate-900">{tx("Live voice")}</h2>
+          <p className="text-xs text-slate-500 mt-0.5 max-w-2xl">
+            {tx("The live voice conversation in the AI copilot, and voice messages typed into the chat. It runs on OpenAI's Realtime API with the OpenAI key above; what it looks up and does still goes through the chat models.")}
+          </p>
+        </div>
+        <span
+          className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded border ${
+            config.configured ? "bg-violet-50 text-violet-700 border-violet-200" : "bg-slate-100 text-slate-500 border-slate-200"
+          }`}
+        >
+          {config.configured ? tx("Custom") : tx("Built-in defaults")}
+        </span>
+      </div>
+
+      <div className="px-5 py-4 space-y-4">
+        {!config.has_key && (
+          <div className="text-xs rounded-lg px-3 py-2 border bg-amber-50 border-amber-200 text-amber-700">
+            {tx("Add an OpenAI API key above to choose the live voice models here.")}
+          </div>
+        )}
+        <div className="grid gap-4 md:grid-cols-3">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1.5">{tx("Realtime model")}</label>
+            <input list="realtime-models" value={model} onChange={(e) => setModel(e.target.value)} disabled={!config.has_key}
+              className={inputClass} placeholder={tx("model id")} />
+            <datalist id="realtime-models">{REALTIME_MODEL_HINTS.map((m) => <option key={m} value={m} />)}</datalist>
+            <p className="text-[11px] text-slate-400 mt-1">{tx("Listens, thinks and speaks during the call.")}</p>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1.5">{tx("Voice")}</label>
+            <select value={voice} onChange={(e) => setVoice(e.target.value)} disabled={!config.has_key}
+              className={inputClass.replace("font-mono", "")}>
+              {(REALTIME_VOICES.includes(voice) ? REALTIME_VOICES : [voice, ...REALTIME_VOICES]).map((v) => (
+                <option key={v} value={v}>{v.charAt(0).toUpperCase() + v.slice(1)}</option>
+              ))}
+            </select>
+            <p className="text-[11px] text-slate-400 mt-1">{tx("How the assistant sounds.")}</p>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1.5">{tx("Transcription model")}</label>
+            <input list="transcribe-models" value={transcription} onChange={(e) => setTranscription(e.target.value)} disabled={!config.has_key}
+              className={inputClass} placeholder={tx("model id")} />
+            <datalist id="transcribe-models">{TRANSCRIBE_MODEL_HINTS.map((m) => <option key={m} value={m} />)}</datalist>
+            <p className="text-[11px] text-slate-400 mt-1">{tx("Writes the captions and turns voice messages into text.")}</p>
+          </div>
+        </div>
+        {test && (
+          <div className={`text-xs rounded-lg px-3 py-2 border ${test.ok ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-red-50 border-red-200 text-red-600"}`}>
+            <span className="font-semibold">{test.ok ? tx("✓ Responding") : tx("✕ Failed")}</span>
+            {" — "}
+            {test.detail}
+          </div>
+        )}
+        {err && <div className="text-xs rounded-lg px-3 py-2 border bg-red-50 border-red-200 text-red-600">{err}</div>}
+        {savedNote && !dirty && <div className="text-xs text-emerald-600 font-medium">{savedNote}</div>}
+      </div>
+
+      <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/60 flex flex-wrap items-center justify-end gap-2">
+        {config.configured && (
+          <button type="button" onClick={() => run("reset")} disabled={!!busy}
+            className="mr-auto px-3 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 disabled:opacity-40">
+            {busy === "reset" ? tx("Saving…") : tx("Use defaults")}
+          </button>
+        )}
+        <button type="button" onClick={() => run("test")} disabled={!!busy || !complete || !config.has_key}
+          className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:border-slate-300 transition-all disabled:opacity-40">
+          {busy === "test" ? tx("Testing…") : tx("Test")}
+        </button>
+        <button type="button" onClick={() => run("save")} disabled={!!busy || !complete || !config.has_key || (!dirty && config.configured)}
+          className="px-6 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all disabled:opacity-40">
+          {busy === "save" ? tx("Saving…") : tx("Save live voice")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Page ─────────────────────────────────────────────────────────────────────
+function LLMConfigContent() {
+  const [authorized, setAuthorized] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [cfg, setCfg] = useState<ConfigResponse | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const role = localStorage.getItem("user_role");
+    if (role !== "SuperAdmin") {
+      setAuthorized(false);
+      setLoading(false);
+      return;
+    }
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const load = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const resp = await api.get<ConfigResponse>("/platform/llm-config");
+      setCfg(resp.data);
+    } catch (err: any) {
+      setError(err.message ?? tx("Failed to load configuration."));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onSaved = (next: ProviderStatus) => {
+    setCfg((prev) =>
+      prev
+        ? {
+            ...prev,
+            providers: prev.providers.map((p) =>
+              // saving a role can demote another provider — reload for truth,
+              // but optimistically update the one we changed
+              p.provider === next.provider ? next : p,
+            ),
+          }
+        : prev,
+    );
+    // pull the authoritative state (role reassignments elsewhere)
+    load();
+  };
+
+  if (!authorized) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-950 text-center font-sans min-h-screen">
+        <div className="max-w-md p-6 bg-slate-900 border border-slate-800 rounded-xl shadow-xl">
+          <h1 className="text-xl font-bold text-white mb-2">{tx("Access Denied")}</h1>
+          <p className="text-slate-400 text-sm mb-6">
+            {tx("This page is restricted to platform SuperAdmins.")}
+          </p>
+          <a
+            href="/"
+            className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm px-5 py-2.5 rounded-lg transition-all"
+          >
+            {tx("Back to app")}
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  const primary = cfg?.providers.find((p) => p.role === "primary");
+  const fallback = cfg?.providers.find((p) => p.role === "fallback");
+  const otherRoles: Record<string, Role> = Object.fromEntries(
+    (cfg?.providers ?? []).map((p) => [p.provider, p.role]),
+  );
+
+  return (
+    <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full font-sans">
+      <div>
+        <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+          {tx("LLM Configuration")}
+        </h1>
+        <p className="text-sm text-slate-500 mt-0.5">
+          {tx("Primary and fallback chat models for the AI agent and risk engine. Keys are encrypted at rest and take effect within ~60 seconds — no restart.")}{" "}
+          {tx("OCR and live voice can use their own models, set below.")}
+        </p>
+      </div>
+
+      {cfg && !cfg.encryption_available && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600">
+          <b>{tx("CONFIG_ENCRYPTION_KEY is not set.")}</b>{" "}{tx("API keys cannot be saved until it is configured in the environment. Generate one with")}{" "}
+          <code className="text-xs bg-red-100 px-1 py-0.5 rounded">
+            python -c &quot;from cryptography.fernet import Fernet;
+            print(Fernet.generate_key().decode())&quot;
+          </code>
+          .
+        </div>
+      )}
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600 font-medium">
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="py-20 flex flex-col items-center justify-center gap-3">
+          <svg
+            className="animate-spin h-7 w-7 text-blue-500"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+            />
+          </svg>
+          <span className="text-xs text-slate-400">{tx("Loading configuration…")}</span>
+        </div>
+      ) : (
+        cfg && (
+          <>
+            <div className="flex flex-col sm:flex-row sm:items-stretch gap-3">
+              <div className="flex-1 bg-white border border-slate-200 border-l-4 border-l-emerald-500 rounded-xl px-4 py-3">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  {tx("Primary")}
+                </div>
+                {primary ? (
+                  <div className="text-sm font-semibold text-slate-800 mt-0.5">
+                    {PROVIDER_META[primary.provider]?.label ?? primary.provider}
+                    <span className="font-normal text-slate-400 font-mono text-xs ml-2">
+                      {primary.model_name}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="text-sm text-amber-600 mt-0.5">
+                    {tx("No primary set — services fall back to env vars")}
+                  </div>
+                )}
+              </div>
+              <div className="hidden sm:flex items-center text-slate-300 text-lg">→</div>
+              <div className="flex-1 bg-white border border-slate-200 border-l-4 border-l-amber-400 rounded-xl px-4 py-3">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  {tx("Fallback")}
+                </div>
+                {fallback ? (
+                  <div className="text-sm font-semibold text-slate-800 mt-0.5">
+                    {PROVIDER_META[fallback.provider]?.label ?? fallback.provider}
+                    <span className="font-normal text-slate-400 font-mono text-xs ml-2">
+                      {fallback.model_name}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="text-sm text-slate-400 mt-0.5">{tx("None")}</div>
+                )}
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 items-stretch">
+              {cfg.providers.map((p) => (
+                <ProviderCard
+                  key={p.provider}
+                  status={p}
+                  otherRoles={otherRoles}
+                  onSaved={onSaved}
+                />
+              ))}
+            </div>
+
+            <OcrModelCard
+              ocr={cfg.ocr ?? { primary: null, fallback: null }}
+              providers={cfg.providers}
+              platformPrimary={primary}
+              onSaved={load}
+            />
+
+            {cfg.live_voice && <LiveVoiceCard config={cfg.live_voice} onSaved={load} />}
+          </>
+        )
+      )}
+    </div>
+  );
+}
+
+export default function LLMConfigPage() {
+  return (
+    <Suspense fallback={null}>
+      <LLMConfigContent />
+    </Suspense>
+  );
+}

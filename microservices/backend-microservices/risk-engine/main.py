@@ -1,0 +1,251 @@
+import asyncio
+import json
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Header, HTTPException
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from typing import Any, Dict, Optional
+
+from graph_writer import write_customer_to_graph
+from workflow import run_evaluation, stream_evaluation
+from consumer import start_consumer_task
+from suggestion import suggest_plan
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start the Kafka consumer daemon in the background
+    stop_event = asyncio.Event()
+    consumer_task = start_consumer_task(stop_event)
+    
+    yield
+    
+    # Graceful shutdown
+    stop_event.set()
+    await consumer_task
+
+app = FastAPI(title="Risk Engine", version="0.1.0", lifespan=lifespan)
+
+
+# ─── Request / response shapes (Pydantic, not SQLModel — no DB writes here) ──
+
+class CustomerInput(BaseModel):
+    cnic: str
+    name: str
+    dob: str                  # ISO date string: YYYY-MM-DD
+    gender: str
+    occupation: str
+    declared_income: float
+    is_smoker: Optional[bool] = None
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
+    details: Optional[Dict[str, Any]] = None
+
+
+class PolicyInput(BaseModel):
+    product_name: str
+    insurance_type: Optional[str] = None
+    coverage_amount: float
+    term_years: int
+    dependent_dob: Optional[str] = None
+
+
+class EvaluationRequest(BaseModel):
+    customer: CustomerInput
+    policy: PolicyInput
+    e_application: Optional[Dict[str, Any]] = None
+    acr: Optional[Dict[str, Any]] = None
+    compliance_screening: Optional[Any] = None
+    # Evidence bundle api-gateway assembles from tenant-service's Requirements
+    # Engine / document OCR / verification before ever calling risk-engine
+    # (brief §2/§4). requirements_satisfied defaults True for a direct/test
+    # call made with no case context at all — api-gateway itself only ever
+    # sends False when it is deliberately exercising the
+    # Request-Additional-Evidence path.
+    document_evidence: Optional[list[Dict[str, Any]]] = None
+    verified_facts: Optional[list[Dict[str, Any]]] = None
+    requirements_satisfied: bool = True
+    # {"medical": {...}, "financial": {...}} — the specialists' submitted reviews.
+    specialist_reviews: Optional[Dict[str, Any]] = None
+
+
+class SuggestPlanRequest(BaseModel):
+    customer: Dict[str, Any]
+    plans: list[Dict[str, Any]]
+
+
+class SuggestPlanResponse(BaseModel):
+    suggested_plan_id: str
+    suggested_coverage: int
+    suggested_term: int
+    reasoning: str
+
+
+class EvaluationResponse(BaseModel):
+    is_valid: bool
+    validation_errors: list[str]
+    medical_score: int
+    financial_score: int
+    fraud_probability: float
+    composite_risk_score: int
+    ai_decision: str
+    suggested_loading: Optional[float]
+    reasons: list[str]
+    underwriting_results: Optional[Dict[str, Any]] = None
+
+
+# ─── Helpers ──────────────────────────────────────────────────────────────────
+
+def _persist_to_graph(
+    result: Dict[str, Any],
+    request: "EvaluationRequest",
+    tenant_id: str,
+) -> None:
+    """Fire-and-forget write of an evaluated customer into Memgraph.
+
+    Only writes valid evaluations. Any failure is swallowed inside
+    write_customer_to_graph so the evaluation response is never affected.
+    """
+    if not result.get("is_valid", False):
+        return
+    write_customer_to_graph(
+        cnic              = request.customer.cnic,
+        tenant_id         = tenant_id,
+        occupation        = request.customer.occupation,
+        declared_income   = float(request.customer.declared_income),
+        coverage_amount   = float(request.policy.coverage_amount),
+        medical_score     = int(result.get("medical_score", 0)),
+        financial_score   = int(result.get("financial_score", 0)),
+        fraud_probability = float(result.get("fraud_probability", 0.0)),
+    )
+
+
+# ─── Endpoints ────────────────────────────────────────────────────────────────
+
+@app.get("/health")
+async def health_check():
+    return {"service": "risk-engine", "status": "healthy"}
+
+
+@app.post("/evaluate", response_model=EvaluationResponse)
+async def evaluate(
+    request: EvaluationRequest,
+    x_tenant_id: str = Header(default=""),
+):
+    """Run the LangGraph risk workflow for a single customer + policy pair."""
+    result: Dict[str, Any] = run_evaluation(
+        customer_data=request.customer.model_dump(),
+        policy_data=request.policy.model_dump(),
+        tenant_id=x_tenant_id,
+        e_application=request.e_application,
+        acr=request.acr,
+        compliance_screening=request.compliance_screening,
+        document_evidence=request.document_evidence,
+        verified_facts=request.verified_facts,
+        requirements_satisfied=request.requirements_satisfied,
+        specialist_reviews=request.specialist_reviews,
+    )
+
+    if not result["is_valid"]:
+        raise HTTPException(status_code=422, detail=result["validation_errors"])
+
+    # Fire-and-forget: persist the evaluated customer into Memgraph so the
+    # fraud-ring graph builds up over time. Never blocks the response.
+    _persist_to_graph(result, request, x_tenant_id)
+
+    return EvaluationResponse(
+        is_valid=result["is_valid"],
+        validation_errors=result["validation_errors"],
+        medical_score=result["medical_score"],
+        financial_score=result["financial_score"],
+        fraud_probability=result["fraud_probability"],
+        composite_risk_score=result["composite_risk_score"],
+        ai_decision=result.get("ai_decision", result.get("decision", "Unknown")),
+        suggested_loading=result.get("suggested_loading"),
+        reasons=[
+            f"{r.get('parameter', 'Factor')} ({r.get('risk_rating', 'Info')}): {r.get('observation', '')}" if isinstance(r, dict) else str(r)
+            for r in result.get("reasons", [])
+        ],
+        underwriting_results=result.get("underwriting_results"),
+    )
+
+
+@app.post("/evaluate/financial")
+async def evaluate_financial(
+    request: EvaluationRequest,
+    x_tenant_id: str = Header(default=""),
+):
+    """Financial underwriting only — score, cover ceiling and referral — for the
+    financial underwriter. Runs no decision and writes nothing."""
+    from workflow import run_financial_evaluation
+    return await asyncio.to_thread(
+        run_financial_evaluation,
+        request.customer.model_dump(), request.policy.model_dump(), x_tenant_id,
+        request.e_application, request.acr, request.document_evidence, request.verified_facts,
+    )
+
+
+@app.post("/evaluate/stream")
+async def evaluate_stream(
+    request: EvaluationRequest,
+    x_tenant_id: str = Header(default=""),
+):
+    """Streams each LangGraph node completion as SSE, then emits the full result."""
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def run_graph():
+        try:
+            for node_name, node_data in stream_evaluation(
+                customer_data=request.customer.model_dump(),
+                policy_data=request.policy.model_dump(),
+                tenant_id=x_tenant_id,
+                e_application=request.e_application,
+                acr=request.acr,
+                compliance_screening=request.compliance_screening,
+                document_evidence=request.document_evidence,
+                verified_facts=request.verified_facts,
+                requirements_satisfied=request.requirements_satisfied,
+                specialist_reviews=request.specialist_reviews,
+            ):
+                if node_name == "__done__":
+                    # Persist the fully-scored customer into Memgraph before
+                    # emitting the final event. Fire-and-forget — never blocks.
+                    _persist_to_graph(node_data, request, x_tenant_id)
+                    evt = {"type": "done", "data": node_data}
+                else:
+                    evt = {"type": "progress", "node": node_name, "data": node_data}
+                loop.call_soon_threadsafe(queue.put_nowait, evt)
+        except Exception as exc:
+            loop.call_soon_threadsafe(queue.put_nowait, {"type": "error", "message": str(exc)})
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, None)
+
+    async def generate():
+        fut = loop.run_in_executor(None, run_graph)
+        try:
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                yield f"data: {json.dumps(item, default=str)}\n\n"
+        finally:
+            await fut
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
+
+
+@app.post("/suggest-plan", response_model=SuggestPlanResponse)
+async def suggest_plan_endpoint(
+    request: SuggestPlanRequest,
+    x_tenant_id: str = Header(default=""),
+):
+    """Uses LLM to recommend the best plan for the customer."""
+    try:
+        result = suggest_plan(request.customer, request.plans)
+        return SuggestPlanResponse(**result)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))

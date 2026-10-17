@@ -1,0 +1,1435 @@
+from datetime import date, datetime
+from typing import Any, Dict, List, Literal, Optional
+from uuid import UUID
+
+from pydantic import BaseModel, EmailStr, Field, computed_field, field_validator, model_validator
+from shared.models.core import (
+    UserStatus,
+    Gender,
+    InsuranceTypeEnum,
+    PlanCategoryEnum,
+    ProductCategoryEnum,
+    PlanStatusEnum,
+    PolicyStatusEnum,
+    BranchTypeEnum,
+    MaritalStatus,
+    AcquisitionSourceType,
+    FamilyPlanTypeEnum,
+    FamilyRelationshipEnum,
+    ProfileStatusEnum,
+)
+
+
+# ── Tenant ────────────────────────────────────────────────────────────────────
+
+class TenantCreate(BaseModel):
+    name: str
+    code: str
+
+    # Company profile — optional, captured at onboarding
+    registration_number: Optional[str] = None
+    license_number: Optional[str] = None
+    head_office_address: Optional[str] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_email: Optional[EmailStr] = None
+    contact_phone: Optional[str] = None
+    website: Optional[str] = None
+    established_date: Optional[date] = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("name must not be blank")
+        return v.strip()
+
+    @field_validator("code")
+    @classmethod
+    def code_format(cls, v: str) -> str:
+        v = v.strip().upper()
+        if not v:
+            raise ValueError("code must not be blank")
+        if not v.replace("-", "").replace("_", "").isalnum():
+            raise ValueError("code must be alphanumeric (hyphens/underscores allowed)")
+        return v
+
+
+class TenantRead(BaseModel):
+    id: UUID
+    name: str
+    code: str
+    is_active: bool
+    created_at: datetime
+
+    registration_number: Optional[str] = None
+    license_number: Optional[str] = None
+    head_office_address: Optional[str] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    website: Optional[str] = None
+    established_date: Optional[date] = None
+
+    model_config = {"from_attributes": True}
+
+
+class TenantSetupStatus(BaseModel):
+    tenant_id: UUID
+    branch_count: int
+    admin_count: int
+    plan_count: int = 0
+
+
+class TenantUpdate(BaseModel):
+    name: Optional[str] = None
+    code: Optional[str] = None
+    is_active: Optional[bool] = None
+
+    registration_number: Optional[str] = None
+    license_number: Optional[str] = None
+    head_office_address: Optional[str] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_email: Optional[EmailStr] = None
+    contact_phone: Optional[str] = None
+    website: Optional[str] = None
+    established_date: Optional[date] = None
+
+
+# ── Branch ────────────────────────────────────────────────────────────────────
+
+class BranchCreate(BaseModel):
+    branch_code: str
+    name: str
+    branch_type: BranchTypeEnum = BranchTypeEnum.BRANCH
+    region: Optional[str] = None
+    city: str
+    address: Optional[str] = None
+    postal_code: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_phone: Optional[str] = None
+    contact_email: Optional[EmailStr] = None
+    manager_user_id: Optional[UUID] = None
+    opened_date: Optional[date] = None
+
+    @field_validator("branch_code")
+    @classmethod
+    def branch_code_format(cls, v: str) -> str:
+        v = v.strip().upper()
+        if not v:
+            raise ValueError("branch_code must not be blank")
+        if not v.replace("-", "").replace("_", "").isalnum():
+            raise ValueError("branch_code must be alphanumeric (hyphens/underscores allowed)")
+        return v
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("name must not be blank")
+        return v.strip()
+
+    @field_validator("city")
+    @classmethod
+    def city_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("city must not be blank")
+        return v.strip()
+
+
+class BranchRead(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    branch_code: str
+    name: str
+    branch_type: BranchTypeEnum
+    region: Optional[str] = None
+    city: str
+    address: Optional[str] = None
+    postal_code: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_phone: Optional[str] = None
+    contact_email: Optional[str] = None
+    manager_user_id: Optional[UUID] = None
+    is_active: bool
+    opened_date: Optional[date] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class BranchUpdate(BaseModel):
+    name: Optional[str] = None
+    branch_type: Optional[BranchTypeEnum] = None
+    region: Optional[str] = None
+    city: Optional[str] = None
+    address: Optional[str] = None
+    postal_code: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_phone: Optional[str] = None
+    contact_email: Optional[EmailStr] = None
+    manager_user_id: Optional[UUID] = None
+    is_active: Optional[bool] = None
+    opened_date: Optional[date] = None
+
+
+# ── Role ──────────────────────────────────────────────────────────────────────
+
+class RoleRead(BaseModel):
+    id: UUID
+    name: str
+    description: str
+
+    model_config = {"from_attributes": True}
+
+
+class RoleCreate(BaseModel):
+    name: str
+    description: str = ""
+
+
+class RoleUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
+class RoleManageRead(BaseModel):
+    """A role as the SuperAdmin management page sees it."""
+    id: UUID
+    name: str
+    description: str
+    is_system: bool      # built-in: platform access is tied to its name
+    is_locked: bool = False  # SuperAdmin: can't be renamed or deleted
+    user_count: int = 0  # users currently holding the role
+
+
+# ── User ──────────────────────────────────────────────────────────────────────
+
+class SeedAdminCreate(BaseModel):
+    """Used by the SuperAdmin bootstrap endpoint — creates the first Admin for a
+    tenant. Username and password are auto-generated and emailed to the Admin.
+    branch_id is required — a SuperAdmin always picks which office this Admin
+    runs (see routers/users.py seed_admin)."""
+    email: EmailStr
+    full_name: str
+    branch_id: UUID
+
+    @field_validator("full_name")
+    @classmethod
+    def full_name_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("full_name must not be blank")
+        return v.strip()
+
+
+class UserCreate(BaseModel):
+    """Username and password are auto-generated and emailed to the new user.
+
+    branch_id is required when a SuperAdmin creates an Admin, but ignored when
+    an Admin creates a User — the new User instead inherits the creating
+    Admin's own branch_id (see routers/users.py create_user)."""
+    email: EmailStr
+    full_name: str
+    role_id: UUID
+    branch_id: Optional[UUID] = None
+    cnic: Optional[str] = None
+    location: Optional[str] = None
+
+    @field_validator("full_name")
+    @classmethod
+    def full_name_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("full_name must not be blank")
+        return v.strip()
+
+
+class UserRead(BaseModel):
+    id: UUID
+    tenant_id: Optional[UUID] = None  # None for SuperAdmins
+    role_id: UUID
+    branch_id: Optional[UUID] = None
+    email: str
+    username: str
+    full_name: str
+    is_active: bool
+    status: UserStatus
+    created_at: datetime
+
+    # Profile fields
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[str] = None
+    avatar_url: Optional[str] = None
+    department: Optional[str] = None
+    employee_id: Optional[str] = None
+    designation: Optional[str] = None
+    date_of_joining: Optional[date] = None
+    cnic: Optional[str] = None
+    location: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class UserUpdate(BaseModel):
+    role_id: Optional[UUID] = None
+    branch_id: Optional[UUID] = None
+    is_active: Optional[bool] = None
+    password: Optional[str] = None
+    status: Optional[UserStatus] = None
+
+    # Profile fields
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    employee_id: Optional[str] = None
+    designation: Optional[str] = None
+    date_of_joining: Optional[date] = None
+    cnic: Optional[str] = None
+    location: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def password_min_length(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and len(v) < 8:
+            raise ValueError("password must be at least 8 characters")
+        return v
+
+
+class ProfileUpdate(BaseModel):
+    """Self-service update for the logged-in user's own profile.
+    Deliberately excludes role/status/tenant — those require Admin/SuperAdmin."""
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    employee_id: Optional[str] = None
+    designation: Optional[str] = None
+    date_of_joining: Optional[date] = None
+    cnic: Optional[str] = None
+    location: Optional[str] = None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def new_password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("new_password must be at least 8 characters")
+        return v
+
+
+# ── Customer ─────────────────────────────────────────────────────────────────
+
+from enum import Enum
+
+class MaritalStatus(str, Enum):
+    SINGLE   = "Single"
+    MARRIED  = "Married"
+    DIVORCED = "Divorced"
+    WIDOWED  = "Widowed"
+
+class CustomerCreate(BaseModel):
+    cnic:             Optional[str] = None
+    first_name:       str
+    last_name:        Optional[str] = ""
+    date_of_birth:    Optional[date] = None
+    gender:           Optional[Gender] = None
+    marital_status:   Optional[MaritalStatus] = None
+    nationality:      str = "Pakistani"
+    occupation:       Optional[str] = None
+    declared_income:  Optional[float] = None
+    is_smoker:        Optional[bool] = False
+    height_cm:        Optional[float] = 170.0
+    weight_kg:        Optional[float] = 70.0
+    profile_status:   Optional[ProfileStatusEnum] = None
+    acquisition_source_id: Optional[UUID] = None
+    branch_id:        Optional[UUID] = None
+    assigned_agent_id: Optional[UUID] = None
+    city:             Optional[str] = None
+    province:         Optional[str] = None
+    details:          Optional[dict] = None
+
+    @field_validator("cnic")
+    @classmethod
+    def validate_cnic(cls, v: Optional[str]) -> Optional[str]:
+        if not v or not v.strip():
+            return None
+        import re
+        v = v.strip()
+        if re.fullmatch(r"\d{13}", v):
+            v = f"{v[:5]}-{v[5:12]}-{v[12]}"
+        if not re.fullmatch(r"\d{5}-\d{7}-\d", v):
+            raise ValueError("cnic must be 13 digits or in the format XXXXX-XXXXXXX-X")
+        return v
+
+    @field_validator("height_cm")
+    @classmethod
+    def height_cm_positive(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v <= 0:
+            raise ValueError("height_cm must be greater than 0")
+        return v
+
+    @field_validator("weight_kg")
+    @classmethod
+    def weight_kg_positive(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v <= 0:
+            raise ValueError("weight_kg must be greater than 0")
+        return v
+
+def _source_type_from_input(v):
+    """Accept the number (1 to 6, or "1") as well as the name, so a client may send either."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, int) or (isinstance(v, str) and v.strip().isdigit()):
+        return AcquisitionSourceType.from_number(int(v))
+    return v
+
+
+class AcquisitionSourceRead(BaseModel):
+    """Who brought the customer in — the crediting agent / broker / bank / etc.
+    Compact shape embedded inside CustomerRead."""
+    id:               UUID
+    source_type:      AcquisitionSourceType
+    name:             str
+    code:             str
+    partner_name:     Optional[str] = None
+    city:             Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def source_type_code(self) -> int:
+        return self.source_type.number
+
+class AcquisitionSourceCreate(BaseModel):
+    source_type:      AcquisitionSourceType
+
+    _source_type_in = field_validator("source_type", mode="before")(_source_type_from_input)
+    name:             str
+    code:             str
+    partner_name:     Optional[str] = None
+    contact_person:   Optional[str] = None
+    contact_phone:    Optional[str] = None
+    contact_email:    Optional[str] = None
+    city:             Optional[str] = None
+    cnic:             Optional[str] = None
+    location:         Optional[str] = None
+    is_active:        bool = True
+
+class AcquisitionSourceUpdate(BaseModel):
+    source_type:      Optional[AcquisitionSourceType] = None
+
+    _source_type_in = field_validator("source_type", mode="before")(_source_type_from_input)
+    name:             Optional[str] = None
+    code:             Optional[str] = None
+    partner_name:     Optional[str] = None
+    contact_person:   Optional[str] = None
+    contact_phone:    Optional[str] = None
+    contact_email:    Optional[str] = None
+    city:             Optional[str] = None
+    cnic:             Optional[str] = None
+    location:         Optional[str] = None
+    is_active:        Optional[bool] = None
+
+class AcquisitionSourceFull(BaseModel):
+    """Full shape returned by the management endpoints."""
+    id:               UUID
+    tenant_id:        UUID
+    source_type:      AcquisitionSourceType
+    name:             str
+    code:             str
+    partner_name:     Optional[str] = None
+    contact_person:   Optional[str] = None
+    contact_phone:    Optional[str] = None
+    contact_email:    Optional[str] = None
+    city:             Optional[str] = None
+    cnic:             Optional[str] = None
+    location:         Optional[str] = None
+    is_active:        bool
+    created_at:       datetime
+    customer_count:   int = 0    # how many customers this source has brought in
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def source_type_code(self) -> int:
+        return self.source_type.number
+    user_id:          Optional[UUID] = None   # login account issued to this source, if any
+    # Login account issued to this source: None (no account), "invited"
+    # (credentials sent, not signed in yet) or "active" (has signed in).
+    login_status:     Optional[str] = None
+    login_role:       Optional[str] = None   # role the login account holds (follows the source type)
+    # Set only on the create / resend responses: did the credentials email go out?
+    credentials_email_sent: Optional[bool] = None
+
+    model_config = {"from_attributes": True}
+
+class CustomerRead(BaseModel):
+    id:               UUID
+    tenant_id:        UUID
+    cnic:             Optional[str] = None
+    name:             str
+    dob:              Optional[date] = None
+    gender:           Optional[Gender] = None
+    marital_status:   Optional[MaritalStatus] = None
+    occupation:       Optional[str] = None
+    declared_income:  Optional[float] = None
+    is_smoker:        Optional[bool] = False
+    height_cm:        Optional[float] = 170.0
+    weight_kg:        Optional[float] = 70.0
+    profile_status:   ProfileStatusEnum = ProfileStatusEnum.LEAD
+    created_at:       datetime
+    details:          Optional[dict] = None
+
+    active_policy_number: Optional[str] = None
+    # Set on the single-customer view only, for someone whose policy has left (surrendered / matured / expired) and who has none in force
+    exited_policy: Optional[dict] = None
+    policy_status: Optional[str] = None   # status of that policy: Active, or Matured / Surrendered / Expired once it has left
+
+    # Who brought this customer in (nullable — legacy/API-created rows may have none)
+    acquisition_source_id: Optional[UUID] = None
+    acquisition_source:    Optional[AcquisitionSourceRead] = None
+
+    branch_id:        Optional[UUID] = None
+    assigned_agent_id: Optional[UUID] = None
+    city:             Optional[str] = None
+    province:         Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+class CustomerStatsRead(BaseModel):
+    """Counts backing the KPI cards atop the admin Customers directory."""
+    total_customers:      int
+    active_policyholders: int   # has >=1 Policy in Approved/Issued status — "taking insurance"
+    full_details:         int   # PROSPECT/UNDERWRITING_READY, not yet an active policyholder
+    quick_leads:          int   # LEAD, not yet an active policyholder
+    not_interested:       int   # explicitly disqualified/declined
+
+class CustomerUpdate(BaseModel):
+    cnic:             Optional[str] = None
+    first_name:       Optional[str] = None
+    last_name:        Optional[str] = None
+    date_of_birth:    Optional[date] = None
+    gender:           Optional[Gender] = None
+    marital_status:   Optional[MaritalStatus] = None
+    nationality:      Optional[str] = None
+    occupation:       Optional[str] = None
+    declared_income:  Optional[float] = None
+    is_smoker:        Optional[bool] = None
+    height_cm:        Optional[float] = None
+    weight_kg:        Optional[float] = None
+    profile_status:   Optional[ProfileStatusEnum] = None
+    acquisition_source_id: Optional[UUID] = None
+    # Sending null can't mean "clear" (null is also what every other form sends for "unchanged"),
+    # so moving a lead back to Direct / Unassigned is an explicit flag.
+    clear_acquisition_source: bool = False
+    branch_id:        Optional[UUID] = None
+    assigned_agent_id: Optional[UUID] = None
+    city:             Optional[str] = None
+    province:         Optional[str] = None
+    details:          Optional[dict] = None
+
+    @field_validator("height_cm")
+    @classmethod
+    def height_cm_positive(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v <= 0:
+            raise ValueError("height_cm must be greater than 0")
+        return v
+
+    @field_validator("weight_kg")
+    @classmethod
+    def weight_kg_positive(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v <= 0:
+            raise ValueError("weight_kg must be greater than 0")
+        return v
+
+
+# ── Policy ────────────────────────────────────────────────────────────────────
+
+class PolicyCreate(BaseModel):
+    plan_id:              Optional[UUID] = None
+    product_name:         str
+    insurance_type:       InsuranceTypeEnum
+    coverage_amount:      float
+    term_years:           int
+    dependent_name:       Optional[str] = None
+    dependent_dob:        Optional[date] = None
+    nominee_name:          Optional[str] = None
+    nominee_relationship: Optional[str] = None
+
+
+class PolicyRead(BaseModel):
+    id:               UUID
+    tenant_id:        UUID
+    customer_id:     UUID
+    product_name:     str
+    insurance_type:   InsuranceTypeEnum
+    coverage_amount:  float
+    term_years:       int
+    dependent_name:   Optional[str] = None
+    dependent_dob:    Optional[date] = None
+    nominee_name:      Optional[str] = None
+    nominee_relationship: Optional[str] = None
+    status:           PolicyStatusEnum
+    created_at:       datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PolicyUpdate(BaseModel):
+    product_name:         Optional[str] = None
+    insurance_type:       Optional[InsuranceTypeEnum] = None
+    coverage_amount:      Optional[float] = None
+    term_years:           Optional[int] = None
+    dependent_name:       Optional[str] = None
+    dependent_dob:        Optional[date] = None
+    nominee_name:          Optional[str] = None
+    nominee_relationship: Optional[str] = None
+    status:               Optional[PolicyStatusEnum] = None
+
+
+
+# ── Organization / Group insurance ─────────────────────────────────────────────
+
+class OrganizationCreate(BaseModel):
+    name: str
+    registration_number: Optional[str] = None
+    industry: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_email: Optional[EmailStr] = None
+    contact_phone: Optional[str] = None
+    branch_id: Optional[UUID] = None
+    assigned_agent_id: Optional[UUID] = None
+    acquisition_source_id: Optional[UUID] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("name must not be blank")
+        return v.strip()
+
+
+class OrganizationUpdate(BaseModel):
+    name: Optional[str] = None
+    registration_number: Optional[str] = None
+    industry: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_email: Optional[EmailStr] = None
+    contact_phone: Optional[str] = None
+    branch_id: Optional[UUID] = None
+    assigned_agent_id: Optional[UUID] = None
+    acquisition_source_id: Optional[UUID] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
+    profile_status: Optional[ProfileStatusEnum] = None
+
+class OrganizationRead(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    name: str
+    registration_number: Optional[str] = None
+    industry: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    branch_id: Optional[UUID] = None
+    assigned_agent_id: Optional[UUID] = None
+    acquisition_source_id: Optional[UUID] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
+    profile_status: ProfileStatusEnum = ProfileStatusEnum.LEAD
+    created_at: datetime
+
+    # Computed, populated only by the list/get endpoints (routers/organizations.py) —
+    # not persisted columns. Defaults let create/update responses skip the extra queries.
+    employee_count:       int = 0
+    master_policy_status: Optional[str] = None   # "Active" | "Pending" | None (no policy yet)
+
+    model_config = {"from_attributes": True}
+
+
+class OrganizationStatsRead(BaseModel):
+    """Counts backing the KPI cards atop the admin Organizations directory."""
+    total_organizations: int
+    active:               int   # has a MasterPolicy with status Active
+    in_progress:          int   # has a MasterPolicy, none Active yet (census/setup pending)
+    new_no_policy:        int   # no MasterPolicy at all yet
+
+
+class MasterPolicyCreate(BaseModel):
+    sum_assured_multiple: float
+    term_years: int
+    effective_date: date
+    # Catalog product (Group category) — e.g. GROUP_LIFE, GROUP_LIFE_SME,
+    # GROUP_FAMILY_TAKAFUL. Omitted → the tenant's GROUP_LIFE plan.
+    plan_code: Optional[str] = None
+
+
+class MasterPolicyUpdate(BaseModel):
+    """Edit a master policy before any employee is enrolled on it."""
+    sum_assured_multiple: Optional[float] = None
+    term_years: Optional[int] = None
+    effective_date: Optional[date] = None
+    plan_code: Optional[str] = None
+
+
+class MasterPolicyRead(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    organization_id: UUID
+    insurance_type: InsuranceTypeEnum
+    sum_assured_multiple: float
+    term_years: int
+    effective_date: date
+    status: str
+    free_cover_limit: Optional[float] = None
+    plan_id: Optional[UUID] = None
+    policy_number: Optional[str] = None
+    expiry_date: Optional[date] = None
+    # Filled from the linked InsurancePlan; business_type is its
+    # product_category ("Conventional" | "Takaful").
+    plan_code: Optional[str] = None
+    plan_label: Optional[str] = None
+    business_type: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ServiceBand(BaseModel):
+    min_years: int = Field(ge=0)
+    amount: float = Field(gt=0)
+
+
+class BenefitClassCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    basis: str                                   # Flat | SalaryMultiple | ServiceBanded
+    flat_amount: Optional[float] = None
+    salary_multiple: Optional[float] = None
+    service_bands: Optional[List[ServiceBand]] = None
+    grades: Optional[List[str]] = None
+    min_cover: Optional[float] = Field(default=None, ge=0)
+    max_cover: Optional[float] = Field(default=None, ge=0)
+    is_default: bool = False
+    coverages: Optional[List["ClassCoverageCreate"]] = None    # benefits beyond Life (Life 100% is automatic)
+
+
+class ClassCoverageCreate(BaseModel):
+    coverage_type: str                                   # AccidentalDeath | Disability | PayContinuation | FeeContinuation
+    percent_of_base: float = Field(gt=0, le=1000)        # % of the member's Life cover
+    max_amount: Optional[float] = Field(default=None, gt=0)
+
+
+class ClassCoverageRead(BaseModel):
+    id: Optional[UUID] = None
+    coverage_type: str
+    percent_of_base: float
+    max_amount: Optional[float] = None
+
+    model_config = {"from_attributes": True}
+
+
+class BenefitClassRead(BaseModel):
+    id: UUID
+    master_policy_id: UUID
+    name: str
+    basis: str
+    flat_amount: Optional[float] = None
+    salary_multiple: Optional[float] = None
+    service_bands: Optional[List[Dict[str, Any]]] = None
+    grades: Optional[List[str]] = None
+    min_cover: Optional[float] = None
+    max_cover: Optional[float] = None
+    is_default: bool
+    coverages: List[ClassCoverageRead] = []
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class CensusRequest(BaseModel):
+    """Raw employee rows — kept as loose dicts (rather than a strict per-field
+    model) so group_underwriting.validate_census() can report friendly
+    per-row errors instead of an opaque FastAPI 422 on the first bad row."""
+    employees: List[Dict[str, Any]]
+
+
+class CensusValidationResponse(BaseModel):
+    is_valid: bool
+    total: int
+    duplicate_cnics: List[str] = []
+    missing_fields: List[str] = []
+    errors: List[str] = []
+    # Preview only (nothing persisted yet) — omitted when is_valid is False,
+    # since a malformed batch (e.g. bad dob) can't have its average age computed.
+    computed_free_cover_limit: Optional[float] = None
+
+
+class CensusEmployeeOutcome(BaseModel):
+    customer_id: UUID
+    policy_id: UUID
+    coverage_amount: float
+    status: PolicyStatusEnum
+    premium_total: float
+    suggested_loading: Optional[float] = None
+    risk_assessment_id: Optional[UUID] = None
+    group_member_id: Optional[UUID] = None
+    benefit_class: Optional[str] = None
+    # True when the CNIC already belonged to a customer of this insurer (e.g.
+    # an individual policyholder) — reused, not duplicated; their profile and
+    # other policies are left untouched.
+    reused_existing_customer: bool = False
+
+
+class CensusConfirmResponse(BaseModel):
+    free_cover_limit: float
+    employees: List[CensusEmployeeOutcome]
+
+
+# ── Group Life Phase 2 — quote → issuance (routers/group_policies.py) ────────
+
+class GroupQuoteRead(BaseModel):
+    id: UUID
+    master_policy_id: UUID
+    version: int
+    status: str
+    business_type: str
+    valid_until: date
+    member_count: int
+    dependent_count: int
+    total_sum_assured: float
+    rate_per_mille: float
+    risk_premium: float
+    policy_fee: float
+    stamp_duty: float
+    total_premium: float
+    wakala_fee_pct: Optional[float] = None
+    wakala_fee: Optional[float] = None
+    ptf_allocation: Optional[float] = None
+    retakaful_share_pct: Optional[float] = None
+    retakaful_contribution: Optional[float] = None
+    renewal_id: Optional[UUID] = None
+    breakdown: Dict[str, Any]
+    decided_at: Optional[datetime] = None
+    decided_by: Optional[str] = None
+    decision_notes: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class GroupQuoteDecision(BaseModel):
+    decided_by: Optional[str] = Field(default=None, max_length=255)   # employer contact who decided
+    notes: Optional[str] = Field(default=None, max_length=1000)
+
+
+class GroupPaymentCreate(BaseModel):
+    reference: str = Field(min_length=1, max_length=100)
+    amount: float = Field(gt=0)
+
+
+class GroupIssueResponse(BaseModel):
+    master_policy: MasterPolicyRead
+    certificates_issued: int
+    total_premium: float
+    amount_due: float
+
+
+class EndorsementRequest(BaseModel):
+    """Members stay loose dicts (like CensusRequest) so each kind takes its natural
+    shape — census-style rows to ADD, {member_id | cnic | employee_id} to DELETE,
+    the same plus the new salary / grade / benefit_class / designation to CHANGE."""
+    endorsement_type: str                       # ADD | DELETE | CHANGE
+    effective_date: date
+    members: List[Dict[str, Any]]
+    reason: Optional[str] = Field(default=None, max_length=500)
+    requested_by: Optional[str] = Field(default=None, max_length=255)
+
+
+class EndorsementSettle(BaseModel):
+    reference: str = Field(min_length=1, max_length=100)
+    amount: float = Field(gt=0)
+
+
+class EndorsementRead(BaseModel):
+    id: UUID
+    master_policy_id: UUID
+    number: str
+    endorsement_type: str
+    status: str
+    effective_date: date
+    reason: Optional[str] = None
+    requested_by: Optional[str] = None
+    lines: List[Dict[str, Any]]
+    days_remaining: int
+    period_days: int
+    pro_rata_factor: float
+    member_count_delta: int
+    sum_assured_delta: float
+    risk_delta: float
+    stamp_duty_delta: float
+    premium_delta: float
+    wakala_fee_delta: Optional[float] = None
+    ptf_delta: Optional[float] = None
+    retakaful_delta: Optional[float] = None
+    settlement_status: str
+    settlement_reference: Optional[str] = None
+    settled_at: Optional[datetime] = None
+    created_at: datetime
+    applied_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class RenewalStart(BaseModel):
+    notes: Optional[str] = Field(default=None, max_length=1000)
+
+
+class RenewalCensusRefresh(BaseModel):
+    """The employer's refreshed workforce list: full census-style rows. Joiners are added,
+    salary / grade / class / designation changes applied, and — only when asked — employees
+    missing from the list are removed."""
+    employees: List[Dict[str, Any]]
+    effective_date: Optional[date] = None
+    remove_missing: bool = False
+    preview: bool = False
+    requested_by: Optional[str] = Field(default=None, max_length=255)
+
+
+class RenewalPayment(BaseModel):
+    reference: str = Field(min_length=1, max_length=100)
+    amount: float = Field(gt=0)
+
+
+class RenewalRead(BaseModel):
+    id: UUID
+    master_policy_id: UUID
+    period_no: int
+    status: str
+    source: str
+    current_period_start: date
+    current_period_end: date
+    new_period_start: date
+    new_period_end: date
+    experience: Dict[str, Any]
+    experience_factor: float
+    census_refresh: Optional[Dict[str, Any]] = None
+    decided_by: Optional[str] = None
+    decided_at: Optional[datetime] = None
+    notes: Optional[str] = None
+    payment_reference: Optional[str] = None
+    amount_paid: Optional[float] = None
+    paid_at: Optional[datetime] = None
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class GroupDependentCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    relationship: str                     # Spouse | Child | Parent
+    dob: date
+    cnic: Optional[str] = None
+    gender: Optional[str] = None
+    covered_amount: float = Field(gt=0)
+
+
+class GroupDependentRead(BaseModel):
+    id: UUID
+    group_member_id: UUID
+    name: str
+    relationship: str
+    dob: Optional[date] = None
+    cnic: Optional[str] = None
+    gender: Optional[str] = None
+    covered_amount: float
+    status: str
+
+    model_config = {"from_attributes": True}
+
+
+class GroupMemberRead(BaseModel):
+    id: UUID
+    customer_id: UUID
+    name: str
+    cnic: Optional[str] = None
+    policy_id: Optional[UUID] = None
+    certificate_number: Optional[str] = None
+    certificate_status: Optional[str] = None
+    benefit_class: Optional[str] = None
+    employee_id: Optional[str] = None
+    designation: Optional[str] = None
+    grade: Optional[str] = None
+    basic_monthly_salary: Optional[float] = None
+    coverage_amount: float
+    status: str
+    annual_premium: Optional[float] = None
+    cover_note: Optional[str] = None
+    underwriting_basis: Optional[str] = None   # Guaranteed | Approved | Loaded | Restricted | Pending
+    dependents: int = 0
+    nominations: int = 0                       # beneficiaries recorded on the certificate
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Family Insurance Schemas — mirrors the Organization/MasterPolicy/Census
+# schemas above; see services/tenant-service/routers/families.py.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class FamilyGroupCreate(BaseModel):
+    name: str
+    contact_person: Optional[str] = None
+    contact_email: Optional[EmailStr] = None
+    contact_phone: Optional[str] = None
+    household_declared_income: Optional[float] = None
+    branch_id: Optional[UUID] = None
+    assigned_agent_id: Optional[UUID] = None
+    acquisition_source_id: Optional[UUID] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("name must not be blank")
+        return v.strip()
+
+
+class FamilyGroupUpdate(BaseModel):
+    name: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_email: Optional[EmailStr] = None
+    contact_phone: Optional[str] = None
+    household_declared_income: Optional[float] = None
+    branch_id: Optional[UUID] = None
+    assigned_agent_id: Optional[UUID] = None
+    acquisition_source_id: Optional[UUID] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
+    profile_status: Optional[ProfileStatusEnum] = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not v.strip():
+            raise ValueError("name must not be blank")
+        if v is not None:
+            return v.strip()
+        return v
+
+
+class FamilyGroupRead(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    name: str
+    contact_person: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    household_declared_income: Optional[float] = None
+    primary_member_customer_id: Optional[UUID] = None
+    branch_id: Optional[UUID] = None
+    assigned_agent_id: Optional[UUID] = None
+    acquisition_source_id: Optional[UUID] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
+    profile_status: ProfileStatusEnum = ProfileStatusEnum.LEAD
+    created_at: datetime
+
+    # Computed, populated only by the list/get endpoints (routers/families.py) —
+    # not persisted columns. Defaults let create/update responses skip the extra queries.
+    member_count:         int = 0
+    family_policy_status: Optional[str] = None   # "Active" | "Pending" | None (no policy yet)
+
+    model_config = {"from_attributes": True}
+
+
+class FamilyStatsRead(BaseModel):
+    """Counts backing the KPI cards atop the admin Family Insurance directory."""
+    total_families: int
+    active:          int   # has a FamilyPolicy with status Active
+    in_progress:     int   # members added and/or a Pending policy, none Active yet
+    new_no_members:  int   # just created, no members added yet
+
+
+class FloaterPolicyCreate(BaseModel):
+    total_sum_insured: float
+    term_years: int
+    effective_date: date
+
+
+class LifeBundlePolicyCreate(BaseModel):
+    term_years: int
+    effective_date: date
+    discount_percentage: float = 0.0
+
+
+class NomineeUpdate(BaseModel):
+    """Edit one nominee of a family policy (a Beneficiary row)."""
+    name: Optional[str] = None
+    relationship: Optional[str] = None
+    cnic: Optional[str] = None
+    share_pct: Optional[float] = None
+    date_of_birth: Optional[date] = None
+
+
+class FamilyPolicyUpdate(BaseModel):
+    """Edit a family policy that has no members enrolled yet."""
+    total_sum_insured: Optional[float] = None       # floater
+    discount_percentage: Optional[float] = None     # life bundle
+    term_years: Optional[int] = None
+    effective_date: Optional[date] = None
+
+
+class FamilyPolicyRead(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    family_group_id: UUID
+    plan_type: FamilyPlanTypeEnum
+    insurance_type: Optional[InsuranceTypeEnum] = None
+    total_sum_insured: Optional[float] = None
+    discount_percentage: Optional[float] = None
+    term_years: int
+    effective_date: date
+    status: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class FamilyMembersRequest(BaseModel):
+    """Raw member rows — kept as loose dicts, same reasoning as CensusRequest:
+    family_underwriting.validate_family_members() reports friendly per-row
+    errors instead of an opaque FastAPI 422 on the first bad row."""
+    members: List[Dict[str, Any]]
+
+
+class FamilyValidationResponse(BaseModel):
+    is_valid: bool
+    total: int
+    duplicate_cnics: List[str] = []
+    missing_fields: List[str] = []
+    errors: List[str] = []
+
+
+class FamilyMemberOutcome(BaseModel):
+    customer_id: UUID
+    policy_id: UUID                       # shared, for FLOATER; own, for LIFE_BUNDLE
+    case_id: Optional[UUID] = None
+    case_number: Optional[str] = None
+    relationship: FamilyRelationshipEnum
+    status: PolicyStatusEnum
+    premium_total: Optional[float] = None
+    suggested_loading: Optional[float] = None
+    risk_assessment_id: Optional[UUID] = None
+
+
+class FamilyConfirmResponse(BaseModel):
+    family_policy_id: UUID
+    total_sum_insured: Optional[float] = None
+    members: List[FamilyMemberOutcome]
+    # Everyone who receives a share of the head's death benefit (spouse included), with the rupee amount.
+    nominees: List[Dict[str, Any]] = []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Case Schemas
+# ─────────────────────────────────────────────────────────────────────────────
+from shared.models.core import (
+    CaseTypeEnum,
+    CaseStatusEnum,
+    CasePriorityEnum,
+    SourceChannelEnum,
+    AssignedRoleEnum,
+    CommentTypeEnum,
+    VisibilityLevelEnum
+)
+
+class CaseCreate(BaseModel):
+    customer_id:     UUID
+    policy_id:        Optional[UUID] = None
+    caseType:         CaseTypeEnum
+    priorityLevel:    CasePriorityEnum = CasePriorityEnum.NORMAL
+    sourceChannel:    SourceChannelEnum
+    assignedTeamld:   Optional[UUID] = None
+    assignedAgentId:  Optional[UUID] = None
+
+class CaseUpdate(BaseModel):
+    caseType:         Optional[CaseTypeEnum] = None
+    priorityLevel:    Optional[CasePriorityEnum] = None
+    sourceChannel:    Optional[SourceChannelEnum] = None
+    assignedAgentId:  Optional[UUID] = None
+
+class CaseRead(BaseModel):
+    caseld:           UUID
+    caseNumber:       str
+    tenant_id:        UUID
+    customer_id:     UUID
+    policy_id:        Optional[UUID] = None
+    caseType:         CaseTypeEnum
+    caseStatus:       CaseStatusEnum
+    priorityLevel:    CasePriorityEnum
+    sourceChannel:    SourceChannelEnum
+    createdAt:        datetime
+    updatedAt:        datetime
+    assignedTeamld:   Optional[UUID] = None
+    assignedAgentId:  Optional[UUID] = None
+    slaDeadline:      Optional[datetime] = None
+    escalationLevel:  int
+    parentCaseld:     Optional[UUID] = None
+    claim_id:         Optional[UUID] = None   # "Claim UW": the claim this underwriting case reviews
+    on_hold:          bool = False
+    hold_reason:      Optional[str] = None
+    held_at:          Optional[datetime] = None
+    held_by:          Optional[str] = None
+    held_from_status: Optional[str] = None
+    claim_number:     Optional[str] = None
+    claim_type:       Optional[str] = None
+
+    # Enrichment — only populated by GET /cases (the Underwriting queue);
+    # None on create/update/get-single responses, which return the bare Case row.
+    customer_name:        Optional[str] = None
+    customer_cnic:        Optional[str] = None
+    customer_segment:     Optional[str] = None
+    family_group_id:      Optional[str] = None
+    family_group_name:    Optional[str] = None
+    organization_id:      Optional[str] = None
+    product_name:           Optional[str] = None
+    coverage_amount:         Optional[float] = None
+    policy_status:           Optional[str] = None
+    latest_ai_decision:      Optional[str] = None
+    latest_composite_score:  Optional[int] = None
+    e_application_status:    Optional[str] = None
+    acr_status:              Optional[str] = None
+    compliance_status:       Optional[str] = None
+    ipp_status:               Optional[str] = None
+    # Pre-underwriting gates 5 & 6 — anti-selection screen and panel medical.
+    insurance_history_status: Optional[str] = None
+    medical_exam_status:      Optional[str] = None
+    # The medical and financial underwriting reviews (case_underwriting_tracks):
+    # {status, assigned_user_id, assigned_user_name, note, updated_at}. Status is
+    # PENDING when no underwriter has picked the track up yet.
+    medical_review:           Optional[dict] = None
+    financial_review:         Optional[dict] = None
+
+    model_config = {"from_attributes": True}
+
+class UnderwritingTrackUpdate(BaseModel):
+    """Any field left out is unchanged; clear_assignee unassigns."""
+    status:           Optional[Literal["PENDING", "IN_REVIEW", "CLEARED", "REFERRED", "DECLINED"]] = None
+    assigned_user_id: Optional[UUID] = None
+    clear_assignee:   bool = False
+    note:             Optional[str] = Field(default=None, max_length=2000)
+
+class CaseStatusUpdate(BaseModel):
+    status: CaseStatusEnum
+
+
+class CaseHoldBody(BaseModel):
+    reason: str = Field(min_length=3, max_length=1000)
+
+
+class CaseReleaseBody(BaseModel):
+    note: Optional[str] = Field(default=None, max_length=1000)
+
+class CaseAssignmentCreate(BaseModel):
+    assignedToUserld: UUID
+    assignedRole: AssignedRoleEnum
+
+class CaseCommentCreate(BaseModel):
+    commentText: str
+    commentType: CommentTypeEnum
+    visibilityLevel: VisibilityLevelEnum
+
+class CaseRequirementWaiveBody(BaseModel):
+    note: Optional[str] = None
+
+class WorkflowAdvanceBody(BaseModel):
+    step: str
+    state: Optional[str] = None
+
+
+# ── Insurance Plans ───────────────────────────────────────────────────────────
+
+class MedicalExamTierSchema(BaseModel):
+    minSumAssured: float
+    tier: str
+
+    @field_validator("minSumAssured")
+    @classmethod
+    def non_negative(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("minSumAssured must not be negative")
+        return v
+
+    @field_validator("tier")
+    @classmethod
+    def tier_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("tier must not be blank")
+        return v.strip()
+
+
+class InsurancePlanCreate(BaseModel):
+    code: str
+    label: str
+    insurance_type: InsuranceTypeEnum
+    category: PlanCategoryEnum = PlanCategoryEnum.INDIVIDUAL
+    product_category: ProductCategoryEnum = ProductCategoryEnum.CONVENTIONAL
+    partner_bank: Optional[str] = None
+    status: PlanStatusEnum = PlanStatusEnum.DRAFT
+    description: str = ""
+    color: str = "blue"
+
+    entry_age_min: int
+    entry_age_max: int
+    entry_age_label: str = "Proposer"
+    dependent_age_min: Optional[int] = None
+    dependent_age_max: Optional[int] = None
+
+    term_min_years: int
+    term_max_years: int
+    max_maturity_age: int
+    max_income_multiple: float
+
+    min_group_size: Optional[int] = None
+    underwriting_basis: Optional[str] = None
+    wakala_fee_pct: Optional[float] = Field(default=None, ge=0, le=100)   # Takaful plans only
+    retakaful_share_pct: Optional[float] = Field(default=None, ge=0, le=100)
+
+    # Pricing framework — defaults are neutral (0 rate / 1.0x factor) until
+    # real rates are loaded per plan.
+    base_premium_rate: float = 0.0
+    smoker_factor: float = 1.0
+    rate_version: str = "v1"
+
+    medical_exam_tiers: List[MedicalExamTierSchema] = []
+    required_documents: List[str] = []
+
+    @field_validator("code")
+    @classmethod
+    def code_format(cls, v: str) -> str:
+        v = v.strip().upper()
+        if not v:
+            raise ValueError("code must not be blank")
+        if not v.replace("-", "").replace("_", "").isalnum():
+            raise ValueError("code must be alphanumeric (hyphens/underscores allowed)")
+        return v
+
+    @field_validator("label")
+    @classmethod
+    def label_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("label must not be blank")
+        return v.strip()
+
+    @model_validator(mode="after")
+    def check_bands(self) -> "InsurancePlanCreate":
+        if self.entry_age_max < self.entry_age_min:
+            raise ValueError("entry_age_max must be >= entry_age_min")
+        if self.term_max_years < self.term_min_years:
+            raise ValueError("term_max_years must be >= term_min_years")
+        if (self.dependent_age_min is None) != (self.dependent_age_max is None):
+            raise ValueError("dependent_age_min and dependent_age_max must be set together")
+        if (
+            self.dependent_age_min is not None
+            and self.dependent_age_max is not None
+            and self.dependent_age_max < self.dependent_age_min
+        ):
+            raise ValueError("dependent_age_max must be >= dependent_age_min")
+        return self
+
+
+class InsurancePlanUpdate(BaseModel):
+    label: Optional[str] = None
+    insurance_type: Optional[InsuranceTypeEnum] = None
+    category: Optional[PlanCategoryEnum] = None
+    product_category: Optional[ProductCategoryEnum] = None
+    partner_bank: Optional[str] = None
+    status: Optional[PlanStatusEnum] = None
+    description: Optional[str] = None
+    color: Optional[str] = None
+
+    entry_age_min: Optional[int] = None
+    entry_age_max: Optional[int] = None
+    entry_age_label: Optional[str] = None
+    dependent_age_min: Optional[int] = None
+    dependent_age_max: Optional[int] = None
+
+    term_min_years: Optional[int] = None
+    term_max_years: Optional[int] = None
+    max_maturity_age: Optional[int] = None
+    max_income_multiple: Optional[float] = None
+
+    min_group_size: Optional[int] = None
+    underwriting_basis: Optional[str] = None
+    wakala_fee_pct: Optional[float] = Field(default=None, ge=0, le=100)
+    retakaful_share_pct: Optional[float] = Field(default=None, ge=0, le=100)
+
+    base_premium_rate: Optional[float] = None
+    smoker_factor: Optional[float] = None
+    rate_version: Optional[str] = None
+
+    medical_exam_tiers: Optional[List[MedicalExamTierSchema]] = None
+    required_documents: Optional[List[str]] = None
+    is_active: Optional[bool] = None
+
+
+class InsurancePlanRead(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    code: str
+    label: str
+    insurance_type: InsuranceTypeEnum
+    category: PlanCategoryEnum
+    product_category: ProductCategoryEnum
+    partner_bank: Optional[str]
+    status: PlanStatusEnum
+    description: str
+    color: str
+
+    entry_age_min: int
+    entry_age_max: int
+    entry_age_label: str
+    dependent_age_min: Optional[int]
+    dependent_age_max: Optional[int]
+
+    term_min_years: int
+    term_max_years: int
+    max_maturity_age: int
+    max_income_multiple: float
+
+    min_group_size: Optional[int]
+    underwriting_basis: Optional[str]
+    wakala_fee_pct: Optional[float] = None
+    retakaful_share_pct: Optional[float] = None
+
+    base_premium_rate: float
+    smoker_factor: float
+    rate_version: str
+
+    medical_exam_tiers: List[MedicalExamTierSchema]
+    required_documents: List[str]
+
+    surrender_terms: Optional[dict] = None
+    claims_terms: Optional[dict] = None
+    policy_wording_filename: Optional[str] = None
+    policy_wording_uploaded_at: Optional[datetime] = None
+
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}

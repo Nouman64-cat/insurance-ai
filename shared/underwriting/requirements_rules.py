@@ -22,6 +22,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from .profile import UnderwritingProfile
+from .demo import tolerated
 from .results import RequirementCategory, RequirementCode, RequirementSpec, RequirementStatus, VerificationFindingSpec, VerificationSeverity
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -182,7 +183,8 @@ def determine_requirements(
     # Prior high-severity verification findings escalate to an explicit
     # additional-document requirement rather than being silently absorbed.
     for finding in prior_findings:
-        if finding.severity == VerificationSeverity.HIGH:
+        # (a finding saved as High before demo tolerance applied is let through the same way)
+        if finding.severity == VerificationSeverity.HIGH and not tolerated(finding.field):
             specs.append(RequirementSpec(
                 code=f"{RequirementCode.ADDITIONAL_DOCUMENT.value}:{finding.field}",
                 category=RequirementCategory.OTHER, required=True,
