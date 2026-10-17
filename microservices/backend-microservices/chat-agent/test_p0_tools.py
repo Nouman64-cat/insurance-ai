@@ -1,5 +1,5 @@
 """P0 evidence, recovery and availability tools
-(docs/agent-scenarios/chatbot-maturity-roadmap.md).
+(microservices/frontend-microservices/docs/agent-scenarios/chatbot-maturity-roadmap.md).
 
 Covers the behaviours the roadmap makes non-negotiable: one application or a
 choice — never someone else's; an AI medical reading never records anything;

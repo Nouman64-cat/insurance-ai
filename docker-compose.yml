@@ -526,7 +526,7 @@ services:
     ports:
       - "4991:4991"
     volumes:
-      - ./docs:/app
+      - ./microservices/frontend-microservices/docs:/app
       - /app/node_modules # prevent host node_modules from being used inside container
     command: sh -c "npm install && npm start"
 

@@ -1,5 +1,5 @@
 """Exceptions, member journeys and operational views
-(docs/agent-scenarios/chatbot-maturity-roadmap.md, P2 and the optional tools).
+(microservices/frontend-microservices/docs/agent-scenarios/chatbot-maturity-roadmap.md, P2 and the optional tools).
 
   resolve_insurance_record      one canonical record across every type, or a choice
   preview_application_transition what a status change would do, before doing it

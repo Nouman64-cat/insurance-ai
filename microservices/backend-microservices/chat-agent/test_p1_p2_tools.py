@@ -1,5 +1,5 @@
 """P1/P2 servicing, service-desk and workflow tools, and the matured Phase 1
-tools (docs/agent-scenarios/chatbot-maturity-roadmap.md).
+tools (microservices/frontend-microservices/docs/agent-scenarios/chatbot-maturity-roadmap.md).
 
 The invariants under test: one record or a choice; reads before writes so a
 repeated click changes nothing; queued/estimated/requested is never reported

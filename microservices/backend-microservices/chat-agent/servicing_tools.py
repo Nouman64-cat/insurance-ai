@@ -1,4 +1,4 @@
-"""Individual policy servicing (docs/agent-scenarios/chatbot-maturity-roadmap.md, P1):
+"""Individual policy servicing (microservices/frontend-microservices/docs/agent-scenarios/chatbot-maturity-roadmap.md, P1):
 delivery, onboarding, premium collection, endorsements, renewal, reinstatement
 and exit.
 

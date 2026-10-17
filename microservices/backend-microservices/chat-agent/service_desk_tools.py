@@ -1,5 +1,5 @@
 """Service requests (Request Management) and support tickets (Customer Service)
-— docs/agent-scenarios/chatbot-maturity-roadmap.md, P1.
+— microservices/frontend-microservices/docs/agent-scenarios/chatbot-maturity-roadmap.md, P1.
 
 Both services already own their workflow and enforce their own permissions:
 the chat forwards the caller's token through the API gateway

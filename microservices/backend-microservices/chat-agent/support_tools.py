@@ -1,5 +1,5 @@
 """Availability tools: get_service_health and diagnose_connection
-(docs/agent-scenarios/chatbot-maturity-roadmap.md, P0).
+(microservices/frontend-microservices/docs/agent-scenarios/chatbot-maturity-roadmap.md, P0).
 
 Both are read-only. They probe each service's own health endpoint from inside
 the platform network and never restart anything — restarting infrastructure

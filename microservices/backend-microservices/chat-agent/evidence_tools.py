@@ -1,5 +1,5 @@
 """Evidence tools: missing documents, linking a file to a requirement, and the
-medical report review (docs/agent-scenarios/chatbot-maturity-roadmap.md, P0).
+medical report review (microservices/frontend-microservices/docs/agent-scenarios/chatbot-maturity-roadmap.md, P0).
 
 Registered by being imported at the foot of tool_executor.py, like
 group_tools.py. Every handler resolves ONE application and refuses to guess:

@@ -145,7 +145,8 @@ insurance-ai/
 │   │   ├── customer-service-app/ # Next.js Customer Service desk, :3008
 │   │   ├── claims-manager-app/   # Next.js Claims Manager app, :3011
 │   │   ├── customer-portal/      # Next.js customer self-service portal
-│   │   └── marketing-site/       # Next.js public marketing site (demo content, :3002)
+│   │   ├── marketing-site/       # Next.js public marketing site (demo content, :3002)
+│   │   └── docs/                 # Docusaurus documentation site, :4991
 │   └── backend-microservices/
 │       ├── api-gateway/
 │       ├── tenant-service/
@@ -162,7 +163,6 @@ insurance-ai/
 │   ├── events/
 │   ├── services/
 │   └── underwriting/
-├── docs/                         # Docusaurus documentation
 └── docker-compose.yml
 ```
 
@@ -480,12 +480,12 @@ docker compose down
 
 ## Documentation
 
-Detailed architecture, service APIs, data flows, database schemas, underwriting rules, and implementation notes live in `docs/`.
+Detailed architecture, service APIs, data flows, database schemas, underwriting rules, and implementation notes live in `microservices/frontend-microservices/docs/`.
 
 Run the documentation locally with:
 
 ```bash
-cd docs
+cd microservices/frontend-microservices/docs
 npm install
 npm start
 ```

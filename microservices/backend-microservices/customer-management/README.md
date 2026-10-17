@@ -1,7 +1,7 @@
 # Customer Management
 
 The back end of the **individual customer portal**. Policyholders sign in with the credentials the post-issuance process
-already generates, then see their policies, premiums, claims, documents and profile. Design: `docs/customer-portal/individual-portal-blueprint.md`.
+already generates, then see their policies, premiums, claims, documents and profile. Design: `microservices/frontend-microservices/docs/customer-portal/individual-portal-blueprint.md`.
 
 It owns **only customer sign-in and portal state**. Every insurance fact (policies, premiums, claims, documents) stays in
 tenant-service and is read through a narrow, signed, customer-safe adapter — no rule is duplicated here.
@@ -48,7 +48,7 @@ Browser ── customer-portal (Next.js, :3009) ── BFF, httpOnly cookies
 
 **Family** (same session, same account): `GET /family`, `/family/{id}`, `/family/{id}/policies`, `/family/{id}/members[/{key}]`, `/family/{id}/beneficiaries`,
 `POST /family/{id}/requests` (+ `GET /family/requests`, `POST /family/requests/{id}/withdraw`), `GET|POST /policies/{id}/renewal[/acceptance]`; the list endpoints
-take `?segment=individual|family|all`. See `docs/customer-portal/implementation-status.md` for the access model.
+take `?segment=individual|family|all`. See `microservices/frontend-microservices/docs/customer-portal/implementation-status.md` for the access model.
 
 Internal (`/internal/v1`, HMAC `TENANT_TO_CM_KEY`, caller `tenant-service`): `PUT /accounts`, `GET /accounts/by-customer/{id}`, `POST /accounts/{id}/suspend|release`.
 
