@@ -11,8 +11,9 @@ graph.py. Grouped below by capability:
                            quick_start_workflow
 
 THE INSURANCE JOURNEY (the order these are normally called in):
-  add_customer -> create_case -> create_proposal -> upload_document
-  -> run_risk_assessment -> update_case_status -> close_case
+  Individual: add_customer -> create_proposal -> proposal submission/review
+  -> initial premium received -> create_case -> underwriting gates and decisions.
+  Family and corporate workflows retain their own backend contracts.
 """
 
 from __future__ import annotations
@@ -3244,3 +3245,23 @@ ALL_TOOLS = [
     *SPECIALIST_REVIEW_TOOLS,
 ]
 
+
+
+@tool
+def search_capabilities(query: str, domain: Optional[str] = None) -> str:
+    """Find authorized insurance capabilities by intent when the required tool is not attached.
+    Returns compact metadata. Call get_capability_schema to load a relevant tool."""
+    return "{}"
+
+
+@tool
+def get_capability_schema(capability_id: str) -> str:
+    """Load an authorized existing capability and its parameter schema for the next turn.
+    Then invoke the capability's named tool normally; this does not execute it."""
+    return "{}"
+
+
+ALL_TOOLS.extend([search_capabilities, get_capability_schema])
+
+from capability_tools import CAPABILITY_TOOLS
+ALL_TOOLS.extend([list_customers, *CAPABILITY_TOOLS])

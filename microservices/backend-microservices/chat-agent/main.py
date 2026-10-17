@@ -19,6 +19,10 @@ def _psycopg_conn_string(database_url: str) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from skills import enabled
+    if enabled():
+        from skills.loader import metadata
+        metadata()  # fail startup on invalid trusted definitions, before accepting chat
     conn_string = _psycopg_conn_string(os.environ["DATABASE_URL"])
     # A POOL, not the single shared connection `from_conn_string` gives. Chat requests overlap — a streaming turn, the
     # mount-time "is this thread paused?" check, a regenerate reading the checkpoint history — and on one connection

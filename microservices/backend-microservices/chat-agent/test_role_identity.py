@@ -26,8 +26,8 @@ from routers import chat
       "approve_case", "compile_final_underwriting", "issue_claim_payout"}),
     ("ClaimsManager",
      {"get_claims_dashboard", "list_claims", "register_claim", "decide_claim", "authorize_claim_disbursement",
-      "disburse_claim_settlement", "issue_claim_payout", "refer_claim_to_reinsurance", "override_claim_eligibility"},
-     {"assign_case", "resume_member_workflow", "approve_case", "run_ai_medical_underwriting", "run_ai_financial_underwriting",
+      "refer_claim_to_reinsurance", "override_claim_eligibility"},
+     {"disburse_claim_settlement", "issue_claim_payout", "assign_case", "resume_member_workflow", "approve_case", "run_ai_medical_underwriting", "run_ai_financial_underwriting",
       "record_underwriting_review", "compile_final_underwriting", "create_proposal", "add_user", "get_commission_ledger"}),
 ])
 def test_role_allow_lists(role, allowed, refused):
@@ -35,9 +35,13 @@ def test_role_allow_lists(role, allowed, refused):
     assert {t for t in refused if is_role_allowed(t, role)} == set()
 
 
-def test_money_release_stays_with_the_claims_manager():
-    for tool in ("authorize_claim_disbursement", "disburse_claim_settlement", "issue_claim_payout"):
-        assert is_role_allowed(tool, "ClaimsManager") and not is_role_allowed(tool, "ClaimsAdjuster")
+def test_claims_authorization_and_payment_are_separate_roles():
+    assert is_role_allowed("authorize_claim_disbursement", "ClaimsManager")
+    assert not is_role_allowed("authorize_claim_disbursement", "Finance")
+    for tool in ("disburse_claim_settlement", "issue_claim_payout"):
+        assert is_role_allowed(tool, "Finance")
+        for role in ("ClaimsManager", "ClaimsAdjuster", "Admin", "SuperAdmin"):
+            assert not is_role_allowed(tool, role)
 
 
 def test_no_role_is_not_admin():

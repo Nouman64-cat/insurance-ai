@@ -346,6 +346,23 @@ _ASSIGN_FIRST = ("Assign the **{who}** first — no e-application link or other 
                  "until both reviews have an underwriter.")
 
 
+class PrerequisiteMissing(ValueError):
+    pass
+
+
+async def _require_underwriting_proposal(customer: dict, ctx: Ctx, policy: dict | None) -> None:
+    if not policy or not policy.get("id"):
+        raise PrerequisiteMissing("Create and submit a proposal before opening an underwriting application.")
+    if policy.get("family_policy_id") or policy.get("master_policy_id"):
+        return  # member/group processes have their own backend contracts
+    if policy.get("status") not in {"Proposed", "UnderReview", "InformationRequested"}:
+        raise PrerequisiteMissing("Submit the individual proposal before sending it to underwriting.")
+    paid = await ctx.client.get(ctx.tsvc(f"/policies/{policy['id']}/ipp"))
+    paid.raise_for_status()
+    if paid.json().get("status") != "Realized":
+        raise PrerequisiteMissing("Collect the initial premium on the proposal before sending this application to underwriting. Use the existing payment request/proof workflow; do not simulate payment.")
+
+
 async def _ensure_case(customer: dict, ctx: Ctx, policy_id: Optional[str] = None) -> tuple[dict, bool]:
     """The customer's open underwriting case, opened now when they have none, and whether it was just opened.
     A proposal is worked on its case: without one, Gate 1 (the e-application link) has nothing to attach to.
@@ -357,6 +374,10 @@ async def _ensure_case(customer: dict, ctx: Ctx, policy_id: Optional[str] = None
     open_case = next((c for c in mine if c.get("caseStatus") not in _CLOSED_CASE_STATUSES), None)
     if open_case:
         return open_case, False
+    proposals = await ctx.client.get(ctx.tsvc(f"/customers/{customer['id']}/policies"))
+    proposals.raise_for_status()
+    policy = next((p for p in proposals.json() if str(p.get("id")) == str(policy_id)), None)
+    await _require_underwriting_proposal(customer, ctx, policy)
     res = await ctx.client.post(ctx.tsvc("/cases"), json={
         "customer_id": customer["id"], "caseType": "Underwriting", "priorityLevel": "Normal", "sourceChannel": "Online",
         **({"policy_id": policy_id} if policy_id else {}),
@@ -2081,9 +2102,12 @@ async def _create_case(args: dict, ctx: Ctx) -> dict:
     # The next step depends on whether the proposal already exists: offering "Create Proposal" after one was made
     # sent users round in a circle. A new case is also linked to that proposal.
     pol_res = await ctx.client.get(ctx.tsvc(f"/customers/{customer['id']}/policies"))
-    open_proposals = sorted((p for p in (pol_res.json() if pol_res.status_code == 200 else [])
+    pol_res.raise_for_status()
+    open_proposals = sorted((p for p in pol_res.json()
                              if p.get("status") in _OPEN_PROPOSAL_STATUSES), key=_created_key, reverse=True)
     has_proposal = bool(open_proposals)
+    if not existing and (args.get("case_type") or "Underwriting") == "Underwriting":
+        await _require_underwriting_proposal(customer, ctx, open_proposals[0] if open_proposals else None)
     if existing:
         data, opened = existing, False
     else:
@@ -2329,40 +2353,16 @@ async def _create_proposal(args: dict, ctx: Ctx) -> dict:
 
     route = build_route("admin/leads", customer.get("cnic"))
 
-    # The proposal is worked on the customer's case. Open it now if there isn't one, so "Pre-Underwriting" below is
-    # true and the Gate 1 button works — it used to fail with "No case found" every time — then show it inline.
-    case_view, case_line, assign = None, "", []
-    try:
-        case, opened = await _ensure_case(customer, ctx, data.get("id"))
-        case_view = f"case/{_case_id(case)}"
-        if opened:
-            case_line = f"Underwriting case **{case.get('caseNumber') or _case_id(case)}** opened for it.\n\n"
-        assign = await _assignment_chips(_case_id(case), case.get("caseNumber") or _case_id(case), ctx)
-    except httpx.HTTPError:
-        pass  # the proposal stands; the lead view below still works and Gate 1 can open the case later
-
     return {
-        "success": True,
-        "policy_id": data.get("id"),
-        "case_id": _case_id(case) if case_view else None,
-        "message": (
-            f"Proposal created for **{_full_name(customer)}** — "
-            f"{args.get('product_name') or 'Term Life Plus'}, PKR {coverage:,.0f} over "
-            f"{int(args.get('term_years') or 10)} years.\n\n{replaced_line}{case_line}"
-            + (_ASSIGN_FIRST.format(who=_underwriters_named(assign)) if assign else
-               "The case is now in **Pre-Underwriting**. To proceed, complete the 5 clearance gates sequentially starting with **Gate 1: Customer E-Application**."
-               if case_view else "No underwriting case could be opened yet — Gate 1 will open it when you generate the e-application link.")
-        ),
-        "last_action": _action("create_proposal", "customer", customer.get("cnic", ""), route, "Proposal created"),
-        **({"navigate": {"route": case_view, "entity_id": "", "highlight": False, "embed": True}} if case_view else {}),
-        "quick_actions": [
-            *(assign or [{"label": "1. Generate E-App Link (Gate 1)", "actionType": "submit",
-                          "payload": f"Generate e-application link for CNIC {customer.get('cnic')}"}]),
-            {"label": "Check Gate Status", "actionType": "submit",
-             "payload": f"Check pre-underwriting status for CNIC {customer.get('cnic')}"},
-            {"label": "View Proposal", "actionType": "embed", "payload": case_view}
-            if case_view else {"label": "View Lead", "actionType": "navigate", "payload": route},
-        ],
+        "success": True, "policy_id": data.get("id"),
+        "message": (f"Draft proposal created for **{_full_name(customer)}** — "
+                    f"{data.get('product_name') or product}, PKR {coverage:,.0f}. {replaced_line}"
+                    "Submit and review the proposal, then collect the initial premium before sending an individual application to underwriting."),
+        "last_action": _action("create_proposal", "proposal", data.get("id"), "proposal", "Draft proposal created"),
+        "proposal_journey": {"customer_id": customer["id"], "name": _full_name(customer)},
+        "quick_actions": [{"label": "Open Proposals", "actionType": "navigate", "payload": "proposal"},
+                          {"label": "Check Application Stage", "actionType": "submit",
+                           "payload": f"What stage is the application for CNIC {customer.get('cnic')}?"}],
     }
 
 
@@ -4632,7 +4632,7 @@ async def _family_risk_chips(result: dict, ctx: Ctx) -> dict:
         return result                                        # never let a nicety break the step that just succeeded
 
 
-async def execute_tool(name: str, args: dict[str, Any], ctx: ExecCtx) -> dict[str, Any]:
+async def _execute_tool_once(name: str, args: dict[str, Any], ctx: ExecCtx) -> dict[str, Any]:
     handler = _HANDLERS.get(name)
     if handler is None:
         return {"success": False, "error": f"Unknown function: {name}"}
@@ -4661,6 +4661,9 @@ async def execute_tool(name: str, args: dict[str, Any], ctx: ExecCtx) -> dict[st
             result = await _skip_completed_gates(name, result, scoped, args)
         result = await _family_risk_chips(result, scoped)
         return result
+    except PrerequisiteMissing as exc:
+        return {"success": False, "error": str(exc), "error_code": "prerequisite_missing", "retryable": False,
+                "quick_actions": [{"label": "Open Proposals", "actionType": "navigate", "payload": "proposal"}]}
     except ChoiceNeeded as exc:
         # A "couldn't find it, but here's what does exist" path — offered as
         # chips instead of a dead-end string the user has to retype from.
@@ -4708,6 +4711,41 @@ async def execute_tool(name: str, args: dict[str, Any], ctx: ExecCtx) -> dict[st
                 "error_code": "unreachable", "retryable": True}
     except Exception as exc:
         return {"success": False, "error": str(exc), "error_code": "internal", "retryable": False}
+
+
+async def execute_tool(name: str, args: dict[str, Any], ctx: ExecCtx) -> dict[str, Any]:
+    """One auditable execution path with bounded *read-only* recovery.
+
+    Mutations are never replayed automatically after a request was sent. Their
+    owning services keep existing idempotency checks; unknown outcomes require
+    live state verification via operations.py before any retry.
+    """
+    import time
+    from permission import MUTATING_TOOLS, is_role_allowed
+    from skills.telemetry import emit
+    from skills.executor import recovery
+    from tools import ALL_TOOLS
+    public = any(t.name == name for t in ALL_TOOLS)
+    if public and not is_role_allowed(name, ctx.role, ctx.platform):
+        emit("denied", capability=name, role=ctx.role, outcome="forbidden")
+        return {"success": False, "error_code": "forbidden", "retryable": False,
+                "error": "This action requires an authorized colleague in the owning workspace."}
+    started = time.monotonic()
+    mutating = name in MUTATING_TOOLS
+    # Only registered reads may retry; hidden helpers/journeys are not assumed read-only.
+    attempts = 2 if public and not mutating and name not in {"get_capability_schema", "search_capabilities"} else 1
+    for attempt in range(attempts):
+        result = await _execute_tool_once(name, args, ctx)
+        action = recovery(result, mutating)
+        emit("execution", capability=name, role=ctx.role, duration_ms=(time.monotonic() - started) * 1000,
+             attempt=attempt + 1, outcome="confirmed" if result.get("success") is True else result.get("error_code", "unconfirmed"),
+             recovery=action)
+        if action != "bounded_read_retry" or attempt + 1 == attempts:
+            if result.get("success") is False:
+                result = {**result, "recovery_action": action}
+            return result
+        await asyncio.sleep(0.15 * (attempt + 1))
+    raise AssertionError("unreachable")
 
 
 def _readable_detail(detail) -> Optional[str]:
@@ -6975,3 +7013,20 @@ import claim_workflow_tools  # noqa: E402,F401
 import commission_tools  # noqa: E402,F401
 import profile_risk_tools  # noqa: E402,F401
 import specialist_review_tools  # noqa: E402,F401
+
+
+@handles("search_capabilities")
+async def _search_capabilities(args: dict, ctx: Ctx) -> dict:
+    from skills.registry import search
+    results = search(str(args.get("query") or "")[:500], ctx.exec_ctx.role, ctx.exec_ctx.platform, args.get("domain"))
+    return {"success": True, "capabilities": results, "message": "Load a matching capability with get_capability_schema." if results else
+            "No authorized matching capability is registered. Use a supported alternative or ask an authorized colleague in the owning workspace."}
+
+
+@handles("get_capability_schema")
+async def _get_capability_schema(args: dict, ctx: Ctx) -> dict:
+    from skills.registry import schema
+    return schema(str(args.get("capability_id") or ""), ctx.exec_ctx.role, ctx.exec_ctx.platform)
+
+from capability_tools import register_handlers as register_capability_handlers
+register_capability_handlers()

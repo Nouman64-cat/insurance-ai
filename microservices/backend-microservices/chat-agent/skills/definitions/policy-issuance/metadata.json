@@ -1,0 +1,75 @@
+{
+  "id": "policy-issuance",
+  "purpose": "Verify readiness and issue a policy only after approved underwriting.",
+  "intents": [
+    "issuance",
+    "issue policy",
+    "active policy",
+    "contract"
+  ],
+  "capabilities": [
+    "get_active_policy_status",
+    "get_pre_issuance_status",
+    "issue_policy",
+    "run_pre_issuance_verification"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "Underwriter",
+    "ClaimsManager",
+    "CustomerService",
+    "Viewer",
+    "CustomBroker"
+  ],
+  "prerequisites": [
+    "Authenticated JWT and tenant scope",
+    "Existing role/platform allow-list",
+    "Live owning-service state and required record identifiers"
+  ],
+  "business_rules": [
+    "Preserve backend lifecycle rules, record ownership and approval requirements.",
+    "A skill never adds permissions or simulates success."
+  ],
+  "lifecycle_source": "lifecycle.py; tenant-service/routers/cases.py",
+  "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",
+  "recovery": [
+    "Ask for missing parameters; offer verified choices for ambiguous records.",
+    "Preserve completed steps; verify unknown mutation outcomes before retry.",
+    "Explain unsupported operations and route to the appropriate workspace or authorized staff."
+  ],
+  "verification": "Report completion only from confirmed backend success. Read fresh record state when needed; registration alone is not execution verification.",
+  "tests": [
+    "test_skills.py::test_all_skills_validate_and_cover_inventory",
+    "test_skills.py::test_generated_role_scenarios"
+  ],
+  "steps": [
+    {
+      "id": "step_1",
+      "capability": "get_pre_issuance_status",
+      "depends_on": []
+    },
+    {
+      "id": "step_2",
+      "capability": "run_pre_issuance_verification",
+      "depends_on": [
+        "step_1"
+      ]
+    },
+    {
+      "id": "step_3",
+      "capability": "issue_policy",
+      "depends_on": [
+        "step_2"
+      ]
+    },
+    {
+      "id": "step_4",
+      "capability": "get_active_policy_status",
+      "depends_on": [
+        "step_3"
+      ]
+    }
+  ],
+  "unsupported": []
+}

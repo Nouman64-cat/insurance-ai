@@ -1,0 +1,77 @@
+{
+  "id": "financial-underwriting",
+  "purpose": "Work assigned financial evidence, affordability and financial review.",
+  "intents": [
+    "financial",
+    "income",
+    "affordability",
+    "financial review",
+    "salary"
+  ],
+  "capabilities": [
+    "get_underwriting_review",
+    "list_my_underwriting_reviews",
+    "record_underwriting_review",
+    "run_ai_financial_underwriting",
+    "run_insurance_history_check",
+    "send_e_application_questionnaire",
+    "start_my_review"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "Underwriter",
+    "Medical Underwriter",
+    "Financial Underwriter"
+  ],
+  "prerequisites": [
+    "Authenticated JWT and tenant scope",
+    "Existing role/platform allow-list",
+    "Live owning-service state and required record identifiers"
+  ],
+  "business_rules": [
+    "Work only assigned financial-track reviews. Do not run medical underwriting or compile final underwriting. Keep evidence and affordability checks within this track.",
+    "A skill never adds permissions or simulates success."
+  ],
+  "lifecycle_source": "lifecycle.py; tenant-service/routers/cases.py",
+  "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",
+  "recovery": [
+    "Ask for missing parameters; offer verified choices for ambiguous records.",
+    "Preserve completed steps; verify unknown mutation outcomes before retry.",
+    "Explain unsupported operations and route to the appropriate workspace or authorized staff."
+  ],
+  "verification": "Report completion only from confirmed backend success. Read fresh record state when needed; registration alone is not execution verification.",
+  "tests": [
+    "test_skills.py::test_all_skills_validate_and_cover_inventory",
+    "test_skills.py::test_generated_role_scenarios"
+  ],
+  "steps": [
+    {
+      "id": "step_1",
+      "capability": "get_underwriting_review",
+      "depends_on": []
+    },
+    {
+      "id": "step_2",
+      "capability": "start_my_review",
+      "depends_on": [
+        "step_1"
+      ]
+    },
+    {
+      "id": "step_3",
+      "capability": "run_ai_financial_underwriting",
+      "depends_on": [
+        "step_2"
+      ]
+    },
+    {
+      "id": "step_4",
+      "capability": "record_underwriting_review",
+      "depends_on": [
+        "step_3"
+      ]
+    }
+  ],
+  "unsupported": []
+}

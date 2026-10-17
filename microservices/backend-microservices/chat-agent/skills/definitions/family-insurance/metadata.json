@@ -1,0 +1,64 @@
+{
+  "id": "family-insurance",
+  "purpose": "Onboard households and inspect each insured member workflow.",
+  "intents": [
+    "family",
+    "household",
+    "dependent",
+    "beneficiary",
+    "spouse",
+    "family floater"
+  ],
+  "capabilities": [
+    "add_family_group",
+    "get_member_workflow_matrix",
+    "list_family_groups",
+    "prepare_family_insurance",
+    "resume_member_workflow"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "Agent",
+    "Underwriter",
+    "CustomerService",
+    "Viewer",
+    "CustomBroker"
+  ],
+  "prerequisites": [
+    "Authenticated JWT and tenant scope",
+    "Existing role/platform allow-list",
+    "Live owning-service state and required record identifiers"
+  ],
+  "business_rules": [
+    "Use prepare_family_insurance for an existing individual. Family enrollment keeps its shared policy and member cases. Preserve proposer-level ACR/payment inheritance; do not apply the individual case-order rule to every family member. Never invent relatives.",
+    "A skill never adds permissions or simulates success."
+  ],
+  "lifecycle_source": "lifecycle.py; tenant-service/routers/cases.py",
+  "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",
+  "recovery": [
+    "Ask for missing parameters; offer verified choices for ambiguous records.",
+    "Preserve completed steps; verify unknown mutation outcomes before retry.",
+    "Explain unsupported operations and route to the appropriate workspace or authorized staff."
+  ],
+  "verification": "Report completion only from confirmed backend success. Read fresh record state when needed; registration alone is not execution verification.",
+  "tests": [
+    "test_skills.py::test_all_skills_validate_and_cover_inventory",
+    "test_skills.py::test_generated_role_scenarios"
+  ],
+  "steps": [
+    {
+      "id": "step_1",
+      "capability": "list_family_groups",
+      "depends_on": []
+    },
+    {
+      "id": "step_2",
+      "capability": "get_member_workflow_matrix",
+      "depends_on": [
+        "step_1"
+      ]
+    }
+  ],
+  "unsupported": []
+}

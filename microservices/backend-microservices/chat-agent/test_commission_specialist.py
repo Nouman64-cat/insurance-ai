@@ -86,7 +86,8 @@ def test_specialist_uses_shared_executor_and_returns_to_main_on_topic_change():
             assert all(c.kwargs['thread_id'] == 'specialist' for c in meter.call_args_list)
             switched = await app.ainvoke({'messages': [HumanMessage('List customers')]}, config)
             assert switched['active_specialist'] is None
-            assert binding.call_args.kwargs == {}  # original main model binding
+            assert 'tool_scope' not in binding.call_args.kwargs  # broad planner with bounded authorized skill tools
+            assert len(binding.call_args.kwargs['capability_names']) <= 24
             assert switched['messages'][-1].content == 'Main assistant reply'
     asyncio.run(run())
 

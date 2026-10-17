@@ -1,0 +1,88 @@
+{
+  "id": "individual-insurance",
+  "purpose": "Manage individual proposals before opening an underwriting application.",
+  "intents": [
+    "individual",
+    "proposal",
+    "quotation",
+    "plan",
+    "insurance",
+    "application"
+  ],
+  "capabilities": [
+    "bulk_underwriting_journey",
+    "continue_underwriting_journey",
+    "create_case",
+    "create_proposal",
+    "get_case_details",
+    "get_workflow_recommendation",
+    "list_insurance_plans",
+    "list_quotes",
+    "quick_start_workflow",
+    "start_underwriting_journey",
+    "transition_proposal",
+    "get_initial_premium_status",
+    "request_initial_premium"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "Agent",
+    "Underwriter",
+    "ClaimsManager",
+    "ClaimsAdjuster",
+    "CustomerService",
+    "Viewer",
+    "CustomBroker"
+  ],
+  "prerequisites": [
+    "Authenticated JWT and tenant scope",
+    "Existing role/platform allow-list",
+    "Live owning-service state and required record identifiers"
+  ],
+  "business_rules": [
+    "Individual sequence: customer \u2192 Draft proposal \u2192 Submitted \u2192 UnderReview \u2192 initial premium received \u2192 underwriting case. `create_proposal` creates a draft; it does not submit it or collect payment. Use transition_proposal for submission/review and request_initial_premium for a payment link. Wait for actual receipt or authorized proof review. Never open the case early. Reuse the current proposal and fetch fresh state before resuming.",
+    "A skill never adds permissions or simulates success."
+  ],
+  "lifecycle_source": "tenant-service/routers/initial_premium_payment.py; tenant-service/test_ipp_proposal.py",
+  "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",
+  "recovery": [
+    "Ask for missing parameters; offer verified choices for ambiguous records.",
+    "Preserve completed steps; verify unknown mutation outcomes before retry.",
+    "Explain unsupported operations and route to the appropriate workspace or authorized staff."
+  ],
+  "verification": "Report completion only from confirmed backend success. Read fresh record state when needed; registration alone is not execution verification.",
+  "tests": [
+    "test_skills.py::test_all_skills_validate_and_cover_inventory",
+    "test_skills.py::test_generated_role_scenarios"
+  ],
+  "steps": [
+    {
+      "id": "step_1",
+      "capability": "create_proposal",
+      "depends_on": []
+    },
+    {
+      "id": "step_2",
+      "capability": "transition_proposal",
+      "depends_on": [
+        "step_1"
+      ]
+    },
+    {
+      "id": "step_3",
+      "capability": "get_initial_premium_status",
+      "depends_on": [
+        "step_2"
+      ]
+    },
+    {
+      "id": "step_4",
+      "capability": "create_case",
+      "depends_on": [
+        "step_3"
+      ]
+    }
+  ],
+  "unsupported": []
+}

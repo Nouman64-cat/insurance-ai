@@ -59,7 +59,9 @@ UNDERWRITING_TOOLS = frozenset({
     'upload_document',
     'verify_e_application',
 })
-UNDERWRITING_DOMAINS = frozenset({'documents', 'workflow'})
+from capability_tools import PROPOSAL_TOOLS
+UNDERWRITING_TOOLS |= PROPOSAL_TOOLS
+UNDERWRITING_DOMAINS = frozenset({'documents', 'workflow', 'proposal_payment'})
 _EXPLICIT = re.compile(r'\b(?:underwrit(?:e|ing)|pre[- ]underwriting|risk assessment|medical (?:review|evidence|reports?)|pre[- ]issuance|issue (?:the |a |this )?policy|proposals?|e[- ]application|confidential report|compliance screening|insurance history check|medical examination|(?:start|continue)_underwriting_journey|CASE-[\w-]+)\b|انڈررائٹنگ', re.I)
 _EXCLUDED = re.compile(r'\b(?:claims?|fnol|commissions?|brokerage|group|family|corporate|census|bulk|rule engine|rule sets?|deploy|surrender|renewal|reinstatement|endorsement|service request|support ticket)\b|کلیم|کمیشن', re.I)
 _INTAKE = re.compile(r'\b(?:create|add|register|delete|list)\s+(?:(?:a|an|the|new|all)\s+){0,2}(?:customers?|leads?|users?|agents?|organizations?)\b', re.I)
@@ -110,6 +112,7 @@ Never automatically issue a policy or confirm payment just because approval succ
 Claims, commissions, customer creation, group/family workflows, rule administration
 and post-issuance servicing are handled by the main assistant or another specialist.
 """
+    prompt += "\nCreate the Draft proposal before an underwriting case. Use transition_proposal for submission/review, get_initial_premium_status to check actual receipt, and request_initial_premium for an explicit payment-link request. Accept/reject submitted proof only on explicit authorized staff instruction after inspecting evidence. Stop and report unpaid initial premium; never use confirm_policy_payment to simulate proposal-stage receipt.\n"
     instructions = {
         'create_proposal': 'Use the selected plan from context. If none is selected, call with the known applicant; the tool presents catalog choices. Do not replace a saved proposal or restart intake.',
         'update_customer': 'For send draft / move lead to proposals, set send_to_draft=true and stop. Do not open an application or start a journey.',

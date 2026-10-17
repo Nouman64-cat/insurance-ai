@@ -1,0 +1,81 @@
+{
+  "id": "medical-underwriting",
+  "purpose": "Work the assigned medical review and verified clinical evidence.",
+  "intents": [
+    "medical",
+    "clinical",
+    "questionnaire",
+    "examination",
+    "medical review"
+  ],
+  "capabilities": [
+    "get_medical_report_status",
+    "get_underwriting_review",
+    "list_my_underwriting_reviews",
+    "record_underwriting_review",
+    "run_ai_medical_underwriting",
+    "send_e_application_questionnaire",
+    "start_my_review"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "Agent",
+    "Underwriter",
+    "Medical Underwriter",
+    "Financial Underwriter",
+    "CustomerService",
+    "Viewer",
+    "CustomBroker"
+  ],
+  "prerequisites": [
+    "Authenticated JWT and tenant scope",
+    "Existing role/platform allow-list",
+    "Live owning-service state and required record identifiers"
+  ],
+  "business_rules": [
+    "Work only assigned medical-track reviews. Do not run financial underwriting or compile final underwriting. AI evaluations are evidence for a specialist review, not autonomous approval.",
+    "A skill never adds permissions or simulates success."
+  ],
+  "lifecycle_source": "lifecycle.py; tenant-service/routers/cases.py",
+  "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",
+  "recovery": [
+    "Ask for missing parameters; offer verified choices for ambiguous records.",
+    "Preserve completed steps; verify unknown mutation outcomes before retry.",
+    "Explain unsupported operations and route to the appropriate workspace or authorized staff."
+  ],
+  "verification": "Report completion only from confirmed backend success. Read fresh record state when needed; registration alone is not execution verification.",
+  "tests": [
+    "test_skills.py::test_all_skills_validate_and_cover_inventory",
+    "test_skills.py::test_generated_role_scenarios"
+  ],
+  "steps": [
+    {
+      "id": "step_1",
+      "capability": "get_underwriting_review",
+      "depends_on": []
+    },
+    {
+      "id": "step_2",
+      "capability": "start_my_review",
+      "depends_on": [
+        "step_1"
+      ]
+    },
+    {
+      "id": "step_3",
+      "capability": "run_ai_medical_underwriting",
+      "depends_on": [
+        "step_2"
+      ]
+    },
+    {
+      "id": "step_4",
+      "capability": "record_underwriting_review",
+      "depends_on": [
+        "step_3"
+      ]
+    }
+  ],
+  "unsupported": []
+}

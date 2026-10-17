@@ -1,0 +1,75 @@
+{
+  "id": "rules-and-governance",
+  "purpose": "Inspect, simulate and author rules with authorized deployment.",
+  "intents": [
+    "rule",
+    "governance",
+    "eligibility",
+    "rule version",
+    "deploy",
+    "retention",
+    "fraud"
+  ],
+  "capabilities": [
+    "add_rule_to_version",
+    "archive_rule_version",
+    "create_eligibility_profile",
+    "create_rule_category",
+    "create_rule_set",
+    "create_rule_subcategory",
+    "create_rule_version",
+    "delete_rule",
+    "deploy_rule_version",
+    "evaluate_rule_scope",
+    "evaluate_rule_set",
+    "get_rule_evaluation_logs",
+    "get_rule_set",
+    "list_rule_categories",
+    "list_rule_sets",
+    "update_rule"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "Underwriter",
+    "CustomerService",
+    "Viewer",
+    "CustomBroker"
+  ],
+  "prerequisites": [
+    "Authenticated JWT and tenant scope",
+    "Existing role/platform allow-list",
+    "Live owning-service state and required record identifiers"
+  ],
+  "business_rules": [
+    "Simulate draft rules before authorized deployment. Governance changes remain subject to backend permissions; a skill cannot authorize deployment.",
+    "A skill never adds permissions or simulates success."
+  ],
+  "lifecycle_source": "lifecycle.py; tenant-service/routers/cases.py",
+  "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",
+  "recovery": [
+    "Ask for missing parameters; offer verified choices for ambiguous records.",
+    "Preserve completed steps; verify unknown mutation outcomes before retry.",
+    "Explain unsupported operations and route to the appropriate workspace or authorized staff."
+  ],
+  "verification": "Report completion only from confirmed backend success. Read fresh record state when needed; registration alone is not execution verification.",
+  "tests": [
+    "test_skills.py::test_all_skills_validate_and_cover_inventory",
+    "test_skills.py::test_generated_role_scenarios"
+  ],
+  "steps": [
+    {
+      "id": "step_1",
+      "capability": "list_rule_sets",
+      "depends_on": []
+    },
+    {
+      "id": "step_2",
+      "capability": "get_rule_set",
+      "depends_on": [
+        "step_1"
+      ]
+    }
+  ],
+  "unsupported": []
+}

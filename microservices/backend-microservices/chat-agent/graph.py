@@ -103,6 +103,10 @@ SYSTEM_PROMPT = """You are Insurance AI Agent, a warm, expert assistant for the 
 underwriting platform. You both GUIDE users through the insurance journey and EXECUTE real \
 actions with tools. Never pretend to act — always call the tool.
 
+## CAPABILITY DISCOVERY
+
+If an action is supported but its tool is not attached, use search_capabilities, then get_capability_schema to load the matching tool. Invoke that named tool on the next model turn through the normal permission gate. Discovery does not authorize an action. If no authorized capability exists, explain the limitation and a supported UI or staff handoff. Never invent a tool, endpoint, or success. Execute dependent steps one at a time and verify each result before continuing.
+
 ## FRESH CUSTOMER LOOKUPS
 
 Always call list_customers or search_records again for a customer list or follow-up status comparison. Never repeat names, counts or statuses solely from an earlier reply. Keep same-name customers separate using their CNIC.
@@ -115,7 +119,7 @@ Always call list_customers or search_records again for a customer list or follow
 ## AUTONOMOUS UNDERWRITING JOURNEY (preferred for end-to-end requests)
 
 **start_underwriting_journey** runs the ENTIRE 8-stage pipeline autonomously: \
-Intake → Case → Proposal → Pre-Underwriting Clearance (5 Gates) → Document Audit → AI Risk Assessment → Decision → Closure. \
+Intake → Proposal → Proposal Submission/Review → Initial Premium → Case → Pre-Underwriting Clearance → Document Audit → AI Risk Assessment → Decision → Closure. \
 It automatically verifies the 5 pre-underwriting gates (E-Application, Agent Confidential Report, Compliance/PEP, Insurance History Check, Medical Examination), auto-approves/declines on the risk bands, and suspends only for missing documents or human review. Use it whenever the user wants an application processed end-to-end \
 ("underwrite Fatima", "process this application", "run the whole flow", "with demo data"). \
 Call it IMMEDIATELY with just the name or CNIC — it resolves existing customers itself \
@@ -137,8 +141,8 @@ When the user changes direction, revise the pending plan rather than restarting 
 An individual customer has ONE open proposal. Switching to another plan is not a new proposal: if the tool refuses because a proposal is already open, relay that and its Change Plan guidance; never say a plan was "changed" unless a tool result says it was changed. When asked for a customer's plan, give the ONE plan the tool returns (get_case_details `plan`, the one the Proposals page shows) — never list several plans for one customer, and never guess why a screen shows a particular one. Explain causes only from tool results; if they don't say, say you don't know.
 
 1. **add_customer / add_organization / add_family_group** → Register the applicant. **CRITICAL:** If the user asks to "add a customer" but does not specify the type, call **resolve_customer_type** — do NOT ask which type it is yourself in plain text, the tool presents Individual / Corporate (Organization) / Family group as clickable buttons and its result tells you which of `add_customer` / `add_organization` / `add_family_group` to call next.
-2. create_case → open the underwriting case
-3. create_proposal → NEVER ask the user to type product details manually. If you don't know the product_name, just call the tool with the applicant's name/CNIC and the system will automatically fetch the catalog and present the user with plan buttons to click.
+2. create_proposal → NEVER ask the user to type product details manually. If you don't know the product_name, just call the tool with the applicant's name/CNIC and the system will automatically fetch the catalog and present the user with plan buttons to click.
+3. For individuals, submit/review the proposal and receive the initial premium BEFORE opening underwriting. If these actions have no registered capability, use the proposal UI and explain the blocker; never simulate submission or payment. `create_case` opens underwriting only when the backend prerequisites are satisfied. Families and corporate schemes follow their own contracts.
 4. **Pre-Underwriting Gates (Strictly Sequential 5 Gates):**
    - The portal enforces 5 distinct, sequential pre-underwriting clearance gates before risk assessment can be run. In interactive workflows, you MUST guide the user step-by-step through each gate in order and NEVER suggest or run bulk clearance in one command:
      - **Gate 1: Customer E-Application** → `verify_e_application`. **CRITICAL:** The E-Application is filled by the customer themselves. Calling this tool generates the public tokenized link (e.g. `http://localhost:3000/e-application/<token>`). You MUST provide this link in chat so the user can share it with the customer. Once submitted by the customer, call `verify_e_application` with `action="verify"` to approve it.
@@ -642,6 +646,9 @@ def _build_prompt(role: str, platform: str = "web", domains: frozenset[str] | No
     never advertises a tool the model cannot call.
     """
     prompt = _SYSTEM_PROMPT_CACHED
+    from skills import enabled as skills_enabled
+    if not skills_enabled():
+        prompt = re.sub(r"## CAPABILITY DISCOVERY.*?(?=## FRESH CUSTOMER LOOKUPS)", "", prompt, flags=re.S)
     for domain in sorted(domains or ()):
         prompt += DOMAIN_PROMPTS.get(domain, "")
     if role == "Agent" and platform == "mobile":
@@ -666,7 +673,8 @@ def _reset_cache_if_stale(version: str) -> None:
 
 
 def _llm(cfg: dict, role: str = "Admin", platform: str = "web",
-         domains: frozenset[str] | None = None, *, tool_scope: frozenset[str] | None = None):
+         domains: frozenset[str] | None = None, *, tool_scope: frozenset[str] | None = None,
+         capability_names: frozenset[str] = frozenset()):
     """The tool-bound model for this turn's scope.
 
     `cfg` comes from providers.resolve(): primary + optional fallback provider,
@@ -674,7 +682,10 @@ def _llm(cfg: dict, role: str = "Admin", platform: str = "web",
     and, on any error, fails over to the fallback (LangChain .with_fallbacks).
     """
     _reset_cache_if_stale(cfg["version"])
-    key = (role, platform, domains, tool_scope)
+    from skills import enabled as skills_enabled
+    if not skills_enabled():
+        capability_names = frozenset()
+    key = (role, platform, domains, tool_scope, capability_names, skills_enabled())
     cached = _LLM_CACHE.get(key)
     if cached is not None:
         return cached
@@ -683,7 +694,7 @@ def _llm(cfg: dict, role: str = "Admin", platform: str = "web",
     if tool_scope is not None:
         allowed = [t for t in allowed if t.name in tool_scope]
     if domains is not None:
-        in_scope = tool_names_for(domains)
+        in_scope = tool_names_for(domains) | set(capability_names)
         allowed = [t for t in allowed if t.name in in_scope]
     if len(allowed) > MAX_BOUND_TOOLS:
         # OpenAI rejects the whole request above 128 tools, so an over-full toolset
@@ -692,7 +703,7 @@ def _llm(cfg: dict, role: str = "Admin", platform: str = "web",
         # only ever fires as a safety net.
         logger.error("_llm: %d tools in scope for role=%s, over the provider cap of %d — trimming %d domain tools",
                      len(allowed), role, MAX_BOUND_TOOLS, len(allowed) - MAX_BOUND_TOOLS)
-        allowed = sorted(allowed, key=lambda t: t.name not in CORE_TOOLS)[:MAX_BOUND_TOOLS]
+        allowed = sorted(allowed, key=lambda t: (t.name not in capability_names, t.name not in CORE_TOOLS, t.name))[:MAX_BOUND_TOOLS]
 
     # permission_gate processes exactly one tool_call per turn (last.tool_calls[0]) —
     # it has to, since a confirm/clarify interrupt suspends the whole node mid-dispatch
@@ -708,6 +719,8 @@ def _llm(cfg: dict, role: str = "Admin", platform: str = "web",
         primary = primary.with_fallbacks(
             [providers.build_chat(cfg["fallback"]).bind_tools(allowed, parallel_tool_calls=False)]
         )
+    if len(_LLM_CACHE) >= 128:
+        _LLM_CACHE.pop(next(iter(_LLM_CACHE)))
     _LLM_CACHE[key] = primary
     return primary
 
@@ -921,7 +934,10 @@ async def agent_node(state: ChatState, config: RunnableConfig = None) -> dict:
     messages = [SystemMessage(content=_build_prompt(user_role, platform, domains, state.get("locale") or "en")), *history]
 
     cfg = await providers.resolve()
-    llm = _llm(cfg, user_role, platform, domains)
+    from skills.selector import binding_names
+    from skills import enabled as skills_enabled
+    llm = _llm(cfg, user_role, platform, domains,
+               capability_names=binding_names(state) if skills_enabled() else frozenset())
     thread_id = ((config or {}).get("configurable") or {}).get("thread_id")
 
     return await _complete_agent_turn(llm, messages, state, thread_id, next_sticky)
@@ -929,6 +945,15 @@ async def agent_node(state: ChatState, config: RunnableConfig = None) -> dict:
 
 async def _complete_agent_turn(llm, messages, state, thread_id, next_sticky, *,
                                allowed_names=None, service_name=usage.SERVICE_CHAT_AGENT, scope_label='commission'):
+    from skills import enabled as skills_enabled
+    if skills_enabled():
+        from skills.loader import prompt as skill_prompt
+        guidance = skill_prompt(state.get("selected_skills") or [], state.get("user_role") or "", state.get("platform") or "web", scope=allowed_names)
+        if guidance:
+            from skills.executor import plan
+            workflow_plan = plan(state.get("selected_skills") or [], state.get("user_role") or "", state.get("platform") or "web")
+            guidance += "\nWorkflow dependency plan (not executed): " + json.dumps(workflow_plan, separators=(",", ":"))
+            messages = [SystemMessage(content=str(messages[0].content) + guidance), *messages[1:]]
     started = time.monotonic()
     # The primary model intermittently 429s/503s (and right now: 403s on a
     # billing block) — one failed call must not kill a live conversation turn.
@@ -980,14 +1005,14 @@ async def _complete_agent_turn(llm, messages, state, thread_id, next_sticky, *,
                     "tool_calls": response.tool_calls[:1],
                     "invalid_tool_calls": [],
                 })
-            if allowed_names is not None and any(tc['name'] not in allowed_names for tc in response.tool_calls):
-                logger.warning('specialist rejected an out-of-scope tool call')
-                response = AIMessage(content=f"I cannot perform that action within the {scope_label} workflow or your current permissions. Please state the other workflow separately if you want to switch tasks.")
-            if allowed_names is not None and response.tool_calls:
+            if response.tool_calls:
                 latest_user = next((m for m in reversed(state['messages']) if isinstance(m, HumanMessage)), None)
                 request_text = str(latest_user.content) if latest_user else ''
                 if re.search(r'\bread[ -]?only\b|\b(?:do not|don\x27t) (?:make (?:any )?changes|change|modify|mutate)|\bno changes\b', request_text, re.I) and any(tc['name'] in (MUTATING_TOOLS | {'continue_underwriting_journey', 'continue_claim_journey', 'continue_group_journey', 'resume_member_workflow'}) for tc in response.tool_calls):
                     response = AIMessage(content='This request is read-only, so I have not executed the proposed change. Ask explicitly for the action if you want to change the record.')
+            if allowed_names is not None and any(tc['name'] not in allowed_names for tc in response.tool_calls):
+                logger.warning('specialist rejected an out-of-scope tool call')
+                response = AIMessage(content=f"I cannot perform that action within the {scope_label} workflow or your current permissions. Please state the other workflow separately if you want to switch tasks.")
             used_now = domains_used(tc["name"] for tc in (getattr(response, "tool_calls", None) or []))
             logging.getLogger('uvicorn.error').info('chat_planner service=%s tools=%s elapsed_ms=%.1f',
                 service_name, len(allowed_names) if allowed_names is not None else 'domain',
@@ -1658,7 +1683,7 @@ async def _permission_gate(state: ChatState) -> Command:
     tool_call = last.tool_calls[0]
     name, args, call_id = tool_call["name"], tool_call["args"], tool_call["id"]
     platform = state.get("platform") or "web"
-    ctx = ExecCtx(tenant_id=state["tenant_id"], jwt_token=state["jwt_token"], role=state.get("user_role") or "Agent",
+    ctx = ExecCtx(tenant_id=state["tenant_id"], jwt_token=state["jwt_token"], role=state.get("user_role") or "",
                   current_org_id=state.get("group_current_org_id"), platform=platform)
     # A group tool called with an explicit organization id is that corporate being chosen: remember it.
     remember: dict = {}
@@ -1692,7 +1717,14 @@ async def _permission_gate(state: ChatState) -> Command:
                 f"'{seen_role}'. If that isn't your real role, try logging out and back in; "
                 "otherwise ask your manager."
             )
-        result = {"success": False, "error": msg}
+        from permission import CLAIM_AUTHORITY_ROLES
+        from skills.telemetry import emit
+        required_roles = sorted(CLAIM_AUTHORITY_ROLES.get(name, ()))
+        if required_roles:
+            msg = "This action requires " + " or ".join(required_roles) + ". Ask an authorized colleague in that workspace to perform it."
+        emit("denied", capability=name, role=state.get("user_role") or "", outcome="forbidden")
+        result = {"success": False, "error": msg, "error_code": "forbidden", "retryable": False,
+                  "required_roles": required_roles}
         return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
 
     # An agent picked at the start of intake rides along on the create call.
@@ -2812,6 +2844,9 @@ async def _permission_gate(state: ChatState) -> Command:
         return Command(goto="client_executor", update={"pending_call": pending})
         
     update: dict = {"messages": [_tool_result_message(name, call_id, result)]}
+    if name == "get_capability_schema" and result.get("success") is True:
+        capability_id = result["capability_id"]
+        update["active_capabilities"] = [n for n in state.get("active_capabilities", []) if n != capability_id][-23:] + [capability_id]
     if consumed_lead_agent:
         update["lead_agent"] = None
         update["lead_source"] = None

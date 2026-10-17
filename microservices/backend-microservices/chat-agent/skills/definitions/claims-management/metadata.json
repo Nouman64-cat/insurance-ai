@@ -1,0 +1,140 @@
+{
+  "id": "claims-management",
+  "purpose": "Operate individual claim workflows through authorized assessment and settlement gates.",
+  "intents": [
+    "claim",
+    "FNOL",
+    "loss",
+    "investigation",
+    "settlement",
+    "claim payout",
+    "claimant"
+  ],
+  "capabilities": [
+    "adjudicate_claim",
+    "adopt_claim_into_workflow",
+    "assess_claim_benefit",
+    "authorize_claim_disbursement",
+    "close_claim_file",
+    "continue_claim_journey",
+    "decide_claim",
+    "disburse_claim_settlement",
+    "get_claim_details",
+    "get_claim_document_checklist",
+    "get_claim_workflow",
+    "get_claims_dashboard",
+    "get_policy_claim_options",
+    "intimate_claim",
+    "issue_claim_payout",
+    "list_claims",
+    "override_claim_eligibility",
+    "reconcile_claim_settlement",
+    "record_claim_investigation",
+    "refer_claim_to_reinsurance",
+    "refer_claim_to_underwriting",
+    "register_claim",
+    "resolve_claim_underwriting",
+    "start_claim_journey",
+    "update_claim_document",
+    "update_claim_status",
+    "upload_claim_document",
+    "verify_claim_eligibility",
+    "verify_claim_payees"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "Underwriter",
+    "ClaimsManager",
+    "ClaimsAdjuster",
+    "CustomerService",
+    "Viewer",
+    "Finance",
+    "CustomBroker"
+  ],
+  "prerequisites": [
+    "Authenticated JWT and tenant scope",
+    "Existing role/platform allow-list",
+    "Live owning-service state and required record identifiers"
+  ],
+  "business_rules": [
+    "ClaimsManager stays with the claims specialist. ClaimsAdjuster prepares the file; decisions, authorization, payment, reconciliation and closure follow the backend workflow and delegated authority. Eligibility, payee verification and settlement authorization must not be skipped. An Admin is not a substitute for the backend claims approver.",
+    "A skill never adds permissions or simulates success."
+  ],
+  "lifecycle_source": "claim_workflow_tools.py; tenant-service/routers/claim_workflow.py",
+  "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",
+  "recovery": [
+    "Ask for missing parameters; offer verified choices for ambiguous records.",
+    "Preserve completed steps; verify unknown mutation outcomes before retry.",
+    "Explain unsupported operations and route to the appropriate workspace or authorized staff."
+  ],
+  "verification": "Report completion only from confirmed backend success. Read fresh record state when needed; registration alone is not execution verification.",
+  "tests": [
+    "test_skills.py::test_all_skills_validate_and_cover_inventory",
+    "test_skills.py::test_generated_role_scenarios"
+  ],
+  "steps": [
+    {
+      "id": "step_1",
+      "capability": "get_claim_workflow",
+      "depends_on": []
+    },
+    {
+      "id": "step_2",
+      "capability": "verify_claim_eligibility",
+      "depends_on": [
+        "step_1"
+      ]
+    },
+    {
+      "id": "step_3",
+      "capability": "assess_claim_benefit",
+      "depends_on": [
+        "step_2"
+      ]
+    },
+    {
+      "id": "step_4",
+      "capability": "decide_claim",
+      "depends_on": [
+        "step_3"
+      ]
+    },
+    {
+      "id": "step_5",
+      "capability": "verify_claim_payees",
+      "depends_on": [
+        "step_4"
+      ]
+    },
+    {
+      "id": "step_6",
+      "capability": "authorize_claim_disbursement",
+      "depends_on": [
+        "step_5"
+      ]
+    },
+    {
+      "id": "step_7",
+      "capability": "disburse_claim_settlement",
+      "depends_on": [
+        "step_6"
+      ]
+    },
+    {
+      "id": "step_8",
+      "capability": "reconcile_claim_settlement",
+      "depends_on": [
+        "step_7"
+      ]
+    },
+    {
+      "id": "step_9",
+      "capability": "close_claim_file",
+      "depends_on": [
+        "step_8"
+      ]
+    }
+  ],
+  "unsupported": []
+}

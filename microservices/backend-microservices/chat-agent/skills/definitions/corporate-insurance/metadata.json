@@ -1,0 +1,84 @@
+{
+  "id": "corporate-insurance",
+  "purpose": "Operate employer group life and Takaful schemes through existing group contracts.",
+  "intents": [
+    "corporate",
+    "organization",
+    "employer",
+    "census",
+    "group",
+    "takaful",
+    "master policy",
+    "FCL"
+  ],
+  "capabilities": [
+    "accept_group_quote",
+    "add_group_benefit_class",
+    "add_group_class_coverage",
+    "add_organization",
+    "apply_group_endorsement",
+    "continue_group_journey",
+    "create_group_scheme",
+    "decide_group_renewal",
+    "decline_group_quote",
+    "generate_group_quote",
+    "get_group_ptf_report",
+    "get_group_renewal",
+    "get_group_scheme_status",
+    "issue_group_policy",
+    "list_group_claims",
+    "list_group_endorsements",
+    "list_group_members",
+    "list_organizations",
+    "pay_group_claim",
+    "preview_group_claim_payout",
+    "preview_group_endorsement",
+    "record_group_payment",
+    "record_group_renewal_payment",
+    "register_group_claim",
+    "resolve_group_endorsement",
+    "settle_group_endorsement",
+    "start_group_journey",
+    "start_group_renewal",
+    "submit_group_census",
+    "upload_group_census"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "Agent",
+    "Underwriter",
+    "CustomerService",
+    "Viewer",
+    "CustomBroker"
+  ],
+  "prerequisites": [
+    "Authenticated JWT and tenant scope",
+    "Existing role/platform allow-list",
+    "Live owning-service state and required record identifiers"
+  ],
+  "business_rules": [
+    "Use the group journey for scheme \u2192 benefit classes \u2192 census \u2192 underwriting \u2192 quote acceptance \u2192 master policy \u2192 enrollment/payment. Preview endorsements and group claim payouts first. Preserve FCL and member exceptions. Do not force the individual proposal process onto a group scheme.",
+    "A skill never adds permissions or simulates success."
+  ],
+  "lifecycle_source": "group_journey.py; tenant-service/routers/group_policies.py",
+  "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",
+  "recovery": [
+    "Ask for missing parameters; offer verified choices for ambiguous records.",
+    "Preserve completed steps; verify unknown mutation outcomes before retry.",
+    "Explain unsupported operations and route to the appropriate workspace or authorized staff."
+  ],
+  "verification": "Report completion only from confirmed backend success. Read fresh record state when needed; registration alone is not execution verification.",
+  "tests": [
+    "test_skills.py::test_all_skills_validate_and_cover_inventory",
+    "test_skills.py::test_generated_role_scenarios"
+  ],
+  "steps": [
+    {
+      "id": "step_1",
+      "capability": "get_group_scheme_status",
+      "depends_on": []
+    }
+  ],
+  "unsupported": []
+}

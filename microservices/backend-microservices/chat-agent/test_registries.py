@@ -156,9 +156,11 @@ def test_mobile_agent_stops_at_the_medical_exam_gate():
         assert not is_role_allowed(tool_name, "Agent", "mobile"), f"Mobile agent may run {tool_name}"
 
 
-def test_admin_can_run_everything_declared():
-    denied = [n for n in TOOL_NAMES if not is_role_allowed(n, "Admin")]
-    assert not denied, f"Admin denied: {denied}"
+def test_admin_scope_respects_platform_and_claims_authority():
+    from capability_tools import PLATFORM_TOOLS
+    denied = {n for n in TOOL_NAMES if not is_role_allowed(n, "Admin")}
+    expected = set(PLATFORM_TOOLS) | {name for name, roles in permission.CLAIM_AUTHORITY_ROLES.items() if "Admin" not in roles}
+    assert denied == expected & set(TOOL_NAMES)
 
 
 # ── Domain selection ─────────────────────────────────────────────────────────
