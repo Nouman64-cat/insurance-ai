@@ -1,6 +1,4 @@
 """Trusted, versioned instructions over the existing execution and authorization layers."""
-import os
+from .settings import enabled
 
-
-def enabled() -> bool:
-    return os.getenv("SKILL_AGENT_ENABLED", "true").lower() in {"true", "1", "yes"}
+__all__ = ["enabled"]

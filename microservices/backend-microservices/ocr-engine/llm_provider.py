@@ -7,11 +7,8 @@ model is chosen on the LLM Configuration page ("ocr" in that response), OCR
 uses it and its OCR fallback instead of the platform primary/fallback. Mirrors
 chat-agent/providers.py.
 
-OCR needs a vision-capable model. Images work on all three providers; **PDFs
-work only on Gemini and Anthropic** — OpenAI chat models can't ingest a PDF.
-When a PDF is submitted and no PDF-capable provider is configured, we raise
-`PdfProviderUnavailable` with a message pointing at the LLM Configuration page
-rather than letting a provider fail cryptically.
+OCR needs a vision-capable model. Gemini and Anthropic receive PDFs directly;
+OpenAI receives rendered page images, preserving scanned text and handwriting.
 """
 
 from __future__ import annotations
@@ -42,7 +39,7 @@ TENANT_SERVICE_URL = os.environ.get("TENANT_SERVICE_URL", "http://tenant-service
 INTERNAL_API_SECRET = os.environ.get("INTERNAL_API_SECRET", "").strip()
 
 PDF_MIME = "application/pdf"
-PDF_CAPABLE = {"gemini", "anthropic"}
+PDF_CAPABLE = {"gemini", "anthropic", "openai"}
 
 _TTL_SECONDS = 60
 _cache: dict[str, Any] = {"at": 0.0, "value": None}
@@ -194,10 +191,21 @@ def provider_chain(cfg: dict, mime_type: str) -> tuple[list[dict], bool]:
 
 def messages_for(entry: dict, prompt: str, file_bytes: bytes, mime_type: str):
     provider = (entry.get("provider") or "").lower()
-    return [
-        SystemMessage(content=prompt),
-        HumanMessage(content=[_content_block(provider, file_bytes, mime_type)]),
-    ]
+    if provider == "openai" and mime_type == PDF_MIME:
+        # Chat vision accepts images: render every page so scanned PDFs also work.
+        # Bound raster size and reject oversized files rather than silently omitting pages.
+        import pymupdf
+        with pymupdf.open(stream=file_bytes, filetype="pdf") as document:
+            if document.needs_pass or not 1 <= len(document) <= 30:
+                raise ValueError("PDF must be unlocked and contain 1–30 pages for image-based OCR.")
+            content = []
+            for page in document:
+                scale = min(2.0, 1800 / max(page.rect.width, page.rect.height))
+                pixmap = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False)
+                content.append(_content_block(provider, pixmap.tobytes("png"), "image/png"))
+    else:
+        content = [_content_block(provider, file_bytes, mime_type)]
+    return [SystemMessage(content=prompt), HumanMessage(content=content)]
 
 
 def usage_of(response: Any) -> dict:

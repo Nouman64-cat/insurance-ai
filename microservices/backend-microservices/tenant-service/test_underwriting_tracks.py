@@ -75,6 +75,54 @@ class Tracks(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.status_code, 200, r.text)
         return next(c for c in r.json() if c["caseld"] == str(self.case.caseld))
 
+    async def test_document_processing_retry_ownership_scope_and_queue(self):
+        from datetime import datetime, timedelta
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        from shared.models.core import Artifact
+        from shared.events.kafka_events import ArtifactOCRRequestedEvent
+        producer = SimpleNamespace(send_and_wait=AsyncMock())
+        self.app.state.kafka_producer = producer
+        async with factory() as session:
+            artifact = Artifact(tenant_id=self.t.id, case_id=self.case.caseld,
+                document_type='Physician Report', file_name='synthetic.pdf', file_type='application/pdf',
+                storage_url='local://synthetic/report.pdf', status='Processing Failed')
+            session.add(artifact); await session.commit()
+            artifact_id = artifact.id
+        root = f"/tenants/{self.t.id}/cases/{self.case.caseld}"
+        retry = root + f"/underwriting-documents/{artifact_id}/retry"
+        self.assertEqual((await self.http.post(retry, headers=self.med_h)).status_code, 403)
+        await self.http.put(self.url('medical'), json={'status':'IN_REVIEW'}, headers=self.med_h)
+        await self.http.put(self.url('financial'), json={'status':'IN_REVIEW'}, headers=self.fin_h)
+        self.assertEqual((await self.http.post(retry, headers=self.fin_h)).status_code, 404)
+        self.assertEqual((await self.http.post(retry.replace(str(self.t.id),str(uuid4())), headers=self.med_h)).status_code, 403)
+        async with factory() as session:
+            case = await session.get(Case,self.case.caseld)
+            case.on_hold=True; session.add(case); await session.commit()
+        self.assertEqual((await self.http.post(retry, headers=self.med_h)).status_code, 409)
+        async with factory() as session:
+            case = await session.get(Case,self.case.caseld)
+            case.on_hold=False; session.add(case); await session.commit()
+        response = await self.http.post(retry, headers=self.med_h)
+        self.assertEqual(response.status_code,202,response.text)
+        producer.send_and_wait.assert_awaited_once()
+        event=ArtifactOCRRequestedEvent.model_validate_json(producer.send_and_wait.call_args.kwargs['value'])
+        self.assertEqual(event.payload.artifact_id,artifact_id)
+        self.assertEqual(event.payload.s3_key,'synthetic/report.pdf')
+        self.assertEqual((await self.http.post(retry, headers=self.med_h)).status_code,409)
+        async with factory() as session:
+            artifact=await session.get(Artifact,artifact_id)
+            artifact.status='Uploaded'; artifact.created_at=datetime.utcnow()-timedelta(hours=1)
+            artifact.extracted_metadata={};session.add(artifact);await session.commit()
+        workspace=await self.http.get(f'/tenants/{self.t.id}/underwriting/reviews/{self.case.caseld}',headers=self.med_h)
+        self.assertEqual(workspace.status_code,200,workspace.text)
+        self.assertTrue(next(d for d in workspace.json()['documents'] if d['id']==str(artifact_id))['processing_stalled'])
+        producer.send_and_wait.side_effect=RuntimeError('queue down')
+        self.assertEqual((await self.http.post(retry,headers=self.med_h)).status_code,503)
+        async with factory() as session:
+            artifact=await session.get(Artifact,artifact_id)
+            self.assertEqual(artifact.status,'Processing Failed')
+
     async def test_questionnaire_expiry_resend_and_tenant_scope(self):
         from datetime import datetime, timedelta
         from unittest.mock import AsyncMock, patch
@@ -189,6 +237,40 @@ class Tracks(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(detail.json()['assessment'])
         self.assertEqual((await self.http.get(root, headers=self.agent_h)).status_code, 403)
         self.assertEqual((await self.http.get(f"/tenants/{uuid4()}/underwriting/reviews", headers=self.med_h)).status_code, 403)
+
+    async def test_proposal_upload_receipt_is_separate_from_ocr_status(self):
+        from datetime import datetime, timedelta
+        from shared.models.core import Artifact, DocumentRequest
+        from services.document_requests import summary
+        async with factory() as session:
+            request=DocumentRequest(tenant_id=self.t.id,policy_id=self.case.policy_id,
+                customer_id=self.case.customer_id,required_documents=['Salary Slip'],
+                expires_at=datetime.utcnow()+timedelta(days=30))
+            session.add(request);await session.flush()
+            artifact=Artifact(tenant_id=self.t.id,customer_id=self.case.customer_id,
+                source_request_id=request.id,document_type='Salary Slip',file_name='proposal-income.pdf',
+                storage_url='local://synthetic/proposal-income.pdf',status='Uploaded')
+            session.add(artifact);await session.commit()
+            request_id,artifact_id=request.id,artifact.id
+        root=f"/tenants/{self.t.id}/underwriting/reviews/{self.case.caseld}"
+        for status in ['Uploaded','Processing','OCR Pending','Processing Failed','Accepted','Waived','Re-submission Requested']:
+            with self.subTest(status=status):
+                async with factory() as session:
+                    artifact=await session.get(Artifact,artifact_id)
+                    artifact.status=status;session.add(artifact);await session.commit()
+                    request=await session.get(DocumentRequest,request_id)
+                    proposal_receipt=await summary(session,request)
+                response=await self.http.get(root,headers=self.fin_h)
+                self.assertEqual(response.status_code,200,response.text)
+                workspace=response.json()
+                expected=status!='Re-submission Requested'
+                self.assertEqual(workspace['required_documents'],[{'type':'Salary Slip','received':expected}])
+                self.assertEqual(proposal_receipt['all_received'],expected)
+                requirement=next(r for r in workspace['requirements'] if r['key']=='documents')
+                self.assertEqual(requirement['status'],'Received' if expected else 'Outstanding')
+                saved=next(d for d in workspace['documents'] if d['id']==str(artifact_id))
+                self.assertEqual(saved['scope'],'customer')
+                self.assertEqual(saved['status'],status)  # receipt never overwrites OCR evidence
 
     async def test_documents_requirement_only_when_the_plan_asks_for_track_evidence(self):
         root = f"/tenants/{self.t.id}/underwriting/reviews/{self.case.caseld}"

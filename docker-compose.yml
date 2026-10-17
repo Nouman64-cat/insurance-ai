@@ -216,7 +216,6 @@ services:
       GROUP_SPECIALIST_ENABLED: ${GROUP_SPECIALIST_ENABLED:-true}
       SERVICING_SPECIALIST_ENABLED: ${SERVICING_SPECIALIST_ENABLED:-true}
       UNDERWRITING_SPECIALIST_ENABLED: ${UNDERWRITING_SPECIALIST_ENABLED:-true}
-      SKILL_AGENT_ENABLED: ${SKILL_AGENT_ENABLED:-true}
       CLAIMS_SPECIALIST_ENABLED: ${CLAIMS_SPECIALIST_ENABLED:-true}
       # LLM provider keys/models come from the SuperAdmin config in
       # tenant-service (Platform → LLM Configuration), not env vars.

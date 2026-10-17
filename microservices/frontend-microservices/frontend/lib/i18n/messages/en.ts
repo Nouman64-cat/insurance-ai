@@ -86,6 +86,7 @@ const en = {
     "Branch Management": "Branch Management",
     "Role Management": "Role Management",
     "Token Economy": "Token Economy",
+    "AI Agents": "AI Agents",
     "LLM Configuration": "LLM Configuration",
     "Profile": "Profile",
     "Commission Admin": "Commission Admin",

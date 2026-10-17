@@ -84,7 +84,7 @@ cannot supply authority or register a capability.
 
 `reports/coverage.md` and `role-skill-tool-coverage.csv` map roles, skills and real
 registered tools. `capabilities.json` includes schemas and handler source evidence.
-`backend-routes.json` inventories 719 route declarations across 10 services;
+`backend-routes.json` inventories 724 route declarations across 10 services;
 `client-surfaces.json` identifies 11 web/mobile applications. Dynamic route
 expressions and router prefixes are source evidence, not a promise of a resolved
 external URL. Route-to-adapter mappings not explicitly established are marked
@@ -117,13 +117,29 @@ import. See `reports/test-report.md` for results and remaining limitations.
 
 ## Rollout and rollback
 
-`SKILL_AGENT_ENABLED=true` is the default and is passed through Compose. Set it
-false and recreate/restart chat-agent to disable skill selection/instructions,
-discovery tools and dynamic loaded bindings. Existing graphs, tools, providers,
-SSE and clients continue using the existing domain-pack path. No migration or
-frontend/mobile API change is required. The corrected business ordering, claims
-authority and new named adapters remain; reverting those requires reverting the
-corresponding code change, not weakening backend validation.
+Use **SuperAdmin → AI Agents** (`/super-admin/ai-agents`) to enable or disable
+progressive skills. The singleton `PlatformAgentConfig` row persists the setting,
+last editor and update time. Its new table is created by the existing SQLModel
+startup migration flow; no existing columns are altered. `SKILL_AGENT_ENABLED`
+is no longer read from the environment or passed through Compose.
+
+The authenticated `/platform/agent-config` GET/PUT endpoints require SuperAdmin.
+Chat workers refresh `/internal/agent-config` at startup and on incoming chat
+requests, with a five-second cache and the existing internal-secret convention.
+Changes require no restart. A temporary outage retains the last verified value;
+a cold start without verified settings disables progressive skills until a
+successful fetch. No browser can call the internal route through the gateway.
+
+The page reads deployed registries from SuperAdmin-only `/chat/platform-inventory`:
+two agent nodes, eight specialist subagents, every registered tool (including
+discovery), and all skills. It shows configured roles, specialist tool scopes,
+parameter schemas, prerequisites and business rules. Runtime inventory remains
+visible while progressive skills are disabled. Existing specialist rollout
+flags are reported as status and are not editable here.
+
+Switching skills off retains the existing domain-pack workflows and providers.
+The corrected business ordering, claims authority and named adapters remain
+active. Existing SSE and web/mobile request contracts are unchanged.
 
 For a new capability, implement a fixed authorized adapter first, declare its
 schema and safe/mutating classification, add a tool pack and skill mapping, and

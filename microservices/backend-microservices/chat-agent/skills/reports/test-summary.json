@@ -1,6 +1,6 @@
 {
   "chat_regression": {
-    "tests": 3881,
+    "tests": 3892,
     "failures": 0,
     "errors": 0,
     "skipped": 0
@@ -15,5 +15,13 @@
     "note": "Existing unmet evidence requirements in unchanged backend test fixtures."
   },
   "real_provider_demo_completion": "not_evaluated",
-  "customer_service_live_role": "not_configured_locally"
+  "customer_service_live_role": "not_configured_locally",
+  "superadmin_agent_configuration": {
+    "database_tests_passed": 5,
+    "changed_ui_type_errors": 0,
+    "full_project_existing_type_errors": 11,
+    "browser_toggle_persistence_and_runtime": "passed",
+    "enabled_restored": true,
+    "temporary_ui_user_removed": true
+  }
 }

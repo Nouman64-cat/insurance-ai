@@ -199,6 +199,9 @@ async def upload_artifact(
         logging.getLogger("tenant-service.artifacts").warning(
             "Kafka publish failed for artifact %s: %s", artifact_id, exc
         )
+        artifact.status = "Processing Failed"
+        session.add(artifact)
+        await session.commit()
 
     return _artifact_response(artifact, s3_key, request)
 
@@ -295,6 +298,9 @@ async def upload_claim_artifact(
         logging.getLogger("tenant-service.artifacts").warning(
             "Kafka publish failed for artifact %s: %s", artifact_id, exc
         )
+        artifact.status = "Processing Failed"
+        session.add(artifact)
+        await session.commit()
 
     return _artifact_response(artifact, s3_key, request)
 

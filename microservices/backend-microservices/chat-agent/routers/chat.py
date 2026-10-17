@@ -10,6 +10,7 @@ answer, a yes/no confirmation, or a client-side upload result), `action_complete
 from __future__ import annotations
 
 import json
+import httpx
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -426,3 +427,18 @@ async def bulk_underwriting_stream(request: Request, body: dict, x_tenant_id: st
                 yield f"data: {json.dumps({'type': 'error', 'cnic': cnic, 'message': str(e)})}\n\n"
                 
     return StreamingResponse(_generate(), media_type="text/event-stream", headers=_SSE_HEADERS)
+
+
+@router.get("/platform-inventory", summary="SuperAdmin: agents, subagents, tools and skills")
+async def platform_inventory(x_tenant_id: str = Header(default=""), authorization: str = Header(default="")):
+    caller = await _caller(authorization, x_tenant_id)
+    if caller.get("role_name") != "SuperAdmin":
+        raise HTTPException(403, "SuperAdmin privileges required")
+    from skills.settings import refresh
+    from skills.inventory import build
+    from tool_executor import TENANT_SERVICE_URL
+    await refresh()
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.get(TENANT_SERVICE_URL + "/roles", headers={"Authorization": authorization})
+        response.raise_for_status()
+    return build([row["name"] for row in response.json()])

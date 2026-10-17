@@ -3,16 +3,17 @@
 import { useEffect, useRef, useState } from "react";
 import { tx } from "@/lib/i18n/tx";
 
-type Document = { id: string; name: string; type: string; status: string; scope: string; tampered?: boolean; ocr_text?: string | null; extracted?: unknown };
+type Document = { id: string; name: string; type: string; status: string; processing_stalled?: boolean; scope: string; tampered?: boolean; ocr_text?: string | null; extracted?: unknown };
 type Props = {
   medical: boolean; documents: Document[]; tests: { code: string; name: string }[]; disabled: boolean;
   /** Financial only: the document types this plan asks for, shown as cards. */
-  requiredTypes?: string[];
+  requiredDocuments?: { type: string; received: boolean }[];
   /** Documents the application as a whole still needs; uploadable ones get a card with an upload. */
   applicationDocuments?: { type: string; reason: string; canUpload: boolean; owner: string | null; tag?: string }[];
   onUploadFile: (file: File, type: string, testCode: string, progress: (value: number) => void) => Promise<void>;
   /** DEMO ONLY: files an accepted placeholder for each outstanding document. */
   onMarkAllUploaded?: (items: { document_type: string; test_code: string }[]) => Promise<void>;
+  onRetry?: (id: string) => Promise<void>;
   onUploaded: () => void; onOpen: (id: string) => void;
   /** Reads the files and names the matching test code (medical) or document type (financial) for each, or null. */
   onClassify?: (files: File[]) => Promise<({ match: string | null; reason?: string | null })[]>;
@@ -79,6 +80,16 @@ export default function ReviewDocuments(p: Props) {
   const [progress, setProgress] = useState(0);
   const [dragging, setDragging] = useState(false);
   const chain = useRef<Promise<void>>(Promise.resolve());
+  const [retrying, setRetrying] = useState<string | null>(null);
+  const [retryError, setRetryError] = useState("");
+  const retryable = (d: Document) => d.status === "Processing Failed" || Boolean(d.processing_stalled);
+  const retry = async (id: string) => {
+    if (!p.onRetry || locked || retrying) return;
+    setRetrying(id); setRetryError("");
+    try { await p.onRetry(id); }
+    catch (error: any) { setRetryError(error?.response?.data?.detail ?? "Could not retry. Please try again shortly."); }
+    finally { setRetrying(null); }
+  };
   const locked = p.disabled;
   const appDocs = p.applicationDocuments ?? [];
   const types = Array.from(new Set([...(p.medical ? ["Medical Report", "X-Ray", "MRI Scan", "Lab Report", "ECG", "Blood Test"] : ["Salary Slip", "Bank Statement", "Tax Return", "Income Certificate", "Financial Statement", "Proof of Income"]), ...appDocs.filter(d => d.canUpload).map(d => d.type)]));
@@ -140,18 +151,19 @@ export default function ReviewDocuments(p: Props) {
   const reading = queue.filter(item => item.match === "reading").length;
   const uploading = queue.filter(item => item.status === "uploading" || (item.status === "ready" && item.match !== "none" && item.match !== "reading")).length;
   const attention = queue.filter(item => item.status === "failed" || (item.status === "ready" && item.match === "none"));
-  const required = p.medical ? [] : p.requiredTypes ?? [];
+  const requiredDocuments = p.medical ? [] : p.requiredDocuments ?? [];
+  const required = requiredDocuments.map(d => d.type);
   const unlinked = p.documents.filter(d => !p.tests.some(test => d.type === `Medical Report: ${test.code}`) && !required.includes(d.type) && !appDocs.some(a => a.type === d.type));
   type Row = { key: string; title: string; hint: string; files: Document[]; done: boolean; checking: boolean; unreadable: boolean; active: boolean; canUpload: boolean; note: string | null; testCode: string; cardType: string; tag: string | null };
   const isActive = (match: (item: QueuedFile) => boolean) => queue.some(item => match(item) && item.match !== "none" && item.match !== "reading" && item.status !== "failed");
   const rows: Row[] = [
     ...appDocs.map((doc): Row => {
       const files = p.documents.filter(d => d.type === doc.type);
-      const checking = files.some(d => isProcessing(d.status));
+      const checking = files.some(d => isProcessing(d.status) && !d.processing_stalled);
       const unreadable = !checking && files.some(d => d.status === "Re-submission Requested");
       return { key: `app:${doc.type}`, title: doc.type, done: false, checking, unreadable, files, canUpload: doc.canUpload, tag: doc.tag ?? "Application", testCode: "", cardType: doc.type,
         active: isActive(i => i.type === doc.type),
-        hint: checking ? "Uploaded — we're reading it now. This usually takes a few seconds and updates by itself." : unreadable ? "The file couldn't be read clearly. Upload a sharper scan or the original PDF." : doc.reason,
+        hint: checking ? "Uploaded — we're reading it now. This usually takes a few seconds and updates by itself." : files.some(retryable) ? "The document reader could not finish. Your file is saved — retry reading it." : unreadable ? "The file couldn't be read clearly. Upload a sharper scan or the original PDF." : doc.reason,
         note: doc.canUpload ? null : doc.owner === "medical" ? "Collected by medical underwriting" : doc.owner === "financial" ? "Collected by financial underwriting" : "Collected by pre-underwriting" };
     }),
     ...(p.medical ? p.tests.map((test): Row => {
@@ -160,7 +172,7 @@ export default function ReviewDocuments(p: Props) {
         active: isActive(i => i.testCode === test.code), hint: "Attach the results for this examination." };
     }) : required.map((type): Row => {
       const files = p.documents.filter(d => d.type === type);
-      return { key: `req:${type}`, title: type, done: files.length > 0, checking: false, unreadable: false, files, canUpload: true, note: null, tag: null, testCode: type, cardType: "",
+      return { key: `req:${type}`, title: type, done: requiredDocuments.some(d => d.type === type && d.received), checking: files.some(d => isProcessing(d.status) && !d.processing_stalled), unreadable: files.some(d => d.status === "Re-submission Requested"), files, canUpload: true, note: null, tag: null, testCode: type, cardType: "",
         active: isActive(i => i.type === type), hint: "Requested from the customer, or upload it here." };
     })),
   ];
@@ -185,14 +197,15 @@ export default function ReviewDocuments(p: Props) {
   const pct = rows.length ? Math.round((receivedCount / rows.length) * 100) : 0;
   const complete = rows.filter(r => r.done);
   const renderRow = (r: Row) => {
-    const badge = r.active ? ["Uploading…", "bg-blue-50 text-blue-700"] : r.checking ? ["Checking…", "bg-blue-50 text-blue-700"] : r.unreadable ? ["Couldn't be read", "bg-rose-50 text-rose-700"] : r.done ? ["Received", "bg-emerald-50 text-emerald-700"] : ["Outstanding", "bg-amber-50 text-amber-800"];
-    const busyRow = r.active || r.checking;
+    const failed = !r.checking && r.files.some(retryable);
+    const badge = r.active ? ["Uploading…", "bg-blue-50 text-blue-700"] : r.done ? ["Received", "bg-emerald-50 text-emerald-700"] : r.checking ? ["Checking…", "bg-blue-50 text-blue-700"] : failed ? ["Reading interrupted", "bg-amber-50 text-amber-800"] : r.unreadable ? ["Couldn't be read", "bg-rose-50 text-rose-700"] : ["Outstanding", "bg-amber-50 text-amber-800"];
+    const busyRow = r.active || (!r.done && r.checking);
     return <li key={r.key} className="flex flex-wrap items-start gap-x-4 gap-y-3 px-5 py-4">
       <span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${r.done ? "bg-emerald-50 text-emerald-600" : r.unreadable ? "bg-rose-50 text-rose-600" : busyRow ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-500"}`}>{busyRow ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" /> : <Icon kind={r.done ? "check" : "file"} className="h-4 w-4" />}</span>
       <div className="min-w-0 flex-1 basis-64">
         <div className="flex flex-wrap items-center gap-2"><h4 className="text-sm font-semibold text-slate-900">{tx(r.title)}</h4>{r.tag && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-500">{tx(r.tag)}</span>}</div>
-        <p className="mt-0.5 text-xs leading-5 text-slate-500">{r.note ? tx(r.note) : tx(r.hint)}</p>
-        {r.files.length > 0 && <ul className="mt-2 flex flex-wrap gap-1.5">{r.files.map(d => <li key={d.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 py-1 pe-2.5 ps-2.5 text-xs"><button onClick={() => p.onOpen(d.id)} className="max-w-52 truncate font-medium text-blue-700 hover:underline" title={d.name}>{d.name}</button><span className={d.tampered || d.status === "Re-submission Requested" ? "text-rose-600" : "text-slate-400"}>{d.tampered ? tx("Authenticity review needed") : tx(isProcessing(d.status) ? "Reading…" : d.status)}</span></li>)}</ul>}
+        <p className="mt-0.5 text-xs leading-5 text-slate-500">{r.note ? tx(r.note) : tx(r.done ? failed ? "Received from your existing upload. Text extraction was interrupted; retry reading the saved file." : r.checking ? "Received from your existing upload. Text extraction is still in progress." : "Received from your existing upload." : failed ? "The document reader could not finish. Your file is saved — retry reading it." : r.hint)}</p>
+        {r.files.length > 0 && <ul className="mt-2 flex flex-wrap gap-1.5">{r.files.map(d => <li key={d.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 py-1 pe-2.5 ps-2.5 text-xs"><button onClick={() => p.onOpen(d.id)} className="max-w-52 truncate font-medium text-blue-700 hover:underline" title={d.name}>{d.name}</button><span className={d.tampered || d.status === "Re-submission Requested" ? "text-rose-600" : "text-slate-400"}>{d.tampered ? tx("Authenticity review needed") : tx(retryable(d) ? "Reading interrupted" : isProcessing(d.status) ? "Reading…" : d.status)}</span>{retryable(d) && p.onRetry && <button disabled={locked || retrying !== null} onClick={() => void retry(d.id)} className="font-semibold text-blue-700 hover:underline disabled:opacity-40">{tx(retrying === d.id ? "Retrying…" : "Retry reading")}</button>}</li>)}</ul>}
       </div>
       <div className="flex shrink-0 items-center gap-3"><span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${badge[1]}`}>{tx(badge[0])}</span>
         {r.canUpload && !r.checking && <button disabled={locked || r.active} onClick={() => {pickerTest.current = r.testCode; pickerType.current = r.cardType; input.current?.click();}} className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition disabled:opacity-40 ${r.done ? "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" : "bg-blue-600 text-white hover:bg-blue-700"}`}><Icon kind="upload" className="h-3.5 w-3.5" />{tx(r.unreadable ? "Upload a clearer copy" : r.done ? "Add another" : "Upload")}</button>}
@@ -204,6 +217,7 @@ export default function ReviewDocuments(p: Props) {
     {complete.length > 0 && <><div className={`flex items-center justify-between border-b border-slate-100 bg-slate-50 px-5 py-2.5 ${pending.length ? "border-t" : ""}`}><h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{tx("Received")}</h3><span className="text-xs text-slate-400">{complete.length}</span></div><ul className="divide-y divide-slate-100">{complete.map(renderRow)}</ul></>}
   </section>;
   return <div className="relative space-y-5" onDragOver={e => {e.preventDefault(); if (!locked) setDragging(true);}} onDragLeave={e => {if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);}} onDrop={e => {e.preventDefault(); setDragging(false); if (!locked) addFiles(Array.from(e.dataTransfer.files));}}>
+    {retryError && <p role="alert" className="text-sm text-rose-600">{tx(retryError)}</p>}
     {dragging && <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-blue-400 bg-blue-50/90 text-sm font-semibold text-blue-700">{tx("Drop files to upload — each is matched to its report")}</div>}
     <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-widest text-blue-600">{tx(p.medical ? "Clinical evidence" : "Financial evidence")}</p><h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-900">{tx(p.medical ? "Medical reports" : "Documents")}</h2><p className="mt-1 text-sm text-slate-500">{tx("Drag files anywhere on this page, or use Bulk upload — each file is matched and filed automatically.")} <span className="text-xs text-slate-400">PDF, JPG, PNG, TIFF, BMP, HEIC</span></p></div>
@@ -217,7 +231,7 @@ export default function ReviewDocuments(p: Props) {
     {attention.length > 0 && <section className="overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm" aria-label={tx("Files that need a choice")}><div className="border-b border-amber-100 bg-amber-50 px-5 py-3"><h3 className="text-sm font-semibold text-amber-900">{tx(p.medical ? "Choose the test for these files" : "Choose the document type for these files")} · {attention.length}</h3><p className="mt-0.5 text-xs text-amber-800">{tx("They couldn't be matched automatically, or didn't upload.")}</p></div><ul className="divide-y divide-slate-100">{attention.map(item => <li key={item.id} className="flex flex-wrap items-center gap-3 px-5 py-3"><span className="rounded-lg bg-slate-50 p-2 text-blue-600"><Icon kind="file" /></span><div className="min-w-0 flex-1 basis-40"><p className="truncate text-sm font-medium text-slate-800">{item.file.name}</p>{item.error ? <p role="alert" className="mt-0.5 text-xs text-red-600">{item.error}</p> : <p className="mt-0.5 text-xs text-slate-400" title={item.reason ?? undefined}>{tx("Couldn't tell which it is")}</p>}</div>{p.medical ? <select aria-label={`${tx("Test for")} ${item.file.name}`} value={item.testCode} onChange={e => update(item.id,{testCode:e.target.value, match:"manual"})} className="max-w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs sm:w-60"><option value="">{tx("General supporting report")}</option>{p.tests.map(test => <option key={test.code} value={test.code}>{test.name}</option>)}</select> : <select aria-label={`${tx("Type for")} ${item.file.name}`} value={item.type} onChange={e => update(item.id,{type:e.target.value, match:"manual"})} className="rounded-lg border p-2 text-xs">{types.map(type => <option key={type}>{type}</option>)}</select>}<button disabled={locked} onClick={() => uploadItems([{...item, status: "ready"}])} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">{tx(item.status === "failed" ? "Retry" : "Upload")}</button><button aria-label={`${tx("Remove")} ${item.file.name}`} onClick={() => setQueue(current => current.filter(row => row.id !== item.id))} className="rounded-lg px-2 py-1 text-xl text-slate-400">×</button></li>)}</ul></section>}
     {p.medical && !p.tests.length && !appDocs.length && <p className="rounded-xl bg-white p-5 text-sm text-slate-500">{tx("Required report cards appear after medical requirements are assessed. You can still upload supporting reports.")}</p>}
     {!p.medical && !required.length && <p className="rounded-xl bg-white p-5 text-sm text-slate-500">{tx("This plan doesn't require financial documents. You can still upload supporting income evidence.")}</p>}
-    {unlinked.length > 0 && <section><h3 className="mb-4 text-sm font-semibold text-slate-800">{tx(p.medical ? "Other uploaded documents" : "Uploaded documents")}</h3><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{unlinked.map(d => <article key={d.id} className="rounded-xl border bg-white p-4"><button onClick={() => p.onOpen(d.id)} className="text-left text-sm font-semibold text-blue-700">{d.name} ↗</button><p className="mt-2 text-xs text-slate-500">{d.type} · {d.status}</p>{d.tampered && <p className="mt-2 text-xs text-red-600">{tx("Authenticity review needed")}</p>}</article>)}</div></section>}
+    {unlinked.length > 0 && <section><h3 className="mb-4 text-sm font-semibold text-slate-800">{tx(p.medical ? "Other uploaded documents" : "Uploaded documents")}</h3><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{unlinked.map(d => <article key={d.id} className="rounded-xl border bg-white p-4"><button onClick={() => p.onOpen(d.id)} className="text-left text-sm font-semibold text-blue-700">{d.name} ↗</button><p className="mt-2 text-xs text-slate-500">{d.type} · {tx(retryable(d) ? "Reading interrupted" : d.status)}</p>{retryable(d) && p.onRetry && <button disabled={locked || retrying !== null} onClick={() => void retry(d.id)} className="mt-2 text-xs font-semibold text-blue-700 disabled:opacity-40">{tx(retrying === d.id ? "Retrying…" : "Retry reading")}</button>}{d.tampered && <p className="mt-2 text-xs text-red-600">{tx("Authenticity review needed")}</p>}</article>)}</div></section>}
     {dialog && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => !marking && setDialog(false)}>
       <div role="dialog" aria-modal="true" aria-labelledby="waive-title" onClick={e => e.stopPropagation()} className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
         <h3 id="waive-title" className="text-lg font-semibold text-slate-900">{tx("Mark as uploaded")}</h3>

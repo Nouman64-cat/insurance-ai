@@ -19,10 +19,10 @@ def _psycopg_conn_string(database_url: str) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from skills import enabled
-    if enabled():
-        from skills.loader import metadata
-        metadata()  # fail startup on invalid trusted definitions, before accepting chat
+    from skills.settings import refresh
+    await refresh(force=True)
+    from skills.loader import metadata
+    metadata()  # fail startup on invalid trusted definitions, before accepting chat
     conn_string = _psycopg_conn_string(os.environ["DATABASE_URL"])
     # A POOL, not the single shared connection `from_conn_string` gives. Chat requests overlap — a streaming turn, the
     # mount-time "is this thread paused?" check, a regenerate reading the checkpoint history — and on one connection
@@ -59,3 +59,11 @@ app.include_router(voice_router)
 @app.get("/health")
 async def health_check():
     return {"service": "chat-agent", "status": "healthy"}
+
+
+@app.middleware("http")
+async def refresh_agent_settings(request, call_next):
+    if request.url.path.startswith("/chat/") and request.method != "OPTIONS":
+        from skills.settings import refresh
+        await refresh()
+    return await call_next(request)

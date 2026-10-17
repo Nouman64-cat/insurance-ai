@@ -97,6 +97,7 @@ PAGES: list[Page] = [
     Page("super-admin/tenants", "Tenant Management", "Tenants on the platform.", lists="tenant"),
     Page("super-admin/admins", "Admin Management", "Tenant administrators."),
     Page("super-admin/branches", "Branch Management", "Branch offices.", lists="branch"),
+    Page("super-admin/ai-agents", "AI Agents", "SuperAdmin agent settings and live agents, subagents, tools and skills inventory."),
     Page("super-admin/tokens", "Token Economy", "LLM token usage and quotas."),
     # ── Personal ────────────────────────────────────────────────────────────
     Page("profile", "Profile", "Your own account settings."),

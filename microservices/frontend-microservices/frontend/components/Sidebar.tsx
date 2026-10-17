@@ -428,6 +428,19 @@ const NAV_ITEMS = [
         superAdminOnly: true,
       },
       {
+        href: "/super-admin/ai-agents",
+        label: "AI Agents",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <rect x="7" y="2" width="10" height="7" rx="2" />
+            <path d="M12 9v5M5 14h14M5 14v4M19 14v4" />
+            <rect x="2" y="18" width="6" height="4" rx="1" /><rect x="16" y="18" width="6" height="4" rx="1" />
+          </svg>
+        ),
+        badge: null,
+        superAdminOnly: true,
+      },
+      {
         href: "/super-admin/llm-config",
         label: "LLM Configuration",
         icon: (
@@ -737,7 +750,7 @@ export function Sidebar() {
   }));
 
   const workingHrefs = ["/customer-service", "/acr", "/profile", "/cases", "/requests", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/underwriting", "/admin/users", "/admin/leads", "/admin/policyholders", "/plans", "/financial", "/claims", "/claims/dashboard", "/claims/register"];
-  const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/roles", "/super-admin/tokens", "/super-admin/llm-config"];
+  const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/roles", "/super-admin/tokens", "/super-admin/ai-agents", "/super-admin/llm-config"];
 
   const displayGroups = (userRole === "SuperAdmin"
     ? [

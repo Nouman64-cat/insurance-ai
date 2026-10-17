@@ -7,7 +7,10 @@
     "risk",
     "approve application",
     "decision",
-    "refer"
+    "refer",
+    "assign eligible underwriters",
+    "awaiting underwriting",
+    "underwriter directory"
   ],
   "capabilities": [
     "add_case_comment",

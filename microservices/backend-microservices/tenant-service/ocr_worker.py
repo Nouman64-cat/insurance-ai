@@ -10,12 +10,9 @@ Lifecycle
 5. Update the artifacts row with ocr_result, confidence score, and final status.
 6. Commit the Kafka offset only after a successful DB write (at-least-once).
 
-If OCR fails (engine down, timeout, bad file) the artifact is marked
-"Re-submission Requested" with confidence 0.0 — the offset is still committed
-so a permanently broken file never blocks the partition.
-
-If the DB write itself fails the offset is NOT committed, so the message will
-be reprocessed after a worker restart.
+Transient OCR failures receive bounded retries. Terminal service failures are
+persisted as "Processing Failed", distinct from an unreadable document, so
+users can retry the stored file without uploading it again.
 """
 
 import asyncio
@@ -126,6 +123,8 @@ def _confidence(ocr_text: str) -> float:
 async def _process(event: ArtifactOCRRequestedEvent) -> None:
     p = event.payload
 
+    await _set_processing_status(p.artifact_id, "Processing")
+
     # 1. Download from S3
     loop = asyncio.get_running_loop()
     try:
@@ -134,19 +133,26 @@ async def _process(event: ArtifactOCRRequestedEvent) -> None:
         )
     except Exception as exc:
         logger.error("S3 download failed | artifact=%s key=%s error=%s", p.artifact_id, p.s3_key, exc)
-        await _update_artifact(p.artifact_id, "", 0.0, "Re-submission Requested")
+        await _set_processing_status(p.artifact_id, "Processing Failed")
         return
 
     # 2. Call OCR engine
-    ocr_text = ""
-    try:
-        ocr_text = await _run_ocr(file_bytes, p.file_name, p.mime_type)
-        logger.info("OCR done | artifact=%s chars=%d", p.artifact_id, len(ocr_text))
-    except Exception as exc:
-        # The engine itself failed (quota, outage). That says nothing about the document, so it is not marked
-        # unreadable: the customer is not asked to upload again for our fault. It stays as uploaded.
-        logger.exception("OCR engine error | artifact=%s — left as uploaded, not marked unreadable", p.artifact_id)
-        return
+    for attempt in range(3):
+        try:
+            ocr_text = await _run_ocr(file_bytes, p.file_name, p.mime_type)
+            logger.info("OCR done | artifact=%s chars=%d", p.artifact_id, len(ocr_text))
+            break
+        except Exception as exc:
+            transient = isinstance(exc, httpx.TransportError) or (
+                isinstance(exc, httpx.HTTPStatusError)
+                and (exc.response.status_code >= 500 or exc.response.status_code == 429)
+            )
+            if transient and attempt < 2:
+                await asyncio.sleep(2 ** attempt)
+                continue
+            logger.warning("OCR failed | artifact=%s error_type=%s", p.artifact_id, type(exc).__name__)
+            await _set_processing_status(p.artifact_id, "Processing Failed")
+            return
 
     # 3. Derive confidence + status
     confidence = _confidence(ocr_text)
@@ -154,6 +160,35 @@ async def _process(event: ArtifactOCRRequestedEvent) -> None:
 
     # 4. Persist result
     await _update_artifact(p.artifact_id, ocr_text, confidence, final_status)
+
+
+async def _set_processing_status(artifact_id, status: str) -> None:
+    from datetime import datetime, timezone
+    from uuid import UUID
+    async with _session_factory() as session:
+        artifact = await session.get(Artifact, UUID(str(artifact_id)))
+        if artifact is None:
+            return
+        metadata = dict(artifact.extracted_metadata or {})
+        if status == "Processing":
+            metadata["processing_started_at"] = datetime.now(timezone.utc).isoformat()
+        artifact.extracted_metadata = metadata
+        artifact.status = status
+        session.add(artifact)
+        await session.commit()
+
+
+def processing_stalled(artifact) -> bool:
+    """Expose abandoned jobs without claiming that a slow document was rejected."""
+    from datetime import datetime, timezone
+    if artifact.status not in {"Uploaded", "Processing"}:
+        return False
+    started = (artifact.extracted_metadata or {}).get("processing_started_at")
+    try:
+        started = datetime.fromisoformat(started) if started else artifact.created_at
+        return (datetime.now(timezone.utc) - started.replace(tzinfo=timezone.utc)).total_seconds() > 600
+    except (ValueError, TypeError, AttributeError):
+        return True
 
 
 async def _update_artifact(artifact_id, ocr_text: str, confidence: float, status: str) -> None:
