@@ -57,7 +57,7 @@ build/
 .eggs/
 __pypackages__/
 
-insurance-ai/mortality-risk-assesment-model/project/data
+ml/mortality-risk-assesment-model/project/data
 *.parquet
 *.dta
 *.log
