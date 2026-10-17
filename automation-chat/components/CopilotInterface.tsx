@@ -81,6 +81,7 @@ import {
 } from "@/lib/portal";
 import GroupCensusClientTool from "@/components/group/GroupCensusClientTool";
 import { useI18n } from "@/lib/i18n/I18nProvider";
+import { currentCopilotIdentity } from "@/lib/copilotName";
 
 // The greeting that opens every chat; its text is the UI language's (composer.greeting, or the role's own).
 const WELCOME_ID = "1";
@@ -1392,6 +1393,14 @@ function getRecommendedActions(
 
 export function CopilotInterface({ compact = false }: { compact?: boolean } = {}) {
   const { t, locale } = useI18n();
+  // The Copilot is named for the signed-in role (Claims Copilot, Financial Underwriting Copilot…). Read after
+  // mount so the server render and the first client render agree; the tab title follows it.
+  const [copilotName, setCopilotName] = useState("GetInsuredAI Copilot");
+  useEffect(() => {
+    const { name } = currentCopilotIdentity();
+    setCopilotName(name);
+    if (!compact) document.title = `${name} | insurance-ai`;
+  }, [compact]);
   const welcome = useMemo<AgentMessage>(
     () => ({ id: WELCOME_ID, role: "assistant", text: t(roleGreetingKey()) }),
     [t],
@@ -3386,6 +3395,56 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
     ],
   );
 
+  // Closing the "Policy Drafted" window finishes the issue_policy step. "Continue to payment" then asks for the
+  // first-premium payment straight away (the payment window with its channels), as the portal's drafted window does.
+  const [paymentFollowUp, setPaymentFollowUp] = useState<string | null>(null);
+  const finishIssuance = (continueToPayment: boolean) => {
+    if (!successModalResult) return;
+    const res = successModalResult.result as IssuanceResult;
+    const caseNum = successModalResult.caseNumber;
+    setSuccessModalResult(null);
+
+    const total = res.premium_breakdown?.total_premium || 0;
+    const credited = res.initial_premium_credited ?? 0;
+    const balance = res.amount_due ?? Math.max(0, total - credited);
+    const msg = `Policy **${res.policy_number}** drafted for **${caseNum}** ✅\n\n- Status: **Pending Payment**\n- Effective: ${displayDate(res.effective_date)}\n- Expiry: ${displayDate(res.expiry_date)}\n- Total Premium: PKR ${total.toLocaleString()}\n- Upfront payment credited: PKR ${credited.toLocaleString()}\n- Remaining balance due: PKR ${balance.toLocaleString()}\n- Payment Reference: ${res.payment?.reference || "—"}\n\nConfirm receipt of the remaining balance to activate coverage and bind the contract.`;
+
+    resolveInterrupt({
+      success: true,
+      message: msg,
+      policy_id: res.policy_id,
+      policy_number: res.policy_number,
+      issuance_result: res,
+      last_action: {
+        tool_name: "issue_policy",
+        entity_type: "case",
+        entity_id: pendingInterrupt?.toolCall.args.case_id,
+        route: "policy-issuance",
+        label: `Policy ${res.policy_number} drafted`,
+      },
+      quick_actions: [
+        {
+          label: "Confirm Payment Now",
+          actionType: "submit",
+          payload: `Confirm payment for case ${caseNum}`,
+        },
+        {
+          label: "Open Policy Issuance",
+          actionType: "embed",
+          payload: "policy-issuance",
+        },
+      ],
+    });
+    if (continueToPayment && caseNum) setPaymentFollowUp(caseNum);
+  };
+  useEffect(() => {
+    if (!paymentFollowUp || isLoading || pendingInterrupt) return;
+    const caseNum = paymentFollowUp;
+    setPaymentFollowUp(null);
+    void handleSubmit(undefined, `Confirm payment for case ${caseNum}`);
+  }, [paymentFollowUp, isLoading, pendingInterrupt, handleSubmit]);
+
+
   // ── Family underwriting: assess every insured member, then let the underwriter decide ───────────────────────────────
   // Only the head and a fully insured spouse are insured; nominees carry no cover and are not assessed. The assessments
   // run one after another once every member's requirements are in, and the results come back as one summary
@@ -4758,7 +4817,7 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
         lines.push(
           "---",
           "",
-          `**${m.role === "user" ? "You" : "Rizviz Copilot"}**`,
+          `**${m.role === "user" ? "You" : currentCopilotIdentity().name}**`,
           "",
         );
         if (m.text) lines.push(m.text, "");
@@ -5276,43 +5335,8 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
             <SuccessModal
               result={successModalResult.result as IssuanceResult}
               policyName={successModalResult.policyName}
-              onClose={() => {
-                const res = successModalResult.result as IssuanceResult;
-                const caseNum = successModalResult.caseNumber;
-                setSuccessModalResult(null);
-
-                const total = res.premium_breakdown?.total_premium || 0;
-                const credited = res.initial_premium_credited ?? 0;
-                const balance = res.amount_due ?? Math.max(0, total - credited);
-                const msg = `Policy **${res.policy_number}** drafted for **${caseNum}** ✅\n\n- Status: **Pending Payment**\n- Effective: ${displayDate(res.effective_date)}\n- Expiry: ${displayDate(res.expiry_date)}\n- Total Premium: PKR ${total.toLocaleString()}\n- Upfront payment credited: PKR ${credited.toLocaleString()}\n- Remaining balance due: PKR ${balance.toLocaleString()}\n- Payment Reference: ${res.payment?.reference || "—"}\n\nConfirm receipt of the remaining balance to activate coverage and bind the contract.`;
-
-                resolveInterrupt({
-                  success: true,
-                  message: msg,
-                  policy_id: res.policy_id,
-                  policy_number: res.policy_number,
-                  issuance_result: res,
-                  last_action: {
-                    tool_name: "issue_policy",
-                    entity_type: "case",
-                    entity_id: pendingInterrupt?.toolCall.args.case_id,
-                    route: "policy-issuance",
-                    label: `Policy ${res.policy_number} drafted`,
-                  },
-                  quick_actions: [
-                    {
-                      label: "Confirm Payment Now",
-                      actionType: "submit",
-                      payload: `Confirm payment for case ${caseNum}`,
-                    },
-                    {
-                      label: "Open Policy Issuance",
-                      actionType: "embed",
-                      payload: "policy-issuance",
-                    },
-                  ],
-                });
-              }}
+              onContinueToPayment={() => finishIssuance(true)}
+              onClose={() => finishIssuance(false)}
             />
           )}
           {successModalResult && successModalResult.isPayment && (
@@ -6306,7 +6330,7 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
                         </div>
 
                         <p className="mt-7 text-center text-xs text-zinc-400">
-                          {t("composer.disclaimer")}
+                          {t("composer.disclaimer", { name: copilotName })}
                         </p>
                       </div>
                     </div>

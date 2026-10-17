@@ -269,7 +269,8 @@ export function SpecialistCaseWorkspace({ track }: { track: "medical" | "financi
           {track === "financial" && <FinancialAIPanel tenantId={user.tenant_id!} caseId={caseId} ai={workspace.ai_underwriting}
             disabled={workspace.read_only || workspace.review.assigned_user_id !== user.id || !workspace.policy_linked} onDone={() => { void load(true); }} />}
           <EApplicationPanel caseId={caseId} track={track} refreshKey={workspace.requirements.find((r) => r.key === "e_application")?.status}
-            onSend={() => void sendEApplication()} sending={saving} canSend={!workspace.read_only && workspace.review.assigned_user_id === user.id} onViewAnswers={() => setCaseTab("applicant")} />
+            onSend={() => void sendEApplication()} sending={saving} canSend={!workspace.read_only && workspace.review.assigned_user_id === user.id} onViewAnswers={() => setCaseTab("applicant")}
+            onWaive={() => void waiveEApplication()} waived={workspace.requirements.find((r) => r.key === "e_application")?.status === "Waived"} />
           </>}
         </div>
         <aside className="space-y-5 xl:col-span-4">

@@ -353,3 +353,24 @@ export function fmtPKR(amount: number): string {
     maximumFractionDigits: 0,
   }).format(amount);
 }
+
+
+// ── First premium already collected at the proposal (same as the portal's policies service) ──
+export interface PrepaidStatus {
+  received: boolean; amount?: number; method?: string | null; reference?: string | null; received_at?: string | null;
+  premium?: number | null; settled?: boolean; awaiting_activation?: boolean;
+  /** Part of the premium was paid at the proposal; this is what remains to pay now. */
+  remaining_due?: number | null; remaining_message?: string | null; split?: { upfront_pct: number; remaining_pct: number; upfront_amount: number; remaining_amount: number; total: number } | null;
+}
+
+/** The initial premium collected at the proposal, if any. */
+export async function getPrepaid(policyId: string): Promise<PrepaidStatus> {
+  const tid = tenantId();
+  return (await api.get(`/tenants/${tid}/policies/${policyId}/payments/prepaid`, { headers: { "X-Tenant-Id": tid } })).data;
+}
+
+/** Settle the first premium with the initial premium already received, and bind cover. No second payment. */
+export async function applyPrepaid(policyId: string): Promise<PaymentConfirmResult> {
+  const tid = tenantId();
+  return (await api.post(`/tenants/${tid}/policies/${policyId}/payments/apply-prepaid`, {}, { headers: { "X-Tenant-Id": tid } })).data;
+}

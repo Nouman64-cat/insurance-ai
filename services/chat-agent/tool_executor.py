@@ -1331,7 +1331,7 @@ def _customer_payload(src: dict) -> dict:
         "is_smoker": bool(src.get("is_smoker", False)),
         "height_cm": _as_float(src.get("height_cm")) or 170,
         "weight_kg": _as_float(src.get("weight_kg")) or 70,
-        "details": {},
+        "details": {"contact": {"email": src["email"]}} if src.get("email") else {},
     }
     if src.get("assigned_agent_id"):
         payload["assigned_agent_id"] = src["assigned_agent_id"]
@@ -4112,11 +4112,24 @@ _LAST_NAMES = ["Khan", "Ahmed", "Hassan", "Shah", "Malik", "Ali", "Hussain", "Iq
 _OCCUPATIONS = ["Software Engineer", "Doctor", "Teacher", "Bank Manager", "Accountant", "Architect", "Consultant"]
 
 
+# Demo customers get a real, reachable inbox: plus-addresses of the demo mailbox named after the customer
+# (Hassan Baig → working.nouman.ejaz+hassanbaig@gmail.com) — the same rule as the portal's "Fill demo data".
+DEMO_CUSTOMER_INBOX = "working.nouman.ejaz@gmail.com"
+
+
+def demo_customer_email(first: str, last: str) -> str:
+    local, domain = DEMO_CUSTOMER_INBOX.split("@")
+    tag = "".join(ch for ch in f"{first}{last}".lower() if ch.isalnum())
+    return f"{local}+{tag}@{domain}"
+
+
 def _demo_customer() -> dict:
     year = random.randint(1975, 2003)
+    first, last = random.choice(_FIRST_NAMES), random.choice(_LAST_NAMES)
     return {
-        "first_name": random.choice(_FIRST_NAMES),
-        "last_name": random.choice(_LAST_NAMES),
+        "first_name": first,
+        "last_name": last,
+        "email": demo_customer_email(first, last),
         "cnic": f"{random.randint(10000, 99999)}-{random.randint(1000000, 9999999)}-{random.randint(1, 9)}",
         "date_of_birth": f"{year}-{random.randint(1, 12):02d}-{random.randint(1, 28):02d}",
         "gender": random.choice(["Male", "Female"]),

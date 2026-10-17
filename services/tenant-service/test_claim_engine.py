@@ -399,7 +399,8 @@ def test_valid_payee_passes_all_checks():
     assert not r["blockers"] and not r["reviews"]
 
 
-def test_bad_iban_cnic_or_missing_bank_block_verification():
+def test_bad_iban_cnic_or_missing_bank_block_verification(monkeypatch):
+    monkeypatch.setenv("ENV_VAR", "")   # strict mode: demo lets a nominee-CNIC mismatch through (test_demo_tolerance.py)
     assert {c["key"] for c in eng.payee_checks(_payee(iban="PK12345"))["blockers"]} == {"iban"}
     assert "cnic" in {c["key"] for c in eng.payee_checks(_payee(cnic="123"))["blockers"]}
     assert "bank" in {c["key"] for c in eng.payee_checks(_payee(bank_name=""))["blockers"]}
@@ -612,6 +613,15 @@ def test_plan_checklist_adds_its_own_documents_before_policy_and_bank():
     assert {"police_report", "postmortem", "rescue_report", "newspaper_cutting", "medical_records"} <= accident
     assert "prior_treatment" not in accident
 
+
+def test_claim_payee_cnic_mismatch_does_not_block_in_demo(monkeypatch):
+    payee = {"cnic": "3520211111111", "iban": "PK36SCBL0000001123456702", "bank_name": "SCB", "account_title": "Ali", "name": "Ali"}
+    monkeypatch.setenv("ENV_VAR", "demo")
+    assert not eng.payee_checks(payee, recorded_cnic="3520222222222")["blockers"]
+    monkeypatch.setenv("ENV_VAR", "")
+    assert [c["key"] for c in eng.payee_checks(payee, recorded_cnic="3520222222222")["blockers"]] == ["cnic_match"]
+
+
 if __name__ == "__main__":
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     failed = 0
@@ -624,3 +634,4 @@ if __name__ == "__main__":
             print(f"FAIL  {name}: {exc!r}")
     print(f"\n{len(tests) - failed}/{len(tests)} passed")
     raise SystemExit(1 if failed else 0)
+

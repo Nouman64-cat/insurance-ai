@@ -77,6 +77,14 @@ export const demoInboxEmail = (person: { first: string; last: string }) => {
   return local && domain ? `${local.split("+")[0]}+${tag}@${domain}` : `${tag}@example.com`;
 };
 
+// Demo customers get a real, reachable inbox: plus-addresses of the demo mailbox, named after the customer
+// (Hassan Baig → working.nouman.ejaz+hassanbaig@gmail.com), so their e-application and policy emails arrive.
+export const DEMO_CUSTOMER_INBOX = "working.nouman.ejaz@gmail.com";
+export const demoCustomerEmail = (first: string, last: string) => {
+  const [local, domain] = DEMO_CUSTOMER_INBOX.split("@");
+  return `${local}+${slugify(first)}${slugify(last)}@${domain}`;
+};
+
 export const demoTenant = () => {
   const prefix = pick(COMPANY_PREFIXES);
   const suffix = pick(COMPANY_SUFFIXES);
@@ -295,7 +303,7 @@ export const demoCustomerFields = (plans: PlanLike[]) => {
     gender: person.female ? "Female" : "Male",
     marital_status: married ? "Married" : "Single",
     mobile_number: demoMobile(),
-    email: `${person.first}.${person.last}${digits(2)}@gmail.com`.toLowerCase(),
+    email: demoCustomerEmail(person.first, person.last),
     emergency_contact_name: married ? `${spouse.first} ${person.last}` : `${demoPerson().first} ${person.last}`,
     street_address: `House ${int(1, 300)}, Street ${int(1, 40)}, ${pick(loc.areas)}`,
     postal_code: loc.postal,
@@ -394,7 +402,7 @@ export const demoFamilyExtraction = () => {
     family: {
       family_name: `${last} Family`,
       contact_person: `${headFirst} ${last}`,
-      contact_email: demoInboxEmail({ first: headFirst, last }),
+      contact_email: demoCustomerEmail(headFirst, last),
       contact_phone: demoMobile(),
       household_declared_income: headIncome + spouseIncome,
       city: loc.city,

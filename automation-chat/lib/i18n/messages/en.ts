@@ -70,7 +70,7 @@ const en = {
     helloAnon: "Hello there",
     suggestedPrompts: "Suggested prompts",
     sendHint: "Enter to send · Shift + Enter for a new line",
-    disclaimer: "Rizviz Copilot can make mistakes. Check important details before acting on them.",
+    disclaimer: "{name} can make mistakes. Check important details before acting on them.",
     send: "Send",
   },
   panel: {

@@ -749,8 +749,11 @@ def payee_checks(payee: dict, *, recorded_cnic: Optional[str] = None) -> dict:
     checks.append(check("cnic", "CNIC provided (13 digits)", len(cnic) == 13, "CNIC recorded." if len(cnic) == 13 else "Enter the payee's 13-digit CNIC."))
     if recorded_cnic and cnic:
         same = _norm_cnic(recorded_cnic) == cnic
+        from services.env_mode import is_demo
         checks.append(check("cnic_match", "CNIC matches the nominee on record", same,
-                            "Matches the CNIC recorded for the nominee." if same else "Does not match the CNIC recorded for this nominee."))
+                            "Matches the CNIC recorded for the nominee." if same else "Does not match the CNIC recorded for this nominee."
+                            + (" Allowed to continue in demo mode." if is_demo() else ""),
+                            "info" if is_demo() else "block"))
     if payee.get("is_minor"):
         checks.append(check("guardian", "Guardian named for a minor beneficiary", bool(payee.get("guardian_name")),
                             f"Paid through guardian {payee.get('guardian_name')}." if payee.get("guardian_name") else "A minor must be paid through a named guardian."))

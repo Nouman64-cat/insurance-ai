@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import List
 
 from .profile import UnderwritingProfile
+from .demo import tolerated
 from .results import VerificationFindingSpec, VerificationSeverity
 
 # Relative-difference bands for the declared-vs-verified income check.
@@ -59,10 +60,12 @@ def verify_profile(profile: UnderwritingProfile) -> List[VerificationFindingSpec
     if declared_cnic and evidenced_cnic and str(declared_cnic).strip() != str(evidenced_cnic).strip():
         findings.append(VerificationFindingSpec(
             field="cnic",
-            severity=VerificationSeverity.HIGH,
+            # Demo mode records the mismatch but lets the case continue (shared/underwriting/demo.py).
+            severity=VerificationSeverity.LOW if tolerated("cnic") else VerificationSeverity.HIGH,
             declared_value=declared_cnic,
             observed_value=evidenced_cnic,
-            explanation="The CNIC on file does not match the CNIC extracted from the identity document.",
+            explanation="The CNIC on file does not match the CNIC extracted from the identity document."
+                        + (" Allowed to continue in demo mode." if tolerated("cnic") else ""),
         ))
 
     declared_dob = profile.demographics.get("dob")

@@ -110,3 +110,13 @@ def test_a_family_with_placeholder_cnics_is_refused_and_real_demo_families_are_n
     members = [{"name": "A", "cnic": "12345-6789012-3", "relationship": "Self"}]
     client, result = _run("add_family_group", {"name": "X", "members": members})
     assert not result["success"] and "placeholder" in result["error"].lower() and client.posted == []
+
+
+def test_demo_customer_gets_a_named_demo_inbox_email():
+    from tool_executor import _customer_payload, _demo_customer, demo_customer_email
+    assert demo_customer_email("Hassan", "Baig") == "working.nouman.ejaz+hassanbaig@gmail.com"
+    assert demo_customer_email("Abdul-Rehman", "O'Neil") == "working.nouman.ejaz+abdulrehmanoneil@gmail.com"
+    demo = _demo_customer()
+    assert demo["email"] == demo_customer_email(demo["first_name"], demo["last_name"])
+    assert _customer_payload(demo)["details"] == {"contact": {"email": demo["email"]}}
+    assert _customer_payload({"first_name": "A", "last_name": "B"})["details"] == {}      # no email → nothing stored

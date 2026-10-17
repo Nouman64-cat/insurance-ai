@@ -71,7 +71,7 @@ const ur: Messages = {
     helloAnon: "السلام علیکم",
     suggestedPrompts: "تجویز کردہ سوالات",
     sendHint: "بھیجنے کے لیے Enter · نئی لائن کے لیے Shift + Enter",
-    disclaimer: "Rizviz کو پائلٹ سے غلطی ہو سکتی ہے۔ عمل کرنے سے پہلے اہم تفصیلات کی تصدیق کریں۔",
+    disclaimer: "{name} سے غلطی ہو سکتی ہے۔ عمل کرنے سے پہلے اہم تفصیلات کی تصدیق کریں۔",
     send: "بھیجیں",
   },
   panel: {

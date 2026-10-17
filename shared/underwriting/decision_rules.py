@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Tuple
 
+from .demo import tolerated
 from .results import (
     FraudAssessment,
     FraudSeverity,
@@ -77,7 +78,7 @@ def decide(
             return UnderwritingDecision.HUMAN_REVIEW, reasons
         return UnderwritingDecision.DECLINE, reasons
 
-    high_findings = [f for f in findings if f.severity == VerificationSeverity.HIGH]
+    high_findings = [f for f in findings if f.severity == VerificationSeverity.HIGH and not tolerated(f.field)]
     if high_findings:
         reasons.append(f"{len(high_findings)} unresolved high-severity verification discrepancy(ies).")
         return UnderwritingDecision.HUMAN_REVIEW, reasons
