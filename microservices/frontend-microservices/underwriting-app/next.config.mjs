@@ -12,7 +12,7 @@ const ownModules = path.join(here, "node_modules");
 function rootSetting(name) {
   if (process.env[name] !== undefined) return process.env[name];
   try {
-    const line = fs.readFileSync(path.join(here, "..", ".env"), "utf8").match(new RegExp(`^\\s*${name}\\s*=(.*)$`, "m"));
+    const line = fs.readFileSync(path.join(here, "..", "..", "..", ".env"), "utf8").match(new RegExp(`^\\s*${name}\\s*=(.*)$`, "m"));
     return line ? line[1].trim().replace(/^["']|["']$/g, "") : "";
   } catch {
     return "";

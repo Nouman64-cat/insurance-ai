@@ -1,6 +1,6 @@
 # Request Management app
 
-Next.js frontend for [Request Management](../services/request-management-service/README.md), on port **3007**. It
+Next.js frontend for [Request Management](../../backend-microservices/request-management-service/README.md), on port **3007**. It
 has no login of its own: it signs in from the portal's session, like the Underwriting Workbench.
 
 | Page | Who | What |

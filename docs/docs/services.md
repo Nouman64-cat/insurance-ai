@@ -10,7 +10,7 @@ Every client call goes through the **API Gateway** (`http://localhost:8010`, Swa
 
 ## API Gateway
 
-**Port:** 8010:8000 · **Source:** `services/api-gateway/`
+**Port:** 8010:8000 · **Source:** `microservices/backend-microservices/api-gateway/`
 
 ### Endpoints the gateway owns
 
@@ -71,7 +71,7 @@ The gateway forwards these path families unchanged (method, body, `Authorization
 
 ## Tenant Service
 
-**Port:** 8011:8001 · **Source:** `services/tenant-service/` · **Swagger:** `http://localhost:8011/docs`
+**Port:** 8011:8001 · **Source:** `microservices/backend-microservices/tenant-service/` · **Swagger:** `http://localhost:8011/docs`
 
 The system of record. Runs `migrate.py` on startup and the `ocr_worker` Kafka consumer. Routers live in `routers/`; business logic in `services/`.
 
@@ -124,7 +124,7 @@ The full lifecycle these routers implement is described in [Underwriting & Polic
 
 ## Risk Engine
 
-**Port:** 8012:8002 · **Source:** `services/risk-engine/`
+**Port:** 8012:8002 · **Source:** `microservices/backend-microservices/risk-engine/`
 
 Runs the LangGraph underwriting workflow (`workflow.py`); plan bands in `underwriting_rules.py`; fraud graph writes in `graph_writer.py`; Kafka consumer in `consumer.py`. Does **not** write to PostgreSQL.
 
@@ -147,7 +147,7 @@ Runs the LangGraph underwriting workflow (`workflow.py`); plan bands in `underwr
 
 ## Chat Agent
 
-**Port:** 8016:8006 · **Source:** `services/chat-agent/`
+**Port:** 8016:8006 · **Source:** `microservices/backend-microservices/chat-agent/`
 
 | Method | Path | Description |
 |---|---|---|
@@ -164,7 +164,7 @@ Called through the gateway's `/chat/*`. See [AI Copilot](/chat-agent).
 
 ## OCR Engine
 
-**Port:** 8014:8004 · **Source:** `services/ocr-engine/`
+**Port:** 8014:8004 · **Source:** `microservices/backend-microservices/ocr-engine/`
 
 | Method | Path | Description |
 |---|---|---|
@@ -181,7 +181,7 @@ Formats: PDF, PNG, JPG, JPEG, TIFF, BMP. Text-heavy documents are transcribed (t
 
 ## Text Summarizer
 
-**Port:** 8015:8005 · **Source:** `services/text-summarizer/`
+**Port:** 8015:8005 · **Source:** `microservices/backend-microservices/text-summarizer/`
 
 | Method | Path | Description |
 |---|---|---|
@@ -195,7 +195,7 @@ Formats: PDF, PNG, JPG, JPEG, TIFF, BMP. Text-heavy documents are transcribed (t
 
 ## Decision Engine
 
-**Port:** 8013:8003 · **Source:** `services/decision-engine/`
+**Port:** 8013:8003 · **Source:** `microservices/backend-microservices/decision-engine/`
 
 Stub with a health check. The decision chain itself is `shared/underwriting/decision_rules.py`, executed in the Risk Engine.
 

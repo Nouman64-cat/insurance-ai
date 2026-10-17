@@ -8,7 +8,7 @@ sidebar_position: 10
 
 The copilot is a conversational agent embedded in the web portal (and the agent app's Chat screen) that can look things up, onboard leads, run the underwriting and claims pipelines, and navigate the UI — while every mutating action is gated in code, not just in the prompt.
 
-**Service:** `services/chat-agent/` (port 8016:8006) · **Called via:** API Gateway `/chat/*`, which adds the caller's `Authorization` / `X-Tenant-Id` scoping.
+**Service:** `microservices/backend-microservices/chat-agent/` (port 8016:8006) · **Called via:** API Gateway `/chat/*`, which adds the caller's `Authorization` / `X-Tenant-Id` scoping.
 
 ## Graph
 

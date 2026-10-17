@@ -55,7 +55,7 @@ docker compose exec tenant-service python create_superadmin.py --email you@yourd
 #    • Super Admin → Admins — bootstrap the tenant's first Admin
 ```
 
-**PostgreSQL is external.** It is not a docker-compose service — run your own instance, create an empty database, and point `DATABASE_URL` at it. Tables and additive migrations are applied on service startup (`services/tenant-service/migrate.py`). From Docker Desktop, a host-installed Postgres is reachable at `host.docker.internal`.
+**PostgreSQL is external.** It is not a docker-compose service — run your own instance, create an empty database, and point `DATABASE_URL` at it. Tables and additive migrations are applied on service startup (`microservices/backend-microservices/tenant-service/migrate.py`). From Docker Desktop, a host-installed Postgres is reachable at `host.docker.internal`.
 
 **LLM keys.** Provider keys are normally configured in the UI (**Platform → LLM Configuration**) and stored Fernet-encrypted; env vars are only the fallback. See [LLM Providers & Token Usage](/llm-providers).
 

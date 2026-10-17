@@ -8,7 +8,7 @@ sidebar_position: 12
 
 Both clients talk only to the API Gateway (`:8010`) — except the web portal's OCR and summarizer screens, which call those services directly via `NEXT_PUBLIC_OCR_URL` / `NEXT_PUBLIC_SUMMARIZER_URL`.
 
-## Web portal — `frontend/`
+## Web portal — `microservices/frontend-microservices/frontend/`
 
 Next.js 14.2 (App Router), React 18, TypeScript, Tailwind CSS. Runs on **http://localhost:3000** (`frontend` container, or `npm run dev`). API base: `NEXT_PUBLIC_API_URL` (default `http://localhost:8010`).
 
@@ -29,12 +29,12 @@ Next.js 14.2 (App Router), React 18, TypeScript, Tailwind CSS. Runs on **http://
 
 The [AI copilot](/chat-agent) is available across the portal; the top-bar search uses `GET /tenants/{id}/search`. Commission rates come from the tenant rule engine (rule set `commission.secp_rate_card`).
 
-## Agent mobile app — `agent-app/`
+## Agent mobile app — `mobile-apps/agent-app/`
 
 Expo 54 / React Native 0.81 app for field agents (Agent role only).
 
 ```bash
-cd agent-app
+cd mobile-apps/agent-app
 npm install
 npm start
 ```

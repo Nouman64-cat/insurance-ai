@@ -438,7 +438,7 @@ Field-level compliance log. The `caseld` column is intentionally **not** a FK so
 
 ## Additional tables
 
-Column-level detail for these lives in `shared/models/core.py` (each class carries a docstring). Additive migrations are in `services/tenant-service/migrate.py`.
+Column-level detail for these lives in `shared/models/core.py` (each class carries a docstring). Additive migrations are in `microservices/backend-microservices/tenant-service/migrate.py`.
 
 ### Organisation & distribution
 

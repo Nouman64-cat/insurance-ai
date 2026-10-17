@@ -1,14 +1,14 @@
 # Customer Management service (customer portal back end). Built from the repository root so the image also carries
 # shared/security (the signed service-to-service contract):
-#   docker build -f services/customer-management/Dockerfile .
+#   docker build -f microservices/backend-microservices/customer-management/Dockerfile .
 FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY services/customer-management/requirements.txt .
+COPY microservices/backend-microservices/customer-management/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY services/customer-management/ ./
+COPY microservices/backend-microservices/customer-management/ ./
 COPY shared/ ./shared/
 
 # Migrations run at startup with CM_MIGRATION_DATABASE_URL (the schema owner); the service itself connects with

@@ -1,4 +1,4 @@
-# Build context is the repository root (see Dockerfile). Send only this app and the portal folders it shares.
+# Build context is microservices/frontend-microservices (see Dockerfile). Send only this app and the portal folders it shares.
 *
 !underwriting-app
 !frontend/app/services

@@ -1,4 +1,4 @@
-# Underwriting Workbench. Built from the repository root (docker-compose: context ".", dockerfile
+# Underwriting Workbench. Built from microservices/frontend-microservices (docker-compose: context, dockerfile
 # underwriting-app/Dockerfile) because it compiles the portal code it shares (frontend/app/services, components, lib).
 # Dockerfile.dockerignore next to this file keeps everything else out of the build context.
 #

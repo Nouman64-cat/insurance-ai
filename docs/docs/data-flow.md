@@ -178,7 +178,7 @@ fan-out from `load_underwriting_profile`), then join at `decision_engine`.
 
 ### Validation rules (validate_input)
 
-Rules are **plan-specific**, keyed by `policy.insurance_type` — see `services/risk-engine/underwriting_rules.py` (`UNDERWRITING_RULES`). If `insurance_type` is missing/unrecognized, a generic fallback band applies (age 18–70, term 1–40, income multiple 20×).
+Rules are **plan-specific**, keyed by `policy.insurance_type` — see `microservices/backend-microservices/risk-engine/underwriting_rules.py` (`UNDERWRITING_RULES`). If `insurance_type` is missing/unrecognized, a generic fallback band applies (age 18–70, term 1–40, income multiple 20×).
 
 | Insurance type | Entry age | Term (yrs) | Max maturity age | Max income multiple | Dependent age |
 |---|---|---|---|---|---|

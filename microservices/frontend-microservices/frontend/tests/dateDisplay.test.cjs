@@ -3,8 +3,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const ts = require('typescript');
-const root = path.resolve(__dirname, '../..');
-const apps = ['frontend/lib', 'automation-chat/lib', 'underwriting-app/lib', 'customer-portal/lib', 'agent-app/src/lib'];
+const root = path.resolve(__dirname, '../../../..');
+const web = 'microservices/frontend-microservices';
+const apps = [`${web}/frontend/lib`, `${web}/automation-chat/lib`, `${web}/underwriting-app/lib`, `${web}/customer-portal/lib`, 'mobile-apps/agent-app/src/lib'];
 for (const app of apps) {
   const source = fs.readFileSync(path.join(root, app, 'dateDisplay.ts'), 'utf8');
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;

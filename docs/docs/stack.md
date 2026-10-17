@@ -34,7 +34,7 @@ sidebar_position: 3
 
 | Database | Use case | Port |
 |---|---|---|
-| **PostgreSQL** | Relational store — all business entities (tenants, users, customers, cases, policies, assessments, claims, artifacts, rules, LLM config, token usage). Schema in `shared/models/core.py`; additive migrations in `services/tenant-service/migrate.py`. **External** — not a docker-compose container; point `DATABASE_URL` at your own instance. | *(external)* |
+| **PostgreSQL** | Relational store — all business entities (tenants, users, customers, cases, policies, assessments, claims, artifacts, rules, LLM config, token usage). Schema in `shared/models/core.py`; additive migrations in `microservices/backend-microservices/tenant-service/migrate.py`. **External** — not a docker-compose container; point `DATABASE_URL` at your own instance. | *(external)* |
 | **Memgraph** | Graph store — fraud ring detection over `Customer` nodes linked by `SAME_AREA` / `SAME_OCCUPATION_CLUSTER` (see [Fraud Layer](/fraud-layer)). | 7688 (Bolt) / 7445 (Lab UI) |
 
 ## Messaging
@@ -50,8 +50,8 @@ Six topics carry proposals, risk results, customer creation, OCR jobs, case even
 
 | App | Technology | Notes |
 |---|---|---|
-| Web portal (`frontend/`) | Next.js 14.2 (App Router), React 18, TypeScript, Tailwind CSS 3 | Operations / admin / super-admin portal on `:3000` |
-| Agent app (`agent-app/`) | Expo 54, React Native 0.81 | Field-agent mobile app — see [Client Apps](/client-apps) |
+| Web portal (`microservices/frontend-microservices/frontend/`) | Next.js 14.2 (App Router), React 18, TypeScript, Tailwind CSS 3 | Operations / admin / super-admin portal on `:3000` |
+| Agent app (`mobile-apps/agent-app/`) | Expo 54, React Native 0.81 | Field-agent mobile app — see [Client Apps](/client-apps) |
 | Docs (`docs/`) | Docusaurus 3 + Mermaid | This site, `:4991` |
 
 ## Infrastructure

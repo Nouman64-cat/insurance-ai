@@ -135,7 +135,7 @@ Creates a `CaseAssignment` record with `assignmentType = Primary` and `assignmen
 }
 ```
 
-The required-document mapping is keyed by `(insurance_type, case_type)` in `services/tenant-service/document_requirements.py`. Claim checklists are currently cause-agnostic (`"*"` wildcard on `insurance_type`) — death/accidental/maturity sub-cases are deferred until there's a `claim_type` selection UI to key off.
+The required-document mapping is keyed by `(insurance_type, case_type)` in `microservices/backend-microservices/tenant-service/document_requirements.py`. Claim checklists are currently cause-agnostic (`"*"` wildcard on `insurance_type`) — death/accidental/maturity sub-cases are deferred until there's a `claim_type` selection UI to key off.
 
 ---
 

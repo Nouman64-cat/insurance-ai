@@ -71,7 +71,7 @@ Rejected: `updated code`, `fix`, `changes`, `final changes`, `feat: missing scop
 | Changed | Do |
 |---|---|
 | A Python service | Uvicorn `--reload` picks it up (polling enabled for Docker Desktop); rebuild with `docker compose up --build -d <service>` if dependencies changed |
-| `shared/models/core.py` | Add an additive migration to `MIGRATIONS` in `services/tenant-service/migrate.py`, then restart `tenant-service` |
+| `shared/models/core.py` | Add an additive migration to `MIGRATIONS` in `microservices/backend-microservices/tenant-service/migrate.py`, then restart `tenant-service` |
 | `shared/events/kafka_events.py` | Restart every producer and consumer of the changed event |
 | `docker-compose.yml` or `.env` | `docker compose down && docker compose up --build -d` |
 | Docs | `cd docs && npm start` → http://localhost:4991/insurance-ai/ |

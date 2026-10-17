@@ -133,29 +133,36 @@ Provider credentials are encrypted at rest and services automatically fall back 
 
 ```text
 insurance-ai/
-├── frontend/                 # Next.js operations/admin portal
-├── automation-chat/          # Next.js Automation Chat (AI copilot) app, own container, :3004 (opt-in)
-├── underwriting-app/         # Next.js Underwriting Workbench (queue, case workspace), own container, :3005
-├── customer-service-app/     # Next.js Customer Service desk, :3008
-├── request-management-app/   # Next.js Request Management app, :3007 (run separately)
-├── marketing-site/           # Next.js public marketing site (demo content, :3002)
-├── agent-app/                # React Native / Expo agent application
-├── services/
-│   ├── api-gateway/
-│   ├── tenant-service/
-│   ├── risk-engine/
-│   ├── chat-agent/
-│   ├── ocr-engine/
-│   ├── text-summarizer/
-│   ├── customer-service/     # FastAPI service desk, isolated PostgreSQL schema, :8018
-│   ├── request-management-service/ # FastAPI request workflows, isolated PostgreSQL schema, :8017
-│   └── decision-engine/
-├── shared/
+├── mobile-apps/
+│   ├── agent-app/                # React Native / Expo agent application
+│   └── customer-app/             # React Native / Expo customer application
+├── microservices/
+│   ├── frontend-microservices/
+│   │   ├── frontend/             # Next.js operations/admin portal, :3000
+│   │   ├── automation-chat/      # Next.js Automation Chat (AI copilot) app, own container, :3004 (opt-in)
+│   │   ├── underwriting-app/     # Next.js Underwriting Workbench (queue, case workspace), own container, :3005
+│   │   ├── request-management-app/ # Next.js Request Management app, :3007 (run separately)
+│   │   ├── customer-service-app/ # Next.js Customer Service desk, :3008
+│   │   ├── claims-manager-app/   # Next.js Claims Manager app, :3011
+│   │   ├── customer-portal/      # Next.js customer self-service portal
+│   │   └── marketing-site/       # Next.js public marketing site (demo content, :3002)
+│   └── backend-microservices/
+│       ├── api-gateway/
+│       ├── tenant-service/
+│       ├── risk-engine/
+│       ├── chat-agent/
+│       ├── ocr-engine/
+│       ├── text-summarizer/
+│       ├── customer-management/  # FastAPI customer portal back end
+│       ├── customer-service/     # FastAPI service desk, isolated PostgreSQL schema, :8018
+│       ├── request-management-service/ # FastAPI request workflows, isolated PostgreSQL schema, :8017
+│       └── decision-engine/
+├── shared/                       # Python code shared by the backend microservices
 │   ├── models/
 │   ├── events/
 │   ├── services/
 │   └── underwriting/
-├── docs/                     # Docusaurus documentation
+├── docs/                         # Docusaurus documentation
 └── docker-compose.yml
 ```
 
@@ -222,7 +229,7 @@ Then configure the primary/fallback LLM providers under **Platform → LLM Confi
 
 ## Automation Chat
 
-The AI copilot runs as its own app and container, separate from the web portal (`automation-chat/`, port **3004**).
+The AI copilot runs as its own app and container, separate from the web portal (`microservices/frontend-microservices/automation-chat/`, port **3004**).
 It is **opt-in**: `docker compose up` does not start it. Start it when you want it:
 
 ```bash
@@ -246,12 +253,12 @@ portal you are sent to its login page and brought back. Signing out of the porta
 | `SSO_COOKIE_SECURE`      | both                 | `true` behind HTTPS                                                 |
 
 The chat uses the same API Gateway and Chat Agent as before; it needs the rest of the stack running. Details:
-[`automation-chat/README.md`](automation-chat/README.md).
+[`microservices/frontend-microservices/automation-chat/README.md`](microservices/frontend-microservices/automation-chat/README.md).
 
 ## Underwriting Workbench
 
 The underwriting queue, case workspace, post-underwriting verification, live evaluation and assessment history run as
-their own app (`underwriting-app/`, port **3005**). It starts with the stack, signs in from the portal's session (the
+their own app (`microservices/frontend-microservices/underwriting-app/`, port **3005**). It starts with the stack, signs in from the portal's session (the
 same `insurance_sso` cookie as the Automation Chat) and uses the same backend. The portal's Underwriting links open
 it, and old portal URLs (`/underwriting`, `/case/<id>`…) redirect there with their query string.
 
@@ -266,17 +273,17 @@ docker compose up -d frontend                   # the portal, where sign-in happ
 | `NEXT_PUBLIC_PORTAL_URL`       | portal, chat, workbench       | The portal's public URL: sign-in and return links (default `http://localhost:3000`) |
 | `SSO_COOKIE_NAME` / `SSO_COOKIE_DOMAIN` | all three            | As for the Automation Chat above                           |
 
-Details, the shared-code setup, production builds and benchmarking: [`underwriting-app/README.md`](underwriting-app/README.md).
+Details, the shared-code setup, production builds and benchmarking: [`microservices/frontend-microservices/underwriting-app/README.md`](microservices/frontend-microservices/underwriting-app/README.md).
 
 ## Request Management
 
-Request Management has a separate FastAPI backend (`services/request-management-service/`) and Next.js frontend
-(`request-management-app/`). Staff submit a request, the service routes it to an eligible reviewer or queue, and
+Request Management has a separate FastAPI backend (`microservices/backend-microservices/request-management-service/`) and Next.js frontend
+(`microservices/frontend-microservices/request-management-app/`). Staff submit a request, the service routes it to an eligible reviewer or queue, and
 the reviewer approves, rejects, or asks for more information. It includes revisions, reassignment, comments,
 private attachments, audit history, notifications, and overdue reminders. Reviewers cannot approve their own requests.
 
-Details: [service README](services/request-management-service/README.md) (permissions, lifecycle, routing,
-execution, API, tests) and [app README](request-management-app/README.md) (pages, sign-in, running).
+Details: [service README](microservices/backend-microservices/request-management-service/README.md) (permissions, lifecycle, routing,
+execution, API, tests) and [app README](microservices/frontend-microservices/request-management-app/README.md) (pages, sign-in, running).
 
 | Request type | Outcome |
 | ------------ | ------- |
@@ -327,7 +334,7 @@ application instances, keeping schema-owner credentials out of the running appli
 
 ### Frontend and SSO
 
-The frontend is not currently a Docker Compose service. Create `request-management-app/.env.local`:
+The frontend is not currently a Docker Compose service. Create `microservices/frontend-microservices/request-management-app/.env.local`:
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8010
@@ -340,7 +347,7 @@ SSO_COOKIE_NAME=insurance_sso
 Start it separately:
 
 ```bash
-cd request-management-app
+cd microservices/frontend-microservices/request-management-app
 npm install
 npm run dev
 ```
@@ -370,8 +377,8 @@ at `/request-management/v1`; backend health is available at http://localhost:801
 
 ## Customer Service
 
-Customer Service runs as a separate Next.js app (`customer-service-app/`, port **3008**) and FastAPI backend
-(`services/customer-service/`, host port **8018**). Open **Operations → Customer Service** in the portal sidebar.
+Customer Service runs as a separate Next.js app (`microservices/frontend-microservices/customer-service-app/`, port **3008**) and FastAPI backend
+(`microservices/backend-microservices/customer-service/`, host port **8018**). Open **Operations → Customer Service** in the portal sidebar.
 It uses the portal SSO and includes customer/policy-linked tickets, search, status filters, priorities and due dates,
 claim/release assignment, replies, internal staff notes, resolution, reopening, and audit history.
 
@@ -393,15 +400,15 @@ The provisioner uses `POSTGRES_USER` and `POSTGRES_PASSWORD` with PostgreSQL adm
 The frontend/backend start with the main stack after provisioning. At custom origins, set
 `NEXT_PUBLIC_CUSTOMER_SERVICE_URL` on the portal and app and use matching SSO cookie settings.
 
-Details: [backend setup and scope](services/customer-service/README.md),
-[frontend setup and production build](customer-service-app/README.md).
+Details: [backend setup and scope](microservices/backend-microservices/customer-service/README.md),
+[frontend setup and production build](microservices/frontend-microservices/customer-service-app/README.md).
 
 ## Agent Mobile App
 
 The agent application runs separately through Expo:
 
 ```bash
-cd agent-app
+cd mobile-apps/agent-app
 npm install
 npm start
 ```

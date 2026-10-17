@@ -5,8 +5,8 @@ team, the reviewer approves, rejects or asks for more information, and the reque
 Approved actions that change another service's data are carried out by that service, never by this one.
 
 - API: `/v1/...` on port 8007 (host 8017), public through the API gateway at **`/request-management/v1/...`**
-- Frontend: [`request-management-app/`](../../request-management-app/README.md) (port 3007)
-- Setup, database roles and environment: see "Request Management" in the [root README](../../README.md#request-management)
+- Frontend: [`request-management-app/`](../../frontend-microservices/request-management-app/README.md) (port 3007)
+- Setup, database roles and environment: see "Request Management" in the [root README](../../../README.md#request-management)
 
 ## Architecture
 
@@ -305,7 +305,7 @@ The suites cover:
 ## Deployment
 
 The image builds from the repository root because it carries `shared/`:
-`docker build -f services/request-management-service/Dockerfile .`
+`docker build -f microservices/backend-microservices/request-management-service/Dockerfile .`
 
 To scale out, run more containers. The workers coordinate through row locks (`FOR UPDATE SKIP LOCKED`), Kafka
 consumer groups and deduplication tables; none of them keep state in memory.

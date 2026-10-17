@@ -134,7 +134,7 @@ local-tests
 
 *.tsbuildinfo
 # Generated policy document PDFs
-services/tenant-service/media/
+microservices/backend-microservices/tenant-service/media/
 *.pdf
 
 

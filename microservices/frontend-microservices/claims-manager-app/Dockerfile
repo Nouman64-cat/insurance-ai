@@ -1,4 +1,4 @@
-# Claims Manager portal. Built from the repository root (docker-compose: context ".", dockerfile
+# Claims Manager portal. Built from microservices/frontend-microservices (docker-compose: context, dockerfile
 # claims-manager-app/Dockerfile) because it compiles the portal code it shares (frontend/app/services, components, lib).
 # Dockerfile.dockerignore next to this file keeps everything else out of the build context.
 #

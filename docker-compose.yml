@@ -113,7 +113,7 @@ services:
   api-gateway:
     <<: *fastapi-defaults
     build:
-      context: ./services/api-gateway
+      context: ./microservices/backend-microservices/api-gateway
       dockerfile: Dockerfile
     container_name: insurance-api-gateway
     # Browsers hold /events/stream (SSE) open indefinitely, so a --reload would
@@ -122,7 +122,7 @@ services:
     ports:
       - "8010:8000"
     volumes:
-      - ./services/api-gateway:/app
+      - ./microservices/backend-microservices/api-gateway:/app
       - ./shared:/app/shared
     environment:
       PYTHONPATH: /app
@@ -141,13 +141,13 @@ services:
   tenant-service:
     <<: *fastapi-defaults
     build:
-      context: ./services/tenant-service
+      context: ./microservices/backend-microservices/tenant-service
       dockerfile: Dockerfile
     container_name: insurance-tenant-service
     ports:
       - "8011:8001"
     volumes:
-      - ./services/tenant-service:/app
+      - ./microservices/backend-microservices/tenant-service:/app
       - ./shared:/app/shared
     environment:
       PYTHONPATH: /app
@@ -173,13 +173,13 @@ services:
   risk-engine:
     <<: *fastapi-defaults
     build:
-      context: ./services/risk-engine
+      context: ./microservices/backend-microservices/risk-engine
       dockerfile: Dockerfile
     container_name: insurance-risk-engine
     ports:
       - "8012:8002"
     volumes:
-      - ./services/risk-engine:/app
+      - ./microservices/backend-microservices/risk-engine:/app
       - ./shared:/app/shared
     environment:
       PYTHONPATH: /app
@@ -199,13 +199,13 @@ services:
   chat-agent:
     <<: *fastapi-defaults
     build:
-      context: ./services/chat-agent
+      context: ./microservices/backend-microservices/chat-agent
       dockerfile: Dockerfile
     container_name: insurance-chat-agent
     ports:
       - "8016:8006"
     volumes:
-      - ./services/chat-agent:/app
+      - ./microservices/backend-microservices/chat-agent:/app
       - ./shared:/app/shared
     environment:
       PYTHONPATH: /app
@@ -229,37 +229,37 @@ services:
   decision-engine:
     <<: *fastapi-defaults
     build:
-      context: ./services/decision-engine
+      context: ./microservices/backend-microservices/decision-engine
       dockerfile: Dockerfile
     container_name: insurance-decision-engine
     ports:
       - "8013:8003"
     volumes:
-      - ./services/decision-engine:/app
+      - ./microservices/backend-microservices/decision-engine:/app
 
   ocr-engine:
     <<: *fastapi-defaults
     build:
-      context: ./services/ocr-engine
+      context: ./microservices/backend-microservices/ocr-engine
       dockerfile: Dockerfile
     container_name: insurance-ocr-engine
     ports:
       - "8014:8004"
     volumes:
-      - ./services/ocr-engine:/app
+      - ./microservices/backend-microservices/ocr-engine:/app
       - ./shared/documents:/data # Required for the /extract-from-path endpoint
 
   # khalid
   text-summarizer:
     <<: *fastapi-defaults
     build:
-      context: ./services/text-summarizer
+      context: ./microservices/backend-microservices/text-summarizer
       dockerfile: Dockerfile
     container_name: insurance-text-summarizer
     ports:
       - "8015:8005"
     volumes:
-      - ./services/text-summarizer:/app
+      - ./microservices/backend-microservices/text-summarizer:/app
 
   # ───────────────────────────────────────────────────────────────────────────
   # Request Management — requests, routing, review decisions and approved-action execution.
@@ -271,13 +271,13 @@ services:
     <<: *fastapi-defaults
     build:
       context: . # repository root: the image also carries shared/ (event, signing and allowlist contracts)
-      dockerfile: services/request-management-service/Dockerfile
+      dockerfile: microservices/backend-microservices/request-management-service/Dockerfile
     container_name: insurance-request-management
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8007", "--reload"]
     ports:
       - "8017:8007"
     volumes:
-      - ./services/request-management-service:/app
+      - ./microservices/backend-microservices/request-management-service:/app
       - ./shared:/app/shared
       - request-attachments:/data/request-attachments # local attachment store when S3 isn't configured
     environment:
@@ -307,7 +307,7 @@ services:
     profiles: ["tools"]
     build:
       context: .
-      dockerfile: services/request-management-service/Dockerfile
+      dockerfile: microservices/backend-microservices/request-management-service/Dockerfile
     networks:
       - insurance-net
     extra_hosts:
@@ -327,7 +327,7 @@ services:
   customer-management-provision:
     build:
       context: .
-      dockerfile: services/customer-management/Dockerfile
+      dockerfile: microservices/backend-microservices/customer-management/Dockerfile
     restart: "no"
     networks: [insurance-net]
     extra_hosts: ["host.docker.internal:host-gateway"]
@@ -340,13 +340,13 @@ services:
     <<: *fastapi-defaults
     build:
       context: .
-      dockerfile: services/customer-management/Dockerfile
+      dockerfile: microservices/backend-microservices/customer-management/Dockerfile
     container_name: insurance-customer-management
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8009", "--reload"]
     ports:
       - "8019:8009"
     volumes:
-      - ./services/customer-management:/app
+      - ./microservices/backend-microservices/customer-management:/app
       - ./shared:/app/shared
     environment:
       PYTHONPATH: /app
@@ -377,7 +377,7 @@ services:
   # session in httpOnly cookies and calls Customer Management through the API gateway, server-to-server.
   customer-portal:
     build:
-      context: ./customer-portal
+      context: ./microservices/frontend-microservices/customer-portal
       dockerfile: Dockerfile
       target: dev
     container_name: insurance-customer-portal
@@ -386,7 +386,7 @@ services:
     ports:
       - "3009:3009"
     volumes:
-      - ./customer-portal:/workspace/customer-portal
+      - ./microservices/frontend-microservices/customer-portal:/workspace/customer-portal
       - /workspace/customer-portal/node_modules
       - /workspace/customer-portal/.next
     environment:
@@ -404,11 +404,11 @@ services:
 
   customer-service:
     <<: *fastapi-defaults
-    build: ./services/customer-service
+    build: ./microservices/backend-microservices/customer-service
     ports:
       - "8018:8008"
     volumes:
-      - ./services/customer-service:/app
+      - ./microservices/backend-microservices/customer-service:/app
     environment:
       CS_DATABASE_URL: postgresql+asyncpg://customer_service_app:${CS_DB_APP_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
       CS_MIGRATION_DATABASE_URL: postgresql+asyncpg://customer_service_owner:${CS_DB_OWNER_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
@@ -431,7 +431,7 @@ services:
   # Creates the customer_service schema and its two database users in the existing database, then exits. Runs on
   # every `docker compose up` (it is safe to repeat) and customer-service waits for it to finish.
   customer-service-provision:
-    build: ./services/customer-service
+    build: ./microservices/backend-microservices/customer-service
     restart: "no"
     networks: [insurance-net]
     extra_hosts: ["host.docker.internal:host-gateway"]
@@ -444,7 +444,7 @@ services:
 
   customer-service-app:
     build:
-      context: .
+      context: ./microservices/frontend-microservices # holds this app and the portal code it shares (frontend/app/services, components, lib)
       dockerfile: customer-service-app/Dockerfile
       target: dev
     restart: unless-stopped
@@ -452,11 +452,11 @@ services:
     ports:
       - "3008:3008"
     volumes:
-      - ./customer-service-app:/workspace/customer-service-app
-      - ./frontend/components:/workspace/frontend/components
-      - ./frontend/lib:/workspace/frontend/lib
-      - ./frontend/app/services:/workspace/frontend/app/services
-      - ./frontend/app/globals.css:/workspace/frontend/app/globals.css
+      - ./microservices/frontend-microservices/customer-service-app:/workspace/customer-service-app
+      - ./microservices/frontend-microservices/frontend/components:/workspace/frontend/components
+      - ./microservices/frontend-microservices/frontend/lib:/workspace/frontend/lib
+      - ./microservices/frontend-microservices/frontend/app/services:/workspace/frontend/app/services
+      - ./microservices/frontend-microservices/frontend/app/globals.css:/workspace/frontend/app/globals.css
       - /workspace/customer-service-app/node_modules
       - /workspace/customer-service-app/.next
     environment:
@@ -480,7 +480,7 @@ services:
   # fixed tenant and the service refuses it when CS_ENV=production. Admins use the signed-in desk (3008) to view tickets.
   customer-service-desk:
     build:
-      context: .
+      context: ./microservices/frontend-microservices # holds this app and the portal code it shares (frontend/app/services, components, lib)
       dockerfile: customer-service-app/Dockerfile
       target: dev
     restart: unless-stopped
@@ -488,11 +488,11 @@ services:
     ports:
       - "3010:3008"
     volumes:
-      - ./customer-service-app:/workspace/customer-service-app
-      - ./frontend/components:/workspace/frontend/components
-      - ./frontend/lib:/workspace/frontend/lib
-      - ./frontend/app/services:/workspace/frontend/app/services
-      - ./frontend/app/globals.css:/workspace/frontend/app/globals.css
+      - ./microservices/frontend-microservices/customer-service-app:/workspace/customer-service-app
+      - ./microservices/frontend-microservices/frontend/components:/workspace/frontend/components
+      - ./microservices/frontend-microservices/frontend/lib:/workspace/frontend/lib
+      - ./microservices/frontend-microservices/frontend/app/services:/workspace/frontend/app/services
+      - ./microservices/frontend-microservices/frontend/app/globals.css:/workspace/frontend/app/globals.css
       - /workspace/customer-service-app/node_modules
       - /workspace/customer-service-app/.next
     environment:
@@ -535,7 +535,7 @@ services:
   # ───────────────────────────────────────────────────────────────────────────
   frontend:
     build:
-      context: ./frontend
+      context: ./microservices/frontend-microservices/frontend
       dockerfile: Dockerfile
       target: dev # use the dev stage for hot-reload during development
     container_name: insurance-frontend
@@ -547,7 +547,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ./frontend:/app # hot-reload source files
+      - ./microservices/frontend-microservices/frontend:/app # hot-reload source files
       - /app/node_modules # prevent host node_modules from overwriting container's
       - /app/.next # preserve Next.js build cache between restarts
     environment:
@@ -569,7 +569,7 @@ services:
   # ───────────────────────────────────────────────────────────────────────────
   automation-chat:
     build:
-      context: ./automation-chat
+      context: ./microservices/frontend-microservices/automation-chat
       dockerfile: Dockerfile
       target: dev
     container_name: insurance-automation-chat
@@ -580,9 +580,9 @@ services:
       - "3004:3000"
     env_file:
       - .env
-      - ./frontend/.env.local # voice keys (STT/TTS) live with the dashboard's local env
+      - ./microservices/frontend-microservices/frontend/.env.local # voice keys (STT/TTS) live with the dashboard's local env
     volumes:
-      - ./automation-chat:/app
+      - ./microservices/frontend-microservices/automation-chat:/app
       - /app/node_modules
       - /app/.next
     environment:
@@ -607,7 +607,7 @@ services:
   # ───────────────────────────────────────────────────────────────────────────
   underwriting-app:
     build:
-      context: . # repository root: the image also needs the portal code it shares (frontend/app/services, components, lib)
+      context: ./microservices/frontend-microservices # holds this app and the portal code it shares (frontend/app/services, components, lib)
       dockerfile: underwriting-app/Dockerfile
       target: dev
     container_name: insurance-underwriting-app
@@ -617,14 +617,14 @@ services:
     ports:
       - "3005:3005"
     volumes:
-      - ./underwriting-app:/repo/underwriting-app # hot-reload source files
+      - ./microservices/frontend-microservices/underwriting-app:/repo/underwriting-app # hot-reload source files
       - /repo/underwriting-app/node_modules # keep the container's node_modules
       - /repo/underwriting-app/.next # preserve the build cache between restarts
       # The portal code the workbench shares, read-only, so edits to it reload here too.
-      - ./frontend/app/services:/repo/frontend/app/services:ro
-      - ./frontend/app/globals.css:/repo/frontend/app/globals.css:ro
-      - ./frontend/components:/repo/frontend/components:ro
-      - ./frontend/lib:/repo/frontend/lib:ro
+      - ./microservices/frontend-microservices/frontend/app/services:/repo/frontend/app/services:ro
+      - ./microservices/frontend-microservices/frontend/app/globals.css:/repo/frontend/app/globals.css:ro
+      - ./microservices/frontend-microservices/frontend/components:/repo/frontend/components:ro
+      - ./microservices/frontend-microservices/frontend/lib:/repo/frontend/lib:ro
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010} # browser-side API gateway
       NEXT_PUBLIC_OCR_URL: ${NEXT_PUBLIC_OCR_URL:-http://localhost:8014}
@@ -654,7 +654,7 @@ services:
   # ───────────────────────────────────────────────────────────────────────────
   claims-manager-app:
     build:
-      context: . # repository root: the image also needs the portal code it shares (frontend/app/services, components, lib)
+      context: ./microservices/frontend-microservices # holds this app and the portal code it shares (frontend/app/services, components, lib)
       dockerfile: claims-manager-app/Dockerfile
       target: dev
     container_name: insurance-claims-manager-app
@@ -664,14 +664,14 @@ services:
     ports:
       - "3011:3011"
     volumes:
-      - ./claims-manager-app:/repo/claims-manager-app # hot-reload source files
+      - ./microservices/frontend-microservices/claims-manager-app:/repo/claims-manager-app # hot-reload source files
       - /repo/claims-manager-app/node_modules # keep the container's node_modules
       - /repo/claims-manager-app/.next # preserve the build cache between restarts
-      - ./frontend/app/services:/repo/frontend/app/services:ro
-      - ./frontend/app/claims:/repo/frontend/app/claims:ro # the claims pages, shared with the main portal
-      - ./frontend/app/globals.css:/repo/frontend/app/globals.css:ro
-      - ./frontend/components:/repo/frontend/components:ro
-      - ./frontend/lib:/repo/frontend/lib:ro
+      - ./microservices/frontend-microservices/frontend/app/services:/repo/frontend/app/services:ro
+      - ./microservices/frontend-microservices/frontend/app/claims:/repo/frontend/app/claims:ro # the claims pages, shared with the main portal
+      - ./microservices/frontend-microservices/frontend/app/globals.css:/repo/frontend/app/globals.css:ro
+      - ./microservices/frontend-microservices/frontend/components:/repo/frontend/components:ro
+      - ./microservices/frontend-microservices/frontend/lib:/repo/frontend/lib:ro
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010} # browser-side API gateway
       NEXT_PUBLIC_PORTAL_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000} # sign-in, "Back to the portal"
@@ -701,7 +701,7 @@ services:
   underwriting-app-prod:
     profiles: ["prod"]
     build:
-      context: .
+      context: ./microservices/frontend-microservices # holds this app and the portal code it shares (frontend/app/services, components, lib)
       dockerfile: underwriting-app/Dockerfile
       target: runner
       args: # compiled into the browser bundle
@@ -737,7 +737,7 @@ services:
   # ───────────────────────────────────────────────────────────────────────────
   marketing-site:
     build:
-      context: ./marketing-site
+      context: ./microservices/frontend-microservices/marketing-site
       dockerfile: Dockerfile
       target: dev
     container_name: insurance-marketing-site
@@ -747,7 +747,7 @@ services:
     ports:
       - "3002:3000"
     volumes:
-      - ./marketing-site:/app
+      - ./microservices/frontend-microservices/marketing-site:/app
       - /app/node_modules
       - /app/.next
     environment:
@@ -761,7 +761,7 @@ services:
   marketing-site-prod:
     profiles: ["prod"]
     build:
-      context: ./marketing-site
+      context: ./microservices/frontend-microservices/marketing-site
       dockerfile: Dockerfile
       target: runner
     container_name: insurance-marketing-site-prod
