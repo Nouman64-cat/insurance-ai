@@ -187,6 +187,7 @@ async def health_check():
             "status": "healthy",
             "primary": f"{primary.get('provider')}/{primary.get('model')}",
             "fallback": f"{fallback.get('provider')}/{fallback.get('model')}" if fallback else None,
+            "source": cfg.get("source"),  # ocr (chosen for OCR) | platform | env
         }
     except Exception as exc:  # noqa: BLE001
         return {"status": "healthy", "config_error": str(exc)}

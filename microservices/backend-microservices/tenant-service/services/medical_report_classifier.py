@@ -2,8 +2,8 @@
 
 Customers upload a pile of lab files at once; asking them to sort each one into
 the right test is slow and error-prone (a combined lab printout usually covers
-several tests). The report itself is read by the platform's configured LLM
-(primary, then fallback); when no model can read it or none decides, the filename is matched
+several tests). The report itself is read by the OCR model chosen on the LLM Configuration page, else the
+platform's configured LLM (primary, then fallback); when no model can read it or none decides, the filename is matched
 against test keywords. Only codes from the order's required panel are ever
 returned, so a misread can never attach a report to a test that wasn't ordered.
 """

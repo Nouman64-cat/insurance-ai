@@ -54,7 +54,7 @@ async def fake_providers(session):
 class Classify(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         report_llm.ask_json = fake_ask_json
-        llm_config.resolved_providers = fake_providers
+        llm_config.ocr_providers = fake_providers
         async with factory() as s:
             self.t = Tenant(name=f"T {uuid4()}", code="T" + uuid4().hex[:8]); s.add(self.t); await s.flush()
             roles = {}

@@ -2314,6 +2314,29 @@ class LLMProviderConfig(SQLModel, table=True):
     updated_by: Optional[UUID] = Field(default=None)
 
 
+class LLMTaskModel(SQLModel, table=True):
+    """A model chosen for one task instead of the platform primary/fallback.
+
+    Today the only task is "ocr" (the OCR engine). One row per (task, role),
+    role "primary" | "fallback". The row names a provider and a model only:
+    the API key is the one stored for that provider in llm_provider_config, so
+    a key is entered once. No "primary" row for a task means the task uses the
+    platform primary/fallback, as before.
+    """
+
+    __tablename__ = "llm_task_model"
+    __table_args__ = (UniqueConstraint("task", "role", name="uq_llm_task_model_task_role"),)
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    task: str = Field(max_length=40, index=True)
+    # primary | fallback
+    role: str = Field(max_length=20)
+    provider: str = Field(max_length=40)
+    model_name: str = Field(max_length=120)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_by: Optional[UUID] = Field(default=None)
+
+
 # =============================================================================
 # POLICY ISSUANCE & RENEWALS MODULE
 # =============================================================================

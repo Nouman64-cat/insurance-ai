@@ -768,7 +768,7 @@ async def classify_specialist_documents(
     session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme),
 ):
     import asyncio
-    from routers.llm_config import resolved_providers
+    from routers.llm_config import ocr_providers
     from services.medical_report_uploads import MAX_REPORT_BYTES
     from services.report_llm import MODEL_READABLE, ask_json
     from shared.models.core import MedicalExamOrder
@@ -795,7 +795,7 @@ async def classify_specialist_documents(
     if not options:
         return {"results": [{"index": i, "match": None, "confidence": 0, "reason": "No required tests to match against yet."} for i in range(len(payloads))]}
 
-    providers = await resolved_providers(session)
+    providers = await ocr_providers(session)
     prompt = _classify_prompt(track, options)
     gate = asyncio.Semaphore(4)
 

@@ -73,8 +73,8 @@ async def read_results(session: AsyncSession, tests: list[dict], reports: list, 
     by_test: dict[str, list] = {}
     for report in reports:
         by_test.setdefault(report.document_type.split(": ", 1)[-1], []).append(report)
-    from routers.llm_config import resolved_providers
-    providers = await resolved_providers(session)
+    from routers.llm_config import ocr_providers
+    providers = await ocr_providers(session)
     gate = asyncio.Semaphore(_CONCURRENCY)
 
     async def one(test: dict) -> tuple[str, dict]:

@@ -65,12 +65,12 @@ async def ask_json(session: AsyncSession | None, files: list[tuple[bytes, str]],
                    providers: list[dict] | None = None) -> dict | None:
     """The model's JSON answer, or None when no provider could read the files
     (unsupported format, no key configured, every provider failing). Pass
-    `providers` (from resolved_providers) when calling concurrently, so the
+    `providers` (from ocr_providers) when calling concurrently, so the
     shared session is not used from several tasks at once."""
-    from routers.llm_config import _extract_reply, resolved_providers
+    from routers.llm_config import _extract_reply, ocr_providers
     if not files or any(mime not in MODEL_READABLE for _, mime in files):
         return None
-    for entry in providers if providers is not None else await resolved_providers(session):
+    for entry in providers if providers is not None else await ocr_providers(session):
         provider = entry["provider"]
         try:
             req = _request(provider, entry["model"], entry["api_key"], files, prompt)

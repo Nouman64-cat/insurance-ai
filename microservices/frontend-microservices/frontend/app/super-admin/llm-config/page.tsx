@@ -16,9 +16,21 @@ interface ProviderStatus {
   updated_at: string;
 }
 
+interface TaskModel {
+  provider: string;
+  model_name: string;
+  has_key: boolean;
+}
+
+interface TaskConfig {
+  primary: TaskModel | null;
+  fallback: TaskModel | null;
+}
+
 interface ConfigResponse {
   encryption_available: boolean;
   providers: ProviderStatus[];
+  ocr: TaskConfig;
 }
 
 interface TestResult {
@@ -363,6 +375,226 @@ function ProviderCard({
   );
 }
 
+// ── OCR model card ───────────────────────────────────────────────────────────
+// Providers that can read a PDF; OpenAI chat models take images only.
+const PDF_CAPABLE = new Set(["gemini", "anthropic"]);
+
+type Slot = { provider: string; model: string };
+
+function OcrRow({
+  label,
+  emptyLabel,
+  slot,
+  providers,
+  onChange,
+}: {
+  label: string;
+  emptyLabel: string;
+  slot: Slot;
+  providers: ProviderStatus[];
+  onChange: (next: Slot) => void;
+}) {
+  const [testing, setTesting] = useState(false);
+  const [test, setTest] = useState<TestResult | null>(null);
+
+  useEffect(() => setTest(null), [slot.provider, slot.model]);
+
+  const runTest = async () => {
+    setTesting(true);
+    setTest(null);
+    try {
+      const resp = await api.post<TestResult>(`/platform/llm-config/${slot.provider}/test`, {
+        model_name: slot.model.trim(),
+      });
+      setTest(resp.data);
+    } catch (e: any) {
+      setTest({ ok: false, detail: e.message ?? "Test failed.", latency_ms: 0 });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-xs font-semibold text-slate-600">{tx(label)}</label>
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_auto]">
+        <select
+          value={slot.provider}
+          onChange={(e) => {
+            const provider = e.target.value;
+            const current = providers.find((p) => p.provider === provider);
+            onChange({ provider, model: provider ? current?.model_name ?? "" : "" });
+          }}
+          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+        >
+          <option value="">{tx(emptyLabel)}</option>
+          {providers.map((p) => (
+            <option key={p.provider} value={p.provider}>
+              {PROVIDER_META[p.provider]?.label ?? p.provider}
+            </option>
+          ))}
+        </select>
+        <input
+          value={slot.model}
+          onChange={(e) => onChange({ ...slot, model: e.target.value })}
+          disabled={!slot.provider}
+          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-400"
+          placeholder={tx("model id")}
+        />
+        <button
+          type="button"
+          onClick={runTest}
+          disabled={!slot.provider || !slot.model.trim() || testing}
+          className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:border-slate-300 transition-all disabled:opacity-40"
+        >
+          {testing ? tx("Testing…") : tx("Test model")}
+        </button>
+      </div>
+      {slot.provider && !PDF_CAPABLE.has(slot.provider) && (
+        <p className="text-[11px] text-amber-600">
+          {tx("OpenAI models read images only — PDF uploads will skip this model.")}
+        </p>
+      )}
+      {test && (
+        <div
+          className={`text-xs rounded-lg px-3 py-2 border ${
+            test.ok
+              ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+              : "bg-red-50 border-red-200 text-red-600"
+          }`}
+        >
+          <span className="font-semibold">{test.ok ? tx("✓ Responding") : tx("✕ Failed")}</span>
+          {" — "}
+          {test.detail}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OcrModelCard({
+  ocr,
+  providers,
+  platformPrimary,
+  onSaved,
+}: {
+  ocr: TaskConfig;
+  providers: ProviderStatus[];
+  platformPrimary: ProviderStatus | undefined;
+  onSaved: () => void;
+}) {
+  const toSlot = (m: TaskModel | null): Slot => ({ provider: m?.provider ?? "", model: m?.model_name ?? "" });
+  const [primary, setPrimary] = useState<Slot>(toSlot(ocr.primary));
+  const [fallback, setFallback] = useState<Slot>(toSlot(ocr.fallback));
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const [savedNote, setSavedNote] = useState("");
+
+  useEffect(() => {
+    setPrimary(toSlot(ocr.primary));
+    setFallback(toSlot(ocr.fallback));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ocr]);
+
+  // Only providers with a stored key can serve OCR; a saved choice whose key was removed stays listed so it shows.
+  const usable = providers.filter(
+    (p) => p.has_key || p.provider === ocr.primary?.provider || p.provider === ocr.fallback?.provider,
+  );
+  const same = (a: Slot, m: TaskModel | null) => a.provider === (m?.provider ?? "") && a.model.trim() === (m?.model_name ?? "");
+  const dirty = !same(primary, ocr.primary) || (!!primary.provider && !same(fallback, ocr.fallback));
+  const missingKey = [ocr.primary, ocr.fallback].filter((m) => m && !m.has_key);
+
+  const save = async () => {
+    setErr("");
+    setSavedNote("");
+    setSaving(true);
+    try {
+      const pick = (s: Slot) => (s.provider ? { provider: s.provider, model_name: s.model.trim() } : null);
+      await api.put("/platform/llm-config/tasks/ocr", {
+        primary: pick(primary),
+        fallback: primary.provider ? pick(fallback) : null,
+      });
+      setSavedNote(tx("Saved."));
+      onSaved();
+    } catch (e: any) {
+      setErr(e.message ?? "Save failed.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className={`h-1 ${ocr.primary ? "bg-blue-500" : "bg-slate-200"}`} />
+      <div className="px-5 pt-5 pb-4 border-b border-slate-100 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-bold text-slate-900">{tx("OCR model")}</h2>
+          <p className="text-xs text-slate-500 mt-0.5 max-w-2xl">
+            {tx("The model the OCR engine uses to read uploaded documents (CNICs, salary slips, medical reports, scheme files). It uses the API key saved for that provider above. Leave it on the platform models to use the primary and fallback above.")}
+          </p>
+        </div>
+        <span
+          className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded border ${
+            ocr.primary
+              ? "bg-blue-50 text-blue-700 border-blue-200"
+              : "bg-slate-100 text-slate-500 border-slate-200"
+          }`}
+        >
+          {ocr.primary ? tx("Own model") : tx("Platform models")}
+        </span>
+      </div>
+
+      <div className="px-5 py-4 space-y-4">
+        <OcrRow
+          label="OCR primary"
+          emptyLabel="Use the platform models"
+          slot={primary}
+          providers={usable}
+          onChange={setPrimary}
+        />
+        {primary.provider ? (
+          <OcrRow
+            label="OCR fallback (optional)"
+            emptyLabel="No fallback"
+            slot={fallback}
+            providers={usable}
+            onChange={setFallback}
+          />
+        ) : (
+          <p className="text-xs text-slate-500">
+            {tx("OCR currently uses")}{" "}
+            <span className="font-mono">
+              {platformPrimary
+                ? `${PROVIDER_META[platformPrimary.provider]?.label ?? platformPrimary.provider} · ${platformPrimary.model_name}`
+                : tx("the env-var keys (no platform primary set)")}
+            </span>
+          </p>
+        )}
+        {missingKey.length > 0 && (
+          <div className="text-xs rounded-lg px-3 py-2 border bg-amber-50 border-amber-200 text-amber-700">
+            {tx("The key for a chosen OCR provider was removed, so OCR skips that model until a key is set again.")}
+          </div>
+        )}
+        {err && (
+          <div className="text-xs rounded-lg px-3 py-2 border bg-red-50 border-red-200 text-red-600">{err}</div>
+        )}
+        {savedNote && !dirty && <div className="text-xs text-emerald-600 font-medium">{savedNote}</div>}
+      </div>
+
+      <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/60 flex justify-end">
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving || !dirty || (!!primary.provider && !primary.model.trim()) || (!!fallback.provider && !fallback.model.trim())}
+          className="px-6 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all disabled:opacity-40"
+        >
+          {saving ? tx("Saving…") : tx("Save OCR model")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 function LLMConfigContent() {
   const [authorized, setAuthorized] = useState(true);
@@ -443,7 +675,8 @@ function LLMConfigContent() {
           {tx("LLM Configuration")}
         </h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          {tx("Primary and fallback chat models for the AI agent and risk engine. Keys are encrypted at rest and take effect within ~60 seconds — no restart.")}
+          {tx("Primary and fallback chat models for the AI agent and risk engine. Keys are encrypted at rest and take effect within ~60 seconds — no restart.")}{" "}
+          {tx("OCR can use its own model, set below.")}
         </p>
       </div>
 
@@ -536,6 +769,13 @@ function LLMConfigContent() {
                 />
               ))}
             </div>
+
+            <OcrModelCard
+              ocr={cfg.ocr ?? { primary: null, fallback: null }}
+              providers={cfg.providers}
+              platformPrimary={primary}
+              onSaved={load}
+            />
           </>
         )
       )}

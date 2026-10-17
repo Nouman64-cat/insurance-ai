@@ -2,8 +2,10 @@
 
 Primary + fallback provider / model / API key come from the SuperAdmin config
 in tenant-service (GET /internal/llm-config), cached ~60s, with an env-var
-fallback (GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY). Mirrors
-services/chat-agent/providers.py.
+fallback (GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY). When an OCR
+model is chosen on the LLM Configuration page ("ocr" in that response), OCR
+uses it and its OCR fallback instead of the platform primary/fallback. Mirrors
+chat-agent/providers.py.
 
 OCR needs a vision-capable model. Images work on all three providers; **PDFs
 work only on Gemini and Anthropic** — OpenAI chat models can't ingest a PDF.
@@ -128,7 +130,7 @@ def _env_config() -> dict:
             "model": os.getenv("ANTHROPIC_FALLBACK_MODEL", "claude-sonnet-4-5"),
             "api_key": os.getenv("ANTHROPIC_API_KEY"),
         }
-    return {"version": "env", "primary": primary, "fallback": fallback}
+    return {"version": "env", "source": "env", "primary": primary, "fallback": fallback}
 
 
 async def _fetch_remote() -> Optional[dict]:
@@ -141,9 +143,14 @@ async def _fetch_remote() -> Optional[dict]:
     except Exception as exc:  # noqa: BLE001
         log.warning("LLM config fetch failed (%s); using env vars", exc)
         return None
+    # A model chosen for OCR on the LLM Configuration page wins over the platform primary/fallback.
+    ocr = data.get("ocr") or {}
+    if ocr.get("primary") and ocr["primary"].get("api_key"):
+        return {"version": data.get("version"), "source": "ocr",
+                "primary": ocr["primary"], "fallback": ocr.get("fallback")}
     if not data.get("primary") or not data["primary"].get("api_key"):
         return None
-    return data
+    return {**data, "source": "platform"}
 
 
 async def resolve() -> dict:

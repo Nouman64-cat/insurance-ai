@@ -9,8 +9,12 @@ Endpoints
 GET   /platform/llm-config              list providers + status (no keys)
 PUT   /platform/llm-config/{provider}   set model / role / api_key
 POST  /platform/llm-config/{provider}/test   live key check (real generation)
-GET   /internal/llm-config              decrypted primary+fallback for services
-                                        (not exposed through the api-gateway)
+PUT   /platform/llm-config/tasks/ocr    choose the OCR engine's own primary/fallback model
+GET   /internal/llm-config              decrypted primary+fallback for services, plus the
+                                        OCR choice (not exposed through the api-gateway)
+
+The OCR choice names a provider and a model only; it uses the key stored for
+that provider above. Without one, OCR uses the platform primary/fallback.
 """
 
 from __future__ import annotations
@@ -30,12 +34,13 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from crypto_utils import EncryptionUnavailable, decrypt_secret, encrypt_secret, is_available
 from database import get_session
 from routers.auth import verify_superadmin
-from shared.models.core import LLMProviderConfig
+from shared.models.core import LLMProviderConfig, LLMTaskModel
 
 router = APIRouter(tags=["Platform — LLM Config"])
 
 PROVIDERS = ("gemini", "openai", "anthropic")
 ROLES = ("primary", "fallback", "disabled")
+TASK_ROLES = ("primary", "fallback")
 DEFAULT_MODELS = {
     "gemini": os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
     "openai": os.getenv("OPENAI_FALLBACK_MODEL", "gpt-4o-mini"),
@@ -58,9 +63,30 @@ class LLMProviderStatus(BaseModel):
     updated_at: datetime
 
 
+class TaskModelChoice(BaseModel):
+    provider: str
+    model_name: str
+
+
+class TaskModelStatus(TaskModelChoice):
+    has_key: bool  # False when the provider's key was removed after this was chosen
+
+
+class TaskConfig(BaseModel):
+    primary: Optional[TaskModelStatus] = None
+    fallback: Optional[TaskModelStatus] = None
+
+
 class LLMConfigResponse(BaseModel):
     encryption_available: bool
     providers: list[LLMProviderStatus]
+    ocr: TaskConfig = TaskConfig()
+
+
+class TaskConfigUpdate(BaseModel):
+    # primary None -> OCR goes back to the platform primary/fallback (fallback is cleared too)
+    primary: Optional[TaskModelChoice] = None
+    fallback: Optional[TaskModelChoice] = None
 
 
 class LLMConfigUpdate(BaseModel):
@@ -109,14 +135,30 @@ def _status(row: LLMProviderConfig) -> LLMProviderStatus:
     )
 
 
-def _version(rows: list[LLMProviderConfig]) -> str:
-    """A short fingerprint that changes whenever any provider row changes —
+def _version(rows: list[LLMProviderConfig], task_rows: list[LLMTaskModel] = ()) -> str:
+    """A short fingerprint that changes whenever any provider or task row changes —
     lets the services cheaply tell whether their cached config is stale."""
     basis = "|".join(
         f"{r.provider}:{r.role}:{r.model_name}:{r.updated_at.isoformat()}:{bool(r.api_key_encrypted)}"
         for r in sorted(rows, key=lambda r: r.provider)
+    ) + "|" + "|".join(
+        f"{t.task}:{t.role}:{t.provider}:{t.model_name}:{t.updated_at.isoformat()}"
+        for t in sorted(task_rows, key=lambda t: (t.task, t.role))
     )
     return hashlib.sha256(basis.encode()).hexdigest()[:16]
+
+
+async def _task_rows(session: AsyncSession, task: str) -> list[LLMTaskModel]:
+    return list((await session.exec(select(LLMTaskModel).where(LLMTaskModel.task == task))).all())
+
+
+def _task_config(rows: list[LLMProviderConfig], task_rows: list[LLMTaskModel]) -> TaskConfig:
+    keyed = {r.provider for r in rows if r.api_key_encrypted}
+    by_role = {t.role: t for t in task_rows}
+    return TaskConfig(**{
+        role: TaskModelStatus(provider=t.provider, model_name=t.model_name, has_key=t.provider in keyed)
+        for role, t in by_role.items() if role in TASK_ROLES
+    })
 
 
 def _error_message(r: httpx.Response) -> str:
@@ -240,7 +282,55 @@ async def list_llm_config(session: AsyncSession = Depends(get_session)):
     return LLMConfigResponse(
         encryption_available=is_available(),
         providers=[_status(r) for r in rows],
+        ocr=_task_config(rows, await _task_rows(session, "ocr")),
     )
+
+
+# Two path segments, so it never collides with the /platform/llm-config/{provider} routes.
+@router.put(
+    "/platform/llm-config/tasks/ocr",
+    response_model=TaskConfig,
+    dependencies=[Depends(verify_superadmin)],
+)
+async def update_ocr_config(body: TaskConfigUpdate, session: AsyncSession = Depends(get_session)):
+    rows = await _all_rows(session)
+    keyed = {r.provider for r in rows if r.api_key_encrypted}
+    wanted = {"primary": body.primary, "fallback": body.fallback if body.primary else None}
+    for role, choice in wanted.items():
+        if choice is None:
+            continue
+        choice.provider = choice.provider.lower()
+        choice.model_name = choice.model_name.strip()
+        if choice.provider not in PROVIDERS:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Unknown provider '{choice.provider}'.")
+        if not choice.model_name:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Choose a model for the OCR {role}.")
+        if choice.provider not in keyed:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"Set an API key for {choice.provider} above before using it for OCR.",
+            )
+    if wanted["fallback"] and (wanted["fallback"].provider, wanted["fallback"].model_name) == (
+        wanted["primary"].provider, wanted["primary"].model_name
+    ):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "The OCR fallback must differ from the OCR primary.")
+
+    existing = {t.role: t for t in await _task_rows(session, "ocr")}
+    now = datetime.utcnow()
+    for role, choice in wanted.items():
+        row = existing.get(role)
+        if choice is None:
+            if row is not None:
+                await session.delete(row)
+            continue
+        if row is None:
+            row = LLMTaskModel(task="ocr", role=role, provider=choice.provider, model_name=choice.model_name)
+        elif (row.provider, row.model_name) == (choice.provider, choice.model_name):
+            continue
+        row.provider, row.model_name, row.updated_at = choice.provider, choice.model_name, now
+        session.add(row)
+    await session.commit()
+    return _task_config(rows, await _task_rows(session, "ocr"))
 
 
 @router.put(
@@ -353,10 +443,13 @@ async def internal_llm_config(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bad internal secret")
 
     rows = await _all_rows(session)
+    ocr_rows = await _task_rows(session, "ocr")
     return {
-        "version": _version(rows),
+        "version": _version(rows, ocr_rows),
         "primary": _resolved(rows, "primary"),
         "fallback": _resolved(rows, "fallback"),
+        # The OCR engine's own models, each with its provider's key; null where none is chosen (or the key is gone).
+        "ocr": {role: _resolved_task(rows, ocr_rows, role) for role in TASK_ROLES},
     }
 
 
@@ -371,7 +464,31 @@ def _resolved(rows: list[LLMProviderConfig], role: str) -> Optional[dict]:
     return {"provider": row.provider, "model": row.model_name, "api_key": key}
 
 
+def _resolved_task(rows: list[LLMProviderConfig], task_rows: list[LLMTaskModel], role: str) -> Optional[dict]:
+    task_row = next((t for t in task_rows if t.role == role), None)
+    provider_row = task_row and next((r for r in rows if r.provider == task_row.provider), None)
+    if provider_row is None or not provider_row.api_key_encrypted:
+        return None
+    try:
+        key = decrypt_secret(provider_row.api_key_encrypted)
+    except EncryptionUnavailable:
+        return None
+    return {"provider": task_row.provider, "model": task_row.model_name, "api_key": key}
+
+
 async def resolved_providers(session: AsyncSession) -> list[dict]:
     """Primary then fallback {provider, model, api_key}, for in-process callers."""
     rows = list((await session.exec(select(LLMProviderConfig))).all())
     return [entry for entry in (_resolved(rows, "primary"), _resolved(rows, "fallback")) if entry]
+
+
+async def ocr_providers(session: AsyncSession) -> list[dict]:
+    """Like resolved_providers, for in-process document reading (medical reports, document classification): the
+    model chosen for OCR and its OCR fallback, or the platform primary/fallback when no OCR model is chosen. The
+    same rule the OCR engine applies to /internal/llm-config."""
+    rows = list((await session.exec(select(LLMProviderConfig))).all())
+    task_rows = await _task_rows(session, "ocr")
+    primary = _resolved_task(rows, task_rows, "primary")
+    if primary is None:
+        return [entry for entry in (_resolved(rows, "primary"), _resolved(rows, "fallback")) if entry]
+    return [entry for entry in (primary, _resolved_task(rows, task_rows, "fallback")) if entry]

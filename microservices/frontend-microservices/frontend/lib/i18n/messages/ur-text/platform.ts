@@ -106,6 +106,25 @@ const platform: Record<string, string> = {
   "Primary and fallback chat models for the AI agent and risk engine. Keys are encrypted at rest and take effect within ~60 seconds — no restart.":
     "AI ایجنٹ اور رسک انجن کے بنیادی اور متبادل چیٹ ماڈلز۔ کلیدیں خفیہ شکل میں محفوظ ہوتی ہیں اور تقریباً 60 سیکنڈ میں نافذ ہو جاتی ہیں — دوبارہ شروع کرنے کی ضرورت نہیں۔",
   "Reassigns {0} from another provider": "{0} کو دوسرے فراہم کنندہ سے منتقل کرتا ہے",
+  // OCR model
+  "OCR can use its own model, set below.": "OCR اپنا الگ ماڈل استعمال کر سکتا ہے، جو نیچے مقرر کیا جاتا ہے۔",
+  "OCR model": "OCR ماڈل",
+  "The model the OCR engine uses to read uploaded documents (CNICs, salary slips, medical reports, scheme files). It uses the API key saved for that provider above. Leave it on the platform models to use the primary and fallback above.":
+    "وہ ماڈل جس سے OCR انجن اپ لوڈ کی گئی دستاویزات (شناختی کارڈ، تنخواہ کی پرچیاں، طبی رپورٹس، اسکیم فائلیں) پڑھتا ہے۔ یہ اوپر اس فراہم کنندہ کے لیے محفوظ API کلید استعمال کرتا ہے۔ اوپر والے بنیادی اور متبادل ماڈل استعمال کرنے کے لیے اسے پلیٹ فارم ماڈلز پر رہنے دیں۔",
+  "Own model": "اپنا ماڈل",
+  "Platform models": "پلیٹ فارم ماڈلز",
+  "OCR primary": "OCR بنیادی",
+  "OCR fallback (optional)": "OCR متبادل (اختیاری)",
+  "Use the platform models": "پلیٹ فارم ماڈلز استعمال کریں",
+  "No fallback": "کوئی متبادل نہیں",
+  "Test model": "ماڈل آزمائیں",
+  "OpenAI models read images only — PDF uploads will skip this model.": "OpenAI ماڈلز صرف تصاویر پڑھتے ہیں — PDF اپ لوڈز کے لیے یہ ماڈل چھوڑ دیا جائے گا۔",
+  "OCR currently uses": "OCR اس وقت استعمال کر رہا ہے",
+  "the env-var keys (no platform primary set)": "env متغیرات کی کلیدیں (کوئی پلیٹ فارم بنیادی ماڈل مقرر نہیں)",
+  "The key for a chosen OCR provider was removed, so OCR skips that model until a key is set again.":
+    "منتخب OCR فراہم کنندہ کی کلید ہٹا دی گئی ہے، اس لیے کلید دوبارہ مقرر ہونے تک OCR یہ ماڈل چھوڑ دے گا۔",
+  "Save OCR model": "OCR ماڈل محفوظ کریں",
+  "Saved.": "محفوظ ہو گیا۔",
   "Replace": "تبدیل کریں",
   "Role": "کردار",
   "Test key": "کلید آزمائیں",
