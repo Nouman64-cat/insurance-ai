@@ -2,6 +2,7 @@
 
 import React from "react";
 import ReactMarkdown from "react-markdown";
+import MarkdownLink from "@/components/MarkdownLink";
 import type { AgentMessage, ProcessStep, QuickAction } from "@/lib/agent/types";
 import { QuickActionSelect } from "./QuickActionSelect";
 import { isPassiveAction } from "@/lib/agent/quickActions";
@@ -97,7 +98,7 @@ export function JourneyActivityPanel({
       {/* Its reply — streams in live */}
       {message?.text && (
         <div className="px-4 pt-2.5 max-h-56 overflow-y-auto custom-scrollbar text-[13px] leading-relaxed text-zinc-700 dark:text-zinc-200 [&_p]:my-1.5 [&_ul]:my-1.5 [&_ul]:pl-4 [&_ul]:list-disc [&_li]:my-0.5 [&_strong]:font-semibold [&_strong]:text-zinc-900 dark:[&_strong]:text-white [&_h3]:font-bold [&_h3]:mt-2 [&_code]:text-[11.5px] [&_a]:text-indigo-600 dark:[&_a]:text-indigo-300 [&_a]:underline">
-          <ReactMarkdown>{message.text}</ReactMarkdown>
+          <ReactMarkdown components={{ a: MarkdownLink }}>{message.text}</ReactMarkdown>
         </div>
       )}
 

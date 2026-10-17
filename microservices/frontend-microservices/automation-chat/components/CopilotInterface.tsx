@@ -13,6 +13,7 @@ import React, {
   useState,
 } from "react";
 import ReactMarkdown from "react-markdown";
+import MarkdownLink from "@/components/MarkdownLink";
 import remarkGfm from "remark-gfm";
 import dynamic from "next/dynamic";
 // Voice mode pulls in LangChain (+ LangSmith, zod); load it only when opened.
@@ -6462,6 +6463,7 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
                                         <ReactMarkdown
                                           remarkPlugins={[remarkGfm]}
                                           components={{
+                                            a: MarkdownLink,
                                             table: ({ children }) => (
                                               <div className="overflow-x-auto">
                                                 <table>{children}</table>
@@ -7301,6 +7303,7 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
                           <ReactMarkdown
                             remarkPlugins={[remarkGfm]}
                             components={{
+                              a: MarkdownLink,
                               table: ({ children }) => (
                                 <div className="overflow-x-auto">
                                   <table>{children}</table>
