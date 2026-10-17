@@ -88,6 +88,7 @@ const ur: Messages = {
     "Branch Management": "برانچوں کا انتظام",
     "Role Management": "کرداروں کا انتظام",
     "Token Economy": "ٹوکن اکانومی",
+    "AI Agents": "اے آئی ایجنٹس",
     "LLM Configuration": "LLM کنفیگریشن",
     "Profile": "پروفائل",
     "Commission Admin": "کمیشن ایڈمن",

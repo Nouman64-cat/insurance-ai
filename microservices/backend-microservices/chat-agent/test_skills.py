@@ -158,7 +158,7 @@ def test_llm_binds_loaded_capability_outside_initial_pack_under_provider_limit()
 
 
 def test_disabled_flag_removes_discovery_and_restores_default_binding(monkeypatch):
-    monkeypatch.setenv('SKILL_AGENT_ENABLED', 'false')
+    monkeypatch.setattr('skills.settings._value', False)
     assert not permission.is_role_allowed('search_capabilities', 'Admin')
     assert not permission.is_role_allowed('get_capability_schema', 'SuperAdmin')
     state = {'messages': [HumanMessage('claims')], 'user_role': 'ClaimsManager'}

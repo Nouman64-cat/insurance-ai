@@ -18,7 +18,7 @@ Underwriter only the financial one — and those two may only assign it to
 themselves. The admin's Underwriting page reads the tracks through GET /cases.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal, Optional
 from uuid import UUID, uuid4
 
@@ -333,7 +333,8 @@ async def _build_workspace(session: AsyncSession, tenant_id: UUID, case_id: UUID
         allowed_documents |= {''.join(ch for ch in d["label"].lower() if ch.isalpha())
                               for d in await claim_documents_for(session, tenant_id, case.claim_id)
                               if claim_engine.is_medical_document(d["label"]) == (track == "MEDICAL")}
-    documents = [{"id": str(d.id), "name": d.file_name or d.document_type, "type": d.document_type, "status": d.status, "scope": "application" if d.case_id else "customer", "ocr_text": d.ocr_result, "extracted": d.extracted_metadata, "quality_score": d.quality_score, "tampered": d.tampered_flag}
+    from ocr_worker import processing_stalled
+    documents = [{"processing_stalled": processing_stalled(d), "id": str(d.id), "name": d.file_name or d.document_type, "type": d.document_type, "status": d.status, "scope": "application" if d.case_id else "customer", "ocr_text": d.ocr_result, "extracted": d.extracted_metadata, "quality_score": d.quality_score, "tampered": d.tampered_flag}
                  for d in documents if ''.join(ch for ch in d.document_type.lower() if ch.isalpha()) in allowed_documents or (track == 'MEDICAL' and d.document_type.startswith('Medical Report: '))]
     # Only the evidence this application actually asks for: the plan's financial
     # documents, or the tests the medical examination ordered. Nothing asked
@@ -345,7 +346,7 @@ async def _build_workspace(session: AsyncSession, tenant_id: UUID, case_id: UUID
     else:
         from services.document_requests import required_documents_for
         from specialist_access import DOCUMENT_TYPES
-        received_types = {d["type"] for d in documents}
+        received_types = {d["type"] for d in documents if d["status"] != "Re-submission Requested"}
         required_documents = [{"type": t, "received": t in received_types}
                               for t in (await required_documents_for(session, policy) if policy else []) if t in DOCUMENT_TYPES["financial"]]
     from shared.models.core import CustomerEApplicationPart
@@ -479,6 +480,50 @@ async def upload_specialist_document(
         await _file_on_claim(session, case_id, claim_doc, result, user)
     await _refresh_case_requirements(session, tenant_id, case_id)
     return result
+
+
+@router.post('/cases/{case_id}/underwriting-documents/{artifact_id}/retry', status_code=202)
+async def retry_specialist_document(
+    request: Request, tenant_id: UUID, case_id: UUID, artifact_id: UUID,
+    session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme),
+):
+    from ocr_worker import processing_stalled
+    from shared.models.core import Artifact
+    from shared.events.kafka_events import ArtifactOCRPayload, ArtifactOCRRequestedEvent
+    user, track = await _specialist_identity(tenant_id, token, session)
+    workspace = await _build_workspace(session, tenant_id, case_id, user, track)
+    if workspace["read_only"] or workspace["review"]["assigned_user_id"] != str(user.id):
+        raise HTTPException(409, "Start your review on an open application before retrying a document.")
+    if str(artifact_id) not in {d["id"] for d in workspace["documents"]}:
+        raise HTTPException(404, "Document not found in this underwriting track.")
+    # Lock the row so simultaneous retry requests cannot publish duplicate jobs.
+    artifact = (await session.exec(select(Artifact).where(Artifact.id == artifact_id).with_for_update().execution_options(populate_existing=True))).one()
+    if artifact.status != "Processing Failed" and not processing_stalled(artifact):
+        raise HTTPException(409, "This document is already processing or has been read.")
+    storage = artifact.storage_url or ""
+    if storage.startswith("local://"):
+        key = storage.removeprefix("local://")
+    elif ".amazonaws.com/" in storage:
+        key = storage.split(".amazonaws.com/", 1)[1]
+    else:
+        raise HTTPException(409, "Stored document is unavailable. Please upload it again.")
+    event = ArtifactOCRRequestedEvent(tenant_id=tenant_id, payload=ArtifactOCRPayload(
+        artifact_id=artifact.id, tenant_id=tenant_id, case_id=case_id, s3_key=key,
+        file_name=artifact.file_name or "document.pdf", mime_type=artifact.file_type or "application/pdf"))
+    artifact.status = "Uploaded"
+    artifact.extracted_metadata = {**(artifact.extracted_metadata or {}), "processing_started_at": datetime.now(timezone.utc).isoformat()}
+    session.add(artifact)
+    # Commit before publish: the consumer can immediately write Processing/Accepted.
+    await session.commit()
+    try:
+        await request.app.state.kafka_producer.send_and_wait(
+            "insurance.artifact.ocr.requested.v1", value=event.model_dump_json(), key=str(artifact.id))
+    except Exception:
+        artifact.status = "Processing Failed"
+        session.add(artifact)
+        await session.commit()
+        raise HTTPException(503, "The document reader is unavailable. Please retry shortly.")
+    return {"id": str(artifact_id), "status": "Uploaded"}
 
 
 # ── Demo shortcut: mark documents as uploaded ────────────────────────────────

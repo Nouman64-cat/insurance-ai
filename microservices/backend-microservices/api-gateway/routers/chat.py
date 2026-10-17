@@ -98,3 +98,12 @@ async def voice_proxy(path: str, request: Request, token: str = Depends(oauth2_s
         return Response(content='{"detail":"Voice service is temporarily unavailable"}', status_code=503, media_type="application/json")
     return Response(response.content, status_code=response.status_code,
                     media_type=response.headers.get("content-type", "application/json"), headers={"Cache-Control": "no-store"})
+
+
+@router.get("/platform-inventory", summary="SuperAdmin agent registry inventory")
+async def platform_inventory(request: Request, token: str = Depends(oauth2_scheme)):
+    headers = {"Authorization": request.headers.get("authorization", ""),
+               "X-Tenant-Id": request.headers.get("x-tenant-id", "")}
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(CHAT_AGENT_URL + "/chat/platform-inventory", headers=headers)
+        return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")

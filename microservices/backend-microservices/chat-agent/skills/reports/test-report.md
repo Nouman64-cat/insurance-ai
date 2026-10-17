@@ -4,11 +4,11 @@
 
 | Suite | Result | What it establishes |
 |---|---|---|
-| Chat-agent regression suite, including new skills | 3,881 passed; 1 warning | Registry integrity, 2,664 role/capability scenarios, role boundaries, discovery/binding, checkpointed graph execution, recovery, isolation, existing journeys, voice and SSE contracts |
+| Chat-agent regression suite, including new skills | 3,892 passed; 1 warning | Registry integrity, 2,664 role/capability scenarios, role boundaries, discovery/binding, checkpointed graph execution, recovery, isolation, existing journeys, voice and SSE contracts |
 | Owning tenant-service proposal/initial-premium suite | 7 passed | Real PostgreSQL proposal/payment/case ordering, received-premium activation, split/loading accounting, and cross-tenant rejection using synthetic fixtures |
 | Authenticated live API smoke suite | 18 passed | Discovery for 10 configured roles, actual initial-premium reads, cross-tenant rejection, denied operations, actual synthetic tenant and global-role creation; all fixtures removed |
 | Owning tenant-service underwriting tracks | 23 passed; 2 failed | Most HTTP/DB track isolation and lifecycle checks pass; the two existing fixture/requirements failures below remain |
-| Static inventory | 719 routes; 10 services; 11 web/mobile surfaces | Implementation source inventory; not a claim of live execution for every route |
+| Static inventory | 724 routes; 10 services; 11 web/mobile surfaces | Implementation source inventory; not a claim of live execution for every route |
 | Diff whitespace check | Passed | `git diff --check` |
 
 The final chat count includes adapter method/path and credential-redaction tests,
@@ -49,7 +49,7 @@ The owning initial-premium suite uses explicitly synthetic financial fixtures;
 none is represented as real premium activity.
 
 The role/skill/tool matrix describes registered reachability. It does not label
-all 222 capabilities complete or all 719 routes AI-accessible. Unmapped route
+all 222 capabilities complete or all 724 routes AI-accessible. Unmapped route
 contracts are explicitly marked in the route inventory. Tenant deletion, global
 role deletion and API-key editing remain manual console operations. Existing
 backend idempotency checks remain authoritative; universal exactly-once mutation
@@ -59,3 +59,13 @@ No frontend/mobile contracts changed. Existing automated streaming, voice,
 quick-action, upload, correction and resume tests passed. A browser/mobile UI
 walkthrough and an authenticated real-provider demo across all configured roles
 remain deployment validation tasks.
+
+## SuperAdmin UI control follow-up
+
+- Database-backed agent settings: **5 tests passed** in a disposable PostgreSQL database.
+- Chat runtime/cache/inventory tests: included in the **3,892** passing chat regression tests.
+- Changed AI Agents page, Sidebar and their dependency graph: **0 TypeScript errors**.
+- Full-project TypeScript check: blocked by 11 existing diagnostics in the e-application, dashboard map and satellite SSO files; none are in the changed UI files.
+- Browser verification: signed in with a disposable synthetic SuperAdmin, saved the setting off, reloaded to verify persistence, confirmed the gateway and live runtime both reported disabled, then restored enabled. Verified subagent lists, tool search, Finance role filtering and skill search. The temporary user was removed.
+- Runtime inventory displayed **2 agents, 8 subagents, 224 tools and 23 skills**, using the database's actual configured role names.
+- Settings take effect on new chat requests within the five-second refresh interval without restarting services. The old environment toggle is ignored and removed from the example/Compose configuration.

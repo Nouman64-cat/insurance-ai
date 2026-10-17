@@ -33,7 +33,7 @@ type RequiredDocument = { type: string; received: boolean };
 type Outstanding = { code: string; reason: string; document_type: string | null; owner: "medical" | "financial" | null; can_upload: boolean; covered_by_exam?: boolean };
 type ReviewRow = { id: string; claim_id?: string | null; reference: string; customer_name: string; product_name: string | null; coverage_amount: number | null; on_hold: boolean; hold_reason: string | null; created_at?: string; case_status?: string; closed?: boolean; review: UnderwritingReview };
 type ClaimInfo = { id: string; claim_number: string | null; claim_type: string; submitted_amount: number; incident_date: string | null; referral_reason: string | null; referral_notes: string | null; ready: boolean; reviews: Record<string, { status: string; note: string | null }> };
-type Workspace = ReviewRow & { claim?: ClaimInfo | null; read_only: boolean; policy_linked: boolean; case_status: string; created_at: string; customer_cnic: string | null; coverage_amount: number | null; term_years: number | null; requirements: Requirement[]; required_documents: RequiredDocument[]; application_outstanding: Outstanding[]; ai_underwriting: FinancialAI | null; documents: { id: string; name: string; type: string; status: string; scope: string; ocr_text: string | null; extracted: unknown; quality_score: number; tampered: boolean }[]; track: string; evidence: Record<string, unknown>; assessment: { results: unknown; score: number; reasons: unknown[]; created_at: string } | null };
+type Workspace = ReviewRow & { claim?: ClaimInfo | null; read_only: boolean; policy_linked: boolean; case_status: string; created_at: string; customer_cnic: string | null; coverage_amount: number | null; term_years: number | null; requirements: Requirement[]; required_documents: RequiredDocument[]; application_outstanding: Outstanding[]; ai_underwriting: FinancialAI | null; documents: { id: string; name: string; type: string; status: string; processing_stalled?: boolean; scope: string; ocr_text: string | null; extracted: unknown; quality_score: number; tampered: boolean }[]; track: string; evidence: Record<string, unknown>; assessment: { results: unknown; score: number; reasons: unknown[]; created_at: string } | null };
 function valueText(value: unknown): string {
   if (value === null || value === undefined || value === "") return tx("Not provided");
   if (typeof value === "boolean") return tx(value ? "Yes" : "No");
@@ -140,16 +140,22 @@ export function SpecialistCaseWorkspace({ track }: { track: "medical" | "financi
       else if (pending.current.has(d.id)) {
         pending.current.delete(d.id);
         if (d.status === "Accepted") notify("success", `${tx(d.type)} ${tx("accepted")}`, `${d.name} · ${tx("the requirement list is up to date.")}`);
+        else if (d.status === "Processing Failed") notify("error", tx("Document reading interrupted"), tx("Your file is saved. Use Retry reading to try again."));
         else notify("error", `${tx(d.type)} ${tx("couldn't be read")}`, `${d.name} · ${tx("upload a clearer copy.")}`);
       }
     }
   }, [workspace]);
   useEffect(() => {
     if (!caseId || !reading) return;
-    let tries = 0;
-    const timer = window.setInterval(() => { if (++tries > 40) window.clearInterval(timer); else void load(true); }, 3000);
-    return () => window.clearInterval(timer);
-  }, [caseId, reading]);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      await load(true);
+      if (!cancelled) timer = setTimeout(poll, 3000);
+    };
+    timer = setTimeout(poll, 3000);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [caseId, root, reading]);
   const uploadDocument = async (file: File, documentType: string, testCode: string, progress: (value: number) => void) => {
     if (!caseId) throw new Error("No application selected.");
     const form = new FormData(); form.append("document_type", documentType); form.append("file", file);
@@ -288,12 +294,16 @@ export function SpecialistCaseWorkspace({ track }: { track: "medical" | "financi
       <div className={caseTab === "documents" ? "space-y-5" : "hidden"}>
         <ReviewDocuments key={caseId} medical={track === "medical"} documents={workspace.documents}
           tests={Array.isArray(workspace.evidence["Required tests"]) ? workspace.evidence["Required tests"] as {code: string; name: string}[] : []}
-          requiredTypes={track === "financial" ? workspace.required_documents.map(d => d.type) : []}
+          requiredDocuments={track === "financial" ? workspace.required_documents : []}
           applicationDocuments={workspace.claim
             // A claim review's documents are the claim's, from its plan's claim terms: one card each for this track.
             ? workspace.required_documents.filter(d => !d.received).map(d => ({ type: d.type, reason: tx("Required for this claim by the plan."), canUpload: true, owner: null, tag: "Claim" }))
             : workspace.application_outstanding.filter(o => o.can_upload).map(o => ({ type: o.document_type!, reason: o.reason, canUpload: o.can_upload, owner: o.owner }))}
           disabled={workspace.read_only || workspace.review.assigned_user_id !== user.id}
+          onRetry={async id => {
+            await api.post(`/tenants/${user.tenant_id}/cases/${caseId}/underwriting-documents/${id}/retry`);
+            await load(true);
+          }}
           onUploadFile={uploadDocument} onMarkAllUploaded={markDocumentsUploaded} onClassify={classifyDocuments} onUploaded={() => { void load(true); }} onOpen={id => { void openDocument(id); }} />
       </div>
       <div className={caseTab === "applicant" ? "" : "hidden"}>

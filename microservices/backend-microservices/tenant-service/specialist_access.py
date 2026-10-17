@@ -46,6 +46,8 @@ async def restrict_specialist_writes(request, call_next):
                     return await call_next(request)  # endpoint checks ownership and permits picking up work
                 allowed = request.method == 'POST' and tail in TRACK_TOOLS[track] or request.method == 'POST' and (tail.startswith('medical-exam/') and tail.split('/')[-1] in MEDICAL_ACTIONS if track == 'medical' else tail.startswith('insurance-history/') and tail.split('/')[-1] in FINANCIAL_ACTIONS)
             allowed = allowed or bool(match and request.method == 'POST' and match[3] in {'underwriting-documents', 'underwriting-documents/classify', 'underwriting-documents/demo-complete'} | customer_forms(track))
+            document_retry = bool(match and request.method == 'POST' and re.fullmatch(r'underwriting-documents/[0-9a-f-]+/retry', match[3]))
+            allowed = allowed or document_retry
             if not allowed:
                 raise HTTPException(403, 'This action is outside your medical or financial underwriting responsibilities.')
             from uuid import UUID
@@ -59,7 +61,7 @@ async def restrict_specialist_writes(request, call_next):
             if case.on_hold or str(getattr(case.caseStatus, 'value', case.caseStatus)) in {'Approved', 'Closed', 'Rejected'}:
                 raise HTTPException(409, 'This application is held or closed for specialist work.')
             from routers.underwriting_tracks import resolve_review_policy
-            if match[3] not in {'underwriting-documents', 'underwriting-documents/classify', 'underwriting-documents/demo-complete'} | customer_forms(track) and await resolve_review_policy(session, case) is None:
+            if not document_retry and match[3] not in {'underwriting-documents', 'underwriting-documents/classify', 'underwriting-documents/demo-complete'} | customer_forms(track) and await resolve_review_policy(session, case) is None:
                 raise HTTPException(409, 'No proposal is linked to this application. Ask an admin to link the correct proposal before running underwriting checks.')
     except HTTPException as exc:
         return JSONResponse(status_code=exc.status_code, content={'detail': exc.detail})

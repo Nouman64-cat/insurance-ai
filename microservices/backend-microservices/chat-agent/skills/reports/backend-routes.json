@@ -911,6 +911,16 @@
   },
   {
     "service": "api-gateway",
+    "method": "GET",
+    "router_path": "/chat/platform-inventory",
+    "handler": "platform_inventory",
+    "source": "microservices/backend-microservices/api-gateway/routers/chat.py",
+    "line": 104,
+    "validation": "source_verified; live_execution_not_asserted",
+    "chat_adapter": "requires_contract_mapping"
+  },
+  {
+    "service": "api-gateway",
     "method": "POST",
     "router_path": "/evaluate",
     "handler": "evaluate",
@@ -1035,7 +1045,7 @@
     "router_path": "/chat/stream",
     "handler": "chat_stream",
     "source": "microservices/backend-microservices/chat-agent/routers/chat.py",
-    "line": 242,
+    "line": 243,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -1045,7 +1055,7 @@
     "router_path": "/chat/resume",
     "handler": "chat_resume",
     "source": "microservices/backend-microservices/chat-agent/routers/chat.py",
-    "line": 305,
+    "line": 306,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -1055,7 +1065,7 @@
     "router_path": "/chat/title",
     "handler": "chat_title",
     "source": "microservices/backend-microservices/chat-agent/routers/chat.py",
-    "line": 319,
+    "line": 320,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -1065,7 +1075,7 @@
     "router_path": "/chat/execute-tool",
     "handler": "chat_execute_tool",
     "source": "microservices/backend-microservices/chat-agent/routers/chat.py",
-    "line": 332,
+    "line": 333,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -1075,7 +1085,17 @@
     "router_path": "/chat/bulk-underwriting/stream",
     "handler": "bulk_underwriting_stream",
     "source": "microservices/backend-microservices/chat-agent/routers/chat.py",
-    "line": 351,
+    "line": 352,
+    "validation": "source_verified; live_execution_not_asserted",
+    "chat_adapter": "requires_contract_mapping"
+  },
+  {
+    "service": "chat-agent",
+    "method": "GET",
+    "router_path": "/chat/platform-inventory",
+    "handler": "platform_inventory",
+    "source": "microservices/backend-microservices/chat-agent/routers/chat.py",
+    "line": 433,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -2245,7 +2265,7 @@
     "router_path": "/health",
     "handler": "health_check",
     "source": "microservices/backend-microservices/tenant-service/main.py",
-    "line": 316,
+    "line": 318,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -2255,7 +2275,7 @@
     "router_path": "/roles",
     "handler": "list_roles",
     "source": "microservices/backend-microservices/tenant-service/main.py",
-    "line": 321,
+    "line": 323,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -2386,6 +2406,36 @@
     "handler": "list_my_acr_requests",
     "source": "microservices/backend-microservices/tenant-service/routers/agent_confidential_report.py",
     "line": 503,
+    "validation": "source_verified; live_execution_not_asserted",
+    "chat_adapter": "requires_contract_mapping"
+  },
+  {
+    "service": "tenant-service",
+    "method": "GET",
+    "router_path": "/platform/agent-config",
+    "handler": "get_agent_config",
+    "source": "microservices/backend-microservices/tenant-service/routers/agent_config.py",
+    "line": 38,
+    "validation": "source_verified; live_execution_not_asserted",
+    "chat_adapter": "requires_contract_mapping"
+  },
+  {
+    "service": "tenant-service",
+    "method": "PUT",
+    "router_path": "/platform/agent-config",
+    "handler": "update_agent_config",
+    "source": "microservices/backend-microservices/tenant-service/routers/agent_config.py",
+    "line": 43,
+    "validation": "source_verified; live_execution_not_asserted",
+    "chat_adapter": "requires_contract_mapping"
+  },
+  {
+    "service": "tenant-service",
+    "method": "GET",
+    "router_path": "/internal/agent-config",
+    "handler": "internal_agent_config",
+    "source": "microservices/backend-microservices/tenant-service/routers/agent_config.py",
+    "line": 57,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },

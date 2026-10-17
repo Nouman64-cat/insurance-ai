@@ -1228,3 +1228,8 @@ async def public_specialist_questionnaire(raw_token: str, request: Request):
 @app.post("/public/underwriting-questionnaire/{raw_token}/submit")
 async def submit_specialist_questionnaire(raw_token: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/underwriting-questionnaire/{raw_token}/submit")
+
+
+@app.api_route("/platform/agent-config", methods=["GET", "PUT", "OPTIONS"], include_in_schema=False)
+async def proxy_platform_agent_config(request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/platform/agent-config")

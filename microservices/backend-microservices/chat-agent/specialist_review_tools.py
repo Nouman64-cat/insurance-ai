@@ -239,6 +239,10 @@ async def _get_underwriting_review(args: dict, ctx: Ctx) -> dict:
                     + (f"\n> {review['note']}" if review.get("note") else "")
                     + f"\n\n**Requirements**\n{reqs}{ai_line}\n\n**Next**\n" + "\n".join(f"- {s}" for s in steps)),
         "review_status": review["status"], "requirements": ws["requirements"],
+        "case_number": ws.get("reference"),
+        **({"financial_readiness": {"ready": bool((ws.get("ai_underwriting") or {}).get("ready")),
+                                   "blockers": (ws.get("ai_underwriting") or {}).get("blockers") or []}}
+           if track == "financial" else {}),
         "quick_actions": [*chips[:3], _open(row["id"])],
         "last_action": _action("get_underwriting_review", "case", row["id"], f"case/{row['id']}", f"{track.title()} review"),
     }

@@ -4004,3 +4004,13 @@ class ClaimAuthorityLimit(SQLModel, table=True):
     authorize_limit: Optional[float] = Field(default=None, ge=0, nullable=True)
     updated_by: Optional[str] = Field(default=None, max_length=255)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class PlatformAgentConfig(SQLModel, table=True):
+    """Singleton runtime settings managed by SuperAdmin, independent of provider keys."""
+    __tablename__ = "platform_agent_config"
+
+    id: str = Field(default="default", primary_key=True, max_length=40)
+    skill_agent_enabled: bool = Field(default=True, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_by: Optional[UUID] = Field(default=None)

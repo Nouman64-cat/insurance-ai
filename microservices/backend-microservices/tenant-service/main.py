@@ -278,6 +278,8 @@ app.include_router(families_router)
 app.include_router(insurance_plans_router)
 app.include_router(tokens_router)
 app.include_router(llm_config_router)
+from routers.agent_config import router as agent_config_router
+app.include_router(agent_config_router)
 app.include_router(acquisition_sources_router)
 app.include_router(roles_router)
 app.include_router(agent_router)

@@ -16,6 +16,9 @@ UNDERWRITING_TOOLS = frozenset({
     'approve_case',
     'assess_medical_examination',
     'assign_case',
+    'list_track_underwriters',
+    'assign_underwriting_track',
+    'get_specialist_reviews',
     'confirm_policy_payment',
     'continue_underwriting_journey',
     'create_case',
@@ -61,7 +64,7 @@ UNDERWRITING_TOOLS = frozenset({
 })
 from capability_tools import PROPOSAL_TOOLS
 UNDERWRITING_TOOLS |= PROPOSAL_TOOLS
-UNDERWRITING_DOMAINS = frozenset({'documents', 'workflow', 'proposal_payment'})
+UNDERWRITING_DOMAINS = frozenset({'documents', 'workflow', 'proposal_payment', 'specialist_review'})
 _EXPLICIT = re.compile(r'\b(?:underwrit(?:e|ing)|pre[- ]underwriting|risk assessment|medical (?:review|evidence|reports?)|pre[- ]issuance|issue (?:the |a |this )?policy|proposals?|e[- ]application|confidential report|compliance screening|insurance history check|medical examination|(?:start|continue)_underwriting_journey|CASE-[\w-]+)\b|انڈررائٹنگ', re.I)
 _EXCLUDED = re.compile(r'\b(?:claims?|fnol|commissions?|brokerage|group|family|corporate|census|bulk|rule engine|rule sets?|deploy|surrender|renewal|reinstatement|endorsement|service request|support ticket)\b|کلیم|کمیشن', re.I)
 _INTAKE = re.compile(r'\b(?:create|add|register|delete|list)\s+(?:(?:a|an|the|new|all)\s+){0,2}(?:customers?|leads?|users?|agents?|organizations?)\b', re.I)
@@ -103,9 +106,20 @@ For an explicit end-to-end underwriting request, use the autonomous journey. Und
 is split between two specialists: the Medical Underwriter (medical e-application,
 examination reports, AI medical underwriting) and the Financial Underwriter (financial
 e-application, insurance history, income documents, AI financial underwriting), each
-recording their own review. Assigning those reviews and compiling them with the Agent
-Confidential Report and PEP screening is final underwriting — tell the user to ask to
-"assign the medical/financial review" or "compile final underwriting". After the
+recording their own review. For applications awaiting underwriting, fetch current cases,
+requirements and get_specialist_reviews. For eligibility or assignment, call
+list_track_underwriters: this is the live tenant directory, including Medical Underwriter,
+Financial Underwriter and eligible general Underwriter accounts. Never claim no directory
+or no eligible staff exists without checking it; a failed lookup is a service error,
+not an empty directory. Recheck even if a previous assistant message claimed otherwise.
+When the user requests assignment, use assign_underwriting_track separately for each
+unassigned medical and financial review, with a verified directory ID and matching track.
+If exactly one person is eligible for a track, use that person; if several are eligible,
+ask the user to choose. Preserve existing assignments unless reassignment is requested.
+assign_case is a general case owner assignment and does not assign specialist reviews.
+Do not assign anyone for a read-only listing request. Report only backend-confirmed results.
+Compiling the reviews with the Agent Confidential Report and PEP screening is final
+underwriting; use compile final underwriting for that separate request. After the
 compiled decision: pre-issuance verification, issuance and first-premium confirmation. Do not confuse an AI recommendation with approval,
 a policy draft with active cover, or a payment request with confirmed funds.
 Never automatically issue a policy or confirm payment just because approval succeeded.
@@ -116,6 +130,9 @@ and post-issuance servicing are handled by the main assistant or another special
     instructions = {
         'create_proposal': 'Use the selected plan from context. If none is selected, call with the known applicant; the tool presents catalog choices. Do not replace a saved proposal or restart intake.',
         'update_customer': 'For send draft / move lead to proposals, set send_to_draft=true and stop. Do not open an application or start a journey.',
+        'list_track_underwriters': 'Read the live directory before reporting availability or choosing an underwriter; track filters are medical or financial.',
+        'assign_underwriting_track': 'Only for a requested assignment. Use the actual case reference/ID and a verified eligible underwriter_id for the medical or financial review; preserve an existing assignment.',
+        'get_specialist_reviews': 'Read both current review assignments before deciding which track needs an underwriter.',
         'get_case_details': 'For application stage, fetch current details by the known name/CNIC. An absent underwriting case does not mean an absent application.',
         'start_underwriting_journey': 'Only for explicit end-to-end processing. Call with the known name/CNIC without pre-asking product/DOB/income; the journey resolves requirements. Respect its interrupts and review gates.',
         'continue_underwriting_journey': 'For continue/resume the underwriting journey, call directly before attempting uploads or other steps. It rechecks readiness itself.',
