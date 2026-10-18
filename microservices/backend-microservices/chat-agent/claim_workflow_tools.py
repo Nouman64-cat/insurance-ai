@@ -113,6 +113,10 @@ def category_for(claim: dict) -> Optional[str]:
 def _not_in_workflow(claim: dict) -> dict:
     ref = claim.get("claim_number") or claim.get("claimant_name")
     category = category_for(claim)
+    if claim.get("status") in ("Approved", "Partial Approval"):
+        return {"success": False, "error_code": "not_in_workflow", "needs_user_input": True,
+                "error": f"{ref} is already approved. Ask the Claims Manager to prepare settlement payees; do not register or approve another claim.",
+                "quick_actions": [_chip("Prepare settlement payees", f"Prepare settlement payees for claim {ref}")]}
     if category in _DEATH:
         question = (f"{ref} is a {claim.get('claim_type')} that isn't in the claims workflow yet. "
                     "What was the cause of death? It decides which documents are needed.")
@@ -213,6 +217,10 @@ def _summary(ws: dict) -> str:
     if payees:
         lines.append("Payees: " + "; ".join(
             f"{py['name']} {_pkr(py['amount'])} {'✓ verified' if py.get('verified') else '— not verified'}" for py in payees))
+    if st.get("authorized_at"):
+        lines.append(f"Payment authorised: {_pkr(st.get('authorized_amount'))}. Finance records the external payment separately.")
+    elif c.get("status") in ("Approved", "Partial Approval"):
+        lines.append("Settlement authorisation pending: prepare and verify all payees, then the Claims Manager authorises Finance.")
     if st.get("paid_total"):
         lines.append(f"Disbursed {_pkr(st['paid_total'])}" + (" · reconciled" if st.get("reconciled_at") else " · not reconciled yet"))
     closure = ws.get("closure") or {}
@@ -262,11 +270,12 @@ def _actions(ws: dict, policy_id: str) -> list[dict]:
         out.append(_chip("Request information", f"Decide claim {ref}: RequestInfo"))
         out.append(_chip("Reject", f"Decide claim {ref}: Reject"))
     if can.get("verify_payees"):
-        out.append(_chip("Verify payees", f"Verify the payees on claim {ref}"))
+        if not (ws.get("settlement") or {}).get("payees"):
+            out.append(_chip("Prepare settlement payees", f"Prepare settlement payees for claim {ref}"))
+        else:
+            out.append(_chip("Verify payees", f"Verify the payees on claim {ref}"))
     if can.get("authorize"):
         out.append(_chip(f"Authorise {_pkr(approved)}", f"Authorise the disbursement on claim {ref}"))
-    if can.get("disburse"):
-        out.append(_chip(f"Disburse {_pkr(approved)}", f"Disburse the settlement on claim {ref} by Bank Transfer"))
     if can.get("reconcile"):
         out.append(_chip("Reconcile payment", f"Reconcile the settlement on claim {ref}"))
     if can.get("close"):
@@ -592,6 +601,28 @@ async def _decide_claim(args: dict, ctx: Ctx) -> dict:
 
 # ── Step 6 — settlement ──────────────────────────────────────────────────────
 
+@handles("prepare_claim_settlement")
+@relay_forbidden
+async def _prepare_claim_settlement(args: dict, ctx: Ctx) -> dict:
+    if ctx.exec_ctx.role != "ClaimsManager":
+        raise PermissionError("Only the Claims Manager prepares settlement payees.")
+    if not (args.get("claim_number") or args.get("claimant_name")):
+        return {"success": False, "needs_user_input": True, "error": "Which approved claim should have its settlement prepared? Supply its reference or claimant name."}
+    claim = await _resolve_financial_claim(args, ctx)
+    if claim.get("status") not in ("Approved", "Partial Approval"):
+        return {"success": False, "error": "Settlement preparation requires an approved unpaid claim. It does not approve the claim."}
+    current = await ctx.client.get(_base(ctx, str(claim["policy_id"]), str(claim["id"])))
+    if current.status_code != 409:
+        current.raise_for_status()
+        existing = current.json()
+        if (existing.get("settlement") or {}).get("payees"):
+            return _result(existing, str(claim["policy_id"]), "Settlement payees already exist. Existing verification and authorisation were preserved; no new preparation was written.", "prepare_claim_settlement")
+    ws = await _post(ctx, claim, "/settlement/prepare")
+    if not (ws.get("settlement") or {}).get("payees"):
+        return {"success": False, "error": "No settlement payees were returned. Review the saved claimant/beneficiary records before proceeding."}
+    return _result(ws, str(claim["policy_id"]), "Settlement payees are prepared from saved records. Verification and Claims Manager authorisation remain separate steps.", "prepare_claim_settlement")
+
+
 @handles("verify_claim_payees")
 @relay_forbidden
 async def _verify_claim_payees(args: dict, ctx: Ctx) -> dict:
@@ -602,18 +633,27 @@ async def _verify_claim_payees(args: dict, ctx: Ctx) -> dict:
     payees = (ws.get("settlement") or {}).get("payees") or []
     if not payees:
         return {"success": False, "error_code": "conflict",
-                "error": f"{ref} has no payees yet — they are derived when the claim is approved."}
+                "error": f"{ref} has no payees yet. The Claims Manager must prepare settlement payees first.",
+                "quick_actions": [_chip("Prepare settlement payees", f"Prepare settlement payees for claim {ref}")]}
     name = (args.get("payee_name") or "").strip().casefold()
-    match = [p for p in payees if name and name in (p.get("name") or "").casefold()] if name else payees
+    payee_id = str(args.get("payee_id") or "").strip()
+    exact = [p for p in payees if (p.get("name") or "").casefold() == name] if name else []
+    match = ([p for p in payees if str(p["id"]) == payee_id] if payee_id else
+             exact or ([p for p in payees if name in (p.get("name") or "").casefold()] if name else payees))
     if len(match) != 1:
         raise ChoiceNeeded(f"Which payee on {ref}?", [
-            _chip(f"{p['name']} · {_pkr(p['amount'])}", f"Verify payee {p['name']} on claim {ref}") for p in payees])
+            _chip(f"{p['name']} · {_pkr(p['amount'])}", f"Verify payee_id {p['id']} ({p['name']}) on claim {ref}") for p in payees])
     payee = match[0]
     update = {"id": payee["id"], "verify": args.get("verify", True)}
     for src, dst in (("cnic", "cnic"), ("bank_name", "bank_name"), ("account_title", "account_title"),
                      ("iban", "iban"), ("identity_verified_by", "method"), ("note", "note")):
         if args.get(src):
             update[dst] = args[src]
+    if update["verify"]:
+        missing = [key for key in ("cnic", "bank_name", "account_title", "iban", "method") if not str(update.get(key) or payee.get(key) or "").strip()]
+        if missing:
+            return {"success": False, "needs_user_input": True, "missing_fields": missing,
+                    "error": f"Provide the real {', '.join(missing)} for {payee['name']} before verification. No details have been invented or saved."}
     ws = await _post(ctx, claim, "/settlement/payees", {"payees": [update]})
     now = next((p for p in (ws.get("settlement") or {}).get("payees") or [] if p["id"] == payee["id"]), payee)
     head = (f"Verified **{now['name']}** for {_pkr(now['amount'])}." if now.get("verified")
@@ -624,25 +664,29 @@ async def _verify_claim_payees(args: dict, ctx: Ctx) -> dict:
 @handles("authorize_claim_disbursement")
 @relay_forbidden
 async def _authorize_claim_disbursement(args: dict, ctx: Ctx) -> dict:
-    return await _run(args, ctx, "authorize_claim_disbursement", "/settlement/authorize", None,
-                      "Disbursement authorised. Nothing has been paid yet — disbursing is the next step.")
+    if ctx.exec_ctx.role != "ClaimsManager":
+        raise PermissionError("Only the Claims Manager authorises Finance payment.")
+    claim, ws = await _claim_and_workspace(args, ctx)
+    if ws is None:
+        return _not_in_workflow(claim)
+    st = ws.get("settlement") or {}
+    if st.get("authorized_at"):
+        return _result(ws, str(claim["policy_id"]), "Payment was already authorised. No new authorisation or payment was recorded.", "authorize_claim_disbursement")
+    if not (ws.get("can") or {}).get("authorize"):
+        return {"success": False, "error": "Payment cannot be authorised yet. Prepare and verify all payees and resolve underwriting blockers first.",
+                "claim_workflow": ws}
+    saved = await _post(ctx, claim, "/settlement/authorize")
+    if not (saved.get("settlement") or {}).get("authorized_at"):
+        return {"success": False, "error": "The service did not verify authorisation. Refresh the claim before retrying."}
+    return _result(saved, str(claim["policy_id"]), "Finance payment authorised. Finance must separately record the external payment with the real transaction reference(s). Nothing has been paid by this action.", "authorize_claim_disbursement")
 
 
 @handles("disburse_claim_settlement")
 @relay_forbidden
 async def _disburse_claim_settlement(args: dict, ctx: Ctx) -> dict:
-    claim, ws = await _claim_and_workspace(args, ctx)
-    if ws is None:
-        return _not_in_workflow(claim)
-    if ws["settlement"].get("disbursed_at"):
-        return _result(ws, str(claim["policy_id"]), "This claim has already been paid — nothing was disbursed again.",
-                       "disburse_claim_settlement")
-    method = args.get("method") or "Bank Transfer"
-    ws = await _post(ctx, claim, "/settlement/disburse", {"method": method})
-    st = ws.get("settlement") or {}
-    refs = ", ".join(f"{p['payee_name']} {_pkr(p['amount'])} ({p.get('reference_number') or 'no ref'})" for p in st.get("payouts") or [])
-    return _result(ws, str(claim["policy_id"]), f"Disbursed **{_pkr(st.get('paid_total'))}** by {method}: {refs}.",
-                   "disburse_claim_settlement")
+    # Same external-payment safeguards as the role-pinned Finance tool.
+    from finance_tools import pay
+    return await pay(args, ctx)
 
 
 @handles("reconcile_claim_settlement")

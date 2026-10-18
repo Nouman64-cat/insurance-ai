@@ -20,7 +20,7 @@ CLAIMS_TOOLS = frozenset({
     'upload_claim_document', 'start_claim_journey', 'continue_claim_journey',
     'get_policy_claim_options', 'get_claim_workflow', 'intimate_claim', 'adopt_claim_into_workflow',
     'verify_claim_eligibility', 'override_claim_eligibility', 'update_claim_document',
-    'record_claim_investigation', 'assess_claim_benefit', 'decide_claim', 'verify_claim_payees',
+    'record_claim_investigation', 'assess_claim_benefit', 'decide_claim', 'prepare_claim_settlement', 'verify_claim_payees',
     'authorize_claim_disbursement', 'disburse_claim_settlement', 'reconcile_claim_settlement',
     'close_claim_file',
     'progress_policy_exit', 'get_claim_authority_limits', 'set_claim_authority_limit',
@@ -62,7 +62,7 @@ def select_claims_specialist(state):
 # A Claims Manager's assistant does claims and nothing else (see specialist_router.PINNED_SPECIALIST).
 _CLAIMS_ONLY = """
 You are the Claims Manager's assistant: you help ONLY with claims — the claims register and dashboard, a claim's
-workflow, documents, investigation, benefit assessment, decisions, payees, authorisation, disbursement,
+workflow, documents, investigation, benefit assessment, decisions, payees, authorisation, Finance handoff,
 reconciliation, reinsurance and closure, the policy or claimant facts a claim needs, policy exit settlements
 (surrender, maturity, expiry) and your delegated approval limits. For anything else —
 customer acquisition or onboarding, leads, proposals, underwriting, policy issuance, premiums, commissions, users,
@@ -117,6 +117,8 @@ handled outside your scope. Do not invent their tool calls.
         'intimate_claim': 'Register a workflow claim only on request, using supplied event/claimant facts; request missing cause/details.',
         'decide_claim': 'Use the assessed benefit and backend decision permissions. Refer to a manager when required; do not manufacture an approval.',
         'override_claim_eligibility': 'A manager exception requires an explicit request and a recorded reason; it is not a routine workaround.',
+        'prepare_claim_settlement': 'For an approved claim with no payees/workflow, use this on request. It derives saved claimant/beneficiary payees; never register a new claim, re-approve it, or invent earlier verification. It does not authorise payment.',
+        'authorize_claim_disbursement': 'Claims Manager only, on explicit instruction after all payees are verified. Read fresh settlement state; ask for missing real evidence. Do not auto-authorise after preparation or verification. Idempotently report existing authorisation. Finance separately records an external payment with actual references.',
         'verify_claim_payees': 'Use user-supplied verified identity/bank details. Never make up an IBAN or verification method.',
         'disburse_claim_settlement': 'Financial action: requires explicit user instruction, verified payees and prior backend authorization.',
         'reconcile_claim_settlement': 'Use actual settlement evidence; do not assume a payout is reconciled.',

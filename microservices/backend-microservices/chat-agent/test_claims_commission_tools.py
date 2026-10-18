@@ -136,8 +136,8 @@ def test_waive_needs_no_reason_but_sending_back_does():
 def test_already_disbursed_claim_is_not_paid_twice():
     ws = _workspace(settlement={"disbursed_at": "2026-10-01T10:00:00", "paid_total": 900000})
     client = FakeClient(_claim_routes(ws))
-    out = _call("disburse_claim_settlement", {"claim_number": "CLM-2026-0001"}, client, role="ClaimsManager")
-    assert out["success"] and "already been paid" in out["message"] and not client.writes()
+    out = _call("disburse_claim_settlement", {"claim_number": "CLM-2026-0001"}, client, role="Finance")
+    assert out["success"] and "already" in out["message"] and not client.writes()
 
 
 def test_undelivered_closure_letter_is_not_reported_as_sent():

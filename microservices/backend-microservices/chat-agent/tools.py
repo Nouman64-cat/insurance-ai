@@ -2650,13 +2650,29 @@ def get_claim_payment_details(**kwargs) -> str:
     return "{}"
 
 
+class FinanceRegisterArgs(BaseModel):
+    search: Optional[str] = Field(default=None, description="Actual bank/payment reference, claim number, policy number or payee name.")
+    payment_status: Optional[Literal["Settled", "Initiated", "Failed"]] = Field(default=None, description="Settled means recorded Paid. Read-only filter; does not change status.")
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=25, ge=1, le=200)
+
+
+@tool(args_schema=FinanceRegisterArgs)
+def list_finance_payments(**kwargs) -> str:
+    """Finance only: read the tenant's external-payment register, including bank references, payees, amount, method, payment status and paid date. Search/filter/page actual records; never initiates a bank transfer or changes a status."""
+    return "{}"
+
+
 class FinancePaymentArgs(ClaimLookupArgs):
     method: str = Field(description="Payment method explicitly selected by the user from the current settlement's available methods.")
+    reference_number: Optional[str] = Field(default=None, min_length=3, max_length=100, description="Actual external transaction reference for a single payee; never fabricate.")
+    payee_references: Optional[dict[str, str]] = Field(default=None, description="For multiple payees: actual distinct bank reference for EVERY verified payee ID, from get_claim_payment_details. Never invent IDs or references.")
+    note: Optional[str] = Field(default=None, max_length=1000, description="User-supplied payment note.")
 
 
 @tool(args_schema=FinancePaymentArgs)
 def pay_authorized_claim(**kwargs) -> str:
-    """Finance only: record payment of an already authorised claim settlement to its verified payees. Requires explicit user instruction. Never approves or authorises a claim."""
+    """Finance only: record an external payment ALREADY MADE to the authorised verified payees, with the actual bank reference(s). Requires explicit instruction and available method. Saves Paid status (backend Settled); never sends a bank transfer, approves a claim or authorises settlement."""
     return "{}"
 
 
@@ -2794,7 +2810,14 @@ def decide_claim(**kwargs) -> str:
     return "{}"
 
 
+@tool(args_schema=ClaimLookupArgs)
+def prepare_claim_settlement(**kwargs) -> str:
+    """Claims Manager only: prepare settlement payees from existing claimant/beneficiary records for an APPROVED unpaid claim, including older register claims with no workflow or payees. Does not verify identity, authorise payment, change approval, or record a payout. Repeat reads preserve existing verified/authorised payees."""
+    return "{}"
+
+
 class VerifyPayeeArgs(ClaimLookupArgs):
+    payee_id: Optional[str] = Field(default=None, description="Exact saved payee ID from the settlement when several payees have the same name.")
     payee_name: Optional[str] = Field(default=None, description="Which payee, when there are several nominees.")
     cnic: Optional[str] = None
     bank_name: Optional[str] = None
@@ -2820,14 +2843,13 @@ def authorize_claim_disbursement(**kwargs) -> str:
     return "{}"
 
 
-class DisburseClaimArgs(ClaimLookupArgs):
+class DisburseClaimArgs(FinancePaymentArgs):
     method: Optional[Literal["Bank Transfer", "Pay Order", "JazzCash", "Easypaisa"]] = None
 
 
 @tool(args_schema=DisburseClaimArgs)
 def disburse_claim_settlement(**kwargs) -> str:
-    """Pay an authorised claim to every verified payee and settle it. THIS MOVES MONEY:
-    state the claim number and amount before calling."""
+    """Record an external payment already made to authorised verified payees. Requires actual bank references and user instruction. Records Paid status; does not initiate a bank transfer. Use pay_authorized_claim for the Finance workflow."""
     return "{}"
 
 
@@ -3279,7 +3301,7 @@ ALL_TOOLS = [
     create_rule_subcategory,
     create_eligibility_profile,
     # Finance settlement tools
-    get_finance_dashboard, get_claim_payment_details, pay_authorized_claim, reconcile_finance_claim,
+    get_finance_dashboard, get_claim_payment_details, list_finance_payments, pay_authorized_claim, reconcile_finance_claim,
     # claims
     list_claims,
     get_claim_details,
@@ -3409,6 +3431,7 @@ ALL_TOOLS = [
     record_claim_investigation,
     assess_claim_benefit,
     decide_claim,
+    prepare_claim_settlement,
     verify_claim_payees,
     authorize_claim_disbursement,
     disburse_claim_settlement,

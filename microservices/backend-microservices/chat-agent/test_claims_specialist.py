@@ -148,7 +148,7 @@ def test_claims_scope_binds_exact_role_filtered_tools_and_omits_hidden_instructi
         with patch.dict(graph._LLM_CACHE,{},clear=True),patch('graph.providers.build_chat',return_value=bound):
             graph._llm({'version':'claims-pilot','primary':{}},role,domains=CLAIMS_DOMAINS,tool_scope=allowed)
         # 37: the Claims Manager also works policy exit settlements and reads delegated authority.
-        assert bound.names==allowed and len(allowed)<=37
+        assert bound.names==allowed and len(allowed)<=38
         assert not {'create_commission_agreement','create_payout_run','issue_policy','add_customer'} & bound.names
         if role=='ClaimsAdjuster':
             assert 'authorize_claim_disbursement' not in allowed

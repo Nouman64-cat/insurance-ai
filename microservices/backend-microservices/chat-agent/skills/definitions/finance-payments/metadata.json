@@ -1,18 +1,24 @@
 {
   "id": "finance-payments",
-  "purpose": "Review Finance payment queues and record already authorised claim settlements using current verified payees.",
+  "purpose": "Read the Finance payment register and record external payments already made against authorised verified claim settlements using actual bank references.",
   "intents": [
     "finance dashboard",
     "awaiting payout",
     "pay claim",
     "payment details",
     "payment history",
-    "authorised payout"
+    "authorised payout",
+    "payment register",
+    "bank reference",
+    "external payment",
+    "record payment",
+    "payment status"
   ],
   "capabilities": [
     "get_finance_dashboard",
     "get_claim_payment_details",
-    "pay_authorized_claim"
+    "pay_authorized_claim",
+    "list_finance_payments"
   ],
   "roles": [
     "Finance"
