@@ -5454,10 +5454,6 @@ def _commission_client_call(name: str, args: dict) -> dict:
             "quick_actions": [{"label": "Open commission earnings", "actionType": "navigate", "payload": "commissions"}]}
 
 
-@handles("get_commission_rate_card")
-async def _get_commission_rate_card(args: dict, ctx: Ctx) -> dict:
-    return {"success": True, "message": "Approved rate agreements are linked to catalog plans once. A premium receipt automatically allocates 100% to the customer's assigned agent unless an explicit policy split exists. Rates are contractual inputs, never statutory defaults. Configure plan rates and independently approve disbursement batches in Commission earnings.",
-            "quick_actions": [{"label": "Open agreements", "actionType": "navigate", "payload": "commissions"}]}
 
 
 async def _commission_filters(args: dict, ctx: Ctx) -> dict:
@@ -5495,21 +5491,6 @@ async def _list_commission_payees(args: dict, ctx: Ctx) -> dict:
     return {"success": True, "payees": rows, "message": "Registered acquisition-source payees from the commission backend."}
 
 
-@handles("calculate_commission")
-async def _calculate_commission(args: dict, ctx: Ctx) -> dict:
-    # Resolve the policy server-side where we can, so the browser gets a real
-    # policy rather than having to guess from a name.
-    resolved = dict(args)
-    if not args.get("policy_number") and (args.get("cnic") or args.get("applicant_name")):
-        policy = await _find_policy_by_customer(ctx, args.get("cnic"), args.get("applicant_name"))
-        if policy:
-            resolved["policy_id"] = policy.get("id")
-            resolved["policy_number"] = policy.get("policy_number")
-            resolved["product_name"] = policy.get("product_name")
-            resolved["coverage_amount"] = policy.get("coverage_amount")
-            resolved["annual_premium"] = policy.get("annual_premium") or policy.get("premium_amount")
-            resolved["customer_name"] = policy.get("customer_name")
-    return _commission_client_call("calculate_commission", resolved)
 
 
 @handles("get_commission_ledger")
@@ -5546,43 +5527,6 @@ async def _get_commission_summary(args: dict, ctx: Ctx) -> dict:
     res.raise_for_status()
     data = res.json()
     return {"success": True, **data, "message": f"Persisted accrued gross: PKR {data.get('accrued_gross', '0')}; externally confirmed paid gross: PKR {data.get('paid_gross', '0')}. Disbursements require separate approval and payment confirmation in Commission earnings; no bank transfer is performed."}
-
-
-@handles("create_payout_run")
-async def _create_payout_run(args: dict, ctx: Ctx) -> dict:
-    return {'success': False, 'message': 'Create a draft disbursement batch from eligible earnings in Commission earnings, then submit it for independent approval. This chat action has not created a financial record.',
-            'quick_actions': [{'label': 'Open disbursement approval', 'actionType': 'navigate', 'payload': 'commissions'}]}
-
-
-@handles("approve_payout_run")
-async def _approve_payout_run(args: dict, ctx: Ctx) -> dict:
-    return {'success': False, 'message': 'Review the submitted disbursement batch in Commission earnings. A different administrator must approve it; payment is recorded separately after external confirmation. Nothing has been approved by this chat action.',
-            'quick_actions': [{'label': 'Review disbursements', 'actionType': 'navigate', 'payload': 'commissions'}]}
-
-
-@handles("list_commission_rules")
-async def _list_commission_rules(args: dict, ctx: Ctx) -> dict:
-    return _commission_client_call("list_commission_rules", args)
-
-
-@handles("create_commission_rule")
-async def _create_commission_rule(args: dict, ctx: Ctx) -> dict:
-    return _commission_client_call("create_commission_rule", args)
-
-
-@handles("update_commission_rule")
-async def _update_commission_rule(args: dict, ctx: Ctx) -> dict:
-    return _commission_client_call("update_commission_rule", args)
-
-
-@handles("delete_commission_rule")
-async def _delete_commission_rule(args: dict, ctx: Ctx) -> dict:
-    return _commission_client_call("delete_commission_rule", args)
-
-
-@handles("toggle_commission_rule_active")
-async def _toggle_commission_rule_active(args: dict, ctx: Ctx) -> dict:
-    return _commission_client_call("toggle_commission_rule_active", args)
 
 
 @handles("list_incentive_schemes")

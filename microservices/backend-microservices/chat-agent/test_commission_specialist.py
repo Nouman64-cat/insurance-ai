@@ -123,7 +123,7 @@ def test_specialist_clarification_resume_keeps_identity_and_executes_once():
     asyncio.run(run())
 
 
-def test_specialist_binds_twenty_tools_at_most_with_no_underwriting_mutations():
+def test_specialist_binds_thirty_tools_at_most_with_no_underwriting_mutations():
     class Bound:
         def bind_tools(self, tools, **kwargs):
             self.names = {t.name for t in tools}; return self
@@ -132,7 +132,7 @@ def test_specialist_binds_twenty_tools_at_most_with_no_underwriting_mutations():
         allowed=frozenset(t.name for t in get_tools_for_role(role) if t.name in COMMISSION_TOOLS)
         with patch.dict(graph._LLM_CACHE,{},clear=True),patch('graph.providers.build_chat',return_value=bound):
             graph._llm({'version':'pilot','primary':{}},role,domains=frozenset({'commission','commission_admin'}),tool_scope=allowed)
-        assert bound.names == allowed and len(bound.names) <= 20
+        assert bound.names == allowed and len(bound.names) <= 30
         assert not {'create_case','issue_policy','add_customer','approve_case'} & bound.names
         if role != 'Admin':
             assert 'approve_commission_agreement' not in bound.names

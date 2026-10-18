@@ -139,6 +139,8 @@ MUTATING_TOOLS = {
     "update_commission_rule",
     "delete_commission_rule",
     "toggle_commission_rule_active",
+    "deploy_commission_rules",
+    "set_producer_start_date",
     "create_incentive_scheme",
     "update_incentive_scheme",
     "delete_incentive_scheme",
@@ -254,6 +256,8 @@ SAFE_TOOLS = {
     "get_agent_statement",
     "get_commission_summary",
     "list_commission_rules",
+    "list_payable_commissions",
+    "list_payout_runs",
     "list_incentive_schemes",
     # Evidence & recovery (read-only)
     "get_medical_report_status",
@@ -344,6 +348,12 @@ CLIENT_EXECUTED_TOOLS = {"upload_document"}
 # that are optional/inferable (e.g. create_case's applicant lookup, which can
 # proceed on cnic OR applicant_name).
 REQUIRED_ARGS: dict[str, list[str]] = {
+    "create_commission_rule": ["rule_code", "name", "commission_pct"],
+    "update_commission_rule": ["rule_code"],
+    "delete_commission_rule": ["rule_code"],
+    "toggle_commission_rule_active": ["rule_code"],
+    "set_producer_start_date": ["payee_name", "start_date"],
+    "approve_payout_run": ["run_id"],
     "record_claim_financial_check": ["key", "finding", "note"],
     "record_underwriting_review": ["decision"],
     "assign_underwriting_track": ["track"],
@@ -642,7 +652,7 @@ STEP_LABELS: dict[str, str] = {
     # Commission engine
     "list_commission_payees": "Fetching payees",
     "get_commission_rate_card": "Looking up rate card",
-    "calculate_commission": "Computing commission waterfall",
+    "calculate_commission": "Previewing policy commission",
     "get_commission_ledger": "Loading commission ledger",
     "get_agent_statement": "Building agent statement",
     "get_commission_summary": "Loading commission summary",
@@ -653,6 +663,10 @@ STEP_LABELS: dict[str, str] = {
     "update_commission_rule": "Updating commission rule",
     "delete_commission_rule": "Deleting commission rule",
     "toggle_commission_rule_active": "Toggling commission rule status",
+    "deploy_commission_rules": "Deploying commission rules",
+    "set_producer_start_date": "Setting producer payout day",
+    "list_payable_commissions": "Checking payable commissions",
+    "list_payout_runs": "Loading payout runs",
     "list_incentive_schemes": "Fetching performance bonus plans",
     "create_incentive_scheme": "Creating performance bonus plan",
     "update_incentive_scheme": "Updating bonus plan",
@@ -676,6 +690,8 @@ AGENT_ALLOWED_TOOLS = {
     "get_agent_statement",
     "get_commission_ledger",
     "explain_commission_earning",
+    # What the commission rules pay (RS-COM-002); the rate-preview API is open to staff and agents.
+    "get_commission_rate_card",
     # Lead Generation & Customer Intake
     "resolve_customer_type",
     "add_customer",
@@ -802,6 +818,7 @@ MOBILE_PORTAL_ONLY_TOOLS = {
     "continue_claim_journey",
     "create_payout_run",
     "approve_payout_run",
+    "deploy_commission_rules",
     "decide_claim",
     "authorize_claim_disbursement",
     "disburse_claim_settlement",
@@ -846,6 +863,19 @@ COMMISSION_ADMIN_TOOLS = {
     "assign_policy_producers",
     "list_commission_exceptions",
     "reconcile_commission_receipts",
+    # Policy preview, commission rules (RS-COM-002), payout day and payout runs: Admin in
+    # tenant-service too. Rule edits change every later posting, so they stay admin-only.
+    "calculate_commission",
+    "create_commission_rule",
+    "update_commission_rule",
+    "delete_commission_rule",
+    "toggle_commission_rule_active",
+    "deploy_commission_rules",
+    "set_producer_start_date",
+    "list_payable_commissions",
+    "list_payout_runs",
+    "create_payout_run",
+    "approve_payout_run",
 }
 
 ADMIN_ONLY_TOOLS |= COMMISSION_ADMIN_TOOLS
