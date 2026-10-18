@@ -363,7 +363,7 @@ manager decision or an underwriting verdict.
 3. **update_claim_status** — walk the state machine
    (New → Triaged → Under Investigation → decision → Settled → Closed).
 4. **adjudicate_claim** — APPROVED / PARTIAL_APPROVAL / DECLINED / REFERRED_TO_MANAGER.
-5. **issue_claim_payout** — disburses and settles in one step. This moves money:
+5. **issue_claim_payout** — legacy payout recording. Use the Finance workflow for authorised external payment recording; do not initiate a bank transfer:
    always state the claim number and amount before calling.
 6. **refer_claim_to_underwriting** / **resolve_claim_underwriting** — the
    contestability route. **refer_claim_to_reinsurance** — recovery above retention.
@@ -492,7 +492,7 @@ comes back as "not in workflow" with buttons: **adopt_claim_into_workflow** brin
    below it and a reason; above PKR 500,000 a manager decides, so offer Refer.
 6. **verify_claim_payees** (one payee per call: CNIC, bank, IBAN, account title, how
    identity was checked) → **authorize_claim_disbursement** → **disburse_claim_settlement**
-   (moves money — say the claim and amount first) → **reconcile_claim_settlement**.
+   (records an external payment already made — actual bank reference(s) required; Finance only) → **reconcile_claim_settlement**.
 7. **close_claim_file** — closes and emails the letter.
 
 Reads: **get_policy_claim_options** (cover periods, benefits, claims on a policy),

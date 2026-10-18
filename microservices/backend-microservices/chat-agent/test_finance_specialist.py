@@ -17,7 +17,7 @@ from tool_executor import ChoiceNeeded
 
 CLAIM={'id':'claim-a','claim_number':'CLM-2026-TEST','policy_id':'policy-a','status':'Approved','approved_amount':1000}
 PATH='/policies/policy-a/claims-management/claim-a'
-WS={'claim':CLAIM,'settlement':{'authorized_at':'2026-10-18','methods':['Bank Transfer'],'payouts':[]},'can':{'disburse':True,'reconcile':False},'investigation':{'medical':'private'}}
+WS={'claim':CLAIM,'settlement':{'authorized_at':'2026-10-18','payees':[{'id':'payee-a','name':'Verified payee','amount':1000,'verified':True}],'methods':['Bank Transfer'],'payouts':[]},'can':{'disburse':True,'reconcile':False},'investigation':{'medical':'private'}}
 def service(ws=WS,extra=None):return FakeClient({('GET','/claims'):[CLAIM],('GET',PATH):ws,**(extra or {})})
 
 @pytest.mark.parametrize('text',['hello','Show payments awaiting reconciliation','approve this claim','create a customer','yes'])
@@ -63,12 +63,12 @@ def test_unready_closed_or_paid_claim_is_never_paid(ws):
 def test_payment_uses_exact_authorised_workflow_and_verifies_completion():
     saved={**WS,'claim':{**CLAIM,'status':'Settled'},'settlement':{**WS['settlement'],'disbursed_at':'2026-10-18','payouts':[{'reference_number':'PAY-TEST'}]}}
     client=service(extra={('POST',PATH+'/settlement/disburse'):saved})
-    r=_call('pay_authorized_claim',{'claim_number':CLAIM['claim_number'],'method':'Bank Transfer'},client,'Finance')
+    r=_call('pay_authorized_claim',{'claim_number':CLAIM['claim_number'],'method':'Bank Transfer','reference_number':'BANK-TEST'},client,'Finance')
     assert r['success'] and r['claim']['status']=='Settled'
     assert client.writes()[0]['path']==PATH+'/settlement/disburse'
-    assert client.writes()[0]['body']=={'method':'Bank Transfer'}
+    assert client.writes()[0]['body']=={'method':'Bank Transfer','reference_number':'BANK-TEST'}
     failed=service(extra={('POST',PATH+'/settlement/disburse'):{}})
-    assert not _call('pay_authorized_claim',{'claim_number':CLAIM['claim_number'],'method':'Bank Transfer'},failed,'Finance')['success']
+    assert not _call('pay_authorized_claim',{'claim_number':CLAIM['claim_number'],'method':'Bank Transfer','reference_number':'BANK-TEST'},failed,'Finance')['success']
 
 def test_reconciliation_requires_human_exception_rationale_and_does_not_invent_completion():
     ws={**WS,'can':{'reconcile':True},'settlement':{**WS['settlement'],'reconciliation':{'status':'Exception'}}}

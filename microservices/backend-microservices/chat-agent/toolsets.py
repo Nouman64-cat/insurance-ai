@@ -97,7 +97,7 @@ CORE_TOOLS: set[str] = {
 
 # ── Domain packs ─────────────────────────────────────────────────────────────
 DOMAIN_TOOLS: dict[str, set[str]] = {
-    "finance": {"get_finance_dashboard", "get_claim_payment_details", "pay_authorized_claim", "reconcile_finance_claim"},
+    "finance": {"list_finance_payments", "get_finance_dashboard", "get_claim_payment_details", "pay_authorized_claim", "reconcile_finance_claim"},
     "admin": {
         "list_acquisition_sources",
         "list_organizations",
@@ -275,6 +275,7 @@ DOMAIN_TOOLS: dict[str, set[str]] = {
         "record_claim_investigation",
         "assess_claim_benefit",
         "decide_claim",
+        "prepare_claim_settlement",
         "verify_claim_payees",
         "authorize_claim_disbursement",
         "disburse_claim_settlement",

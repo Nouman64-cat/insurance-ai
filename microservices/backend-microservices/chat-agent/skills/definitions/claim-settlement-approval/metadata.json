@@ -1,0 +1,82 @@
+{
+  "id": "claim-settlement-approval",
+  "purpose": "Claims Manager prepares an approved claim settlement, verifies real payee details and explicitly authorises Finance to record external payment.",
+  "intents": [
+    "prepare settlement",
+    "settlement payees",
+    "verify payee",
+    "authorise payment",
+    "authorize payment",
+    "authorise finance",
+    "authorize finance",
+    "settlement approval",
+    "approved claim",
+    "payment authorisation"
+  ],
+  "capabilities": [
+    "get_claim_workflow",
+    "prepare_claim_settlement",
+    "verify_claim_payees",
+    "authorize_claim_disbursement",
+    "get_claim_authority_limits"
+  ],
+  "roles": [
+    "ClaimsManager"
+  ],
+  "prerequisites": [
+    "Authenticated JWT and tenant scope",
+    "Existing role/platform allow-list",
+    "Live owning-service state and required record identifiers"
+  ],
+  "business_rules": [
+    "ClaimsManager stays with the claims specialist. ClaimsAdjuster prepares the file; decisions, authorization, payment, reconciliation and closure follow the backend workflow and delegated authority. Eligibility, payee verification and settlement authorization must not be skipped. An Admin is not a substitute for the backend claims approver.",
+    "A skill never adds permissions or simulates success.",
+    "Never register a replacement claim to correct an event date or bypass eligibility; preserve the original claim and require review with supporting evidence."
+  ],
+  "lifecycle_source": "claim_workflow_tools.py; tenant-service/routers/claim_workflow.py",
+  "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",
+  "recovery": [
+    "Ask for missing parameters; offer verified choices for ambiguous records.",
+    "Preserve completed steps; verify unknown mutation outcomes before retry.",
+    "Explain unsupported operations and route to the appropriate workspace or authorized staff."
+  ],
+  "verification": "Report completion only from confirmed backend success. Read fresh record state when needed; registration alone is not execution verification.",
+  "tests": [
+    "test_settlement_chat_workflows.py",
+    "test_skills.py::test_all_skills_validate_and_cover_inventory"
+  ],
+  "steps": [
+    {
+      "id": "read",
+      "capability": "get_claim_workflow",
+      "depends_on": []
+    },
+    {
+      "id": "prepare",
+      "capability": "prepare_claim_settlement",
+      "depends_on": [
+        "read"
+      ]
+    },
+    {
+      "id": "verify",
+      "capability": "verify_claim_payees",
+      "depends_on": [
+        "prepare"
+      ]
+    },
+    {
+      "id": "authorise",
+      "capability": "authorize_claim_disbursement",
+      "depends_on": [
+        "verify"
+      ]
+    }
+  ],
+  "unsupported": [
+    "Recording a Finance payout",
+    "Initiating a bank transfer",
+    "Inventing identity verification or bank details",
+    "Re-approving or replacing a claim to prepare settlement"
+  ]
+}

@@ -9,6 +9,7 @@ the graph checks before a tool ever runs.
 from env_mode import is_demo
 
 MUTATING_TOOLS = {
+    "prepare_claim_settlement",
     "run_customer_risk_assessment",
     "pay_authorized_claim", "reconcile_finance_claim",
     "record_claim_financial_check",
@@ -181,6 +182,7 @@ MUTATING_TOOLS = {
 # Read-only + navigation. Never gated, never confirmed — asking "shall I open
 # the cases page?" before every navigation makes the agent unusable.
 SAFE_TOOLS = {
+    "list_finance_payments",
     "get_customer_risk_assessment",
     "get_finance_dashboard", "get_claim_payment_details",
     "get_claim_financial_review",
@@ -904,6 +906,7 @@ CLAIMS_READ_TOOLS = {
 # Disbursement and reinsurance recovery are the two claims actions that move
 # money or bind the reinsurer. Adjusters prepare them; managers release them.
 CLAIMS_MANAGER_ONLY_TOOLS = {
+    "prepare_claim_settlement",
     "resolve_claim_underwriting",
     "refer_claim_to_reinsurance",
     # Workflow equivalents: releasing and paying the settlement, and letting an
@@ -1114,6 +1117,7 @@ CLAIM_AUTHORITY_ROLES = {
     "adjudicate_claim": {"ClaimsAdjuster", "ClaimsManager"},
     "decide_claim": {"ClaimsAdjuster", "ClaimsManager"},
     "authorize_claim_disbursement": {"ClaimsManager"},
+    "prepare_claim_settlement": {"ClaimsManager"},
     "override_claim_eligibility": {"ClaimsManager"},
     "issue_claim_payout": {"Finance"},
     "disburse_claim_settlement": {"Finance"},
@@ -1130,14 +1134,14 @@ CLAIM_AUTHORITY_ROLES.update({name: {"ClaimsAdjuster", "ClaimsManager"} for name
                               {"start_claim_journey", "continue_claim_journey"}})
 
 FINANCE_ALLOWED_TOOLS = CLAIMS_READ_TOOLS | SPECIALIST_NAVIGATION | {
-    "get_finance_dashboard", "get_claim_payment_details", "pay_authorized_claim", "reconcile_finance_claim",
+    "get_finance_dashboard", "get_claim_payment_details", "list_finance_payments", "pay_authorized_claim", "reconcile_finance_claim",
     "issue_claim_payout", "disburse_claim_settlement", "reconcile_claim_settlement",
     "resolve_insurance_record", "get_claim_blockers", "get_workflow_timeline",
 }
 
 
 # Finance-specific capabilities cannot be discovered or executed by another role.
-_FINANCE_ONLY_TOOLS = {"get_finance_dashboard", "get_claim_payment_details", "pay_authorized_claim", "reconcile_finance_claim"}
+_FINANCE_ONLY_TOOLS = {"get_finance_dashboard", "get_claim_payment_details", "list_finance_payments", "pay_authorized_claim", "reconcile_finance_claim"}
 CLAIM_AUTHORITY_ROLES.update({name: {"Finance"} for name in _FINANCE_ONLY_TOOLS})
 
 # Role operations carry their own explicit grants, mirrored from the owning
@@ -1147,6 +1151,7 @@ from role_operations import STEP_LABELS as _ROLE_OPERATION_LABELS, TOOL_ROLES as
 MUTATING_TOOLS |= _ROLE_OPERATION_MUTATING
 SAFE_TOOLS |= _ROLE_OPERATION_READS
 STEP_LABELS.update(_ROLE_OPERATION_LABELS)
+STEP_LABELS.update({"prepare_claim_settlement": "Preparing settlement payees", "list_finance_payments": "Reading payment register"})
 
 
 def is_role_allowed(tool_name: str, role: str, platform: str = "web") -> bool:
