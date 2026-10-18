@@ -6095,11 +6095,6 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
           <div className="flex-1 flex flex-row relative h-full min-w-0 min-h-0">
             <div className="flex-1 flex flex-col relative h-full min-w-0 min-h-0">
               {compact && <div className="flex shrink-0 justify-end border-b border-slate-100 px-3 py-2"><button type="button" disabled={isLoading} onClick={handleClearChat} className="rounded-lg px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-50 disabled:opacity-40">+ {t("sidebar.newChat")}</button></div>}
-              {!compact && <div className="flex shrink-0 justify-end px-4 sm:px-7 pt-3">
-                <button type="button" onClick={() => setAutomationMode(false)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-blue-50 hover:text-blue-700">
-                  <span aria-hidden="true">←</span>{t("sidebar.backToPortal")}
-                </button>
-              </div>}
               {/* Chat Header */}
               <div className={`${compact ? "hidden" : "flex"} items-center justify-between gap-3 px-4 sm:px-7 pt-4 sm:pt-6 pb-3 relative z-20`}>
                 <div className="flex items-center gap-2 min-w-0">
@@ -6149,7 +6144,17 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
                   )}
                   <CopilotBadge name={copilotName} betaLabel={t("header.beta")} />
                 </div>
-                <div className="flex items-center gap-2 sm:gap-2.5">
+                <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setAutomationMode(false)}
+                    title={t("sidebar.backToPortal")}
+                    aria-label={t("sidebar.backToPortal")}
+                    className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-600 hover:bg-blue-50 hover:text-blue-700"
+                  >
+                    <span aria-hidden="true">←</span>
+                    <span className="hidden sm:inline">{t("sidebar.backToPortal")}</span>
+                  </button>
                   <button
                     onClick={() => setShowJourneyMap((v) => !v)}
                     aria-pressed={showJourneyMap}

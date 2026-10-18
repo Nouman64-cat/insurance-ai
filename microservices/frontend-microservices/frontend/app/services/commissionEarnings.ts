@@ -1,12 +1,20 @@
 import api from './api';
 
+export interface CommissionValues { rate_pct: string; gross_amount: string; disburse_date: string | null }
+export interface CommissionAdjustment {
+  revision: number; actor_id: string; actor_name: string; at: string; reason: string;
+  before: CommissionValues; after: CommissionValues;
+}
+export interface EarningFilters {
+  search?: string; source_id?: string; disbursement_status?: string; date_from?: string; date_to?: string;
+}
 export interface Earning {
   disbursement_status?: string;
   id: string; receipt_id: string; policy_id: string; source_id: string;
   basis_amount: string; gross_amount: string; rate_pct: string; split_pct: string;
   policy_year: number; created_at: string;
   rule_code: string | null; rule_version: string | null; disburse_date: string | null;
-  snapshot: { payee_name: string; payee_code: string; policy_number: string; customer_name: string; receipt_no: string;
+  snapshot: { adjustment_revision?: number; adjustments?: CommissionAdjustment[]; original_posting?: CommissionValues; payee_name: string; payee_code: string; policy_number: string; customer_name: string; receipt_no: string;
     rule_code?: string; rule_version?: string; is_first_premium?: boolean; commission_recurring?: boolean;
     agreement_code?: string; agreement_version?: number; basis_description: string };
 }
@@ -34,8 +42,8 @@ function base() {
   return `/tenants/${tenant}/commissions`;
 }
 function auth() { return { headers: { Authorization: `Bearer ${localStorage.getItem('jwt_token') || ''}` } }; }
-export const loadEarnings = async (offset = 0) => (await api.get<{items: Earning[]; total: number}>(`${base()}/earnings`, { ...auth(), params: {offset, limit: 50} })).data;
-export const loadSummary = async () => (await api.get<Summary>(`${base()}/summary`, auth())).data;
+export const loadEarnings = async (offset = 0, filters: EarningFilters = {}) => (await api.get<{items: Earning[]; total: number}>(`${base()}/earnings`, { ...auth(), params: {...filters, offset, limit: 50} })).data;
+export const loadSummary = async (filters: EarningFilters = {}) => (await api.get<Summary>(`${base()}/summary`, {...auth(), params: filters})).data;
 export const loadPayees = async () => (await api.get<Payee[]>(`${base()}/payees`, auth())).data;
 export const loadExceptions = async () => (await api.get<AccrualException[]>(`${base()}/exceptions`, auth())).data;
 export const loadSetup = async (search = '', customer_id?: string) => (await api.get<Setup>(`${base()}/setup`, {...auth(), params: {search, customer_id}})).data;
@@ -50,3 +58,6 @@ export const submitDisbursement = async (id: string) => (await api.post(`${base(
 export const approveDisbursement = async (id: string) => (await api.post(`${base()}/disbursements/${id}/approve`, {}, auth())).data;
 export const rejectDisbursement = async (id: string, reason: string) => (await api.post(`${base()}/disbursements/${id}/reject`, {reason}, auth())).data;
 export const recordDisbursementPayment = async (id: string, payment_reference: string, confirmed: boolean) => (await api.post(`${base()}/disbursements/${id}/record-payment`, {payment_reference, confirmed}, auth())).data;
+
+export const updateEarning = async (id: string, body: {rate_pct: string; disburse_date: string; reason: string; expected_revision: number}) =>
+  (await api.patch<Earning>(`${base()}/earnings/${encodeURIComponent(id)}`, body, auth())).data;

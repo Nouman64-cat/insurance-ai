@@ -5731,7 +5731,9 @@ function SpecialistReviewsSummary({ tracks }: { tracks: CompiledReviews | null }
   const card = (track: "medical" | "financial") => {
     const r = tracks[track];
     const ai = r.ai;
-    const facts: [string, string][] = track === "medical"
+    const facts: [string, string][] = ai?.scope === "claim"
+      ? [["AI recommendation", ai.recommendation ?? "—"], ["Type", "Advisory only"], ["Review", "Claim UW"]]
+      : track === "medical"
       ? ai ? [["Examination", ai.exam_status ?? "—"], ["Clinical outcome", ai.outcome ?? "Not rated"], ["Loading", ai.suggested_loading_pct != null ? `+${ai.suggested_loading_pct}%` : "None"]] : []
       : ai ? [["Financial risk", ai.score != null ? `${ai.score} / 100` : "—"], ["Cover justified", ai.financially_justified ? "Yes" : "No"], ["Referral", ai.referral_required ? "Suggested" : "Not needed"]] : [];
     return <div key={track} className="rounded-xl border border-slate-200 p-4">
@@ -5742,6 +5744,7 @@ function SpecialistReviewsSummary({ tracks }: { tracks: CompiledReviews | null }
       </div>
       {facts.length > 0 ? <dl className="mt-3 grid grid-cols-3 gap-2">{facts.map(([k, v]) => <div key={k} className="rounded-lg bg-slate-50 px-2.5 py-2"><dt className="text-[11px] text-slate-500">{tx(k)}</dt><dd className="mt-0.5 truncate text-xs font-semibold text-slate-900">{tx(v)}</dd></div>)}</dl>
         : <p className="mt-3 text-xs text-slate-400">{tx(track === "medical" ? "No AI medical underwriting recorded yet." : "No AI financial underwriting run yet.")}</p>}
+      {ai?.scope === "claim" && ai.summary && <p className="mt-3 whitespace-pre-wrap text-xs text-slate-600">{ai.summary}</p>}
       {r.note && <p className="mt-3 whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700"><span className="font-semibold">{tx("Rationale")}: </span>{r.note}</p>}
     </div>;
   };

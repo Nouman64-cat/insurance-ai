@@ -17,6 +17,7 @@ import TrackOperations from "./TrackOperations";
 import { useCaseEvents } from "@/lib/agent/useCaseEvents";
 import { useCoalescedRefresh } from "@/lib/liveRefresh";
 import EApplicationPanel from "./EApplicationPanel";
+import ClaimAIPanel, { type ClaimAI } from "./ClaimAIPanel";
 import FinancialAIPanel, { type FinancialAI } from "./FinancialAIPanel";
 import ApplicantPolicyTab from "./ApplicantPolicyTab";
 import { getArtifactUrl } from "@/app/services/artifacts";
@@ -35,7 +36,7 @@ type RequiredDocument = { type: string; received: boolean };
 type Outstanding = { code: string; reason: string; document_type: string | null; owner: "medical" | "financial" | null; can_upload: boolean; covered_by_exam?: boolean };
 type ReviewRow = { id: string; claim_id?: string | null; reference: string; customer_name: string; product_name: string | null; coverage_amount: number | null; on_hold: boolean; hold_reason: string | null; created_at?: string; case_status?: string; closed?: boolean; review: UnderwritingReview };
 type ClaimInfo = { id: string; claim_number: string | null; claim_type: string; submitted_amount: number; incident_date: string | null; referral_reason: string | null; referral_notes: string | null; ready: boolean; reviews: Record<string, { status: string; note: string | null }> };
-type Workspace = ReviewRow & { claim_checks?: Record<string, ClaimCheck>; claim?: ClaimInfo | null; read_only: boolean; policy_linked: boolean; case_status: string; created_at: string; customer_cnic: string | null; coverage_amount: number | null; term_years: number | null; requirements: Requirement[]; required_documents: RequiredDocument[]; application_outstanding: Outstanding[]; ai_underwriting: FinancialAI | null; documents: { id: string; name: string; type: string; status: string; processing_stalled?: boolean; scope: string; ocr_text: string | null; extracted: unknown; quality_score: number; tampered: boolean }[]; track: string; evidence: Record<string, unknown>; assessment: { results: unknown; score: number; reasons: unknown[]; created_at: string } | null };
+type Workspace = ReviewRow & { claim_checks?: Record<string, ClaimCheck>; claim?: ClaimInfo | null; read_only: boolean; policy_linked: boolean; case_status: string; created_at: string; customer_cnic: string | null; coverage_amount: number | null; term_years: number | null; requirements: Requirement[]; required_documents: RequiredDocument[]; application_outstanding: Outstanding[]; ai_underwriting: FinancialAI | null; claim_ai_underwriting: ClaimAI | null; documents: { id: string; name: string; type: string; status: string; processing_stalled?: boolean; scope: string; ocr_text: string | null; extracted: unknown; quality_score: number; tampered: boolean }[]; track: string; evidence: Record<string, unknown>; assessment: { results: unknown; score: number; reasons: unknown[]; created_at: string } | null };
 function valueText(value: unknown): string {
   if (value === null || value === undefined || value === "") return tx("Not provided");
   if (typeof value === "boolean") return tx(value ? "Yes" : "No");
@@ -231,8 +232,10 @@ export function SpecialistCaseWorkspace({ track }: { track: "medical" | "financi
 
       <div className={caseTab === "overview" ? "grid items-start gap-5 xl:grid-cols-12" : "hidden"}>
         <div className="min-w-0 space-y-5 xl:col-span-8">
-          {/* A claim review is checked against the claim's plan terms (Requirements tab) — not run like a new
-              application: no exam ordered from the non-medical grid, no exposure check, AI rating or e-application. */}
+          {/* Claim AI reviews the claim evidence; new-business examination/rating stays separate. */}
+          {workspace.claim && <ClaimAIPanel tenantId={user.tenant_id!} caseId={caseId} track={track} ai={workspace.claim_ai_underwriting}
+            disabled={workspace.read_only || workspace.review.assigned_user_id !== user.id || !workspace.policy_linked}
+            onDone={() => { void load(true); }} />}
           {workspace.claim && <ClaimReviewChecks requirements={workspace.requirements} checks={workspace.claim_checks ?? {}}
             disabled={workspace.read_only || workspace.review.assigned_user_id !== user.id}
             onEvidence={setCaseTab} onSave={async (key, finding, rationale) => {

@@ -9,6 +9,7 @@ the graph checks before a tool ever runs.
 from env_mode import is_demo
 
 MUTATING_TOOLS = {
+    "run_customer_risk_assessment",
     "pay_authorized_claim", "reconcile_finance_claim",
     "record_claim_financial_check",
     "issue_claim_payout",
@@ -180,6 +181,7 @@ MUTATING_TOOLS = {
 # Read-only + navigation. Never gated, never confirmed — asking "shall I open
 # the cases page?" before every navigation makes the agent unusable.
 SAFE_TOOLS = {
+    "get_customer_risk_assessment",
     "get_finance_dashboard", "get_claim_payment_details",
     "get_claim_financial_review",
     "get_platform_configuration", "get_platform_token_usage", "get_initial_premium_status",
@@ -495,6 +497,8 @@ STEP_LABELS: dict[str, str] = {
     "list_insurance_plans": "Fetching plans",
     "get_risk_assessment": "Loading assessment",
     "assess_customer_risk_profile": "Assessing profile risk",
+    "run_customer_risk_assessment": "Running lead risk assessment",
+    "get_customer_risk_assessment": "Reading saved lead risk assessment",
     "get_dashboard_stats": "Loading metrics",
     "get_workflow_recommendation": "Planning next step",
     "quick_start_workflow": "Generating demo data",
@@ -1153,6 +1157,9 @@ def is_role_allowed(tool_name: str, role: str, platform: str = "web") -> bool:
     registries above defaulted to *permitted* for unrecognised roles, and
     Underwriter was a deny-list that auto-granted anything newly added.
     """
+    # Match the owning customer risk-profile endpoints, which require verify_admin.
+    if tool_name in {"run_customer_risk_assessment", "get_customer_risk_assessment"}:
+        return role in ADMIN_ROLES
     if tool_name in {"search_capabilities", "get_capability_schema"}:
         from skills import enabled
         return enabled()
