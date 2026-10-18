@@ -936,8 +936,8 @@ export async function verifyClaimPayees(policyId: string, claimId: string, payee
 export async function authorizeClaimDisbursement(policyId: string, claimId: string): Promise<ClaimWorkspace> {
   return (await api.post(`${claimsBase(policyId, claimId)}/settlement/authorize`)).data;
 }
-export async function disburseClaim(policyId: string, claimId: string, method: string): Promise<ClaimWorkspace> {
-  return (await api.post(`${claimsBase(policyId, claimId)}/settlement/disburse`, { method })).data;
+export async function disburseClaim(policyId: string, claimId: string, method: string, payment?: {reference_number?: string; payee_references?: Record<string, string>; note?: string}): Promise<ClaimWorkspace> {
+  return (await api.post(`${claimsBase(policyId, claimId)}/settlement/disburse`, { method, ...payment })).data;
 }
 export async function reconcileClaim(policyId: string, claimId: string, note?: string): Promise<ClaimWorkspace> {
   return (await api.post(`${claimsBase(policyId, claimId)}/settlement/reconcile`, { note })).data;

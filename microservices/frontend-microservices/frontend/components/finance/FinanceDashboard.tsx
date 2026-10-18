@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { listClaims, type Claim } from "@/app/services/claims";
 import { tx } from "@/lib/i18n/tx";
 
+import PaymentRegister from "./PaymentRegister";
 import { money, paymentQueue } from "./paymentQueue";
 
 export default function FinanceDashboard() {
@@ -31,7 +32,7 @@ export default function FinanceDashboard() {
     <header className="flex flex-wrap items-center justify-between gap-4">
       <div><p className="text-xs font-bold uppercase tracking-widest text-blue-600">{tx("Finance workspace")}</p>
         <h1 className="mt-2 text-3xl font-bold text-slate-900">{tx("Payments dashboard")}</h1>
-        <p className="mt-2 text-sm text-slate-500">{tx("Review approved claims, execute authorised payouts and reconcile payments.")}</p></div>
+        <p className="mt-2 text-sm text-slate-500">{tx("Record payments made outside the system, track payment status and reconcile approved settlements.")}</p></div>
       <button onClick={refresh} disabled={loading} className="rounded-lg border bg-white px-4 py-2 text-sm font-semibold disabled:opacity-50">{loading ? tx("Loading…") : tx("Refresh")}</button>
     </header>
     {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</p>}
@@ -57,11 +58,12 @@ export default function FinanceDashboard() {
           <td className="px-5 py-4"><p>{c.customer_name || "—"}</p><p className="mt-1 text-xs text-slate-500">{tx("Claimant")}: {c.claimant_name}</p></td>
           <td className="whitespace-nowrap px-5 py-4 font-semibold">{money(c.approved_amount)}</td><td className="whitespace-nowrap px-5 py-4">{money(c.settlement_amount ?? 0)}</td>
           <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${view==="history"?"bg-emerald-50 text-emerald-700":"bg-amber-50 text-amber-700"}`}>{view==="history"?tx(c.status):tx(view==="reconciliation"?"To reconcile":c.finance_summary?.authorized_at?"Authorised":"Awaiting authorisation")}</span></td>
-          <td className="px-5 py-4"><Link href={`/claims/${c.id}`} className="whitespace-nowrap font-semibold text-blue-600">{tx(view==="history"?"View payment →":view==="reconciliation"?"Reconcile →":"Review payment →")}</Link></td>
+          <td className="px-5 py-4"><Link href={`/claims/${c.id}`} className="whitespace-nowrap font-semibold text-blue-600">{tx(view==="history"?"View payment →":view==="reconciliation"?"Reconcile →":c.finance_summary?.authorized_at?"Record payout →":"Review authorisation →")}</Link></td>
         </tr>)}</tbody>
       </table></div>
       {!rows.length && <div className="p-12 text-center"><p className="font-semibold text-slate-700">{loading?tx("Loading payments…"):tx(search?"No matching payments":view==="history"?"No recorded payments yet":view==="reconciliation"?"No payments awaiting reconciliation":"No claims awaiting payout")}</p><p className="mt-2 text-sm text-slate-500">{tx("Approved claims appear here after the claims team records its decision.")}</p></div>}
     </section>
+    <PaymentRegister refreshKey={updated} />
     <p className="text-xs text-slate-500">{tx("Claims Managers authorise settlements. Finance executes and reconciles payments.")}{updated && ` · ${tx("Updated")} ${updated}`}</p>
   </main>;
 }

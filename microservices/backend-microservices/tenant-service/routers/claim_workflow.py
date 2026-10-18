@@ -31,7 +31,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
-from pydantic import BaseModel, Field as PField
+from pydantic import BaseModel, Field as PField, field_validator
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -187,6 +187,14 @@ class PayeesBody(BaseModel):
 
 class DisburseBody(BaseModel):
     method: str = "Bank Transfer"
+    reference_number: Optional[str] = PField(default=None, min_length=3, max_length=100)
+    payee_references: Optional[dict[str, str]] = None
+    note: Optional[str] = PField(default=None, max_length=1000)
+
+    @field_validator("reference_number", mode="before")
+    @classmethod
+    def trim_reference(cls, value):
+        return value.strip() if isinstance(value, str) else value
 
 
 class ReconcileBody(BaseModel):
@@ -1321,9 +1329,14 @@ async def disburse_claim(
 ):
     """Execute the payment of the authorised amount. Finance only: the person who approved the claim does not also
     release the money. Pay the authorised amount — one payout per payee, through the register's own
-    settlement routine, which marks the claim Settled."""
+    settlement routine, which marks the claim Settled. Records external payment; no bank transfer is sent."""
+    if not user.is_active or user.tenant_id != tenant_id:
+        raise HTTPException(403, "Record payments only in your own organization using an active Finance account.")
     policy = await _get_policy(session, tenant_id, policy_id)
+    await session.exec(select(Claim).where(Claim.id == claim_id).with_for_update())
     claim, proc = await _get_claim(session, policy_id, claim_id)
+    await session.refresh(claim)
+    await session.refresh(proc)
     if not proc.authorized_at:
         raise HTTPException(409, "Authorise the disbursement first.")
     await _assert_underwriting_cleared(session, claim, proc)
@@ -1332,10 +1345,18 @@ async def disburse_claim(
     if body.method not in cfg.CLAIM_PAYOUT_METHODS:
         raise HTTPException(400, f"Unknown payout method '{body.method}'")
     payees = proc.payees_json or []
+    references = {k: v.strip() for k, v in (body.payee_references or {}).items()}
+    if references:
+        if set(references) != {p['id'] for p in payees} or any(not 3 <= len(r) <= 100 for r in references.values()) or len(set(references.values())) != len(references):
+            raise HTTPException(422, "Provide one distinct bank reference (3–100 characters) for every authorised payee.")
+    elif body.reference_number and len(payees) > 1:
+        raise HTTPException(422, "Record the bank reference separately for each authorised payee.")
     await assert_claim_payable(session, tenant_id, claim, claim.approved_amount)
     payouts = [{"amount": p["amount"], "method": body.method, "payee_name": p["name"], "payee_cnic": eng._norm_cnic(p.get("cnic")) or None,
                 "payee_relationship": p.get("relationship"), "share_pct": p.get("share_pct"),
-                "notes": f"{p.get('bank_name')} · {p.get('iban')} · {p.get('account_title')}"} for p in payees]
+                "reference_number": references.get(p["id"]) or (body.reference_number.strip() if body.reference_number else None),
+                "notes": " · ".join(filter(None, [f"{p.get('bank_name')} · {p.get('iban')} · {p.get('account_title')}",
+                    body.note.strip() if body.note else None]))} for p in payees]
     rows = await settle_claim_with_payouts(session, tenant_id, claim, user, payouts)
     proc.disbursed_at = _now()
     _touch(proc)

@@ -617,6 +617,33 @@ async def claim_underwriting_review_state(session: AsyncSession, claim: Claim) -
             "on_hold": case.on_hold, "reviews": reviews, **opinion}
 
 
+@router.get("/payments", summary="Finance payment register")
+async def list_finance_payments(
+    tenant_id: UUID, search: Optional[str] = None, payment_status: Optional[str] = None,
+    offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200),
+    token: str = Depends(oauth2_scheme), session: AsyncSession = Depends(get_session),
+):
+    from sqlalchemy import func, or_
+    user = await _assert_role(token, session, ("Finance",), "Viewing the payment register")
+    if not user.is_active or user.tenant_id != tenant_id:
+        raise HTTPException(403, "Not your organization or your account is inactive.")
+    filters = [ClaimPayout.tenant_id == tenant_id, Claim.tenant_id == tenant_id, Policy.tenant_id == tenant_id]
+    if payment_status:
+        filters.append(ClaimPayout.status == payment_status)
+    if search and search.strip():
+        needle = '%' + search.strip().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
+        filters.append(or_(*(column.ilike(needle, escape='\\') for column in (
+            Claim.claim_number, Policy.policy_number, Claim.claimant_name, ClaimPayout.payee_name, ClaimPayout.reference_number))))
+    base = select(ClaimPayout, Claim, Policy).join(Claim, Claim.id == ClaimPayout.claim_id).join(Policy, Policy.id == Claim.policy_id).where(*filters)
+    total = (await session.exec(select(func.count()).select_from(base.subquery()))).one()
+    rows = (await session.exec(base.order_by(ClaimPayout.created_at.desc(), ClaimPayout.id).offset(offset).limit(limit))).all()
+    return {"total": total, "items": [{"id": str(p.id), "claim_id": str(c.id), "claim_number": c.claim_number,
+        "policy_number": policy.policy_number, "payee_name": p.payee_name or c.claimant_name,
+        "amount": p.amount, "method": p.method, "status": p.status, "reference_number": p.reference_number,
+        "initiated_at": p.initiated_at.isoformat(), "completed_at": p.completed_at.isoformat() if p.completed_at else None,
+        "notes": p.notes} for p, c, policy in rows]}
+
+
 @router.get("/{claim_id}", summary="Get Claim Detail")
 async def get_claim_detail(
     tenant_id: UUID,
