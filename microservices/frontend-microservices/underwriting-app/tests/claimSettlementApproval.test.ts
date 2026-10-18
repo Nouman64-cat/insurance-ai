@@ -7,7 +7,7 @@ const {renderToStaticMarkup}=require('react-dom/server');
 const source=readFileSync(new URL('../../frontend/components/claims/ClaimSettlementApproval.tsx',import.meta.url),'utf8');
 const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText;
 const mod={exports:{}};
-new Function('require','exports','module',compiled)(name=>name==='@/lib/i18n/tx'?{tx:s=>s}:name==='@/lib/dateDisplay'?{displayDate:s=>s}:name==='@/app/services/postIssuance'?{}:require(name),mod.exports,mod);
+new Function('require','exports','module',compiled)(name=>name==='@/lib/i18n/tx'?{tx:s=>s}:name==='@/lib/dateDisplay'?{displayDate:s=>s}:name==='@/app/services/postIssuance'?{}:name==='@/components/DemoFillButton'?{__esModule:true,default:()=>null}:require(name),mod.exports,mod);
 const render=(workspace=null,role='ClaimsManager')=>renderToStaticMarkup(React.createElement(mod.exports.default,{role,policyId:'p',claimId:'c',workspace,onDone:async()=>{}}));
 const payee={id:'p1',name:'Mahnoor Shah',amount:185000,share_pct:100,verified:false};
 const workspace={settlement:{payees:[payee]},can:{verify_payees:true,authorize:false}};
