@@ -83,6 +83,8 @@ import {
 import GroupCensusClientTool from "@/components/group/GroupCensusClientTool";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import { currentCopilotIdentity } from "@/lib/copilotName";
+import CopilotBadge from "@/components/CopilotBadge";
+import CopilotRoleIcon from "@/components/CopilotRoleIcon";
 
 // The greeting that opens every chat; its text is the UI language's (composer.greeting, or the role's own).
 const WELCOME_ID = "1";
@@ -6109,15 +6111,7 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
                       </svg>
                     </button>
                   )}
-                  <div className="flex items-center gap-2 h-11 ps-2 pe-3 rounded-xl ring-1 ring-zinc-200/80 bg-white min-w-0">
-                    <span className="copilot-orb w-7 h-7 flex-shrink-0" />
-                    <span className="font-medium text-[15px] text-zinc-900 tracking-tight truncate">
-                      GetInsuredAI
-                    </span>
-                    <span className="hidden sm:inline-block px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-600 text-[10px] font-semibold uppercase tracking-wider">
-                      {t("header.beta")}
-                    </span>
-                  </div>
+                  <CopilotBadge name={copilotName} betaLabel={t("header.beta")} />
                 </div>
                 <div className="flex items-center gap-2 sm:gap-2.5">
                   <button
@@ -6353,13 +6347,7 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
                             {/* Avatar (only for Agent) */}
                             {msg.role !== "user" && (
                               <div className="flex-shrink-0 mt-1">
-                                <div className="copilot-orb w-8 h-8 flex items-center justify-center p-2">
-                                  <img
-                                    src="/logo-mark.png"
-                                    alt="GetInsuredAI"
-                                    className="relative z-10 w-full h-full object-contain brightness-0 invert opacity-90"
-                                  />
-                                </div>
+                                <CopilotRoleIcon name={copilotName} />
                               </div>
                             )}
 
@@ -6990,13 +6978,7 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
                         <div className="w-full px-4 py-6">
                           <div className="max-w-3xl mx-auto flex gap-4 md:gap-6">
                             <div className="flex-shrink-0 mt-1">
-                              <div className="copilot-orb w-8 h-8 flex items-center justify-center p-2">
-                                <img
-                                  src="/logo-mark.png"
-                                  alt="GetInsuredAI"
-                                  className="relative z-10 w-full h-full object-contain brightness-0 invert opacity-90"
-                                />
-                              </div>
+                              <CopilotRoleIcon name={copilotName} />
                             </div>
                             <div className="flex items-center gap-2 pt-2">
                               <span
