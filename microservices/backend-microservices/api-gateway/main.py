@@ -20,6 +20,7 @@ from uuid import UUID
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.middleware.cors import CORSMiddleware
+from cors_config import cors_options
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from database import create_db_and_tables
@@ -98,17 +99,11 @@ app = FastAPI(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CORS — allow the Next.js dev server and any localhost port to call the API
+# CORS — explicit deployment origins, with loopback-only defaults for local development.
+# Root .env is injected by Compose; recreating the gateway picks up changes.
 # ─────────────────────────────────────────────────────────────────────────────
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origin_regex=r"https?://.*",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+app.add_middleware(CORSMiddleware, **cors_options())
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Global error handler — keeps error responses consistent
