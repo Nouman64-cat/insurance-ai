@@ -1,7 +1,7 @@
 import { PageHero, Section } from "@/components/ui/Section";
 import { pageMetadata } from "@/lib/seo";
 
-export const metadata = pageMetadata("Terms", "Terms of use for the Insurance AI prototype site.", "/legal/terms");
+export const metadata = pageMetadata("Terms", "Terms of use for the GetInsuredAI prototype site.", "/legal/terms");
 
 export default function TermsPage() {
   return (

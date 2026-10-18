@@ -8,7 +8,7 @@ const ur: Messages = {
   },
   shell: {
     validating: "اسناد کی تصدیق ہو رہی ہے...",
-    footer: "insurance-ai انڈر رائٹنگ پورٹل — پروٹو ٹائپ v0.1.0 · انتہائی خفیہ · {tenant}",
+    footer: "GetInsuredAI انڈر رائٹنگ پورٹل — پروٹو ٹائپ v0.1.0 · انتہائی خفیہ · {tenant}",
     documentStatus: "{name} کی حیثیت: {status}",
     quoteGenerated: "{name} کے لیے کوٹیشن تیار ہو گئی!",
   },

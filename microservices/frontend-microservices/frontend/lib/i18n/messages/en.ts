@@ -6,7 +6,7 @@ const en = {
   },
   shell: {
     validating: "Validating credentials...",
-    footer: "insurance-ai Underwriting Portal — Prototype v0.1.0 · Strictly Confidential · {tenant}",
+    footer: "GetInsuredAI Underwriting Portal — Prototype v0.1.0 · Strictly Confidential · {tenant}",
     documentStatus: "{name} has been {status}!",
     quoteGenerated: "Quotation generated for {name}!",
   },

@@ -8,7 +8,7 @@ import "./globals.css";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: { default: "My Insurance | Customer Portal", template: "%s | My Insurance" },
+  title: { default: "GetInsuredAI | Customer Portal", template: "%s | GetInsuredAI" },
   description: "View your policies, premiums, claims and documents.",
   robots: { index: false, follow: false },
 };

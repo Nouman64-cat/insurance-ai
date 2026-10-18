@@ -1,5 +1,5 @@
 """
-API Gateway — single public entry point for the insurance-ai platform.
+API Gateway — single public entry point for the GetInsuredAI platform.
 
 Responsibilities:
   - Table initialisation on startup (create_db_and_tables via SQLModel).
@@ -85,10 +85,10 @@ async def lifespan(app: FastAPI):
 # ─────────────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="insurance-ai — API Gateway",
+    title="GetInsuredAI — API Gateway",
     version="0.1.0",
     description=(
-        "Single public entry point for the insurance-ai underwriting platform. "
+        "Single public entry point for the GetInsuredAI underwriting platform. "
         "Validates requests, calls the Risk Engine, and persists results to "
         "PostgreSQL."
     ),

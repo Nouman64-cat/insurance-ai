@@ -48,7 +48,7 @@ def build(roles: list[str]) -> dict:
                       "skills": [s.id for s in skills if tool.name in s.capabilities],
                       "schema": tool.args_schema.model_json_schema()})
     return {"skill_agent_enabled": enabled(), "roles": sorted(roles),
-            "agents": [{"id": "coordinator", "name": "Insurance AI coordinator", "node": "agent",
+            "agents": [{"id": "coordinator", "name": "GetInsuredAI coordinator", "node": "agent",
                         "description": "Routes requests to the general assistant or a specialist, preserving role and conversation context.",
                         "tools": [], "subagents": [s[0] for s in scopes]},
                        {"id": "general", "name": "General assistant", "node": "general_agent",

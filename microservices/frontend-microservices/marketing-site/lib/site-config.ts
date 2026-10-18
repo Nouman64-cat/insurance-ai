@@ -1,9 +1,9 @@
 export const siteConfig = {
-  name: "Insurance AI",
+  name: "GetInsuredAI",
   developer: "Rizviz International Impex",
   tagline: "AI-assisted underwriting and policy servicing for life and takaful insurers",
   description:
-    "Insurance AI takes a policy from lead to claim on one auditable platform: AI underwriting with deterministic decision rules, a fraud graph, a gated AI copilot and a field-agent mobile app.",
+    "GetInsuredAI takes a policy from lead to claim on one auditable platform: AI underwriting with deterministic decision rules, a fraud graph, a gated AI copilot and a field-agent mobile app.",
   url: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3002",
   portalUrl: process.env.NEXT_PUBLIC_PORTAL_URL ?? "http://localhost:3000",
 } as const;

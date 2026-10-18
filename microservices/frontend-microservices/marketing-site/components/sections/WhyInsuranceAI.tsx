@@ -46,7 +46,7 @@ export function WhyInsuranceAI() {
         <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_50%_40%_at_50%_60%,rgb(37_99_235/0.07),transparent_70%),radial-gradient(ellipse_35%_30%_at_80%_75%,rgb(109_40_217/0.05),transparent_70%),radial-gradient(ellipse_30%_25%_at_20%_40%,rgb(34_184_214/0.07),transparent_70%)]" />
       <Container className="relative">
         <div data-reveal className="max-w-4xl">
-          <p className="eyebrow">Why Insurance AI</p>
+          <p className="eyebrow">Why GetInsuredAI</p>
           <h2 className="mt-3 text-3xl font-semibold leading-[1.06] tracking-[-0.03em] text-ink sm:text-5xl 2xl:text-6xl">
             Intelligent analysis. Controlled decisions. Complete traceability.
           </h2>

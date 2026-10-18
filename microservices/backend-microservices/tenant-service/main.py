@@ -208,7 +208,7 @@ async def lifespan(app: FastAPI):
 # ── App ───────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="insurance-ai — Tenant Service",
+    title="GetInsuredAI — Tenant Service",
     version="0.1.0",
     description="Manages insurance companies (tenants) and their employees (users). "
                 "Every downstream microservice uses the tenant_id issued here.",

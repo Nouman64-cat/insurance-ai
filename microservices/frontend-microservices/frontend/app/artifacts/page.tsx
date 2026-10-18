@@ -1032,7 +1032,7 @@ function DirectOcrTab() {
               });
             })()}
           </div>
-          <div className="border-t border-slate-200 mt-8 pt-4 text-center text-[10px] text-slate-400" style={{ pageBreakInside: "avoid" }}><p className="font-semibold">{tx("insurance-ai Underwriting Portal — AI Document Processing Pipeline")}</p><p className="mt-1">{tx("Adamjee Life Assurance Co. Ltd. · Strictly Confidential")}</p></div>
+          <div className="border-t border-slate-200 mt-8 pt-4 text-center text-[10px] text-slate-400" style={{ pageBreakInside: "avoid" }}><p className="font-semibold">{tx("GetInsuredAI Underwriting Portal — AI Document Processing Pipeline")}</p><p className="mt-1">{tx("Adamjee Life Assurance Co. Ltd. · Strictly Confidential")}</p></div>
         </div>
       </div>
     </>

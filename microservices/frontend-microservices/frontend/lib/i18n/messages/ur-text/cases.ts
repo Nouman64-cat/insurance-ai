@@ -43,7 +43,7 @@ const cases: Record<string, string> = {
   "Generating...": "تیار ہو رہا ہے...",
   "In": "اِن",
   "in the left panel": "بائیں پینل میں",
-  "insurance-ai Underwriting Portal — AI Document Processing Pipeline": "insurance-ai انڈر رائٹنگ پورٹل — AI دستاویز پروسیسنگ پائپ لائن",
+  "GetInsuredAI Underwriting Portal — AI Document Processing Pipeline": "GetInsuredAI انڈر رائٹنگ پورٹل — AI دستاویز پروسیسنگ پائپ لائن",
   "INTERNAL USE ONLY": "صرف اندرونی استعمال کے لیے",
   "Max words (optional)": "زیادہ سے زیادہ الفاظ (اختیاری)",
   "No active tenant.": "کوئی فعال ٹیننٹ نہیں۔",

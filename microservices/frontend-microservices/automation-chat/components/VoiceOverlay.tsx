@@ -100,7 +100,7 @@ export default function VoiceOverlay({onClose, context, onPlatformRequest, minim
 
   return <div ref={dialog} role="dialog" aria-modal="true" aria-label={text('Live voice', 'لائیو وائس')} className="absolute inset-0 z-50 flex flex-col rounded-[1.75rem] overflow-hidden bg-slate-950 text-white" dir={ur ? 'rtl' : 'ltr'}>
     <header className="flex items-center justify-between px-5 pt-5">
-      <div><h2 className="font-semibold">{text('Insurance AI · Live voice', 'انشورنس اے آئی · لائیو وائس')}</h2><p className="text-xs text-slate-400">{text('AI-generated voice', 'اے آئی کی تیار کردہ آواز')} · {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}</p></div>
+      <div><h2 className="font-semibold">{text('GetInsuredAI · Live voice', 'GetInsuredAI · لائیو وائس')}</h2><p className="text-xs text-slate-400">{text('AI-generated voice', 'اے آئی کی تیار کردہ آواز')} · {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}</p></div>
       <button className={control} onClick={finish} aria-label={text('Close voice call', 'وائس کال بند کریں')}>×</button>
     </header>
     <div className="flex flex-col items-center gap-4 py-6 px-5">
@@ -114,7 +114,7 @@ export default function VoiceOverlay({onClose, context, onPlatformRequest, minim
     </div>
     <div className="flex-1 min-h-0 overflow-y-auto px-4 space-y-3 pb-4" aria-label={text('Live captions', 'لائیو کیپشنز')}>
       {!captions.length && <p className="text-center text-sm text-slate-400 py-6">{text('Speak naturally. English and Urdu are welcome.', 'قدرتی انداز میں بات کریں۔ انگریزی اور اردو دونوں بول سکتے ہیں۔')}</p>}
-      {captions.map(c => <div key={c.id} className={`flex ${c.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[90%] rounded-xl px-3 py-2 text-sm ${c.role === 'user' ? 'bg-indigo-500/25' : 'bg-white/10'}`}><span className="block text-[10px] text-slate-300 mb-1">{c.role === 'user' ? text('You', 'آپ') : 'Insurance AI'}</span><p dir="auto">{c.text}</p></div></div>)}
+      {captions.map(c => <div key={c.id} className={`flex ${c.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[90%] rounded-xl px-3 py-2 text-sm ${c.role === 'user' ? 'bg-indigo-500/25' : 'bg-white/10'}`}><span className="block text-[10px] text-slate-300 mb-1">{c.role === 'user' ? text('You', 'آپ') : 'GetInsuredAI'}</span><p dir="auto">{c.text}</p></div></div>)}
       <div ref={end}/>
     </div>
     <footer className="px-4 pb-5 pt-3 border-t border-white/10 flex flex-col items-center gap-3">

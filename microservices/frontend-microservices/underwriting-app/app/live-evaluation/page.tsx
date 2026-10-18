@@ -293,7 +293,7 @@ export default function LiveEvaluationPage() {
     doc.setFillColor(15, 23, 42); doc.rect(0, 0, pageW, 28, "F");
     doc.setFillColor(59, 130, 246); doc.rect(0, 28, pageW, 1.5, "F");
     doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(13);
-    doc.text("insurance-ai", mg, 12);
+    doc.text("GetInsuredAI", mg, 12);
     doc.setFont("helvetica", "normal"); doc.setFontSize(7.5);
     doc.text("Underwriting Platform · Live Evaluation Report", mg, 20);
     doc.setTextColor(148, 163, 184);
@@ -358,7 +358,7 @@ export default function LiveEvaluationPage() {
       doc.setPage(p);
       doc.setDrawColor(226, 232, 240); doc.line(mg, pageH - 12, pageW - mg, pageH - 12);
       doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); doc.setTextColor(148, 163, 184);
-      doc.text("insurance-ai Underwriting Platform · Prototype v0.1.0 · Strictly Confidential · Adamjee Life Assurance Co. Ltd.", pageW / 2, pageH - 7, { align: "center" });
+      doc.text("GetInsuredAI Underwriting Platform · Prototype v0.1.0 · Strictly Confidential · Adamjee Life Assurance Co. Ltd.", pageW / 2, pageH - 7, { align: "center" });
       doc.text(`Page ${p} of ${total}`, pageW - mg, pageH - 7, { align: "right" });
     }
 

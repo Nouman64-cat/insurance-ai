@@ -5,9 +5,9 @@ title: Overview
 sidebar_position: 1
 ---
 
-# insurance-ai
+# GetInsuredAI
 
-**insurance-ai** is an AI-powered, multi-tenant life-insurance platform built for Pakistani insurers. It covers the full policy journey — lead intake, quotation, pre-underwriting clearance, AI underwriting, issuance, in-force servicing, and claims — on a FastAPI microservice backend with LLMs, a Memgraph fraud graph, and a Kafka event bus.
+**GetInsuredAI** is an AI-powered, multi-tenant life-insurance platform built for Pakistani insurers. It covers the full policy journey — lead intake, quotation, pre-underwriting clearance, AI underwriting, issuance, in-force servicing, and claims — on a FastAPI microservice backend with LLMs, a Memgraph fraud graph, and a Kafka event bus.
 
 ## What it does
 

@@ -53,7 +53,7 @@ export default function ScoreEnginePage() {
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("AI Score Engine")}</h1>
           <p className="text-sm text-slate-500 mt-0.5">{tx("Centralized intelligence engine consolidating risk, artifact, fraud, and persistency signals into a unified decision score.")}</p>
         </div>
-        <span className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold tracking-wide">{tx("insurance-ai v0.1.0-proto")}</span>
+        <span className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold tracking-wide">{tx("GetInsuredAI v0.1.0-proto")}</span>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

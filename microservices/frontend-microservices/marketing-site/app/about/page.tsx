@@ -8,7 +8,7 @@ import { stagger } from "@/lib/utils";
 
 export const metadata = pageMetadata(
   "About",
-  "Why Insurance AI keeps decisions deterministic, humans in the loop and every change auditable.",
+  "Why GetInsuredAI keeps decisions deterministic, humans in the loop and every change auditable.",
   "/about"
 );
 
@@ -41,7 +41,7 @@ export default function AboutPage() {
       <PageHero
         eyebrow="About"
         title="Insurance technology that can explain itself"
-        description="Insurance AI is an AI-powered, multi-tenant life insurance platform built for Pakistani insurers, designed so that every automated step can be justified to an underwriter, an auditor or a customer. It is developed by Rizviz International Impex."
+        description="GetInsuredAI is an AI-powered, multi-tenant life insurance platform built for Pakistani insurers, designed so that every automated step can be justified to an underwriter, an auditor or a customer. It is developed by Rizviz International Impex."
       />
 
       <Section>

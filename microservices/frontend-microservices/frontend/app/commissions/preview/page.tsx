@@ -482,7 +482,7 @@ export default function CommissionsPage() {
 
       {/* Footer Disclaimer */}
       <p className="text-center text-[10px] text-slate-400 pb-2 leading-relaxed">
-        {tx("Commission metrics are computed live from real-time calculation engine datasets for the selected filters.  ·  Model suite:")}{" "}<span className="font-mono">{tx("insurance-ai v0.1.0-commissions")}</span>
+        {tx("Commission metrics are computed live from real-time calculation engine datasets for the selected filters.  ·  Model suite:")}{" "}<span className="font-mono">{tx("GetInsuredAI v0.1.0-commissions")}</span>
         {" "}{tx("·  Commission Dashboard — Internal Use Only")}
       </p>
     </div>

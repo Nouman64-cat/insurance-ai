@@ -125,8 +125,8 @@ def credentials_email(
     button is not possible inside the message; selecting the field is the
     closest equivalent and matches what GitHub / Atlassian / Vercel do.
     """
-    scope = f"at {tenant_name}" if tenant_name else "on the insurance-ai platform"
-    subject = f"Your insurance-ai {role_label} account is ready"
+    scope = f"at {tenant_name}" if tenant_name else "on the GetInsuredAI platform"
+    subject = f"Your GetInsuredAI {role_label} account is ready"
     article = "An" if role_label[:1].lower() in "aeiou" else "A"
 
     # ── Plain-text fallback ──────────────────────────────────────────────────
@@ -140,7 +140,7 @@ def credentials_email(
         + "For your security, change this password immediately after your first "
         "sign-in, then delete this email.\n\n"
         "If you weren't expecting this, please contact your administrator.\n\n"
-        "— insurance-ai"
+        "— GetInsuredAI"
     )
 
     # ── HTML ─────────────────────────────────────────────────────────────────
@@ -190,7 +190,7 @@ def credentials_email(
 <tr><td align="center">
   <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,Helvetica,sans-serif;">
     <tr><td style="background:{_BRAND};padding:24px 28px;">
-      <div style="color:#ffffff;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;opacity:.8;">insurance-ai</div>
+      <div style="color:#ffffff;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;opacity:.8;">GetInsuredAI</div>
       <div style="color:#ffffff;font-size:22px;font-weight:700;margin-top:6px;">Your {_html.escape(role_label)} account is ready</div>
     </td></tr>
     <tr><td style="padding:28px;">
@@ -222,7 +222,7 @@ def credentials_email(
     </td></tr>
     <tr><td style="background:#f8fafc;padding:18px 28px;border-top:1px solid {_LINE};">
       <div style="color:{_MUTE};font-size:11px;line-height:17px;">
-        You're receiving this because an administrator created an insurance-ai account for this
+        You're receiving this because an administrator created a GetInsuredAI account for this
         email address. If you weren't expecting it, please contact your administrator.
       </div>
       <div style="color:{_MUTE};font-size:11px;margin-top:8px;">This is a system-generated message — please do not reply.</div>

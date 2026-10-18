@@ -526,7 +526,7 @@ async def view_artifact_file(
             </div>
 
             <div class="paper-footer">
-                <div>Insurance AI Governance Framework · Document Gate Verified</div>
+                <div>GetInsuredAI Governance Framework · Document Gate Verified</div>
                 <div>Page 1 of 1</div>
             </div>
         </div>

@@ -6,7 +6,7 @@ const ur: Record<keyof typeof en, string> = {
   "common.done": "مکمل", "common.save": "محفوظ کریں", "common.saving": "محفوظ ہو رہا ہے…", "common.edit": "ترمیم", "common.open": "کھولیں", "common.viewAll": "سب دیکھیں",
   "common.download": "ڈاؤن لوڈ", "common.submitting": "جمع ہو رہا ہے…", "common.uploading": "اپ لوڈ ہو رہا ہے…",
 
-  "brand.name": "میری انشورنس", "brand.tagline": "کسٹمر پورٹل", "topBar.customerPortal": "کسٹمر پورٹل",
+  "brand.name": "GetInsuredAI", "brand.tagline": "کسٹمر پورٹل", "topBar.customerPortal": "کسٹمر پورٹل",
   "footer.text": "آپ کی معلومات نجی اور محفوظ ہیں۔ مشترکہ ڈیوائس استعمال کرنے کے بعد سائن آؤٹ کریں۔",
   "nav.label": "مرکزی نیویگیشن", "nav.dashboard": "ڈیش بورڈ", "nav.policies": "میری پالیسیاں", "nav.payments": "پریمیم کی ادائیگیاں", "nav.claims": "کلیمز",
   "nav.documents": "دستاویزات", "nav.profile": "پروفائل", "nav.support": "معاونت", "nav.notifications": "اطلاعات",

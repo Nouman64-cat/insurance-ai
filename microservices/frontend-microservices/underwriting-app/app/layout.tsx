@@ -12,7 +12,7 @@ import "@/app/globals.css";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: { default: "insurance-ai | Underwriting Workbench", template: "%s | Underwriting Workbench" },
+  title: { default: "GetInsuredAI | Underwriting Workbench", template: "%s | Underwriting Workbench | GetInsuredAI" },
   description: "Underwriting queue, case workspace, evidence review and risk evaluation.",
 };
 

@@ -22,7 +22,7 @@ MODEL = "gpt-realtime-2.1-mini"
 TENANT_SERVICE_URL = os.getenv("TENANT_SERVICE_URL", "http://tenant-service:8001")
 OPENAI_URL = "https://api.openai.com/v1"
 
-INSTRUCTIONS = """You are Insurance AI's live voice companion. Speak naturally and briefly,
+INSTRUCTIONS = """You are GetInsuredAI's live voice companion. Speak naturally and briefly,
 one or two sentences at a time. Match the user's English or Urdu, including mixed speech.
 Before a platform lookup that may take time, briefly acknowledge that you are checking,
 then call the tool. Do not imply the action has already completed.

@@ -568,7 +568,7 @@ export default function ClaimsDashboardPage() {
 
       {/* ── Footer Disclaimer ─────────────────────────────────────────────── */}
       <p className="text-center text-[10px] text-slate-400 pb-2 leading-relaxed">
-        {tx("Claims metrics are computed live from real-time adjudication datasets for the selected filters.  ·  Model suite:")}{" "}<span className="font-mono">{tx("insurance-ai v0.1.0-claims")}</span>
+        {tx("Claims metrics are computed live from real-time adjudication datasets for the selected filters.  ·  Model suite:")}{" "}<span className="font-mono">{tx("GetInsuredAI v0.1.0-claims")}</span>
         {" "}{tx("·  Claims Dashboard — Internal Use Only")}
       </p>
 

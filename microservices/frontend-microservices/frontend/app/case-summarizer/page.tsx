@@ -300,7 +300,7 @@ export default function CaseSummarizerPage() {
     doc.setTextColor(15, 23, 42);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(13);
-    doc.text("insurance-ai", mg, 12);
+    doc.text("GetInsuredAI", mg, 12);
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
@@ -616,7 +616,7 @@ export default function CaseSummarizerPage() {
       doc.setFontSize(6.5);
       doc.setTextColor(148, 163, 184);
       doc.text(
-        "insurance-ai Underwriting Platform · Prototype v0.1.0 · Strictly Confidential · Adamjee Life Assurance Co. Ltd.",
+        "GetInsuredAI Underwriting Platform · Prototype v0.1.0 · Strictly Confidential · Adamjee Life Assurance Co. Ltd.",
         pageW / 2, pageH - 7, { align: "center" },
       );
       doc.text(`Page ${p} of ${totalPages}`, pageW - mg, pageH - 7, { align: "right" });

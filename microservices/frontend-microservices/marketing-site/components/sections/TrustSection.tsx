@@ -28,7 +28,7 @@ export function TrustSection() {
             AI you can put in front of an auditor.
           </h2>
           <p className="mt-5 max-w-md text-base leading-relaxed text-body 2xl:text-lg">
-            Insurance AI is a prototype built around the questions a regulated insurer asks first.
+            GetInsuredAI is a prototype built around the questions a regulated insurer asks first.
           </p>
 
           {/* A decision record, the thing an auditor would ask to see */}

@@ -1,7 +1,7 @@
 import { PageHero, Section } from "@/components/ui/Section";
 import { pageMetadata } from "@/lib/seo";
 
-export const metadata = pageMetadata("Privacy", "How the Insurance AI prototype site handles information.", "/legal/privacy");
+export const metadata = pageMetadata("Privacy", "How the GetInsuredAI prototype site handles information.", "/legal/privacy");
 
 export default function PrivacyPage() {
   return (
