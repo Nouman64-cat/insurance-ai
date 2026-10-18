@@ -12,6 +12,9 @@ import {
 } from "@/app/services/claims";
 import { tx } from "@/lib/i18n/tx";
 import { getClaimWorkspace, type ClaimWorkspace } from "@/app/services/postIssuance";
+import FinanceClaimWorkspace from "@/components/finance/FinanceClaimWorkspace";
+import ClaimPayoutAction from "@/components/claims/ClaimPayoutAction";
+import ClaimFinalUnderwritingDecision from "@/components/claims/ClaimFinalUnderwritingDecision";
 import ClaimWorkspaceHeader from "@/components/claims/ClaimWorkspaceHeader";
 import { ClaimJourneyTimeline } from "@/components/claims/ClaimJourneyTimeline";
 
@@ -138,9 +141,11 @@ export default function ClaimDetailPage() {
   const [tab, setTab] = useState("overview");
   // Admin oversees claims: it sees everything and works nothing. Claims staff (and the claims manager) act.
   const [canAct, setCanAct] = useState(false);
+  const [currentRole,setCurrentRole] = useState<string | null>(null);
   useEffect(() => {
     const role = localStorage.getItem("user_role") ?? "";
-    setCanAct(!["Admin", "SuperAdmin"].includes(role));
+    setCurrentRole(role);
+    setCanAct(["ClaimsAdjuster", "ClaimsManager", "Underwriter"].includes(role));
   }, []);
   const [modal, setModal] = useState<"adj" | "payout" | "doc" | "reunderwrite" | "resolve_uw" | "decide" | null>(null);
   const [modalError, setModalError] = useState<string | null>(null);
@@ -150,6 +155,7 @@ export default function ClaimDetailPage() {
   const [showConfirmStep, setShowConfirmStep] = useState<boolean>(false);
 
   const openModal = (m: "adj" | "payout" | "doc" | "reunderwrite" | "resolve_uw" | "decide") => {
+    if (m === "payout" && currentRole !== "Finance") return;
     setModalError(null);
     setShowConfirmStep(false);
     if (m === "reunderwrite" && claim) {
@@ -310,6 +316,10 @@ export default function ClaimDetailPage() {
 
   const handlePayout = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (currentRole !== "Finance") {
+      showToast("err", tx("Only Finance users can execute claim payments."));
+      return;
+    }
     const maxAllowed = (claim?.approved_amount && claim.approved_amount > 0) ? claim.approved_amount : claim?.submitted_amount ?? 0;
     if (payAmount > maxAllowed) {
       showToast("err", tx("Payout amount cannot exceed approved amount of PKR {0}.", { 0: maxAllowed.toLocaleString() }));
@@ -319,6 +329,7 @@ export default function ClaimDetailPage() {
       showToast("err", tx("Payout amount must be greater than 0."));
       return;
     }
+    setModalError(null);
     setSubmitting(true);
     try {
       await createClaimPayout(claimId, { amount: payAmount, method: payMethod, reference_number: payRef || undefined });
@@ -327,7 +338,8 @@ export default function ClaimDetailPage() {
     } catch (e: any) {
       const detail = e.response?.data?.detail;
       const msg = typeof detail === "string" ? detail : (Array.isArray(detail) ? detail[0]?.msg : "Payout failed.");
-      showToast("err", msg);
+      setModalError(msg || tx("Payout failed. Please try again."));
+      showToast("err", msg || tx("Payout failed. Please try again."));
     }
     finally { setSubmitting(false); }
   };
@@ -400,6 +412,8 @@ export default function ClaimDetailPage() {
     </div>
   );
 
+  if (currentRole === "Finance") return <FinanceClaimWorkspace claim={claim} workspace={workspace} onReload={load} />;
+
   const isClosedStatus = ["Paid", "Approved", "Rejected", "Declined", "Voided", "Closed", "Settled"].includes(claim.status);
   const isReUnderwriting = claim.status === "Re-Underwriting Required";
   const flowStages = workspace?.stages ?? null;
@@ -411,7 +425,7 @@ export default function ClaimDetailPage() {
   // On the workflow, the current step is its first open one (all done → past the end, everything ticked).
   const stepIdx = flowStages ? (flowCurrent < 0 ? flowStages.length : flowCurrent) : displaySteps.indexOf(currentStepName as any);
   const stepNote = flowStages && flowCurrent >= 0 ? `${tx(flowStages[flowCurrent].label)}${flowStages[flowCurrent].detail ? ` — ${tx(flowStages[flowCurrent].detail)}` : ""}` : null;
-  const nextOpts = VALID_NEXT[claim.status] || [];
+  const nextOpts = (VALID_NEXT[claim.status] || []).filter((status) => status !== "Settled" || currentRole === "Finance");
   const hasDocs = (claim.artifacts?.length ?? 0) > 0;
   const daysOpen = Math.max(0, Math.floor((Date.now() - new Date(claim.reported_date).getTime()) / 86_400_000));
   const fraudPct = Math.round((claim.fraud_probability ?? 0) * 100);
@@ -424,6 +438,18 @@ export default function ClaimDetailPage() {
   );
 
   const guide = getNextStep(claim.status, { hasDocs, canPayout, nextOpts, uwBlocked: hasUnresolvedFlags });
+  if (canPayout) {
+    guide.title = currentRole === "Finance" ? "Settle the claim" : "Awaiting Finance";
+    guide.body = currentRole === "Finance" ? "Record the payout to settle the approved claim." : "The claim is approved. Finance must record the payout; ask your administrator to provision a Finance account if needed.";
+    guide.cta = undefined; // Payment has its own Finance-only control in the header.
+  }
+  const uwTriggers = (claim.underwriting_referral_reason || "").split("; ").map((r) => r.trim()).filter(Boolean);
+  const uwNote = (claim.underwriting_decision_notes || "").replace(/^Referral Note \(\d{4}-\d{2}-\d{2}\):\s*/i, "").trim();
+  const docProgress = workspace?.documents?.progress ?? null;
+  const coverPct = (claim.coverage_amount ?? 0) > 0 ? Math.round((claim.submitted_amount / claim.coverage_amount!) * 1000) / 10 : null;
+  const fraudBand = fraudPct >= 70 ? "High" : fraudPct >= 30 ? "Medium" : "Low";
+  const isThirdParty = !!claim.claimant_type && claim.claimant_type !== "SELF";
+  const payouts = claim.payouts ?? [];
   const openDecision = (target: ClaimStatus | null = null) => {
     setDecideTarget(target);
     setDecideNote("");
@@ -492,11 +518,13 @@ export default function ClaimDetailPage() {
                 {tx("Refer to underwriting")}
               </button>)
             )}
-            {canPayout && (
-              canAct && (<button type="button" onClick={() => setModal("payout")}
-                className="rounded-lg border border-blue-600 px-3 py-2 text-sm font-medium text-blue-600 transition-colors hover:bg-blue-50">
-                {tx("Issue payout")}
-              </button>)
+            <ClaimPayoutAction role={currentRole} eligible={canPayout} disabled={submitting}
+              onPayout={() => openModal("payout")} />
+            {canAct && !isReUnderwriting && nextOpts.length > 0 && !(guide.cta?.kind === "decide" && !guide.cta.target) && (
+              <button type="button" onClick={() => openDecision(null)}
+                className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900">
+                {tx("More options")}
+              </button>
             )}
             {guide.cta && (
               canAct && (<button type="button" onClick={() => runNextStep(guide.cta!)}
@@ -507,9 +535,10 @@ export default function ClaimDetailPage() {
           </>
         }
       />
+      {isReUnderwriting && <ClaimFinalUnderwritingDecision claimId={claimId} role={currentRole} initialClaim={claim} disabled={submitting} onDone={load} />}
 
       {/* Mandatory Document Gate Notice */}
-      {!hasDocs && claim.status !== "Closed" && claim.status !== "Declined" && guide.cta?.kind !== "docs" && (
+      {tab !== "overview" && !hasDocs && claim.status !== "Closed" && claim.status !== "Declined" && guide.cta?.kind !== "docs" && (
         <div className="p-3 bg-blue-50/70 border-y border-r border-blue-200/80 border-l-4 border-l-blue-500 rounded-xl text-xs text-blue-950 flex items-center justify-between shadow-2xs gap-4">
           <div className="flex items-center gap-3">
             <div className="w-7 h-7 rounded-lg bg-blue-500/15 border border-blue-500/30 flex items-center justify-center flex-shrink-0 text-blue-600">
@@ -539,172 +568,221 @@ export default function ClaimDetailPage() {
         </div>
       )}
 
-      {/* Underwriting Active Audit / Review Banner */}
-      {claim.status === "Re-Underwriting Required" && (
-        <div className="p-4 bg-blue-50/80 border border-blue-200/90 rounded-xl shadow-2xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-blue-950">
-          <div className="flex items-start gap-3.5">
-            <div className="w-9 h-9 rounded-lg bg-blue-100 border border-blue-200/80 flex items-center justify-center shrink-0 text-blue-800 shadow-2xs mt-0.5">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-bold text-blue-950 text-xs uppercase tracking-wider">
-                  {tx("Claim Underwriting")}
-                </span>
-                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-200/70 border border-blue-300/80 text-blue-900">
-                  {tx("Paused Adjudication")}
-                </span>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] text-blue-900 font-medium">{tx("Referral Triggers:")}</span>
-                {(claim.underwriting_referral_reason || "Technical Underwriting Audit").split("; ").map((reason, idx) => (
-                  <span
-                    key={idx}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white border border-blue-200/90 text-blue-950 font-semibold text-[11px] shadow-2xs"
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
-                    {reason}
-                  </span>
-                ))}
-              </div>
-
-              {claim.underwriting_decision_notes && (
-                <div className="flex items-center gap-1.5 text-[11px] text-blue-900 pt-0.5">
-                  <span className="font-semibold text-blue-800">{tx("Referral Note:")}</span>
-                  <span className="italic font-medium text-blue-950">
-                    "{claim.underwriting_decision_notes.replace(/^Referral Note \(\d{4}-\d{2}-\d{2}\):\s*/i, "")}"
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <span className="shrink-0 self-stretch rounded-lg border border-blue-200 bg-white px-4 py-2 text-center text-xs font-semibold text-blue-900 md:self-auto">
-            {tx("With the Underwriting department")}
+      {/* Off the overview, a one-line reminder that the claim is paused — the full story lives on the overview. */}
+      {isReUnderwriting && tab !== "overview" && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-2.5 text-sm">
+          <span className="flex items-center gap-2 text-blue-950">
+            <span className="h-2 w-2 rounded-full bg-blue-500" aria-hidden="true" />
+            <b>{tx("Paused")}</b> {tx("— with the Underwriting department until they record a decision.")}
           </span>
+          <button type="button" onClick={() => setTab("overview")} className="text-xs font-semibold text-blue-700 hover:underline">{tx("See why")}</button>
         </div>
       )}
 
       {/* Main content: the sections are tabs, as in the Underwriting Workbench */}
       <div className="space-y-5">
         {tab === "overview" && (
-          <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-3">
-            <div className="space-y-5 lg:col-span-2">
-              <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <div className="border-b border-slate-100 px-5 py-3.5"><h2 className="text-sm font-bold text-slate-900">{tx("Where this claim stands")}</h2></div>
-                <div className="px-5 py-5">
-                  <ol className="flex" aria-label={tx("Claim progress")}>
-                    {displaySteps.map((step, i) => {
-                      const isDone = i < stepIdx;
-                      const isCurrent = i === stepIdx;
-                      return (
-                        <li key={step} className="relative flex flex-1 flex-col items-center text-center">
-                          {i > 0 && <span aria-hidden="true" className={`absolute right-1/2 top-3 h-0.5 w-full -translate-y-1/2 ${i <= stepIdx ? "bg-blue-500" : "bg-slate-200"}`} />}
-                          <span aria-current={isCurrent ? "step" : undefined}
-                            className={`relative z-10 flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold ${isCurrent ? "bg-blue-600 text-white ring-4 ring-blue-100" : isDone ? "bg-blue-600 text-white" : "border-2 border-slate-300 bg-white text-slate-400"}`}>
-                            {isDone ? "✓" : i + 1}
-                          </span>
-                          <span className={`mt-1.5 px-1 text-[11px] ${isCurrent ? "font-bold text-blue-700" : isDone ? "font-semibold text-slate-700" : "font-medium text-slate-400"}`}>{step}</span>
-                        </li>
-                      );
-                    })}
-                  </ol>
-                  {stepIdx < 0 && <p className="mt-3 text-xs text-slate-500">{tx("This claim is outside the standard path.")}</p>}
-                  {stepNote && <p className="mt-3 text-xs text-slate-600"><b>{tx(displaySteps[stepIdx])}:</b> {stepNote}</p>}
-                  <div className={`mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3 ${guide.done ? "bg-slate-50" : "bg-blue-50"}`}>
-                    <div className="min-w-0">
-                      <p className={`text-[11px] font-bold uppercase tracking-wider ${guide.done ? "text-slate-500" : "text-blue-600"}`}>{guide.done ? tx("All done") : tx("Next step")}</p>
-                      <p className="text-sm font-semibold text-slate-900">{tx(guide.title)}</p>
-                      <p className="text-xs text-slate-600">{tx(guide.body)}</p>
-                    </div>
-                    {nextOpts.length > 0 && !(guide.cta?.kind === "decide" && !guide.cta.target) && (
-                      canAct && (<button type="button" onClick={() => openDecision(null)} className="text-xs font-semibold text-blue-700 hover:underline">{tx("All options")}</button>)
-                    )}
-                  </div>
-                </div>
-              </section>
+          <div className="space-y-5">
+            {/* ── Status: where the claim is, why, and what can be done now ─────────────── */}
+            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="px-6 pt-5">
+                <ol className="flex" aria-label={tx("Claim progress")}>
+                  {displaySteps.map((step, i) => {
+                    const isDone = i < stepIdx;
+                    const isCurrent = i === stepIdx;
+                    return (
+                      <li key={step} className="relative flex flex-1 flex-col items-center text-center">
+                        {i > 0 && <span aria-hidden="true" className={`absolute right-1/2 top-3 h-0.5 w-full -translate-y-1/2 ${i <= stepIdx ? "bg-blue-500" : "bg-slate-200"}`} />}
+                        <span aria-current={isCurrent ? "step" : undefined}
+                          className={`relative z-10 flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold ${
+                            isCurrent ? (isReUnderwriting ? "border-2 border-blue-500 bg-white text-blue-600 ring-4 ring-blue-100" : "bg-blue-600 text-white ring-4 ring-blue-100")
+                              : isDone ? "bg-blue-600 text-white" : "border-2 border-slate-200 bg-white text-slate-400"}`}>
+                          {isDone ? "✓" : isCurrent && isReUnderwriting ? "❙❙" : i + 1}
+                        </span>
+                        <span className={`mt-2 hidden px-1 text-xs sm:block ${isCurrent ? "font-semibold text-slate-900" : isDone ? "text-slate-600" : "text-slate-400"}`}>{tx(step)}</span>
+                      </li>
+                    );
+                  })}
+                </ol>
+                {stepIdx < 0 && <p className="mt-3 text-xs text-slate-500">{tx("This claim is outside the standard path.")}</p>}
+              </div>
 
-              <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
-                  <h2 className="text-sm font-bold text-slate-900">{tx("Claim details")}</h2>
-                  {claim.claimant_type && claim.claimant_type !== "SELF" ? (
-                    <span className="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-800">{tx("Claim by {who}", { who: claim.claimant_relationship || tx("nominee") })}</span>
-                  ) : (
-                    <span className="rounded-md border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{tx("Insured self claim")}</span>
-                  )}
-                </div>
-                <dl className="grid grid-cols-2 gap-x-6 gap-y-4 px-5 py-4 sm:grid-cols-3">
-                  <div>
-                    <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Claimant")}</dt>
-                    <dd className="mt-0.5 text-sm font-semibold text-slate-900">{claim.claimant_name || tx("Self")}</dd>
-                    {claim.claimant_type && claim.claimant_type !== "SELF" && (
-                      <span className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[11px] font-semibold ${claim.nominee_match ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-700"}`}>
-                        {claim.nominee_match ? tx("Verified nominee") : tx("Not the listed nominee")}
-                      </span>
+              <div className="mt-5 grid gap-px border-t border-slate-100 bg-slate-100 lg:grid-cols-[1fr_20rem]">
+                {/* What is happening */}
+                <div className="bg-white px-6 py-5">
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                      guide.done ? "bg-slate-100 text-slate-600" : isReUnderwriting ? "bg-blue-100 text-blue-800" : "bg-blue-600 text-white"}`}>
+                      {isReUnderwriting && <span className="h-1.5 w-1.5 rounded-full bg-blue-500" aria-hidden="true" />}
+                      {guide.done ? tx("All done") : isReUnderwriting ? tx("Paused") : tx("Your next step")}
+                    </span>
+                    {stepIdx >= 0 && stepIdx < displaySteps.length && (
+                      <span className="text-xs text-slate-400">{tx("Step {n} of {total}", { n: stepIdx + 1, total: displaySteps.length })}</span>
                     )}
                   </div>
-                  <div><dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Policyholder")}</dt><dd className="mt-0.5 text-sm font-semibold text-slate-900">{claim.customer_name || tx("Policyholder")}</dd></div>
-                  <div><dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Adjuster")}</dt><dd className="mt-0.5 text-sm font-semibold text-slate-900">{claim.assigned_adjuster_name || tx("Unassigned")}</dd></div>
-                  {claim.claimant_cnic && (<div><dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Claimant CNIC")}</dt><dd className="mt-0.5 font-mono text-sm font-semibold text-slate-900">{claim.claimant_cnic}</dd></div>)}
-                  {claim.claimant_phone && (<div><dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Phone")}</dt><dd className="mt-0.5 text-sm font-semibold text-slate-900">{claim.claimant_phone}</dd></div>)}
-                  {claim.policy_type && (<div><dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{tx("Plan")}</dt><dd className="mt-0.5 text-sm font-semibold text-slate-900">{claim.policy_type}</dd></div>)}
-                </dl>
-                {claim.claimant_type && claim.claimant_type !== "SELF" && !claim.nominee_match && (
+                  <h2 className="mt-2 text-lg font-semibold text-slate-900">{tx(guide.title)}</h2>
+                  <p className="mt-1 max-w-2xl text-sm text-slate-600">{tx(guide.body)}</p>
+
+                  {isReUnderwriting && uwTriggers.length > 0 && (
+                    <div className="mt-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{tx("Why it was referred")}</p>
+                      <ul className="mt-2 grid gap-1.5 sm:grid-cols-2">
+                        {uwTriggers.map((reason) => (
+                          <li key={reason} className="flex items-start gap-2 text-sm text-slate-700">
+                            <svg className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m0 3.75h.008M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            {tx(reason)}
+                          </li>
+                        ))}
+                      </ul>
+                      {uwNote && (
+                        <blockquote className="mt-3 border-l-2 border-slate-200 pl-3 text-sm text-slate-600">
+                          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">{tx("Referral note")}</span>
+                          <p className="mt-0.5">{uwNote}</p>
+                        </blockquote>
+                      )}
+                    </div>
+                  )}
+
+                </div>
+
+                {/* What can move meanwhile: the document checklist runs alongside every other step */}
+                <div className="bg-slate-50/60 px-6 py-5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{isReUnderwriting ? tx("Meanwhile") : tx("Documents")}</p>
+                  {docProgress ? (
+                    <>
+                      <p className="mt-2 text-sm text-slate-700">
+                        <span className="text-2xl font-semibold tabular-nums text-slate-900">{docProgress.received}</span>
+                        <span className="text-slate-400"> / {docProgress.required}</span> {tx("required documents in")}
+                      </p>
+                      <div className="mt-2 h-1.5 rounded-full bg-slate-200" role="progressbar" aria-valuenow={docProgress.received} aria-valuemin={0} aria-valuemax={docProgress.required}>
+                        <div className="h-1.5 rounded-full bg-blue-600 transition-all" style={{ width: `${docProgress.required ? (docProgress.received / docProgress.required) * 100 : 100}%` }} />
+                      </div>
+                    </>
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-700">
+                      {hasDocs ? tx("{n} documents on file", { n: claim.artifacts?.length ?? 0 }) : tx("No documents on file yet. At least one verified document is needed before approval.")}
+                    </p>
+                  )}
+                  {workspace?.sla?.message && workspace.sla.state !== "not_started" && (
+                    <p className={`mt-3 text-xs ${["at_risk", "breached"].includes(workspace.sla.state) ? "font-semibold text-blue-800" : "text-slate-500"}`}>{tx(workspace.sla.message)}</p>
+                  )}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {canAct && !isClosedStatus && (
+                      <button type="button" onClick={() => openModal("doc")}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:border-blue-300 hover:text-blue-700">
+                        {tx("Upload document")}
+                      </button>
+                    )}
+                    <button type="button" onClick={() => setTab("documents")} className="px-1 py-1.5 text-xs font-semibold text-blue-700 hover:underline">
+                      {tx("View checklist")}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* ── The numbers ───────────────────────────────────────────────────────────── */}
+            <section className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-slate-200 bg-slate-200 shadow-sm lg:grid-cols-4" aria-label={tx("Key figures")}>
+              <div className="bg-white px-5 py-4">
+                <p className="text-xs text-slate-500">{tx("Claimed")}</p>
+                <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">{tx("PKR")} {claim.submitted_amount.toLocaleString()}</p>
+                {coverPct !== null && <p className="mt-0.5 text-xs text-slate-500">{tx("{pct} of PKR {cover} cover", { pct: `${coverPct}%`, cover: (claim.coverage_amount ?? 0).toLocaleString() })}</p>}
+              </div>
+              <div className="bg-white px-5 py-4">
+                <p className="text-xs text-slate-500">{tx("Approved")}</p>
+                <p className={`mt-1 text-xl font-semibold tabular-nums ${claim.approved_amount > 0 ? "text-slate-900" : "text-slate-300"}`}>
+                  {claim.approved_amount > 0 ? `${tx("PKR")} ${claim.approved_amount.toLocaleString()}` : tx("Not yet")}
+                </p>
+                {payouts.length > 0 && <p className="mt-0.5 text-xs text-slate-500">{tx("PKR {n} paid out", { n: payouts.reduce((s, p) => s + p.amount, 0).toLocaleString() })}</p>}
+              </div>
+              <div className="bg-white px-5 py-4">
+                <p className="text-xs text-slate-500">{tx("Fraud risk")}</p>
+                <p className="mt-1 text-xl font-semibold text-slate-900">{tx(fraudBand)} <span className="text-sm font-normal tabular-nums text-slate-400">{fraudPct}%</span></p>
+                <div className="mt-2 h-1 rounded-full bg-slate-100"><div className="h-1 rounded-full bg-blue-600" style={{ width: `${Math.max(2, Math.min(100, fraudPct))}%` }} /></div>
+              </div>
+              <div className="bg-white px-5 py-4">
+                <p className="text-xs text-slate-500">{tx("Duplicate check")}</p>
+                <p className="mt-1 text-xl font-semibold text-slate-900">{claim.duplicate_flag ? tx("Flagged") : tx("Clear")}</p>
+                <p className="mt-0.5 text-xs text-slate-500">{claim.duplicate_flag ? tx("A similar claim exists on this policy") : tx("No similar claim on this policy")}</p>
+              </div>
+            </section>
+
+            {/* ── Who and what ──────────────────────────────────────────────────────────── */}
+            <div className="grid gap-5 lg:grid-cols-2">
+              <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <h2 className="border-b border-slate-100 px-5 py-3.5 text-sm font-semibold text-slate-900">{tx("People")}</h2>
+                <ul className="divide-y divide-slate-100">
+                  {[
+                    {
+                      role: isThirdParty ? tx("Claimant · {who}", { who: claim.claimant_relationship || tx("nominee") }) : tx("Claimant · policyholder"),
+                      name: claim.claimant_name || claim.customer_name || tx("Self"),
+                      sub: claim.claimant_cnic,
+                      badge: isThirdParty ? (claim.nominee_match ? { text: tx("Matches nominee"), ok: true } : { text: tx("Not the listed nominee"), ok: false }) : null,
+                    },
+                    ...(isThirdParty ? [{ role: tx("Policyholder"), name: claim.customer_name || "—", sub: null, badge: null }] : []),
+                    { role: tx("Adjuster"), name: claim.assigned_adjuster_name || tx("Unassigned"), sub: null, badge: null },
+                  ].map((p) => (
+                    <li key={p.role} className="flex items-center gap-3 px-5 py-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600" aria-hidden="true">
+                        {p.name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase()}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-slate-900">{p.name}</p>
+                        <p className="truncate text-xs text-slate-500">{p.role}{p.sub && <> · <span className="font-mono">{p.sub}</span></>}</p>
+                      </div>
+                      {p.badge && (
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${p.badge.ok ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-700"}`}>
+                          {p.badge.ok ? "✓ " : ""}{p.badge.text}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                {isThirdParty && !claim.nominee_match && (
                   <p className="mx-5 mb-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700">
                     {tx("The policy names")} <strong>{claim.nominee_name || tx("no nominee")}</strong> ({claim.nominee_relationship || tx("nominee")}) {tx("as nominee. Check the claimant's identity and relationship before paying.")}
                   </p>
                 )}
               </section>
-            </div>
 
-            <div className="space-y-5">
               <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <div className="border-b border-slate-100 px-5 py-3.5"><h2 className="text-sm font-bold text-slate-900">{tx("Key figures")}</h2></div>
-                <dl className="divide-y divide-slate-100 text-sm">
-                  <div className="flex items-baseline justify-between px-5 py-3"><dt className="text-slate-500">{tx("Claimed")}</dt><dd className="font-bold text-slate-900">{tx("PKR")} {claim.submitted_amount.toLocaleString()}</dd></div>
-                  {(claim.coverage_amount ?? 0) > 0 && (
-                    <div className="px-5 py-3">
-                      <div className="flex items-baseline justify-between"><dt className="text-slate-500">{tx("Cover")}</dt><dd className="font-bold text-slate-900">{tx("PKR")} {(claim.coverage_amount ?? 0).toLocaleString()}</dd></div>
-                      <div className="mt-2 h-1.5 rounded-full bg-slate-100"><div className="h-1.5 rounded-full bg-blue-600" style={{ width: `${Math.max(1, Math.min(100, (claim.submitted_amount / (claim.coverage_amount ?? 1)) * 100))}%` }} /></div>
-                      <p className="mt-1 text-xs text-slate-500">{tx("{pct} of cover claimed", { pct: `${((claim.submitted_amount / (claim.coverage_amount ?? 1)) * 100).toFixed(1)}%` })}</p>
+                <h2 className="border-b border-slate-100 px-5 py-3.5 text-sm font-semibold text-slate-900">{tx("Policy & event")}</h2>
+                <dl className="grid grid-cols-2 gap-x-6 gap-y-4 px-5 py-4 text-sm">
+                  {[
+                    [tx("Plan"), claim.policy_type],
+                    [tx("Policy"), claim.policy_number && <span className="font-mono">{claim.policy_number}</span>],
+                    [tx("Event date"), workspace?.process?.event?.date ? displayDate(workspace.process.event.date) : claim.incident_date ? displayDate(claim.incident_date) : null],
+                    [tx("Cause"), workspace?.process?.event?.cause],
+                    [tx("Reported"), displayDate(claim.reported_date)],
+                    [tx("Phone"), claim.claimant_phone],
+                  ].filter(([, v]) => v).map(([label, value]) => (
+                    <div key={label as string}>
+                      <dt className="text-xs text-slate-500">{label}</dt>
+                      <dd className="mt-0.5 font-medium text-slate-900">{value}</dd>
                     </div>
-                  )}
-                  <div className="flex items-baseline justify-between px-5 py-3"><dt className="text-slate-500">{tx("Approved")}</dt><dd className={`font-bold ${claim.approved_amount > 0 ? "text-blue-700" : "text-slate-400"}`}>{claim.approved_amount > 0 ? `${tx("PKR")} ${claim.approved_amount.toLocaleString()}` : "—"}</dd></div>
-                  <div className="px-5 py-3">
-                    <div className="flex items-baseline justify-between"><dt className="text-slate-500">{tx("Fraud risk")}</dt><dd className="font-bold text-slate-900">{fraudPct}%</dd></div>
-                    <div className="mt-2 h-1.5 rounded-full bg-slate-100" role="progressbar" aria-valuenow={fraudPct} aria-valuemin={0} aria-valuemax={100}><div className="h-1.5 rounded-full bg-blue-600" style={{ width: `${Math.max(2, Math.min(100, fraudPct))}%` }} /></div>
-                  </div>
-                  <div className="flex items-center justify-between px-5 py-3"><dt className="text-slate-500">{tx("Duplicate check")}</dt>
-                    <dd className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${claim.duplicate_flag ? "border-slate-300 bg-slate-100 text-slate-700" : "border-blue-200 bg-blue-50 text-blue-700"}`}>{claim.duplicate_flag ? tx("Flagged") : tx("Clear")}</dd></div>
-                  {claim.ai_recommendation && (
-                    <div className="flex items-baseline justify-between px-5 py-3"><dt className="text-slate-500">{tx("Rule recommendation")}</dt><dd className="font-semibold text-slate-900">{humanize(claim.ai_recommendation)}</dd></div>
-                  )}
+                  ))}
                 </dl>
               </section>
-
-              <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <div className="border-b border-slate-100 px-5 py-3.5"><h2 className="text-sm font-bold text-slate-900">{tx("Payouts")}</h2></div>
-                <div className="px-5 py-4">
-                  {(!claim.payouts || claim.payouts.length === 0) ? (
-                    <p className="text-sm text-slate-500">{tx("No payout recorded yet.")}</p>
-                  ) : (
-                    <ul className="space-y-3">
-                      {claim.payouts.map((p) => (
-                        <li key={p.id} className="text-sm">
-                          <div className="flex items-center justify-between gap-3"><span className="font-bold text-slate-900">{tx("PKR")} {p.amount.toLocaleString()}</span><span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700">{p.status}</span></div>
-                          <p className="mt-0.5 text-xs text-slate-500">{p.method} · {displayDate(p.initiated_at)}</p>
-                          {p.reference_number && <p className="font-mono text-xs text-slate-500">{tx("Ref:")} {p.reference_number}</p>}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </section>
             </div>
+
+            {payouts.length > 0 && (
+              <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <h2 className="border-b border-slate-100 px-5 py-3.5 text-sm font-semibold text-slate-900">{tx("Payouts")}</h2>
+                <ul className="divide-y divide-slate-100">
+                  {payouts.map((p) => (
+                    <li key={p.id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
+                      <div>
+                        <p className="font-semibold tabular-nums text-slate-900">{tx("PKR")} {p.amount.toLocaleString()}</p>
+                        <p className="text-xs text-slate-500">{p.method} · {displayDate(p.initiated_at)}{p.reference_number && <> · <span className="font-mono">{p.reference_number}</span></>}</p>
+                      </div>
+                      <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">{p.status}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
           </div>
         )}
         {tab === "documents" && (<>
@@ -1279,7 +1357,7 @@ export default function ClaimDetailPage() {
       )}
 
       {/* Payout Modal */}
-      {modal === "payout" && (
+      {currentRole === "Finance" && modal === "payout" && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-lg border border-slate-200 w-full max-w-md overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
@@ -1287,6 +1365,7 @@ export default function ClaimDetailPage() {
               <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-600 text-lg">{tx("×")}</button>
             </div>
             <form onSubmit={handlePayout} className="p-5 space-y-3 text-xs">
+              {modalError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-red-700">{modalError}</p>}
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="block font-semibold text-slate-700">{tx("Amount (PKR)")}</label>
@@ -1495,7 +1574,7 @@ export default function ClaimDetailPage() {
       )}
 
       {/* Resolve Underwriting Review Modal */}
-      {modal === "resolve_uw" && (() => {
+      {currentRole === "ClaimsManager" && modal === "resolve_uw" && (() => {
         const options = (() => {
           const r = (claim.underwriting_referral_reason || "").toLowerCase();
           if (r.includes("contestable") || r.includes("non-disclosure") || r.includes("pre-existing") || r.includes("undisclosed") || r.includes("medical")) {

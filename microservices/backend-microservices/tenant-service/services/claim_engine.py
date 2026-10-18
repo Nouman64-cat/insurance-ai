@@ -471,7 +471,7 @@ def is_medical_document(label: str) -> bool:
 
 
 def claim_review_requirements(*, track: str, claims_terms: Optional[dict], documents: list[dict],
-                              contestable: bool, review_submitted: bool) -> tuple[list[dict], list[dict]]:
+                              contestable: bool, review_submitted: bool, checks: Optional[dict] = None) -> tuple[list[dict], list[dict]]:
     """What a Claim UW review checks, from the claim's own plan rather than the policy's underwriting rules:
     the claim's documents for this track (as on the claim's checklist), the plan's exclusions and waiting periods,
     and contestability. Returns (requirements, required_documents) in the specialist workspace's shapes."""
@@ -500,6 +500,10 @@ def claim_review_requirements(*, track: str, claims_terms: Optional[dict], docum
         reqs.append({"key": "claim_contestability", "label": "Contestability — proposal answers vs. history", "section": "overview",
                      "status": checked, "detail": "The event is within the contestability period: check the proposal's "
                      + ("medical declarations against the medical evidence." if medical else "income, occupation and existing-cover declarations.")})
+    for requirement in reqs:
+        saved = (checks or {}).get(requirement["key"])
+        if saved:
+            requirement["status"] = "Completed" if saved["finding"] in {"Clear", "Resolved"} else "Required"
     return reqs, required_documents
 
 

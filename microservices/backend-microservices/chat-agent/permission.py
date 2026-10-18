@@ -9,6 +9,7 @@ the graph checks before a tool ever runs.
 from env_mode import is_demo
 
 MUTATING_TOOLS = {
+    "record_claim_financial_check",
     "issue_claim_payout",
     "create_platform_tenant", "manage_platform_role", "configure_platform_model",
     "request_initial_premium", "review_initial_premium_proof", "transition_proposal",
@@ -172,6 +173,7 @@ MUTATING_TOOLS = {
 # Read-only + navigation. Never gated, never confirmed — asking "shall I open
 # the cases page?" before every navigation makes the agent unusable.
 SAFE_TOOLS = {
+    "get_claim_financial_review",
     "get_platform_configuration", "get_platform_token_usage", "get_initial_premium_status",
     "search_capabilities", "get_capability_schema",
     # Specialist underwriting reads — scoped further by ROLE_SCOPED_READS below.
@@ -336,6 +338,7 @@ CLIENT_EXECUTED_TOOLS = {"upload_document"}
 # that are optional/inferable (e.g. create_case's applicant lookup, which can
 # proceed on cnic OR applicant_name).
 REQUIRED_ARGS: dict[str, list[str]] = {
+    "record_claim_financial_check": ["key", "finding", "note"],
     "record_underwriting_review": ["decision"],
     "assign_underwriting_track": ["track"],
     "add_customer": [
@@ -407,6 +410,8 @@ REQUIRED_ARGS: dict[str, list[str]] = {
 # Tools that emit progress steps worth showing in the UI's process graph, with
 # the label each step gets. Everything else falls back to a humanised tool name.
 STEP_LABELS: dict[str, str] = {
+    "get_claim_financial_review": "Checking claim financial underwriting",
+    "record_claim_financial_check": "Recording financial claim finding",
     "get_platform_configuration": "Read platform configuration",
     "get_platform_token_usage": "Read token usage",
     "create_platform_tenant": "Create tenant",
@@ -851,6 +856,7 @@ CLAIMS_READ_TOOLS = {
 # Disbursement and reinsurance recovery are the two claims actions that move
 # money or bind the reinsurer. Adjusters prepare them; managers release them.
 CLAIMS_MANAGER_ONLY_TOOLS = {
+    "resolve_claim_underwriting",
     "refer_claim_to_reinsurance",
     # Workflow equivalents: releasing and paying the settlement, and letting an
     # ineligible claim through. (The API lets an adjuster authorise up to the
@@ -910,6 +916,8 @@ CLAIMS_ADJUSTER_ALLOWED_TOOLS = CLAIMS_READ_TOOLS | {
 }
 
 CLAIMS_MANAGER_ALLOWED_TOOLS = (CLAIMS_ADJUSTER_ALLOWED_TOOLS | CLAIMS_MANAGER_ONLY_TOOLS | {
+    "get_claim_financial_review",
+    "record_claim_financial_check",
     "get_active_policy_status",
     "list_users",
     # Claims managers are Customer Service staff too (customer-service STAFF roles).
@@ -976,11 +984,8 @@ UNDERWRITER_ALLOWED_TOOLS = SAFE_TOOLS | {
     "create_rule_version",
     "add_rule_to_version",
     "update_rule",
-    # Claims — an underwriter reads the claim file and rules on re-underwriting
-    # referrals (that IS their half of the claims workflow). They do not
-    # adjudicate, disburse, or open an FNOL: that is the adjuster's desk.
+    # Underwriters read claims and submit specialist reviews; the Claims Manager records final resolution.
     *CLAIMS_READ_TOOLS,
-    "resolve_claim_underwriting",
     # Evidence & medical review — reviewing medical reports is underwriting work.
     "request_missing_documents",
     "link_document_to_requirement",
@@ -1047,6 +1052,9 @@ ROLE_SCOPED_READS: dict[str, set[str]] = {
 # Mirrored from tenant-service/services/claim_authority.py. These restrictions
 # precede the legacy Admin fast path: platform administration is not claims authority.
 CLAIM_AUTHORITY_ROLES = {
+    "resolve_claim_underwriting": {"ClaimsManager"},
+    "get_claim_financial_review": {"ClaimsManager"},
+    "record_claim_financial_check": {"ClaimsManager"},
     "register_claim": {"ClaimsAdjuster", "ClaimsManager"},
     "adjudicate_claim": {"ClaimsAdjuster", "ClaimsManager"},
     "decide_claim": {"ClaimsAdjuster", "ClaimsManager"},

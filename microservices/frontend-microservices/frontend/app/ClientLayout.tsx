@@ -108,6 +108,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
     if (token && tenantId) {
       api.defaults.headers.common["X-Tenant-Id"] = tenantId;
     }
+    const isFinance = localStorage.getItem("user_role") === "Finance";
     const isSuperAdmin = localStorage.getItem("user_role") === "SuperAdmin";
     // A claims manager works in their own portal. The main portal (Admin, adjusters, agents...) is not theirs, so
     // anything here except the profile page sends them there.
@@ -136,10 +137,12 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
         // Another app is only reachable with the shared cookie set; without it, stay in the portal.
         if (back && result === "ok") window.location.assign(back);
         else if (isClaimsManager) window.location.assign(claimsHome);
-        else router.push(isSuperAdmin ? "/super-admin/tenants" : "/");
+        else router.push(isFinance ? "/finance" : isSuperAdmin ? "/super-admin/tenants" : "/");
       });
     } else if (token && isClaimsManager && !isLoginPage && !isFramed && pathname !== "/profile") {
       window.location.replace(claimsHome);
+    } else if (token && isFinance && pathname !== "/finance" && pathname !== "/profile" && !/^\/claims\/[0-9a-f-]{36}$/i.test(pathname ?? "")) {
+      router.replace("/finance");
     } else if (token && isSuperAdmin && pathname === "/") {
       router.push("/super-admin/tenants");
     } else {

@@ -1226,12 +1226,19 @@ class CaseRead(BaseModel):
 
     model_config = {"from_attributes": True}
 
+class ClaimUnderwritingCheckInput(BaseModel):
+    key: Literal["claim_exclusions", "claim_waiting_periods", "claim_contestability"]
+    finding: Literal["Clear", "Resolved", "Concern"]
+    note: str = Field(min_length=5, max_length=2000)
+
+
 class UnderwritingTrackUpdate(BaseModel):
     """Any field left out is unchanged; clear_assignee unassigns."""
     status:           Optional[Literal["PENDING", "IN_REVIEW", "CLEARED", "REFERRED", "DECLINED"]] = None
     assigned_user_id: Optional[UUID] = None
     clear_assignee:   bool = False
     note:             Optional[str] = Field(default=None, max_length=2000)
+    claim_checks: Optional[List[ClaimUnderwritingCheckInput]] = Field(default=None, max_length=3)
 
 class CaseStatusUpdate(BaseModel):
     status: CaseStatusEnum

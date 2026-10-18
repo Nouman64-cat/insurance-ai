@@ -86,7 +86,8 @@ export default function DashboardPage() {
     if (role && role !== "Admin") {
       setAuthorized(false);
       let target = "/cases";
-      if (role === "SuperAdmin") target = "/super-admin/tenants";
+      if (role === "Finance") target = "/finance";
+      else if (role === "SuperAdmin") target = "/super-admin/tenants";
       else if (role === "Agent" || role === "Broker") target = "/proposal";
       else if (role === "ClaimsAdjuster" || role === "ClaimsManager") target = "/claims";
       router.replace(target);

@@ -151,6 +151,37 @@ async def update_track(
     if row is None:
         row = CaseUnderwritingTrack(tenant_id=tenant_id, case_id=case_id, track=track_key)
     before = (row.status, row.assigned_user_id, row.note)
+    if body.claim_checks is not None:
+        from shared.models.core import ClaimUnderwritingCheck
+        if not case.claim_id:
+            raise HTTPException(422, "These checks apply only to claim underwriting reviews.")
+        if case.on_hold or str(getattr(case.caseStatus, 'value', case.caseStatus)) in {'Approved', 'Closed', 'Rejected'}:
+            raise HTTPException(409, "This application is held or closed for specialist work.")
+        if row.assigned_user_id != user.id:
+            raise HTTPException(403, "Only the assigned underwriter can record these findings.")
+        workspace = await _build_workspace(session, tenant_id, case_id, user, track_key)
+        applicable = {r['key'] for r in workspace['requirements'] if r['key'].startswith('claim_')}
+        if len({check.key for check in body.claim_checks}) != len(body.claim_checks):
+            raise HTTPException(422, "Record each check only once.")
+        for check in body.claim_checks:
+            if check.key not in applicable or len(check.note.strip()) < 5:
+                raise HTTPException(422, "Choose an applicable requirement and supply supporting evidence and rationale.")
+            saved = (await session.exec(select(ClaimUnderwritingCheck).where(
+                ClaimUnderwritingCheck.case_id == case_id, ClaimUnderwritingCheck.track == track_key,
+                ClaimUnderwritingCheck.requirement_key == check.key))).first()
+            previous = f"{saved.finding}: {saved.note}" if saved else "Not reviewed"
+            if saved is None:
+                saved = ClaimUnderwritingCheck(tenant_id=tenant_id, case_id=case_id, track=track_key,
+                    requirement_key=check.key, finding=check.finding, note=check.note.strip(), updated_by=user.id)
+            saved.finding, saved.note, saved.updated_by, saved.updated_at = check.finding, check.note.strip(), user.id, datetime.utcnow()
+            session.add(saved)
+            session.add(CaseAuditTrail(caseld=case_id, actionPerformed=f"{track.title()} claim requirement reviewed",
+                entityChanged=check.key, previousValue=previous, newValue=f"{saved.finding}: {saved.note}",
+                performedBy=user.id, timestamp=datetime.utcnow()))
+        if body.claim_checks and row.status in {"CLEARED", "REFERRED", "DECLINED"}:
+            row.status = "IN_REVIEW"
+            session.add(row)
+        await session.flush()
     if role in TRACK_ROLE.values():
         if row.assigned_user_id not in (None, user.id):
             raise HTTPException(403, "This review is assigned to another underwriter. Ask an admin to reassign it.")
@@ -164,7 +195,7 @@ async def update_track(
 
     if body.status == "CLEARED":
         # An application is only cleared once everything this review needs is in (referring or declining can happen earlier).
-        workspace = await _build_workspace(session, tenant_id, case_id, user, track_key)
+        workspace = await _build_workspace(session, tenant_id, case_id, user, track_key, checking_clearance=True)
         done = {"Submitted", "Verified", "Clear", "Completed", "NotRequired", "Waived", "Received"}
         outstanding = [r for r in workspace["requirements"] if r.get("status") not in done]
         if outstanding:
@@ -282,7 +313,7 @@ async def specialist_workspace(tenant_id: UUID, case_id: UUID, session: AsyncSes
     return await _build_workspace(session, tenant_id, case_id, user, track)
 
 
-async def _build_workspace(session: AsyncSession, tenant_id: UUID, case_id: UUID, user, track: str):
+async def _build_workspace(session: AsyncSession, tenant_id: UUID, case_id: UUID, user, track: str, checking_clearance: bool = False):
     from shared.models.core import Customer, Policy, CustomerEApplication, MedicalExamOrder, RiskAssessment, CaseTypeEnum, Artifact, AgentConfidentialReport, PremiumQuote, DocumentRequest, InsuranceHistoryCheck
     case = await session.get(Case, case_id)
     if not case or case.tenant_id != tenant_id or case.caseType != CaseTypeEnum.UNDERWRITING:
@@ -409,6 +440,7 @@ async def _build_workspace(session: AsyncSession, tenant_id: UUID, case_id: UUID
     # claim travels with it. The track's requirements do — its e-application questionnaire, insurance history and
     # evidence are what the underwriter reviews the claim on, so only the application-level ones are dropped.
     claim_info = None
+    claim_checks = {}
     if case.claim_id:
         from shared.models.core import Claim, ClaimProcess, InsurancePlan
         from services import claim_engine
@@ -421,10 +453,16 @@ async def _build_workspace(session: AsyncSession, tenant_id: UUID, case_id: UUID
                                                                InsurancePlan.label == policy.product_name))).first() if policy else None
         from services.underwriting_gate import claim_documents_for
         claim_docs = await claim_documents_for(session, tenant_id, case.claim_id)
+        from shared.models.core import ClaimUnderwritingCheck
+        saved_checks = (await session.exec(select(ClaimUnderwritingCheck).where(
+            ClaimUnderwritingCheck.case_id == case_id, ClaimUnderwritingCheck.track == track,
+            ClaimUnderwritingCheck.tenant_id == tenant_id))).all()
+        claim_checks = {c.requirement_key: {"finding": c.finding, "note": c.note,
+                        "updated_at": c.updated_at.isoformat(), "updated_by": str(c.updated_by)} for c in saved_checks}
         requirements, required_documents = claim_engine.claim_review_requirements(
             track=track, claims_terms=plan.claims_terms if plan else None, documents=claim_docs,
             contestable=bool(((proc.eligibility_json if proc else None) or {}).get("contestable")) or bool(claim and claim.is_contestable),
-            review_submitted=review["status"] in ("CLEARED", "REFERRED", "DECLINED"))
+            review_submitted=not checking_clearance and review["status"] in ("CLEARED", "REFERRED", "DECLINED"), checks=claim_checks)
         both = (await reviews_by_case(session, [case_id]))[case_id]
         if claim:
             claim_info = {"id": str(claim.id), "claim_number": claim.claim_number, "claim_type": claim.claim_type,
@@ -432,7 +470,7 @@ async def _build_workspace(session: AsyncSession, tenant_id: UUID, case_id: UUID
                           "referral_reason": claim.underwriting_referral_reason, "referral_notes": claim.underwriting_decision_notes,
                           "reviews": {t.lower(): {"status": r["status"], "note": r["note"]} for t, r in both.items()},
                           "ready": all(r["status"] in ("CLEARED", "REFERRED", "DECLINED") for r in both.values())}
-    return {"id": str(case_id), "claim": claim_info, "reference": case.caseNumber, "customer_name": customer.name,
+    return {"id": str(case_id), "claim": claim_info, "claim_checks": claim_checks, "reference": case.caseNumber, "customer_name": customer.name,
         "product_name": policy.product_name if policy else None, "track": track.lower(), "review": review,
         "case_status": case.caseStatus, "created_at": case.createdAt, "customer_cnic": customer.cnic,
         "coverage_amount": policy.coverage_amount if policy else None, "term_years": policy.term_years if policy else None,

@@ -179,6 +179,15 @@ def test_repeated_intimation_for_same_event_registers_nothing():
     assert "already open" in out["message"] and not client.writes()
 
 
+def test_invalid_event_date_offers_a_date_picker_and_registers_nothing():
+    client = FakeClient(_policy_routes())
+    out = _call("intimate_claim", {"policy_number": "PL-2026-0001", "category": "Death", "cause": "Natural / illness",
+                                   "event_date": "20206-10-17", "claimed_amount": 900000, "claimant_name": "Sara Khan"}, client)
+    assert "isn't a valid date" in out["error"] and not client.writes()
+    [picker] = out["quick_actions"]
+    assert picker["actionType"] == "date" and "{value}" in picker["payload"] and picker["max"]
+
+
 def test_hospital_claim_defaults_claimant_to_policyholder():
     client = FakeClient(_policy_routes({("POST", "/policies/p-1/claims-management"): _workspace()}))
     _call("intimate_claim", {"policy_number": "PL-2026-0001", "category": "Hospitalization",

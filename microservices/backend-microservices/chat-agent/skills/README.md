@@ -1,8 +1,8 @@
 # Skill-driven capability discovery
 
 The implementation extends the existing LangGraph coordinator, specialist agents,
-permission gate, executor, checkpoints and SSE transport. It adds 23 trusted local
-skills and indexes 222 implemented capabilities (plus two discovery tools). It
+permission gate, executor, checkpoints and SSE transport. It adds 24 trusted local
+skills and indexes 224 implemented capabilities (plus two discovery tools). It
 does not expose arbitrary HTTP endpoints or make skill metadata an authorization
 source.
 
@@ -90,7 +90,7 @@ expressions and router prefixes are source evidence, not a promise of a resolved
 external URL. Route-to-adapter mappings not explicitly established are marked
 `requires_contract_mapping`; those endpoints are never automatically exposed.
 
-`demo-scenarios.json` generates 2,664 positive/negative role-capability cases.
+`demo-scenarios.json` generates 2,688 positive/negative role-capability cases.
 `test_skills.py` additionally covers realistic phrasings, dependent plans,
 track isolation, missing parameters, unsupported tools, discovery, checkpoint
 persistence, cross-tenant headers, retries, duplicate payment requests and
@@ -146,3 +146,21 @@ schema and safe/mutating classification, add a tool pack and skill mapping, and
 add owning-service contract tests. Do not register an endpoint merely because it
 appears in the route inventory. Inventory coverage is distinct from live execution
 coverage, and neither establishes real-provider demo completion rates.
+
+### Claim financial review for Claims Managers
+
+The `claim-financial-underwriting` skill binds `get_claim_financial_review` and
+`record_claim_financial_check` to the Claims Manager’s claims specialist. It reads
+claim-specific documents, plan exclusions, waiting periods, contestability and
+assigned-review status. Recording requires an explicitly supplied finding and
+supporting rationale; it records the manager’s actual identity in the shared
+claim-review audit trail. Concerns remain open. The assigned Financial Underwriter
+still records the final specialist decision. These tools cannot run application
+AI affordability underwriting, approve a claim, reassign the specialist or pay it.
+
+Both tools use tenant-scoped `/claims/{claim_id}/financial-underwriting` endpoints.
+Identical retries do not create another audit record or reopen a completed review.
+Changes to existing findings return the financial review to In review. Held,
+decided or closed claims cannot be changed through this endpoint.
+
+The combined claim-underwriting resolution (`resolve_claim_underwriting`) is ClaimsManager-only. Both medical and financial reviews on the latest open referral must be submitted first. Specialist reviewers cannot record that combined decision from UI, chat or a direct API call. Their individual review authority is unchanged.

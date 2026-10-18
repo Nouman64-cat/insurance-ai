@@ -4,7 +4,7 @@ import React from "react";
 import ReactMarkdown from "react-markdown";
 import MarkdownLink from "@/components/MarkdownLink";
 import type { AgentMessage, ProcessStep, QuickAction } from "@/lib/agent/types";
-import { QuickActionSelect } from "./QuickActionSelect";
+import { QuickActionSelect, isInlineInput } from "./QuickActionSelect";
 import { isPassiveAction } from "@/lib/agent/quickActions";
 
 /**
@@ -106,7 +106,7 @@ export function JourneyActivityPanel({
       {!working && actions.length > 0 && (
         <div className="px-4 py-3 flex flex-wrap gap-2">
           {actions.map((action, idx) => {
-            if (action.actionType === "select") {
+            if (isInlineInput(action)) {
               return (
                 <QuickActionSelect
                   key={`sel-${idx}`}

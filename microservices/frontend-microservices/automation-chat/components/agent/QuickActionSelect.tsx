@@ -2,6 +2,7 @@
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { QuickAction } from "@/lib/agent/types";
+import { QuickActionDate } from "./QuickActionDate";
 
 // ── Option labels arrive as one sentence from chat-agent, e.g.
 //    "PL-2026-0006 — Ahmed Malik (Salary Protection Plan, cover PKR 10,500,000)".
@@ -124,20 +125,30 @@ const Icon = {
   ),
 };
 
-export function QuickActionSelect({
-  action,
-  onRun,
-  variant = "chip",
-  selectedLabel,
-  onSelected,
-}: {
+type InlineInputProps = {
   action: QuickAction;
   onRun: (text: string) => void;
   variant?: "chip" | "card";
   // The persisted answer, when the parent keeps one (see AgentMessage.selections).
   selectedLabel?: string;
   onSelected?: (label: string) => void;
-}) {
+};
+
+// The quick actions that take an answer inline rather than acting on click.
+export const isInlineInput = (action: QuickAction): boolean =>
+  action.actionType === "select" || action.actionType === "date";
+
+export function QuickActionSelect(props: InlineInputProps) {
+  return props.action.actionType === "date" ? <QuickActionDate {...props} /> : <OptionSelect {...props} />;
+}
+
+function OptionSelect({
+  action,
+  onRun,
+  variant = "chip",
+  selectedLabel,
+  onSelected,
+}: InlineInputProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [visible, setVisible] = useState(false); // drives the enter transition
   const [openUp, setOpenUp] = useState(false);

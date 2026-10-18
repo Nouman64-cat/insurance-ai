@@ -5913,7 +5913,7 @@ def _upload_action(claim: dict, doc_type: str) -> dict:
     }
 
 
-def _claim_actions(claim: dict) -> list[dict]:
+def _claim_actions(claim: dict, role: str | None = None) -> list[dict]:
     """The next legal moves on this claim, as one-click chips.
 
     Ordered by what an adjuster would actually do next, and filtered by the
@@ -5961,7 +5961,7 @@ def _claim_actions(claim: dict) -> list[dict]:
         actions.append(submit("Decline claim", f"Adjudicate claim {ref} as DECLINED"))
         actions.append(submit("Send back to investigation", f"Move claim {ref} to Under Investigation"))
 
-    elif status == "Re-Underwriting Required":
+    elif status == "Re-Underwriting Required" and role == "ClaimsManager" and (claim.get("underwriting_review") or {}).get("ready"):
         actions.append(submit("Approve & continue", f"Resolve underwriting on claim {ref} as APPROVE_CONTINUE"))
         actions.append(submit("Approve with exclusion", f"Resolve underwriting on claim {ref} as APPROVE_WITH_EXCLUSION"))
         actions.append(submit("Approve with loading", f"Resolve underwriting on claim {ref} as APPROVE_WITH_LOADING"))
@@ -6149,7 +6149,7 @@ async def _get_claim_details(args: dict, ctx: Ctx) -> dict:
         "message": "\n".join(lines),
         "claim": claim,
         "navigate": {"route": _claim_route(claim), "entity_id": str(claim.get("id") or ""), "highlight": False},
-        "quick_actions": _claim_actions(claim),
+        "quick_actions": _claim_actions(claim, ctx.exec_ctx.role),
     }
 
 
@@ -6591,7 +6591,7 @@ async def _register_claim(args: dict, ctx: Ctx) -> dict:
         "last_action": _action("register_claim", "claim", str(claim.get("id", "")),
                                _claim_route(claim), f"Claim {claim.get('claim_number')} registered"),
         "navigate": {"route": _claim_route(claim), "entity_id": str(claim.get("id") or ""), "highlight": False},
-        "quick_actions": _claim_actions(claim),
+        "quick_actions": _claim_actions(claim, ctx.exec_ctx.role),
     }
 
 
@@ -6658,7 +6658,7 @@ async def _update_claim_status(args: dict, ctx: Ctx) -> dict:
         "claim": updated,
         "last_action": _action("update_claim_status", "claim", str(claim.get("id", "")),
                                _claim_route(claim), f"{claim.get('claim_number')} → {resolved}"),
-        "quick_actions": _claim_actions(updated),
+        "quick_actions": _claim_actions(updated, ctx.exec_ctx.role),
     }
 
 
@@ -6670,7 +6670,7 @@ async def _adjudicate_claim(args: dict, ctx: Ctx) -> dict:
         return {
             "success": False,
             "error": f"What is the decision on `{claim.get('claim_number')}`?",
-            "quick_actions": _claim_actions(claim),
+            "quick_actions": _claim_actions(claim, ctx.exec_ctx.role),
         }
 
     submitted = float(claim.get("submitted_amount") or 0)
@@ -6757,7 +6757,7 @@ async def _adjudicate_claim(args: dict, ctx: Ctx) -> dict:
         "claim": updated,
         "last_action": _action("adjudicate_claim", "claim", str(claim.get("id", "")),
                                _claim_route(claim), f"{claim.get('claim_number')} {decision}"),
-        "quick_actions": _claim_actions(updated),
+        "quick_actions": _claim_actions(updated, ctx.exec_ctx.role),
     }
 
 
@@ -6772,7 +6772,7 @@ async def _issue_claim_payout(args: dict, ctx: Ctx) -> dict:
                 f"`{claim.get('claim_number')}` is **{status}** — payouts can only be issued from "
                 "Approved or Partial Approval."
             ),
-            "quick_actions": _claim_actions(claim),
+            "quick_actions": _claim_actions(claim, ctx.exec_ctx.role),
         }
     if _claim_doc_count(claim) == 0:
         return {
@@ -6818,7 +6818,7 @@ async def _issue_claim_payout(args: dict, ctx: Ctx) -> dict:
         "payout": payout,
         "last_action": _action("issue_claim_payout", "claim", str(claim.get("id", "")),
                                _claim_route(claim), f"PKR {float(amount):,.0f} disbursed on {claim.get('claim_number')}"),
-        "quick_actions": _claim_actions(updated),
+        "quick_actions": _claim_actions(updated, ctx.exec_ctx.role),
     }
 
 
@@ -6830,7 +6830,7 @@ async def _refer_claim_to_reinsurance(args: dict, ctx: Ctx) -> dict:
             "success": True,
             "message": f"`{claim.get('claim_number')}` already has a reinsurance recovery referral open.",
             "claim": claim,
-            "quick_actions": _claim_actions(claim),
+            "quick_actions": _claim_actions(claim, ctx.exec_ctx.role),
         }
     res = await ctx.client.post(_claims(ctx, f"/{claim['id']}/reinsurance-refer"))
     res.raise_for_status()
@@ -6920,7 +6920,7 @@ async def _refer_claim_to_underwriting(args: dict, ctx: Ctx) -> dict:
         "claim": updated,
         "last_action": _action("refer_claim_to_underwriting", "claim", str(claim.get("id", "")),
                                _claim_route(claim), f"{claim.get('claim_number')} referred to underwriting"),
-        "quick_actions": _claim_actions(updated),
+        "quick_actions": _claim_actions(updated, ctx.exec_ctx.role),
     }
 
 
@@ -6949,7 +6949,7 @@ async def _resolve_claim_underwriting(args: dict, ctx: Ctx) -> dict:
                 f"`{claim.get('claim_number')}` is **{_claim_status(claim)}** — there is no open "
                 "re-underwriting referral to resolve."
             ),
-            "quick_actions": _claim_actions(claim),
+            "quick_actions": _claim_actions(claim, ctx.exec_ctx.role),
         }
 
     decision = (args.get("decision") or "").strip().upper()
@@ -6957,10 +6957,12 @@ async def _resolve_claim_underwriting(args: dict, ctx: Ctx) -> dict:
         return {
             "success": False,
             "error": f"What is underwriting's verdict on `{claim.get('claim_number')}`?",
-            "quick_actions": _claim_actions(claim),
+            "quick_actions": _claim_actions(claim, ctx.exec_ctx.role),
         }
 
-    notes = (args.get("decision_notes") or "").strip() or _UW_DEFAULT_NOTES[decision]
+    notes = (args.get("decision_notes") or "").strip()
+    if not notes:
+        return {"success": False, "message": "Provide your rationale as Claims Manager before recording the final claim-underwriting decision."}
     res = await ctx.client.post(
         _claims(ctx, f"/{claim['id']}/resolve-underwriting"),
         json={"decision": decision, "decision_notes": notes},
@@ -6977,7 +6979,7 @@ async def _resolve_claim_underwriting(args: dict, ctx: Ctx) -> dict:
         "claim": updated,
         "last_action": _action("resolve_claim_underwriting", "claim", str(claim.get("id", "")),
                                _claim_route(claim), f"{claim.get('claim_number')} underwriting resolved"),
-        "quick_actions": _claim_actions(updated),
+        "quick_actions": _claim_actions(updated, ctx.exec_ctx.role),
     }
 
 

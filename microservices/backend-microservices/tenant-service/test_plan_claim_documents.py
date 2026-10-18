@@ -90,3 +90,14 @@ def test_financial_review_gets_the_non_medical_documents_and_checks_complete_on_
 def test_plan_without_terms_lists_documents_only():
     reqs, _ = _review("MEDICAL", claims_terms=None, contestable=False)
     assert [r["key"] for r in reqs] == ["documents"]
+
+
+def test_explicit_claim_findings_complete_each_requirement_before_submission():
+    reqs, _ = _review("FINANCIAL", checks={
+        "claim_exclusions": {"finding": "Clear"},
+        "claim_contestability": {"finding": "Resolved"},
+        "claim_waiting_periods": {"finding": "Concern"},
+    })
+    states = {r["key"]: r["status"] for r in reqs}
+    assert states["claim_exclusions"] == states["claim_contestability"] == "Completed"
+    assert states["claim_waiting_periods"] == "Required"

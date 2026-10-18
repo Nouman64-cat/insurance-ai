@@ -3,12 +3,13 @@
 Generated from declarations, handlers, skills and the existing permission function.
 Registration and schema validation do not establish successful owning-service execution.
 
-222 capabilities, 23 skills, 12 role scenarios (CustomBroker exercises the existing unknown-role fallback).
+224 capabilities, 24 skills, 12 role scenarios (CustomBroker exercises the existing unknown-role fallback).
 
 | Skill | Registered tools | SuperAdmin | Admin | Agent | Underwriter | Medical Underwriter | Financial Underwriter | ClaimsManager | ClaimsAdjuster | CustomerService | Viewer | Finance | CustomBroker |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | agent-operations | 4 | 4 | 4 | 4 | 4 | 0 | 0 | 2 | 2 | 2 | 2 | 0 | 2 |
-| claims-management | 29 | 8 | 8 | 0 | 7 | 0 | 0 | 26 | 22 | 6 | 6 | 9 | 6 |
+| claim-financial-underwriting | 6 | 2 | 2 | 0 | 2 | 0 | 0 | 6 | 3 | 2 | 2 | 2 | 2 |
+| claims-management | 29 | 7 | 7 | 0 | 6 | 0 | 0 | 27 | 22 | 6 | 6 | 9 | 6 |
 | commissions | 27 | 27 | 27 | 3 | 9 | 0 | 0 | 0 | 0 | 9 | 9 | 0 | 9 |
 | corporate-insurance | 30 | 30 | 30 | 2 | 2 | 0 | 0 | 0 | 0 | 1 | 1 | 0 | 1 |
 | customer-acquisition | 6 | 6 | 6 | 5 | 5 | 0 | 0 | 2 | 2 | 4 | 4 | 0 | 4 |

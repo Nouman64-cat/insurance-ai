@@ -245,7 +245,8 @@ async def list_cases(
         from routers.claims import open_claim_uw_case
         from shared.models.core import Claim, ClaimStatusEnum
         referred = (await session.execute(select(Claim).where(
-            Claim.tenant_id == tenant_id, Claim.status == ClaimStatusEnum.REUNDERWRITING_REQUIRED))).scalars().all()
+            Claim.tenant_id == tenant_id, Claim.status == ClaimStatusEnum.REUNDERWRITING_REQUIRED)
+            .order_by(Claim.id))).scalars().all()
         for referred_claim in referred:
             await open_claim_uw_case(session, referred_claim)
         if referred:

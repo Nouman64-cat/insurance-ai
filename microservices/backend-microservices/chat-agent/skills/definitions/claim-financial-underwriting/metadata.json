@@ -1,0 +1,58 @@
+{
+  "id": "claim-financial-underwriting",
+  "purpose": "Review a referred claim\u2019s financial documents, plan exclusions and contestability using live evidence.",
+  "intents": [
+    "claim financial underwriting",
+    "claim financial review",
+    "claim contestability",
+    "claim exclusions",
+    "legal heir",
+    "payee documents"
+  ],
+  "capabilities": [
+    "get_claim_financial_review",
+    "get_claim_document_checklist",
+    "get_claim_workflow",
+    "refer_claim_to_underwriting",
+    "record_claim_financial_check",
+    "resolve_claim_underwriting"
+  ],
+  "roles": [
+    "ClaimsManager"
+  ],
+  "prerequisites": [
+    "Authenticated JWT and tenant scope",
+    "Existing role/platform allow-list",
+    "Live owning-service state and required record identifiers"
+  ],
+  "business_rules": [
+    "Read the claim-specific financial review before reporting readiness. Do not substitute new-policy affordability scoring for claim review.",
+    "Human findings require evidence and an explicit authorized instruction. A referral is not a decision; specialists submit their own reviews and only the Claims Manager records the combined claim-underwriting resolution after both are complete."
+  ],
+  "lifecycle_source": "tenant-service/routers/claim_financial_review.py; claim_engine.claim_review_requirements",
+  "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",
+  "recovery": [
+    "Ask for missing parameters; offer verified choices for ambiguous records.",
+    "Preserve completed steps; verify unknown mutation outcomes before retry.",
+    "Explain unsupported operations and route to the appropriate workspace or authorized staff."
+  ],
+  "verification": "Report completion only from confirmed backend success. Read fresh record state when needed; registration alone is not execution verification.",
+  "tests": [
+    "test_claim_financial_tools.py"
+  ],
+  "steps": [
+    {
+      "id": "read_review",
+      "capability": "get_claim_financial_review",
+      "depends_on": []
+    },
+    {
+      "id": "record_supplied_finding",
+      "capability": "record_claim_financial_check",
+      "depends_on": [
+        "read_review"
+      ]
+    }
+  ],
+  "unsupported": []
+}

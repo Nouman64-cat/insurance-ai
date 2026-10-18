@@ -16,13 +16,18 @@ export interface QuickAction {
   // the chat's case panel instead of a new tab. Used for the underwriting
   // process (case view, gates, workbench, results) and the customer intake
   // form — everywhere else in the app still opens a normal new tab via "navigate".
+  // "date" renders an inline calendar the same way: the picked YYYY-MM-DD
+  // replaces {value} in `payload`, bounded by the optional `min` / `max`.
   // "proposal_step" is handled in the browser, not sent to the model: it moves a
   // proposal one status forward (payload is JSON, see CopilotInterface).
-  actionType: "navigate" | "submit" | "upload" | "confirm" | "select" | "download" | "embed" | "proposal_step" | "uw_requirements" | "family_assess" | "family_decision" | "family_report" | "claim_documents";
+  actionType: "navigate" | "submit" | "upload" | "confirm" | "select" | "date" | "download" | "embed" | "proposal_step" | "uw_requirements" | "family_assess" | "family_decision" | "family_report" | "claim_documents";
   payload: string;
   // "select" only.
   options?: { label: string; value: string }[];
   placeholder?: string;
+  // "date" only, YYYY-MM-DD.
+  min?: string;
+  max?: string;
 }
 
 export interface ActionResult {

@@ -71,6 +71,8 @@ export interface Claim {
   is_contestable?: boolean;
   underwriting_referral_reason?: string | null;
   underwriting_decision_notes?: string | null;
+  underwriting_review?: { ready: boolean; case_id: string | null; case_number?: string; on_hold?: boolean;
+    reviews: Record<string, {status: string}> };
   settlement_amount?: number | null;
   settled_at?: string | null;
   closed_at?: string | null;
@@ -102,6 +104,7 @@ export interface Claim {
   graph_ring_reason?: string | null;
   status_history?: ClaimStatusHistoryItem[];
   payouts?: ClaimPayoutItem[];
+  finance_summary?: { authorized_at: string | null; reconciled_at: string | null };
   artifacts?: ClaimArtifact[];
 }
 
