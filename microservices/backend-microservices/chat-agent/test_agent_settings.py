@@ -74,11 +74,14 @@ def test_inventory_matches_real_registries_and_specialist_scopes():
     from track_specialists import SCOPES
     result = build(['SuperAdmin', 'Admin', 'Viewer', 'Finance', 'Medical Underwriter'])
     assert len(result['agents']) == 2
-    assert len(result['subagents']) == 8
+    assert len(result['subagents']) == 9
     assert len(result['skills']) == len(metadata())
     assert {tool['id'] for tool in result['tools']} == {tool.name for tool in ALL_TOOLS}
     subagents = {agent['id']: agent for agent in result['subagents']}
     assert set(subagents['claims']['tools']) == CLAIMS_TOOLS
+    from finance_specialist import FINANCE_TOOLS
+    assert set(subagents['finance']['tools']) == FINANCE_TOOLS
+    assert subagents['finance']['roles'] == ['Finance']
     assert set(subagents['medical_underwriting']['tools']) == SCOPES['medical_underwriting']
     tools = {tool['id']: tool for tool in result['tools']}
     assert tools['configure_platform_model']['roles'] == ['SuperAdmin']
@@ -90,7 +93,7 @@ def test_inventory_uses_saved_flag_without_hiding_existing_agents(monkeypatch):
     monkeypatch.setattr(settings, '_value', False)
     result = build(['SuperAdmin'])
     assert not result['skill_agent_enabled']
-    assert len(result['subagents']) == 8 and len(result['skills']) == len(metadata())
+    assert len(result['subagents']) == 9 and len(result['skills']) == len(metadata())
     assert not next(t for t in result['tools'] if t['id'] == 'search_capabilities')['available']
 
 

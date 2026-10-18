@@ -56,6 +56,7 @@ const en = {
     welcome: "How can I help you today?",
     greeting: "Hello! I am your AI Underwriting Copilot. I can help you onboard applicants, run risk assessments, or pull case details instantly. What would you like to automate today?",
     // Roles that work one domain open on what they can actually do here.
+    greetingFinance: "Hello! I am your Finance Copilot. I can help you review payment queues, check authorised settlements and payees, record requested payouts, and reconcile payments. Which payment shall we review?",
     greetingClaimsManager: "Hello! I am your Claims Copilot. I can help you work claims — review the claims register and dashboard, check a claim's documents and eligibility, assess benefits, decide, authorise and release settlements, and close claim files. Which claim shall we look at?",
     greetingMedicalUnderwriter: "Hello! I am your Medical Underwriting Copilot. I can help you with the medical reviews assigned to you — the medical questionnaire, required tests and reports, AI medical underwriting, and recording your review. Which application shall we start with?",
     greetingFinancialUnderwriter: "Hello! I am your Financial Underwriting Copilot. I can help you with the financial reviews assigned to you — the financial questionnaire, insurance history, income documents, AI financial underwriting, and recording your review. Which application shall we start with?",

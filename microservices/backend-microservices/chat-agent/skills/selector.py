@@ -7,7 +7,7 @@ def select(text: str, role: str, platform: str = "web", previous=(), scope=None,
     permitted = authorized(role, platform, scope)
     terms = words(text)
     ranked = []
-    isolated = {"medical_underwriting": {"medical-underwriting"},
+    isolated = {"finance": {"finance-payments", "finance-reconciliation", "failure-recovery"},"medical_underwriting": {"medical-underwriting"},
                 "financial_underwriting": {"financial-underwriting"},
                 "final_underwriting": {"final-underwriting", "pre-underwriting", "document-intelligence"},
                 "claims": {"claims-management", "claim-financial-underwriting", "failure-recovery"},

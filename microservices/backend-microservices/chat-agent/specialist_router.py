@@ -12,7 +12,7 @@ from track_specialists import select_final_underwriting, select_track_specialist
 # Roles whose whole job is one domain: every message goes to that domain's specialist, whatever it asks about —
 # keyword routing would hand an off-topic question ("can you do customer acquisition?") to the broad planner,
 # whose prompt describes onboarding the role can't do.
-PINNED_SPECIALIST = {"ClaimsManager": "claims", "Finance": "claims"}
+PINNED_SPECIALIST = {"ClaimsManager": "claims", "Finance": "finance"}
 
 # Managing staff accounts ("add a Medical Underwriter", "deactivate Ali's account", "make Sana an Admin") is the main
 # assistant's job: only it carries the user tools. Without this, "underwriter" or "claims" in the request would hand
@@ -69,7 +69,7 @@ def _specialist_selection(state):
 
 
 def route_coordinator(state):
-    return {'commission':'commission_agent','claims':'claims_agent','underwriting':'underwriting_agent','servicing':'servicing_agent','group':'group_agent',
+    return {'finance':'finance_agent','commission':'commission_agent','claims':'claims_agent','underwriting':'underwriting_agent','servicing':'servicing_agent','group':'group_agent',
             'medical_underwriting':'medical_underwriting_agent','financial_underwriting':'financial_underwriting_agent',
             'final_underwriting':'final_underwriting_agent'}.get(state.get('active_specialist'), 'general_agent')
 

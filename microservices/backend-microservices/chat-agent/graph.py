@@ -66,6 +66,7 @@ from operations import OPERATION_TOOLS, operation_status_result, plan_resume
 from toolsets import CORE_TOOLS, domains_used, fit_to_cap, matched_domains, select_domains, tool_names_for
 from commission_specialist import commission_agent_node
 from claims_specialist import claims_agent_node
+from finance_specialist import finance_agent_node
 from underwriting_specialist import underwriting_agent_node
 from servicing_specialist import servicing_agent_node
 from track_specialists import final_underwriting_agent_node, financial_underwriting_agent_node, medical_underwriting_agent_node
@@ -2937,6 +2938,7 @@ _graph_builder.add_node("agent", coordinator_node)
 _graph_builder.add_node("general_agent", agent_node)
 _graph_builder.add_node("commission_agent", commission_agent_node)
 _graph_builder.add_node("claims_agent", claims_agent_node)
+_graph_builder.add_node("finance_agent", finance_agent_node)
 _graph_builder.add_node("underwriting_agent", underwriting_agent_node)
 _graph_builder.add_node("servicing_agent", servicing_agent_node)
 _graph_builder.add_node("medical_underwriting_agent", medical_underwriting_agent_node)
@@ -2946,10 +2948,11 @@ _graph_builder.add_node("group_agent", group_agent_node)
 _graph_builder.add_node("permission_gate", permission_gate)
 _graph_builder.add_node("client_executor", client_executor_node)
 _graph_builder.add_edge(START, "agent")
-_graph_builder.add_conditional_edges("agent", route_coordinator, {"general_agent": "general_agent", "commission_agent": "commission_agent", "claims_agent": "claims_agent", "underwriting_agent": "underwriting_agent", "servicing_agent": "servicing_agent", "group_agent": "group_agent", "medical_underwriting_agent": "medical_underwriting_agent", "financial_underwriting_agent": "financial_underwriting_agent", "final_underwriting_agent": "final_underwriting_agent"})
+_graph_builder.add_conditional_edges("agent", route_coordinator, {"finance_agent": "finance_agent", "general_agent": "general_agent", "commission_agent": "commission_agent", "claims_agent": "claims_agent", "underwriting_agent": "underwriting_agent", "servicing_agent": "servicing_agent", "group_agent": "group_agent", "medical_underwriting_agent": "medical_underwriting_agent", "financial_underwriting_agent": "financial_underwriting_agent", "final_underwriting_agent": "final_underwriting_agent"})
 _graph_builder.add_conditional_edges("general_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
 _graph_builder.add_conditional_edges("commission_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
 _graph_builder.add_conditional_edges("claims_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
+_graph_builder.add_conditional_edges("finance_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
 _graph_builder.add_conditional_edges("underwriting_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
 _graph_builder.add_conditional_edges("servicing_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
 _graph_builder.add_conditional_edges("medical_underwriting_agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})

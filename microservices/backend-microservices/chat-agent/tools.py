@@ -2573,6 +2573,43 @@ def get_claim_workflow(**kwargs) -> str:
     return "{}"
 
 
+class FinanceDashboardArgs(BaseModel):
+    queue: Literal["payouts", "reconciliation", "history"] = "payouts"
+    search: Optional[str] = None
+
+
+@tool(args_schema=FinanceDashboardArgs)
+def get_finance_dashboard(**kwargs) -> str:
+    """Finance only: read approved claims awaiting payout, reconciliation work, or paid history and live totals. Approval is not payment authorisation."""
+    return "{}"
+
+
+@tool(args_schema=ClaimLookupArgs)
+def get_claim_payment_details(**kwargs) -> str:
+    """Finance only: inspect one exact claim's settlement payees, bank details, manager authorisation, payout references and reconciliation. Read this before payment."""
+    return "{}"
+
+
+class FinancePaymentArgs(ClaimLookupArgs):
+    method: str = Field(description="Payment method explicitly selected by the user from the current settlement's available methods.")
+
+
+@tool(args_schema=FinancePaymentArgs)
+def pay_authorized_claim(**kwargs) -> str:
+    """Finance only: record payment of an already authorised claim settlement to its verified payees. Requires explicit user instruction. Never approves or authorises a claim."""
+    return "{}"
+
+
+class FinanceReconcileArgs(ClaimLookupArgs):
+    note: Optional[str] = Field(default=None, description="User-supplied rationale, required to resolve a reconciliation exception. Never fabricate it.")
+
+
+@tool(args_schema=FinanceReconcileArgs)
+def reconcile_finance_claim(**kwargs) -> str:
+    """Finance only: reconcile an existing settlement payment; surface mismatches. Exception resolution requires a user-supplied rationale."""
+    return "{}"
+
+
 class IntimateClaimArgs(PolicyClaimLookupArgs):
     category: Optional[ClaimCategory] = Field(default=None, description="The benefit being claimed. Leave unset to get choices.")
     event_date: Optional[str] = Field(default=None, description="YYYY-MM-DD the death/accident/admission happened.")
@@ -3109,6 +3146,8 @@ ALL_TOOLS = [
     create_rule_category,
     create_rule_subcategory,
     create_eligibility_profile,
+    # Finance settlement tools
+    get_finance_dashboard, get_claim_payment_details, pay_authorized_claim, reconcile_finance_claim,
     # claims
     list_claims,
     get_claim_details,

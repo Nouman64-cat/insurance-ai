@@ -3,7 +3,7 @@
 Generated from declarations, handlers, skills and the existing permission function.
 Registration and schema validation do not establish successful owning-service execution.
 
-224 capabilities, 24 skills, 12 role scenarios (CustomBroker exercises the existing unknown-role fallback).
+228 capabilities, 26 skills, 12 role scenarios (CustomBroker exercises the existing unknown-role fallback).
 
 | Skill | Registered tools | SuperAdmin | Admin | Agent | Underwriter | Medical Underwriter | Financial Underwriter | ClaimsManager | ClaimsAdjuster | CustomerService | Viewer | Finance | CustomBroker |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -18,6 +18,8 @@ Registration and schema validation do not establish successful owning-service ex
 | failure-recovery | 4 | 4 | 4 | 4 | 4 | 0 | 0 | 4 | 4 | 4 | 3 | 0 | 3 |
 | family-insurance | 5 | 5 | 5 | 5 | 5 | 0 | 0 | 0 | 0 | 3 | 3 | 0 | 3 |
 | final-underwriting | 15 | 15 | 15 | 3 | 14 | 0 | 0 | 2 | 2 | 3 | 3 | 0 | 3 |
+| finance-payments | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 3 | 0 |
+| finance-reconciliation | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 3 | 0 |
 | financial-underwriting | 7 | 7 | 7 | 0 | 3 | 5 | 7 | 0 | 0 | 0 | 0 | 0 | 0 |
 | individual-insurance | 13 | 13 | 13 | 10 | 13 | 0 | 0 | 2 | 2 | 5 | 5 | 0 | 5 |
 | medical-underwriting | 7 | 7 | 7 | 1 | 3 | 7 | 5 | 0 | 0 | 1 | 1 | 0 | 1 |
@@ -38,6 +40,14 @@ The CSV includes both allowed and denied role/skill/tool combinations. Backend r
 ## Explicit limitations
 
 - customer-acquisition: Customer deletion is intentionally disabled; retain customer audit history.
+- finance-payments: Claim approval
+- finance-payments: Settlement authorisation
+- finance-payments: Underwriting findings
+- finance-payments: Changing bank details
+- finance-reconciliation: Claim approval
+- finance-reconciliation: Settlement authorisation
+- finance-reconciliation: Underwriting findings
+- finance-reconciliation: Changing bank details
 - platform-configuration: Tenant deletion and provider API-key editing must use the platform console.
 - tenant-administration: Tenant deletion and provider API-key editing must use the platform console.
 - user-and-role-management: Global role deletion must use the platform console.

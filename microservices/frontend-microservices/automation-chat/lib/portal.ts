@@ -14,6 +14,7 @@ export function homeUrlFor(role: string | null | undefined): string {
   const r = (role || "").trim();
   const compact = r.replace(/\s+/g, "");
   if (r === "Medical Underwriter" || r === "Financial Underwriter") return `${UNDERWRITING_URL}/underwriting`;
+  if (compact === "Finance") return `${PORTAL_URL}/finance`;
   if (compact === "ClaimsManager") return `${CLAIMS_URL}/claims/dashboard`;
   if (r === "SuperAdmin") return portalUrl("/super-admin/tenants");
   if (r === "Agent" || r === "Broker") return portalUrl("/proposal");
