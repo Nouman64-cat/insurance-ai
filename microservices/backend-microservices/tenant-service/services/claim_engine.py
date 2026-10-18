@@ -908,6 +908,12 @@ def project_stages(proc: ClaimProcess, claim: Claim, *, payout_total: float = 0.
         rows.append(_stage("closure", "Claim closure", "action", "Ready to close", "", 7))
     else:
         rows.append(_stage("closure", "Claim closure", "not_started", "Not started", "", 7))
+    if closed:
+        # Register-only transitions can close a claim without filling the newer
+        # workflow timestamps. Do not reopen those steps or invent completed reviews.
+        rows = [({**row, "state": "skipped", "label": "Not recorded",
+                  "detail": "Claim is closed; this workflow step has no completion record."}
+                 if row["state"] not in ("complete", "skipped") else row) for row in rows]
     return rows
 
 
