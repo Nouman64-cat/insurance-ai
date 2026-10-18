@@ -10,7 +10,7 @@ import { stagger } from "@/lib/utils";
 
 export const metadata = pageMetadata(
   "Pricing",
-  "Two ways to pay for Insurance AI: a fixed Enterprise Retainer at $11,500 a month, or a Cost + Hybrid plan at $9,050 a month plus AI usage passed through at cost.",
+  "Two ways to pay for GetInsuredAI: a fixed Enterprise Retainer at $11,500 a month, or a Cost + Hybrid plan at $9,050 a month plus AI usage passed through at cost.",
   "/pricing"
 );
 

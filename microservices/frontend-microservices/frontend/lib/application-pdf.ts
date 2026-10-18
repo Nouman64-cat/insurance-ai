@@ -459,7 +459,7 @@ export async function generateApplicationPDF(detail: ApplicationData) {
   for (let p = 1; p <= total; p++) {
     doc.setPage(p);
     doc.setFont("helvetica", "normal").setFontSize(7).setTextColor(150, 160, 175);
-    doc.text("insurance-ai · Confidential Application Document", mg, 292);
+    doc.text("GetInsuredAI · Confidential Application Document", mg, 292);
     doc.text(`Page ${p} of ${total}`, W - mg - 18, 292);
   }
 

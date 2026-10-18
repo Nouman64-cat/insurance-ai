@@ -261,7 +261,7 @@ export default function DashboardPage() {
       <p className="text-center text-[10px] text-slate-400 pb-2 leading-relaxed">
         {tx("Metrics are computed live from claims, policies and commission data for the selected filters.")}
         {lastRefreshed && " " + tx("Last refreshed {0} · refreshes every 60 seconds.", { 0: lastRefreshed.toLocaleTimeString() })}
-        {" "}{tx("·  Model suite:")}{" "}<span className="font-mono">{tx("insurance-ai v0.1.0-proto")}</span>
+        {" "}{tx("·  Model suite:")}{" "}<span className="font-mono">{tx("GetInsuredAI v0.1.0-proto")}</span>
         {" "}{tx("·  Executive Dashboard — Internal Use Only")}
       </p>
 

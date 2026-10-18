@@ -56,6 +56,6 @@ export const homeFaq = [
   },
   {
     q: "Is this a live product?",
-    a: "Insurance AI is currently a prototype. The workflows shown here are built and running, while rates, plans and figures on this site are demo data.",
+    a: "GetInsuredAI is currently a prototype. The workflows shown here are built and running, while rates, plans and figures on this site are demo data.",
   },
 ];

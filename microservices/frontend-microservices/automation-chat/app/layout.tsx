@@ -10,7 +10,7 @@ import "./globals.css";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: { default: "GetInsuredAI Copilot", template: "%s | insurance-ai" },
+  title: { default: "GetInsuredAI Copilot", template: "%s | GetInsuredAI" },
   description: "GetInsuredAI Copilot: lead to policy by conversation.",
 };
 

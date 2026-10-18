@@ -1409,7 +1409,7 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
   useEffect(() => {
     const { name } = currentCopilotIdentity();
     setCopilotName(name);
-    if (!compact) document.title = `${name} | insurance-ai`;
+    if (!compact) document.title = `${name} | GetInsuredAI`;
   }, [compact]);
   const welcome = useMemo<AgentMessage>(
     () => ({ id: WELCOME_ID, role: "assistant", text: t(roleGreetingKey()) }),

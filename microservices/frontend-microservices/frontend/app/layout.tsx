@@ -11,8 +11,8 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: {
-    default: "insurance-ai | Underwriting Portal",
-    template: "%s | insurance-ai",
+    default: "GetInsuredAI | Underwriting Portal",
+    template: "%s | GetInsuredAI",
   },
   description:
     "AI-powered multi-tenant insurance underwriting and risk assessment platform.",

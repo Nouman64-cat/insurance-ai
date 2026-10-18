@@ -24,8 +24,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Insurance AI to attach a photo of a document or payment receipt.",
-          "cameraPermission": "Allow Insurance AI to photograph a document or payment receipt."
+          "photosPermission": "Allow GetInsuredAI to attach a photo of a document or payment receipt.",
+          "cameraPermission": "Allow GetInsuredAI to photograph a document or payment receipt."
         }
       ],
       "expo-document-picker",

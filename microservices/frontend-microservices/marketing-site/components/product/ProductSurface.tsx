@@ -59,7 +59,7 @@ export function ProductSurface({ stage, className = "" }: Readonly<{ stage: numb
     <div
       className={`glass overflow-hidden rounded-2xl shadow-surface ${className}`}
       role="img"
-      aria-label="Insurance AI underwriting workbench showing a case moving from lead, through AI analysis and rule evaluation, to a recorded decision. Demo data."
+      aria-label="GetInsuredAI underwriting workbench showing a case moving from lead, through AI analysis and rule evaluation, to a recorded decision. Demo data."
     >
       <div aria-hidden="true">
         {/* Window bar */}

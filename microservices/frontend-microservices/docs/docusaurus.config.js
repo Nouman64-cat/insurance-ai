@@ -3,7 +3,7 @@ const { themes: prismThemes } = require('prism-react-renderer');
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
-  title: 'insurance-ai',
+  title: 'GetInsuredAI',
   tagline: 'AI-powered multi-tenant insurance underwriting platform',
   favicon: 'img/favicon.ico',
 
@@ -49,7 +49,7 @@ const config = {
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
       navbar: {
-        title: 'insurance-ai',
+        title: 'GetInsuredAI',
         items: [
           {
             type: 'docSidebar',
@@ -61,7 +61,7 @@ const config = {
       },
       footer: {
         style: 'dark',
-        copyright: `insurance-ai — internal documentation`,
+        copyright: `GetInsuredAI — internal documentation`,
       },
       prism: {
         theme: prismThemes.github,

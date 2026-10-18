@@ -525,7 +525,7 @@ export async function generateAssessmentReport(entries: ReportEntry[], opts: Rep
     doc.setPage(p);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7).setTextColor(150, 160, 175);
-    doc.text("insurance-ai · Confidential", mg, 292);
+    doc.text("GetInsuredAI · Confidential", mg, 292);
     doc.text(`Page ${p} of ${total}`, W - mg - 18, 292);
   }
 

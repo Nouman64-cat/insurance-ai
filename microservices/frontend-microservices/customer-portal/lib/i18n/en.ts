@@ -4,7 +4,7 @@ const en = {
   "common.done": "Done", "common.save": "Save", "common.saving": "Saving…", "common.edit": "Edit", "common.open": "Open", "common.viewAll": "View all",
   "common.download": "Download", "common.submitting": "Submitting…", "common.uploading": "Uploading…",
 
-  "brand.name": "My Insurance", "brand.tagline": "Customer portal", "topBar.customerPortal": "Customer portal",
+  "brand.name": "GetInsuredAI", "brand.tagline": "Customer portal", "topBar.customerPortal": "Customer portal",
   "footer.text": "Your information is private and protected. Sign out when you use a shared device.",
   "nav.label": "Main navigation", "nav.dashboard": "Dashboard", "nav.policies": "My Policies", "nav.payments": "Premium Payments", "nav.claims": "Claims",
   "nav.documents": "Documents", "nav.profile": "Profile", "nav.support": "Support", "nav.notifications": "Notifications",

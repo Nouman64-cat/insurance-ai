@@ -1,6 +1,6 @@
 # LLM Cost Estimate — OpenAI gpt-4o-mini
 
-Estimated API cost per request and per case for the Rizviz insurance-ai platform.
+Estimated API cost per request and per case for the Rizviz GetInsuredAI platform.
 
 > **Status: estimate, not billing data.** Figures are derived from the actual prompts, tool schemas
 > and code paths (token counts measured with the `o200k_base` tokenizer). They were not measured on a

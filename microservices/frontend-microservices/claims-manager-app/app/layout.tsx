@@ -11,7 +11,7 @@ import "@/app/globals.css";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: { default: "insurance-ai | Claims Manager", template: "%s | Claims Manager" },
+  title: { default: "GetInsuredAI | Claims Manager", template: "%s | Claims Manager | GetInsuredAI" },
   description: "Claims approvals, workload, risk flags and settlement oversight.",
 };
 

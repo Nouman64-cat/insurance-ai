@@ -6,7 +6,7 @@ import { pageMetadata } from "@/lib/seo";
 
 export const metadata = pageMetadata(
   "Request a demo",
-  "Book a walkthrough of the Insurance AI platform on demo data.",
+  "Book a walkthrough of the GetInsuredAI platform on demo data.",
   "/contact"
 );
 
