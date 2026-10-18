@@ -1,61 +1,108 @@
 import type { IconName } from "@/components/ui/Icon";
 
 export const lifecycle: { title: string; body: string; icon: IconName }[] = [
-  { title: "Lead", body: "Agent, portal or copilot adds the customer, family or employer.", icon: "users" },
-  { title: "Quote", body: "Every eligible plan is priced instantly with deterministic math.", icon: "coin" },
-  { title: "Case & gates", body: "E-application, agent report, compliance, first premium, history, medical.", icon: "file" },
-  { title: "Underwriting", body: "Parallel medical, financial and fraud scoring, then a rule-based verdict.", icon: "spark" },
-  { title: "Issuance", body: "Counter-offer, reinsurance, beneficiaries and documents gate issue.", icon: "shield" },
-  { title: "In force", body: "Free-look, premiums, endorsements and renewals on one state machine.", icon: "clock" },
-  { title: "Claims", body: "Triage, fraud checks, adjudication, payout and recovery.", icon: "heart" },
+  {
+    "title": "Lead",
+    "body": "Capture customers and screen profile risk before a proposal exists.",
+    "icon": "users"
+  },
+  {
+    "title": "Proposal",
+    "body": "Select a plan, prepare the proposal and track initial premium receipt.",
+    "icon": "coin"
+  },
+  {
+    "title": "Evidence",
+    "body": "Collect disclosure, agent reports, compliance checks and required documents.",
+    "icon": "file"
+  },
+  {
+    "title": "Underwriting",
+    "body": "Medical and financial specialists review evidence with advisory AI findings.",
+    "icon": "spark"
+  },
+  {
+    "title": "Issuance",
+    "body": "Authorised staff complete approval, verification and issuance requirements.",
+    "icon": "shield"
+  },
+  {
+    "title": "In force",
+    "body": "Manage premiums, policy servicing, renewals and commission earnings.",
+    "icon": "clock"
+  },
+  {
+    "title": "Claims & Finance",
+    "body": "Review the claim, authorise settlement, record external payments and reconcile.",
+    "icon": "heart"
+  }
 ];
 
-// Counts describe the product's structure, not performance claims.
 export const facts = [
-  { value: "7", label: "underwriting verdicts" },
-  { value: "6", label: "pre-underwriting gates" },
-  { value: "3", label: "LLM providers, with fallback" },
-  { value: "1", label: "policy state machine" },
+  {
+    "value": "2",
+    "label": "specialist underwriting tracks"
+  },
+  {
+    "value": "7",
+    "label": "stages in the claims workflow"
+  },
+  {
+    "value": "2",
+    "label": "portal languages: English and Urdu"
+  },
+  {
+    "value": "1",
+    "label": "connected operational record"
+  }
 ];
 
 export const pillars: { title: string; body: string; icon: IconName }[] = [
   {
-    title: "Rules decide, models assist",
-    body: "LLMs extract and interpret. Approve, load, postpone or decline is chosen by a deterministic rule chain.",
-    icon: "shield",
+    "title": "AI assists, people decide",
+    "body": "Evidence analysis and configurable rules support authorised human reviews and decisions.",
+    "icon": "shield"
   },
   {
-    title: "Auditable by design",
-    body: "Every policy status change runs through one state machine and leaves an immutable event behind.",
-    icon: "file",
+    "title": "Traceable operations",
+    "body": "Assessments, review findings, approval records and payment references stay linked to the operational record.",
+    "icon": "file"
   },
   {
-    title: "Multi-tenant and role-aware",
-    body: "Each insurer runs in an isolated tenant with its own plans, rules and users, behind JWT authentication.",
-    icon: "lock",
+    "title": "Workspaces by role",
+    "body": "Tenant and role permissions govern what each portal, mobile app and copilot can read or change.",
+    "icon": "lock"
   },
   {
-    title: "Built for Pakistan",
-    body: "CNIC handling, PKR pricing, takaful as a distinct product type and PEP and sanctions screening.",
-    icon: "building",
-  },
+    "title": "Built for Pakistan",
+    "body": "CNIC handling, PKR amounts, English and Urdu interfaces, conventional insurance and takaful workflows.",
+    "icon": "building"
+  }
 ];
 
 export const homeFaq = [
   {
-    q: "Does the AI approve or decline applications on its own?",
-    a: "Models score evidence, but the verdict is picked by a deterministic decision engine. Borderline cases go to a human underwriter, and the copilot never mutates data without confirmation.",
+    "q": "Can AI make the final decision on a claim?",
+    "a": "AI produces recommendations. Medical and Financial Underwriters record their specialist reviews; Admin records the human underwriting outcome for a claim referral, and the Claims Manager makes the claim decision. AI output does not replace these approvals."
   },
   {
-    q: "Which LLM providers are supported?",
-    a: "Google Gemini, OpenAI and Anthropic. A super admin sets the primary and fallback provider at runtime and credentials are encrypted at rest.",
+    "q": "How are Claims Manager and Finance responsibilities separated?",
+    "a": "The Claims Manager prepares settlement payees, verifies their identity and bank details, then authorises payment. Finance records payments already made outside the system using actual transaction references and handles reconciliation. Recording a payout does not initiate a bank transfer."
   },
   {
-    q: "Can we sell both conventional and takaful products?",
-    a: "Yes. Plans carry a product category, and group and family takaful follow the same lifecycle with their own fund concepts.",
+    "q": "Which teams have their own copilots?",
+    "a": "Role-specific assistants support authorised operational work, including Claims Manager, Finance, medical underwriting and financial underwriting. Their tools and skills follow the signed-in role and tenant. Copilots ask for missing evidence and cannot bypass backend permissions."
   },
   {
-    q: "Is this a live product?",
-    a: "GetInsuredAI is currently a prototype. The workflows shown here are built and running, while rates, plans and figures on this site are demo data.",
+    "q": "Does GetInsuredAI support Urdu?",
+    "a": "The portals support English and Urdu. Live voice is configured to match English or Urdu speech, with Urdu transcription guidance and Urdu-script captions. Recognition accuracy depends on the recording conditions."
   },
+  {
+    "q": "How are commissions created?",
+    "a": "Commission earnings are created from recorded premium receipts after policy issuance, using configured acquisition-source allocation and Rule Engine rates. Recurring eligibility and rates follow the applicable rules; payable dates use the source start-date day in the month after collection."
+  },
+  {
+    "q": "Are the records on this website real?",
+    "a": "No. The people, plans, amounts and interface examples shown here are illustrative demo data. Product availability, rules, integrations and permissions depend on the insurer configuration."
+  }
 ];

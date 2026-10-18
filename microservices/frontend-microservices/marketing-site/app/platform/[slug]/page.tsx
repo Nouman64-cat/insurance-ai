@@ -58,7 +58,7 @@ export default function PlatformFeaturePage({ params }: { params: { slug: string
       </Section>
 
       <Section tone="muted">
-        <SectionHeader eyebrow="Guarantees" title="Built to be trusted" />
+        <SectionHeader eyebrow="Workflow controls" title="Built to be trusted" />
         <ul className="mt-8 grid gap-3 md:grid-cols-3">
           {feature.guarantees.map((g, i) => (
             <li key={g} data-reveal style={stagger(i)} className="card flex items-start gap-3 p-5 text-sm text-body">

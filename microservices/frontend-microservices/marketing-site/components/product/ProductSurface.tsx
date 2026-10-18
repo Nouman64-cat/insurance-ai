@@ -10,7 +10,7 @@ import { LogoMark } from "@/components/layout/LogoMark";
 
 export const SURFACE_STAGES = ["Lead", "AI analysis", "Rules", "Decision"] as const;
 
-const status = ["New lead", "AI analysing", "Rules running", "Approved with loading"];
+const status = ["New lead", "AI analysing", "Rules running", "Human review recorded"];
 
 const risks = [
   { label: "Medical risk", shown: "38 / 100", pct: 38 },
@@ -31,7 +31,7 @@ const audit = [
   { at: "10:03", text: "Medical and financial evidence received", from: 1 },
   { at: "10:04", text: "Risk scored by AI, advisory only", from: 1 },
   { at: "10:04", text: "Rule chain v12 evaluated", from: 2 },
-  { at: "10:05", text: "Decision recorded: Approve with Loading", from: 3 },
+  { at: "10:05", text: "Human outcome recorded: Approve with Loading", from: 3 },
 ];
 
 const reveal = (on: boolean) =>
@@ -157,7 +157,7 @@ export function ProductSurface({ stage, className = "" }: Readonly<{ stage: numb
               <Icon name="spark" className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
               <p className="text-xs leading-relaxed text-body">
                 <span className="font-semibold text-ink">AI insight.</span> Elevated BMI noted in the medical report. This is
-                advice for the rules, not a decision.
+                evidence for the human reviewer.
               </p>
             </div>
           </section>
@@ -192,8 +192,8 @@ export function ProductSurface({ stage, className = "" }: Readonly<{ stage: numb
             </ul>
 
             <div className={`mt-5 rounded-lg border border-line bg-card p-3 ${reveal(s >= 3)}`} style={delay(s >= 3, 0)}>
-              <p className="text-[0.6875rem] font-semibold uppercase tracking-wider text-muted">Outcome</p>
-              <p className="mt-1 text-sm font-semibold text-ink">Approve with Loading</p>
+              <p className="text-[0.6875rem] font-semibold uppercase tracking-wider text-muted">Rule recommendation</p>
+              <p className="mt-1 text-sm font-semibold text-ink">Loading recommended</p>
               <p className="text-xs text-body">+25% extra contribution, medical band 2</p>
             </div>
           </section>
@@ -234,7 +234,7 @@ export function ProductSurface({ stage, className = "" }: Readonly<{ stage: numb
               </span>
               <span className="truncate">Approve with Loading · +25%</span>
             </span>
-            <span className="truncate pl-7 text-xs font-medium text-white md:whitespace-nowrap md:pl-0 md:text-[0.8125rem]">Recorded 10:05 · replayable step by step</span>
+            <span className="truncate pl-7 text-xs font-medium text-white md:whitespace-nowrap md:pl-0 md:text-[0.8125rem]">Human review recorded · 10:05</span>
           </div>
         </div>
       </div>

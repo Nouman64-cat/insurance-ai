@@ -5,9 +5,9 @@ import { Icon } from "@/components/ui/Icon";
 // CSS only): each shows who it is for, the verdict the rules reached, and the three scores the
 // AI contributed. It sits centred under the hero CTAs, above the cues.
 const cases = [
-  { kind: "Individual", who: "Term Life · PKR 5,000,000", verdict: "Auto Approve", scores: [38, 22, 6] },
-  { kind: "Family", who: "Khan family · 5 members", verdict: "Approve with Loading", scores: [52, 30, 9] },
-  { kind: "Corporate", who: "Crescent Textiles · 248 members", verdict: "Approved, 6 referred", scores: [34, 41, 4] },
+  { kind: "Individual", who: "Term Life · PKR 5,000,000", verdict: "Proceed recommended", scores: [38, 22, 6] },
+  { kind: "Family", who: "Khan family · 5 members", verdict: "Loading recommended", scores: [52, 30, 9] },
+  { kind: "Corporate", who: "Crescent Textiles · 248 members", verdict: "Specialist review", scores: [34, 41, 4] },
 ];
 const labels = ["Medical", "Financial", "Fraud"];
 
@@ -23,7 +23,7 @@ export function HeroDecisionFeed({ className = "" }: Readonly<{ className?: stri
             </span>
             Live decisions
           </span>
-          <span className="text-[0.6875rem] text-faint">AI scores · rules decide · demo data</span>
+          <span className="text-[0.6875rem] text-faint">AI recommendations · human review · demo data</span>
         </div>
 
         <div className="relative mt-3 h-[6.5rem] sm:h-[3.5rem]">

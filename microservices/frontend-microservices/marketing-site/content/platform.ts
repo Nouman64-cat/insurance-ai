@@ -1,6 +1,6 @@
 import type { IconName } from "@/components/ui/Icon";
 
-export type MockKind = "underwriting" | "copilot" | "claims" | "fraud" | "agent";
+export type MockKind = "underwriting" | "copilot" | "claims" | "fraud" | "agent" | "finance" | "commissions" | "customer";
 
 export type PlatformFeature = {
   slug: string;
@@ -15,165 +15,253 @@ export type PlatformFeature = {
 
 export const platformFeatures: PlatformFeature[] = [
   {
-    slug: "ai-underwriting",
-    name: "AI Underwriting",
-    icon: "spark",
-    mock: "underwriting",
-    tagline: "Models assess the evidence. Deterministic rules make the decision.",
-    summary:
-      "Medical, financial and fraud risk are scored in parallel by a LangGraph workflow, combining LLM analysis with hard floors and ceilings. A separate rule-based decision engine then picks one of seven outcomes, so every verdict can be explained and replayed.",
-    points: [
+    "slug": "ai-underwriting",
+    "name": "AI Underwriting",
+    "icon": "spark",
+    "mock": "underwriting",
+    "tagline": "Separate specialist reviews. Advisory AI. Human outcomes.",
+    "summary": "Screen lead profile risk before a proposal, then work application-level medical and financial reviews through their own evidence and readiness checks. AI recommendations support the authorised human review.",
+    "points": [
       {
-        title: "Requirements engine first",
-        body: "Mandatory evidence is derived from age, cover, cover-to-income, smoker status, BMI and declared conditions. Until it is satisfied, the risk engine is never called.",
+        "title": "Lead risk screening",
+        "body": "Run and save a customer profile assessment before creating a proposal or underwriting case."
       },
       {
-        title: "Document intelligence",
-        body: "OCR and visual analysis extract and verify uploaded documents, and a summariser produces underwriter notes.",
+        "title": "Specialist workbenches",
+        "body": "Medical and Financial Underwriters manage assigned reviews, questionnaires, evidence and findings."
       },
       {
-        title: "Seven explicit verdicts",
-        body: "Auto Approve, Approve with Loading, Human Review, Request Additional Evidence, Fraud Investigation, Postpone, or Decline.",
+        "title": "Claim referral analysis",
+        "body": "Run claim-specific medical or financial AI analysis against existing evidence and plan terms, without new-business examination requirements."
       },
       {
-        title: "Streaming evaluation",
-        body: "Watch each node of the workflow complete live, or run it asynchronously over Kafka for bulk jobs.",
-      },
+        "title": "Human underwriting outcomes",
+        "body": "For claim referrals, Admin records Proceed or Decline after specialist reviews. The Claims Manager retains the actual claim decision."
+      }
     ],
-    guarantees: [
-      "Final branching is rule-based, not model-generated",
-      "Primary and fallback LLM provider configurable at runtime",
-      "Every evaluation is persisted and auditable",
-    ],
+    "guarantees": [
+      "AI recommendations remain separate from human outcomes",
+      "Readiness checks follow the application or claim context",
+      "Evidence and review rationale stay with the record"
+    ]
   },
   {
-    slug: "ai-copilot",
-    name: "AI Copilot",
-    icon: "chat",
-    mock: "copilot",
-    tagline: "A conversational agent that does the work, and asks before it changes anything.",
-    summary:
-      "The copilot looks things up, onboards leads, runs the underwriting and claims pipelines and navigates the portal. Every action that changes data is gated in code, not just in the prompt.",
-    points: [
+    "slug": "ai-copilot",
+    "name": "AI Copilots",
+    "icon": "chat",
+    "mock": "copilot",
+    "tagline": "The right assistant, tools and workflow for each role.",
+    "summary": "Claims, Finance, medical and financial underwriting copilots use a shared capability and skill framework. They read current records, ask for missing details and work within the signed-in role.",
+    "points": [
       {
-        title: "Confirmation before mutation",
-        body: "Creating a customer, opening a case, uploading a document or running a risk assessment always pauses for an explicit yes or no.",
+        "title": "Skills and specialist agents",
+        "body": "Workflows bind relevant tools for the current role, task and record rather than offering every operation to every user."
       },
       {
-        title: "Clarifying questions",
-        body: "Missing or invalid inputs trigger a question instead of a guess. Near-valid input such as a CNIC without dashes is corrected automatically.",
+        "title": "Requested actions, verified results",
+        "body": "Explicit requests authorise the requested work. The assistant asks for missing evidence or required decisions and reports owning-service results."
       },
       {
-        title: "Autonomous journeys",
-        body: "Underwriting and claims run end to end, and stop for a human when documents are missing, a decision needs review, or a payout is large.",
+        "title": "Text and live voice",
+        "body": "Use chat or live voice with English and Urdu language handling, captions, interruption and the same authorised business workflow."
       },
       {
-        title: "Role-aware tools",
-        body: "What the copilot may do depends on the signed-in role and on whether the user is on web or mobile.",
-      },
+        "title": "Portal handoff",
+        "body": "Open the relevant record, attach documents or return to the role’s portal when a task needs the screen."
+      }
     ],
-    guarantees: [
-      "Permission gate enforced in code, with real pause and resume",
-      "Conversations survive restarts through persistent checkpoints",
-      "Token usage metered per call",
-    ],
+    "guarantees": [
+      "Backend role and tenant permissions apply to tools",
+      "Human decisions and actual payment references are required inputs",
+      "Unknown mutation outcomes are checked before retrying"
+    ]
   },
   {
-    slug: "claims",
-    name: "Claims",
-    icon: "file",
-    mock: "claims",
-    tagline: "From first notice of loss to payout, with a human wherever it matters.",
-    summary:
-      "Claims move through triage, document audit, fraud and contestability checks, adjudication and disbursement. Rule-engine adjudication handles the routine; large or suspicious claims are routed to a person.",
-    points: [
+    "slug": "claims",
+    "name": "Claims Management",
+    "icon": "file",
+    "mock": "claims",
+    "tagline": "From notification to settlement, with clear ownership at every step.",
+    "summary": "Follow intimation, eligibility, documents, investigation and assessment, claim decision, settlement and closure. Specialist claim referrals, settlement authorisation and Finance recording remain distinct.",
+    "points": [
       {
-        title: "Registered and triaged on arrival",
-        body: "First notice of loss is captured once and the claim is triaged against the policy state at the date of loss.",
+        "title": "Evidence and requirements",
+        "body": "Track the claim’s checklist, documents, exclusions, waiting periods and contestability findings."
       },
       {
-        title: "Contestability re-underwriting",
-        body: "Early claims can be referred back to underwriting to test the original disclosure.",
+        "title": "Specialist claim referrals",
+        "body": "Assign medical and financial reviews. AI supplies recommendations; specialists and authorised staff record human outcomes."
       },
       {
-        title: "Manager review thresholds",
-        body: "Claims above a configured amount, or referred by a rule, wait for manager sign-off before payout.",
+        "title": "Claims Manager authorisation",
+        "body": "Prepare payees, verify identity and bank details, then authorise the approved settlement within delegated limits."
       },
       {
-        title: "Reinsurance recovery",
-        body: "Referral and recovery against the reinsurance split are part of the claim record.",
-      },
+        "title": "Finance handoff",
+        "body": "Finance records external payments with real references and reconciles them. Reconciliation and closure are separate actions."
+      }
     ],
-    guarantees: [
-      "Twelve explicit claim statuses",
-      "Claim documents stored with the case",
-      "Full status history for audit",
-    ],
+    "guarantees": [
+      "Approval alone does not authorise payment",
+      "Claims Manager and Finance duties are separated",
+      "Status history and recorded findings support review"
+    ]
   },
   {
-    slug: "fraud-intelligence",
-    name: "Fraud Intelligence",
-    icon: "graph",
-    mock: "fraud",
-    tagline: "A relationship graph that finds what a single application cannot show.",
-    summary:
-      "Every evaluation reads from and writes to a Memgraph graph of customers. Clusters of applicants sharing a registration area, an occupation, an outlier income or a coverage pattern raise a probability that feeds the underwriting decision.",
-    points: [
+    "slug": "fraud-intelligence",
+    "name": "Fraud Intelligence",
+    "icon": "graph",
+    "mock": "fraud",
+    "tagline": "Connected risk signals for a human investigation.",
+    "summary": "Relationship analysis, duplicate checks and document findings help reviewers identify suspicious patterns. Signals provide evidence for investigation rather than a standalone claim decision.",
+    "points": [
       {
-        title: "Ring detection",
-        body: "Customers are linked by shared registration area and occupation cluster, and queried for coordinated patterns.",
+        "title": "Relationship patterns",
+        "body": "Review shared customer attributes and connected application patterns."
       },
       {
-        title: "Income and coverage outliers",
-        body: "Declared income and requested cover are compared against the surrounding cluster.",
+        "title": "Financial outliers",
+        "body": "Compare income and coverage signals alongside the applicant’s evidence."
       },
       {
-        title: "Gets stronger over time",
-        body: "Each evaluation enriches the graph, so signals improve as more applications are seen.",
+        "title": "Duplicate claim checks",
+        "body": "Review possible duplicate insured events without creating replacement claims to change eligibility."
       },
       {
-        title: "Tenant isolated",
-        body: "Graph queries never cross tenant boundaries, and a graph outage never blocks an evaluation.",
-      },
+        "title": "Recorded rationale",
+        "body": "Keep concerns, investigative findings and authorised outcomes linked to the case or claim."
+      }
     ],
-    guarantees: [
-      "Severity bands are deterministic, not model-picked",
-      "High or critical severity routes to Fraud Investigation",
-      "Failures in the graph layer degrade gracefully",
-    ],
+    "guarantees": [
+      "Risk signals require interpretation",
+      "Findings support evidence-based review",
+      "Operational permissions remain in force"
+    ]
   },
   {
-    slug: "agent-app",
-    name: "Agent App",
-    icon: "phone",
-    mock: "agent",
-    tagline: "Everything a field agent needs, in their pocket.",
-    summary:
-      "A mobile app for field agents to manage leads, submit proposals, send e-application links, file their confidential report, follow underwriting and check commissions. Leads created anywhere appear without a refresh.",
-    points: [
+    "slug": "agent-app",
+    "name": "Agent App",
+    "icon": "phone",
+    "mock": "agent",
+    "tagline": "Lead capture, proposals and earnings for field teams.",
+    "summary": "Agents work with customer leads, selected plans, proposal progress and their commission information. Their mobile copilot follows the mobile role’s permitted tools.",
+    "points": [
       {
-        title: "Lead board",
-        body: "Leads across individual, family and corporate categories, kept in sync with the portal.",
+        "title": "Lead management",
+        "body": "Work individual, family and corporate leads with the connected portal records."
       },
       {
-        title: "Customer e-application",
-        body: "Send a tokenised link so the customer completes their own disclosure and declaration.",
+        "title": "Customer disclosure",
+        "body": "Send e-application links so customers provide their own answers and declarations."
       },
       {
-        title: "Confidential report",
-        body: "Capture moral-hazard, financial-standing and lifestyle observations that feed underwriting.",
+        "title": "Agent confidential report",
+        "body": "Capture the agent’s observations and supplied income or occupation verification evidence."
       },
       {
-        title: "Commission visibility",
-        body: "See earnings and the commission rate card, and ask the copilot for the next step.",
-      },
+        "title": "Commission visibility",
+        "body": "Follow earnings generated from eligible premium receipts and the applicable commission setup."
+      }
     ],
-    guarantees: [
-      "Available to the Agent role",
-      "Copilot on mobile runs with tighter tool permissions",
-      "Notifications raised when lead state changes",
-    ],
+    "guarantees": [
+      "Mobile permissions are scoped to the agent",
+      "Customers provide their own declarations",
+      "Earnings follow receipts and configured rules"
+    ]
   },
+  {
+    "slug": "finance",
+    "name": "Finance Workspace",
+    "icon": "coin",
+    "mock": "finance",
+    "tagline": "Record external payments. Keep settlement authority with Claims.",
+    "summary": "Finance has a payments dashboard, an awaiting-payout queue, a payment register and reconciliation work. It records payments already made outside GetInsuredAI; it does not initiate a bank transfer.",
+    "points": [
+      {
+        "title": "Live payment register",
+        "body": "Search by claim, payee, policy or bank reference and filter recorded payment statuses."
+      },
+      {
+        "title": "Authorised settlements",
+        "body": "Review verified payees and the Claims Manager’s authorisation before recording payment."
+      },
+      {
+        "title": "Actual bank references",
+        "body": "Record a selected method, real transaction references and notes, with separate references for split payees."
+      },
+      {
+        "title": "Finance Copilot",
+        "body": "Inspect payments, record an authorised external payout and reconcile on request using Finance-scoped tools."
+      }
+    ],
+    "guarantees": [
+      "Finance cannot approve claims or authorise its own settlement",
+      "Recording Paid status does not send a bank transfer",
+      "Already recorded payouts are protected against duplicate submission"
+    ]
+  },
+  {
+    "slug": "commissions",
+    "name": "Commission Management",
+    "icon": "coin",
+    "mock": "commissions",
+    "tagline": "Premium receipts become traceable commission records.",
+    "summary": "Commission earnings are generated from eligible premium receipts after policy issuance. Rule Engine settings determine rates and recurring eligibility; acquisition-source allocation identifies who earns the commission.",
+    "points": [
+      {
+        "title": "Receipt-driven earnings",
+        "body": "The first eligible premium produces commission; recurring commissions follow configured rates and eligibility."
+      },
+      {
+        "title": "Payable dates",
+        "body": "Use the acquisition source’s start-date day in the month after premium collection, with month-end handling."
+      },
+      {
+        "title": "Editable records",
+        "body": "Authorised admins can correct rates or payable dates with a reason and recorded adjustment history. Reserved payouts lock the earning."
+      },
+      {
+        "title": "Payout and exception workflow",
+        "body": "Review earnings, exceptions and commission disbursement batches separately from claim payment recording."
+      }
+    ],
+    "guarantees": [
+      "Rules determine rates and recurring eligibility",
+      "Corrections retain original posting information and history",
+      "Payout reservation protects earnings from concurrent edits"
+    ]
+  },
+  {
+    "slug": "customer-experience",
+    "name": "Customer Experience",
+    "icon": "users",
+    "mock": "customer",
+    "tagline": "Connected customer journeys across portal, mobile and service desks.",
+    "summary": "Customers can access their insurer’s supported self-service journeys through customer-facing apps and portals. Operational teams handle requests and records through their own authorised workspaces.",
+    "points": [
+      {
+        "title": "Customer portal and app",
+        "body": "Access customer policy and service journeys through the insurer’s configured channels."
+      },
+      {
+        "title": "Disclosure and evidence",
+        "body": "Complete questionnaires and provide requested documents without staff inventing customer declarations."
+      },
+      {
+        "title": "Service requests",
+        "body": "Track supported policy changes and customer-service requests through their owning workflows."
+      },
+      {
+        "title": "Connected insurer teams",
+        "body": "Agent, underwriting, claims and service teams work on shared records while role permissions control access."
+      }
+    ],
+    "guarantees": [
+      "Available journeys follow insurer configuration",
+      "Customer declarations remain the customer’s responsibility",
+      "Tenant and role checks apply across channels"
+    ]
+  }
 ];
 
 export function getPlatformFeature(slug: string) {

@@ -11,16 +11,16 @@ import { TrustSection } from "@/components/sections/TrustSection";
 import { CopilotMock } from "@/components/mocks/CopilotMock";
 import { AgentMock } from "@/components/mocks/AgentMock";
 import { Lifecycle } from "@/components/sections/Lifecycle";
-import { ProductCards } from "@/components/sections/FeatureCards";
+import { ProductCards, PlatformCards } from "@/components/sections/FeatureCards";
 import { Faq } from "@/components/sections/Faq";
 import { CtaBand } from "@/components/sections/CtaBand";
 import { homeFaq } from "@/content/home";
 import { stagger } from "@/lib/utils";
 
 const cues: { icon: IconName; title: string; body: string }[] = [
-  { icon: "spark", title: "AI insights", body: "Medical, financial and fraud risk, scored in parallel" },
-  { icon: "shield", title: "Rule-based decisions", body: "Deterministic, configurable, identical every time" },
-  { icon: "file", title: "Auditable outcomes", body: "Every step recorded and replayable" },
+  { icon: "spark", title: "AI insights", body: "Lead screening and specialist evidence reviews" },
+  { icon: "shield", title: "Human decision controls", body: "Clear responsibilities for underwriting, Claims and Finance" },
+  { icon: "file", title: "Auditable outcomes", body: "Findings, approvals and payment references linked" },
 ];
 
 export default function HomePage() {
@@ -48,8 +48,8 @@ export default function HomePage() {
           </h1>
 
           <p className="fade-up-intro mx-auto mt-6 max-w-[40rem] text-lg leading-relaxed text-body" style={stagger(3)}>
-            AI-assisted underwriting for life and takaful insurers. Analyze medical, financial, and fraud risk,
-            apply deterministic rules, and maintain a complete audit trail from quote to payout.
+            Connect leads, proposals, specialist underwriting, claims, Finance and commissions.
+            Role-specific AI copilots assist your team while authorised people control reviews, approvals and settlement.
           </p>
           <div className="fade-up-intro mt-8 flex flex-wrap justify-center gap-3" style={stagger(4)}>
             <ButtonLink href="/contact" arrow>
@@ -100,8 +100,8 @@ export default function HomePage() {
           <div>
             <SectionHeader
               eyebrow="AI copilot"
-              title="A teammate that asks before it acts"
-              description="The copilot can onboard a lead, open a case and run the underwriting pipeline from a chat message. Anything that changes data pauses for a yes or no, enforced in code rather than left to the prompt."
+              title="A specialist copilot for each team"
+              description="Claims Manager, Finance, medical and financial underwriting copilots use role-scoped tools and skills. Work in chat or English and Urdu live voice, with missing evidence and human decisions handled explicitly."
             />
             <div data-reveal className="mt-8">
               <ButtonLink href="/platform/ai-copilot" variant="ghost" arrow>
@@ -118,7 +118,7 @@ export default function HomePage() {
             <SectionHeader
               eyebrow="Agent app"
               title="Field agents get the whole workflow on their phone"
-              description="Lead board, tokenised e-application links, the confidential agent report and commissions. Leads created in the portal show up without a refresh."
+              description="Manage leads, e-application links, confidential agent reports and commission visibility from the agent workspace."
             />
             <div data-reveal className="mt-8">
               <ButtonLink href="/platform/agent-app" variant="ghost" arrow>
@@ -136,7 +136,7 @@ export default function HomePage() {
         <SectionHeader
           eyebrow="The policy journey"
           title="One platform for every stage of a policy"
-          description="Seven connected stages share the same customer, case and policy records, so nothing is re-entered and nothing is lost between teams."
+          description="Connected workflows share customer, proposal, policy and claim records, with specialist reviews, Finance handoffs and receipt-driven commissions."
         />
         <div className="mt-10">
           <Lifecycle />
@@ -151,6 +151,17 @@ export default function HomePage() {
         />
         <div className="mt-10">
           <ProductCards />
+        </div>
+      </Section>
+
+      <Section>
+        <SectionHeader
+          eyebrow="Connected workspaces"
+          title="Support every team in the insurance journey"
+          description="Explore specialist underwriting, role-specific copilots, claims, Finance, commissions and customer channels."
+        />
+        <div className="mt-10">
+          <PlatformCards />
         </div>
       </Section>
 
@@ -179,7 +190,7 @@ export default function HomePage() {
 
       <CtaBand
         title="Ready to make insurance decisions clearer?"
-        description="We will walk you through a lead becoming a policy and a claim on demo data, with the AI advising and your rules deciding."
+        description="We will walk you through a lead becoming a policy and a claim on demo data, with AI recommendations, configured rules and human approval controls."
       />
     </>
   );

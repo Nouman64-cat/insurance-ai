@@ -7,7 +7,7 @@ import { Icon, type IconName } from "@/components/ui/Icon";
 const stages: { label: string; icon: IconName; line: string }[] = [
   { label: "Lead", icon: "users", line: "A new application arrives from the agent app, the portal or the copilot." },
   { label: "AI analysis", icon: "spark", line: "Medical, financial and fraud risk are scored in parallel, as advice." },
-  { label: "Rules", icon: "shield", line: "A deterministic rule chain turns the scores into a verdict." },
+  { label: "Rules", icon: "shield", line: "Configured rules support a recommendation for the authorised reviewer." },
   { label: "Decision", icon: "file", line: "The outcome and the reasons behind it are recorded and replayable." },
 ];
 

@@ -12,15 +12,15 @@ export const metadata = pageMetadata(
 
 const expect = [
   "A lead taken through quote, case, underwriting and issuance",
-  "A claim handled end to end, including manager review",
-  "The copilot driving a workflow, with confirmation gates",
-  "Your questions on takaful, group schemes and rules",
+  "A claim through specialist review, manager authorisation and Finance payment recording",
+  "Role-specific copilots, English and Urdu voice, and evidence-aware workflows",
+  "Your questions on customer channels, takaful, group schemes and commissions",
 ];
 
 const next = [
   { title: "We read your note", body: "Tell us about your team and the lines of business you care about." },
   { title: "We shape a walkthrough", body: "A session built around your scenarios, on demo data." },
-  { title: "You see it working", body: "A lead through to a claim, with the AI advising and your rules deciding." },
+  { title: "You see it working", body: "A lead through to a claim, with AI recommendations and authorised human decisions." },
 ];
 
 function Next() {

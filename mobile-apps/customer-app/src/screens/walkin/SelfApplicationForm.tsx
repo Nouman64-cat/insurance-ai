@@ -25,14 +25,14 @@ export default function SelfApplicationForm({ plans, plansLoading, email, initia
   const key = useRef(newIdempotencyKey()); // one key per form: a double tap or retry can never create a second request
   const set = (k: string, v: string | boolean) => setF((s) => ({ ...s, [k]: v }));
 
-  const individualPlans = useMemo(() => plans.filter((p) => p.category !== 'Family'), [plans]);
+  const individualPlans = useMemo(() => plans.filter((p) => p.category === 'Individual'), [plans]);
   const chosen = plans.find((p) => p.id === f.plan_id);
   const gaps = missing(f);
   const valid = TABS.every((k) => gaps[k].length === 0);
   const idx = Math.max(TABS.indexOf(tab), 0);
 
   async function submit() {
-    if (!valid || busy) return;
+    if (!valid || busy || chosen?.category !== 'Individual') return;
     setBusy(true); setError(null);
     try {
       const r = await post<{ reference: string }>('/walk-in/application', {

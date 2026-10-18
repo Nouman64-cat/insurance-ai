@@ -4,8 +4,8 @@ import { stagger } from "@/lib/utils";
 
 const principles: { icon: IconName; title: string; body: string }[] = [
   { icon: "file", title: "Decision traceability", body: "Every status change runs through one state machine and leaves an event behind, so any outcome can be traced back." },
-  { icon: "users", title: "Human oversight", body: "Borderline cases go to a person. Human Review and Request Additional Evidence are first-class outcomes." },
-  { icon: "search", title: "Explainability", body: "Scores come with reasons, and the rule that produced a verdict is recorded next to it." },
+  { icon: "users", title: "Human oversight", body: "Specialists record findings; Claims Managers decide claims and authorise settlement; Finance records and reconciles external payments." },
+  { icon: "search", title: "Explainability", body: "Risk insights and rule results give reviewers reasons to assess alongside the evidence." },
   { icon: "lock", title: "Configurable rules", body: "Business rules are versioned data your team can change, not behaviour buried inside a prompt." },
   { icon: "building", title: "Enterprise workflow integration", body: "Multi-tenant and role-aware, with the portal, agent app and copilot working on one set of records." },
 ];
@@ -15,7 +15,7 @@ const record = [
   ["AI scores (advisory)", "Medical 38 · Financial 22 · Fraud 6%"],
   ["Rule chain", "v12, 5 of 5 rules passed"],
   ["Outcome", "Approve with Loading, +25%"],
-  ["Recorded", "10:05, by the rule engine"],
+  ["Recorded", "10:05, by the authorised reviewer"],
 ];
 
 export function TrustSection() {
@@ -28,7 +28,7 @@ export function TrustSection() {
             AI you can put in front of an auditor.
           </h2>
           <p className="mt-5 max-w-md text-base leading-relaxed text-body 2xl:text-lg">
-            GetInsuredAI is a prototype built around the questions a regulated insurer asks first.
+            Evidence, human review records and role permissions help insurance teams inspect how work progressed.
           </p>
 
           {/* A decision record, the thing an auditor would ask to see */}

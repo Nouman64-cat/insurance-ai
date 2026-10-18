@@ -60,7 +60,7 @@ export function ProductCards() {
 export function PlatformCards() {
   return (
     <CardGrid
-      cols="md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5"
+      cols="md:grid-cols-2 lg:grid-cols-4"
       cards={platformFeatures.map((f) => ({
         href: `/platform/${f.slug}`,
         name: f.name,

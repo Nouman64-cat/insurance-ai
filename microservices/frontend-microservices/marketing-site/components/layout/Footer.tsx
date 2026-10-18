@@ -29,8 +29,8 @@ export function Footer() {
         </div>
         <div className="mt-10 border-t border-line pt-6 text-xs leading-relaxed text-muted">
           <p>
-            GetInsuredAI is a prototype. Plans, rates, figures and people shown on this site are illustrative demo
-            data and do not describe a live insurance product or real customers.
+            Plans, rates, amounts, people and interface examples shown on this site are illustrative demo
+            data. Available workflows and integrations depend on the insurer’s configuration. This site does not offer an insurance policy.
           </p>
           <p className="mt-2">
             © {new Date().getFullYear()} {siteConfig.name}. Developed by{" "}

@@ -14,7 +14,7 @@ const trail = [
 
 export function UnderwritingMock() {
   return (
-    <div className="card mx-auto w-full max-w-[34rem] overflow-hidden shadow-float" role="img" aria-label="Example underwriting decision">
+    <div className="card mx-auto w-full max-w-[34rem] overflow-hidden shadow-float" role="img" aria-label="Example advisory underwriting assessment">
       <div className="flex items-start justify-between border-b border-line px-5 py-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-faint">Underwriting case</p>
@@ -41,8 +41,8 @@ export function UnderwritingMock() {
       <div className="border-t border-line bg-alt px-5 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs text-muted">Verdict</p>
-            <p className="text-sm font-semibold text-ink">Approve with Loading</p>
+            <p className="text-xs text-muted">AI recommendation</p>
+            <p className="text-sm font-semibold text-ink">Loading recommended</p>
           </div>
           <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-500/30">
             +25% loading

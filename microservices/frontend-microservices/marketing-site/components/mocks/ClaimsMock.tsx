@@ -3,18 +3,18 @@ import { Icon } from "@/components/ui/Icon";
 type Stage = { label: string; state: "done" | "current" | "todo" };
 
 const stages: Stage[] = [
-  { label: "First notice of loss", state: "done" },
-  { label: "Triage", state: "done" },
-  { label: "Document audit", state: "done" },
-  { label: "Fraud & contestability", state: "done" },
-  { label: "Adjudication", state: "current" },
-  { label: "Disbursement", state: "todo" },
+  { label: "Claim intimation", state: "done" },
+  { label: "Eligibility verification", state: "done" },
+  { label: "Document collection", state: "done" },
+  { label: "Investigation & assessment", state: "done" },
+  { label: "Claims decision", state: "current" },
+  { label: "Settlement", state: "todo" },
   { label: "Closure", state: "todo" },
 ];
 
 export function ClaimsMock() {
   return (
-    <div className="card mx-auto w-full max-w-[34rem] overflow-hidden shadow-float" role="img" aria-label="Example claim journey">
+    <div className="card mx-auto w-full max-w-[34rem] overflow-hidden shadow-float" role="img" aria-label="Illustrative claim journey, demo data">
       <div className="flex items-start justify-between border-b border-line px-5 py-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-faint">Claim</p>
@@ -46,7 +46,7 @@ export function ClaimsMock() {
       </ol>
 
       <div className="border-t border-line bg-alt px-5 py-3 text-xs text-body">
-        Amount is above the manager-review threshold, so payout waits for sign-off.
+        Claims Manager decides the claim, verifies payees and authorises settlement. Finance then records the external payment.
       </div>
     </div>
   );
