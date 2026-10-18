@@ -19,7 +19,7 @@ export const products: Product[] = [
     slug: "individual-life",
     name: "Individual Life",
     icon: "heart",
-    tagline: "Term, whole life and endowment, quoted in seconds and underwritten the same day.",
+    tagline: "Protection and savings plans, from lead assessment through human underwriting review.",
     summary:
       "A single applicant moves from lead to issued policy without re-keying data. Indicative quotes are priced the moment a customer is added, and the underwriting case collects only the evidence that applicant's age, cover and health actually require.",
     audience: "Insurers and agencies selling individual protection and savings plans.",
@@ -43,8 +43,8 @@ export const products: Product[] = [
     ],
     steps: [
       { title: "Add the lead", body: "Agent, portal or copilot captures the applicant; quotes are ready immediately." },
-      { title: "Open a case", body: "Six pre-underwriting gates collect disclosure, compliance, payment and history." },
-      { title: "Underwrite", body: "Medical, financial and fraud risk are scored in parallel, then rules decide." },
+      { title: "Open a case", body: "Readiness checks collect disclosure, compliance, premium receipt and the required specialist evidence." },
+      { title: "Underwrite", body: "Medical, financial and fraud insights support configured rules and an authorised human review." },
       { title: "Issue", body: "Terms accepted, first premium collected, beneficiaries recorded, documents generated." },
     ],
     plans: [
@@ -55,7 +55,7 @@ export const products: Product[] = [
     faq: [
       {
         q: "Does an AI model decide whether to approve an application?",
-        a: "No. Models help extract and assess evidence, but the verdict comes from a deterministic rule chain that can be audited and replayed.",
+        a: "No. Models help extract and assess evidence. Configured rules guide the recommendation, and authorised reviewers record the underwriting outcome.",
       },
       {
         q: "What if an applicant is missing documents?",

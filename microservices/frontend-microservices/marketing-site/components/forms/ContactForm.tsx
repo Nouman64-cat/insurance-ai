@@ -47,7 +47,7 @@ export function ContactForm() {
         </span>
         <h2 className="mt-4 text-lg font-semibold text-ink">Thanks, we have your request</h2>
         <p className="mt-2 text-sm text-body">
-          This is a prototype site, so nothing is sent onward yet. Your request was validated and logged.
+          Your request was validated and logged. This form does not currently send an email.
         </p>
         <button type="button" onClick={() => setStatus("idle")} className={`${buttonClass("ghost")} mt-6`}>
           Send another

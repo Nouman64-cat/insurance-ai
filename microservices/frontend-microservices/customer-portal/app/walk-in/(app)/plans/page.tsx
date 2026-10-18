@@ -44,7 +44,7 @@ export default function PlansPage() {
                     <div><dt className="text-slate-400">{t("walkin.plans.age")}</dt><dd className="font-semibold text-slate-800 ltr-num">{p.entry_age_min}–{p.entry_age_max}</dd></div>
                     <div><dt className="text-slate-400">{t("walkin.plans.term")}</dt><dd className="font-semibold text-slate-800 ltr-num">{t("walkin.plans.years", { min: p.term_min_years, max: p.term_max_years })}</dd></div>
                   </dl>
-                  <Link href={`/walk-in/apply?plan=${p.id}`} className="btn-primary self-start">{t("walkin.plans.apply")}</Link>
+                  <Link href={`/walk-in/apply?plan=${p.id}`} className="btn-primary self-start">{t(p.category === "Individual" ? "walkin.plans.apply" : "walkin.comingSoon.title")}</Link>
                 </div>
               </Card>
             ))}

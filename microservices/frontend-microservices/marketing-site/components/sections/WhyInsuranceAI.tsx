@@ -15,9 +15,9 @@ const parts: { n: string; icon: IconName; title: string; role: string; body: str
     n: "02",
     icon: "shield",
     title: "Controlled decisions",
-    role: "Rules decide",
-    body: "A deterministic, versioned rule chain makes the call. It is configurable by your team and behaves identically every time.",
-    sample: "Fraud below 15%: pass",
+    role: "People decide",
+    body: "Configured rules support the recommendation. Specialist reviews, claim decisions and settlement authorisation stay with the authorised people.",
+    sample: "Human review recorded",
   },
   {
     n: "03",
@@ -30,8 +30,8 @@ const parts: { n: string; icon: IconName; title: string; role: string; body: str
 ];
 
 const verdicts = [
-  "Auto Approve",
-  "Approve with Loading",
+  "Proceed recommendation",
+  "Loading recommendation",
   "Human Review",
   "Request Additional Evidence",
   "Fraud Investigation",
@@ -51,8 +51,8 @@ export function WhyInsuranceAI() {
             Intelligent analysis. Controlled decisions. Complete traceability.
           </h2>
           <p className="mt-5 max-w-2xl text-base leading-relaxed text-body 2xl:text-lg">
-            Most AI in insurance is a black box that nobody can explain. Here the model never decides: it informs a rule
-            chain you control, and every step is recorded.
+            AI recommendations, configured rules and human approval records work together. Your team can inspect
+            the evidence and the role responsible for each outcome.
           </p>
         </div>
 
@@ -78,7 +78,7 @@ export function WhyInsuranceAI() {
         </ol>
 
         <div data-reveal className="mt-12 2xl:mt-16">
-          <p className="text-sm font-semibold text-ink">Seven possible outcomes, each one reachable only through the rules</p>
+          <p className="text-sm font-semibold text-ink">Recommendations guide the next human review</p>
           <ul className="mt-4 flex flex-wrap gap-2">
             {verdicts.map((v) => (
               <li key={v} className="glass flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[0.8125rem] font-medium text-body">

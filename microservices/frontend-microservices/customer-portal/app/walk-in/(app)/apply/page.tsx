@@ -4,7 +4,6 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Banner, Card, ErrorState, Field, PageHeader, Skeleton, Spinner, errorText } from "@/components/ui";
 import { ApiError, api, useApi } from "@/lib/api";
-import { FamilyApplication } from "@/components/walkin/FamilyApplication";
 import { demoApplication } from "@/lib/demoWalkIn";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { WalkInLead, WalkInPlan, WalkInProfile } from "@/lib/types";
@@ -25,47 +24,45 @@ function ApplyForm() {
   const mine = useApi<{ leads: WalkInLead[] }>("walk-in/application");
   const [f, setF] = useState<FormState>(() => ({ ...emptyForm(), plan_id: params.get("plan") || "" }));
   const [tab, setTab] = useState<TabId>("demographics");
-  const [who, setWho] = useState<Applicant>("Self");              // for myself, or for my family
-  const [demoTick, setDemoTick] = useState(0);                   // tells the family form to fill itself with demo data
+  const [who, setWho] = useState<Applicant | "Corporate">("Self");
   const key = useRef(newKey());                         // one key per form: a double click or retry can never create a second request
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const set = (k: string, v: string | boolean) => setF((s) => ({ ...s, [k]: v }));
 
-  // A family chooses a family plan; someone applying for themselves chooses any other.
+  // Only individual applications are currently available to customers.
   const grouped = useMemo(() => {
     const g: Record<string, WalkInPlan[]> = {};
-    (plans.data?.plans || []).filter((p) => (who === "Family") === (p.category === "Family")).forEach((p) => { (g[p.category] ||= []).push(p); });
+    (plans.data?.plans || []).filter((p) => p.category === "Individual").forEach((p) => { (g[p.category] ||= []).push(p); });
     return g;
-  }, [plans.data, who]);
+  }, [plans.data]);
   const chosen = plans.data?.plans.find((p) => p.id === f.plan_id);
   const gaps = missing(f);
   const valid = TABS.every((k) => gaps[k].length === 0);
   const idx = Math.max(TABS.indexOf(tab), 0);
 
-  // Opened from a plan (?plan=…): a family plan means a family application.
+  // Plan links select the matching type, including unavailable application types.
   useEffect(() => {
     const p = plans.data?.plans.find((x) => x.id === params.get("plan"));
-    if (p) setWho(p.category === "Family" ? "Family" : "Self");
+    if (p) setWho(p.category === "Individual" ? "Self" : p.category);
   }, [plans.data, params]);
 
-  function chooseWho(next: Applicant) {
+  function chooseWho(next: Applicant | "Corporate") {
     if (next === who) return;
     setWho(next);
     setError(null);
-    if (chosen && (next === "Family") !== (chosen.category === "Family")) set("plan_id", "");     // the old choice no longer fits
+    if (chosen && (next === "Self" ? "Individual" : next) !== chosen.category) set("plan_id", "");     // the old choice no longer fits
   }
 
   function fillDemo() {
-    if (!plans.data) return;
+    if (!plans.data || who !== "Self") return;
     setError(null);
-    if (who === "Family") { setDemoTick((n) => n + 1); return; }
     setF(demoApplication(plans.data.plans, String(f.plan_id || params.get("plan") || "")));
   }
 
   async function send(body: Record<string, unknown>) {
-    if (busy) return;
+    if (busy || who !== "Self" || chosen?.category !== "Individual") return;
     setBusy(true); setError(null);
     try {
       const r = await api<{ reference: string }>("walk-in/application", { method: "POST", body, idempotencyKey: key.current });
@@ -80,7 +77,7 @@ function ApplyForm() {
     finally { setBusy(false); }
   }
   const submit = () => {
-    if (!valid) return;
+    if (!valid || who !== "Self" || chosen?.category !== "Individual") return;
     void send({ applicant_type: "Self", profile: buildProfile(f), plan_id: f.plan_id, preferred_contact: f.preferred_contact, message: String(f.message).trim() || undefined, consent: f.consent });
   };
 
@@ -135,23 +132,23 @@ function ApplyForm() {
   return (
     <>
       <PageHeader title={t("walkin.apply.title")} subtitle={t("walkin.apply.subtitle")}
-        actions={DEMO ? <button type="button" className="btn-secondary" onClick={fillDemo} disabled={!plans.data}>{t("walkin.apply.demo")}</button> : undefined} />
+        actions={DEMO && who === "Self" ? <button type="button" className="btn-secondary" onClick={fillDemo} disabled={!plans.data}>{t("walkin.apply.demo")}</button> : undefined} />
       {(mine.data?.leads.length ?? 0) > 0 && (
         <div className="mb-4"><Banner tone="info" title={t("walkin.apply.existing", { count: mine.data!.leads.length })}
           action={<Link href="/walk-in/status" className="btn-secondary">{t("walkin.nav.status")}</Link>} /></div>
       )}
-      <div role="radiogroup" aria-label={t("walkin.who.title")} className="mb-4 grid sm:grid-cols-2 gap-3">
-        {(["Self", "Family"] as const).map((k) => (
+      <div role="radiogroup" aria-label={t("walkin.who.title")} className="mb-4 grid sm:grid-cols-3 gap-3">
+        {(["Self", "Family", "Corporate"] as const).map((k) => (
           <button key={k} type="button" role="radio" aria-checked={who === k} onClick={() => chooseWho(k)}
             className={`text-start rounded-xl border p-4 transition-colors ${who === k ? "border-blue-600 bg-blue-50 ring-1 ring-blue-200" : "border-slate-200 bg-white hover:border-slate-300"}`}>
             <p className={`text-sm font-bold ${who === k ? "text-blue-800" : "text-slate-800"}`}>{t(`walkin.who.${k}`)}</p>
             <p className="text-xs text-slate-500 mt-0.5">{t(`walkin.who.${k}Text`)}</p>
+            {k !== "Self" && <span className="mt-2 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">{t("walkin.comingSoon.title")}</span>}
           </button>
         ))}
       </div>
-      {who === "Family" ? (
-        <FamilyApplication plans={plans.data?.plans} plansLoading={plans.loading} email={me.data?.email || ""} initialPlanId={chosen?.category === "Family" ? chosen.id : String(params.get("plan") || "")}
-          demoTick={demoTick} busy={busy} error={error} onSubmit={(body) => void send(body)} />
+      {who !== "Self" ? (
+        <div role="status"><Banner tone="info" title={t("walkin.comingSoon.title")}>{t(`walkin.comingSoon.${who}`)}</Banner></div>
       ) : (<>
       <div className="card overflow-hidden">
         <div role="tablist" aria-label={t("walkin.apply.title")} className="flex flex-wrap gap-x-1 border-b border-slate-100 px-3 pt-2">

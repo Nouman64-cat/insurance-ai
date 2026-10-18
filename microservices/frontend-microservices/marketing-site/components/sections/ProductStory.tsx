@@ -19,12 +19,12 @@ const steps = [
     body: "Language models read the medical, financial and fraud evidence in parallel. What they produce is advice: scored, explained, and kept separate from any decision.",
   },
   {
-    title: "Your rules remain in control",
-    body: "A versioned, configurable rule chain turns that advice into an outcome. Models never approve or decline anyone; the rules do, the same way every time.",
+    title: "Your reviewers remain in control",
+    body: "Versioned rules support the recommendation. Authorised reviewers record the human outcome, and Claims and Finance retain separate decision and payment responsibilities.",
   },
   {
     title: "Every decision has a story you can replay",
-    body: "The verdict, the evidence behind it and every step taken are written to an audit trail, so a decision can be explained to an auditor, a regulator or a customer.",
+    body: "Saved findings, review rationale and recorded outcomes let teams inspect how a case progressed.",
   },
 ];
 
@@ -106,7 +106,7 @@ export function ProductStory() {
           <div>
             <p className="eyebrow">How a case moves</p>
             <h2 className="mt-3 max-w-xl text-3xl font-semibold leading-[1.08] tracking-[-0.025em] text-ink sm:text-4xl 2xl:text-5xl">
-              Watch one decision being made.
+              Follow the evidence to a human decision.
             </h2>
 
             <ol className="relative mt-8 space-y-1 pl-7 2xl:mt-10">

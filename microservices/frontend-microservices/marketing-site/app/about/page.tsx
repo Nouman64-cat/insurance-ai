@@ -8,19 +8,19 @@ import { stagger } from "@/lib/utils";
 
 export const metadata = pageMetadata(
   "About",
-  "Why GetInsuredAI keeps decisions deterministic, humans in the loop and every change auditable.",
+  "How GetInsuredAI connects insurance teams with advisory AI, configurable rules and human approval controls.",
   "/about"
 );
 
 const principles: { title: string; body: string; icon: IconName }[] = [
   {
     title: "Deterministic where it matters",
-    body: "Pricing, requirements and underwriting verdicts are computed by rules that can be read, tested and replayed. Language models stay on the interpretation side of the line.",
+    body: "Configured rules support premium calculations, requirements, risk recommendations and commissions. Authorised staff retain the reviews and decisions assigned to their roles.",
     icon: "shield",
   },
   {
     title: "Humans stay in the loop",
-    body: "Borderline risks, large claims and every data-changing copilot action stop for a person. Automation removes busywork, not accountability.",
+    body: "Specialists record their own findings. Admin records claim-referral underwriting outcomes, Claims Managers decide claims and authorise settlements, and Finance records external payments.",
     icon: "users",
   },
   {
@@ -63,20 +63,20 @@ export default function AboutPage() {
         tone="alt"
         lines={[
           { word: "Models advise.", note: "Language models read evidence and score risk. Their output is advice, and it is always labelled as advice." },
-          { word: "Rules decide.", note: "A deterministic, versioned rule chain chooses the verdict, so the same inputs always give the same outcome." },
-          { word: "Audit proves.", note: "Every input, rule and outcome is recorded, so a decision can be replayed months later." },
+          { word: "People decide.", note: "Rules and AI support evidence review. Human reviews, claim decisions and settlement authorisation remain explicit, separate records." },
+          { word: "Audit proves.", note: "Recorded assessments, rule results and human rationale help teams trace how an outcome was reached." },
         ]}
       />
 
       <FeatureGrid
         eyebrow="Status"
-        title="A working prototype, built end to end"
-        description="Plans, rates and customer data on this site are demo data while we work with early insurers on real catalogues and integrations."
+        title="Connected workflows for insurance operations"
+        description="The platform connects underwriting, claims, Finance and servicing. Website examples use illustrative records; each insurer configures its catalogue, rules, roles and integrations."
         items={[
-          { icon: "spark", title: "Underwriting pipeline", body: "Medical, financial and fraud scoring, then a rule-based verdict with reasons." },
-          { icon: "chat", title: "AI copilot", body: "Onboards leads and runs workflows from chat, pausing for confirmation before any change." },
-          { icon: "coin", title: "Claims journey", body: "Triage, fraud checks, adjudication, payout and recovery, with a human wherever it matters." },
-          { icon: "graph", title: "Fraud graph", body: "A relationship graph that finds what a single application cannot show." },
+          { icon: "spark", title: "Underwriting pipeline", body: "Lead screening, medical and financial specialist reviews, and advisory AI findings." },
+          { icon: "chat", title: "AI copilot", body: "Role-specific tools and skills for requested work in chat and English or Urdu live voice." },
+          { icon: "coin", title: "Claims journey", body: "Evidence review, human claim decisions, payee verification, manager authorisation and Finance reconciliation." },
+          { icon: "coin", title: "Finance and commissions", body: "External-payment records and reconciliation, plus receipt-driven commission earnings and adjustment history." },
           { icon: "users", title: "Group and family workflows", body: "Census upload for employers, nominee shares for families, on the same lifecycle." },
           { icon: "phone", title: "Agent mobile app", body: "Lead board, e-application links, the confidential agent report and commissions." },
         ]}

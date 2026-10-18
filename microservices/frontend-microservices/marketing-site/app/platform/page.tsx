@@ -9,7 +9,7 @@ import { pageMetadata } from "@/lib/seo";
 
 export const metadata = pageMetadata(
   "Platform",
-  "AI underwriting, an AI copilot, claims, fraud intelligence and a field-agent app on one multi-tenant platform.",
+  "Specialist underwriting, role-specific copilots, claims, Finance, commissions and customer channels on one platform.",
   "/platform"
 );
 
@@ -20,7 +20,7 @@ export default function PlatformPage() {
         art="stages"
         eyebrow="Platform"
         title="Everything between a lead and a claim"
-        description="Five capabilities share one data model, one event stream and one audit trail."
+        description="Connected workspaces share operational records while preserving each team’s responsibilities."
       />
       <Section>
         <PlatformCards />
@@ -38,11 +38,11 @@ export default function PlatformPage() {
         description="The same building blocks serve the portal, the agent app and the copilot."
         items={[
           { icon: "lock", title: "Multi-tenant and role-aware", body: "Each insurer runs in an isolated tenant with its own plans, rules and users, behind JWT authentication." },
-          { icon: "file", title: "One policy state machine", body: "Every status change runs through the same state machine and leaves an immutable event behind." },
+          { icon: "file", title: "One policy state machine", body: "Policy lifecycle transitions use shared rules and event records. Specialist reviews and claim settlement maintain their own approval controls." },
           { icon: "spark", title: "Three LLM providers", body: "Gemini, OpenAI and Anthropic, with a primary and a fallback chosen at runtime. Credentials are encrypted at rest." },
           { icon: "graph", title: "Fraud graph", body: "Relationships between customers, policies and claims are analysed as a graph, so a single application is never judged in isolation." },
           { icon: "building", title: "Built for Pakistan", body: "CNIC handling, PKR pricing, takaful as a distinct product type, and PEP and sanctions screening." },
-          { icon: "chat", title: "A copilot with confirmation gates", body: "Anything that changes data pauses for a yes or no, enforced in code rather than left to the prompt." },
+          { icon: "chat", title: "Role-specific copilots", body: "Tools follow role and tenant permissions. Assistants act on requested work, ask for missing evidence and preserve human decision gates." },
         ]}
       />
       <TrustSection />

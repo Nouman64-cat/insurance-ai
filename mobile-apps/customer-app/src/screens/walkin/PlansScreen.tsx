@@ -41,7 +41,7 @@ export default function PlansScreen({ navigation }: { navigation: any }) {
                 <View><Text variant="caption" color="subtle">{t('walkin.plans.age')}</Text><Text variant="bodyStrong">{p.entry_age_min}–{p.entry_age_max}</Text></View>
                 <View><Text variant="caption" color="subtle">{t('walkin.plans.term')}</Text><Text variant="bodyStrong">{t('walkin.plans.years', { min: p.term_min_years, max: p.term_max_years })}</Text></View>
               </View>
-              <Button title={t('walkin.plans.apply')} onPress={() => navigation.navigate('Apply', { planId: p.id })} />
+              <Button title={t(p.category === 'Individual' ? 'walkin.plans.apply' : 'walkin.comingSoon.title')} onPress={() => navigation.navigate('Apply', { planId: p.id })} />
             </View>
           </Card>
         ))}

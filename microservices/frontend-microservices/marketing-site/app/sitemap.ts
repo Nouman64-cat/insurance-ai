@@ -10,7 +10,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     ...products.map((p) => `/products/${p.slug}`),
     "/platform",
     ...platformFeatures.map((f) => `/platform/${f.slug}`),
-    "/pricing",
     "/about",
     "/contact",
     "/legal/privacy",
