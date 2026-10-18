@@ -13,6 +13,7 @@ import {
 import { tx } from "@/lib/i18n/tx";
 import { getClaimWorkspace, type ClaimWorkspace } from "@/app/services/postIssuance";
 import FinanceClaimWorkspace from "@/components/finance/FinanceClaimWorkspace";
+import ClaimSettlementApproval from "@/components/claims/ClaimSettlementApproval";
 import ClaimPayoutAction from "@/components/claims/ClaimPayoutAction";
 import ClaimFinalUnderwritingDecision from "@/components/claims/ClaimFinalUnderwritingDecision";
 import ClaimWorkspaceHeader from "@/components/claims/ClaimWorkspaceHeader";
@@ -438,8 +439,9 @@ export default function ClaimDetailPage() {
 
   const guide = getNextStep(claim.status, { hasDocs, canPayout, nextOpts, uwBlocked: hasUnresolvedFlags });
   if (canPayout) {
-    guide.title = currentRole === "Finance" ? "Settle the claim" : "Awaiting Finance";
-    guide.body = currentRole === "Finance" ? "Record the payout to settle the approved claim." : "The claim is approved. Finance must record the payout; ask your administrator to provision a Finance account if needed.";
+    const authorised = !!workspace?.settlement.authorized_at;
+    guide.title = authorised ? "Awaiting Finance" : "Prepare and authorise settlement";
+    guide.body = authorised ? "Payment is authorised. Finance can now record the external payment." : "The claim is approved. Verify the payees and bank details, then the Claims Manager must authorise Finance to record payment.";
     guide.cta = undefined; // Payment has its own Finance-only control in the header.
   }
   const uwTriggers = (claim.underwriting_referral_reason || "").split("; ").map((r) => r.trim()).filter(Boolean);
@@ -517,7 +519,8 @@ export default function ClaimDetailPage() {
                 {tx("Refer to underwriting")}
               </button>)
             )}
-            <ClaimPayoutAction role={currentRole} eligible={canPayout} disabled={submitting}
+            {canPayout && currentRole === "ClaimsManager" && !workspace?.settlement.authorized_at && <button type="button" onClick={()=>document.getElementById("claim-settlement-approval")?.scrollIntoView({behavior:"smooth",block:"start"})} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{tx("Prepare / authorise payment")}</button>}
+            <ClaimPayoutAction role={currentRole} eligible={canPayout && !!workspace?.settlement.authorized_at} disabled={submitting}
               onPayout={() => openModal("payout")} />
             {canAct && !isReUnderwriting && nextOpts.length > 0 && !(guide.cta?.kind === "decide" && !guide.cta.target) && (
               <button type="button" onClick={() => openDecision(null)}
@@ -535,6 +538,10 @@ export default function ClaimDetailPage() {
         }
       />
       {isReUnderwriting && <ClaimFinalUnderwritingDecision claimId={claimId} role={currentRole} initialClaim={claim} disabled={submitting} onDone={load} />}
+
+      {tab === "overview" && canPayout && currentRole === "ClaimsManager" && <ClaimSettlementApproval
+        key={`${claim.id}:${workspace?.settlement.payees_verified_at}:${workspace?.settlement.authorized_at}:${workspace?.settlement.payees.length}`}
+        role={currentRole} policyId={claim.policy_id} claimId={claimId} workspace={workspace} onDone={load} />}
 
       {/* Mandatory Document Gate Notice */}
       {tab !== "overview" && !hasDocs && claim.status !== "Closed" && claim.status !== "Declined" && guide.cta?.kind !== "docs" && (

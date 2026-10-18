@@ -664,3 +664,14 @@ def test_settled_claim_still_requires_reconciliation_before_closure():
     assert _states(rows)["settlement"] == "action"
     assert _labels(rows)["settlement"] == "Reconcile payment"
     assert _states(rows)["closure"] != "complete"
+
+
+def test_register_approved_claim_projects_settlement_without_inventing_earlier_checks():
+    for status in ('Approved','Partial Approval','Settled'):
+        p = _proc()
+        rows = eng.project_stages(p, _claim(status))
+        states = _states(rows)
+        assert states['eligibility'] == 'skipped'
+        assert states['assessment'] == 'skipped'
+        assert next(row['key'] for row in rows if row['state'] not in ('complete','skipped')) == 'settlement'
+        assert p.eligibility_status is None and p.assessed_at is None

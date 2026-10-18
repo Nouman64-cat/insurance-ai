@@ -930,6 +930,9 @@ export async function assessClaim(policyId: string, claimId: string, body: { dis
 export async function decideClaim(policyId: string, claimId: string, body: { decision: "Approve" | "PartialApprove" | "Reject" | "RequestInfo" | "Refer"; amount?: number; reason?: string; info_requests?: { label: string }[] }): Promise<ClaimWorkspace> {
   return (await api.post(`${claimsBase(policyId, claimId)}/decision`, body)).data;
 }
+export async function prepareClaimSettlement(policyId: string, claimId: string): Promise<ClaimWorkspace> {
+  return (await api.post(`${claimsBase(policyId, claimId)}/settlement/prepare`)).data;
+}
 export async function verifyClaimPayees(policyId: string, claimId: string, payees: { id: string; cnic?: string; bank_name?: string; account_title?: string; iban?: string; method?: string; note?: string; verify: boolean }[]): Promise<ClaimWorkspace> {
   return (await api.post(`${claimsBase(policyId, claimId)}/settlement/payees`, { payees })).data;
 }
