@@ -635,3 +635,32 @@ if __name__ == "__main__":
     print(f"\n{len(tests) - failed}/{len(tests)} passed")
     raise SystemExit(1 if failed else 0)
 
+
+
+def test_closed_register_claim_does_not_reopen_incomplete_workflow_stages():
+    proc = _proc(eligibility_status="Referred", documents_json=_docs(True),
+                 investigation_json={"requires_investigation": True})
+    claim = _claim("Closed")
+    before = proc.model_dump()
+    rows = eng.project_stages(proc, claim)
+    assert len(rows) == 7
+    assert set(_states(rows).values()) <= {"complete", "skipped"}
+    assert _states(rows)["assessment"] == "skipped"
+    assert _labels(rows)["assessment"] == "Not recorded"
+    assert _states(rows)["closure"] == "complete"
+    assert proc.model_dump() == before  # Presentation never fabricates an assessment/payment.
+
+
+def test_closed_rejected_claim_preserves_skipped_payment_and_rejection():
+    proc = _proc(eligibility_status="Ineligible", decision="Reject", closure_outcome="Rejected")
+    rows = eng.project_stages(proc, _claim("Closed"))
+    assert set(_states(rows).values()) <= {"complete", "skipped"}
+    assert _labels(rows)["decision"] == "Rejected"
+    assert _labels(rows)["settlement"] == "Not applicable"
+
+
+def test_settled_claim_still_requires_reconciliation_before_closure():
+    rows = eng.project_stages(_proc(), _claim("Settled"), payout_total=100)
+    assert _states(rows)["settlement"] == "action"
+    assert _labels(rows)["settlement"] == "Reconcile payment"
+    assert _states(rows)["closure"] != "complete"

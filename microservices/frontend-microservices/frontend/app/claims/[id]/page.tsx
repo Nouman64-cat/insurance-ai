@@ -16,6 +16,7 @@ import FinanceClaimWorkspace from "@/components/finance/FinanceClaimWorkspace";
 import ClaimPayoutAction from "@/components/claims/ClaimPayoutAction";
 import ClaimFinalUnderwritingDecision from "@/components/claims/ClaimFinalUnderwritingDecision";
 import ClaimWorkspaceHeader from "@/components/claims/ClaimWorkspaceHeader";
+import { claimStepIndex } from "@/components/claims/claimProgress";
 import { ClaimJourneyTimeline } from "@/components/claims/ClaimJourneyTimeline";
 
 const VALID_NEXT: Record<string, ClaimStatus[]> = {
@@ -417,14 +418,12 @@ export default function ClaimDetailPage() {
   const isClosedStatus = ["Paid", "Approved", "Rejected", "Declined", "Voided", "Closed", "Settled"].includes(claim.status);
   const isReUnderwriting = claim.status === "Re-Underwriting Required";
   const flowStages = workspace?.stages ?? null;
-  const flowCurrent = flowStages ? flowStages.findIndex((s) => !["complete", "skipped"].includes(s.state)) : -1;
   const displaySteps: string[] = flowStages
     ? flowStages.map((s) => s.title)
     : isReUnderwriting ? ["New", "Triaged", "Re-Underwriting Review", "Under Investigation", "Approved", "Settled"] : WORKFLOW_STEPS;
   const currentStepName = isReUnderwriting ? "Re-Underwriting Review" : claim.status;
   // On the workflow, the current step is its first open one (all done → past the end, everything ticked).
-  const stepIdx = flowStages ? (flowCurrent < 0 ? flowStages.length : flowCurrent) : displaySteps.indexOf(currentStepName as any);
-  const stepNote = flowStages && flowCurrent >= 0 ? `${tx(flowStages[flowCurrent].label)}${flowStages[flowCurrent].detail ? ` — ${tx(flowStages[flowCurrent].detail)}` : ""}` : null;
+  const stepIdx = claimStepIndex(claim.status, flowStages, displaySteps, currentStepName);
   const nextOpts = (VALID_NEXT[claim.status] || []).filter((status) => status !== "Settled" || currentRole === "Finance");
   const hasDocs = (claim.artifacts?.length ?? 0) > 0;
   const daysOpen = Math.max(0, Math.floor((Date.now() - new Date(claim.reported_date).getTime()) / 86_400_000));
@@ -616,8 +615,8 @@ export default function ClaimDetailPage() {
                       {isReUnderwriting && <span className="h-1.5 w-1.5 rounded-full bg-blue-500" aria-hidden="true" />}
                       {guide.done ? tx("All done") : isReUnderwriting ? tx("Paused") : tx("Your next step")}
                     </span>
-                    {stepIdx >= 0 && stepIdx < displaySteps.length && (
-                      <span className="text-xs text-slate-400">{tx("Step {n} of {total}", { n: stepIdx + 1, total: displaySteps.length })}</span>
+                    {stepIdx >= 0 && displaySteps.length > 0 && (
+                      <span className="text-xs text-slate-400">{tx("Step {n} of {total}", { n: Math.min(stepIdx + 1, displaySteps.length), total: displaySteps.length })}</span>
                     )}
                   </div>
                   <h2 className="mt-2 text-lg font-semibold text-slate-900">{tx(guide.title)}</h2>
