@@ -26,22 +26,24 @@ from permission import FINAL_UNDERWRITING_TOOLS, get_tools_for_role
 
 TRACK_ROLES = {"Medical Underwriter": "medical_underwriting", "Financial Underwriter": "financial_underwriting"}
 FINAL_ROLES = {"SuperAdmin", "Admin", "Underwriter"}
-DOMAINS = frozenset({"specialist_review"})
+DOMAINS = frozenset({"specialist_review", "underwriting_ops"})
 
 NAVIGATION = {"navigate_to_page", "show_record", "search_records"}
 MEDICAL_TOOLS = frozenset({
     "list_my_underwriting_reviews", "get_underwriting_review", "start_my_review",
     "send_e_application_questionnaire", "run_ai_medical_underwriting", "record_underwriting_review", *NAVIGATION,
+    "waive_medical_examination", "list_claim_underwriting_referrals",
 })
 FINANCIAL_TOOLS = frozenset({
     "list_my_underwriting_reviews", "get_underwriting_review", "start_my_review",
     "send_e_application_questionnaire", "run_insurance_history_check", "run_ai_financial_underwriting",
-    "record_underwriting_review", *NAVIGATION,
+    "record_underwriting_review", *NAVIGATION, "list_claim_underwriting_referrals",
 })
 FINAL_TOOLS = frozenset({
     *FINAL_UNDERWRITING_TOOLS, "assign_underwriting_track", "get_case_details", "list_cases",
     "submit_agent_confidential_report", "run_compliance_screening", "override_compliance_screening",
     "approve_case", "update_case_status", "add_case_comment", *NAVIGATION,
+    "hold_underwriting_case", "release_underwriting_case", "waive_agent_confidential_report",
 })
 
 _FINAL = re.compile(

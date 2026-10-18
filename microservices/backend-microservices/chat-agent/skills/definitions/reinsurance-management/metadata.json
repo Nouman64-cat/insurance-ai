@@ -1,0 +1,78 @@
+{
+  "id": "reinsurance-management",
+  "purpose": "Read an application's cession position and manage its facultative reinsurance referral: refer, record the reinsurer's reply, apply terms or withdraw.",
+  "intents": [
+    "reinsurance",
+    "facultative",
+    "refer to reinsurer",
+    "reinsurer response",
+    "reinsurer terms",
+    "withdraw referral",
+    "cession",
+    "retention"
+  ],
+  "capabilities": [
+    "get_policy_reinsurance",
+    "refer_policy_to_reinsurer",
+    "record_reinsurer_response",
+    "apply_reinsurer_terms",
+    "withdraw_reinsurance_referral"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "Underwriter"
+  ],
+  "prerequisites": [
+    "Authenticated role and tenant scope",
+    "Live owning-service record for the policy, application or desk item"
+  ],
+  "business_rules": [
+    "The reinsurer's reply is recorded exactly as received.",
+    "Applying terms may raise a counter-offer the customer must accept.",
+    "Explicit user instruction is required for mutations; backend gates remain authoritative."
+  ],
+  "lifecycle_source": "tenant-service/routers/reinsurance.py; underwriting_operations.py",
+  "approvals": "role_operations.TOOL_ROLES mirrors the owning router; the shared permission gate and owning-service checks apply.",
+  "recovery": [
+    "Ask for missing details or offer verified choices; never fill a decision, answer or reference in.",
+    "Read the live case before retrying; an unknown mutation outcome is verified, never replayed."
+  ],
+  "verification": "Report only backend-confirmed outcomes; a skipped step is reported as skipped.",
+  "tests": [
+    "test_role_operations.py",
+    "test_skills.py::test_all_skills_validate_and_cover_inventory"
+  ],
+  "steps": [
+    {
+      "id": "read",
+      "capability": "get_policy_reinsurance",
+      "depends_on": []
+    },
+    {
+      "id": "refer",
+      "capability": "refer_policy_to_reinsurer",
+      "depends_on": [
+        "read"
+      ]
+    },
+    {
+      "id": "response",
+      "capability": "record_reinsurer_response",
+      "depends_on": [
+        "refer"
+      ]
+    },
+    {
+      "id": "apply",
+      "capability": "apply_reinsurer_terms",
+      "depends_on": [
+        "response"
+      ]
+    }
+  ],
+  "unsupported": [
+    "Adding reinsurers to the panel (platform console)",
+    "Claim reinsurance recoveries (claims-management)"
+  ]
+}

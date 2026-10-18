@@ -1,0 +1,57 @@
+{
+  "id": "branch-administration",
+  "purpose": "List the organisation's branches and offices, and (SuperAdmin) create or update a branch.",
+  "intents": [
+    "branches",
+    "branch list",
+    "create branch",
+    "new branch",
+    "update branch",
+    "branch office"
+  ],
+  "capabilities": [
+    "list_branches",
+    "manage_branch"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin"
+  ],
+  "prerequisites": [
+    "Authenticated role and tenant scope",
+    "Live owning-service record for the policy, application or desk item"
+  ],
+  "business_rules": [
+    "Only SuperAdmin creates or updates branches.",
+    "Branch codes are unique per tenant.",
+    "Explicit user instruction is required for mutations; backend gates remain authoritative."
+  ],
+  "lifecycle_source": "tenant-service/routers/branches.py; desk_operations.py",
+  "approvals": "role_operations.TOOL_ROLES mirrors the owning router; the shared permission gate and owning-service checks apply.",
+  "recovery": [
+    "Ask for missing details or offer verified choices; never fill a decision, answer or reference in.",
+    "Read the live case before retrying; an unknown mutation outcome is verified, never replayed."
+  ],
+  "verification": "Report only backend-confirmed outcomes; a skipped step is reported as skipped.",
+  "tests": [
+    "test_role_operations.py",
+    "test_skills.py::test_all_skills_validate_and_cover_inventory"
+  ],
+  "steps": [
+    {
+      "id": "read",
+      "capability": "list_branches",
+      "depends_on": []
+    },
+    {
+      "id": "change",
+      "capability": "manage_branch",
+      "depends_on": [
+        "read"
+      ]
+    }
+  ],
+  "unsupported": [
+    "Deleting a branch (platform console)"
+  ]
+}

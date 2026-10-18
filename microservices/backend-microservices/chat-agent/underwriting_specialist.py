@@ -63,8 +63,11 @@ UNDERWRITING_TOOLS = frozenset({
     'verify_e_application',
 })
 from capability_tools import PROPOSAL_TOOLS
+from role_operations import DOMAINS as _ROLE_OPERATION_DOMAINS
 UNDERWRITING_TOOLS |= PROPOSAL_TOOLS
-UNDERWRITING_DOMAINS = frozenset({'documents', 'workflow', 'proposal_payment', 'specialist_review'})
+# Counter-offers, holds, waivers, plan changes, reinsurance (underwriting_operations.py).
+UNDERWRITING_TOOLS |= _ROLE_OPERATION_DOMAINS['underwriting_ops']
+UNDERWRITING_DOMAINS = frozenset({'documents', 'workflow', 'proposal_payment', 'specialist_review', 'underwriting_ops'})
 _EXPLICIT = re.compile(r'\b(?:underwrit(?:e|ing)|pre[- ]underwriting|risk assessment|medical (?:review|evidence|reports?)|pre[- ]issuance|issue (?:the |a |this )?policy|proposals?|e[- ]application|confidential report|compliance screening|insurance history check|medical examination|(?:start|continue)_underwriting_journey|CASE-[\w-]+)\b|انڈررائٹنگ', re.I)
 _EXCLUDED = re.compile(r'\b(?:claims?|fnol|commissions?|brokerage|group|family|corporate|census|bulk|rule engine|rule sets?|deploy|surrender|renewal|reinstatement|endorsement|service request|support ticket)\b|کلیم|کمیشن', re.I)
 _INTAKE = re.compile(r'\b(?:create|add|register|delete|list)\s+(?:(?:a|an|the|new|all)\s+){0,2}(?:customers?|leads?|users?|agents?|organizations?)\b', re.I)

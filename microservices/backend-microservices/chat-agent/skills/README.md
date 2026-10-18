@@ -1,8 +1,8 @@
 # Skill-driven capability discovery
 
 The implementation extends the existing LangGraph coordinator, specialist agents,
-permission gate, executor, checkpoints and SSE transport. It adds 24 trusted local
-skills and indexes 224 implemented capabilities (plus two discovery tools). It
+permission gate, executor, checkpoints and SSE transport. It adds 35 trusted local
+skills and indexes 262 implemented capabilities (plus two discovery tools). It
 does not expose arbitrary HTTP endpoints or make skill metadata an authorization
 source.
 
@@ -63,6 +63,34 @@ SuperAdmin. The original backend validates record ownership, lifecycle and
 financial evidence. A live payment request is reused instead of emailing a
 second link. These adapters never automatically accept evidence or simulate a
 payment.
+
+### Role operations
+
+`role_operations.py` adds 34 adapters for work each role already does in its
+staff UI but could not do from chat, found by walking every role's workspace
+against the owning routers:
+
+- Underwriter/Admin servicing back office: work an open renewal, reinstatement or
+  exit stage by stage (`progress_policy_renewal`, `progress_reinstatement`,
+  `progress_policy_exit`), record premiums already received, waive instalments,
+  restructure billing, issue lapse warnings, toggle auto-debit, list upcoming
+  renewals. Claims Adjusters and Managers also work exits; authorising an exit
+  settlement or waiving an exit document stays with Claims Manager/Admin.
+- Underwriting decisions: counter-offers and the customer's response, holds,
+  requirement/ACR/medical-exam waivers, plan changes, pre-issuance requirements,
+  the claim re-underwriting queue and facultative reinsurance referrals.
+- Desks: walk-in lead acknowledgement and (manager) reassignment, the agent's ACR
+  request inbox, the claims authority matrix (Admin edits), and branches
+  (SuperAdmin edits).
+
+`TOOL_ROLES` is checked before every other RBAC rule and mirrors the router's
+role checks; where a router has none, the grant follows the owning workspace.
+Each action reads live state first and runs only when the case's `can` flags or
+status allow it. Payments are recorded only as already received, with the
+user's real method, reference and confirmation; the mock gateway is never driven
+from chat. Decisions, waivers, consent, payee details and declaration answers
+must come from the user. `test_role_operations.py` covers grants, guardrails and
+exact request bodies.
 
 ## Failure recovery and observability
 

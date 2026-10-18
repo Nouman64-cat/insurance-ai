@@ -1091,6 +1091,15 @@ FINANCE_ALLOWED_TOOLS = CLAIMS_READ_TOOLS | SPECIALIST_NAVIGATION | {
 _FINANCE_ONLY_TOOLS = {"get_finance_dashboard", "get_claim_payment_details", "pay_authorized_claim", "reconcile_finance_claim"}
 CLAIM_AUTHORITY_ROLES.update({name: {"Finance"} for name in _FINANCE_ONLY_TOOLS})
 
+# Role operations carry their own explicit grants, mirrored from the owning
+# routers (role_operations.py). They precede every allow-list below.
+from role_operations import MUTATING as _ROLE_OPERATION_MUTATING, READ_TOOLS as _ROLE_OPERATION_READS
+from role_operations import STEP_LABELS as _ROLE_OPERATION_LABELS, TOOL_ROLES as ROLE_OPERATION_ROLES
+MUTATING_TOOLS |= _ROLE_OPERATION_MUTATING
+SAFE_TOOLS |= _ROLE_OPERATION_READS
+STEP_LABELS.update(_ROLE_OPERATION_LABELS)
+
+
 def is_role_allowed(tool_name: str, role: str, platform: str = "web") -> bool:
     """Whether `role` may run `tool_name`.
 
@@ -1105,6 +1114,8 @@ def is_role_allowed(tool_name: str, role: str, platform: str = "web") -> bool:
     from capability_tools import PLATFORM_TOOLS, PROPOSAL_TOOLS
     if tool_name in PLATFORM_TOOLS:
         return role == "SuperAdmin"
+    if tool_name in ROLE_OPERATION_ROLES:
+        return role in ROLE_OPERATION_ROLES[tool_name]
     if tool_name in PROPOSAL_TOOLS:
         if tool_name == "review_initial_premium_proof":
             return role in {"SuperAdmin", "Admin", "Underwriter"}
