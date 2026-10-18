@@ -487,7 +487,8 @@ async def _build_workspace(session: AsyncSession, tenant_id: UUID, case_id: UUID
         "coverage_amount": policy.coverage_amount if policy else None, "term_years": policy.term_years if policy else None,
         "requirements": requirements, "required_documents": required_documents,
         "application_outstanding": application_outstanding,
-        "ai_underwriting": await _financial_ai_state(session, case, policy) if track == "FINANCIAL" else None,
+        "ai_underwriting": await _financial_ai_state(session, case, policy) if track == "FINANCIAL" and not case.claim_id else None,
+        "claim_ai_underwriting": await _claim_ai_state(session, case, track, policy, required_documents) if case.claim_id else None,
         "on_hold": case.on_hold, "hold_reason": case.hold_reason,
         "read_only": case.on_hold or str(getattr(case.caseStatus, "value", case.caseStatus)) in {"Approved", "Closed", "Rejected"}, "evidence": evidence, "documents": documents,
         "policy_linked": policy is not None,
@@ -1048,3 +1049,94 @@ async def classify_specialist_documents(
 
     results = await asyncio.gather(*(one(i, name, data) for i, (name, data) in enumerate(payloads)))
     return {"results": list(results)}
+
+
+async def _claim_ai_state(session, case, track, policy, required_documents):
+    row = (await session.exec(select(CaseUnderwritingTrack).where(
+        CaseUnderwritingTrack.case_id == case.caseld, CaseUnderwritingTrack.track == track))).first()
+    blockers = [f"{d['type']} is still outstanding." for d in required_documents if not d.get('received')]
+    if policy is None:
+        blockers.append("Link the claim's policy before analysis.")
+    result = row.ai_result if row and (row.ai_result or {}).get('scope') == 'claim' else None
+    return {"ready": not blockers, "blockers": blockers, "result": result,
+            "run_at": row.ai_run_at if result else None}
+
+
+async def _claim_ai_access(session, tenant_id, case_id, user, track):
+    from shared.models.core import Claim, ClaimStatusEnum, CaseTypeEnum
+    case = (await session.exec(select(Case).where(Case.caseld == case_id).with_for_update().execution_options(populate_existing=True))).first()
+    if not case or case.tenant_id != tenant_id or not case.claim_id or case.caseType != CaseTypeEnum.UNDERWRITING:
+        raise HTTPException(404, "Claim underwriting referral not found.")
+    row = (await session.exec(select(CaseUnderwritingTrack).where(
+        CaseUnderwritingTrack.case_id == case_id, CaseUnderwritingTrack.track == track).execution_options(populate_existing=True))).first()
+    if not user.is_active or not row or row.assigned_user_id != user.id:
+        raise HTTPException(403, "Only the active assigned underwriter can run this track's AI review.")
+    claim = await session.get(Claim, case.claim_id)
+    if claim:
+        await session.refresh(claim)
+    if case.on_hold or str(getattr(case.caseStatus, 'value', case.caseStatus)) in {'Approved', 'Rejected', 'Closed'}:
+        raise HTTPException(409, "This claim underwriting review is held or closed.")
+    if not claim or claim.tenant_id != tenant_id or claim.status in {
+        ClaimStatusEnum.APPROVED, ClaimStatusEnum.PARTIAL_APPROVAL, ClaimStatusEnum.DECLINED,
+        ClaimStatusEnum.SETTLED, ClaimStatusEnum.CLOSED,
+    }:
+        raise HTTPException(409, "AI review is unavailable after the claim decision.")
+    return case, row
+
+
+async def _evaluate_claim_ai(body, tenant_id):
+    import httpx
+    import os
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                f"{os.getenv('RISK_ENGINE_URL', 'http://risk-engine:8002')}/evaluate/claim-underwriting",
+                json=body, headers={"X-Tenant-Id": str(tenant_id)})
+        response.raise_for_status()
+        # Validate model output before storing; no case/claim decisions are accepted here.
+        from pydantic import TypeAdapter
+        TypeAdapter(Literal['Proceed', 'Refer', 'Decline']).validate_python(response.json()['recommendation'])
+        return response.json()
+    except (httpx.HTTPError, ValueError, KeyError) as exc:
+        raise HTTPException(502, "AI claim recommendation unavailable. No human review or claim decision was changed.") from exc
+
+
+@router.post('/cases/{case_id}/claim-underwriting/{track}/run')
+async def run_claim_track_ai(tenant_id: UUID, case_id: UUID, track: TrackParam,
+    session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme)):
+    from fastapi.encoders import jsonable_encoder
+    from shared.models.core import InsurancePlan
+    user, own_track = await _specialist_identity(tenant_id, token, session)
+    if own_track != track.upper():
+        raise HTTPException(403, "Run AI only for your own underwriting track.")
+    case, _ = await _claim_ai_access(session, tenant_id, case_id, user, own_track)
+    ws = await _build_workspace(session, tenant_id, case_id, user, own_track)
+    if not ws['claim_ai_underwriting']['ready']:
+        raise HTTPException(409, "Not ready for claim AI underwriting: " + " ".join(ws['claim_ai_underwriting']['blockers']))
+    policy = await resolve_review_policy(session, case)
+    plan = (await session.exec(select(InsurancePlan).where(InsurancePlan.tenant_id == tenant_id,
+        InsurancePlan.label == policy.product_name))).first()
+    from services.underwriting_gate import _policy_dict
+    context = {'claim': ws['claim'], 'policy': {**_policy_dict(policy),
+        'policy_number': policy.policy_number, 'effective_date': policy.effective_date, 'issued_at': policy.issued_at,
+        'nominee_name': policy.nominee_name, 'nominee_relationship': policy.nominee_relationship},
+        'claims_terms': plan.claims_terms if plan else None, 'requirements': ws['requirements'],
+        'human_checks': ws['claim_checks'], 'profile_evidence': ws['evidence'],
+        'documents': [{**d, 'ocr_text': (d.get('ocr_text') or '')[:24000]}
+                      for d in ws['documents'] if d['status'] == 'Accepted']}
+    await session.commit()  # never hold a database lock across the model call
+    result = await _evaluate_claim_ai(jsonable_encoder({'track': track, 'context': context}), tenant_id)
+    # Recheck ownership and lifecycle after the slow model call.
+    await session.refresh(user)
+    user, current_track = await _specialist_identity(tenant_id, token, session)
+    if current_track != own_track:
+        raise HTTPException(403, "Your underwriting role has changed.")
+    case, row = await _claim_ai_access(session, tenant_id, case_id, user, own_track)
+    row.ai_result = {**result, 'scope': 'claim', 'track': track, 'advisory': True}
+    row.ai_run_at = datetime.utcnow()
+    session.add(row)
+    session.add(CaseAuditTrail(caseld=case_id, performedBy=user.id,
+        actionPerformed=f"AI {track} claim underwriting recommendation (advisory)", entityChanged="CaseUnderwritingTrack.ai_result",
+        newValue=str(result.get("recommendation"))))
+    await session.commit()
+    return {'result': row.ai_result, 'run_at': row.ai_run_at}

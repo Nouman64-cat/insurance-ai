@@ -1,6 +1,6 @@
 {
   "id": "pre-underwriting",
-  "purpose": "Complete sequential application readiness gates without bypassing prerequisites.",
+  "purpose": "Assess lead profile risk independently, or complete sequential application readiness gates without bypassing prerequisites.",
   "intents": [
     "pre underwriting",
     "ACR",
@@ -8,7 +8,10 @@
     "screening",
     "insurance history",
     "examination",
-    "e application"
+    "e application",
+    "lead risk assessment",
+    "risk assessment",
+    "risk profile"
   ],
   "capabilities": [
     "assess_customer_risk_profile",
@@ -19,7 +22,9 @@
     "run_insurance_history_check",
     "run_pre_underwriting_clearance",
     "submit_agent_confidential_report",
-    "verify_e_application"
+    "verify_e_application",
+    "run_customer_risk_assessment",
+    "get_customer_risk_assessment"
   ],
   "roles": [
     "SuperAdmin",

@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import func, or_, cast, String
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import delete, select
@@ -356,12 +356,17 @@ def scoped_earnings(tenant_id, identity, source_id=None, date_from=None, date_to
     return q
 
 
-@router.get("/earnings")
-async def earnings(tenant_id: UUID, offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=500),
-                   source_id: UUID | None = None, date_from: date | None = None, date_to: date | None = None,
-                   disbursement_status: Literal['ACCRUED','DRAFT','SUBMITTED','APPROVED','PAID'] | None = None,
-                   identity=Depends(caller), session: AsyncSession = Depends(get_session)):
+def filtered_earnings(tenant_id, identity, source_id=None, date_from=None, date_to=None,
+                      search='', disbursement_status=None):
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(422, 'Recorded from date must not be after the to date')
     query = scoped_earnings(tenant_id, identity, source_id, date_from, date_to)
+    if search.strip():
+        pattern = '%' + search.strip().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
+        query = query.where(or_(*[
+            CommissionEarning.snapshot[key].as_string().ilike(pattern, escape='\\')
+            for key in ('receipt_no', 'policy_number', 'customer_name', 'payee_name', 'payee_code')
+        ]))
     reserved_ids = select(CommissionDisbursementItem.reserved_earning_id).join(
         CommissionDisbursement, CommissionDisbursement.id == CommissionDisbursementItem.batch_id).where(
             CommissionDisbursement.tenant_id == tenant_id, CommissionDisbursementItem.reserved_earning_id.is_not(None))
@@ -369,6 +374,18 @@ async def earnings(tenant_id: UUID, offset: int = Query(0, ge=0), limit: int = Q
         query = query.where(CommissionEarning.id.not_in(reserved_ids))
     elif disbursement_status:
         query = query.where(CommissionEarning.id.in_(reserved_ids.where(CommissionDisbursement.status == disbursement_status)))
+    return query
+
+
+DisbursementStatus = Literal['ACCRUED', 'DRAFT', 'SUBMITTED', 'APPROVED', 'PAID']
+
+
+@router.get("/earnings")
+async def earnings(tenant_id: UUID, offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=500),
+                   source_id: UUID | None = None, date_from: date | None = None, date_to: date | None = None,
+                   search: str = Query('', max_length=200), disbursement_status: DisbursementStatus | None = None,
+                   identity=Depends(caller), session: AsyncSession = Depends(get_session)):
+    query = filtered_earnings(tenant_id, identity, source_id, date_from, date_to, search, disbursement_status)
     total = (await session.execute(select(func.count()).select_from(query.subquery()))).scalar_one()
     rows = (await session.exec(query.order_by(CommissionEarning.created_at.desc(), CommissionEarning.id).offset(offset).limit(limit))).all()
     states = (await session.exec(select(CommissionDisbursementItem.reserved_earning_id, CommissionDisbursement.status).join(
@@ -378,6 +395,54 @@ async def earnings(tenant_id: UUID, offset: int = Query(0, ge=0), limit: int = Q
     by_id = dict(states)
     return {"items": [{**e.model_dump(), 'disbursement_status': by_id.get(e.id, 'ACCRUED')} for e in rows],
             "total": total, "offset": offset, "limit": limit}
+
+
+class EarningUpdateIn(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    rate_pct: Pct
+    disburse_date: date
+    reason: str = Field(min_length=5, max_length=500)
+    expected_revision: int = Field(ge=0)
+
+
+@router.patch('/earnings/{earning_id}')
+async def update_earning(tenant_id: UUID, earning_id: UUID, body: EarningUpdateIn,
+                         user=Depends(admin), session: AsyncSession = Depends(get_session)):
+    # Same first lock as batch creation: an edit and a reservation cannot race.
+    row = (await session.exec(select(CommissionEarning).where(
+        CommissionEarning.tenant_id == tenant_id, CommissionEarning.id == earning_id).with_for_update())).first()
+    if not row:
+        raise HTTPException(404, 'Earning not found in this tenant')
+    reserved = (await session.exec(select(CommissionDisbursementItem).where(
+        CommissionDisbursementItem.reserved_earning_id == row.id))).first()
+    if reserved:
+        raise HTTPException(409, 'This earning belongs to a payout batch and cannot be edited. Cancel or reject an unpaid batch before making a correction.')
+    snapshot = dict(row.snapshot or {})
+    revision = snapshot.get('adjustment_revision', 0)
+    if body.expected_revision != revision:
+        raise HTTPException(409, 'This commission was changed by another user. Refresh the record before editing.')
+    if row.rate_pct == body.rate_pct and row.disburse_date == body.disburse_date:
+        return {**row.model_dump(), 'disbursement_status': 'ACCRUED'}
+    def values():
+        return {'rate_pct': str(row.rate_pct), 'gross_amount': str(row.gross_amount),
+                'disburse_date': row.disburse_date.isoformat() if row.disburse_date else None}
+    before = values()
+    # Premium receipt basis, producer identity, split and original rule stay intact.
+    row.rate_pct = body.rate_pct
+    row.gross_amount = money(row.basis_amount * body.rate_pct * row.split_pct / Decimal(10000))
+    row.disburse_date = body.disburse_date
+    snapshot.setdefault('original_posting', before)
+    snapshot['adjustments'] = [*snapshot.get('adjustments', []), {
+        'revision': revision + 1, 'actor_id': str(user.id), 'actor_name': user.full_name,
+        'at': datetime.utcnow().isoformat() + 'Z', 'reason': body.reason,
+        'before': before, 'after': values(),
+    }]
+    snapshot['adjustment_revision'] = revision + 1
+    row.snapshot = snapshot
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return {**row.model_dump(), 'disbursement_status': 'ACCRUED'}
 
 
 @router.get("/earnings/{earning_id}")
@@ -391,8 +456,10 @@ async def earning(tenant_id: UUID, earning_id: UUID, identity=Depends(caller), s
 
 
 @router.get("/summary")
-async def summary(tenant_id: UUID, source_id: UUID | None = None, date_from: date | None = None, date_to: date | None = None, identity=Depends(caller), session: AsyncSession = Depends(get_session)):
-    sub = scoped_earnings(tenant_id, identity, source_id, date_from, date_to).subquery()
+async def summary(tenant_id: UUID, source_id: UUID | None = None, date_from: date | None = None, date_to: date | None = None,
+                  search: str = Query('', max_length=200), disbursement_status: DisbursementStatus | None = None,
+                  identity=Depends(caller), session: AsyncSession = Depends(get_session)):
+    sub = filtered_earnings(tenant_id, identity, source_id, date_from, date_to, search, disbursement_status).subquery()
     count, gross = (await session.execute(select(func.count(), func.coalesce(func.sum(sub.c.gross_amount), 0)).select_from(sub))).one()
     paid = (await session.execute(select(func.coalesce(func.sum(sub.c.gross_amount), 0)).select_from(sub).join(
         CommissionDisbursementItem, CommissionDisbursementItem.reserved_earning_id == sub.c.id).join(

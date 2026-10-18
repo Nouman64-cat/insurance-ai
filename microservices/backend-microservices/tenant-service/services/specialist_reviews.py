@@ -52,6 +52,9 @@ async def compile_specialist_reviews(session: AsyncSession, case_id: UUID) -> di
         "abnormal_findings": exam.abnormal_findings or [],
         "completed_at": exam.completed_at.isoformat() if exam.completed_at else None,
     } if exam else None
+    medical_row = rows.get("MEDICAL")
+    if medical_row and (medical_row.ai_result or {}).get("scope") == "claim":
+        medical["ai"] = {**medical_row.ai_result, "run_at": medical_row.ai_run_at.isoformat() if medical_row.ai_run_at else None}
     financial = review("FINANCIAL")
     row = rows.get("FINANCIAL")
     financial["ai"] = {**(row.ai_result or {}), "run_at": row.ai_run_at.isoformat() if row.ai_run_at else None} if row and row.ai_result else None

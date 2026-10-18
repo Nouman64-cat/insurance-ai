@@ -2857,6 +2857,24 @@ def close_claim_file(**kwargs) -> str:
 # Pre-proposal profile risk screening (profile_risk_tools.py)
 # ═══════════════════════════════════════════════════════════════════════════
 
+class CustomerRiskAssessmentArgs(BaseModel):
+    cnic: Optional[str] = Field(default=None, description="Customer CNIC, if known.")
+    customer_id: Optional[str] = Field(default=None, description="Customer UUID.")
+    customer_name: Optional[str] = Field(default=None, description="Stored name; ambiguous matches require selection.")
+
+
+@tool(args_schema=CustomerRiskAssessmentArgs)
+def run_customer_risk_assessment(**kwargs) -> str:
+    """Run and SAVE the lead/customer profile risk assessment, exactly like the lead page Risk Assessment button. Uses the stored selected plan and profile. No proposal, underwriting case or documents required. Distinct from final case underwriting (run_risk_assessment). Admin/SuperAdmin only."""
+    return "{}"
+
+
+@tool(args_schema=CustomerRiskAssessmentArgs)
+def get_customer_risk_assessment(**kwargs) -> str:
+    """Read the saved lead/customer risk assessment and whether it is outdated. Does not run or save an assessment. No proposal or case required. Admin/SuperAdmin only."""
+    return "{}"
+
+
 class CustomerRiskProfileArgs(BaseModel):
     cnic: Optional[str] = Field(default=None, description="Customer CNIC, if known.")
     customer_id: Optional[str] = Field(default=None, description="Customer UUID, never put it in the CNIC field.")
@@ -3080,7 +3098,9 @@ class RunAiMedicalArgs(ReviewLookupArgs):
 def run_ai_medical_underwriting(**kwargs) -> str:
     """Medical Underwriter: AI medical underwriting. Works out the medical requirements if needed, checks every
     required test has an accepted report, has the AI read each result, and shows them for review. Only with
-    confirm=true (after the user confirms) are the results recorded and rated (clinical outcome, loading)."""
+    confirm=true (after the user confirms) are the results recorded and rated (clinical outcome, loading).
+    For a CLAIM referral instead, runs and saves a claim-specific advisory medical recommendation from existing
+    claim evidence and plan terms; no new-business exam, rating or human review decision is recorded."""
     return "{}"
 
 
@@ -3088,7 +3108,9 @@ def run_ai_medical_underwriting(**kwargs) -> str:
 def run_ai_financial_underwriting(**kwargs) -> str:
     """Financial Underwriter: AI financial underwriting — financial risk score, the cover the income supports
     and whether a referral is needed. Needs the financial e-application submitted, insurance history cleared and
-    the plan's financial documents accepted. Analysis only: it records no decision."""
+    the plan's financial documents accepted for NEW BUSINESS. For a CLAIM referral instead, reviews claim
+    documents and plan terms to save an advisory recommendation, without new-business prerequisites.
+    Analysis only: it records no human finding, review decision or final claim decision."""
     return "{}"
 
 
@@ -3394,6 +3416,8 @@ ALL_TOOLS = [
     close_claim_file,
     # pre-proposal profile screening
     assess_customer_risk_profile,
+    run_customer_risk_assessment,
+    get_customer_risk_assessment,
     # commission administration
     get_customer_commission_setup,
     list_commission_agreements,

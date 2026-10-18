@@ -301,6 +301,8 @@ DOMAIN_TOOLS: dict[str, set[str]] = {
     },
     # Pre-proposal profile screening (profile_risk_tools.py). Keyword-only, like the packs above.
     "profile_risk": {
+        "run_customer_risk_assessment",
+        "get_customer_risk_assessment",
         "assess_customer_risk_profile",
     },
     # Specialist underwriting: the medical and financial reviews and the final compile

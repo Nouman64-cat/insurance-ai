@@ -373,8 +373,6 @@ def test_claim_review_lookup_never_falls_back_from_an_unknown_claim_number():
 
 
 @pytest.mark.parametrize('role,tool', [
-    ('Medical Underwriter', 'run_ai_medical_underwriting'),
-    ('Financial Underwriter', 'run_ai_financial_underwriting'),
     ('Medical Underwriter', 'send_e_application_questionnaire'),
     ('Financial Underwriter', 'send_e_application_questionnaire'),
 ])
@@ -407,3 +405,24 @@ def test_admin_does_not_record_ai_decline_as_a_human_outcome_without_explicit_ch
     assert body['decision']=='PROCEED' and body['assessment_id']=='risk-1'
     assert is_role_allowed('record_claim_underwriting_outcome','Admin')
     assert not is_role_allowed('record_claim_underwriting_outcome','ClaimsManager')
+
+
+@pytest.mark.parametrize('role,track', [('Medical Underwriter', 'medical'), ('Financial Underwriter', 'financial')])
+def test_claim_ai_tools_use_claim_analysis_and_leave_decisions_to_humans(role, track):
+    row = {**QUEUE[0], 'claim_id': 'claim-1', 'claim_number': 'CLM-1'}
+    service = FakeService({'GET /underwriting/reviews': [row],
+        f'POST /cases/case-1/claim-underwriting/{track}/run': {'result': {
+            'recommendation': 'Decline', 'summary': 'Evidence warrants human review.', 'findings': [], 'missing_evidence': []}}})
+    result = run(f'run_ai_{track}_underwriting', {'claim_number': 'CLM-1'}, service, role)
+    assert result['success'] and 'Advisory only' in result['message']
+    assert [c[1].split('/cases/')[-1] for c in service.calls if c[0] == 'POST'] == [f'case-1/claim-underwriting/{track}/run']
+    assert not any(c[0] == 'PUT' or 'medical-exam' in c[1] or 'financial-underwriting/run' in c[1] for c in service.calls)
+
+
+@pytest.mark.parametrize('track', ['medical', 'financial'])
+def test_ready_claim_review_offers_ai_action(track):
+    ws = {'reference': 'UW-CLM-1', 'review': {'status': 'IN_REVIEW'}, 'requirements': [],
+          'claim': {'claim_number': 'CLM-1'}, 'claim_ai_underwriting': {'ready': True}, 'required_documents': []}
+    steps, chips = srt._claim_next_steps(track, ws)
+    assert any(c['label'] == f'Run AI {track} underwriting' for c in chips)
+    assert 'advisory' in ' '.join(steps)

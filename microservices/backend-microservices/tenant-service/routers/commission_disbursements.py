@@ -168,7 +168,12 @@ async def detail(tenant_id: UUID, batch_id: UUID, user=Depends(admin), session: 
         CommissionEarning.tenant_id == tenant_id, CommissionEarning.id.in_([i.earning_id for i in items])))).all()
     events = (await session.exec(select(CommissionDisbursementEvent).where(
         CommissionDisbursementEvent.batch_id == batch.id).order_by(CommissionDisbursementEvent.created_at, CommissionDisbursementEvent.id))).all()
-    return {'batch': batch, 'earnings': entries, 'events': events}
+    # A cancelled batch keeps the amounts it reserved, even if its released
+    # earning is subsequently corrected and included in a new batch.
+    amounts = {item.earning_id: item.gross_amount for item in items}
+    return {'batch': batch, 'earnings': [{**entry.model_dump(),
+            'gross_amount': amounts[entry.id], 'current_gross_amount': entry.gross_amount}
+            for entry in entries], 'events': events}
 
 
 @router.post('/{batch_id}/submit')

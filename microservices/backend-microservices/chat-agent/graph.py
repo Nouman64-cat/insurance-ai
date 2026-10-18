@@ -519,11 +519,19 @@ DOMAIN_PROMPTS["profile_risk"] = """
 
 ## PROFILE RISK SCREENING
 
-- "Risk assessment / risk profile / how risky is this customer or lead?" with no proposal yet →
-  **assess_customer_risk_profile** (name, CNIC or customer_id). Show its safe and risk tables as
-  returned; the percentages total 100% — never recompute or round them differently.
-- It is a screening view, not an underwriting decision. Once a case exists, the decision comes
-  from run_risk_assessment / get_risk_assessment.
+- A lead's profile assessment is independent of case underwriting. A selected plan
+  is not yet a proposal. No case, proposal or document prerequisites are required.
+- "Run risk assessment for this lead/customer" before a proposal →
+  **run_customer_risk_assessment** using the known name, CNIC or customer_id. This
+  saves the same assessment as the lead-page Risk Assessment button.
+- "Show the saved/latest assessment" → **get_customer_risk_assessment**. Report
+  missing or outdated results accurately; do not run a new assessment for a read request.
+- A hypothetical coverage/profile preview → **assess_customer_risk_profile** (read-only).
+- Show returned safe/risk factors and percentages without recomputing them. This is
+  lead screening, not a final underwriting decision. For an existing application's
+  case assessment use run_risk_assessment / get_risk_assessment with their gates.
+- Never create a proposal or case just to run lead screening. Respect role permissions.
+
 """
 
 DOMAIN_PROMPTS["documents"] = """

@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import * as service from '@/app/services/commissionEarnings';
 import { tx } from "@/lib/i18n/tx";
 import CommissionDisbursements from '@/components/commissions/CommissionDisbursements';
+import CommissionRecords from '@/components/commissions/CommissionRecords';
+import CommissionRecordDrawer from '@/components/commissions/CommissionRecordDrawer';
 
 const money = (value: string | number) => new Intl.NumberFormat('en-PK', {style: 'currency', currency: 'PKR'}).format(Number(value));
 const field = 'border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white w-full';
@@ -12,6 +14,10 @@ const button = 'rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white 
 const blankProducer = (): service.Producer => ({source_id: '', split_pct: '100'});
 
 export default function EarningsPage() {
+  const [activeTab, setActiveTab] = useState<'records' | 'payouts' | 'exceptions' | 'setup'>('records');
+  const [filters, setFilters] = useState<service.EarningFilters>({});
+  const [selectedRecord, setSelectedRecord] = useState<{earning: service.Earning; edit: boolean} | null>(null);
+  const requestRevision = useRef(0);
   const [entries, setEntries] = useState<service.Earning[]>([]);
   const [summary, setSummary] = useState<service.Summary | null>(null);
   const [payees, setPayees] = useState<service.Payee[]>([]);
@@ -33,6 +39,7 @@ export default function EarningsPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setCustomerId(params.get('customer_id') || undefined);
+    if (params.get('customer_id')) setActiveTab('setup');
   }, []);
   const selectedPolicy = setup?.policies.find(p => p.id === policy);
   const splitTotal = producers.reduce((total, p) => total + Math.round(Number(p.split_pct) * 10000), 0);
@@ -48,54 +55,58 @@ export default function EarningsPage() {
     try {
       const configuration = await service.loadSetup(exception.policy_id);
       setCustomerId(undefined); setPolicySearch(exception.policy_id); setPolicySearchInput(exception.policy_id);
-      setSetup(configuration); choosePolicy(exception.policy_id, configuration); setReceipt(exception.receipt_id);
+      setSetup(configuration); choosePolicy(exception.policy_id, configuration); setReceipt(exception.receipt_id); setActiveTab('setup');
       if (!configuration.policies.length) setNotice('This receipt’s policy is not an individual policy available for commission setup.');
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to load policy setup'); }
     finally { setBusy(false); }
   }
   const refresh = useCallback(async () => {
+    const revision = ++requestRevision.current;
     const isAdmin = ['Admin', 'SuperAdmin'].includes(localStorage.getItem('user_role') || '');
     setAdmin(isAdmin);
-    const [ledger, totals] = await Promise.all([service.loadEarnings(offset), service.loadSummary()]);
+    const [ledger, totals] = await Promise.all([service.loadEarnings(offset, filters), service.loadSummary(filters)]);
+    if (revision !== requestRevision.current) return;
     setEntries(ledger.items); setTotal(ledger.total); setSummary(totals);
     if (isAdmin) {
       const [p, e, configuration] = await Promise.all([service.loadPayees(), service.loadExceptions(), service.loadSetup(policySearch, customerId)]);
+      if (revision !== requestRevision.current) return;
       setPayees(p); setExceptions(e); setSetup(configuration); setActorId(configuration.actor_id);
     }
-  }, [offset, policySearch, customerId]);
-  useEffect(() => { setBusy(true); refresh().catch(e => setError(e.message)).finally(() => setBusy(false)); }, [refresh]);
+  }, [offset, policySearch, customerId, filters]);
+  useEffect(() => {
+    let current = true;
+    setBusy(true); setError('');
+    refresh().catch(e => { if (current) setError(e.message); }).finally(() => { if (current) setBusy(false); });
+    return () => { current = false; };
+  }, [refresh]);
   async function run(action: () => Promise<unknown>, message: string) {
     setBusy(true); setError(''); setNotice('');
     try { await action(); await refresh(); setNotice(message); } catch (e) { setError(e instanceof Error ? e.message : tx("Request failed")); }
     finally { setBusy(false); }
   }
-  return <div className="max-w-7xl mx-auto p-6 space-y-6 text-slate-800">
-    <div className="flex flex-wrap justify-between gap-3 items-start">
-      <div><h1 className="text-2xl font-bold">{tx("Commission earnings")}</h1><p className="text-sm text-slate-500 mt-1">{tx("Recorded premium receipts and the Rule Engine commission rates applied to them.")}</p></div>
-      <button className={button} disabled={busy} onClick={() => run(async () => {}, 'Refreshed')}>{tx("Refresh")}</button>
+  async function savedRecord(updated: service.Earning) {
+    setEntries(rows => rows.map(row => row.id === updated.id ? updated : row));
+    setSelectedRecord(null); setNotice(tx('Commission record updated. The change is saved in its history.'));
+    try { await refresh(); } catch (e) { setError(e instanceof Error ? e.message : tx('Unable to refresh records')); }
+  }
+  return <div className="mx-auto max-w-[1600px] space-y-5 p-4 text-slate-800 sm:p-6 lg:p-8">
+    <div className="flex flex-wrap items-start justify-between gap-4">
+      <div><div className="mb-1.5 flex items-center gap-2"><span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{tx('Finance')}</span><span className="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">{tx('Automatic accrual')}</span></div><h1 className="text-2xl font-semibold tracking-tight text-slate-900">{tx('Commissions')}</h1><p className="mt-1.5 text-sm text-slate-500">{tx('Track agent commissions generated from received premiums.')}</p></div>
+      <div className="flex flex-wrap items-center gap-2">{admin && <Link className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50" href="/admin/rule-engine">{tx('Commission rules')} ↗</Link>}<button className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50" disabled={busy} onClick={() => void run(async () => {}, tx('Records refreshed'))}><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1"/></svg>{tx('Refresh')}</button></div>
     </div>
-    <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm">Commission accrues automatically on the first premium after issuance, at the rate set by the agent commission rules in the Rule Engine; later premiums earn only if the rule is recurring. Each earning is payable from the agent’s start day in the following month. Disbursement requires independent approval and external payment confirmation. Tax calculation, bank transfers and group/family allocation are not enabled.</div>
-    {error && <p role="alert" className="bg-red-50 text-red-800 p-4 rounded-lg">{error}</p>}
-    {notice && <p role="status" className="bg-emerald-50 text-emerald-800 p-4 rounded-lg">{notice}</p>}
-    <div className="grid sm:grid-cols-3 gap-4">
-      <div className="border rounded-xl bg-white p-5"><p className="text-sm text-slate-500">{tx("Accrued gross · all entries")}</p><p className="text-2xl font-semibold">{summary ? money(summary.accrued_gross) : '—'}</p></div>
-      <div className="border rounded-xl bg-white p-5"><p className="text-sm text-slate-500">{tx("Posted allocations")}</p><p className="text-2xl font-semibold">{summary?.entries ?? '—'}</p></div>
-      <div className="border rounded-xl bg-white p-5"><p className="text-sm text-slate-500">External payments recorded · gross</p><p className="text-2xl font-semibold">{summary ? money(summary.paid_gross || '0') : '—'}</p></div>
-    </div>
-    <section className="rounded-xl border bg-white overflow-hidden">
-      <h2 className="font-semibold p-4 border-b">{tx("Earnings ledger")}</h2>
-      <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead className="bg-slate-50"><tr>{['Receipt / policy', 'Producer', 'Basis', 'Rate / split', 'Gross accrued', 'Rule', 'Payable from'].map(x => <th key={x} className="p-3">{x}</th>)}</tr></thead>
-      <tbody>{entries.map(e => <tr key={e.id} className="border-t">
-        <td className="p-3"><div>{e.snapshot.receipt_no}</div><div className="text-xs text-slate-500">{e.snapshot.policy_number || e.policy_id}</div></td>
-        <td className="p-3">{e.snapshot.payee_name}<div className="text-xs text-slate-500">{e.snapshot.customer_name}</div></td>
-        <td className="p-3" title={e.snapshot.basis_description}>{money(e.basis_amount)}</td>
-        <td className="p-3">{Number(e.rate_pct)}% / {Number(e.split_pct)}%<div className="text-xs">{tx("Policy year")}{" "}{e.policy_year}</div></td>
-        <td className="p-3 font-semibold">{money(e.gross_amount)}<div className="text-xs font-normal text-slate-500">{e.disbursement_status || 'ACCRUED'}</div></td><td className="p-3">{e.rule_code ? `${e.rule_code} v${e.rule_version}` : `${e.snapshot.agreement_code} v${e.snapshot.agreement_version}`}<div className="text-xs text-slate-500">{e.snapshot.is_first_premium === false ? tx("Recurring") : tx("First premium")}</div></td><td className="p-3">{e.disburse_date || '—'}</td>
-      </tr>)}</tbody></table></div>
-      {!entries.length && <p className="p-8 text-center text-slate-500">{busy ? tx("Loading…") : 'No posted earnings. Assign the customer’s agent and check the agent commission rules in the Rule Engine, then collect a premium or reconcile a receipt.'}</p>}
-      <div className="p-3 flex gap-4 items-center"><button disabled={busy || offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>{tx("Previous")}</button><span>{total ? offset + 1 : 0}–{Math.min(offset + entries.length, total)}{" "}{tx("of")}{" "}{total}</span><button disabled={busy || offset + 50 >= total} onClick={() => setOffset(offset + 50)}>{tx("Next")}</button></div>
-    </section>
-    {admin && <>
+    <div className="grid gap-4 sm:grid-cols-3">{[
+      [tx('Accrued commission'), summary ? money(summary.accrued_gross) : '—', tx('Gross across matching records')],
+      [tx('Commission records'), summary?.entries ?? '—', tx('Generated from premium receipts')],
+      [tx('Paid commission'), summary ? money(summary.paid_gross || '0') : '—', tx('External payments recorded · gross')],
+    ].map(([label, value, hint]) => <div key={String(label)} className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm"><p className="text-xs font-medium text-slate-500">{label}</p><p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{value}</p><p className="mt-1.5 text-[11px] text-slate-400">{hint}</p></div>)}</div>
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200"><nav aria-label={tx('Commission views')} className="flex gap-5 overflow-x-auto">{([
+      ['records', 'Records'], ...(admin ? [['payouts', 'Payouts'], ['exceptions', 'Exceptions'], ['setup', 'Setup']] : []),
+    ] as [typeof activeTab, string][]).map(([id, label]) => <button key={id} aria-current={activeTab === id ? 'page' : undefined} onClick={() => setActiveTab(id)} className={`relative whitespace-nowrap border-b-2 px-0.5 pb-3 pt-1 text-sm font-medium transition-colors ${activeTab === id ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-700'}`}>{tx(label)}{id === 'exceptions' && exceptions.length > 0 && <span className="ml-1.5 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">{exceptions.length}</span>}</button>)}</nav></div>
+    {error && <p role="alert" className="rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+    {notice && <p role="status" className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</p>}
+    {activeTab === 'records' && <CommissionRecords entries={entries} total={total} offset={offset} busy={busy} admin={admin} payees={payees} filters={filters} onFilters={next => {setOffset(0); setFilters(next);}} onOffset={setOffset} onOpen={(earning, edit) => setSelectedRecord({earning, edit})}/>}
+    {admin && activeTab === 'setup' && <>
+
       <section className="rounded-xl border border-blue-200 bg-blue-50 p-5 space-y-2">
         <h2 className="font-semibold">Commission setup</h2>
         <p className="text-sm">Assign the customer’s agent. Premium receipts then create earnings automatically at the rate set by rule set {setup?.commission_rule_set_code || 'RS-COM-002'}: percentage of premium, and whether later premiums also earn. Edit rates in the <Link className="underline" href="/admin/rule-engine">Rule Engine</Link>. Set each agent’s start date (their payout day) in <Link className="underline" href="/admin/acquisition-sources">Acquisition Sources</Link>. Policy-specific splits below are optional overrides.</p>
@@ -120,13 +131,16 @@ export default function EarningsPage() {
         <div className="flex gap-3"><button disabled={producers.length >= 20} onClick={() => setProducers([...producers, {...blankProducer(), split_pct: ''}])}>{tx("Add producer")}</button><button disabled={!validSplit} className={button} onClick={() => run(() => service.saveAssignments(policy, producers), 'Producer assignments saved')}>{tx("Save assignments")}</button></div>
         </fieldset>
       </section>
+    </>}
+    {admin && activeTab === 'exceptions' && <>
       <section className="rounded-xl border bg-white p-5 space-y-4">
         <h2 className="font-semibold">{tx("Reconcile receipts and resolve exceptions")}</h2>
         <p className="text-sm text-slate-500">{tx("Reconcile an existing receipt after configuration is corrected. Repeating a posted receipt does not create another earning. Showing up to 100 open exceptions.")}</p>
         <form className="flex gap-3" onSubmit={e => {e.preventDefault(); void run(async () => { const results = await service.reconcileReceipts([receipt]); const failed = results.find(x => x.status === 'EXCEPTION'); if (failed) throw new Error(failed.reason); }, 'Receipt reconciled');}}><input aria-label={tx("Receipt ID")} className={field} placeholder={tx("Receipt ID")} required value={receipt} onChange={e => setReceipt(e.target.value)}/><button disabled={busy} className={button}>{tx("Reconcile")}</button></form>
         {exceptions.map(e => <div key={e.id} className="border-t pt-3 text-sm flex flex-wrap justify-between gap-3"><div>{e.reason}<div className="text-xs text-slate-500">{tx("Receipt")}{" "}{e.receipt_id}{" "}{tx("· Policy")}{" "}{e.policy_id}</div></div><button disabled={busy} onClick={() => void reviewException(e)}>Review setup</button></div>)}
       </section>
-      <CommissionDisbursements actorId={actorId} onChange={refresh}/>
     </>}
+    {admin && activeTab === 'payouts' && <CommissionDisbursements actorId={actorId} onChange={refresh}/>}
+    {selectedRecord && <CommissionRecordDrawer key={selectedRecord.earning.id} earning={selectedRecord.earning} edit={selectedRecord.edit} admin={admin} onClose={() => setSelectedRecord(null)} onSaved={savedRecord}/>}
   </div>;
 }

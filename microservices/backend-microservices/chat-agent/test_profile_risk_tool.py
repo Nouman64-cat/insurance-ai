@@ -56,3 +56,58 @@ class ProfileRiskToolTests(unittest.IsolatedAsyncioTestCase):
     async def test_needs_someone_to_assess(self):
         out = await _assess_customer_risk_profile({}, _ctx())
         assert not out["success"]
+
+
+class SavedLeadRiskTests(unittest.IsolatedAsyncioTestCase):
+    async def test_run_saves_through_same_lead_endpoint_without_case(self):
+        from profile_risk_tools import _run_customer_risk_assessment
+        ctx = _ctx()
+        saved = {**PROFILE, "assessed_at": "2026-10-19T01:00:00Z", "stale": False}
+        ctx.client.post = AsyncMock(return_value=SimpleNamespace(json=lambda: saved, raise_for_status=lambda: None))
+        out = await _run_customer_risk_assessment({"customer_name": "Amna Butt"}, ctx)
+        ctx.client.post.assert_awaited_once_with("/t/customers/c1/risk-profile")
+        assert [c.args[0] for c in ctx.client.get.call_args_list] == ["/t/customers"]
+        assert out["success"] and "assessment saved" in out["message"]
+        assert out["risk_profile"]["assessed_at"] == saved["assessed_at"]
+        assert "Safe **94.6%**" in out["message"]
+
+    async def test_run_ambiguity_or_missing_customer_never_posts(self):
+        from profile_risk_tools import _run_customer_risk_assessment
+        ctx = _ctx()
+        ctx.client.post = AsyncMock()
+        with self.assertRaises(ChoiceNeeded):
+            await _run_customer_risk_assessment({"customer_name": "Amna"}, ctx)
+        out = await _run_customer_risk_assessment({"customer_name": "Unknown"}, ctx)
+        assert not out["success"]
+        ctx.client.post.assert_not_awaited()
+
+    async def test_backend_failure_does_not_claim_saved(self):
+        import httpx
+        from profile_risk_tools import _run_customer_risk_assessment
+        ctx = _ctx()
+        response = httpx.Response(403, request=httpx.Request("POST", "http://tenant/customers/c1/risk-profile"))
+        ctx.client.post = AsyncMock(return_value=response)
+        with self.assertRaises(httpx.HTTPStatusError):
+            await _run_customer_risk_assessment({"customer_id": "c1"}, ctx)
+        ctx.client.post.assert_awaited_once()
+
+    async def test_saved_result_reports_staleness_without_rerunning(self):
+        from profile_risk_tools import _get_customer_risk_assessment
+        ctx = _ctx()
+        body = {"assessment": {**PROFILE, "stale": True, "stale_reasons": ["Profile changed"]}}
+        ctx.client.get.side_effect = [SimpleNamespace(json=lambda: CUSTOMERS, raise_for_status=lambda: None),
+                                      SimpleNamespace(json=lambda: body, raise_for_status=lambda: None)]
+        ctx.client.post = AsyncMock()
+        out = await _get_customer_risk_assessment({"customer_id": "c1"}, ctx)
+        assert "outdated" in out["message"] and "Profile changed" in out["message"]
+        assert ctx.client.get.call_args.args[0] == "/t/customers/c1/risk-profile/latest"
+        ctx.client.post.assert_not_awaited()
+
+    async def test_no_saved_result_is_not_a_case_prerequisite(self):
+        from profile_risk_tools import _get_customer_risk_assessment
+        ctx = _ctx()
+        ctx.client.get.side_effect = [SimpleNamespace(json=lambda: CUSTOMERS, raise_for_status=lambda: None),
+                                      SimpleNamespace(json=lambda: {"assessment": None}, raise_for_status=lambda: None)]
+        out = await _get_customer_risk_assessment({"customer_id": "c1"}, ctx)
+        assert out["assessment"] is None
+        assert "without creating a proposal" in out["message"]

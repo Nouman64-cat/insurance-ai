@@ -138,3 +138,35 @@ def test_streamed_handoff():
         assert any('"delta": true' in e for e in events)
         assert not any('"type": "error"' in e for e in events)
     asyncio.run(run())
+
+
+@pytest.mark.parametrize('text', [
+    'okay run risk assessment for this customer',
+    'Run lead risk assessment for Faisal Qureshi',
+    'Show the saved risk profile of Faisal Qureshi',
+])
+def test_lead_assessment_routing_and_binding(text):
+    from permission import is_role_allowed, MUTATING_TOOLS, SAFE_TOOLS
+    assert coordinator_node(initial(text))['active_specialist'] == 'underwriting'
+    names = {t.name for t in get_tools_for_role('Admin') if t.name in UNDERWRITING_TOOLS}
+    assert {'run_customer_risk_assessment', 'get_customer_risk_assessment', 'assess_customer_risk_profile'} <= names
+    assert 'profile_risk' in UNDERWRITING_DOMAINS
+    assert 'run_customer_risk_assessment' in MUTATING_TOOLS
+    assert 'get_customer_risk_assessment' in SAFE_TOOLS
+    for role in ['Viewer', 'Agent', 'Underwriter', 'ClaimsManager', 'Finance', 'Medical Underwriter', 'Financial Underwriter']:
+        assert not is_role_allowed('run_customer_risk_assessment', role)
+        assert not is_role_allowed('get_customer_risk_assessment', role)
+
+
+def test_lead_run_executes_in_underwriting_scope():
+    async def run():
+        llm = AsyncMock()
+        llm.ainvoke.side_effect = [call('run_customer_risk_assessment', customer_name='Faisal Qureshi'),
+                                 AIMessage(content='Lead risk assessment saved.')]
+        executor = AsyncMock(return_value={'success': True, 'message': 'Lead risk assessment saved.'})
+        with patch('graph._llm', return_value=llm), patch('providers.resolve', AsyncMock(return_value={})), patch('graph.execute_tool', executor):
+            result = await graph.build_graph(MemorySaver()).ainvoke(initial('okay run risk assessment for this customer'), {'configurable': {'thread_id': 'lead-risk'}})
+        assert result['active_specialist'] == 'underwriting'
+        assert executor.await_count == 1
+        assert executor.call_args.args[0] == 'run_customer_risk_assessment'
+    asyncio.run(run())

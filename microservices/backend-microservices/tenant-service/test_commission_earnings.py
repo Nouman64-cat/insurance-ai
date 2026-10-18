@@ -704,6 +704,118 @@ class CommissionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(detail['batch']['status'],'APPROVED')
             self.assertNotIn('PAID',[e['action'] for e in detail['events']])
 
+    async def test_commission_record_correction_preserves_origin_and_reconciliation(self):
+        await self.post_receipt()
+        async with await self.client() as c:
+            original = (await c.get(self.url('earnings'))).json()['items'][0]
+            body = {'rate_pct': '12.5', 'disburse_date': '2026-11-15', 'reason': 'Contract correction approved by operations', 'expected_revision': 0}
+            response = await c.patch(self.url('earnings/' + original['id']), json=body)
+            self.assertEqual(response.status_code, 200, response.text)
+            changed = response.json()
+            self.assertEqual(Decimal(changed['gross_amount']), Decimal('125.00'))
+            self.assertEqual(changed['snapshot']['adjustment_revision'], 1)
+            self.assertEqual(changed['snapshot']['adjustments'][0]['actor_id'], str(self.users[0].id))
+            self.assertEqual(Decimal(changed['snapshot']['original_posting']['gross_amount']), Decimal('100.00'))
+            for key in ('basis_amount', 'source_id', 'receipt_id', 'policy_id', 'split_pct', 'rule_code', 'rule_version'):
+                self.assertEqual(changed[key], original[key])
+            for key, value in original['snapshot'].items():
+                self.assertEqual(changed['snapshot'][key], value)
+            await c.post(self.url('reconcile'), json={'receipt_ids': [str(self.receipt.id)]})
+            read = (await c.get(self.url('earnings/' + original['id']))).json()
+            self.assertEqual(Decimal(read['gross_amount']), Decimal('125.00'))
+            self.assertEqual(read['snapshot']['adjustment_revision'], 1)
+            self.assertEqual(Decimal((await c.get(self.url('summary'))).json()['accrued_gross']), Decimal('125.00'))
+
+    async def test_commission_record_correction_requires_admin_tenant_and_reason(self):
+        await self.post_receipt()
+        async with await self.client() as c:
+            earning = (await c.get(self.url('earnings'))).json()['items'][0]
+        route = self.url('earnings/' + earning['id'])
+        body = {'rate_pct': '20', 'disburse_date': '2026-11-15', 'reason': 'Correction', 'expected_revision': 0}
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=self.app), base_url='http://test') as c:
+            self.assertEqual((await c.patch(route, json=body)).status_code, 401)
+        for role in ('Agent', 'Viewer', 'Underwriter'):
+            async with await self.client(2, role) as c:
+                self.assertEqual((await c.patch(route, json=body)).status_code, 403)
+        async with await self.client() as c:
+            self.assertEqual((await c.patch(f'/tenants/{uuid4()}/commissions/earnings/' + earning['id'], json=body)).status_code, 403)
+            self.assertEqual((await c.patch(self.url('earnings/' + str(uuid4())), json=body)).status_code, 404)
+            for bad in ({'reason': '   '}, {'rate_pct': '-1'}, {'rate_pct': '101'}, {'rate_pct': 'NaN'}, {'basis_amount': '9999'}, {'disburse_date': 'invalid'}):
+                self.assertEqual((await c.patch(route, json={**body, **bad})).status_code, 422)
+            self.assertEqual((await c.get(route)).json()['snapshot'].get('adjustment_revision', 0), 0)
+
+    async def test_commission_record_stale_update_is_rejected_and_history_appends(self):
+        await self.post_receipt()
+        async with await self.client() as c:
+            earning = (await c.get(self.url('earnings'))).json()['items'][0]
+            route = self.url('earnings/' + earning['id'])
+            body = {'rate_pct': '20', 'disburse_date': '2026-11-15', 'reason': 'First correction', 'expected_revision': 0}
+            results = await asyncio.gather(*(c.patch(route, json=body) for _ in range(2)))
+            self.assertEqual(sorted(r.status_code for r in results), [200, 409])
+            updated = await c.patch(route, json={**body, 'rate_pct': '15', 'expected_revision': 1, 'reason': 'Second correction'})
+            self.assertEqual(updated.status_code, 200, updated.text)
+            row = updated.json()
+            self.assertEqual(row['snapshot']['adjustment_revision'], 2)
+            self.assertEqual(len(row['snapshot']['adjustments']), 2)
+            self.assertEqual(Decimal(row['snapshot']['original_posting']['gross_amount']), Decimal('100.00'))
+
+    async def test_commission_record_edits_are_locked_for_each_reserved_batch_state(self):
+        earning = await self.payable_earning()
+        body = {'rate_pct': '20', 'disburse_date': '2025-02-01', 'reason': 'Requested correction', 'expected_revision': 0}
+        route = self.url('earnings/' + str(earning.id))
+        async with await self.client() as maker:
+            batch = (await maker.post(self.url('disbursements'), json={'earning_ids': [str(earning.id)]})).json()['id']
+            self.assertEqual((await maker.patch(route, json=body)).status_code, 409)
+            await maker.post(self.url(f'disbursements/{batch}/submit'))
+            self.assertEqual((await maker.patch(route, json=body)).status_code, 409)
+        async with await self.client(1) as checker:
+            self.assertEqual((await checker.post(self.url(f'disbursements/{batch}/approve'))).status_code, 200)
+            self.assertEqual((await checker.patch(route, json=body)).status_code, 409)
+            self.assertEqual((await checker.post(self.url(f'disbursements/{batch}/record-payment'), json={'payment_reference': 'TEST-LOCKED-RECORD', 'confirmed': True})).status_code, 200)
+            self.assertEqual((await checker.patch(route, json=body)).status_code, 409)
+
+    async def test_commission_record_can_be_corrected_after_cancelled_batch(self):
+        earning = await self.payable_earning()
+        async with await self.client() as c:
+            batch = (await c.post(self.url('disbursements'), json={'earning_ids': [str(earning.id)]})).json()['id']
+            await c.post(self.url(f'disbursements/{batch}/reject'), json={'reason': 'Correct rate before processing'})
+            response = await c.patch(self.url('earnings/' + str(earning.id)), json={
+                'rate_pct': '15', 'disburse_date': '2025-02-01', 'reason': 'Correct the agreed rate', 'expected_revision': 0})
+            self.assertEqual(response.status_code, 200, response.text)
+            detail = (await c.get(self.url('disbursements/' + batch))).json()
+            self.assertEqual(Decimal(detail['batch']['gross_amount']), Decimal('100.00'))
+            self.assertEqual(Decimal(detail['earnings'][0]['gross_amount']), Decimal('100.00'))
+            self.assertEqual(Decimal(detail['earnings'][0]['current_gross_amount']), Decimal('150.00'))
+
+    async def test_commission_record_filters_and_totals_match_and_keep_agent_scope(self):
+        await self.post_receipt()
+        async with await self.client() as c:
+            for search, expected in (('Producer', 1), ('Test insured', 1), (self.receipt.receipt_no, 1), ('Missing', 0), ('%', 0)):
+                params = {'search': search, 'disbursement_status': 'ACCRUED'}
+                result = (await c.get(self.url('earnings'), params=params)).json()
+                totals = (await c.get(self.url('summary'), params=params)).json()
+                self.assertEqual(result['total'], expected)
+                self.assertEqual(totals['entries'], expected)
+                self.assertEqual(Decimal(totals['accrued_gross']), Decimal('100.00' if expected else '0'))
+            self.assertEqual((await c.get(self.url('earnings'), params={'date_from': '2026-11-01', 'date_to': '2026-01-01'})).status_code, 422)
+        async with await self.client(1, 'Agent') as c:
+            self.assertEqual((await c.get(self.url('earnings'), params={'search': 'Producer'})).json()['total'], 0)
+
+    async def test_commission_record_edit_and_batch_creation_share_the_same_lock(self):
+        earning = await self.payable_earning()
+        async with await self.client() as c:
+            edited, batched = await asyncio.gather(
+                c.patch(self.url('earnings/' + str(earning.id)), json={
+                    'rate_pct': '20', 'disburse_date': earning.disburse_date.isoformat(),
+                    'reason': 'Concurrent rate correction', 'expected_revision': 0}),
+                c.post(self.url('disbursements'), json={'earning_ids': [str(earning.id)]}))
+            self.assertIn(edited.status_code, (200, 409), edited.text)
+            self.assertEqual(batched.status_code, 201, batched.text)
+            current = (await c.get(self.url('earnings/' + str(earning.id)))).json()
+            detail = (await c.get(self.url('disbursements/' + batched.json()['id']))).json()
+            self.assertEqual(Decimal(detail['batch']['gross_amount']), Decimal(current['gross_amount']))
+            self.assertEqual(Decimal(detail['earnings'][0]['gross_amount']), Decimal(current['gross_amount']))
+
 
 if __name__ == '__main__':
     import sys

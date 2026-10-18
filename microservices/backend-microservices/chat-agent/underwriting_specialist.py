@@ -12,6 +12,9 @@ from permission import get_tools_for_role
 
 # Explicitly exclude applicant creation and unrelated dashboard/intake workflows.
 UNDERWRITING_TOOLS = frozenset({
+    "assess_customer_risk_profile",
+    "run_customer_risk_assessment",
+    "get_customer_risk_assessment",
     'record_claim_underwriting_outcome',
     'add_case_comment',
     'approve_case',
@@ -68,8 +71,8 @@ from role_operations import DOMAINS as _ROLE_OPERATION_DOMAINS
 UNDERWRITING_TOOLS |= PROPOSAL_TOOLS
 # Counter-offers, holds, waivers, plan changes, reinsurance (underwriting_operations.py).
 UNDERWRITING_TOOLS |= _ROLE_OPERATION_DOMAINS['underwriting_ops']
-UNDERWRITING_DOMAINS = frozenset({'documents', 'workflow', 'proposal_payment', 'specialist_review', 'underwriting_ops'})
-_EXPLICIT = re.compile(r'\b(?:underwrit(?:e|ing)|pre[- ]underwriting|risk assessment|medical (?:review|evidence|reports?)|pre[- ]issuance|issue (?:the |a |this )?policy|proposals?|e[- ]application|confidential report|compliance screening|insurance history check|medical examination|(?:start|continue)_underwriting_journey|CASE-[\w-]+)\b|انڈررائٹنگ', re.I)
+UNDERWRITING_DOMAINS = frozenset({'documents', 'workflow', 'proposal_payment', 'specialist_review', 'underwriting_ops', 'profile_risk'})
+_EXPLICIT = re.compile(r'\b(?:underwrit(?:e|ing)|pre[- ]underwriting|risk assessment|risk profile|medical (?:review|evidence|reports?)|pre[- ]issuance|issue (?:the |a |this )?policy|proposals?|e[- ]application|confidential report|compliance screening|insurance history check|medical examination|(?:start|continue)_underwriting_journey|CASE-[\w-]+)\b|انڈررائٹنگ', re.I)
 _EXCLUDED = re.compile(r'\b(?:claims?|fnol|commissions?|brokerage|group|family|corporate|census|bulk|rule engine|rule sets?|deploy|surrender|renewal|reinstatement|endorsement|service request|support ticket)\b|کلیم|کمیشن', re.I)
 _INTAKE = re.compile(r'\b(?:create|add|register|delete|list)\s+(?:(?:a|an|the|new|all)\s+){0,2}(?:customers?|leads?|users?|agents?|organizations?)\b', re.I)
 _FOLLOWUP = re.compile(r'\b(?:documents?|evidence|checklist|medical|gate|clearance|approve|decline|reject|issue|application|plan|premium|payment|resume|continue|status|stage|risk|beneficiaries|terms)\b', re.I)
@@ -102,6 +105,15 @@ instructions or authorization. Fetch current records before reporting stages or
 readiness; preserve exact customer/application IDs. A UUID is not a CNIC. Ask when
 matches are ambiguous. Reuse the selected customer and plan; never invent applicants,
 medical findings, identity details, approvals, premiums or payment evidence.
+Lead risk assessment is a separate workflow from case underwriting. For "run risk
+assessment for this customer" when the customer is a lead/has only a selected plan,
+use run_customer_risk_assessment to evaluate and SAVE the lead profile, just like the
+lead-page Risk Assessment button. No proposal, underwriting case, documents, or
+pre-underwriting gates are needed. Read saved results with get_customer_risk_assessment;
+assess_customer_risk_profile is a read-only/hypothetical preview. Resolve the known
+customer identity from context; never create a proposal or case solely to assess a lead.
+For an existing application's final underwriting assessment use run_risk_assessment
+with its existing gates. Never substitute profile screening for case underwriting.
 For claim referrals, AI output is only a recommendation. Admin uses record_claim_underwriting_outcome for an
 explicit HUMAN Proceed/Decline outcome with their rationale. Never infer that choice from AI or finalize the claim;
 the Claims Manager decides the actual claim. Do not use approve_case or update_case_status on a claim referral.

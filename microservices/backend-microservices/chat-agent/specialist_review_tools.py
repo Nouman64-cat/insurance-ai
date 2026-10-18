@@ -150,7 +150,7 @@ async def _list_my_underwriting_reviews(args: dict, ctx: Ctx) -> dict:
 
 def _claim_next_steps(track: str, ws: dict) -> tuple[list[str], list[dict]]:
     """A Claim UW review is checked against the claim's plan terms, not run like a new application: no e-application
-    to email, no exam to order, no AI rating — the claim's documents (collected by the claims team) and the plan's
+    to email, no exam to order — AI gives an advisory claim-evidence recommendation; the claim's documents (collected by the claims team) and the plan's
     exclusions, waiting periods and contestability, then the underwriter's own decision."""
     ref, steps, chips = ws["reference"], [], []
     missing = [d["type"] for d in ws.get("required_documents") or [] if not d.get("received")]
@@ -158,6 +158,10 @@ def _claim_next_steps(track: str, ws: dict) -> tuple[list[str], list[dict]]:
         steps.append(f"Claim documents still needed: {', '.join(missing)}. Upload them here or explicitly waive a document with your reason.")
         chips += [_chip(f"Upload {missing[0]}", f"Upload underwriting document {missing[0]} for case {ref}"),
                   _chip("Waive a document", f"Waive a document on my claim underwriting review for case {ref}")]
+    ai = ws.get("claim_ai_underwriting") or {}
+    if ai.get("ready"):
+        steps.append("AI claim underwriting is available as an advisory evidence review, not a human decision.")
+        chips.append(_chip(f"Run AI {track} underwriting", f"Run AI {track} underwriting for case {ref}"))
     for r in ws["requirements"]:
         if r["key"].startswith("claim_") and r["status"] != "Completed":
             steps.append(f"Check {r['label'].lower()}" + (f": {r['detail']}" if r.get("detail") else "") + ".")
@@ -236,6 +240,8 @@ async def _get_underwriting_review(args: dict, ctx: Ctx) -> dict:
     reqs = "\n".join(f"- {r['label']}: **{r['status']}**" + (f" ({r['detail']})" if r.get("detail") else "") for r in ws["requirements"])
     steps, chips = _next_steps(track, ws, exam)
     ai_line = ""
+    if ws.get("claim") and (claim_ai := (ws.get("claim_ai_underwriting") or {}).get("result")):
+        ai_line = f"\n\n**AI {track} claim recommendation (advisory):** {claim_ai.get('recommendation')} — {claim_ai.get('summary', '')}"
     if track == "financial" and not ws.get("claim") and (ai := (ws.get("ai_underwriting") or {}).get("result")):
         ai_line = (f"\n\n**AI financial underwriting:** risk {ai.get('score')}/100 · cover "
                    f"{'justified' if ai.get('financially_justified') else 'not justified'} by income · referral "
@@ -403,13 +409,31 @@ async def _send_e_application_questionnaire(args: dict, ctx: Ctx) -> dict:
 
 # ── AI underwriting ──────────────────────────────────────────────────────────
 
+async def _run_claim_track_ai(row: dict, ctx: Ctx) -> dict:
+    track, case_id = _track(ctx), row["id"]
+    res = await ctx.client.post(ctx.tsvc(f"/cases/{case_id}/claim-underwriting/{track}/run"), timeout=180.0)
+    if res.status_code >= 400:
+        return {"success": False, "message": _detail_text(res, "AI claim underwriting failed."), "quick_actions": [_open(case_id)]}
+    result = res.json().get("result") or {}
+    findings = "\n".join(f"- **{f['requirement']}**: {f['observation']} (evidence: {'; '.join(f.get('evidence') or [])})"
+                         for f in result.get("findings") or [])
+    missing = "; ".join(result.get("missing_evidence") or [])
+    return {"success": True, "result": result,
+        "message": (f"**AI {track} claim underwriting — {_label(row)}**\n\n"
+                    f"Recommendation: **{result.get('recommendation')}**\n\n{result.get('summary', '')}\n\n{findings}"
+                    + (f"\n\nMissing evidence: {missing}." if missing else "")
+                    + "\n\nAdvisory only. Record your own findings and specialist review; the Claims Manager decides the claim."),
+        "quick_actions": [_chip("Record my review", f"I want to record my {track} review for case {row['reference']}"), _open(case_id)],
+        "last_action": _action(f"run_ai_{track}_underwriting", "case", case_id, f"case/{case_id}", "AI claim recommendation saved")}
+
+
 @handles("run_ai_medical_underwriting")
 async def _run_ai_medical_underwriting(args: dict, ctx: Ctx) -> dict:
     if _track(ctx) != "medical":
         return {"success": False, "message": "AI medical underwriting is the Medical Underwriter's tool."}
     row = await _resolve_review(args, ctx)
     if row.get("claim_id"):
-        return {"success": False, "message": "This is a claim underwriting referral. Review its claim documents and record evidence-backed findings; new-business AI rating does not apply."}
+        return await _run_claim_track_ai(row, ctx)
     case_id, ref = row["id"], row["reference"]
     exam_res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/medical-exam"))
     exam_res.raise_for_status()
@@ -479,7 +503,7 @@ async def _run_ai_financial_underwriting(args: dict, ctx: Ctx) -> dict:
         return {"success": False, "message": "AI financial underwriting is the Financial Underwriter's tool."}
     row = await _resolve_review(args, ctx)
     if row.get("claim_id"):
-        return {"success": False, "message": "This is a claim underwriting referral. Review its claim documents and record evidence-backed findings; new-business AI rating does not apply."}
+        return await _run_claim_track_ai(row, ctx)
     case_id, ref = row["id"], row["reference"]
     res = await ctx.client.post(ctx.tsvc(f"/cases/{case_id}/financial-underwriting/run"), timeout=180.0)
     if res.status_code == 409:

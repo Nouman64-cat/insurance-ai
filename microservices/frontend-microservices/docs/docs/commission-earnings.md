@@ -7,6 +7,14 @@ title: Commission Earnings
 
 The portal at `/commissions` now reads persisted **accrued gross earnings** from the tenant service. The mobile commission screen and copilot ledger, summary, payee and statement tools use that same backend. A policy's status never implies a commission payment.
 
+## Commission register and corrections
+
+The default **Records** tab shows automatically posted earnings in a searchable, paginated table. Filter by producer, payment status and recorded dates; the summary cards use the same filters. **View** opens the source receipt, policy, original rule, current values and correction history. Payouts, exceptions and producer setup are separate tabs.
+
+Admin/SuperAdmin can **Edit** an unbatched earning's commission rate and payable date. A reason is required. `PATCH /tenants/{tenant_id}/commissions/earnings/{earning_id}` recalculates gross from the unchanged receipt basis and producer split, preserves the original posting, and records the authenticated actor, timestamp, reason and before/after values. `expected_revision` rejects stale concurrent edits. This is a correction to one earning; it does not alter the rule engine or future earnings.
+
+An earning reserved in a draft, submitted, approved or paid batch cannot be edited. Cancelling/rejecting an unpaid batch releases its earnings; the cancelled batch continues to show its originally reserved gross amounts if an earning is later corrected. Batch creation and corrections lock the same earning row to prevent changing an approved allocation during reservation. Receipt reconciliation does not overwrite a corrected posted earning. There is no manual create-commission action: new records still originate from premium receipts.
+
 ## Setup
 
 1. Create the real producer in **Acquisition Sources**. Set its **Start Date**: that day of the month is the producer's payout day. Link its login account for the agent to see its own earnings.

@@ -249,3 +249,16 @@ async def suggest_plan_endpoint(
         return SuggestPlanResponse(**result)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+from claim_underwriting import ClaimReviewInput
+
+
+@app.post("/evaluate/claim-underwriting")
+async def evaluate_claim_underwriting(request: ClaimReviewInput, x_tenant_id: str = Header(default="")):
+    """Internal advisory analysis; the tenant service owns authentication and persistence."""
+    from claim_underwriting import recommend_claim_review
+    try:
+        return await asyncio.to_thread(recommend_claim_review, request.track, request.context, x_tenant_id)
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc))
