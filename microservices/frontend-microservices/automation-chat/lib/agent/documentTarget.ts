@@ -6,7 +6,7 @@ export interface UploadTarget {
   applicant_name?: string;
 }
 export function uploadTargetFromText(message: string): UploadTarget | null {
-  const refs = Array.from(new Set((message.match(/\b(?:APP|CASE)-\d{4}-[A-Z0-9]+\b/gi) ?? []).map(r => r.toUpperCase())));
+  const refs = Array.from(new Set((message.match(/\b(?:UW-CLM-\d{4}-[A-Z0-9]+-[A-Z0-9]+|(?:APP|CASE)-\d{4}-[A-Z0-9]+)\b/gi) ?? []).map(r => r.toUpperCase())));
   if (refs.length === 1) return { case_number: refs[0] };
   if (refs.length > 1) return null;
   const cnics = Array.from(new Set(message.match(/\b\d{5}-\d{7}-\d\b/g) ?? []));
@@ -17,7 +17,7 @@ const digits = (s: unknown) => String(s ?? '').replace(/\D/g, '');
 export function resolveUploadCase(cases: any[], target: UploadTarget): any {
   let found: any[];
   if (target.case_id) found = cases.filter(c => String(c.caseld ?? c.case_id ?? c.id) === target.case_id);
-  else if (target.case_number) found = cases.filter(c => ref(c.caseNumber ?? c.case_number) === ref(target.case_number));
+  else if (target.case_number) found = cases.filter(c => ref(c.caseNumber ?? c.case_number ?? c.reference) === ref(target.case_number));
   else if (target.cnic) found = cases.filter(c => digits(c.customer_cnic ?? c.cnic) === digits(target.cnic));
   else if (target.applicant_name) {
     const name = target.applicant_name.trim().toLowerCase();

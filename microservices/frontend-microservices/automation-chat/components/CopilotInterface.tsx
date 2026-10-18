@@ -2643,10 +2643,41 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
         checklist_key?: string;
         case_number?: string;
         case_id?: string;
+        underwriting_track?: "medical" | "financial";
       },
       file: File,
     ) => {
       const tenantId = localStorage.getItem("tenant_id") || DEFAULT_TENANT_ID;
+
+      const role = (localStorage.getItem("user_role") || "").replace(/\s+/g, "");
+      if (!args.underwriting_track && ["MedicalUnderwriter", "FinancialUnderwriter"].includes(role)) {
+        const response = await api.get(`/tenants/${tenantId}/underwriting/reviews`);
+        const reviews = response.data || [];
+        const matching = args.claim_number ? reviews.filter((row: any) => row.claim_number === args.claim_number) : reviews;
+        const review = resolveUploadCase(matching.map((row: any) => ({ ...row, caseNumber: row.reference })),
+          args.claim_number && matching.length === 1 ? { case_id: matching[0].id } : args);
+        args = { ...args, case_id: review.id, case_number: review.reference,
+          underwriting_track: role === "MedicalUnderwriter" ? "medical" : "financial" };
+      }
+
+      // Specialist uploads use the track-scoped endpoint, which also updates the linked claim checklist.
+      if (args.underwriting_track) {
+        if (!args.case_id) throw new Error("Select the assigned underwriting review before uploading.");
+        const form = new FormData();
+        form.append("document_type", args.document_type);
+        form.append("file", file);
+        await api.post(`/tenants/${tenantId}/cases/${args.case_id}/underwriting-documents`, form, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+        return {
+          success: true,
+          message: `${args.document_type} (${file.name}) uploaded to ${args.case_number || "your underwriting review"}.`,
+          last_action: { tool_name: "upload_underwriting_document", entity_type: "case", entity_id: args.case_id,
+            route: `case/${args.case_id}`, label: `${args.document_type} uploaded` },
+          quick_actions: [{ label: "Refresh my review", actionType: "submit",
+            payload: `Show my underwriting review for case ${args.case_number}` }],
+        };
+      }
 
       // A claim upload may name the claim only by number (a suggestion chip) —
       // resolve it to the record, never fall through to the application upload.
@@ -2844,7 +2875,7 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
   useEffect(() => {
     if (pendingInterrupt?.kind !== "client_execute") return;
     if (
-      !["upload_document", "upload_claim_document"].includes(
+      !["upload_document", "upload_claim_document", "upload_underwriting_document"].includes(
         pendingInterrupt.toolCall.name,
       )
     )
@@ -6064,6 +6095,11 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
           <div className="flex-1 flex flex-row relative h-full min-w-0 min-h-0">
             <div className="flex-1 flex flex-col relative h-full min-w-0 min-h-0">
               {compact && <div className="flex shrink-0 justify-end border-b border-slate-100 px-3 py-2"><button type="button" disabled={isLoading} onClick={handleClearChat} className="rounded-lg px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-50 disabled:opacity-40">+ {t("sidebar.newChat")}</button></div>}
+              {!compact && <div className="flex shrink-0 justify-end px-4 sm:px-7 pt-3">
+                <button type="button" onClick={() => setAutomationMode(false)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-blue-50 hover:text-blue-700">
+                  <span aria-hidden="true">←</span>{t("sidebar.backToPortal")}
+                </button>
+              </div>}
               {/* Chat Header */}
               <div className={`${compact ? "hidden" : "flex"} items-center justify-between gap-3 px-4 sm:px-7 pt-4 sm:pt-6 pb-3 relative z-20`}>
                 <div className="flex items-center gap-2 min-w-0">

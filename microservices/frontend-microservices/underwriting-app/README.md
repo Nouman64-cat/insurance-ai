@@ -74,7 +74,7 @@ Copy `.env.example` to `.env.local` for a local `npm run dev`. Docker Compose se
 | Variable | Default | Used for |
 |---|---|---|
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8010` | API gateway, from the browser |
-| `NEXT_PUBLIC_OCR_URL` / `NEXT_PUBLIC_SUMMARIZER_URL` | `:8014` / `:8015` | OCR and summarizer, from the browser |
+| `NEXT_PUBLIC_OCR_URL` | `http://localhost:8014` | OCR, from the browser |
 | `API_GATEWAY_INTERNAL_URL` | `http://api-gateway:8000` | Gateway, from this app's server (session check, live-event stream). `http://localhost:8010` outside Docker |
 | `NEXT_PUBLIC_PORTAL_URL` | `http://localhost:3000` | Sign-in, "Back to the portal", links to portal pages, customer e-application and medical-exam links |
 | `NEXT_PUBLIC_UNDERWRITING_URL` | `http://localhost:3005` | This app's public URL. **Also set it on the portal and the Automation Chat**: their underwriting links and the portal's old-URL redirects use it |
@@ -170,3 +170,5 @@ React, about 9 MB of JavaScript per page instead of 0.2–0.3 MB). Measure each 
   following the user into the workbench.
 - The portal's ACR-request bell and toasts (for agents) stay in the portal. Underwriting screens show ACR status per
   case.
+
+Summarization uses `NEXT_PUBLIC_API_URL` with the SSO JWT bearer token. The gateway verifies underwriting permissions and proxies to `TEXT_SUMMARIZER_URL` (default `http://text-summarizer:8005`). The summarizer has no published host port or public domain.

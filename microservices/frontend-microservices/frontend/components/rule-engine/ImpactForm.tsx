@@ -55,6 +55,20 @@ const ALL_NUMBER_FIELDS: { key: keyof ActuarialImpactDetail; label: string; step
     forTypes: ["AUTO_APPROVE", "REFER_TO_UNDERWRITER"],
   },
   {
+    key: "recurring_commission_pct",
+    label: "Recurring rate (%) — later premiums",
+    step: "0.1",
+    icon: "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15",
+    forTypes: ["AUTO_APPROVE", "REFER_TO_UNDERWRITER"],
+  },
+  {
+    key: "recurring_years",
+    label: "Recurring for (policy years)",
+    step: "1",
+    icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
+    forTypes: ["AUTO_APPROVE", "REFER_TO_UNDERWRITER"],
+  },
+  {
     key: "upfront_payment_pct",
     label: "Upfront payment (%) — the rest is paid at issuance",
     step: "1",
@@ -145,6 +159,22 @@ export default function ImpactForm({ impactType, impactData, onChange }: Props) 
             </div>
           ))}
         </div>
+      )}
+
+      {/* Agent commission (RS-COM-002): first premium only, unless recurring */}
+      {impactData.commission_pct != null && (impactType === "AUTO_APPROVE" || impactType === "REFER_TO_UNDERWRITER") && (
+        <label className="flex items-start gap-2 p-2.5 bg-slate-50/60 border border-slate-200 rounded-xl text-xs text-slate-700">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={!!impactData.commission_recurring}
+            onChange={(e) => setField("commission_recurring", e.target.checked)}
+          />
+          <span>
+            <span className="font-semibold">{tx("Recurring commission")}</span>
+            <span className="block text-[11px] text-slate-500">{tx("The commission rate is paid on the first premium after issuance. Tick to also pay on later premiums, at the recurring rate if set.")}</span>
+          </span>
+        </label>
       )}
 
       {/* Medical Test Codes */}

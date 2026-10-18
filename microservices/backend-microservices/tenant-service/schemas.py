@@ -424,6 +424,7 @@ class AcquisitionSourceCreate(BaseModel):
     city:             Optional[str] = None
     cnic:             Optional[str] = None
     location:         Optional[str] = None
+    start_date:       Optional[date] = None   # payout day-of-month for commission
     is_active:        bool = True
 
 class AcquisitionSourceUpdate(BaseModel):
@@ -439,6 +440,7 @@ class AcquisitionSourceUpdate(BaseModel):
     city:             Optional[str] = None
     cnic:             Optional[str] = None
     location:         Optional[str] = None
+    start_date:       Optional[date] = None   # payout day-of-month for commission
     is_active:        Optional[bool] = None
 
 class AcquisitionSourceFull(BaseModel):
@@ -455,6 +457,7 @@ class AcquisitionSourceFull(BaseModel):
     city:             Optional[str] = None
     cnic:             Optional[str] = None
     location:         Optional[str] = None
+    start_date:       Optional[date] = None   # payout day-of-month for commission
     is_active:        bool
     created_at:       datetime
     customer_count:   int = 0    # how many customers this source has brought in

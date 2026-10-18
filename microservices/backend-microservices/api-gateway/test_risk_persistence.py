@@ -52,3 +52,41 @@ def test_duplicate_risk_evaluated_event_is_not_persisted_twice():
     source = inspect.getsource(risk_result_worker._process)
     assert "correlation_id == event.correlation_id" in source
     assert "already persisted" in source
+
+
+def test_claim_assessment_is_advisory_and_never_changes_case_or_bound_policy():
+    import asyncio
+    from types import SimpleNamespace as NS
+    from uuid import uuid4
+    from risk_persistence import persist_assessment, apply_ai_case_status
+    class DB:
+        def __init__(self): self.rows = []
+        def add(self, row): self.rows.append(row)
+        async def exec(self, query):
+            assert query._for_update_arg is not None  # The sole read serializes new advice with human decisions.
+    async def run():
+        for decision in AIDecision:
+            db = DB()
+            case = NS(caseld=uuid4(), claim_id=uuid4(), caseStatus=CaseStatusEnum.UNDER_REVIEW, on_hold=False)
+            policy = NS(id=uuid4(), status=PolicyStatusEnum.ACTIVE)
+            assessment = await persist_assessment(db, uuid4(), customer=NS(id=uuid4()), policy=policy, case=case,
+                final_risk={'medical_score': 80, 'financial_score': 70, 'fraud_probability': .1, 'ai_decision': decision.value})
+            assert assessment.ai_decision == decision
+            assert len(db.rows) == 1 and db.rows[0] is assessment
+            await apply_ai_case_status(db, uuid4(), case, decision.value)
+            assert case.caseStatus == CaseStatusEnum.UNDER_REVIEW and policy.status == PolicyStatusEnum.ACTIVE
+    asyncio.run(run())
+
+
+def test_ai_cannot_reopen_a_human_finalized_case():
+    import asyncio
+    from types import SimpleNamespace as NS
+    from risk_persistence import apply_ai_case_status
+    class DB:
+        async def exec(self, *_): raise AssertionError('AI overwrote a human decision')
+    async def run():
+        for status in (CaseStatusEnum.APPROVED, CaseStatusEnum.REJECTED, CaseStatusEnum.CLOSED):
+            case = NS(claim_id=None, caseStatus=status)
+            await apply_ai_case_status(DB(), None, case, 'Decline')
+            assert case.caseStatus == status
+    asyncio.run(run())

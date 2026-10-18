@@ -6,7 +6,7 @@ sidebar_position: 12
 
 # Client Apps
 
-Both clients talk only to the API Gateway (`:8010`) — except the web portal's OCR and summarizer screens, which call those services directly via `NEXT_PUBLIC_OCR_URL` / `NEXT_PUBLIC_SUMMARIZER_URL`.
+Both clients talk only to the API Gateway (`:8010`) — except the web portal's OCR screens, which call OCR directly via `NEXT_PUBLIC_OCR_URL`. Summarization uses the gateway with a JWT bearer token and underwriting role permissions.
 
 ## Web portal — `microservices/frontend-microservices/frontend/`
 

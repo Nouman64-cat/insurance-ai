@@ -6,16 +6,23 @@
     "income",
     "affordability",
     "financial review",
-    "salary"
+    "salary",
+    "claim",
+    "claim underwriting",
+    "claim documents",
+    "document waiver"
   ],
   "capabilities": [
     "get_underwriting_review",
     "list_my_underwriting_reviews",
+    "record_claim_underwriting_check",
     "record_underwriting_review",
     "run_ai_financial_underwriting",
     "run_insurance_history_check",
     "send_e_application_questionnaire",
-    "start_my_review"
+    "start_my_review",
+    "upload_underwriting_document",
+    "waive_underwriting_document"
   ],
   "roles": [
     "SuperAdmin",
@@ -31,7 +38,8 @@
   ],
   "business_rules": [
     "Work only assigned financial-track reviews. Do not run medical underwriting or compile final underwriting. Keep evidence and affordability checks within this track.",
-    "A skill never adds permissions or simulates success."
+    "A skill never adds permissions or simulates success.",
+    "Assigned claim underwriting referrals are in scope. Upload or waive only own-track documents with a recorded reason, and record evidence-backed claim findings. Do not run new-business AI or questionnaires on claims, or record the final claim decision."
   ],
   "lifecycle_source": "lifecycle.py; tenant-service/routers/cases.py",
   "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",

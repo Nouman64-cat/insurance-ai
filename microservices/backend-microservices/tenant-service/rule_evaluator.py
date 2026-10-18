@@ -321,10 +321,14 @@ async def evaluate_rule_set(
     proposal_id: Optional[str] = None,
     actor: Optional[str] = "System",
     case_id: Optional[str] = None,  # deprecated alias for proposal_id, kept for one deploy cycle
+    commit: bool = True,
 ) -> Dict[str, Any]:
     """
     Evaluates an active RuleVersion of a single named RuleSet against the
     provided context payload (pipeline steps 3-8).
+
+    commit=False leaves the audit row in the caller's transaction (for callers
+    holding row locks, e.g. commission posting) instead of committing it.
 
     Returns:
         {
@@ -341,7 +345,7 @@ async def evaluate_rule_set(
     if tenant_id:
         query = select(RuleSet).where(
             (RuleSet.rule_code == rule_set_code) & ((RuleSet.tenant_id == tenant_id) | (RuleSet.tenant_id == None))  # noqa: E711
-        )
+        ).order_by(RuleSet.tenant_id.is_(None))  # a tenant's own set wins over the global one
     result = await session.exec(query)
     rule_set = result.first()
 
@@ -411,6 +415,11 @@ async def evaluate_rule_set(
             "upfront_payment_pct": data.get("upfront_payment_pct"),
             "medical_profile_codes": data.get("medical_profile_codes") or [],
             "extra_mortality_pct": data.get("extra_mortality_pct") or 0,
+            "commission_pct": data.get("commission_pct"),
+            "withholding_tax_pct": data.get("withholding_tax_pct"),
+            "commission_recurring": bool(data.get("commission_recurring")),
+            "recurring_commission_pct": data.get("recurring_commission_pct"),
+            "recurring_years": data.get("recurring_years"),
         })
         reasons.append(f"Rule '{rule.name}' matched ({impact_label} — {rule.action_outcome})")
 
@@ -459,7 +468,8 @@ async def evaluate_rule_set(
             execution_duration_ms=duration_ms,
         )
         session.add(audit_log)
-        await session.commit()
+        if commit:
+            await session.commit()
     except Exception as err:
         logger.error("Failed to record RuleEvaluationLog: %s", err)
 

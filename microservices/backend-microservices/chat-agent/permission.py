@@ -15,6 +15,10 @@ MUTATING_TOOLS = {
     "create_platform_tenant", "manage_platform_role", "configure_platform_model",
     "request_initial_premium", "review_initial_premium_proof", "transition_proposal",
     # Specialist underwriting (specialist_review_tools.py)
+    "upload_underwriting_document",
+    "waive_underwriting_document",
+    "record_claim_underwriting_check",
+    "record_claim_underwriting_outcome",
     "start_my_review",
     "send_e_application_questionnaire",
     "run_ai_medical_underwriting",
@@ -436,6 +440,10 @@ STEP_LABELS: dict[str, str] = {
     "run_ai_medical_underwriting": "Running AI medical underwriting",
     "run_ai_financial_underwriting": "Running AI financial underwriting",
     "record_underwriting_review": "Recording your review",
+    "upload_underwriting_document": "Uploading underwriting evidence",
+    "waive_underwriting_document": "Waiving claim document requirement",
+    "record_claim_underwriting_check": "Recording claim underwriting finding",
+    "record_claim_underwriting_outcome": "Recording human underwriting outcome",
     "list_track_underwriters": "Finding underwriters",
     "assign_underwriting_track": "Assigning the review",
     "get_specialist_reviews": "Reading the specialist reviews",
@@ -1021,6 +1029,9 @@ UNDERWRITER_ALLOWED_TOOLS = SAFE_TOOLS | {
 # The Medical and Financial Underwriter work one track each, in their own
 # workspace; the backend additionally refuses anything outside their track.
 SPECIALIST_TOOLS = {
+    "upload_underwriting_document",
+    "waive_underwriting_document",
+    "record_claim_underwriting_check",
     "list_my_underwriting_reviews",
     "get_underwriting_review",
     "start_my_review",
@@ -1058,6 +1069,10 @@ ROLE_SCOPED_READS: dict[str, set[str]] = {
 # Mirrored from tenant-service/services/claim_authority.py. These restrictions
 # precede the legacy Admin fast path: platform administration is not claims authority.
 CLAIM_AUTHORITY_ROLES = {
+    "upload_underwriting_document": {"Medical Underwriter", "Financial Underwriter"},
+    "waive_underwriting_document": {"Medical Underwriter", "Financial Underwriter"},
+    "record_claim_underwriting_check": {"Medical Underwriter", "Financial Underwriter"},
+    "record_claim_underwriting_outcome": {"Admin", "SuperAdmin"},
     "resolve_claim_underwriting": {"ClaimsManager"},
     "get_claim_financial_review": {"ClaimsManager"},
     "record_claim_financial_check": {"ClaimsManager"},

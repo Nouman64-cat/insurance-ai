@@ -59,7 +59,8 @@
   ],
   "business_rules": [
     "ClaimsManager stays with the claims specialist. ClaimsAdjuster prepares the file; decisions, authorization, payment, reconciliation and closure follow the backend workflow and delegated authority. Eligibility, payee verification and settlement authorization must not be skipped. An Admin is not a substitute for the backend claims approver.",
-    "A skill never adds permissions or simulates success."
+    "A skill never adds permissions or simulates success.",
+    "Never register a replacement claim to correct an event date or bypass eligibility; preserve the original claim and require review with supporting evidence."
   ],
   "lifecycle_source": "claim_workflow_tools.py; tenant-service/routers/claim_workflow.py",
   "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",

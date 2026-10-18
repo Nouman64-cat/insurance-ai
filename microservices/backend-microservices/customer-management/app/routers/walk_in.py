@@ -53,7 +53,16 @@ async def tenant_id() -> str:
     if not code:
         raise ApiError(503, "WALK_IN_UNAVAILABLE", "Walk-in registration is not available right now.")
     if code not in _tenant_cache:
-        found = await tenant_client.get_client().get(f"{PREFIX}/tenant", code=code)
+        try:
+            found = await tenant_client.get_client().get(f"{PREFIX}/tenant", code=code)
+        except ApiError as exc:
+            # This lookup is server configuration, not a search for the visitor's
+            # email. Never report an absent tenant/adapter as "customer not found",
+            # and never silently register the visitor with a different insurer.
+            if exc.status == 404:
+                log.error("Walk-in tenant lookup failed for configured code %r; check CM_WALKIN_TENANT_CODE and the tenant-service walk-in adapter", code)
+                raise ApiError(503, "WALK_IN_UNAVAILABLE", "Walk-in registration is not available right now.") from exc
+            raise
         _tenant_cache[code] = str(found["tenant_id"])
     return _tenant_cache[code]
 

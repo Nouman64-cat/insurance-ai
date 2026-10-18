@@ -213,6 +213,7 @@ export const demoAcquisitionSource = (sourceType: string) => {
     city: loc.city,
     cnic: demoCnic(loc.cnic, contact.female),
     location: area,
+    start_date: isoDate(2018, 2025),
     is_active: true,
   };
 };

@@ -59,7 +59,7 @@ The platform combines deterministic insurance rules with LLM-assisted analysis, 
                 │
                 ▼
        Text Summarizer
-             :8015
+       :8005 (internal)
 
 Risk Engine ───────────────► Memgraph
                              Fraud Graph
@@ -434,7 +434,7 @@ A physical device must use an address reachable from the device rather than `loc
 | Risk Engine     | http://localhost:8012 |
 | Decision Engine | http://localhost:8013 |
 | OCR Engine      | http://localhost:8014 |
-| Text Summarizer | http://localhost:8015 |
+| Text Summarizer | Internal Docker service `text-summarizer:8005`, via the authenticated API Gateway |
 | Chat Agent      | http://localhost:8016 |
 | Customer Service App | http://localhost:3008 |
 | Customer Service Backend | http://localhost:8018 |

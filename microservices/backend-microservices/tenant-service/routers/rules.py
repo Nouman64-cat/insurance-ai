@@ -142,6 +142,10 @@ def _map_outcome_to_impact(action_outcome: str, outcome_payload: dict):
         "risk_level": outcome_payload.get("risk_level"),
         "commission_pct": outcome_payload.get("commission_pct"),
         "withholding_tax_pct": outcome_payload.get("withholding_tax_pct"),
+        # Agent commission (RS-COM-002): whether premiums after the first also earn.
+        "commission_recurring": bool(outcome_payload.get("commission_recurring")),
+        "recurring_commission_pct": outcome_payload.get("recurring_commission_pct"),
+        "recurring_years": outcome_payload.get("recurring_years"),
     }
     return impact_type, impact_data
 
@@ -1072,6 +1076,17 @@ async def ensure_profile_risk_rule_set(session: AsyncSession) -> None:
     await _create_rule_set_from_seed(session, RISK_RULE_SET, sub.id, None)
 
 
+async def ensure_agent_commission_rule_set(session: AsyncSession) -> None:
+    """Idempotent startup seed of RS-COM-002, the agent commission rates. Edited afterwards in the rule-engine admin."""
+    from services.agent_commission import AGENT_COMMISSION_RULE_SET as RS
+    await seed_rules_if_empty(session)
+    if (await session.exec(select(RuleSet).where(RuleSet.rule_code == RS["code"]))).first() is not None:
+        return
+    category = await _get_or_create_category(session, RS["category_code"], RS["category_name"])
+    sub = await _get_or_create_subcategory(session, category.id, RS["sub_code"], RS["sub_name"])
+    await _create_rule_set_from_seed(session, RS, sub.id, None)
+
+
 async def ensure_payment_split_rule_set(session: AsyncSession) -> None:
     """Idempotent startup seed of RS-PAY-001, the initial-premium split. Edited afterwards in the rule-engine admin."""
     from services.payment_split import PAYMENT_SPLIT_RULE_SET as RS
@@ -1151,8 +1166,14 @@ class ActuarialImpactDetailIn(BaseModel):
     underwriter_authority_level: Optional[int] = None
     exclusion_riders: List[str] = PydanticField(default_factory=list)
     is_terminal: bool = False
-    commission_pct: Optional[float] = None
+    commission_pct: Optional[float] = PydanticField(default=None, ge=0, le=100)
     withholding_tax_pct: Optional[float] = None
+    # Agent commission (RS-COM-002). The first premium after issuance earns commission_pct;
+    # later premiums earn only when recurring, at recurring_commission_pct (else commission_pct),
+    # for policy years up to recurring_years (no limit when empty).
+    commission_recurring: bool = False
+    recurring_commission_pct: Optional[float] = PydanticField(default=None, ge=0, le=100)
+    recurring_years: Optional[int] = PydanticField(default=None, ge=1, le=100)
     reason: Optional[str] = None
     risk_factor: Optional[str] = None
     risk_level: Optional[float] = PydanticField(default=None, ge=0, le=1)

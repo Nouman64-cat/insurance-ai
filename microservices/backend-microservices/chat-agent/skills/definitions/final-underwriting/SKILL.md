@@ -17,3 +17,5 @@ Examples:
 
 Contract: `lifecycle.py; tenant-service/routers/cases.py`.
 Tests: `test_skills.py` generated role/skill/capability scenarios and domain regression suites.
+
+For claim referrals, AI output is advisory. After both specialist reviews and the final AI check, Admin explicitly chooses Proceed/Decline and supplies a rationale to record_claim_underwriting_outcome. Never infer this outcome from AI; only the Claims Manager makes the final claim decision.

@@ -10,7 +10,9 @@
     "refer",
     "assign eligible underwriters",
     "awaiting underwriting",
-    "underwriter directory"
+    "underwriter directory",
+    "human underwriting outcome",
+    "claim underwriting outcome"
   ],
   "capabilities": [
     "add_case_comment",
@@ -24,6 +26,7 @@
     "list_cases",
     "list_track_underwriters",
     "preview_application_transition",
+    "record_claim_underwriting_outcome",
     "refer_underwriting_review",
     "request_additional_evidence",
     "run_risk_assessment",
@@ -47,7 +50,8 @@
   ],
   "business_rules": [
     "Read specialist reviews and live lifecycle blockers before compiling or approving. Do not treat an AI recommendation as a recorded human decision.",
-    "A skill never adds permissions or simulates success."
+    "A skill never adds permissions or simulates success.",
+    "On claim referrals, AI is advisory. Admin explicitly records Proceed/Decline with their own rationale after the final AI check. Only the Claims Manager decides the claim."
   ],
   "lifecycle_source": "lifecycle.py; tenant-service/routers/cases.py",
   "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",

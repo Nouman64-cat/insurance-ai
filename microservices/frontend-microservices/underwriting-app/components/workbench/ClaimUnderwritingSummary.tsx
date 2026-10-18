@@ -3,6 +3,7 @@ import { tx } from "@/lib/i18n/tx";
 import { fmtCoverage } from "@/lib/mock-data";
 
 type Claim = { claim_number: string | null; claim_type: string; submitted_amount: number; incident_date: string | null;
+  ai_recommendation?: string | null; underwriting_outcome?: {decision:string;reason:string;current:boolean} | null;
   referral_reason: string | null; ready: boolean; reviews: Record<string, { status: string; note: string | null }> };
 const STATUS: Record<string, string> = {PENDING:"Pending",IN_REVIEW:"In review",CLEARED:"Cleared",REFERRED:"Referred",DECLINED:"Declined"};
 
@@ -13,6 +14,8 @@ export default function ClaimUnderwritingSummary({ claim }: { claim: Claim }) {
     <p className="text-xs text-slate-600">{tx("Claimed")} {fmtCoverage(claim.submitted_amount)}{claim.incident_date ? ` · ${tx("Incident")} ${claim.incident_date}` : ""}</p>
     {claim.referral_reason && <p className="text-xs text-slate-600"><span className="font-semibold">{tx("Why Claims referred it")}:</span> {claim.referral_reason}</p>}
     <ul className="space-y-1 text-xs text-slate-600">{Object.entries(claim.reviews).map(([t,r]) => <li key={t}>{tx(t === "medical" ? "Medical review" : "Financial review")}: <span className="font-semibold">{tx(STATUS[r.status] ?? r.status)}</span></li>)}</ul>
-    <p className="text-xs text-blue-800">{tx(claim.ready ? "Both specialist reviews are complete. The Claims Manager records the final decision in the claims workbench." : "Submit your specialist review when ready. The Claims Manager records the final decision after both reviews are complete.")}</p>
+    {claim.ai_recommendation && <p className="text-xs text-slate-600">{tx("AI recommendation")}: <strong>{claim.ai_recommendation}</strong> · {tx("Advisory only")}</p>}
+    {claim.underwriting_outcome && <p className="text-xs text-slate-600">{tx("Admin underwriting outcome")}: <strong>{tx(claim.underwriting_outcome.decision === "PROCEED" ? "Proceed" : "Decline")}</strong> · {claim.underwriting_outcome.reason}</p>}
+    <p className="text-xs text-blue-800">{tx(claim.ready ? "The human underwriting outcome is recorded. The Claims Manager records the final decision in the claims workbench." : "Submit your specialist review when ready. Admin then records a human underwriting outcome after the AI check; the Claims Manager makes the final claim decision.")}</p>
   </section>;
 }

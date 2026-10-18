@@ -3,6 +3,7 @@ import type { AIDecision } from "@/lib/mock-data";
 interface StatusBadgeProps {
   decision: AIDecision;
   size?: "sm" | "md" | "lg";
+  advisory?: boolean;
 }
 
 const CONFIG: Record<
@@ -59,21 +60,21 @@ const SIZE = {
   lg: "px-3 py-1.5 text-sm gap-2",
 };
 
-export function StatusBadge({ decision, size = "md" }: StatusBadgeProps) {
+export function StatusBadge({ decision, size = "md", advisory = false }: StatusBadgeProps) {
   const cfg = CONFIG[decision];
   return (
     <span
       className={`inline-flex items-center rounded-full font-semibold tracking-wide ${cfg.classes} ${SIZE[size]}`}
     >
       <span className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot}`} />
-      {cfg.label}
+      {advisory ? `Recommend ${decision === "Auto Approve" ? "approval" : decision.toLowerCase()}` : cfg.label}
     </span>
   );
 }
 
 /** Large banner variant used in the AI Recommendation panel */
 /** `compact` is a slim one-line callout in sentence case (the case page's Overview); the default is the large box. */
-export function DecisionBanner({ decision, variant = "default" }: { decision: AIDecision; variant?: "default" | "compact" }) {
+export function DecisionBanner({ decision, variant = "default", advisory = false }: { decision: AIDecision; variant?: "default" | "compact"; advisory?: boolean }) {
   const BANNER: Record<AIDecision, { bg: string; border: string; text: string; sub: string; icon: string }> = {
     "Auto Approve": {
       bg: "bg-blue-50",
@@ -147,8 +148,10 @@ export function DecisionBanner({ decision, variant = "default" }: { decision: AI
   };
 
   const cfg = BANNER[decision];
+  const label = advisory ? `AI recommendation: ${decision}` : LABEL[decision];
+  const detail = advisory ? "Advisory only. A human must review the evidence and record the decision." : SUB[decision];
   if (variant === "compact") {
-    const title = LABEL[decision].charAt(0) + LABEL[decision].slice(1).toLowerCase();
+    const title = advisory ? label : label.charAt(0) + label.slice(1).toLowerCase();
     return (
       <div className={`flex items-start gap-3 rounded-xl ${cfg.bg} px-4 py-3`}>
         <span className={`mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-white text-sm font-bold ${cfg.text}`}>
@@ -156,7 +159,7 @@ export function DecisionBanner({ decision, variant = "default" }: { decision: AI
         </span>
         <div className="min-w-0">
           <p className={`text-sm font-semibold ${cfg.text}`}>{title}</p>
-          <p className={`text-sm leading-relaxed ${cfg.sub}`}>{SUB[decision]}</p>
+          <p className={`text-sm leading-relaxed ${cfg.sub}`}>{detail}</p>
         </div>
       </div>
     );
@@ -167,9 +170,9 @@ export function DecisionBanner({ decision, variant = "default" }: { decision: AI
         <span className={`text-3xl font-bold ${cfg.text}`}>{cfg.icon}</span>
         <div>
           <p className={`text-sm font-bold tracking-widest uppercase ${cfg.text}`}>
-            {LABEL[decision]}
+            {label}
           </p>
-          <p className={`mt-0.5 text-xs leading-relaxed ${cfg.sub}`}>{SUB[decision]}</p>
+          <p className={`mt-0.5 text-xs leading-relaxed ${cfg.sub}`}>{detail}</p>
         </div>
       </div>
     </div>

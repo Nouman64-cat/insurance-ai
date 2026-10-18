@@ -138,6 +138,10 @@ async def apply_ai_policy_status(db, policy: Policy, ai_decision: str, actor: st
 
 async def apply_ai_case_status(db, tenant_id: UUID, case: Case, ai_decision: str) -> None:
     """Move the case to the status this AI decision implies, with history."""
+    # Claim referrals have their own human review and Claims Manager decision.
+    # An assessment must neither resolve that referral nor undo any human case decision.
+    if getattr(case, "claim_id", None) or case.caseStatus in {CaseStatusEnum.APPROVED, CaseStatusEnum.REJECTED, CaseStatusEnum.CLOSED}:
+        return
     new_case_status = DECISION_CASE_STATUS.get(ai_decision)
     if new_case_status is None or new_case_status == case.caseStatus:
         return
@@ -174,6 +178,11 @@ async def persist_assessment(
     only happens once cover actually binds — see tenant-service
     routers/policies.py::_bind_cover, reached from payment confirmation.
     """
+    if case is not None and getattr(case, "claim_id", None):
+        # Serialize new advice with Admin's outcome and the Claims Manager's final decision.
+        # The assessment is still saved without changing either claim or policy lifecycle.
+        await db.exec(select(Case).where(Case.caseld == case.caseld, Case.tenant_id == tenant_id).with_for_update())
+
     assessment = RiskAssessment(
         tenant_id=tenant_id,
         customer_id=customer.id,
@@ -202,7 +211,7 @@ async def persist_assessment(
 
     # A case put on hold while the engine was still working keeps the result, but nothing about the case or its policy moves:
     # the AI never advances a held case (release, then re-run if needed).
-    if case is None or not case.on_hold:
+    if case is None or (not case.on_hold and not getattr(case, "claim_id", None)):
         await apply_ai_policy_status(db, policy, final_risk["ai_decision"], actor=actor)
         if case is not None:
             await apply_ai_case_status(db, tenant_id, case, final_risk["ai_decision"])

@@ -130,7 +130,7 @@ async def _process(event: RiskEvaluatedEvent) -> None:
     # Advance CaseWorkflow to decision/human_review — best-effort, outside the
     # DB transaction above (a workflow-step write failing must not undo an
     # already-committed RiskAssessment).
-    if case is not None:
+    if case is not None and not case.claim_id:
         step = "human_review" if payload.ai_decision in (
             "Human Review", "Fraud Investigation", "Postpone", "Request Additional Evidence",
         ) else "decision"

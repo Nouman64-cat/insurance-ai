@@ -1001,6 +1001,9 @@ async def update_case_status(
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
 
+    if case.claim_id and is_decision:
+        raise HTTPException(409, "Claim underwriting uses a human underwriting outcome, followed by the Claims Manager's claim decision. Use the claim-underwriting-outcome endpoint; AI recommendations do not decide claims.")
+
     old_status = case.caseStatus
     case.caseStatus = body.status
     case.updatedAt = datetime.utcnow()

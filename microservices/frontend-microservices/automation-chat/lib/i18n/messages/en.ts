@@ -31,6 +31,7 @@ const en = {
     exportJson: "Export as JSON",
     deleteChat: "Delete chat",
     seeMore: "See more",
+    backToPortal: "Back to portal",
     backToDashboard: "Back to Dashboard",
     dashboard: "Dashboard",
     collapse: "Collapse sidebar",

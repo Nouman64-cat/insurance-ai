@@ -1,3 +1,4 @@
+import calendar
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -43,3 +44,10 @@ def allocate(base, rows):
     for key, _ in sorted(raw, key=lambda x: (-(x[1] / CENT - cents[x[0]]), str(x[0])))[:remaining]:
         cents[key] += 1
     return {k: (v * CENT).quantize(CENT) for k, v in cents.items()}
+
+
+def disburse_date(earned_on: date, start: date) -> date:
+    """The producer's start day-of-month in the month after earning, clamped to
+    that month's end (a 31st start pays on 30 Apr / 28-29 Feb)."""
+    year, month = (earned_on.year + 1, 1) if earned_on.month == 12 else (earned_on.year, earned_on.month + 1)
+    return date(year, month, min(start.day, calendar.monthrange(year, month)[1]))

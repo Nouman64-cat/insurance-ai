@@ -321,4 +321,89 @@ def test_claim_review_next_steps_are_the_claims_not_a_new_applications():
         text = " ".join(steps)
         assert "Hospital records" in text and "plan exclusions to check: Suicide." in text and "CLM-2026-0003" in text
         assert "e-application" not in text and "salary slip" not in text and "AI" not in text
-        assert [c["label"] for c in chips] == ["Record my review"]
+        assert {c["label"] for c in chips} == {"Upload Hospital records", "Waive a document", "Record Plan exclusions to check", "Record my review"}
+
+
+@pytest.mark.parametrize('role,track,label', [
+    ('Medical Underwriter', 'medical', 'Hospital records'),
+    ('Financial Underwriter', 'financial', 'Payee bank account details / cancelled cheque'),
+])
+def test_claim_specialists_resolve_claim_upload_waive_and_record_findings(role, track, label):
+    from tool_executor import ChoiceNeeded
+    from track_specialists import SCOPES
+    tools = {'upload_underwriting_document', 'waive_underwriting_document', 'record_claim_underwriting_check'}
+    assert tools <= SCOPES[f'{track}_underwriting']
+    assert all(is_role_allowed(name, role) for name in tools)
+    assert all(not is_role_allowed(name, 'ClaimsAdjuster') for name in tools)
+    row = {**QUEUE[0], 'reference': 'UW-CLM-2026-0001-AB12', 'claim_id': 'claim-1', 'claim_number': 'CLM-2026-0001'}
+    workspace = {'reference': row['reference'], 'claim': {'claim_number': row['claim_number']}, 'read_only': False,
+        'required_documents': [{'type': label, 'received': False}], 'application_outstanding': [],
+        'requirements': [{'key': 'claim_exclusions', 'label': 'Plan exclusions', 'status': 'Required'}]}
+    service = FakeService({'GET /underwriting/reviews': [row], 'GET /underwriting/reviews/case-1': workspace,
+        'POST /underwriting-documents/waive': {'status': 'Waived'}, f'PUT /underwriting-tracks/{track}': {'status': 'IN_REVIEW'}})
+    args = {'claim_number': 'CLM-2026-0001', 'document_type': label}
+    upload = run('upload_underwriting_document', args, service, role)
+    assert upload['__client_execute__']
+    assert upload['tool_call']['args'] == {'case_id': 'case-1', 'case_number': row['reference'],
+        'document_type': label, 'underwriting_track': track}
+    assert not [call for call in service.calls if call[0] != 'GET']
+    with pytest.raises(ChoiceNeeded):
+        run('upload_underwriting_document', {**args, 'document_type': 'Unrelated document'}, service, role)
+    missing = run('waive_underwriting_document', args, service, role)
+    assert missing['needs_user_input'] and not [call for call in service.calls if call[0] != 'GET']
+    waived = run('waive_underwriting_document', {**args, 'reason': 'Verified evidence is already on file'}, service, role)
+    assert waived['success']
+    post = next(call for call in service.calls if call[0] == 'POST')
+    assert post[2] == {'document_type': label, 'reason': 'Verified evidence is already on file'}
+    finding = {**args, 'requirement': 'claim_exclusions', 'finding': 'Clear'}
+    assert run('record_claim_underwriting_check', finding, service, role)['needs_user_input']
+    assert not [call for call in service.calls if call[0] == 'PUT']
+    recorded = run('record_claim_underwriting_check', {**finding, 'note': 'Reviewed policy exclusion terms against supplied evidence'}, service, role)
+    assert recorded['success']
+    put = next(call for call in service.calls if call[0] == 'PUT')
+    assert put[2] == {'claim_checks': [{'key': 'claim_exclusions', 'finding': 'Clear',
+        'note': 'Reviewed policy exclusion terms against supplied evidence'}]}
+
+
+def test_claim_review_lookup_never_falls_back_from_an_unknown_claim_number():
+    service = FakeService({'GET /underwriting/reviews': QUEUE})
+    with pytest.raises(LookupError):
+        run('upload_underwriting_document', {'claim_number': 'CLM-2026-9999'}, service, 'Medical Underwriter')
+    assert not [call for call in service.calls if call[0] != 'GET']
+
+
+@pytest.mark.parametrize('role,tool', [
+    ('Medical Underwriter', 'run_ai_medical_underwriting'),
+    ('Financial Underwriter', 'run_ai_financial_underwriting'),
+    ('Medical Underwriter', 'send_e_application_questionnaire'),
+    ('Financial Underwriter', 'send_e_application_questionnaire'),
+])
+def test_claim_referrals_never_start_new_business_rating_or_questionnaires(role, tool):
+    row = {**QUEUE[0], 'reference': 'UW-CLM-2026-0001-AB12', 'claim_id': 'claim-1', 'claim_number': 'CLM-2026-0001'}
+    service = FakeService({'GET /underwriting/reviews': [row]})
+    result = run(tool, {'claim_number': row['claim_number']}, service, role)
+    assert result['success'] is False and 'claim' in result['message'].lower()
+    assert all(call[0] == 'GET' for call in service.calls)
+
+
+def test_claim_compile_needs_two_reviews_not_new_business_acr_and_pep():
+    case = {'id':'case-1','caseNumber':'UW-CLM-2026-0001-AB12','claim_id':'claim-1'}
+    reviews = {name:{'submitted':True,'status':'CLEARED','reviewer':'Human','note':'Reviewed'} for name in ('medical','financial')}
+    service = FakeService({'GET /underwriting-tracks':reviews,'GET /detail':{'pre_underwriting_status':{}}})
+    state = asyncio.run(srt._compile_state(case, ctx(service, 'Admin')))
+    assert state['ready'] and len(state['inputs']) == 2
+
+
+def test_admin_does_not_record_ai_decline_as_a_human_outcome_without_explicit_choice():
+    case = {'caseld':'case-1','caseNumber':'UW-CLM-2026-0001-AB12','claim_id':'claim-1'}
+    state = {'reviews_complete':True,'assessment_id':'risk-1','ai_recommendation':'Decline','outcome':None}
+    service = FakeService({'GET /claim-underwriting-outcome':state,'POST /claim-underwriting-outcome':{'success':True}})
+    with patch('specialist_review_tools._resolve_case',AsyncMock(return_value=case)):
+        result=run('record_claim_underwriting_outcome',{},service,'Admin')
+        assert result['needs_user_input'] and not [call for call in service.calls if call[0]=='POST']
+        result=run('record_claim_underwriting_outcome',{'decision':'PROCEED','reason':'Human reviewed evidence and supports continuing'},service,'Admin')
+        assert result['success']
+    body=next(call[2] for call in service.calls if call[0]=='POST')
+    assert body['decision']=='PROCEED' and body['assessment_id']=='risk-1'
+    assert is_role_allowed('record_claim_underwriting_outcome','Admin')
+    assert not is_role_allowed('record_claim_underwriting_outcome','ClaimsManager')

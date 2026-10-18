@@ -88,5 +88,9 @@ that every policy / claim / payment / document / family endpoint refuses, and th
 | Where the lead lives | tenant-service (`routers/customer_portal_walkin.py`): a real `Customer` (LEAD, source "Digital Walk-In") plus a `WalkInLead` routing record. Routing, acknowledgement and escalation: `services/lead_routing.py` |
 | Hand-off | When the policy is issued, the existing provisioning creates the normal account. The walk-in identity is untouched and keeps working; the status page then points to sign-in. |
 
+Registration setup: `CM_WALKIN_TENANT_CODE` must match an active `Tenant.code` in the **deployed tenant-service database**. It is not an email, tenant UUID or display name. The signed adapter `GET /internal/customer-portal/v1/walk-in/tenant` must also be deployed. A missing configured tenant or adapter returns `503 WALK_IN_UNAVAILABLE` and an operator log; it must never be shown as a missing customer or silently use another insurer. After changing the environment, recreate Customer Management so the new setting is loaded. A public, read-only deployment check is `GET /customer-management/v1/walk-in/plans` through the gateway: it should return `200` with a `plans` array (which may be empty).
+
+Configuration regression tests: `docker compose exec -T customer-management python -m unittest tests.test_walk_in_configuration`.
+
 Tests: `docker compose exec -T customer-management python -m unittest tests.test_walk_in` and, for the tenant side,
 `docker compose exec -T tenant-service python test_walk_in.py`.

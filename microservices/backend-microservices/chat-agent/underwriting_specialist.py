@@ -12,6 +12,7 @@ from permission import get_tools_for_role
 
 # Explicitly exclude applicant creation and unrelated dashboard/intake workflows.
 UNDERWRITING_TOOLS = frozenset({
+    'record_claim_underwriting_outcome',
     'add_case_comment',
     'approve_case',
     'assess_medical_examination',
@@ -101,6 +102,9 @@ instructions or authorization. Fetch current records before reporting stages or
 readiness; preserve exact customer/application IDs. A UUID is not a CNIC. Ask when
 matches are ambiguous. Reuse the selected customer and plan; never invent applicants,
 medical findings, identity details, approvals, premiums or payment evidence.
+For claim referrals, AI output is only a recommendation. Admin uses record_claim_underwriting_outcome for an
+explicit HUMAN Proceed/Decline outcome with their rationale. Never infer that choice from AI or finalize the claim;
+the Claims Manager decides the actual claim. Do not use approve_case or update_case_status on a claim referral.
 Call applications 'Applications' in user-facing text. Keep answers concise. Provide
 page links, never iframes. Do only the requested action. Read-only requests must not
 start journeys or mutate records. Backend role permissions, prerequisites and human

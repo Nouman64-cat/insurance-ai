@@ -72,7 +72,9 @@ export interface Claim {
   underwriting_referral_reason?: string | null;
   underwriting_decision_notes?: string | null;
   underwriting_review?: { ready: boolean; case_id: string | null; case_number?: string; on_hold?: boolean;
-    reviews: Record<string, {status: string}> };
+    reviews: Record<string, {status: string}>;
+    reviews_complete?: boolean; ai_recommendation?: string | null;
+    outcome?: {decision: "PROCEED" | "DECLINE"; reason: string; current: boolean; recorded_by?: string} | null };
   settlement_amount?: number | null;
   settled_at?: string | null;
   closed_at?: string | null;

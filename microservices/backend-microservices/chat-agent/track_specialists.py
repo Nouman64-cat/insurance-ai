@@ -28,18 +28,21 @@ TRACK_ROLES = {"Medical Underwriter": "medical_underwriting", "Financial Underwr
 FINAL_ROLES = {"SuperAdmin", "Admin", "Underwriter"}
 DOMAINS = frozenset({"specialist_review", "underwriting_ops"})
 
+CLAIM_REVIEW_TOOLS = {"upload_underwriting_document", "waive_underwriting_document", "record_claim_underwriting_check"}
+
 NAVIGATION = {"navigate_to_page", "show_record", "search_records"}
 MEDICAL_TOOLS = frozenset({
     "list_my_underwriting_reviews", "get_underwriting_review", "start_my_review",
-    "send_e_application_questionnaire", "run_ai_medical_underwriting", "record_underwriting_review", *NAVIGATION,
+    "send_e_application_questionnaire", "run_ai_medical_underwriting", "record_underwriting_review", *NAVIGATION, *CLAIM_REVIEW_TOOLS,
     "waive_medical_examination", "list_claim_underwriting_referrals",
 })
 FINANCIAL_TOOLS = frozenset({
     "list_my_underwriting_reviews", "get_underwriting_review", "start_my_review",
     "send_e_application_questionnaire", "run_insurance_history_check", "run_ai_financial_underwriting",
-    "record_underwriting_review", *NAVIGATION, "list_claim_underwriting_referrals",
+    "record_underwriting_review", *NAVIGATION, *CLAIM_REVIEW_TOOLS, "list_claim_underwriting_referrals",
 })
 FINAL_TOOLS = frozenset({
+    "record_claim_underwriting_outcome",
     *FINAL_UNDERWRITING_TOOLS, "assign_underwriting_track", "get_case_details", "list_cases",
     "submit_agent_confidential_report", "run_compliance_screening", "override_compliance_screening",
     "approve_case", "update_case_status", "add_case_comment", *NAVIGATION,
@@ -47,9 +50,9 @@ FINAL_TOOLS = frozenset({
 })
 
 _FINAL = re.compile(
-    r"\b(?:compile|final underwriting|specialist reviews?|(?:medical|financial) (?:review|underwriter|underwriting)s?|"
+    r"\b(?:compile|human underwriting outcome|claim underwriting outcome|final underwriting|specialist reviews?|(?:medical|financial) (?:review|underwriter|underwriting)s?|"
     r"assign (?:the |a )?(?:medical|financial)|who (?:is|has) (?:the )?(?:medical|financial))\b", re.I)
-_FOLLOWUP = re.compile(r"\b(?:assign|compile|review|acr|pep|screening|ready|status|confirm|approve|decline|next)\b", re.I)
+_FOLLOWUP = re.compile(r"\b(?:assign|compile|review|acr|pep|screening|ready|status|confirm|approve|proceed|decline|next)\b", re.I)
 _SHORT = re.compile(r"^(?:yes|no|ok(?:ay)?|go ahead|cancel|confirm|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\s*[.!?]*$", re.I)
 
 
@@ -98,7 +101,7 @@ called with confirm=true ONLY when the user's own message confirms that exact ac
 'Confirm'/'Record' chip). Never infer a review decision or rationale from AI output — ask the underwriter."""
 
 _MEDICAL = """You are the Medical Underwriter's assistant. You work only on the medical review of the applications
-assigned to this user. Workflow per application: start the review if unassigned; email the medical e-application
+assigned to this user, including claim referrals. Workflow for NEW BUSINESS: start the review if unassigned; email the medical e-application
 if the customer hasn't submitted it; the medical requirements (required tests, from the non-medical limit grid)
 are worked out automatically; examination reports are uploaded on the application's Documents tab and accepted
 by OCR; once every required test has an accepted report, run AI medical underwriting — it shows the AI-read
@@ -107,7 +110,7 @@ underwriter records their review (Cleared / Referred / Declined) with their own 
 Financial questions, the agent's report, PEP screening and final approval belong to other roles — say so."""
 
 _FINANCIAL = """You are the Financial Underwriter's assistant. You work only on the financial review of the
-applications assigned to this user. Workflow per application: start the review if unassigned; email the
+applications assigned to this user, including claim referrals. Workflow for NEW BUSINESS: start the review if unassigned; email the
 financial e-application (employment, income, commitments, assets, premium funding, existing cover) if the
 customer hasn't submitted it; run the insurance history check and get any flag resolved; make sure the plan's
 financial documents (e.g. salary slip) are uploaded and accepted; then run AI financial underwriting — analysis
@@ -123,12 +126,17 @@ Request the ACR from the agent and run PEP screening when they are missing; a fl
 on an explicit instruction with a real reason. When all four are in, compile_final_underwriting shows a preview;
 run it with confirm=true only after the user confirms. The compile produces a recommendation — a specialist's
 decline or referral is never overridden — and approving the application is a separate, explicit step. You do not
-do the specialists' work (e-application answers, medical results, AI financial runs, their decisions)."""
+do the specialists' work (e-application answers, medical results, AI financial runs, their decisions).
+For CLAIM underwriting referrals, the final AI output is advisory. Never call the claim declined or approved based
+on that output. Admin records a separate HUMAN Proceed/Decline underwriting outcome with record_claim_underwriting_outcome,
+only when the user explicitly chooses it and supplies a rationale. The human may disagree with the AI recommendation.
+The claim stays pending for the Claims Manager, who makes the actual final claim decision. Do not use approve_case
+or update_case_status to finalize a claim referral."""
 
 # A Medical or Financial Underwriter's assistant is their whole chat (specialist_router): nothing outside the track.
 _TRACK_ONLY = """You help ONLY with this {track} review work on the applications assigned to this user. For anything
 else — customer acquisition or onboarding, leads, proposals, other underwriting tracks, final approval, policy
-issuance, premiums, claims, commissions, users, rules, other pages or general questions — do not offer help, do not
+issuance, premiums, claim registration or settlement, commissions, users, rules, other pages or general questions — do not offer help, do not
 say you can do it and do not describe how it is done: reply in one or two sentences that you can only help with
 {track} underwriting here, and offer a {track} review action instead (e.g. show my reviews). Never open a page
 outside the Underwriting workspace."""
@@ -146,6 +154,8 @@ SERVICES = {
 
 def specialist_prompt(kind: str, locale: str) -> str:
     prompt = f"{PROMPTS[kind]}\n\n{_COMMON}"
+    if kind != "final_underwriting":
+        prompt += "\nAssigned claim underwriting referrals ARE in your scope. Resolve a CLM number or UW-CLM reference with get_underwriting_review. When it returns claim data, use that claim's plan documents and saved checks; never run a new-business questionnaire, medical exam, insurance history or AI rating for a claim. Use upload_underwriting_document to open the actual file picker in chat. Use waive_underwriting_document only for an explicit waiver with the underwriter's reason, within this track. Exclusions, waiting periods and contestability are findings, not document waivers: use record_claim_underwriting_check with user-supplied finding and evidence. Then record_underwriting_review on explicit instruction. Only the Claims Manager records the final combined claim decision. Never claim these tools are unavailable without checking your attached tools.\n"
     if locale == "ur":
         prompt += "\nReply in Urdu script; preserve exact IDs, names, dates and amounts."
     return prompt

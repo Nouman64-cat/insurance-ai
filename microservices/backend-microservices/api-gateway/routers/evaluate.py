@@ -519,7 +519,7 @@ async def evaluate_stream(
 
             customer, policy, case, assessment = await asyncio.shield(asyncio.create_task(_save()))
 
-            if case is not None:
+            if case is not None and not case.claim_id:
                 step = "human_review" if assessment.ai_decision.value in (
                     "Human Review", "Fraud Investigation", "Postpone", "Request Additional Evidence",
                 ) else "decision"

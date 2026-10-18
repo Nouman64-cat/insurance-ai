@@ -28,6 +28,7 @@ const workbench: Record<string, string> = {
   "Underwriting Workbench": "انڈر رائٹنگ ورک بینچ",
   "Underwriting sections": "انڈر رائٹنگ کے حصے",
   "Automation": "آٹومیشن",
+  "Back to portal": "پورٹل پر واپس",
   "← Back to the portal": "← پورٹل پر واپس",
   "Signing you in…": "آپ کو سائن اِن کیا جا رہا ہے…",
   "Can't reach the sign-in service. Retrying…": "سائن اِن سروس سے رابطہ نہیں ہو سکا۔ دوبارہ کوشش جاری ہے…",

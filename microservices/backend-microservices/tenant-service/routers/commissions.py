@@ -13,6 +13,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 from routers.auth import _get_current_user, _role_name, oauth2_scheme
+from services.agent_commission import AGENT_COMMISSION_RULE_SET_CODE
 from services.commission_engine import accrue_receipt, automatic_assignment
 from shared.models.core import AcquisitionSource, Customer, User, InsurancePlan, Policy, PremiumReceipt
 from shared.models.commission import (CommissionAccrual, CommissionAgreement, CommissionAssignment,
@@ -57,8 +58,8 @@ class AgreementIn(BaseModel):
 
 
 class ProducerIn(BaseModel):
+    # Rates come from the RS-COM-002 rule set; a legacy agreement_id in the body is ignored.
     source_id: UUID
-    agreement_id: UUID
     split_pct: Pct
 
 
@@ -121,8 +122,6 @@ async def setup(tenant_id: UUID, customer_id: UUID | None = None,
             raise HTTPException(404, "Customer not found in this tenant")
     sources = {r.id: r for r in (await session.exec(select(AcquisitionSource).where(
         AcquisitionSource.tenant_id == tenant_id))).all()}
-    agreements = {r.id: r for r in (await session.exec(select(CommissionAgreement).where(
-        CommissionAgreement.tenant_id == tenant_id))).all()}
     q = select(Policy, Customer).join(Customer, Customer.id == Policy.customer_id).where(
         Policy.tenant_id == tenant_id, Customer.tenant_id == tenant_id,
         Policy.master_policy_id.is_(None), Policy.family_policy_id.is_(None))
@@ -139,16 +138,10 @@ async def setup(tenant_id: UUID, customer_id: UUID | None = None,
     posted = set((await session.exec(select(CommissionAccrual.policy_id).where(
         CommissionAccrual.tenant_id == tenant_id, CommissionAccrual.policy_id.in_(policy_ids),
         CommissionAccrual.status == 'POSTED'))).all()) if policy_ids else set()
-    today = date.today()
     owners = {c.id: c for _, c in rows[:50]}
     agent_ids = [c.assigned_agent_id for c in owners.values() if c.assigned_agent_id]
     users = (await session.exec(select(User).where(User.tenant_id == tenant_id, User.id.in_(agent_ids)))).all() if agent_ids else []
-    configuration = {'customers': owners, 'users': {u.id: u for u in users}, 'sources': sources,
-        'agreements': agreements,
-        'plans': (await session.exec(select(InsurancePlan).where(InsurancePlan.tenant_id == tenant_id))).all(),
-        'rules': (await session.exec(select(CommissionPlanRule).where(CommissionPlanRule.tenant_id == tenant_id))).all()}
-    def current(a):
-        return a.status == 'APPROVED' and a.effective_from <= today and (not a.effective_to or today <= a.effective_to)
+    configuration = {'customers': owners, 'users': {u.id: u for u in users}, 'sources': sources}
     def suggested(c):
         source = sources.get(c.acquisition_source_id)
         if source and source.is_active:
@@ -162,21 +155,16 @@ async def setup(tenant_id: UUID, customer_id: UUID | None = None,
         automatic = None
         if not split:
             try:
-                candidate, plan = await automatic_assignment(session, policy, today, configuration)
-                automatic = {'source_id': candidate.source_id, 'agreement_id': candidate.agreement_id,
-                             'plan_id': plan.id, 'split_pct': '100'}
+                candidate = await automatic_assignment(session, policy, configuration)
+                automatic = {'source_id': candidate.source_id, 'split_pct': '100'}
             except ValueError as exc:
                 reasons.append(str(exc))
         elif sum(a.split_pct for a in split) != Decimal(100) or any(a.split_pct <= 0 for a in split):
             reasons.append('Producer splits must total 100%')
         for allocation in split:
-            source, agreement = sources.get(allocation.source_id), agreements.get(allocation.agreement_id)
+            source = sources.get(allocation.source_id)
             if not source or not source.is_active:
                 reasons.append('Producer is missing or inactive')
-            if not agreement or not current(agreement):
-                reasons.append('Agreement is not approved and effective today')
-            elif agreement.basis != 'RECEIPT_BASE':
-                reasons.append('Unsupported commission basis')
         result.append({'id': policy.id, 'policy_number': policy.policy_number,
             'customer_id': owner.id, 'customer_name': owner.name, 'product_name': policy.product_name,
             'status': policy.status, 'recommended_source_id': suggested(owner),
@@ -191,7 +179,7 @@ async def setup(tenant_id: UUID, customer_id: UUID | None = None,
             'acquisition_source_name': source.name if source else None,
             'recommended_source_id': suggested(customer)}
     return {'actor_id': user.id, 'customer': context, 'policies': result, 'has_more': len(rows) > 50,
-        'approved_agreement_count': sum(current(a) for a in agreements.values()),
+        'commission_rule_set_code': AGENT_COMMISSION_RULE_SET_CODE,
         'basis_description': 'Receipt base including fees/duty; excludes surcharge',
         'settlement_enabled': False}
 
@@ -265,11 +253,8 @@ async def assign(tenant_id: UUID, policy_id: UUID, body: AssignmentsIn, user=Dep
         raise HTTPException(409, "Producer assignments are frozen after the first posting")
     for p in body.producers:
         source = await session.get(AcquisitionSource, p.source_id)
-        agreement = await session.get(CommissionAgreement, p.agreement_id)
         if not source or source.tenant_id != tenant_id or not source.is_active:
             raise HTTPException(422, "Producer must be an active acquisition source in this tenant")
-        if not agreement or agreement.tenant_id != tenant_id or agreement.status != "APPROVED":
-            raise HTTPException(422, "Agreement must be approved in this tenant")
     await session.exec(delete(CommissionAssignment).where(
         CommissionAssignment.tenant_id == tenant_id, CommissionAssignment.policy_id == policy_id,
     ))

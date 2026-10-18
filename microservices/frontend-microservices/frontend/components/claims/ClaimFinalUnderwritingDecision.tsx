@@ -38,8 +38,10 @@ export default function ClaimFinalUnderwritingDecision({claimId,role,disabled=fa
       try{setClaim(await getClaimDetail(claimId));setError("");}catch(e:any){setError(e?.message ?? "Could not refresh the reviews.");}
     }}>{tx("Refresh reviews")}</button></div>
     {review && <div className="space-y-1 text-xs text-slate-600">{["medical","financial"].map(track=><p key={track}>{tx(track==="medical"?"Medical review":"Financial review")}: <strong>{tx(({CLEARED:"Cleared",REFERRED:"Referred",DECLINED:"Declined",IN_REVIEW:"In review",PENDING:"Pending"} as Record<string,string>)[review.reviews[track]?.status] ?? "Pending")}</strong></p>)}</div>}
+    {review?.ai_recommendation && <p className="text-xs text-slate-600">{tx("AI recommendation")}: <strong>{review.ai_recommendation}</strong> · {tx("Advisory only")}</p>}
+    {review?.outcome && <div className="rounded-lg border bg-white p-3 text-xs text-slate-700"><strong>{tx("Admin underwriting outcome")}: {tx(review.outcome.decision === "PROCEED" ? "Proceed" : "Decline")}</strong><p>{review.outcome.reason}</p>{!review.outcome.current && <p>{tx("The outcome needs to be refreshed against the current evidence.")}</p>}</div>}
     <button type="button" disabled={disabled || !ready || saving} onClick={()=>setOpen(true)} className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">{tx("Record final decision")}</button>
-    {!ready && <p className="text-xs text-slate-600">{tx(review?.on_hold?"The underwriting referral is on hold.":"Available once both the medical and financial reviews on the current referral are submitted.")}</p>}
+    {!ready && <p className="text-xs text-slate-600">{tx(review?.on_hold?"The underwriting referral is on hold.":"Available after both specialist reviews and Admin’s human underwriting outcome on the current referral.")}</p>}
     {error && <p role="alert" className="text-sm text-rose-700">{tx(error)}</p>}
     {open && <form role="dialog" aria-modal="true" aria-label={tx("Final claim underwriting decision")} className="space-y-3 rounded-xl bg-white p-4" onSubmit={async e=>{
       e.preventDefault();if(disabled || !ready || saving || !notes.trim())return;

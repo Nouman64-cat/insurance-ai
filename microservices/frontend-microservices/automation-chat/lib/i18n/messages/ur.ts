@@ -33,6 +33,7 @@ const ur: Messages = {
     exportJson: "JSON میں ایکسپورٹ کریں",
     deleteChat: "چیٹ حذف کریں",
     seeMore: "مزید دیکھیں",
+    backToPortal: "پورٹل پر واپس",
     backToDashboard: "ڈیش بورڈ پر واپس",
     dashboard: "ڈیش بورڈ",
     collapse: "سائیڈ بار بند کریں",

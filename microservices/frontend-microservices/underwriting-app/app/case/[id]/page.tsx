@@ -1,5 +1,6 @@
 "use client";
 
+import ClaimAdminUnderwritingOutcome from "@/components/workbench/ClaimAdminUnderwritingOutcome";
 import { runCaseCompliance } from "@/app/services/cases";
 import { displayDate } from '../../../lib/dateDisplay';
 import {
@@ -3912,7 +3913,7 @@ function GeneralCasePage({ params }: { params: { id: string } }) {
 
       <CaseWorkspaceHeader headerRef={headRef} name={customer?.name ?? tx("Unknown Customer")} reference={c.caseNumber}
         status={<span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${CASE_STATUS_STYLE[c.caseStatus] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>{c.caseStatus}</span>}
-        extraStatus={aiDecision && <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">{tx("AI")} <StatusBadge decision={aiDecision} size="sm" /></span>}
+        extraStatus={aiDecision && <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">{tx("AI recommendation")} <StatusBadge decision={aiDecision} size="sm" advisory={Boolean(c.claim_id)} /></span>}
         fields={[{ label: "CNIC", value: customer?.cnic }, { label: "Plan", value: policy?.product_name }, { label: "Cover", value: policy ? fmtCoverage(policy.coverage_amount) : null }, { label: "Term", value: policy ? `${policy.term_years} ${tx("yrs")}` : null }, { label: "Opened", value: displayDate(c.createdAt) }]}
         tab={caseTab} onTab={setCaseTab} documentCount={artifacts.length} actions={
           <div className="flex flex-shrink-0 flex-wrap items-center gap-2 lg:justify-end">
@@ -3954,6 +3955,9 @@ function GeneralCasePage({ params }: { params: { id: string } }) {
             {decisionButtons}
           </div>
         } />
+
+      {c.claim_id && tenantId && <ClaimAdminUnderwritingOutcome tenantId={tenantId} caseId={caseId} role={userRole}
+        refreshKey={assessment?.id} onDone={fetchDetail} />}
 
       {onHold && (
         <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
@@ -4436,7 +4440,7 @@ function GeneralCasePage({ params }: { params: { id: string } }) {
 
                 {aiDecision && !trace.open && (
                   <div className="border-t border-slate-100 px-5 py-4">
-                    <DecisionBanner decision={aiDecision} variant="compact" />
+                    <DecisionBanner decision={aiDecision} variant="compact" advisory={Boolean(c.claim_id)} />
                   </div>
                 )}
               </div>
@@ -5547,10 +5551,10 @@ function GeneralCasePage({ params }: { params: { id: string } }) {
               <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div className="md:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col items-start justify-center gap-3">
                   <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                    {tx("Final AI Decision")}
+                    {tx("AI recommendation")}
                   </span>
                   {aiDecision ? (
-                    <StatusBadge decision={aiDecision} size="lg" />
+                    <StatusBadge decision={aiDecision} size="lg" advisory={Boolean(c.claim_id)} />
                   ) : (
                     <span className="text-xl font-semibold text-slate-400">{tx("Pending")}</span>
                   )}

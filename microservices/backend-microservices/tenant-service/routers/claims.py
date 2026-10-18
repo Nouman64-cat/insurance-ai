@@ -24,6 +24,7 @@ from shared.models.core import (
     CaseTypeEnum,
     Claim,
     ClaimPayout,
+    ClaimProcess,
     ClaimStatusEnum,
     ClaimStatusHistory,
     Customer,
@@ -274,6 +275,35 @@ class ClaimPayoutCreate(BaseModel):
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+def _same_claim_event(existing, process, body, *, group_member_id=None, group_dependent_id=None,
+                      coverage_type=None, covered_person_relationship="Self", covered_person_name=None,
+                      covered_person_cnic=None) -> bool:
+    """A different reported death date or claimant does not create another insured loss."""
+    if (existing.group_member_id, existing.group_dependent_id, existing.coverage_type) != (
+        group_member_id, group_dependent_id, coverage_type
+    ) or existing.claim_type.casefold() != body.claim_type.casefold():
+        return False
+    if not group_member_id:
+        previous_relationship = (process.covered_person_relationship if process else None) or "Self"
+        if previous_relationship.casefold() != covered_person_relationship.casefold():
+            return False
+        if previous_relationship.casefold() != "self":
+            # Family claims concern the covered person, not the person filing the claim.
+            norm = lambda value: "".join((value or "").casefold().split()).replace("-", "")
+            old_cnic = norm(process.covered_person_cnic) if process else ""
+            new_cnic = norm(covered_person_cnic)
+            if old_cnic and new_cnic:
+                if old_cnic != new_cnic:
+                    return False
+            elif not (process and norm(process.covered_person_name) and
+                      norm(process.covered_person_name) == norm(covered_person_name)):
+                return False
+    if "death" in body.claim_type.casefold():
+        return True
+    return (existing.incident_date == (body.incident_date or date.today()) and
+            abs(existing.submitted_amount - body.submitted_amount) < 0.01)
+
+
 async def open_claim(
     session: AsyncSession,
     tenant_id: UUID,
@@ -283,20 +313,27 @@ async def open_claim(
     group_member_id: Optional[UUID] = None,
     group_dependent_id: Optional[UUID] = None,
     coverage_type: Optional[str] = None,
+    covered_person_relationship: str = "Self",
+    covered_person_name: Optional[str] = None,
+    covered_person_cnic: Optional[str] = None,
+    commit: bool = True,
 ) -> tuple[Claim, Policy, Optional[Customer]]:
     """Open an FNOL: the claim, its SLA case and the first status-history row.
     Shared by POST /claims and the group-certificate claim endpoint
-    (routers/group_claims.py), which adds who the loss is about. Commits."""
+    (routers/group_claims.py), which adds who the loss is about. The workflow
+    passes commit=False so registration and its process are saved atomically."""
     tenant = await session.get(Tenant, tenant_id)
     if tenant is None or not tenant.is_active:
         raise HTTPException(status_code=404, detail="Tenant not found or inactive")
 
-    policy = await session.get(Policy, body.policy_id)
+    # Serialize registrations on this policy, including concurrent copilot tool calls.
+    policy = (await session.exec(select(Policy).where(
+        Policy.id == body.policy_id, Policy.tenant_id == tenant_id
+    ).with_for_update())).first()
     if policy is None or policy.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Policy not found for this tenant")
 
     customer = await session.get(Customer, policy.customer_id)
-    claim_num = await _generate_claim_number(session, tenant_id)
 
     # Simple AI risk scoring recommendation
     fraud_prob = 0.02
@@ -307,6 +344,17 @@ async def open_claim(
     existing_claims = (await session.exec(
         select(Claim).where(Claim.policy_id == policy.id, Claim.tenant_id == tenant_id)
     )).all()
+    for existing in existing_claims:
+        process = (await session.exec(select(ClaimProcess).where(ClaimProcess.claim_id == existing.id))).first()
+        if _same_claim_event(existing, process, body, group_member_id=group_member_id,
+                             group_dependent_id=group_dependent_id, coverage_type=coverage_type,
+                             covered_person_relationship=covered_person_relationship,
+                             covered_person_name=covered_person_name, covered_person_cnic=covered_person_cnic):
+            raise HTTPException(409, f"Claim {existing.claim_number} already records this insured event "
+                                f"(event date {existing.incident_date}). No new claim was registered. "
+                                "A date correction must be reviewed on the existing claim with supporting evidence; "
+                                "do not register another claim to change the date or eligibility.")
+    claim_num = await _generate_claim_number(session, tenant_id)
     if len(existing_claims) > 0:
         for ec in existing_claims:
             if ec.claim_type == body.claim_type and abs(ec.submitted_amount - body.submitted_amount) < 1.0:
@@ -369,8 +417,11 @@ async def open_claim(
         notes=body.notes or "FNOL intake completed and claim created.",
     )
     session.add(history)
-    await session.commit()
-    await session.refresh(claim)
+    if commit:
+        await session.commit()
+        await session.refresh(claim)
+    else:
+        await session.flush()
     return claim, policy, customer
 
 
@@ -559,8 +610,11 @@ async def claim_underwriting_review_state(session: AsyncSession, claim: Claim) -
         and not case.on_hold
         and str(getattr(case.caseStatus,'value',case.caseStatus)) not in {'Approved','Closed','Rejected'}
         and all(reviews.get(t,{}).get('status') in {'CLEARED','REFERRED','DECLINED'} for t in ('medical','financial')))
+    from services.claim_underwriting_opinion import opinion_state
+    opinion = await opinion_state(session, case)
+    ready = ready and bool(opinion['outcome'] and opinion['outcome']['current'])
     return {"ready": ready, "case_id": str(case.caseld), "case_number": case.caseNumber,
-            "on_hold": case.on_hold, "reviews": reviews}
+            "on_hold": case.on_hold, "reviews": reviews, **opinion}
 
 
 @router.get("/{claim_id}", summary="Get Claim Detail")
@@ -1167,7 +1221,7 @@ async def resolve_claim_underwriting(
         .with_for_update().execution_options(populate_existing=True))).one()
     state = await claim_underwriting_review_state(session, claim)
     if not state['ready']:
-        raise HTTPException(409, "Both the medical and the financial review must be completed on the current, open referral before the Claims Manager records the final decision.")
+        raise HTTPException(409, "Complete both specialist reviews, the final AI assessment and the Admin human underwriting outcome on the current open referral before the Claims Manager records the final decision.")
     if not (body.decision_notes or '').strip():
         raise HTTPException(422, "Record the Claims Manager's rationale for the final decision.")
 
@@ -1186,6 +1240,8 @@ async def resolve_claim_underwriting(
         CaseUnderwritingTrack.case_id == case.caseld, CaseUnderwritingTrack.tenant_id == tenant_id))).all()
     findings = [f"{t.track.title()} review {t.status}" + (f" - {t.note}" if t.note else "") for t in tracks]
     results = f" Reviews: {'; '.join(findings)}." if findings else ""
+    opinion = state.get('outcome') or {}
+    results += f" Human underwriting outcome: {opinion.get('decision')} - {opinion.get('reason')}. AI recommendation: {state.get('ai_recommendation')} (advisory)."
     claim.underwriting_decision_notes = f"Claims Manager Resolution [{body.decision}] ({timestamp}): {body.decision_notes}.{results}"
     session.add(claim)
     case.caseStatus = CaseStatusEnum.REJECTED if body.decision == "DECLINE_NON_DISCLOSURE" else CaseStatusEnum.APPROVED

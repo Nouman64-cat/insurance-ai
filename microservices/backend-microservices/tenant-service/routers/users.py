@@ -137,6 +137,22 @@ async def verify_admin(
         )
 
 
+async def verify_tenant_member(
+    tenant_id: UUID,
+    token: str = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Tenant data (customers, families, organisations, plans, group business) is for any active user of this
+    tenant, whatever their role; a SuperAdmin may reach any tenant. Role-specific limits live in the endpoints."""
+    user = await _get_current_user(token, session)  # 401 for a missing / invalid token or a removed account
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Your account is inactive.")
+    if user.tenant_id != tenant_id:
+        role = await session.get(Role, user.role_id)
+        if not role or role.name != "SuperAdmin":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot access another tenant's data.")
+
+
 async def _acting(token: str, session: AsyncSession) -> tuple[User, str]:
     """The signed-in user and their role name (verify_admin has already checked they may manage users)."""
     user = await _get_current_user(token, session)
