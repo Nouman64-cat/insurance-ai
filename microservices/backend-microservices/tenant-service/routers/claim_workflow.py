@@ -677,7 +677,10 @@ async def register_claim(
         policy_id=policy_id, claim_type=cfg.CLAIM_CATEGORIES[body.category]["claim_type"], submitted_amount=body.claimed_amount,
         incident_date=body.event_date, notes=body.notes or f"Intimated via {body.channel}.", claimant_type=claimant_type,
         claimant_name=body.claimant_name.strip(), claimant_cnic=body.claimant_cnic,
-        claimant_relationship=body.claimant_relationship, claimant_phone=body.claimant_phone))
+        claimant_relationship=body.claimant_relationship, claimant_phone=body.claimant_phone),
+        covered_person_relationship=body.covered_person_relationship,
+        covered_person_name=body.covered_person_name, covered_person_cnic=body.covered_person_cnic,
+        commit=False)
 
     segment = eng._segment(policy)
     covered_name = (body.covered_person_name or "").strip() or (customer.name if customer and body.covered_person_relationship == "Self" else None)

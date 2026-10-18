@@ -119,6 +119,12 @@ export interface ActuarialImpactDetail {
   risk_level?: number | null;
   /** Initial-premium split (RS-PAY-001): the % of the premium collected before underwriting; the rest is paid at policy issuance. */
   upfront_payment_pct?: number | null;
+  /** Agent commission (RS-COM-002): commission_pct is paid on the first premium after issuance; later premiums earn only when recurring … */
+  commission_recurring?: boolean;
+  /** … at this rate (commission_pct when empty) … */
+  recurring_commission_pct?: number | null;
+  /** … for policy years up to this one (no limit when empty). */
+  recurring_years?: number | null;
 }
 
 export const DEFAULT_IMPACT_DATA: ActuarialImpactDetail = {

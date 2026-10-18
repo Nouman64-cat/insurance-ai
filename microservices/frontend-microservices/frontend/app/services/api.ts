@@ -3,7 +3,8 @@ import { sessionExpired } from "@/lib/sso";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 export const OCR_BASE_URL = process.env.NEXT_PUBLIC_OCR_URL;
-export const SUMMARIZER_BASE_URL = process.env.NEXT_PUBLIC_SUMMARIZER_URL;
+// Summarization uses the authenticated API Gateway, never a public LLM host.
+export const SUMMARIZER_BASE_URL = API_BASE_URL;
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -67,6 +68,14 @@ export const summarizerApi = axios.create({
     "Content-Type": "application/json",
   },
   timeout: 120_000,
+});
+
+summarizerApi.interceptors.request.use((config) => {
+  if (typeof window !== "undefined") {
+    const token = localStorage.getItem("jwt_token");
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
 });
 
 summarizerApi.interceptors.response.use(

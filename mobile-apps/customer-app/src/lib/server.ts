@@ -2,11 +2,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL as DEFAULT_URL } from '../config';
 
 /**
- * Which API gateway the app talks to. Normally that is the address worked out in config.ts. While developing, it can be overridden
+ * Which API gateway the app talks to. Normally that is the deployed address in config.ts. While developing, it can be overridden
  * from the sign-in screens ("Check connection"), so a wrong or changed computer address never needs a restart of Metro or a rebuild.
  * The override is only read in development builds; a release build always uses its configured address.
  */
-const KEY = 'dev_api_url';
+// Ignore overrides saved before the switch from a local gateway to the deployed backend.
+const KEY = 'dev_api_url_v2';
 let override: string | null = null;
 let loaded = false;
 
@@ -26,9 +27,11 @@ export const defaultApiUrl = DEFAULT_URL;
 export function normalizeServerUrl(input: string): string | null {
   let v = input.trim().replace(/\/+$/, '');
   if (!v) return null;
-  if (!/^https?:\/\//i.test(v)) v = `http://${v}`;
+  if (!/^https?:\/\//i.test(v)) {
+    const local = /^(localhost|(?:\d{1,3}\.){3}\d{1,3})(:\d{1,5})?$/i.test(v);
+    v = local ? `http://${v}${/:\d{1,5}$/.test(v) ? '' : ':8010'}` : `https://${v}`;
+  }
   if (!/^https?:\/\/[^\s/:]+(:\d{1,5})?$/i.test(v)) return null;
-  if (!/:\d{1,5}$/.test(v)) v += ':8010';
   return v;
 }
 

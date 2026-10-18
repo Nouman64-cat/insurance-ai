@@ -831,7 +831,7 @@ function DirectOcrTab() {
     try {
       const body: { documents: string[]; max_words?: number } = { documents: extractedDocuments };
       const parsed = parseInt(maxWords, 10); if (!isNaN(parsed) && parsed > 0) body.max_words = parsed;
-      const response = await fetch(`${SUMMARIZER_BASE_URL}/summarize/stream`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const response = await fetch(`${SUMMARIZER_BASE_URL}/summarize/stream`, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("jwt_token") ?? ""}` }, body: JSON.stringify(body) });
       if (!response.ok || !response.body) { const detail = await response.text().catch(() => response.statusText); throw new Error(detail || tx("Summarization request failed")); }
       const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = ""; let summaryText = "";
       while (true) {

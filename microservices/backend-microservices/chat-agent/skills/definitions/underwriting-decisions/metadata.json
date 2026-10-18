@@ -14,20 +14,23 @@
     "change plan",
     "verify requirement",
     "claim referrals",
-    "re-underwriting queue"
+    "re-underwriting queue",
+    "human underwriting outcome",
+    "claim underwriting outcome"
   ],
   "capabilities": [
-    "get_counter_offer",
-    "make_counter_offer",
-    "record_counter_offer_response",
-    "hold_underwriting_case",
-    "release_underwriting_case",
-    "waive_case_requirement",
     "change_case_plan",
+    "get_counter_offer",
+    "hold_underwriting_case",
+    "list_claim_underwriting_referrals",
+    "make_counter_offer",
+    "record_claim_underwriting_outcome",
+    "record_counter_offer_response",
+    "release_underwriting_case",
     "resolve_issuance_requirement",
     "waive_agent_confidential_report",
-    "waive_medical_examination",
-    "list_claim_underwriting_referrals"
+    "waive_case_requirement",
+    "waive_medical_examination"
   ],
   "roles": [
     "SuperAdmin",
@@ -46,7 +49,8 @@
     "Every hold, waiver and counter-offer carries the underwriter's own reason.",
     "A counter-offer response is recorded only when the customer gave it; declining closes the application.",
     "A plan change is previewed before it is applied.",
-    "Explicit user instruction is required for mutations; backend gates remain authoritative."
+    "Explicit user instruction is required for mutations; backend gates remain authoritative.",
+    "On claim referrals, AI is advisory. Admin explicitly records Proceed/Decline with their own rationale after the final AI check. Only the Claims Manager decides the claim."
   ],
   "lifecycle_source": "tenant-service/routers/pre_issuance.py; tenant-service/routers/cases.py; tenant-service/routers/agent_confidential_report.py; tenant-service/routers/medical_exam.py; underwriting_operations.py",
   "approvals": "role_operations.TOOL_ROLES mirrors the owning router; the shared permission gate and owning-service checks apply.",

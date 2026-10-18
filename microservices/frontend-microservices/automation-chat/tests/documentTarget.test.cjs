@@ -12,3 +12,9 @@ test('legacy CASE reference and alternative ID fields work',()=>{assert.equal(re
 test('explicit wrong reference never falls back to an unrelated applicant',()=>assert.throws(()=>resolveUploadCase(cases,{case_number:'APP-2026-000000',cnic:'12345-1234567-1'}),/could not be found/));
 test('multiple applications belonging to a customer require a reference',()=>assert.throws(()=>resolveUploadCase([...cases,{...cases[0],caseld:'second'}],{cnic:'1234512345671'}),/More than one/));
 test('missing target gives an actionable error',()=>assert.throws(()=>resolveUploadCase(cases,{}),/does not identify an application/));
+test('claim underwriting references stay intact and resolve the assigned review',()=>{
+  const reference='UW-CLM-2026-0001-AB12';
+  assert.deepEqual(uploadTargetFromText(`Upload Hospital records for case ${reference}`),{case_number:reference});
+  const row={id:'review-1',reference};
+  assert.equal(resolveUploadCase([row],{case_number:reference}),row);
+});

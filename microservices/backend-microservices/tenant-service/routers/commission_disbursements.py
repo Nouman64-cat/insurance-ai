@@ -41,6 +41,7 @@ async def eligibility(session, tenant_id, rows):
         AcquisitionSource.tenant_id == tenant_id, AcquisitionSource.id.in_([e.source_id for e in rows])))).all()} if rows else {}
     return {e.id: ('Policy not found in tenant' if e.policy_id not in policies else
         'Gross earning must be positive' if e.gross_amount <= 0 else
+        f'Commission is payable from {e.disburse_date.isoformat()}' if e.disburse_date and e.disburse_date > date.today() else
         hold_reason(policies[e.policy_id], sources.get(e.source_id))) for e in rows}
 
 

@@ -1197,7 +1197,9 @@ class RegisterClaimArgs(BaseModel):
 
 @tool(args_schema=RegisterClaimArgs)
 def register_claim(**kwargs) -> str:
-    """Register a First Notice of Loss (FNOL) — opens a claim against an active
+    """Register a First Notice of Loss (FNOL) for a NEW insured event only.
+    Never use to correct an existing claim's date or replace an ineligible claim.
+    Opens a claim against an active
     policy, auto-generates the claim number, runs duplicate detection, opens
     the linked SLA case and puts it straight into the claims workflow
     (eligibility, plan exclusions, document checklist). Call it with whatever you have; the platform presents
@@ -2637,7 +2639,8 @@ def intimate_claim(**kwargs) -> str:
     """Intimate (register) a claim into the claims workflow. Checks cover on the EVENT
     date — a policy lapsed today can still owe a claim — builds the document checklist
     and starts triage. Call with what you have; a missing benefit or cause comes back
-    as buttons. Prefer this over register_claim for new claims."""
+    as buttons. Prefer this over register_claim for new claims. Never use it to
+    change a recorded event date or replace an existing ineligible claim."""
     return "{}"
 
 
@@ -2875,22 +2878,21 @@ def approve_commission_agreement(**kwargs) -> str:
 
 @tool(args_schema=PolicyClaimLookupArgs)
 def get_policy_commission_split(**kwargs) -> str:
-    """Which producers earn on a policy, their split %, and under which agreement."""
+    """Which producers earn on a policy and their split %. Rates come from the Rule Engine."""
     return "{}"
 
 
 class AssignProducersArgs(PolicyClaimLookupArgs):
     payee_name: Optional[str] = Field(default=None, description="Single producer taking 100% (name or code).")
-    agreement_code: Optional[str] = Field(default=None, description="Approved agreement for that single producer.")
     producers_json: Optional[str] = Field(
         default=None,
-        description='Shared production, e.g. [{"payee": "AG-001", "agreement_code": "AGENCY-STD", "split_pct": 60}, ...]. Must total 100.')
+        description='Shared production, e.g. [{"payee": "AG-001", "split_pct": 60}, ...]. Must total 100.')
 
 
 @tool(args_schema=AssignProducersArgs)
 def assign_policy_producers(**kwargs) -> str:
-    """Set who earns commission on an individual policy and in what split, under approved
-    agreements. Replaces the current split; frozen once any commission has posted."""
+    """Set who earns commission on an individual policy and in what split; the Rule Engine
+    sets the rate. Replaces the current split; frozen once any commission has posted."""
     return "{}"
 
 
@@ -2931,9 +2933,45 @@ def explain_commission_earning(**kwargs) -> str:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class ReviewLookupArgs(BaseModel):
+    claim_number: Optional[str] = Field(default=None, description="For claim underwriting: CLM reference. Resolves only assigned reviews.")
     case_number: Optional[str] = Field(default=None, description="Application reference, e.g. APP-2026-19A187 or CASE-2026-19A187.")
     applicant_name: Optional[str] = Field(default=None, description="Applicant's name as stored.")
     cnic: Optional[str] = Field(default=None, description="Applicant CNIC. Never put a UUID here.")
+
+
+class UnderwritingDocumentArgs(ReviewLookupArgs):
+    document_type: Optional[str] = Field(default=None, description="Exact required document label from get_underwriting_review; leave unset for choices.")
+
+
+@tool(args_schema=UnderwritingDocumentArgs)
+def upload_underwriting_document(**kwargs) -> str:
+    """Upload an actual file to my assigned medical/financial review in chat. For claim reviews, attaches to the
+    linked claim checklist too. Resolves the review and document before opening the browser file picker."""
+    return "{}"
+
+
+class WaiveUnderwritingDocumentArgs(UnderwritingDocumentArgs):
+    reason: Optional[str] = Field(default=None, description="Underwriter's own reason for waiving this claim document.")
+
+
+@tool(args_schema=WaiveUnderwritingDocumentArgs)
+def waive_underwriting_document(**kwargs) -> str:
+    """Waive a document on my assigned CLAIM underwriting track with a recorded reason. Never waives exclusions,
+    waiting periods or contestability findings, and never records a final claim decision."""
+    return "{}"
+
+
+class ClaimUnderwritingCheckArgs(ReviewLookupArgs):
+    requirement: Optional[Literal["claim_exclusions", "claim_waiting_periods", "claim_contestability"]] = None
+    finding: Optional[Literal["Clear", "Concern", "Resolved"]] = None
+    note: Optional[str] = Field(default=None, description="Actual evidence and rationale supplied by the underwriter.")
+
+
+@tool(args_schema=ClaimUnderwritingCheckArgs)
+def record_claim_underwriting_check(**kwargs) -> str:
+    """Record my evidence-backed exclusions, waiting-period or contestability finding on an assigned claim review.
+    This does not submit my specialist review or record the Claims Manager's final claim decision."""
+    return "{}"
 
 
 class ListMyReviewsArgs(BaseModel):
@@ -3051,7 +3089,21 @@ def compile_final_underwriting(**kwargs) -> str:
     return "{}"
 
 
+class ClaimUnderwritingOutcomeArgs(ReviewLookupArgs):
+    decision: Optional[Literal['PROCEED', 'DECLINE']] = Field(default=None, description="Admin's explicit human underwriting outcome, never inferred from AI.")
+    reason: Optional[str] = Field(default=None, description="Admin's own underwriting rationale.")
+
+
+@tool(args_schema=ClaimUnderwritingOutcomeArgs)
+def record_claim_underwriting_outcome(**kwargs) -> str:
+    """Admin: after both specialist reviews and the final AI check, record a HUMAN Proceed/Decline underwriting
+    outcome for the Claims Manager. AI is advisory and may be disagreed with. This never decides or pays the claim."""
+    return '{}'
+
+
 SPECIALIST_REVIEW_TOOLS = [
+    record_claim_underwriting_outcome,
+    upload_underwriting_document, waive_underwriting_document, record_claim_underwriting_check,
     list_my_underwriting_reviews, get_underwriting_review, start_my_review, send_e_application_questionnaire,
     run_ai_medical_underwriting, run_ai_financial_underwriting, record_underwriting_review,
     list_track_underwriters, assign_underwriting_track, get_specialist_reviews, compile_final_underwriting,

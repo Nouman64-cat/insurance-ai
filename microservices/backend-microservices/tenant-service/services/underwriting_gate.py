@@ -249,10 +249,15 @@ async def claim_documents_for(session: AsyncSession, tenant_id: UUID, claim_id) 
             if d.get("when") == "always" or (d.get("when") == "contestable" and claim.is_contestable)]
     files = {(a.document_type or "").strip().lower(): a for a in (await session.exec(
         select(Artifact).where(Artifact.claim_id == claim_id))).all()}
+    waived = set((await session.exec(select(CaseRequirement.code).join(Case, Case.caseld == CaseRequirement.case_id).where(
+        Case.tenant_id == tenant_id, Case.claim_id == claim_id,
+        CaseRequirement.status == CaseRequirementStatusEnum.WAIVED))).all())
     out = []
     for d in docs:
         hit = files.get(d["label"].strip().lower())
-        out.append({**d, "status": "Received" if hit else "Requested", "artifact_id": str(hit.id) if hit else None})
+        code = "_".join("".join(ch if ch.isalnum() else " " for ch in d["label"]).split())[:100]
+        out.append({**d, "status": "Received" if hit else "Waived" if code in waived else "Requested",
+                    "artifact_id": str(hit.id) if hit else None})
     return out
 
 

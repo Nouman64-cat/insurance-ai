@@ -1504,6 +1504,14 @@ MIGRATIONS: list[tuple[str, str]] = [
     ("v69b — token_usage.audio_output_tokens", "ALTER TABLE token_usage ADD COLUMN IF NOT EXISTS audio_output_tokens INTEGER NOT NULL DEFAULT 0"),
     ("v69c — token_usage.audio_cached_tokens", "ALTER TABLE token_usage ADD COLUMN IF NOT EXISTS audio_cached_tokens INTEGER NOT NULL DEFAULT 0"),
     ("v69d — token_usage.audio_seconds (per-minute billed transcription)", "ALTER TABLE token_usage ADD COLUMN IF NOT EXISTS audio_seconds DOUBLE PRECISION NOT NULL DEFAULT 0"),
+    # Agent commission from the rule engine (RS-COM-002): agreements no longer set rates.
+    ("v70a — acquisition_sources.start_date (producer's payout day)", "ALTER TABLE acquisition_sources ADD COLUMN IF NOT EXISTS start_date DATE"),
+    ("v70b — commission_assignments.agreement_id optional", "ALTER TABLE commission_assignments ALTER COLUMN agreement_id DROP NOT NULL"),
+    ("v70c — commission_earnings.agreement_id optional", "ALTER TABLE commission_earnings ALTER COLUMN agreement_id DROP NOT NULL"),
+    ("v70d — commission_earnings rule-engine provenance", "ALTER TABLE commission_earnings ADD COLUMN IF NOT EXISTS rule_set_code VARCHAR(100), "
+     "ADD COLUMN IF NOT EXISTS rule_code VARCHAR(100), ADD COLUMN IF NOT EXISTS rule_version VARCHAR(50)"),
+    ("v70e — commission_earnings.disburse_date", "ALTER TABLE commission_earnings ADD COLUMN IF NOT EXISTS disburse_date DATE"),
+    ("v70f — index commission_earnings.disburse_date", "CREATE INDEX IF NOT EXISTS ix_commission_earnings_disburse_date ON commission_earnings (disburse_date)"),
 ]
 
 

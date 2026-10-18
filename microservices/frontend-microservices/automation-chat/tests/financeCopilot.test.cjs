@@ -30,3 +30,13 @@ test('English and Urdu greetings identify Finance and explain its payment scope'
     assert.ok(dictionary.composer.greetingFinance.length>60);
   }
 });
+
+test('Every specialist role alias returns to its own portal',()=>{
+  const {homeUrlFor,UNDERWRITING_URL,CLAIMS_URL,PORTAL_URL,CUSTOMER_SERVICE_URL}=load('lib/portal.ts');
+  for(const role of ['Medical Underwriter','MedicalUnderwriter','Financial Underwriter','FinancialUnderwriter','Underwriter'])
+    assert.equal(homeUrlFor(role),`${UNDERWRITING_URL}/underwriting`);
+  for(const role of ['ClaimsManager','Claims Manager']) assert.equal(homeUrlFor(role),`${CLAIMS_URL}/claims/dashboard`);
+  assert.equal(homeUrlFor('ClaimsAdjuster'),`${PORTAL_URL}/claims`);
+  assert.equal(homeUrlFor('CustomerService'),`${CUSTOMER_SERVICE_URL}/customer-service`);
+  assert.equal(homeUrlFor('Agent'),`${PORTAL_URL}/proposal`);
+});

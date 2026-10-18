@@ -124,7 +124,7 @@ async def _get_customer_commission_setup(args: dict, ctx: Ctx) -> dict:
     lines = [f"**{customer['name']}** · customer ID {customer['id']}",
              f"Assigned agent: {customer.get('assigned_agent_name') or 'Unassigned'}.",
              f"Acquisition source: {customer.get('acquisition_source_name') or 'Unassigned'}.",
-             f"Approved agreements effective today: {data['approved_agreement_count']}."]
+             f"Commission rates come from rule set {data.get('commission_rule_set_code', 'RS-COM-002')} in the Rule Engine."]
     if not data['policies']:
         lines.append('No individual policy exists yet. Customer ownership alone does not accrue commission.')
     for p in data['policies']:
@@ -133,7 +133,7 @@ async def _get_customer_commission_setup(args: dict, ctx: Ctx) -> dict:
                      ('; producer assignment frozen after posting' if p['frozen'] else ''))
     if data['has_more']:
         lines.append('Only the first 50 policies are shown; narrow the selection in Commission earnings.')
-    lines.append('Link an approved agreement to the plan once: the next premium receipt allocates 100% to the assigned agent automatically. Explicit policy splits override plan allocation. Disbursement batches require independent approval and recorded external payment confirmation; bank transfers and tax calculations are not automated.')
+    lines.append('The first premium after issuance allocates 100% to the assigned agent automatically, at the rate the Rule Engine sets; later premiums earn only if that rule is recurring. Explicit policy splits override automatic allocation. Each earning is payable from the agent\'s start day in the following month. Disbursement batches require independent approval and recorded external payment confirmation; bank transfers and tax calculations are not automated.')
     return {'success': True, 'message': '\n\n'.join(lines), 'setup': data,
             'quick_actions': [{'label': 'Configure commissions', 'actionType': 'navigate',
                                'payload': f"commissions?customer_id={customer['id']}"}]}
@@ -224,14 +224,12 @@ async def _split_view(ctx: Ctx, policy: dict) -> tuple[list[dict], str]:
     res.raise_for_status()
     rows = res.json()
     if not rows:
-        return rows, f"No explicit producers are assigned on {policy.get('policy_number')}. Approved plan rates can automatically allocate to the customer's assigned agent on the next premium receipt. Check customer commission setup to verify readiness."
+        return rows, f"No explicit producers are assigned on {policy.get('policy_number')}. The next premium receipt can automatically allocate to the customer's assigned agent. Check customer commission setup to verify readiness."
     payees = {str(p["id"]): p for p in await _payees(ctx)}
-    agreements = {str(a["id"]): a for a in await _agreements(ctx)}
-    lines = [f"Producer split on **{policy.get('policy_number')}**:"]
+    lines = [f"Producer split on **{policy.get('policy_number')}** (rates set by the Rule Engine):"]
     for r in rows:
-        p, a = payees.get(str(r["source_id"]), {}), agreements.get(str(r["agreement_id"]), {})
-        lines.append(f"- {p.get('name', r['source_id'])} ({p.get('code', '—')}) · **{_pct(r['split_pct'])}** under "
-                     f"`{a.get('code', '?')}` v{a.get('version', '?')} (first year {_pct(a.get('first_year_pct'))}, renewal {_pct(a.get('renewal_pct'))})")
+        p = payees.get(str(r["source_id"]), {})
+        lines.append(f"- {p.get('name', r['source_id'])} ({p.get('code', '—')}) · **{_pct(r['split_pct'])}**")
     return rows, "\n".join(lines)
 
 
@@ -252,33 +250,26 @@ async def _assign_policy_producers(args: dict, ctx: Ctx) -> dict:
     number = policy.get("policy_number")
     wanted = _parse_json_arg(args.get("producers_json"), "producers_json") if args.get("producers_json") else None
     if wanted is None and args.get("payee_name"):
-        wanted = [{"payee": args["payee_name"], "agreement_code": args.get("agreement_code"), "split_pct": 100}]
+        wanted = [{"payee": args["payee_name"], "split_pct": 100}]
     if not wanted:
         return {"success": False, "needs_user_input": True, "error_code": "missing_details",
-                "error": f"Who produced {number}, under which agreement code, and (if shared) what split? Splits must total 100%."}
+                "error": f"Who produced {number}, and (if shared) what split? Splits must total 100%."}
     if isinstance(wanted, dict):
         wanted = [wanted]
-    payees, agreements = await _payees(ctx), await _agreements(ctx)
+    payees = await _payees(ctx)
     producers, described = [], []
     for w in wanted:
         payee = _pick_payee(payees, str(w.get("payee") or w.get("payee_name") or ""))
-        code = w.get("agreement_code")
-        approved = _pick_agreement(agreements, code, w.get("agreement_version"), "APPROVED") if code else []
-        if not approved:
-            ready = sorted({a["code"] for a in agreements if a["status"] == "APPROVED"})
-            raise ChoiceNeeded(f"Which approved agreement does {payee['name']} earn under on {number}?",
-                               [_chip(c, f"Assign {payee['code']} on policy {number} under agreement {c}") for c in ready[:6]]
-                               or [_chip("List agreements", "List commission agreements")])
-        producers.append({"source_id": payee["id"], "agreement_id": approved[0]["id"], "split_pct": str(w.get("split_pct") or 100)})
-        described.append(f"{payee['name']} {_pct(w.get('split_pct') or 100)} under {approved[0]['code']} v{approved[0]['version']}")
+        producers.append({"source_id": payee["id"], "split_pct": str(w.get("split_pct") or 100)})
+        described.append(f"{payee['name']} {_pct(w.get('split_pct') or 100)}")
 
     total = sum(Decimal(p["split_pct"]) for p in producers)
     if total != 100:
         return {"success": False, "needs_user_input": True, "error_code": "validation",
                 "error": f"The splits add up to {_pct(total)} — they must total exactly 100%."}
     current, _ = await _split_view(ctx, policy)
-    if sorted((str(r["source_id"]), str(r["agreement_id"]), Decimal(str(r["split_pct"]))) for r in current) == \
-            sorted((str(p["source_id"]), str(p["agreement_id"]), Decimal(p["split_pct"])) for p in producers):
+    if sorted((str(r["source_id"]), Decimal(str(r["split_pct"]))) for r in current) == \
+            sorted((str(p["source_id"]), Decimal(p["split_pct"])) for p in producers):
         return {"success": True, "message": f"{number} already has exactly that split — nothing changed.", "quick_actions": [_NAV]}
     res = await ctx.client.put(ctx.tsvc(f"/commissions/policies/{policy['id']}/assignments"), json={"producers": producers})
     res.raise_for_status()
@@ -378,7 +369,8 @@ async def _explain_commission_earning(args: dict, ctx: Ctx) -> dict:
             f"- **{s.get('payee_name', '—')}** on `{s.get('policy_number', '—')}` receipt {s.get('receipt_no', '—')} "
             f"({str(s.get('receipt_date', ''))[:10]}), policy year {e['policy_year']}: "
             f"{_pkr(e['basis_amount'])} × {_pct(e['rate_pct'])} × {_pct(e['split_pct'])} split = **{_pkr(e['gross_amount'])}** "
-            f"under `{s.get('agreement_code', '?')}` v{s.get('agreement_version', '?')}")
+            + (f"under rule `{s['rule_code']}` v{s.get('rule_version', '?')}, payable from {e.get('disburse_date') or '—'}"
+               if s.get('rule_code') else f"under `{s.get('agreement_code', '?')}` v{s.get('agreement_version', '?')}"))
     return {"success": True, "earnings": rows,
             "message": "\n".join(lines) + f"\n\nTotal accrued gross: **{_pkr(total)}**. Basis is the receipt base "
                        "(fees and duty included, surcharge excluded). This is an accrual — no tax or payment is implied.",

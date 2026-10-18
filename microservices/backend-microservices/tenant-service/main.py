@@ -146,6 +146,11 @@ async def lifespan(app: FastAPI):
             await ensure_payment_split_rule_set(session)
         except Exception:
             logging.getLogger(__name__).exception("Could not seed the initial-premium split rule set")
+        try:
+            from routers.rules import ensure_agent_commission_rule_set
+            await ensure_agent_commission_rule_set(session)
+        except Exception:
+            logging.getLogger(__name__).exception("Could not seed the agent commission rule set")
 
     # Kafka producer — shared across all request handlers via app.state
     producer = AIOKafkaProducer(

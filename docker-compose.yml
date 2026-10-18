@@ -256,8 +256,8 @@ services:
       context: ./microservices/backend-microservices/text-summarizer
       dockerfile: Dockerfile
     container_name: insurance-text-summarizer
-    ports:
-      - "8015:8005"
+    expose:
+      - "8005"
     volumes:
       - ./microservices/backend-microservices/text-summarizer:/app
 
@@ -554,7 +554,6 @@ services:
       NEXT_PUBLIC_CUSTOMER_SERVICE_URL: ${NEXT_PUBLIC_CUSTOMER_SERVICE_URL:-http://localhost:3008}
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010} # browser-side; host port that maps to gateway container port 8000
       NEXT_PUBLIC_OCR_URL: ${NEXT_PUBLIC_OCR_URL:-http://localhost:8014} # browser-side; host port mapping to ocr-engine
-      NEXT_PUBLIC_SUMMARIZER_URL: ${NEXT_PUBLIC_SUMMARIZER_URL:-http://localhost:8015} # browser-side; host port mapping to text-summarizer
       API_GATEWAY_INTERNAL_URL: http://api-gateway:8000 # server-side (Next.js API routes); internal docker network
       CHOKIDAR_USEPOLLING: "true" # macOS Docker Desktop: FSEvents don't reach chokidar via inotify
       NEXT_PUBLIC_AUTOMATION_URL: ${NEXT_PUBLIC_AUTOMATION_URL:-http://localhost:3004} # the Automation Chat app (the "Automation" button opens it)
@@ -588,10 +587,10 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010}
       NEXT_PUBLIC_OCR_URL: ${NEXT_PUBLIC_OCR_URL:-http://localhost:8014}
-      NEXT_PUBLIC_SUMMARIZER_URL: ${NEXT_PUBLIC_SUMMARIZER_URL:-http://localhost:8015}
       NEXT_PUBLIC_PORTAL_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000} # the dashboard: embedded pages and the sign-in redirect
       NEXT_PUBLIC_UNDERWRITING_URL: ${NEXT_PUBLIC_UNDERWRITING_URL:-http://localhost:3005} # case views and other underwriting pages it opens or embeds
       NEXT_PUBLIC_CLAIMS_URL: ${NEXT_PUBLIC_CLAIMS_URL:-http://localhost:3011} # the Claims Manager app, which hosts the Copilot window
+      NEXT_PUBLIC_CUSTOMER_SERVICE_URL: ${NEXT_PUBLIC_CUSTOMER_SERVICE_URL:-http://localhost:3008}
       API_GATEWAY_INTERNAL_URL: http://api-gateway:8000
       SSO_COOKIE_NAME: ${SSO_COOKIE_NAME:-insurance_sso}
       SSO_COOKIE_DOMAIN: ${SSO_COOKIE_DOMAIN:-}
@@ -628,7 +627,6 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010} # browser-side API gateway
       NEXT_PUBLIC_OCR_URL: ${NEXT_PUBLIC_OCR_URL:-http://localhost:8014}
-      NEXT_PUBLIC_SUMMARIZER_URL: ${NEXT_PUBLIC_SUMMARIZER_URL:-http://localhost:8015}
       NEXT_PUBLIC_PORTAL_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000} # sign-in, "Back to the portal", portal pages
       NEXT_PUBLIC_UNDERWRITING_URL: ${NEXT_PUBLIC_UNDERWRITING_URL:-http://localhost:3005} # this app's own public URL
       NEXT_PUBLIC_AUTOMATION_URL: ${NEXT_PUBLIC_AUTOMATION_URL:-http://localhost:3004} # the chat that embeds case views
@@ -707,7 +705,6 @@ services:
       args: # compiled into the browser bundle
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010}
         NEXT_PUBLIC_OCR_URL: ${NEXT_PUBLIC_OCR_URL:-http://localhost:8014}
-        NEXT_PUBLIC_SUMMARIZER_URL: ${NEXT_PUBLIC_SUMMARIZER_URL:-http://localhost:8015}
         NEXT_PUBLIC_PORTAL_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000}
         NEXT_PUBLIC_UNDERWRITING_URL: ${UNDERWRITING_PROD_URL:-http://localhost:3006}
         NEXT_PUBLIC_AUTOMATION_URL: ${NEXT_PUBLIC_AUTOMATION_URL:-http://localhost:3004}

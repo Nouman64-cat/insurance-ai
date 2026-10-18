@@ -24,18 +24,39 @@ from routers.auth import create_access_token
 from routers.commissions import router
 from routers.commission_disbursements import router as disbursements_router
 from services.commission_engine import accrue_receipt, record_binding_receipt
-from shared.commissions.calculator import allocate, policy_year
+from shared.commissions.calculator import allocate, disburse_date, policy_year
 from shared.models.core import (Tenant, Role, User, Customer, Policy, InsuranceTypeEnum,
     AcquisitionSource, AcquisitionSourceType, PremiumReceipt, PremiumSchedule, PremiumScheduleStatusEnum,
-    InsurancePlan, PolicyStatusEnum)
+    InsurancePlan, PolicyStatusEnum, ActualRule, RuleSet)
+from services.agent_commission import AGENT_COMMISSION_RULE_SET
 from shared.models.commission import (CommissionAgreement, CommissionAssignment, CommissionAccrual,
     CommissionEarning, CommissionPlanRule, CommissionDisbursementItem)
 
 factory = None
 
+# Test rates for RS-COM-002: 10% on the first premium, recurring at 5%.
+TEST_RULE = {'commission_pct': 10.0, 'commission_recurring': True, 'recurring_commission_pct': 5.0,
+             'recurring_years': None, 'withholding_tax_pct': 10.0, 'is_terminal': True}
+
+
+async def commission_rule(active=True, **changes):
+    """Create RS-COM-002 once per schema, then set its one rule to the test rates plus `changes`."""
+    from routers.rules import _create_rule_set_from_seed, _get_or_create_category, _get_or_create_subcategory
+    async with factory() as s:
+        if not (await s.exec(select(RuleSet).where(RuleSet.rule_code == AGENT_COMMISSION_RULE_SET['code']))).first():
+            rs = AGENT_COMMISSION_RULE_SET
+            category = await _get_or_create_category(s, rs['category_code'], rs['category_name'])
+            sub = await _get_or_create_subcategory(s, category.id, rs['sub_code'], rs['sub_name'])
+            await _create_rule_set_from_seed(s, rs, sub.id, None)
+        rule = (await s.exec(select(ActualRule).where(ActualRule.rule_code == 'COM-AGT-IND'))).one()
+        rule.impact_data = {**rule.impact_data, **TEST_RULE, **changes}
+        rule.is_active = active
+        s.add(rule); await s.commit()
+
 
 class CommissionTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        await commission_rule()
         self.tenant = Tenant(name=f"Commission test {uuid4()}", code=uuid4().hex)
         self.role = Role(name=f"role-{uuid4()}", description="test")
         async with factory() as s:
@@ -95,7 +116,10 @@ class CommissionTests(unittest.IsolatedAsyncioTestCase):
         async with factory() as s:
             entry = (await s.exec(select(CommissionEarning).where(CommissionEarning.receipt_id == self.receipt.id))).one()
             self.assertEqual(entry.gross_amount, Decimal("100.00"))  # excludes surcharge
-            self.assertEqual(entry.snapshot['agreement_version'], 1)
+            self.assertEqual((entry.rule_set_code, entry.rule_code), ('RS-COM-002', 'COM-AGT-IND'))
+            self.assertEqual(entry.snapshot['rule_version'], '1.0.0')
+            self.assertTrue(entry.snapshot['is_first_premium'])
+            self.assertIsNone(entry.agreement_id)
             self.assertEqual(entry.policy_year, 1)
             # Changing producer identity later never rewrites the financial snapshot.
             source = await s.get(AcquisitionSource, self.source.id); source.name = "Renamed"; s.add(source); await s.commit()
@@ -111,26 +135,82 @@ class CommissionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(rows), 1)
 
     async def test_missing_configuration_is_retryable_exception(self):
-        async with factory() as s:
-            a = await s.get(CommissionAgreement, self.agreement.id); a.status = 'DRAFT'; s.add(a); await s.commit()
-        self.assertEqual((await self.post_receipt()).status, 'EXCEPTION')
+        await commission_rule(active=False)
+        result = await self.post_receipt()
+        self.assertEqual(result.status, 'EXCEPTION')
+        self.assertIn('RS-COM-002', result.reason)
         async with factory() as s:
             self.assertFalse((await s.exec(select(CommissionEarning).where(CommissionEarning.receipt_id == self.receipt.id))).all())
-            a = await s.get(CommissionAgreement, self.agreement.id); a.status = 'APPROVED'; s.add(a); await s.commit()
+        await commission_rule()
         self.assertEqual((await self.post_receipt()).status, 'POSTED')
 
-    async def test_renewal_uses_due_date_not_collection_date(self):
+    async def make_renewal(self):
+        """Move the fixture receipt to a second, year-2 installment behind an earlier first premium."""
         async with factory() as s:
+            s.add(PremiumSchedule(policy_id=self.policy.id, due_date=date(2025, 1, 1), amount_due=1000, amount_paid=1000,
+                                  status=PremiumScheduleStatusEnum.PAID))
             schedule = await s.get(PremiumSchedule, self.schedule.id); schedule.due_date = date(2026, 1, 1); s.add(schedule); await s.commit()
+
+    async def test_renewal_uses_due_date_not_collection_date(self):
+        await self.make_renewal()
         await self.post_receipt()
         async with factory() as s:
             row = (await s.exec(select(CommissionEarning).where(CommissionEarning.receipt_id == self.receipt.id))).one()
-            self.assertEqual((row.policy_year, row.gross_amount), (2, Decimal('50.00')))
+            self.assertEqual((row.policy_year, row.gross_amount, row.rate_pct), (2, Decimal('50.00'), Decimal('5')))
+            self.assertFalse(row.snapshot['is_first_premium'])
 
-    async def test_receipt_outside_effective_period_is_exception(self):
+    async def test_non_recurring_rule_pays_the_first_premium_only(self):
+        await commission_rule(commission_recurring=False)
+        await self.make_renewal()
+        result = await self.post_receipt()
+        self.assertEqual(result.status, 'NOT_APPLICABLE')
+        self.assertIn('first premium only', result.reason)
         async with factory() as s:
-            a = await s.get(CommissionAgreement, self.agreement.id); a.effective_from = date(2026, 1, 1); s.add(a); await s.commit()
-        self.assertIn('effective period', (await self.post_receipt()).reason)
+            self.assertFalse((await s.exec(select(CommissionEarning).where(CommissionEarning.policy_id == self.policy.id))).all())
+        async with await self.client() as c:
+            self.assertEqual((await c.get(self.url('exceptions'))).json(), [])
+        # Enabling recurring later and reconciling posts the held premium.
+        await commission_rule()
+        self.assertEqual((await self.post_receipt()).status, 'POSTED')
+
+    async def test_recurring_stops_after_recurring_years(self):
+        await commission_rule(recurring_years=1)
+        await self.make_renewal()
+        self.assertIn('1 policy year', (await self.post_receipt()).reason)
+
+    async def test_recurring_rate_falls_back_to_commission_rate(self):
+        await commission_rule(recurring_commission_pct=None)
+        await self.make_renewal()
+        await self.post_receipt()
+        async with factory() as s:
+            row = (await s.exec(select(CommissionEarning).where(CommissionEarning.receipt_id == self.receipt.id))).one()
+            self.assertEqual(row.gross_amount, Decimal('100.00'))
+
+    async def test_disburse_date_is_producer_start_day_next_month(self):
+        self.assertEqual(disburse_date(date(2025, 1, 15), date(2023, 3, 31)), date(2025, 2, 28))
+        self.assertEqual(disburse_date(date(2025, 12, 2), date(2020, 6, 10)), date(2026, 1, 10))
+        async with factory() as s:
+            source = await s.get(AcquisitionSource, self.source.id); source.start_date = date(2023, 3, 31); s.add(source); await s.commit()
+        await self.post_receipt()
+        async with factory() as s:
+            row = (await s.exec(select(CommissionEarning).where(CommissionEarning.receipt_id == self.receipt.id))).one()
+            self.assertEqual(row.disburse_date, date(2025, 2, 28))
+            self.assertEqual(row.snapshot['payout_day_from'], 'start_date')
+
+    async def test_disbursement_waits_for_disburse_date(self):
+        from datetime import timedelta
+        async with factory() as s:
+            receipt = await s.get(PremiumReceipt, self.receipt.id); receipt.created_at = datetime.utcnow(); s.add(receipt); await s.commit()
+        earning = await self.payable_earning()
+        self.assertGreater(earning.disburse_date, date.today())
+        async with await self.client() as c:
+            candidates = (await c.get(self.url('disbursements/eligible'))).json()
+            self.assertIn('payable from', candidates['items'][0]['hold_reason'])
+            self.assertEqual((await c.post(self.url('disbursements'), json={'earning_ids': [str(earning.id)]})).status_code, 409)
+        async with factory() as s:
+            row = await s.get(CommissionEarning, earning.id); row.disburse_date = date.today() - timedelta(days=1); s.add(row); await s.commit()
+        async with await self.client() as c:
+            self.assertEqual((await c.post(self.url('disbursements'), json={'earning_ids': [str(earning.id)]})).status_code, 201)
 
     async def test_binding_receipt_is_stable_and_not_backfilled_from_status(self):
         async with factory() as s:
@@ -235,7 +315,7 @@ class CommissionTests(unittest.IsolatedAsyncioTestCase):
         async with factory() as s:
             rows = (await s.exec(select(CommissionEarning).where(CommissionEarning.policy_id == self.policy.id))).all()
             self.assertEqual(sorted(r.basis_amount for r in rows), [Decimal('400.00'), Decimal('600.00')])
-            self.assertEqual(sum(r.gross_amount for r in rows), Decimal('50.00'))  # year 2
+            self.assertEqual(sum(r.gross_amount for r in rows), Decimal('100.00'))  # both receipts pay the first premium
 
     async def test_cross_tenant_producer_and_receipt_are_rejected(self):
         async with factory() as s:
@@ -266,7 +346,7 @@ class CommissionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await c.post(self.url('reconcile'), json={'receipt_ids': [str(uuid4())]})).status_code, 404)
 
     async def test_individual_agent_assignment_to_first_premium_and_renewal(self):
-        """Customer ownership alone earns nothing; an approved policy split does."""
+        """The assigned agent earns automatically: the rule's rate on the first premium, its recurring rate after."""
         from routers.policies import confirm_payment, PaymentConfirmRequest
         from routers.post_issuance import collect_installment, CollectBody
         from shared.models.core import PolicyStatusEnum
@@ -274,30 +354,19 @@ class CommissionTests(unittest.IsolatedAsyncioTestCase):
         async with factory() as s:
             customer = await s.get(Customer, self.customer.id)
             customer.name = 'QA Commission Individual'
-            customer.assigned_agent_id = self.users[2].id
-            customer.acquisition_source_id = self.source.id
             s.add(customer)
             await s.delete(await s.get(CommissionAssignment, self.assignment.id))
             await s.commit()
+        # Customer without an assigned agent: nothing to credit.
         self.assertEqual((await self.post_receipt()).status, 'EXCEPTION')
-        async with await self.client(2, 'Agent') as c:
-            self.assertEqual(Decimal((await c.get(self.url('summary'))).json()['accrued_gross']), Decimal('0'))
-
-        contract = dict(code='INDIVIDUAL_QA', version=1, name='QA individual contract',
-                        first_year_pct='12.5', renewal_pct='5', effective_from='2024-01-01')
-        async with await self.client() as c:
-            created = await c.post(self.url('agreements'), json=contract)
-            self.assertEqual(created.status_code, 201, created.text)
-            aid = created.json()['id']
-            self.assertEqual((await c.post(self.url(f'agreements/{aid}/approve'))).status_code, 403)
-        async with await self.client(1) as c:
-            approved = await c.post(self.url(f'agreements/{aid}/approve'))
-            self.assertEqual(approved.status_code, 200, approved.text)
-        async with await self.client() as c:
-            assigned = await c.put(self.url(f'policies/{self.policy.id}/assignments'), json={
-                'producers': [{'source_id': str(self.source.id), 'agreement_id': aid, 'split_pct': '100'}],
-            })
-            self.assertEqual(assigned.status_code, 200, assigned.text)
+        async with factory() as s:
+            customer = await s.get(Customer, self.customer.id)
+            customer.assigned_agent_id = self.users[2].id
+            customer.acquisition_source_id = self.source.id
+            s.add(customer)
+            await s.delete((await s.exec(select(CommissionAccrual).where(CommissionAccrual.receipt_id == self.receipt.id))).one())
+            await s.delete(await s.get(PremiumReceipt, self.receipt.id))
+            await s.commit()
 
         async with factory() as s:
             policy = await s.get(Policy, self.policy.id)
@@ -316,10 +385,10 @@ class CommissionTests(unittest.IsolatedAsyncioTestCase):
             first = (await s.exec(select(CommissionEarning).where(
                 CommissionEarning.policy_id == self.policy.id))).one()
             self.assertEqual((first.basis_amount, first.gross_amount, first.policy_year),
-                             (Decimal('12000.00'), Decimal('1500.00'), 1))
+                             (Decimal('12000.00'), Decimal('1200.00'), 1))
             self.assertEqual(first.source_id, self.source.id)
             self.assertEqual(first.snapshot['customer_name'], 'QA Commission Individual')
-            self.assertEqual(first.snapshot['agreement_code'], 'INDIVIDUAL_QA')
+            self.assertEqual(first.snapshot['allocation_method'], 'AUTO_AGENT')
             first_receipt_id = first.receipt_id
             renewal = PremiumSchedule(policy_id=self.policy.id,
                 due_date=date(date.today().year + 1, 1, 1),
@@ -337,8 +406,8 @@ class CommissionTests(unittest.IsolatedAsyncioTestCase):
             ledger = (await c.get(self.url('earnings'))).json()
             self.assertEqual(ledger['total'], 2)
             self.assertEqual(sorted(Decimal(e['gross_amount']) for e in ledger['items']),
-                             [Decimal('600.00'), Decimal('1500.00')])
-            self.assertEqual((await c.get(self.url('summary'))).json()['accrued_gross'], '2100.00')
+                             [Decimal('600.00'), Decimal('1200.00')])
+            self.assertEqual((await c.get(self.url('summary'))).json()['accrued_gross'], '1800.00')
         async with await self.client(1, 'Agent') as c:
             self.assertEqual((await c.get(self.url('earnings'))).json()['total'], 0)
 
@@ -356,7 +425,8 @@ class CommissionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(data['customer']['recommended_source_id'], str(self.source.id))
             self.assertTrue(data['policies'][0]['ready'])
             self.assertFalse(data['policies'][0]['frozen'])
-            self.assertEqual(data['policies'][0]['assignments'][0]['agreement_id'], str(self.agreement.id))
+            self.assertEqual(data['policies'][0]['assignments'][0]['source_id'], str(self.source.id))
+            self.assertEqual(data['commission_rule_set_code'], 'RS-COM-002')
             self.assertEqual((await c.get(self.url('setup'), params={'search': 'Test term'})).json()['policies'][0]['id'], str(self.policy.id))
             self.assertEqual((await c.get(self.url('setup'), params={'search': str(self.policy.id)})).json()['policies'][0]['id'], str(self.policy.id))
             self.assertEqual((await c.get(self.url('setup'), params={'search': '%'})).json()['policies'], [])
@@ -385,7 +455,10 @@ class CommissionTests(unittest.IsolatedAsyncioTestCase):
             customer = await s.get(Customer, self.customer.id)
             customer.assigned_agent_id = self.users[2].id
             customer.acquisition_source_id = self.source.id
-            s.add(customer)
+            s.add(customer); await s.commit()
+
+    async def legacy_plan(self):
+        async with factory() as s:
             plan = InsurancePlan(tenant_id=self.tenant.id, code='TEST_TERM', label='Test term',
                 insurance_type=InsuranceTypeEnum.TERM_LIFE, entry_age_min=18, entry_age_max=65,
                 term_min_years=5, term_max_years=30, max_maturity_age=80, max_income_multiple=20)
@@ -405,8 +478,8 @@ class CommissionTests(unittest.IsolatedAsyncioTestCase):
             s.add(policy); await s.commit()
             return (await s.exec(select(CommissionEarning).where(CommissionEarning.policy_id == policy.id))).one()
 
-    async def test_automatic_plan_rate_agent_and_receipt_are_idempotent(self):
-        plan = await self.configure_automatic()
+    async def test_automatic_agent_and_receipt_are_idempotent(self):
+        await self.configure_automatic()
         async with await self.client() as c:
             before = (await c.get(self.url('setup'))).json()['policies'][0]
             self.assertTrue(before['ready'])
@@ -416,23 +489,23 @@ class CommissionTests(unittest.IsolatedAsyncioTestCase):
         async with factory() as s:
             entry = (await s.exec(select(CommissionEarning).where(CommissionEarning.policy_id == self.policy.id))).one()
             self.assertEqual(entry.gross_amount, Decimal('100.00'))
-            self.assertEqual(entry.snapshot['allocation_method'], 'AUTO_PLAN')
-            self.assertEqual(entry.snapshot['plan_id'], str(plan.id))
+            self.assertEqual(entry.snapshot['allocation_method'], 'AUTO_AGENT')
             self.assertEqual(len((await s.exec(select(CommissionAssignment).where(CommissionAssignment.policy_id == self.policy.id))).all()), 1)
             customer = await s.get(Customer, self.customer.id)
             customer.assigned_agent_id = self.users[1].id
             s.add(customer)
-            schedule = await s.get(PremiumSchedule, self.schedule.id)
-            schedule.due_date = date(2026,1,1)
+            schedule = PremiumSchedule(policy_id=self.policy.id, due_date=date(2026,1,1), amount_due=1000, amount_paid=1000,
+                status=PremiumScheduleStatusEnum.PAID)
+            s.add(schedule); await s.flush()
             renewal = PremiumReceipt(tenant_id=self.tenant.id, policy_id=self.policy.id, schedule_id=schedule.id,
                 receipt_no=uuid4().hex, base_amount=1000, total_amount=1000, created_at=datetime(2026,1,15))
-            s.add_all([schedule, renewal]); await s.flush()
+            s.add(renewal); await s.flush()
             await accrue_receipt(s, renewal); await s.commit()
             entries = (await s.exec(select(CommissionEarning).where(CommissionEarning.policy_id == self.policy.id))).all()
             self.assertEqual(sorted(e.gross_amount for e in entries), [Decimal('50.00'),Decimal('100.00')])
             self.assertTrue(all(e.source_id == self.source.id for e in entries))
 
-    async def test_automatic_missing_agent_or_plan_rate_writes_no_assignment(self):
+    async def test_automatic_missing_agent_or_rule_writes_no_assignment(self):
         await self.configure_automatic()
         async with factory() as s:
             customer = await s.get(Customer, self.customer.id); customer.assigned_agent_id = None
@@ -441,40 +514,11 @@ class CommissionTests(unittest.IsolatedAsyncioTestCase):
         async with factory() as s:
             self.assertEqual((await s.exec(select(CommissionAssignment).where(CommissionAssignment.policy_id == self.policy.id))).all(), [])
             customer = await s.get(Customer, self.customer.id); customer.assigned_agent_id = self.users[2].id
-            policy = await s.get(Policy, self.policy.id); policy.product_name = 'Missing plan'
-            s.add_all([customer,policy]); await s.commit()
-        self.assertIn('catalog plan', (await self.post_receipt()).reason)
-
-    async def test_plan_rule_scope_approval_and_version_selection(self):
-        plan = await self.configure_automatic()
+            s.add(customer); await s.commit()
+        await commission_rule(active=False)
+        self.assertIn('commission rule', (await self.post_receipt()).reason)
         async with factory() as s:
-            newer = CommissionAgreement(tenant_id=self.tenant.id, code='NEW_RATE', version=1,
-                name='New rate', first_year_pct=20, renewal_pct=7, effective_from=date(2025,1,1),
-                effective_to=date(2025,12,31), status='DRAFT', created_by=self.users[0].id)
-            s.add(newer); await s.commit()
-        payload = {'plan_id': str(plan.id), 'agreement_id': str(newer.id)}
-        async with await self.client() as c:
-            self.assertEqual((await c.post(self.url('plan-rules'), json=payload)).status_code,422)
-        async with await self.client(1) as c:
-            self.assertEqual((await c.post(self.url(f'agreements/{newer.id}/approve'))).status_code,200)
-            self.assertEqual((await c.post(self.url('plan-rules'), json=payload)).status_code,201)
-        self.assertEqual((await self.post_receipt()).status,'POSTED')
-        async with factory() as s:
-            entry = (await s.exec(select(CommissionEarning).where(CommissionEarning.policy_id == self.policy.id))).one()
-            self.assertEqual(entry.gross_amount, Decimal('200.00'))
-        async with await self.client(2,'Agent') as c:
-            self.assertEqual((await c.get(self.url('plan-rules'))).status_code,403)
-            self.assertEqual((await c.post(self.url('plan-rules'),json=payload)).status_code,403)
-
-    async def test_expired_latest_plan_rate_never_falls_back(self):
-        plan = await self.configure_automatic()
-        async with factory() as s:
-            newer = CommissionAgreement(tenant_id=self.tenant.id,code='EXPIRED',version=1,name='Expired',
-                first_year_pct=20,renewal_pct=7,effective_from=date(2024,6,1),effective_to=date(2024,12,31),
-                status='APPROVED',created_by=self.users[0].id,approved_by=self.users[1].id)
-            s.add(newer); await s.flush()
-            s.add(CommissionPlanRule(tenant_id=self.tenant.id,plan_id=plan.id,agreement_id=newer.id,created_by=self.users[0].id)); await s.commit()
-        self.assertIn('expired', (await self.post_receipt()).reason)
+            self.assertEqual((await s.exec(select(CommissionAssignment).where(CommissionAssignment.policy_id == self.policy.id))).all(), [])
 
     async def test_disbursement_approval_recording_and_no_double_payment(self):
         earning = await self.payable_earning()
@@ -568,10 +612,10 @@ class CommissionTests(unittest.IsolatedAsyncioTestCase):
             rows=(await s.exec(select(CommissionEarning).where(CommissionEarning.policy_id==self.policy.id))).all()
             self.assertEqual(len(rows),1)
             self.assertEqual(rows[0].gross_amount,Decimal('1200.00'))
-            self.assertEqual(rows[0].snapshot['allocation_method'],'AUTO_PLAN')
+            self.assertEqual(rows[0].snapshot['allocation_method'],'AUTO_AGENT')
 
     async def test_plan_binding_refuses_duplicate_start_dates_and_foreign_ids(self):
-        plan=await self.configure_automatic()
+        plan=await self.legacy_plan()
         async with factory() as s:
             other=CommissionAgreement(tenant_id=self.tenant.id,code='SAME_START',version=1,name='Same date',
                 first_year_pct=30,renewal_pct=5,effective_from=self.agreement.effective_from,status='APPROVED',

@@ -36,7 +36,8 @@ class CommissionAssignment(SQLModel, table=True):
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True)
     policy_id: UUID = Field(foreign_key="policies.id", index=True)
     source_id: UUID = Field(foreign_key="acquisition_sources.id")
-    agreement_id: UUID = Field(foreign_key="commission_agreements.id")
+    # Legacy: rates now come from the rule engine (RS-COM-002), not agreements.
+    agreement_id: Optional[UUID] = Field(default=None, foreign_key="commission_agreements.id")
     split_pct: Decimal = Field(sa_column=Column(Numeric(7, 4), nullable=False))
     created_by: UUID = Field(foreign_key="users.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -63,7 +64,13 @@ class CommissionEarning(SQLModel, table=True):
     policy_id: UUID = Field(foreign_key="policies.id", index=True)
     receipt_id: UUID = Field(foreign_key="premium_receipts.id")
     source_id: UUID = Field(foreign_key="acquisition_sources.id", index=True)
-    agreement_id: UUID = Field(foreign_key="commission_agreements.id")
+    agreement_id: Optional[UUID] = Field(default=None, foreign_key="commission_agreements.id")
+    # The rule-engine rule that set the rate, frozen at posting.
+    rule_set_code: Optional[str] = Field(default=None, max_length=100)
+    rule_code: Optional[str] = Field(default=None, max_length=100)
+    rule_version: Optional[str] = Field(default=None, max_length=50)
+    # Earliest date the earning may be disbursed (the producer's payout day next month).
+    disburse_date: Optional[date] = Field(default=None, index=True)
     basis_amount: Decimal = Field(sa_column=Column(Numeric(18, 2), nullable=False))
     gross_amount: Decimal = Field(sa_column=Column(Numeric(18, 2), nullable=False))
     rate_pct: Decimal = Field(sa_column=Column(Numeric(7, 4), nullable=False))

@@ -251,10 +251,10 @@ def test_split_must_total_100_before_anything_is_written():
     assert "90%" in out["error"] and not client.writes()
 
 
-def test_assignment_uses_the_approved_version_only():
+def test_assignment_sends_producers_only_rates_come_from_the_rule_engine():
     client = FakeClient(_commission_routes({("PUT", "/commissions/policies/p-1/assignments"): []}))
-    _call("assign_policy_producers", {"policy_number": "PL-2026-0001", "payee_name": "AG-001", "agreement_code": "AGENCY-STD"}, client)
-    assert client.writes()[0]["body"] == {"producers": [{"source_id": "s-1", "agreement_id": "a-1", "split_pct": "100"}]}
+    _call("assign_policy_producers", {"policy_number": "PL-2026-0001", "payee_name": "AG-001"}, client)
+    assert client.writes()[0]["body"] == {"producers": [{"source_id": "s-1", "split_pct": "100"}]}
 
 
 def test_reconcile_for_one_policy_sends_only_its_receipts():
@@ -504,3 +504,20 @@ def test_claim_summary_names_the_plan_terms():
     assert "Plan **Life Protection Plus** — documents per the plan's claim terms" in text and "Suicide" in text
     ws["plan_terms"] = {"plan": "Old Plan", "from_plan": False, "exclusions": [], "waiting_periods": []}
     assert "standard checklist" in _summary(ws)
+
+
+@pytest.mark.parametrize("tool,path,args", [
+    ("register_claim", "/claims", {"claim_type": "Death Claim", "submitted_amount": 200000,
+                                  "incident_date": "2026-10-18", "cause": "Natural / illness"}),
+    ("intimate_claim", "/policies/p-1/claims-management", {"category": "Death", "claimed_amount": 200000,
+          "event_date": "2026-10-18", "cause": "Natural / illness", "claimant_name": "Ali Ahmad"}),
+])
+def test_duplicate_registration_conflict_never_adopts_or_opens_another_claim(tool, path, args):
+    detail = "Claim CLM-2026-0001 already records this insured event. No new claim was registered."
+    routes = _policy_routes() if tool == "intimate_claim" else _fnol_routes()
+    client = FakeClient({**routes, ("POST", path): (409, {"detail": detail})})
+    with pytest.raises(httpx.HTTPStatusError) as error:
+        _call(tool, {"policy_number": "PL-2026-0001", **args}, client, role="ClaimsManager")
+    assert error.value.response.status_code == 409
+    assert error.value.response.json()["detail"] == detail
+    assert len(client.writes()) == 1 and client.writes()[0]["path"] == path

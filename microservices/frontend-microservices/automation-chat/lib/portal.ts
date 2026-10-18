@@ -8,15 +8,18 @@ export const UNDERWRITING_ORIGIN = new URL(UNDERWRITING_URL).origin;
 
 export const CLAIMS_URL = (process.env.NEXT_PUBLIC_CLAIMS_URL || "http://localhost:3011").replace(/\/+$/, "");
 
+export const CUSTOMER_SERVICE_URL = (process.env.NEXT_PUBLIC_CUSTOMER_SERVICE_URL || "http://localhost:3008").replace(/\/+$/, "");
+
 /** Where a role's own dashboard is: the same destinations the portal's login page sends each role to
  *  (frontend/app/login/page.tsx), so "Back to Dashboard" from the copilot lands where that person works. */
 export function homeUrlFor(role: string | null | undefined): string {
   const r = (role || "").trim();
   const compact = r.replace(/\s+/g, "");
-  if (r === "Medical Underwriter" || r === "Financial Underwriter") return `${UNDERWRITING_URL}/underwriting`;
+  if (["MedicalUnderwriter", "FinancialUnderwriter", "Underwriter"].includes(compact)) return `${UNDERWRITING_URL}/underwriting`;
   if (compact === "Finance") return `${PORTAL_URL}/finance`;
   if (compact === "ClaimsManager") return `${CLAIMS_URL}/claims/dashboard`;
-  if (r === "SuperAdmin") return portalUrl("/super-admin/tenants");
+  if (compact === "CustomerService") return `${CUSTOMER_SERVICE_URL}/customer-service`;
+  if (compact === "SuperAdmin") return portalUrl("/super-admin/tenants");
   if (r === "Agent" || r === "Broker") return portalUrl("/proposal");
   if (compact === "ClaimsAdjuster") return portalUrl("/claims");
   if (r === "Admin" || !r) return portalUrl("/");

@@ -24,7 +24,9 @@ Every client call goes through the **API Gateway** (`http://localhost:8010`, Swa
 | `POST` | `/suggest-plan` | LLM plan recommendation (forwards to Risk Engine) |
 | `POST` | `/chat/stream` · `/chat/resume` · `/chat/title` · `/chat/execute-tool` | AI copilot (proxied to Chat Agent with the caller's auth) |
 | `GET` | `/events/stream` | SSE stream of live case events for the caller's tenant (15 s heartbeat) |
-| `POST` | `/summarize/stream` | SSE proxy to the Text Summarizer |
+| `POST` | `/summarize/underwriter-note` | Authenticated underwriting note proxy |
+| `POST` | `/summarize/underwriting` | Authenticated categorized document summary proxy |
+| `POST` | `/summarize/stream` | Authenticated SSE proxy to the Text Summarizer |
 | `GET` | `/health` | Health check |
 
 `/evaluate` and `/evaluate/stream` require `X-Tenant-Id`. When the body carries a `case_id`, the [requirements/evidence gate](/data-flow#requirementsevidence-gate-runs-before-either-evaluate-path-below) runs first.
@@ -181,7 +183,7 @@ Formats: PDF, PNG, JPG, JPEG, TIFF, BMP. Text-heavy documents are transcribed (t
 
 ## Text Summarizer
 
-**Port:** 8015:8005 · **Source:** `microservices/backend-microservices/text-summarizer/`
+**Port:** Docker-internal 8005 (no published host port) · **Source:** `microservices/backend-microservices/text-summarizer/`
 
 | Method | Path | Description |
 |---|---|---|

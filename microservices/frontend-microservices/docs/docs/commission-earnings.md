@@ -7,18 +7,26 @@ title: Commission Earnings
 
 The portal at `/commissions` now reads persisted **accrued gross earnings** from the tenant service. The mobile commission screen and copilot ledger, summary, payee and statement tools use that same backend. A policy's status never implies a commission payment.
 
-## One-time plan setup
+## Setup
 
-1. Create the real producer in **Acquisition Sources**. Link its login account for the agent to see its own earnings.
-2. In **Commission earnings**, create an agreement with an explicit code/version, first-year and renewal rates, and effective dates. No statutory or tax rate is seeded or selected automatically.
-3. A **different administrator** approves the draft. Approved agreements have no edit/delete endpoint; create a new version for new assignments.
-4. In **Automatic commission by plan**, link the approved agreement to the catalog plan. Each receipt then automatically allocates 100% to the customer's assigned agent through their active AGENT acquisition source. There is no per-customer approval or manual split requirement.
-5. Collect a premium through the existing payment flow. The receipt, accrual and earnings are written in the **same database transaction**. Missing/expired configuration creates an exception without inventing an amount.
-6. After correcting configuration, reconcile the receipt by ID. Previously posted receipts return their existing accrual without creating new earnings.
+1. Create the real producer in **Acquisition Sources**. Set its **Start Date**: that day of the month is the producer's payout day. Link its login account for the agent to see its own earnings.
+2. Review the **Agent Commission** rule set (`RS-COM-002`) in the **Rule Engine**. Each rule tests premium context (`category`, `insurance_type`, `product_name`, `policy_year`, `premium_type`, `installment_number`, `is_first_premium`, `premium_amount`, `channel_code`, `source_type`, `source_code`, `coverage_amount`, `term_years`) and sets:
+   - **Commission rate (%)**: paid on the first premium after policy issuance.
+   - **Recurring commission**: whether later premiums also earn.
+   - **Recurring rate (%)**: the rate for later premiums (the commission rate when empty).
+   - **Recurring for (policy years)**: the last policy year that earns (no limit when empty).
+   - **Withholding tax (%)**: recorded in the earning snapshot only; no net amount is calculated.
 
-The plan is resolved by an exact catalog label or code and insurance type in the same tenant. Missing or ambiguous plan/agent/source/rates create exceptions. If several approved rate versions start on different dates, the latest starting on or before the receipt date applies. Equal start dates are rejected; an expired latest version never falls back to an older rate. Plan rules and approved rates are immutable.
+   The startup seed is one rule, `COM-AGT-IND`: 35% of the first premium on individual policies, not recurring. This is the SECP first-year maximum. Change it to the insurer's real rates, and deploy a new version, before go-live. Rules are versioned and edited like every other rule set; the first matching rule (by priority) with a commission rate decides.
+3. Assign the customer's agent. Each receipt then automatically allocates 100% to that agent through their active AGENT acquisition source. No per-customer approval or manual split is required.
+4. Collect a premium through the existing payment flow. The receipt, accrual and earnings are written in the **same database transaction**. A missing rule set, active version or matching rule creates an exception without inventing an amount. A later premium that the matched rule does not pay (not recurring, or past its recurring years) is recorded as `NOT_APPLICABLE`, not as an exception.
+5. After correcting configuration, reconcile the receipt by ID. Previously posted receipts return their existing accrual without creating new earnings. `NOT_APPLICABLE` receipts are evaluated again, so enabling recurring and reconciling posts them.
 
-An explicit policy split overrides automatic allocation. Shared production can still be configured on individual policies, with positive splits totaling 100%. The first successful posting persists and freezes the producer and agreement; subsequent agent or plan-rate changes do not rewrite that policy's allocation or historical earnings. New rate versions apply to newly allocated policies. Expired contracts on existing assignments remain exceptions for contractual review.
+The first premium is every receipt against the policy's earliest installment, including first-premium top-ups. Rules are evaluated with the version active at posting time. The rule set, rule code and version are frozen on the earning.
+
+An explicit policy split overrides automatic allocation. Shared production can still be configured on individual policies, with positive splits totaling 100%. Each producer is evaluated against the rules with its own channel. The first successful posting persists and freezes the producer allocation; subsequent agent changes do not rewrite that policy's allocation or historical earnings.
+
+Commission agreements and plan rate links (`/agreements`, `/plan-rules`) no longer set rates. They remain readable for history; earnings posted before this change keep their agreement snapshot.
 
 The setup checklist previews automatic allocation without saving it. Receipt dates determine actual eligibility, including reconciliation of older receipts. **Review setup** on an exception selects that receipt and policy. Draft creators see **Awaiting another administrator** instead of an enabled self-approval action.
 
@@ -28,12 +36,13 @@ The first-premium path creates a stable receipt when cover binds, including a cr
 
 ## Calculation contract
 
-- Basis `RECEIPT_BASE`: the recorded receipt base, **including any policy fees/duty already included in that base**, excluding late surcharge. This is the only supported basis in this milestone; configure agreements only when this matches their terms.
-- Formula per producer: `receipt base × contractual rate / 100 × split / 100`.
-- Policy year comes from installment due date relative to inception, not collection date. Rates are first year versus year two onwards.
-- Effective dates are tested against the receipt date. No fallback rate is used.
+- Basis `RECEIPT_BASE`: the recorded receipt base, **including any policy fees/duty already included in that base**, excluding late surcharge. This is the only supported basis in this milestone.
+- Formula per producer: `receipt base × rule rate / 100 × split / 100`. The rate is the rule's commission rate on the first premium, otherwise its recurring rate.
+- Policy year comes from installment due date relative to inception, not collection date.
+- No fallback rate is used.
+- **Disburse date**: the producer's start day-of-month in the month after the receipt date, clamped to month end (a 31st start pays on 28/29 Feb). The source's creation date is used when no start date is set.
 - Decimal arithmetic and largest-remainder allocation conserve the rounded aggregate to the paisa. Stable producer IDs break ties.
-- Entries preserve the rate, split, basis amount, gross amount, producer identity, agreement version, receipt identity and policy/customer labels.
+- Entries preserve the rate, split, basis amount, gross amount, producer identity, rule code and version, recurring flag, disburse date, receipt identity and policy/customer labels.
 - Reports use posting dates. The receipt's original date remains in the snapshot.
 
 ## Storage and transactions
@@ -53,7 +62,7 @@ This milestone uses local transactions instead of an asynchronous Kafka consumer
 3. After external payment completes, record its reference and explicitly confirm completion. This marks the batch PAID; the application does not transfer money.
 4. Rejection/cancellation releases earnings for a new batch while retaining the original items and audit events. Paid batches cannot be reopened or rejected.
 
-Eligibility is rechecked at submission, approval and payment recording. Policies must be Active/GracePeriod, past a known free-look end date, and have an active producer and positive earning. Cancelled, surrendered, lapsed or otherwise exited policies are held. Policy locks serialize the final check with policy transitions. One earning can be reserved/paid in only one active batch. A tenant payment reference cannot be reused in another batch. Replaying an identical payment confirmation returns the existing batch without another event.
+Eligibility is rechecked at submission, approval and payment recording. An earning is held until its disburse date. Policies must be Active/GracePeriod, past a known free-look end date, and have an active producer and positive earning. Cancelled, surrendered, lapsed or otherwise exited policies are held. Policy locks serialize the final check with policy transitions. One earning can be reserved/paid in only one active batch. A tenant payment reference cannot be reused in another batch. Replaying an identical payment confirmation returns the existing batch without another event.
 
 Every transition records its authenticated actor and time. Amounts come from immutable earnings, never from client-supplied totals. Paid totals remain historical if a policy is cancelled later; automatic clawback and tax/net calculation require a subsequent implementation.
 
@@ -65,14 +74,14 @@ All routes are under `/tenants/{tenant_id}/commissions` and require a valid bear
 |---|---|---|
 | GET | `/payees` | Tenant staff; agents see their own sources |
 | GET | `/setup` | Admin / SuperAdmin; optional customer_id or search, up to 50 individual policies |
-| GET / POST | `/agreements` | Admin / SuperAdmin |
-| POST | `/agreements/{id}/approve` | A different Admin / SuperAdmin |
+| GET / POST | `/agreements` | Admin / SuperAdmin; legacy, does not set rates |
+| POST | `/agreements/{id}/approve` | A different Admin / SuperAdmin; legacy |
 | GET / PUT | `/policies/{id}/assignments` | Admin / SuperAdmin |
 | GET | `/earnings` | Staff; agents see their own earnings |
 | GET | `/summary` | Same scope as earnings |
 | GET | `/exceptions` | Admin / SuperAdmin |
 | POST | `/reconcile` | Admin / SuperAdmin; explicit receipt IDs |
-| GET / POST | `/plan-rules` | Admin / SuperAdmin; approved agreement linked once per plan/rate version |
+| GET / POST | `/plan-rules` | Admin / SuperAdmin; legacy, does not set rates |
 | GET | `/disbursements/eligible` | Admin / SuperAdmin; unreserved entries with hold reasons |
 | GET / POST | `/disbursements` | Admin / SuperAdmin; list/create batches |
 | GET | `/disbursements/{id}` | Admin / SuperAdmin; entries and audit events |
@@ -87,7 +96,7 @@ Earnings accept `offset`, `limit`, `source_id`, `date_from`, `date_to`, and `dis
 
 - Only individual policies are allocated. Group and family policies produce exceptions to avoid multiplying one collected premium across certificates.
 - No net balance, tax computation, bank transfer, automatic clawback or incentive settlement is implemented. Payment recording is gross and manual.
-- Automatic matching is for individual agents and exact catalog plans; other distribution channels and shared splits require explicit policy configuration.
+- Automatic matching is for the customer's assigned individual agent; other distribution channels and shared splits require explicit policy configuration.
 - Collection still uses the application's existing manual/mock payment gateway. A persisted receipt is not independent confirmation from a live bank integration.
 - The old commission dashboard is at `/commissions/preview`. Legacy commission subpages are marked illustrative. Their browser state is not imported into the ledger. Copilot prototype mutations are disabled.
 

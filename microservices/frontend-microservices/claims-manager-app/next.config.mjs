@@ -43,7 +43,7 @@ const nextConfig = {
     NEXT_PUBLIC_ENV_VAR: rootSetting("ENV_VAR"),
     // Browser-facing addresses, also from the root .env when the app runs natively. An empty value falls back to the
     // localhost default in the code that reads it.
-    ...Object.fromEntries(["NEXT_PUBLIC_API_URL", "NEXT_PUBLIC_OCR_URL", "NEXT_PUBLIC_SUMMARIZER_URL", "NEXT_PUBLIC_PORTAL_URL",
+    ...Object.fromEntries(["NEXT_PUBLIC_API_URL", "NEXT_PUBLIC_OCR_URL", "NEXT_PUBLIC_PORTAL_URL",
       "NEXT_PUBLIC_UNDERWRITING_URL", "NEXT_PUBLIC_REQUESTS_URL", "NEXT_PUBLIC_AUTOMATION_URL", "NEXT_PUBLIC_CLAIMS_URL"].map((name) => [name, rootSetting(name)])),
   },
   webpack(config) {

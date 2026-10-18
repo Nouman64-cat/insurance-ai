@@ -22,6 +22,8 @@ from datetime import datetime, timezone
 from typing import Literal, Optional
 from uuid import UUID, uuid4
 
+from pydantic import BaseModel, Field
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -275,7 +277,12 @@ async def specialist_queue(tenant_id: UUID, session: AsyncSession = Depends(get_
         Case.caseType == CaseTypeEnum.UNDERWRITING).order_by(Case.createdAt.desc()))).all()
     reviews = await reviews_by_case(session, [c.caseld for c, _, _ in rows])
     resolved = {c.caseld: policy or await resolve_review_policy(session, c) for c, _, policy in rows}
-    return [{"id": str(c.caseld), "claim_id": str(c.claim_id) if c.claim_id else None, "reference": c.caseNumber, "customer_name": customer.name, "customer_cnic": customer.cnic,
+    from shared.models.core import Claim
+    claim_ids = [c.claim_id for c, _, _ in rows if c.claim_id]
+    claim_numbers = {claim.id: claim.claim_number for claim in (await session.exec(
+        select(Claim).where(Claim.tenant_id == tenant_id, Claim.id.in_(claim_ids)))).all()} if claim_ids else {}
+    return [{"id": str(c.caseld), "claim_id": str(c.claim_id) if c.claim_id else None,
+             "claim_number": claim_numbers.get(c.claim_id), "reference": c.caseNumber, "customer_name": customer.name, "customer_cnic": customer.cnic,
              "product_name": policy.product_name if policy else None,
              "coverage_amount": policy.coverage_amount if policy else None,
              "case_status": c.caseStatus, "on_hold": c.on_hold, "hold_reason": c.hold_reason,
@@ -465,11 +472,15 @@ async def _build_workspace(session: AsyncSession, tenant_id: UUID, case_id: UUID
             review_submitted=not checking_clearance and review["status"] in ("CLEARED", "REFERRED", "DECLINED"), checks=claim_checks)
         both = (await reviews_by_case(session, [case_id]))[case_id]
         if claim:
+            from routers.claims import claim_underwriting_review_state
+            final_state = await claim_underwriting_review_state(session, claim)
             claim_info = {"id": str(claim.id), "claim_number": claim.claim_number, "claim_type": claim.claim_type,
                           "submitted_amount": claim.submitted_amount, "incident_date": claim.incident_date.isoformat() if claim.incident_date else None,
                           "referral_reason": claim.underwriting_referral_reason, "referral_notes": claim.underwriting_decision_notes,
                           "reviews": {t.lower(): {"status": r["status"], "note": r["note"]} for t, r in both.items()},
-                          "ready": all(r["status"] in ("CLEARED", "REFERRED", "DECLINED") for r in both.values())}
+                          "ready": bool(final_state['ready'] and final_state['case_id'] == str(case_id)),
+                          "underwriting_outcome": final_state.get('outcome'),
+                          "ai_recommendation": final_state.get('ai_recommendation')}
     return {"id": str(case_id), "claim": claim_info, "claim_checks": claim_checks, "reference": case.caseNumber, "customer_name": customer.name,
         "product_name": policy.product_name if policy else None, "track": track.lower(), "review": review,
         "case_status": case.caseStatus, "created_at": case.createdAt, "customer_cnic": customer.cnic,
@@ -482,7 +493,71 @@ async def _build_workspace(session: AsyncSession, tenant_id: UUID, case_id: UUID
         "policy_linked": policy is not None,
         "assessment": {"results": (assessment.underwriting_results or {}).get(track.lower()), "score": getattr(assessment, track.lower() + '_score'),
                        "reasons": getattr(assessment, track.lower() + '_reasons') or [],
-                       "created_at": assessment.created_at} if assessment else None}
+                       "created_at": assessment.created_at,
+                       "recommendation": str(getattr(assessment.ai_decision, 'value', assessment.ai_decision)),
+                       "advisory_only": True} if assessment else None}
+
+
+class ClaimUnderwritingOutcomeBody(BaseModel):
+    decision: Literal['PROCEED', 'DECLINE']
+    reason: str = Field(min_length=5, max_length=2000)
+    assessment_id: UUID
+
+
+async def _claim_outcome_access(tenant_id, case_id, token, session, *, write=False):
+    from shared.models.core import Claim, ClaimStatusEnum
+    user = await _get_current_user(token, session)
+    role = await _role_name(user, session)
+    allowed = {'Admin', 'SuperAdmin'} if write else {'Admin', 'SuperAdmin', 'Underwriter', 'ClaimsManager'}
+    tenant_access = user.tenant_id == tenant_id or (role == "SuperAdmin" and user.tenant_id is None)
+    if not tenant_access or role not in allowed:
+        raise HTTPException(403, 'Only Admin records the human underwriting outcome; the Claims Manager decides the claim.')
+    case = (await session.exec(select(Case).where(Case.caseld == case_id, Case.tenant_id == tenant_id)
+        .with_for_update().execution_options(populate_existing=True))).first()
+    if not case or not case.claim_id:
+        raise HTTPException(404, 'Claim underwriting referral not found.')
+    claim = await session.get(Claim, case.claim_id)
+    if not claim or claim.tenant_id != tenant_id:
+        raise HTTPException(404, 'Claim not found.')
+    if write and (case.on_hold or claim.status != ClaimStatusEnum.REUNDERWRITING_REQUIRED or
+                  str(getattr(case.caseStatus, 'value', case.caseStatus)) in {'Approved', 'Rejected', 'Closed'}):
+        raise HTTPException(409, 'This referral is held or already resolved by a human. It cannot receive a new outcome.')
+    return user, case, claim
+
+
+@router.get('/cases/{case_id}/claim-underwriting-outcome')
+async def get_claim_underwriting_outcome(tenant_id: UUID, case_id: UUID,
+    session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme)):
+    from services.claim_underwriting_opinion import opinion_state
+    _, case, claim = await _claim_outcome_access(tenant_id, case_id, token, session)
+    from shared.models.core import ClaimStatusEnum
+    return {**await opinion_state(session, case), 'on_hold': case.on_hold,
+            'resolved': claim.status != ClaimStatusEnum.REUNDERWRITING_REQUIRED}
+
+
+@router.post('/cases/{case_id}/claim-underwriting-outcome')
+async def record_claim_underwriting_outcome(tenant_id: UUID, case_id: UUID, body: ClaimUnderwritingOutcomeBody,
+    session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme)):
+    import json
+    from services.claim_underwriting_opinion import opinion_state, ACTION
+    user, case, _ = await _claim_outcome_access(tenant_id, case_id, token, session, write=True)
+    state = await opinion_state(session, case)
+    if not state['reviews_complete'] or not state['assessment_id']:
+        raise HTTPException(409, 'Submit both specialist reviews and run the final AI assessment before recording your human underwriting outcome.')
+    if state['assessment_id'] != str(body.assessment_id):
+        raise HTTPException(409, 'A newer assessment exists. Review its recommendation before recording your outcome.')
+    if len(body.reason.strip()) < 5:
+        raise HTTPException(422, 'Record your own underwriting rationale.')
+    outcome = {'decision': body.decision, 'reason': body.reason.strip(), 'assessment_id': state['assessment_id'],
+               'ai_recommendation': state['ai_recommendation'], 'reviews': state['review_snapshot']}
+    if state['outcome'] and state['outcome']['current'] and all(state['outcome'].get(k) == v for k, v in outcome.items()):
+        return {'success': True, 'outcome': state['outcome']}
+    session.add(CaseAuditTrail(caseld=case_id, actionPerformed=ACTION, entityChanged='ClaimUnderwritingOutcome',
+        previousValue=json.dumps(state['outcome']) if state['outcome'] else None,
+        newValue=json.dumps(outcome), performedBy=user.id, timestamp=datetime.utcnow()))
+    await session.commit()
+    return {'success': True, 'outcome': {**outcome, 'current': True, 'recorded_by': str(user.id)},
+            'message': 'Human underwriting outcome recorded for the Claims Manager. No claim or policy decision was changed.'}
 
 
 # Keep upload validation/storage/OCR in the existing artifact implementation.
@@ -518,6 +593,80 @@ async def upload_specialist_document(
         await _file_on_claim(session, case_id, claim_doc, result, user)
     await _refresh_case_requirements(session, tenant_id, case_id)
     return result
+
+
+class SpecialistDocumentWaiver(BaseModel):
+    document_type: str
+    reason: str = Field(min_length=5, max_length=2000)
+
+
+async def _assigned_claim_document(session, tenant_id, case_id, user, track, document_type):
+    from shared.models.core import Claim, ClaimStatusEnum, CaseTypeEnum
+    case = (await session.exec(select(Case).where(Case.caseld == case_id, Case.tenant_id == tenant_id).with_for_update())).first()
+    if not case or case.caseType != CaseTypeEnum.UNDERWRITING or not case.claim_id:
+        raise HTTPException(404, "Claim underwriting review not found.")
+    review = (await session.exec(select(CaseUnderwritingTrack).where(
+        CaseUnderwritingTrack.case_id == case_id, CaseUnderwritingTrack.track == track))).first()
+    if not review or review.assigned_user_id != user.id:
+        raise HTTPException(403, "Only the assigned underwriter can waive documents on this track.")
+    if case.on_hold or str(getattr(case.caseStatus, 'value', case.caseStatus)) in {'Approved', 'Closed', 'Rejected'}:
+        raise HTTPException(409, "This claim review is held or closed.")
+    claim = await session.get(Claim, case.claim_id)
+    if not claim or claim.tenant_id != tenant_id or claim.status in {
+        ClaimStatusEnum.APPROVED, ClaimStatusEnum.PARTIAL_APPROVAL, ClaimStatusEnum.DECLINED,
+        ClaimStatusEnum.SETTLED, ClaimStatusEnum.CLOSED,
+    }:
+        raise HTTPException(409, "Documents cannot be waived after the claim decision.")
+    doc = await _claim_document_for_track(session, tenant_id, case_id, track, document_type)
+    if doc is None:
+        raise HTTPException(403, "Choose a claim document belonging to your underwriting track.")
+    return case, claim, review, doc
+
+
+@router.post('/cases/{case_id}/underwriting-documents/waive')
+async def waive_specialist_claim_document(
+    tenant_id: UUID, case_id: UUID, body: SpecialistDocumentWaiver,
+    session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme),
+):
+    from shared.models.core import ClaimProcess
+    from services import underwriting_gate
+    user, track = await _specialist_identity(tenant_id, token, session)
+    if len(body.reason.strip()) < 5:
+        raise HTTPException(422, "Supply the reason for waiving this document.")
+    case, claim, review, doc = await _assigned_claim_document(
+        session, tenant_id, case_id, user, track, body.document_type)
+    if doc.get('status') == 'Waived':
+        return {'status': 'Waived', 'document_type': body.document_type, 'already_waived': True}
+    if doc.get('status') == 'Received':
+        raise HTTPException(409, "This document is already received; it does not need a waiver.")
+    proc = (await session.exec(select(ClaimProcess).where(ClaimProcess.claim_id == claim.id).with_for_update())).first()
+    if proc:
+        from routers.claim_workflow import _update_doc, _sync_documents, _touch, _audit
+        _update_doc(proc, doc['key'], status='Waived', note=body.reason.strip(),
+                    waived_by=str(user.id), waived_at=datetime.utcnow().isoformat())
+        await _sync_documents(session, claim, proc, user)
+        _touch(proc)
+        session.add(proc)
+        from shared.models.core import Policy
+        policy = await session.get(Policy, claim.policy_id)
+        _audit(session, policy, claim, proc, 'ClaimDocumentWaived', user.email,
+               {'document': body.document_type, 'reason': body.reason.strip(), 'track': track.lower()})
+    else:
+        rows, _ = await underwriting_gate.compute_requirements(session, tenant_id, case)
+        code = '_'.join(''.join(ch if ch.isalnum() else ' ' for ch in body.document_type).split())[:100]
+        requirement = next((row for row in rows if row.code == code), None)
+        if requirement is None:
+            raise HTTPException(409, "This document is not a claim requirement.")
+        await underwriting_gate.waive_requirement(session, requirement, note=body.reason.strip())
+    session.add(CaseAuditTrail(caseld=case_id, actionPerformed=f'{track.title()} claim document waived',
+        entityChanged=body.document_type, previousValue=doc.get('status') or 'Requested',
+        newValue=f'Waived: {body.reason.strip()}', performedBy=user.id, timestamp=datetime.utcnow()))
+    if review.status in {'CLEARED', 'REFERRED', 'DECLINED'}:
+        review.status = 'IN_REVIEW'
+        session.add(review)
+    await session.commit()
+    await _refresh_case_requirements(session, tenant_id, case_id)
+    return {'status': 'Waived', 'document_type': body.document_type, 'reason': body.reason.strip()}
 
 
 @router.post('/cases/{case_id}/underwriting-documents/{artifact_id}/retry', status_code=202)

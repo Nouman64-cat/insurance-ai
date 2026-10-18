@@ -8,7 +8,7 @@ interface Result { ok: boolean; title: string; detail?: string }
 
 /**
  * Development helper on the sign-in screens: shows which server address the app is using, tests it for real, and lets the address
- * be typed in when the automatic one is wrong (a new IP after reconnecting to Wi-Fi, a different computer). Not shown in release builds.
+ * be changed for local development. Not shown in release builds.
  */
 export default function ConnectionCheck() {
   const [open, setOpen] = useState(false);
@@ -27,18 +27,18 @@ export default function ConnectionCheck() {
       const r = await axios.get(`${target}/customer-management/v1/walk-in/config`, { timeout: 8000, validateStatus: () => true });
       const ms = Date.now() - started;
       if (r.status === 200) setResult({ ok: true, title: `Connected to the server (${ms} ms)` });
-      else setResult({ ok: false, title: `The server answered, but with HTTP ${r.status}`, detail: 'The address is reachable. This is a backend problem: check `docker compose ps` and the gateway logs.' });
+      else setResult({ ok: false, title: `The server answered, but with HTTP ${r.status}`, detail: 'The address is reachable. Check the backend service and gateway logs.' });
     } catch (e: any) {
       setResult({
         ok: false, title: `Cannot reach ${target}`,
-        detail: `${e?.code ?? 'ERROR'}: ${e?.message ?? 'no details'}\n\nCheck that the phone is on the same Wi-Fi as the computer (not mobile data, no VPN), that Docker is running, and that this address is the computer's current IP (run hostname -I on it).`,
+        detail: `${e?.code ?? 'ERROR'}: ${e?.message ?? 'no details'}\n\nCheck your internet connection and that the backend is available. For a local development server, check the address and that your phone can reach it.`,
       });
     } finally { setBusy(false); }
   }
 
   async function save() {
     const url = normalizeServerUrl(input);
-    if (!url) { setResult({ ok: false, title: 'That is not a valid address', detail: 'Use the computer\'s IP, for example 192.168.18.85 (port 8010 is added for you).' }); return; }
+    if (!url) { setResult({ ok: false, title: 'That is not a valid address', detail: 'Use https://api.getinsuredai.com or a local server IP.' }); return; }
     await setServerOverride(url);
     setCurrent(url); setInput(url);
     await test(url);
@@ -62,16 +62,16 @@ export default function ConnectionCheck() {
           <View>
             <Text variant="caption" color="subtle">In use</Text>
             <Text variant="bodyStrong" selectable>{current}</Text>
-            <Text variant="caption" color="subtle" style={{ marginTop: 6 }}>Found automatically from the development server</Text>
+            <Text variant="caption" color="subtle" style={{ marginTop: 6 }}>Configured default server</Text>
             <Text variant="callout" selectable>{defaultApiUrl}</Text>
           </View>
           {result ? <Banner tone={result.ok ? 'success' : 'danger'} title={result.title} description={result.detail} /> : null}
           <Button title="Test connection" onPress={() => test(current)} loading={busy} disabled={busy} fullWidth />
           <Field label="Use a different address" value={input} onChangeText={setInput} autoCapitalize="none" autoCorrect={false} keyboardType="url"
-            placeholder="192.168.18.85" helperText="The computer running Docker. The port (8010) is added automatically." />
+            placeholder="https://api.getinsuredai.com" helperText="Use a full server URL. Bare local IP addresses use port 8010." />
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <Button title="Save and test" onPress={save} disabled={busy} style={{ flex: 1 }} />
-            <Button title="Use automatic" variant="outline" onPress={reset} disabled={busy || !hasServerOverride()} style={{ flex: 1 }} />
+            <Button title="Use default" variant="outline" onPress={reset} disabled={busy || !hasServerOverride()} style={{ flex: 1 }} />
           </View>
         </View>
       </Sheet>

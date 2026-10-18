@@ -28,6 +28,7 @@ interface AcquisitionSource {
   city?: string | null;
   cnic?: string | null;
   location?: string | null;
+  start_date?: string | null;
   is_active: boolean;
   created_at: string;
   customer_count: number;
@@ -95,6 +96,7 @@ const EMPTY_FORM = {
   city: "",
   cnic: "",
   location: "",
+  start_date: "",
   is_active: true,
 };
 
@@ -180,6 +182,7 @@ export default function AcquisitionSourcesPage() {
       city: s.city ?? "",
       cnic: s.cnic ?? "",
       location: s.location ?? "",
+      start_date: s.start_date ?? "",
       is_active: s.is_active,
     });
     setError("");
@@ -212,6 +215,7 @@ export default function AcquisitionSourcesPage() {
       city: form.city.trim() || null,
       cnic: form.cnic.trim() || null,
       location: form.location.trim() || null,
+      start_date: form.start_date || null,
       is_active: form.is_active,
     };
     try {
@@ -681,6 +685,16 @@ export default function AcquisitionSourcesPage() {
                     onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
                     className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
                   />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("Start Date")}</label>
+                  <input
+                    type="date"
+                    value={form.start_date}
+                    onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                  />
+                  <p className="text-[11px] text-slate-500">{tx("Commission earned in a month is payable on this day of the following month.")}</p>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">{tx("CNIC")}</label>

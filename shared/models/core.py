@@ -475,6 +475,9 @@ class AcquisitionSource(SQLModel, table=True):
 
     is_active: bool = Field(default=True, nullable=False)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    # When the producer started with the insurer. Commission earned in a month is
+    # payable on this day-of-month in the following month (created_at if unset).
+    start_date: Optional[date] = Field(default=None, nullable=True)
 
     # The login account issued to this source when it was created with a contact
     # email. The account stays out of User Management until the entity first signs

@@ -301,6 +301,10 @@ DOMAIN_TOOLS: dict[str, set[str]] = {
     # Specialist underwriting: the medical and financial reviews and the final compile
     # (specialist_review_tools.py). The specialist agents bind this pack on its own.
     "specialist_review": {
+        "record_claim_underwriting_outcome",
+        "upload_underwriting_document",
+        "waive_underwriting_document",
+        "record_claim_underwriting_check",
         "list_my_underwriting_reviews",
         "get_underwriting_review",
         "start_my_review",
