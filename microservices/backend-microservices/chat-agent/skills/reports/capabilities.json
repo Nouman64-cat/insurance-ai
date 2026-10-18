@@ -14,7 +14,7 @@
     "schema": {
       "properties": {
         "page_name": {
-          "description": "Exact page route. Must be one of: dashboard, submissions, cases, artifacts, underwriting, applications, claims, claims/dashboard, claims/register, reimbursements, fraud, score-engine, proposal, live-evaluation, case-summarizer, assessments, agents, financial, reports, plans, policy-issuance, policy-management/post-issuance, pre-underwriting, post-underwriting, renewals, commissions, commissions/rate-card, commissions/payees, commissions/calculator, commissions/types, commissions/bonuses, commission-ops, commission-ops/ledger, commission-ops/statements, treasury/runs, treasury/banking, treasury/settlement, treasury/holdbacks, risk/clawbacks, risk/tax, risk/secp, admin/rule-engine, admin/leads, admin/customers, admin/policyholders, admin/acquisition-sources, admin/organizations, admin/families, admin/users, super-admin/tenants, super-admin/admins, super-admin/branches, super-admin/ai-agents, super-admin/tokens, profile",
+          "description": "Exact page route. Must be one of: dashboard, submissions, cases, artifacts, underwriting, applications, finance, claims, claims/dashboard, claims/register, reimbursements, fraud, score-engine, proposal, live-evaluation, case-summarizer, assessments, agents, financial, reports, plans, policy-issuance, policy-management/post-issuance, pre-underwriting, post-underwriting, renewals, commissions, commissions/rate-card, commissions/payees, commissions/calculator, commissions/types, commissions/bonuses, commission-ops, commission-ops/ledger, commission-ops/statements, treasury/runs, treasury/banking, treasury/settlement, treasury/holdbacks, risk/clawbacks, risk/tax, risk/secp, admin/rule-engine, admin/leads, admin/customers, admin/policyholders, admin/acquisition-sources, admin/organizations, admin/families, admin/users, super-admin/tenants, super-admin/admins, super-admin/branches, super-admin/ai-agents, super-admin/tokens, profile",
           "title": "Page Name",
           "type": "string"
         },
@@ -4817,6 +4817,215 @@
     "roles": [
       "SuperAdmin",
       "Admin"
+    ]
+  },
+  {
+    "capability_id": "get_finance_dashboard",
+    "description": "Finance only: read approved claims awaiting payout, reconciliation work, or paid history and live totals. Approval is not payment authorisation.",
+    "domain": "finance",
+    "mutating": false,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "finance_tools",
+      "line": 34,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "queue": {
+          "default": "payouts",
+          "enum": [
+            "payouts",
+            "reconciliation",
+            "history"
+          ],
+          "title": "Queue",
+          "type": "string"
+        },
+        "search": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Search"
+        }
+      },
+      "title": "FinanceDashboardArgs",
+      "type": "object"
+    },
+    "roles": [
+      "Finance"
+    ]
+  },
+  {
+    "capability_id": "get_claim_payment_details",
+    "description": "Finance only: inspect one exact claim's settlement payees, bank details, manager authorisation, payout references and reconciliation. Read this before payment.",
+    "domain": "finance",
+    "mutating": false,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "finance_tools",
+      "line": 59,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "claim_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. CLM-2026-0001.",
+          "title": "Claim Number"
+        },
+        "claimant_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Claimant / policyholder name, when the number isn't known.",
+          "title": "Claimant Name"
+        }
+      },
+      "title": "ClaimLookupArgs",
+      "type": "object"
+    },
+    "roles": [
+      "Finance"
+    ]
+  },
+  {
+    "capability_id": "pay_authorized_claim",
+    "description": "Finance only: record payment of an already authorised claim settlement to its verified payees. Requires explicit user instruction. Never approves or authorises a claim.",
+    "domain": "finance",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "finance_tools",
+      "line": 67,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "claim_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. CLM-2026-0001.",
+          "title": "Claim Number"
+        },
+        "claimant_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Claimant / policyholder name, when the number isn't known.",
+          "title": "Claimant Name"
+        },
+        "method": {
+          "description": "Payment method explicitly selected by the user from the current settlement's available methods.",
+          "title": "Method",
+          "type": "string"
+        }
+      },
+      "required": [
+        "method"
+      ],
+      "title": "FinancePaymentArgs",
+      "type": "object"
+    },
+    "roles": [
+      "Finance"
+    ]
+  },
+  {
+    "capability_id": "reconcile_finance_claim",
+    "description": "Finance only: reconcile an existing settlement payment; surface mismatches. Exception resolution requires a user-supplied rationale.",
+    "domain": "finance",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "finance_tools",
+      "line": 88,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "claim_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. CLM-2026-0001.",
+          "title": "Claim Number"
+        },
+        "claimant_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Claimant / policyholder name, when the number isn't known.",
+          "title": "Claimant Name"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "User-supplied rationale, required to resolve a reconciliation exception. Never fabricate it.",
+          "title": "Note"
+        }
+      },
+      "title": "FinanceReconcileArgs",
+      "type": "object"
+    },
+    "roles": [
+      "Finance"
     ]
   },
   {

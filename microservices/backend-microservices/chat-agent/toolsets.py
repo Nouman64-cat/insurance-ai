@@ -97,6 +97,7 @@ CORE_TOOLS: set[str] = {
 
 # ── Domain packs ─────────────────────────────────────────────────────────────
 DOMAIN_TOOLS: dict[str, set[str]] = {
+    "finance": {"get_finance_dashboard", "get_claim_payment_details", "pay_authorized_claim", "reconcile_finance_claim"},
     "admin": {
         "list_acquisition_sources",
         "list_organizations",
@@ -321,6 +322,7 @@ FALLBACK_DOMAINS: tuple[str, ...] = ("admin", "rules", "claims", "group", "commi
 # Words that put a conversation into a domain. Generous on purpose — a false
 # positive costs a few hundred tokens, a false negative costs a capability.
 DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "finance": ("finance", "payment history", "reconciliation", "authorised payout", "authorized payout"),
     "admin": (
         "user", "users", "staff", "team", "role", "underwriter", "organization",
         "organisation", "corporate", "company", "family", "families", "household",

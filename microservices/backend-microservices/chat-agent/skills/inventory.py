@@ -9,6 +9,7 @@ def build(roles: list[str]) -> dict:
     from .registry import capabilities, GRAPH_TOOLS, DISCOVERY_TOOLS
     from commission_specialist import COMMISSION_TOOLS
     from claims_specialist import CLAIMS_TOOLS
+    from finance_specialist import FINANCE_TOOLS
     from underwriting_specialist import UNDERWRITING_TOOLS
     from servicing_specialist import SERVICING_TOOLS
     from group_specialist import GROUP_TOOLS
@@ -18,6 +19,7 @@ def build(roles: list[str]) -> dict:
     skills = metadata()
     caps = capabilities()
     scopes = [
+        ("finance", "Finance specialist", "finance_agent", FINANCE_TOOLS, "FINANCE_SPECIALIST_ENABLED"),
         ("commission", "Commission specialist", "commission_agent", COMMISSION_TOOLS, "COMMISSION_SPECIALIST_ENABLED"),
         ("claims", "Claims specialist", "claims_agent", CLAIMS_TOOLS, "CLAIMS_SPECIALIST_ENABLED"),
         ("underwriting", "Underwriting specialist", "underwriting_agent", UNDERWRITING_TOOLS, "UNDERWRITING_SPECIALIST_ENABLED"),
@@ -31,7 +33,7 @@ def build(roles: list[str]) -> dict:
         return sorted(role for role in roles if any(is_role_allowed(n, role) for n in names))
     subagents = [{"id": sid, "name": title, "node": node,
                   "enabled": os.getenv(flag, "true").lower() not in {"false", "0", "off"},
-                  "tools": sorted(names), "roles": permissions(names)}
+                  "tools": sorted(names), "roles": ["Finance"] if sid == "finance" else permissions(names)}
                  for sid, title, node, names, flag in scopes]
     tools = []
     for tool in ALL_TOOLS:

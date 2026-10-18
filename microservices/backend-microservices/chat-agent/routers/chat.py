@@ -27,7 +27,7 @@ from routers.voice import voice_user
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 _SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"}
-_PLANNER_NODES = {'agent', 'general_agent', 'commission_agent', 'claims_agent', 'underwriting_agent', 'servicing_agent', 'group_agent'}
+_PLANNER_NODES = {'finance_agent','agent', 'general_agent', 'commission_agent', 'claims_agent', 'underwriting_agent', 'servicing_agent', 'group_agent'}
 
 
 async def _caller(authorization: str, tenant_id: str) -> dict:
@@ -141,7 +141,7 @@ async def _consume(graph, config, input_):
                 handoff = node_data.get('specialist_handoff')
                 if handoff:
                     yield step('specialist:' + handoff['agent'],
-                               {'commission':'Commission specialist selected', 'claims':'Claims specialist selected', 'underwriting':'Underwriting specialist selected', 'servicing':'Policy servicing specialist selected', 'group':'Group insurance specialist selected', 'medical_underwriting':'Medical underwriting specialist selected', 'financial_underwriting':'Financial underwriting specialist selected', 'final_underwriting':'Final underwriting specialist selected'}.get(handoff['agent'], 'Main assistant selected'), 'done')
+                               {'finance':'Finance specialist selected', 'commission':'Commission specialist selected', 'claims':'Claims specialist selected', 'underwriting':'Underwriting specialist selected', 'servicing':'Policy servicing specialist selected', 'group':'Group insurance specialist selected', 'medical_underwriting':'Medical underwriting specialist selected', 'financial_underwriting':'Financial underwriting specialist selected', 'final_underwriting':'Final underwriting specialist selected'}.get(handoff['agent'], 'Main assistant selected'), 'done')
 
                 # Autonomous journey stages narrate themselves: each pipeline
                 # node reports its own completion (journey_done) and what runs

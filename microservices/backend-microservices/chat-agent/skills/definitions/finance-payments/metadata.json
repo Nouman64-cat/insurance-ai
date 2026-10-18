@@ -1,0 +1,58 @@
+{
+  "id": "finance-payments",
+  "purpose": "Review Finance payment queues and record already authorised claim settlements using current verified payees.",
+  "intents": [
+    "finance dashboard",
+    "awaiting payout",
+    "pay claim",
+    "payment details",
+    "payment history",
+    "authorised payout"
+  ],
+  "capabilities": [
+    "get_finance_dashboard",
+    "get_claim_payment_details",
+    "pay_authorized_claim"
+  ],
+  "roles": [
+    "Finance"
+  ],
+  "prerequisites": [
+    "Authenticated Finance role and tenant scope",
+    "Existing claim and current settlement workflow"
+  ],
+  "business_rules": [
+    "Claims Managers approve and authorise; Finance executes and reconciles only.",
+    "Explicit user instruction is required for mutations; current backend gates remain authoritative."
+  ],
+  "lifecycle_source": "tenant-service/routers/claim_workflow.py; finance_tools.py",
+  "approvals": "Existing shared permission and execution gates; owning-service settlement authorisation is required before payment.",
+  "recovery": [
+    "Ask for exact identifiers or ambiguous matches.",
+    "Refresh unknown payment outcomes before retry; do not repeat completed operations."
+  ],
+  "verification": "Report verified backend outcomes only; registration does not prove live bank execution.",
+  "tests": [
+    "test_finance_specialist.py"
+  ],
+  "steps": [
+    {
+      "id": "read_payment",
+      "capability": "get_claim_payment_details",
+      "depends_on": []
+    },
+    {
+      "id": "pay_requested_settlement",
+      "capability": "pay_authorized_claim",
+      "depends_on": [
+        "read_payment"
+      ]
+    }
+  ],
+  "unsupported": [
+    "Claim approval",
+    "Settlement authorisation",
+    "Underwriting findings",
+    "Changing bank details"
+  ]
+}

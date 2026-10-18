@@ -3,6 +3,7 @@
  * chat-agent from the user's verified role, never from this.
  */
 const NAMES: Record<string, { name: string; tagline: string }> = {
+  Finance: { name: "Finance Copilot", tagline: "Your payments and reconciliation assistant" },
   ClaimsManager: { name: "Claims Copilot", tagline: "Your claims assistant" },
   ClaimsAdjuster: { name: "Claims Copilot", tagline: "Your claims assistant" },
   MedicalUnderwriter: { name: "Medical Underwriting Copilot", tagline: "Your medical review assistant" },

@@ -9,6 +9,7 @@ the graph checks before a tool ever runs.
 from env_mode import is_demo
 
 MUTATING_TOOLS = {
+    "pay_authorized_claim", "reconcile_finance_claim",
     "record_claim_financial_check",
     "issue_claim_payout",
     "create_platform_tenant", "manage_platform_role", "configure_platform_model",
@@ -173,6 +174,7 @@ MUTATING_TOOLS = {
 # Read-only + navigation. Never gated, never confirmed — asking "shall I open
 # the cases page?" before every navigation makes the agent unusable.
 SAFE_TOOLS = {
+    "get_finance_dashboard", "get_claim_payment_details",
     "get_claim_financial_review",
     "get_platform_configuration", "get_platform_token_usage", "get_initial_premium_status",
     "search_capabilities", "get_capability_schema",
@@ -410,6 +412,10 @@ REQUIRED_ARGS: dict[str, list[str]] = {
 # Tools that emit progress steps worth showing in the UI's process graph, with
 # the label each step gets. Everything else falls back to a humanised tool name.
 STEP_LABELS: dict[str, str] = {
+    "get_finance_dashboard": "Checking Finance queues",
+    "get_claim_payment_details": "Checking claim payment details",
+    "pay_authorized_claim": "Recording authorised settlement payment",
+    "reconcile_finance_claim": "Reconciling claim payment",
     "get_claim_financial_review": "Checking claim financial underwriting",
     "record_claim_financial_check": "Recording financial claim finding",
     "get_platform_configuration": "Read platform configuration",
@@ -1075,10 +1081,15 @@ CLAIM_AUTHORITY_ROLES.update({name: {"ClaimsAdjuster", "ClaimsManager"} for name
                               {"start_claim_journey", "continue_claim_journey"}})
 
 FINANCE_ALLOWED_TOOLS = CLAIMS_READ_TOOLS | SPECIALIST_NAVIGATION | {
+    "get_finance_dashboard", "get_claim_payment_details", "pay_authorized_claim", "reconcile_finance_claim",
     "issue_claim_payout", "disburse_claim_settlement", "reconcile_claim_settlement",
     "resolve_insurance_record", "get_claim_blockers", "get_workflow_timeline",
 }
 
+
+# Finance-specific capabilities cannot be discovered or executed by another role.
+_FINANCE_ONLY_TOOLS = {"get_finance_dashboard", "get_claim_payment_details", "pay_authorized_claim", "reconcile_finance_claim"}
+CLAIM_AUTHORITY_ROLES.update({name: {"Finance"} for name in _FINANCE_ONLY_TOOLS})
 
 def is_role_allowed(tool_name: str, role: str, platform: str = "web") -> bool:
     """Whether `role` may run `tool_name`.
@@ -1100,6 +1111,8 @@ def is_role_allowed(tool_name: str, role: str, platform: str = "web") -> bool:
         return role in {"SuperAdmin", "Admin", "Underwriter", "Agent"}
     if tool_name in CLAIM_AUTHORITY_ROLES and role not in CLAIM_AUTHORITY_ROLES[tool_name]:
         return False
+    if tool_name in _FINANCE_ONLY_TOOLS:
+        return role == "Finance"
     if role == "Finance":
         return tool_name in FINANCE_ALLOWED_TOOLS
     if tool_name in ROLE_SCOPED_READS and role not in ROLE_SCOPED_READS[tool_name]:

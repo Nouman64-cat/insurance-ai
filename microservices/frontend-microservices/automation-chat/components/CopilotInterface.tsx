@@ -88,6 +88,7 @@ import { currentCopilotIdentity } from "@/lib/copilotName";
 const WELCOME_ID = "1";
 
 const ROLE_GREETINGS: Record<string, string> = {
+  Finance: "composer.greetingFinance",
   ClaimsManager: "composer.greetingClaimsManager",
   MedicalUnderwriter: "composer.greetingMedicalUnderwriter",
   FinancialUnderwriter: "composer.greetingFinancialUnderwriter",
@@ -380,6 +381,12 @@ function customerChoiceRows(actions: QuickAction[]) {
 }
 
 const ROLE_STARTERS: Record<string, QuickAction[]> = {
+  Finance: [
+    { label: "Finance dashboard", actionType: "submit", payload: "Show my Finance payment dashboard" },
+    { label: "Awaiting payout", actionType: "submit", payload: "Show approved claims awaiting payout" },
+    { label: "Reconciliation queue", actionType: "submit", payload: "Show payments awaiting reconciliation" },
+    { label: "Payment history", actionType: "submit", payload: "Show claim payment history" },
+  ],
   MedicalUnderwriter: [
     { label: "My medical reviews", actionType: "submit", payload: "Show my medical underwriting reviews" },
     { label: "Start next review", actionType: "submit", payload: "Start my next medical review" },

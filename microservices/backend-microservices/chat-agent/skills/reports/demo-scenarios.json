@@ -560,6 +560,38 @@
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
+    "id": "SuperAdmin:get_finance_dashboard",
+    "role": "SuperAdmin",
+    "capability": "get_finance_dashboard",
+    "request": "Please get finance dashboard.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:get_claim_payment_details",
+    "role": "SuperAdmin",
+    "capability": "get_claim_payment_details",
+    "request": "Please get claim payment details.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:pay_authorized_claim",
+    "role": "SuperAdmin",
+    "capability": "pay_authorized_claim",
+    "request": "Please pay authorized claim.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:reconcile_finance_claim",
+    "role": "SuperAdmin",
+    "capability": "reconcile_finance_claim",
+    "request": "Please reconcile finance claim.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
     "id": "SuperAdmin:list_claims",
     "role": "SuperAdmin",
     "capability": "list_claims",
@@ -2352,6 +2384,38 @@
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
+    "id": "Admin:get_finance_dashboard",
+    "role": "Admin",
+    "capability": "get_finance_dashboard",
+    "request": "Please get finance dashboard.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:get_claim_payment_details",
+    "role": "Admin",
+    "capability": "get_claim_payment_details",
+    "request": "Please get claim payment details.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:pay_authorized_claim",
+    "role": "Admin",
+    "capability": "pay_authorized_claim",
+    "request": "Please pay authorized claim.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:reconcile_finance_claim",
+    "role": "Admin",
+    "capability": "reconcile_finance_claim",
+    "request": "Please reconcile finance claim.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
     "id": "Admin:list_claims",
     "role": "Admin",
     "capability": "list_claims",
@@ -4140,6 +4204,38 @@
     "role": "Agent",
     "capability": "create_eligibility_profile",
     "request": "Please create eligibility profile.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:get_finance_dashboard",
+    "role": "Agent",
+    "capability": "get_finance_dashboard",
+    "request": "Please get finance dashboard.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:get_claim_payment_details",
+    "role": "Agent",
+    "capability": "get_claim_payment_details",
+    "request": "Please get claim payment details.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:pay_authorized_claim",
+    "role": "Agent",
+    "capability": "pay_authorized_claim",
+    "request": "Please pay authorized claim.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:reconcile_finance_claim",
+    "role": "Agent",
+    "capability": "reconcile_finance_claim",
+    "request": "Please reconcile finance claim.",
     "allowed": false,
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
@@ -5936,6 +6032,38 @@
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
+    "id": "Underwriter:get_finance_dashboard",
+    "role": "Underwriter",
+    "capability": "get_finance_dashboard",
+    "request": "Please get finance dashboard.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:get_claim_payment_details",
+    "role": "Underwriter",
+    "capability": "get_claim_payment_details",
+    "request": "Please get claim payment details.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:pay_authorized_claim",
+    "role": "Underwriter",
+    "capability": "pay_authorized_claim",
+    "request": "Please pay authorized claim.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:reconcile_finance_claim",
+    "role": "Underwriter",
+    "capability": "reconcile_finance_claim",
+    "request": "Please reconcile finance claim.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
     "id": "Underwriter:list_claims",
     "role": "Underwriter",
     "capability": "list_claims",
@@ -7724,6 +7852,38 @@
     "role": "Medical Underwriter",
     "capability": "create_eligibility_profile",
     "request": "Please create eligibility profile.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:get_finance_dashboard",
+    "role": "Medical Underwriter",
+    "capability": "get_finance_dashboard",
+    "request": "Please get finance dashboard.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:get_claim_payment_details",
+    "role": "Medical Underwriter",
+    "capability": "get_claim_payment_details",
+    "request": "Please get claim payment details.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:pay_authorized_claim",
+    "role": "Medical Underwriter",
+    "capability": "pay_authorized_claim",
+    "request": "Please pay authorized claim.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:reconcile_finance_claim",
+    "role": "Medical Underwriter",
+    "capability": "reconcile_finance_claim",
+    "request": "Please reconcile finance claim.",
     "allowed": false,
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
@@ -9520,6 +9680,38 @@
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
+    "id": "Financial Underwriter:get_finance_dashboard",
+    "role": "Financial Underwriter",
+    "capability": "get_finance_dashboard",
+    "request": "Please get finance dashboard.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:get_claim_payment_details",
+    "role": "Financial Underwriter",
+    "capability": "get_claim_payment_details",
+    "request": "Please get claim payment details.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:pay_authorized_claim",
+    "role": "Financial Underwriter",
+    "capability": "pay_authorized_claim",
+    "request": "Please pay authorized claim.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:reconcile_finance_claim",
+    "role": "Financial Underwriter",
+    "capability": "reconcile_finance_claim",
+    "request": "Please reconcile finance claim.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
     "id": "Financial Underwriter:list_claims",
     "role": "Financial Underwriter",
     "capability": "list_claims",
@@ -11308,6 +11500,38 @@
     "role": "ClaimsManager",
     "capability": "create_eligibility_profile",
     "request": "Please create eligibility profile.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:get_finance_dashboard",
+    "role": "ClaimsManager",
+    "capability": "get_finance_dashboard",
+    "request": "Please get finance dashboard.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:get_claim_payment_details",
+    "role": "ClaimsManager",
+    "capability": "get_claim_payment_details",
+    "request": "Please get claim payment details.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:pay_authorized_claim",
+    "role": "ClaimsManager",
+    "capability": "pay_authorized_claim",
+    "request": "Please pay authorized claim.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:reconcile_finance_claim",
+    "role": "ClaimsManager",
+    "capability": "reconcile_finance_claim",
+    "request": "Please reconcile finance claim.",
     "allowed": false,
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
@@ -13104,6 +13328,38 @@
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
+    "id": "ClaimsAdjuster:get_finance_dashboard",
+    "role": "ClaimsAdjuster",
+    "capability": "get_finance_dashboard",
+    "request": "Please get finance dashboard.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:get_claim_payment_details",
+    "role": "ClaimsAdjuster",
+    "capability": "get_claim_payment_details",
+    "request": "Please get claim payment details.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:pay_authorized_claim",
+    "role": "ClaimsAdjuster",
+    "capability": "pay_authorized_claim",
+    "request": "Please pay authorized claim.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:reconcile_finance_claim",
+    "role": "ClaimsAdjuster",
+    "capability": "reconcile_finance_claim",
+    "request": "Please reconcile finance claim.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
     "id": "ClaimsAdjuster:list_claims",
     "role": "ClaimsAdjuster",
     "capability": "list_claims",
@@ -14892,6 +15148,38 @@
     "role": "CustomerService",
     "capability": "create_eligibility_profile",
     "request": "Please create eligibility profile.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:get_finance_dashboard",
+    "role": "CustomerService",
+    "capability": "get_finance_dashboard",
+    "request": "Please get finance dashboard.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:get_claim_payment_details",
+    "role": "CustomerService",
+    "capability": "get_claim_payment_details",
+    "request": "Please get claim payment details.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:pay_authorized_claim",
+    "role": "CustomerService",
+    "capability": "pay_authorized_claim",
+    "request": "Please pay authorized claim.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:reconcile_finance_claim",
+    "role": "CustomerService",
+    "capability": "reconcile_finance_claim",
+    "request": "Please reconcile finance claim.",
     "allowed": false,
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
@@ -16688,6 +16976,38 @@
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
+    "id": "Viewer:get_finance_dashboard",
+    "role": "Viewer",
+    "capability": "get_finance_dashboard",
+    "request": "Please get finance dashboard.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:get_claim_payment_details",
+    "role": "Viewer",
+    "capability": "get_claim_payment_details",
+    "request": "Please get claim payment details.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:pay_authorized_claim",
+    "role": "Viewer",
+    "capability": "pay_authorized_claim",
+    "request": "Please pay authorized claim.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:reconcile_finance_claim",
+    "role": "Viewer",
+    "capability": "reconcile_finance_claim",
+    "request": "Please reconcile finance claim.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
     "id": "Viewer:list_claims",
     "role": "Viewer",
     "capability": "list_claims",
@@ -18480,6 +18800,38 @@
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
+    "id": "Finance:get_finance_dashboard",
+    "role": "Finance",
+    "capability": "get_finance_dashboard",
+    "request": "Please get finance dashboard.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:get_claim_payment_details",
+    "role": "Finance",
+    "capability": "get_claim_payment_details",
+    "request": "Please get claim payment details.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:pay_authorized_claim",
+    "role": "Finance",
+    "capability": "pay_authorized_claim",
+    "request": "Please pay authorized claim.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:reconcile_finance_claim",
+    "role": "Finance",
+    "capability": "reconcile_finance_claim",
+    "request": "Please reconcile finance claim.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
     "id": "Finance:list_claims",
     "role": "Finance",
     "capability": "list_claims",
@@ -20268,6 +20620,38 @@
     "role": "CustomBroker",
     "capability": "create_eligibility_profile",
     "request": "Please create eligibility profile.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:get_finance_dashboard",
+    "role": "CustomBroker",
+    "capability": "get_finance_dashboard",
+    "request": "Please get finance dashboard.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:get_claim_payment_details",
+    "role": "CustomBroker",
+    "capability": "get_claim_payment_details",
+    "request": "Please get claim payment details.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:pay_authorized_claim",
+    "role": "CustomBroker",
+    "capability": "pay_authorized_claim",
+    "request": "Please pay authorized claim.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:reconcile_finance_claim",
+    "role": "CustomBroker",
+    "capability": "reconcile_finance_claim",
+    "request": "Please reconcile finance claim.",
     "allowed": false,
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },

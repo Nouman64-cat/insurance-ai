@@ -43,6 +43,7 @@ PAGES: list[Page] = [
     # ── Underwriting ────────────────────────────────────────────────────────
     Page("underwriting", "Underwriting", "Underwriting case queue grouped by customer.", lists="case", highlight_param="case_id"),
     Page("applications", "Applications", "Insurance applications with downloadable PDFs.", lists="case", highlight_param="case_id"),
+    Page("finance", "Finance dashboard", "Finance payment queues, authorised payouts, reconciliation and history."),
     Page("claims", "Claims", "The claims workbench — every claim, its status, documents and adjudication.", lists="claim"),
     Page("claims/dashboard", "Claims Dashboard", "Claims portfolio analytics — volumes, settlement ratios and SLA breaches."),
     Page("claims/register", "Register a Claim", "First Notice of Loss intake form."),
@@ -128,7 +129,7 @@ ROLE_PAGES: dict[str, frozenset[str]] = {
     "Medical Underwriter": frozenset({"underwriting", "case", "profile"}),
     "Financial Underwriter": frozenset({"underwriting", "case", "profile"}),
     "ClaimsManager": frozenset({"claims", "claims/dashboard", "claims/register", "profile"}),
-    "Finance": frozenset({"claims", "claims/dashboard", "profile"}),
+    "Finance": frozenset({"finance", "claims", "profile"}),
 }
 ROLE_RECORDS: dict[str, frozenset[str]] = {
     "Medical Underwriter": frozenset({"case"}),
