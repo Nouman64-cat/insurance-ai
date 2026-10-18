@@ -34,7 +34,7 @@ import type {
 import { useConfirm } from "@/components/ConfirmDialog";
 import { useCaseEvents } from "@/lib/agent/useCaseEvents";
 import type { CaseEvent } from "@/lib/agent/useCaseEvents";
-import { isPassiveAction } from "@/lib/agent/quickActions";
+import { dateAskAction, isPassiveAction } from "@/lib/agent/quickActions";
 import {
   useAgentChat,
   type FamilyJourney,
@@ -45,7 +45,7 @@ import {
   isCommissionTool,
   runCommissionTool,
 } from "@/lib/agent/commissionTools";
-import { QuickActionSelect } from "./agent/QuickActionSelect";
+import { QuickActionSelect, isInlineInput } from "./agent/QuickActionSelect";
 import { DocumentUploadDialog } from "./agent/DocumentUploadDialog";
 import type { DocumentUploadResult } from "./agent/DocumentUploadDialog";
 import { getQuote, listQuotes, updateQuote } from "../app/services/quotes";
@@ -6298,7 +6298,7 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
                           )
                             .slice(0, compact ? 3 : 6)
                             .map((action, idx) =>
-                              action.actionType === "select" ? (
+                              isInlineInput(action) ? (
                                 <QuickActionSelect
                                   key={idx}
                                   action={action}
@@ -6784,9 +6784,13 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
                                       lowerText.includes("document")) ||
                                     (lowerText.includes("upload") &&
                                       lowerText.includes("document")));
+                                const dateAsk =
+                                  msg.role === "assistant" ? dateAskAction(msg.text) : null;
                                 const contentActions = looksLikeMissingDocs
                                   ? getRecommendedActions(msg)
-                                  : [];
+                                  : dateAsk
+                                    ? [dateAsk]
+                                    : [];
                                 const effectiveActions = msg.checklist
                                   ? undefined
                                   : msg.quickActions &&
@@ -6840,7 +6844,7 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
                                     className={`flex flex-wrap gap-2 mt-4 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                                   >
                                     {effectiveActions.map((action, idx) => {
-                                      if (action.actionType === "select") {
+                                      if (isInlineInput(action)) {
                                         return (
                                           <QuickActionSelect
                                             key={`select-${action.label}-${idx}`}
@@ -7716,7 +7720,9 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
                             ? msg.quickActions
                             : looksLikeMissingDocs
                               ? getRecommendedActions(msg)
-                              : undefined;
+                              : msg.role === "assistant" && dateAskAction(msg.text)
+                                ? [dateAskAction(msg.text)!]
+                                : undefined;
                         if (
                           !phoneEffectiveActions ||
                           phoneEffectiveActions.length === 0
@@ -7725,7 +7731,7 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
                         return (
                           <div className="flex flex-wrap gap-2 mt-1">
                             {phoneEffectiveActions.map((action, idx) => {
-                              if (action.actionType === "select") {
+                              if (isInlineInput(action)) {
                                 return (
                                   <QuickActionSelect
                                     key={`select-${action.label}-${idx}`}

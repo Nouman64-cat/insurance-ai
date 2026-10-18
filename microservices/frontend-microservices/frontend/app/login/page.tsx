@@ -104,6 +104,8 @@ export default function LoginPage() {
       } else if (userRoleName === "ClaimsManager") {
         // Claims managers work in their own portal.
         targetPath = (process.env.NEXT_PUBLIC_CLAIMS_URL || "http://localhost:3011") + "/claims/dashboard";
+      } else if (userRoleName === "Finance") {
+        targetPath = "/finance";
       } else if (userRoleName === "ClaimsAdjuster") {
         targetPath = "/claims";
       } else if (["Medical Underwriter", "Financial Underwriter"].includes(userRoleName)) {

@@ -132,10 +132,12 @@ def test_claims_roles_cannot_reach_underwriting_or_governance():
             assert not is_role_allowed(tool_name, role), f"{role} may run {tool_name}"
 
 
-def test_underwriter_rules_on_referrals_but_does_not_adjudicate():
+def test_claims_manager_owns_final_referral_resolution():
     """The underwriter's half of the claims workflow is the re-underwriting
     verdict — not the adjudication, the FNOL, or the money."""
-    assert is_role_allowed("resolve_claim_underwriting", "Underwriter")
+    assert is_role_allowed("resolve_claim_underwriting", "ClaimsManager")
+    for role in ("Underwriter", "Medical Underwriter", "Financial Underwriter", "ClaimsAdjuster", "Admin", "SuperAdmin", "Finance"):
+        assert not is_role_allowed("resolve_claim_underwriting", role)
     for tool_name in ("adjudicate_claim", "register_claim", "issue_claim_payout"):
         assert not is_role_allowed(tool_name, "Underwriter"), f"Underwriter may run {tool_name}"
 

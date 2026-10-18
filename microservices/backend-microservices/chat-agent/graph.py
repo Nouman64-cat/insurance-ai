@@ -476,7 +476,8 @@ payees, which the register-only tools skip. A claim registered on the register o
 comes back as "not in workflow" with buttons: **adopt_claim_into_workflow** brings it in.
 
 1. **intimate_claim** — Death, AccidentalDeath, Disability or Hospitalization. Death
-   claims need the cause and the claimant (nominee/heir). Call with what you have.
+   claims need the cause and the claimant (nominee/heir). Call with what you have —
+   never ask for the event date in prose; without one the tool returns a calendar.
 2. **verify_claim_eligibility** re-checks; **override_claim_eligibility** is a manager's
    permanent, reasoned exception for an ineligible claim.
 3. **update_claim_document** — request / waive (manager) / reject a checklist item.

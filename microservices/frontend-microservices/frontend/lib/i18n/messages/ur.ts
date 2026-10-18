@@ -42,6 +42,12 @@ const ur: Messages = {
     notice: "صرف مجاز عملے کے لیے۔ تمام رسائی ریکارڈ اور مانیٹر کی جاتی ہے۔",
   },
   nav: {
+    "Finance": "مالیات",
+    "Payments dashboard": "ادائیگیوں کا ڈیش بورڈ",
+    "Awaiting payout": "ادائیگی کے منتظر",
+    "Payment history": "ادائیگیوں کی تاریخ",
+    "Reconciliation": "ادائیگیوں کی مطابقت",
+
     "Customer Service": "کسٹمر سروس",
     "Confidential Reports (ACR)": "خفیہ رپورٹس (ACR)",
     "Request Management": "درخواستوں کا انتظام",

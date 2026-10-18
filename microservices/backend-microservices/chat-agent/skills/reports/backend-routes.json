@@ -2455,7 +2455,7 @@
     "router_path": "/tenants/{tenant_id}/claims/{claim_id}/artifacts",
     "handler": "upload_claim_artifact",
     "source": "microservices/backend-microservices/tenant-service/routers/artifacts.py",
-    "line": 211,
+    "line": 214,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -2465,7 +2465,7 @@
     "router_path": "/tenants/{tenant_id}/claims/{claim_id}/artifacts",
     "handler": "list_claim_artifacts",
     "source": "microservices/backend-microservices/tenant-service/routers/artifacts.py",
-    "line": 303,
+    "line": 309,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -2475,7 +2475,7 @@
     "router_path": "/tenants/{tenant_id}/cases/{case_id}/artifacts",
     "handler": "list_case_artifacts",
     "source": "microservices/backend-microservices/tenant-service/routers/artifacts.py",
-    "line": 317,
+    "line": 323,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -2485,7 +2485,7 @@
     "router_path": "/tenants/{tenant_id}/customers/{customer_id}/artifacts",
     "handler": "list_customer_uploaded_artifacts",
     "source": "microservices/backend-microservices/tenant-service/routers/artifacts.py",
-    "line": 335,
+    "line": 341,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -2495,7 +2495,7 @@
     "router_path": "/tenants/{tenant_id}/artifacts/{artifact_id}/download",
     "handler": "view_artifact_file",
     "source": "microservices/backend-microservices/tenant-service/routers/artifacts.py",
-    "line": 359,
+    "line": 365,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -2505,7 +2505,7 @@
     "router_path": "/tenants/{tenant_id}/artifacts/{artifact_id}/view",
     "handler": "view_artifact_file",
     "source": "microservices/backend-microservices/tenant-service/routers/artifacts.py",
-    "line": 359,
+    "line": 365,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -2515,7 +2515,7 @@
     "router_path": "/tenants/{tenant_id}/artifacts/{artifact_id}",
     "handler": "get_artifact",
     "source": "microservices/backend-microservices/tenant-service/routers/artifacts.py",
-    "line": 534,
+    "line": 540,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -2525,7 +2525,7 @@
     "router_path": "/tenants/{tenant_id}/artifacts/{artifact_id}",
     "handler": "update_artifact",
     "source": "microservices/backend-microservices/tenant-service/routers/artifacts.py",
-    "line": 565,
+    "line": 571,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -2535,7 +2535,7 @@
     "router_path": "/tenants/{tenant_id}/artifacts/{artifact_id}",
     "handler": "delete_artifact",
     "source": "microservices/backend-microservices/tenant-service/routers/artifacts.py",
-    "line": 604,
+    "line": 610,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -2836,6 +2836,26 @@
     "handler": "change_case_plan",
     "source": "microservices/backend-microservices/tenant-service/routers/cases.py",
     "line": 1428,
+    "validation": "source_verified; live_execution_not_asserted",
+    "chat_adapter": "requires_contract_mapping"
+  },
+  {
+    "service": "tenant-service",
+    "method": "GET",
+    "router_path": "/tenants/{tenant_id}/claims/{claim_id}/financial-underwriting",
+    "handler": "get_claim_financial_review",
+    "source": "microservices/backend-microservices/tenant-service/routers/claim_financial_review.py",
+    "line": 14,
+    "validation": "source_verified; live_execution_not_asserted",
+    "chat_adapter": "requires_contract_mapping"
+  },
+  {
+    "service": "tenant-service",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/claims/{claim_id}/financial-underwriting/checks",
+    "handler": "record_claim_financial_check",
+    "source": "microservices/backend-microservices/tenant-service/routers/claim_financial_review.py",
+    "line": 56,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -6975,7 +6995,7 @@
     "router_path": "/tenants/{tenant_id}/cases/{case_id}/underwriting-tracks",
     "handler": "case_specialist_reviews",
     "source": "microservices/backend-microservices/tenant-service/routers/underwriting_tracks.py",
-    "line": 226,
+    "line": 257,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -6985,7 +7005,7 @@
     "router_path": "/tenants/{tenant_id}/underwriting/reviews",
     "handler": "specialist_queue",
     "source": "microservices/backend-microservices/tenant-service/routers/underwriting_tracks.py",
-    "line": 237,
+    "line": 268,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -6995,7 +7015,7 @@
     "router_path": "/tenants/{tenant_id}/underwriting/claim-referrals",
     "handler": "claim_underwriting_queue",
     "source": "microservices/backend-microservices/tenant-service/routers/underwriting_tracks.py",
-    "line": 257,
+    "line": 288,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -7005,7 +7025,7 @@
     "router_path": "/tenants/{tenant_id}/underwriting/reviews/{case_id}",
     "handler": "specialist_workspace",
     "source": "microservices/backend-microservices/tenant-service/routers/underwriting_tracks.py",
-    "line": 280,
+    "line": 311,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -7015,7 +7035,17 @@
     "router_path": "/tenants/{tenant_id}/cases/{case_id}/underwriting-documents",
     "handler": "upload_specialist_document",
     "source": "microservices/backend-microservices/tenant-service/routers/underwriting_tracks.py",
-    "line": 452,
+    "line": 491,
+    "validation": "source_verified; live_execution_not_asserted",
+    "chat_adapter": "requires_contract_mapping"
+  },
+  {
+    "service": "tenant-service",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/underwriting-documents/{artifact_id}/retry",
+    "handler": "retry_specialist_document",
+    "source": "microservices/backend-microservices/tenant-service/routers/underwriting_tracks.py",
+    "line": 524,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -7025,7 +7055,7 @@
     "router_path": "/tenants/{tenant_id}/cases/{case_id}/underwriting-documents/demo-complete",
     "handler": "demo_mark_documents_uploaded",
     "source": "microservices/backend-microservices/tenant-service/routers/underwriting_tracks.py",
-    "line": 494,
+    "line": 577,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -7035,7 +7065,7 @@
     "router_path": "/tenants/{tenant_id}/cases/{case_id}/e-application/{part_name}/waive",
     "handler": "waive_e_application_part",
     "source": "microservices/backend-microservices/tenant-service/routers/underwriting_tracks.py",
-    "line": 544,
+    "line": 627,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -7045,7 +7075,7 @@
     "router_path": "/tenants/{tenant_id}/cases/{case_id}/financial-underwriting/run",
     "handler": "run_financial_underwriting",
     "source": "microservices/backend-microservices/tenant-service/routers/underwriting_tracks.py",
-    "line": 627,
+    "line": 710,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },
@@ -7055,7 +7085,7 @@
     "router_path": "/tenants/{tenant_id}/cases/{case_id}/underwriting-documents/classify",
     "handler": "classify_specialist_documents",
     "source": "microservices/backend-microservices/tenant-service/routers/underwriting_tracks.py",
-    "line": 765,
+    "line": 848,
     "validation": "source_verified; live_execution_not_asserted",
     "chat_adapter": "requires_contract_mapping"
   },

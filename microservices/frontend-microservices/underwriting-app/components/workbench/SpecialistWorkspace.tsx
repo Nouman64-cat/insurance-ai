@@ -10,6 +10,8 @@ import { fmtCoverage } from "@/lib/mock-data";
 import { displayDate } from "@/lib/dateDisplay";
 import { useNewArrivals, floatNew, useRevealNew, recentIds, NewArrivalsBanner, NEW_ARRIVAL_CLASS, scrollToFirstNew } from "@/lib/useNewArrivals";
 import { downloadReviewReport } from "./reviewReportPdf";
+import ClaimUnderwritingSummary from "./ClaimUnderwritingSummary";
+import ClaimReviewChecks, { type ClaimCheck } from "./ClaimReviewChecks";
 import ReviewDocuments, { isProcessing } from "./ReviewDocuments";
 import TrackOperations from "./TrackOperations";
 import { useCaseEvents } from "@/lib/agent/useCaseEvents";
@@ -33,7 +35,7 @@ type RequiredDocument = { type: string; received: boolean };
 type Outstanding = { code: string; reason: string; document_type: string | null; owner: "medical" | "financial" | null; can_upload: boolean; covered_by_exam?: boolean };
 type ReviewRow = { id: string; claim_id?: string | null; reference: string; customer_name: string; product_name: string | null; coverage_amount: number | null; on_hold: boolean; hold_reason: string | null; created_at?: string; case_status?: string; closed?: boolean; review: UnderwritingReview };
 type ClaimInfo = { id: string; claim_number: string | null; claim_type: string; submitted_amount: number; incident_date: string | null; referral_reason: string | null; referral_notes: string | null; ready: boolean; reviews: Record<string, { status: string; note: string | null }> };
-type Workspace = ReviewRow & { claim?: ClaimInfo | null; read_only: boolean; policy_linked: boolean; case_status: string; created_at: string; customer_cnic: string | null; coverage_amount: number | null; term_years: number | null; requirements: Requirement[]; required_documents: RequiredDocument[]; application_outstanding: Outstanding[]; ai_underwriting: FinancialAI | null; documents: { id: string; name: string; type: string; status: string; processing_stalled?: boolean; scope: string; ocr_text: string | null; extracted: unknown; quality_score: number; tampered: boolean }[]; track: string; evidence: Record<string, unknown>; assessment: { results: unknown; score: number; reasons: unknown[]; created_at: string } | null };
+type Workspace = ReviewRow & { claim_checks?: Record<string, ClaimCheck>; claim?: ClaimInfo | null; read_only: boolean; policy_linked: boolean; case_status: string; created_at: string; customer_cnic: string | null; coverage_amount: number | null; term_years: number | null; requirements: Requirement[]; required_documents: RequiredDocument[]; application_outstanding: Outstanding[]; ai_underwriting: FinancialAI | null; documents: { id: string; name: string; type: string; status: string; processing_stalled?: boolean; scope: string; ocr_text: string | null; extracted: unknown; quality_score: number; tampered: boolean }[]; track: string; evidence: Record<string, unknown>; assessment: { results: unknown; score: number; reasons: unknown[]; created_at: string } | null };
 function valueText(value: unknown): string {
   if (value === null || value === undefined || value === "") return tx("Not provided");
   if (typeof value === "boolean") return tx(value ? "Yes" : "No");
@@ -41,45 +43,6 @@ function valueText(value: unknown): string {
   if (typeof value === "object") return Object.entries(value as Record<string, unknown>).map(([key, v]) => `${key.replace(/_/g, " ")}: ${valueText(v)}`).join("\n");
   return String(value);
 }
-const CLAIM_DECISIONS = [
-  { value: "APPROVE_CONTINUE", label: "Cover confirmed: continue the claim" },
-  { value: "APPROVE_WITH_EXCLUSION", label: "Continue, with an exclusion applied" },
-  { value: "APPROVE_WITH_LOADING", label: "Continue, with a premium loading" },
-  { value: "DECLINE_NON_DISCLOSURE", label: "Decline: non-disclosure at application" },
-];
-
-/** The last step of a Claim UW case: once both reviews are in, record the decision and the claim goes back to Claims. */
-function ClaimDecisionPanel({ tenantId, claim, disabled, onDone }: { tenantId: string; claim: ClaimInfo; disabled: boolean; onDone: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [decision, setDecision] = useState(CLAIM_DECISIONS[0].value);
-  const [notes, setNotes] = useState("");
-  const [saving, setSaving] = useState(false);
-  const submit = async () => {
-    setSaving(true);
-    try {
-      await api.post(`/tenants/${tenantId}/claims/${claim.id}/resolve-underwriting`, { decision, decision_notes: notes.trim() });
-      notify("success", tx("Decision recorded"), tx("The claim is back with Claims, with the review results."));
-      setOpen(false);
-      onDone();
-    } catch (err: any) { notify("error", tx("Could not record the decision."), err?.response?.data?.detail); }
-    finally { setSaving(false); }
-  };
-  return <section className="space-y-3 rounded-2xl border border-blue-200 bg-blue-50/60 p-5">
-    <div className="flex items-center gap-2"><span className="rounded-md border border-blue-200 bg-white px-1.5 py-0.5 text-[10px] font-bold uppercase text-blue-700">{tx("Claim UW")}</span><h3 className="text-sm font-bold text-slate-900">{claim.claim_number} · {claim.claim_type}</h3></div>
-    <p className="text-xs text-slate-600">{tx("Claimed")} {fmtCoverage(claim.submitted_amount)}{claim.incident_date ? ` · ${tx("Incident")} ${claim.incident_date}` : ""}</p>
-    {claim.referral_reason && <p className="text-xs text-slate-600"><span className="font-semibold">{tx("Why Claims referred it")}:</span> {claim.referral_reason}</p>}
-    <ul className="space-y-1 text-xs text-slate-600">{Object.entries(claim.reviews).map(([t, r]) => <li key={t}>{tx(t === "medical" ? "Medical review" : "Financial review")}: <span className="font-semibold">{tx(LABELS[r.status as UnderwritingReviewStatus] ?? r.status)}</span></li>)}</ul>
-    <button type="button" disabled={disabled || !claim.ready} onClick={() => setOpen(true)} className="w-full rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">{tx("Record final decision")}</button>
-    {!claim.ready && <p className="text-[11px] text-slate-500">{tx("Available once both the medical and the financial review are completed.")}</p>}
-    {open && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" role="dialog" aria-modal="true"><div className="w-full max-w-lg space-y-4 rounded-2xl bg-white p-6 shadow-xl">
-      <h2 className="text-base font-bold text-slate-900">{tx("Final decision")} · {claim.claim_number}</h2>
-      <label className="block text-xs font-semibold text-slate-600">{tx("Decision")}<select value={decision} onChange={(e) => setDecision(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">{CLAIM_DECISIONS.map((d) => <option key={d.value} value={d.value}>{tx(d.label)}</option>)}</select></label>
-      <label className="block text-xs font-semibold text-slate-600">{tx("Notes for Claims")}<textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" /></label>
-      <div className="flex justify-end gap-2"><button type="button" onClick={() => setOpen(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">{tx("Cancel")}</button><button type="button" disabled={saving || !notes.trim()} onClick={() => void submit()} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{tx("Send back to Claims")}</button></div>
-    </div></div>}
-  </section>;
-}
-
 function Badge({ status }: { status: UnderwritingReviewStatus }) {
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${TONES[status]}`}>{tx(LABELS[status])}</span>;
 }
@@ -270,6 +233,15 @@ export function SpecialistCaseWorkspace({ track }: { track: "medical" | "financi
         <div className="min-w-0 space-y-5 xl:col-span-8">
           {/* A claim review is checked against the claim's plan terms (Requirements tab) — not run like a new
               application: no exam ordered from the non-medical grid, no exposure check, AI rating or e-application. */}
+          {workspace.claim && <ClaimReviewChecks requirements={workspace.requirements} checks={workspace.claim_checks ?? {}}
+            disabled={workspace.read_only || workspace.review.assigned_user_id !== user.id}
+            onEvidence={setCaseTab} onSave={async (key, finding, rationale) => {
+              await api.put(`/tenants/${user.tenant_id}/cases/${caseId}/underwriting-tracks/${track}`, {
+                claim_checks: [{key, finding, note: rationale}],
+              });
+              await load(true);
+              notify("success", tx("Finding saved"));
+            }} />}
           {!workspace.claim && <>
           <TrackOperations key={caseId} track={track} caseId={caseId} documentsVersion={workspace.documents.map((d) => `${d.id}:${d.status}`).join(",")} disabled={workspace.read_only || workspace.review.assigned_user_id !== user.id || !workspace.policy_linked} onChanged={() => { void load(true); }} />
           {track === "financial" && <FinancialAIPanel tenantId={user.tenant_id!} caseId={caseId} ai={workspace.ai_underwriting}
@@ -280,7 +252,7 @@ export function SpecialistCaseWorkspace({ track }: { track: "medical" | "financi
           </>}
         </div>
         <aside className="space-y-5 xl:col-span-4">
-          {workspace.claim && <ClaimDecisionPanel tenantId={user.tenant_id!} claim={workspace.claim} disabled={workspace.read_only} onDone={() => { void load(true); }} />}
+          {workspace.claim && <ClaimUnderwritingSummary claim={workspace.claim} />}
           <ReviewPanel key={workspace.review.updated_at ?? "new"} track={track} workspace={workspace} decision={decision} setDecision={setDecision} note={note} setNote={setNote} saving={saving} onSave={() => void save()} />
           <RequirementChecklist requirements={workspace.requirements} onOpen={setCaseTab} />
           <RiskEvidence assessment={workspace.assessment} />
@@ -419,7 +391,7 @@ function RequirementChecklist({ requirements, onOpen }: { requirements: Requirem
   return <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
     <div className="flex items-center justify-between"><h2 className="text-base font-semibold text-slate-900">{tx("Requirements")}</h2><span className="text-xs font-semibold text-slate-500">{done}/{requirements.length} {tx("complete")}</span></div>
     <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${requirements.length ? done / requirements.length * 100 : 0}%` }} /></div>
-    <ul className="mt-3 -mx-2">{requirements.map((r, i) => <li key={r.key ?? r.label}><button type="button" onClick={() => onOpen(r.section)} className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-slate-50">
+    <ul className="mt-3 -mx-2">{requirements.map((r, i) => <li key={r.key ?? r.label}><button type="button" onClick={() => { onOpen(r.section); if (r.key.startsWith("claim_")) requestAnimationFrame(() => document.getElementById(r.key)?.scrollIntoView({behavior:"smooth",block:"start"})); }} className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-slate-50">
       <StateIcon state={requirementState(r.status)} index={i + 1} />
       <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-800">{tx(r.label)}</span><span className="block text-xs text-slate-500">{tx(r.detail ?? statusLabel(r.status))}</span></span>
     </button></li>)}</ul>
@@ -464,7 +436,7 @@ function RequirementsBoard({ track, requirements, requiredDocuments, outstanding
       <StatusPill status={r.status} />
       {r.key === "e_application" && SENDABLE.has(r.status) && <button disabled={!onSendEApplication || sending} onClick={onSendEApplication} title={onSendEApplication ? undefined : tx("Start your review to email the customer.")} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-40"><svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6h16v12H4z" /><path d="m4 7 8 6 8-6" /></svg>{tx(sending ? "Sending…" : r.status === "NotSent" ? "Email to customer" : "Resend email")}</button>}
       {r.key === "e_application" && SENDABLE.has(r.status) && <button disabled={!onWaiveEApplication || sending} onClick={onWaiveEApplication} className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40">{tx("Waive")}</button>}
-      <button onClick={() => { onOpen(r.section); if (r.key === "medical_ai") requestAnimationFrame(() => document.getElementById("medical-underwriting")?.scrollIntoView({behavior:"smooth",block:"start"})); }} className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${state === "done" ? "text-slate-500 hover:bg-slate-50" : "border border-slate-200 text-blue-700 hover:border-blue-300"}`}>{tx(state === "done" ? "View" : r.key === "medical_ai" ? "Run AI medical underwriting" : r.key === "documents" || r.key === "application_documents" ? "Upload" : "Open")} →</button>
+      <button onClick={() => { onOpen(r.section); if (r.key.startsWith("claim_")) requestAnimationFrame(() => document.getElementById(r.key)?.scrollIntoView({behavior:"smooth",block:"start"})); if (r.key === "medical_ai") requestAnimationFrame(() => document.getElementById("medical-underwriting")?.scrollIntoView({behavior:"smooth",block:"start"})); }} className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${state === "done" ? "text-slate-500 hover:bg-slate-50" : "border border-slate-200 text-blue-700 hover:border-blue-300"}`}>{tx(state === "done" ? "View" : r.key === "medical_ai" ? "Run AI medical underwriting" : r.key === "documents" || r.key === "application_documents" ? "Upload" : "Open")} →</button>
     </li>; })}</ol>
   </section>;
 }

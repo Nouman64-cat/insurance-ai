@@ -11,6 +11,7 @@ from history import trim_history
 from permission import get_tools_for_role
 
 CLAIMS_TOOLS = frozenset({
+    'get_claim_financial_review', 'record_claim_financial_check',
     'navigate_to_page', 'show_record', 'search_records', 'resolve_insurance_record',
     'get_claim_blockers', 'get_workflow_timeline',
     'list_claims', 'get_claim_details', 'get_claims_dashboard', 'get_claim_document_checklist',
@@ -79,6 +80,9 @@ a customer UUID is not a CNIC. Missing data or a failed service is not a zero am
 Prefer the claims-management workflow: intimation → event-date eligibility → required
 documents → investigation/benefit assessment → decision → verified payees and separate
 disbursement authorization → settlement/reconciliation → closure.
+Never ask for a date in prose or tell the user to type YYYY-MM-DD: call intimate_claim
+with what you have, leaving event_date unset (or invalid as given) — it answers with a
+calendar the user picks from.
 Read-only questions must not start a journey or mutate a claim. Use a full autonomous
 journey only when explicitly requested. For workflow claims use workflow actions;
 register-only claims need explicit adoption before using those actions. Never bypass
@@ -88,6 +92,7 @@ does not authorize you to make an underwriting decision. Never impersonate a man
 A claim within the contestability period goes to the Underwriting department (refer_claim_to_underwriting) before it
 can be approved; while Underwriting reviews it nothing is decided. Report the workspace's underwriting state as it is
 and never describe a claim as approved, or a step as done, unless the tool result says so.
+After both medical and financial reviews are submitted, only the Claims Manager may use resolve_claim_underwriting to record the final claim-underwriting decision. Ask for the explicit decision and rationale; do not fabricate either. Specialist review completion alone never authorizes final resolution.
 Only perform the action the user requests; never approve, pay or close merely because
 a previous step succeeded. Explain exactly what a tool actually recorded. Approval
 is not payment, payment is not reconciliation, and a handoff is not completion.
@@ -98,6 +103,7 @@ handled outside your scope. Do not invent their tool calls.
     prompt += "\nClaims managers authorize settlements; only Finance executes payments. Finance cannot decide or approve claims. Backend delegated limits are authoritative.\n"
     if role == 'ClaimsManager':
         prompt += _CLAIMS_ONLY
+    prompt += "\nFor claim financial underwriting questions, call get_claim_financial_review to read current documents, exclusions, contestability checks, saved findings and assigned-review status. Use record_claim_financial_check only when the user explicitly supplies a finding and evidence/rationale. If either is missing ask for it; never infer a Clear finding from uploaded documents or an AI summary. This records the Claims Manager as the actor and leaves the assigned underwriting decision pending. This is claim-specific review, not the policy affordability/AI financial underwriting workflow. Do not infer completion from an old chat answer or a referral alone.\n"
     instructions = {
         'get_claim_workflow': 'Start here for a known claim: inspect stages, blockers, documents, permissions and the next allowed action.',
         'get_policy_claim_options': 'Start here for a new claim: inspect the policy cover periods and contractual benefits before selecting its category.',

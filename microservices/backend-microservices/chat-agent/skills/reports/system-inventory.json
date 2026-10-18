@@ -1,5 +1,5 @@
 {
-  "backend_routes": 724,
+  "backend_routes": 727,
   "services": [
     "api-gateway",
     "chat-agent",

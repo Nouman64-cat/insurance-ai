@@ -40,6 +40,12 @@ const en = {
     notice: "Authorized personnel only. All access is logged and monitored.",
   },
   nav: {
+    "Finance": "Finance",
+    "Payments dashboard": "Payments dashboard",
+    "Awaiting payout": "Awaiting payout",
+    "Payment history": "Payment history",
+    "Reconciliation": "Reconciliation",
+
     "Customer Service": "Customer Service",
     "Confidential Reports (ACR)": "Confidential Reports (ACR)",
     "Request Management": "Request Management",

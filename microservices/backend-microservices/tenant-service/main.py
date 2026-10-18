@@ -325,3 +325,6 @@ async def list_roles():
     async for session in get_session():
         roles = list(await session.exec(select(Role)))
         return [{"id": str(r.id), "name": r.name, "description": r.description} for r in roles]
+
+from routers.claim_financial_review import router as claim_financial_review_router
+app.include_router(claim_financial_review_router)

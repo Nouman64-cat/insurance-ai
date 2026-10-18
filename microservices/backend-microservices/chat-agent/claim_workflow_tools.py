@@ -29,6 +29,7 @@ Registered by being imported at the foot of tool_executor.py.
 from __future__ import annotations
 
 import json
+from datetime import date
 from typing import Any, Optional
 
 import httpx
@@ -48,6 +49,27 @@ def _pkr(value: Any) -> str:
 
 def _chip(label: str, payload: str) -> dict:
     return {"label": label, "actionType": "submit", "payload": payload}
+
+
+def _date_picker(label: str, payload: str, *, max_date: Optional[str] = None) -> dict:
+    """A calendar instead of asking for YYYY-MM-DD in prose; `{value}` in the payload
+    becomes the picked ISO date. Defaults to no later than today."""
+    return {"label": label, "actionType": "date", "payload": payload,
+            "max": max_date or date.today().isoformat()}
+
+
+def _event_date(raw: Any) -> tuple[Optional[str], Optional[str]]:
+    """(ISO date, None) when usable, else (None, why) — a typo like 20206-10-17 or a
+    future date is caught here, before the backend rejects it."""
+    if not raw:
+        return None, None
+    try:
+        parsed = date.fromisoformat(str(raw).strip()[:10])
+    except ValueError:
+        return None, f"{raw} isn't a valid date."
+    if parsed > date.today():
+        return None, f"{parsed.isoformat()} is in the future."
+    return parsed.isoformat(), None
 
 
 def _open_policy(policy_id: str) -> dict:
@@ -359,15 +381,21 @@ async def _intimate_claim(args: dict, ctx: Ctx) -> dict:
         causes = (ov.get("options") or {}).get("causes") or []
         raise ChoiceNeeded("What was the cause of death? It decides which documents are needed.",
                            [_chip(c, f"Intimate a {category} claim on policy {number}, cause: {c}") for c in causes])
-    missing = [f for f, label in (("event_date", "the event date (YYYY-MM-DD)"), ("claimed_amount", "the amount claimed"))
-               if not args.get(f)]
+    event_date, date_problem = _event_date(args.get("event_date"))
+    args["event_date"] = event_date
+    missing = [f for f in ("event_date", "claimed_amount") if not args.get(f)]
     if category in _DEATH and not args.get("claimant_name"):
         missing.append("claimant_name")
     if missing:
-        ask = {"event_date": "the event date (YYYY-MM-DD)", "claimed_amount": "the amount claimed in PKR",
+        ask = {"event_date": "the event date", "claimed_amount": "the amount claimed in PKR",
                "claimant_name": "who is claiming (the nominee or legal heir) and their relationship"}
-        return {"success": False, "needs_user_input": True, "error_code": "missing_details",
-                "error": f"To intimate this claim on {number} I still need " + ", ".join(ask[m] for m in missing) + "."}
+        out = {"success": False, "needs_user_input": True, "error_code": "missing_details",
+               "error": (date_problem + " " if date_problem else "")
+               + f"To intimate this claim on {number} I still need " + ", ".join(ask[m] for m in missing) + "."}
+        if not event_date:
+            out["quick_actions"] = [_date_picker(
+                "Event date", f"The event date is {{value}}. Continue intimating the {category} claim on policy {number}.")]
+        return out
 
     # A repeated click must not open a second claim for the same event.
     same = next((c for c in ov.get("claims") or [] if c.get("has_workflow") and c.get("category") == category
@@ -663,3 +691,66 @@ async def _close_claim_file(args: dict, ctx: Ctx) -> dict:
                 head.append(f"The letter was not sent: {detail or exc.response.status_code}.")
             ws = (await _claim_and_workspace({"claim_number": ws["claim"]["claim_number"]}, ctx))[1] or ws
     return _result(ws, policy_id, " ".join(head), "close_claim_file")
+
+
+async def _resolve_financial_claim(args: dict, ctx: Ctx) -> dict:
+    number = str(args.get('claim_number') or '').strip()
+    name = str(args.get('claimant_name') or '').strip().casefold()
+    response = await ctx.client.get(ctx.tsvc('/claims'), params={'search':number or name} if number or name else {})
+    response.raise_for_status()
+    claims = response.json()
+    if number:
+        matches = [c for c in claims if number.casefold() in {str(c.get('claim_number') or '').casefold(), str(c['id']).casefold()}]
+    elif name:
+        matches = [c for c in claims if name in {str(c.get('claimant_name') or '').casefold(), str(c.get('customer_name') or '').casefold()}]
+        if not matches:
+            matches = [c for c in claims if any(name in str(c.get(k) or '').casefold() for k in ('claimant_name','customer_name'))]
+    else:
+        matches = claims
+    if not matches:
+        raise LookupError('No matching claim was found in this organization. Check the claim reference or claimant name.')
+    if len(matches) != 1:
+        raise ChoiceNeeded('Which claim should be reviewed?', [_chip(c.get('claim_number') or c['id'],
+            f"Show financial underwriting for claim {c.get('claim_number') or c['id']}") for c in matches[:6]])
+    return matches[0]
+
+
+@handles("get_claim_financial_review")
+async def _get_claim_financial_review(args: dict, ctx: Ctx) -> dict:
+    claim = await _resolve_financial_claim(args, ctx)
+    response = await ctx.client.get(ctx.tsvc(f"/claims/{claim['id']}/financial-underwriting"))
+    response.raise_for_status()
+    review = response.json()
+    lines = [f"- {r['label']}: **{r['status']}**" + (f" — {r['detail']}" if r.get('detail') else '')
+             for r in review.get('requirements', [])]
+    reviewer = review.get('review') or {}
+    return {"success": True, **review,
+        "message": f"**Claim {review.get('claim_number')} — financial underwriting**\n"
+            + f"Reviewer: {reviewer.get('assigned_user_name') or 'Unassigned'} · Status: {reviewer.get('status')}\n"
+            + "\n".join(lines) + "\n"
+            + ('This claim or review is held, decided or closed; changes are disabled.' if review.get('read_only') else 'All requirements are complete; the assigned underwriter can record the review decision.'
+               if review.get('ready_to_clear') else 'Complete the outstanding checks and documents before clearing the financial review.')}
+
+
+@handles("record_claim_financial_check")
+async def _record_claim_financial_check(args: dict, ctx: Ctx) -> dict:
+    claim = await _resolve_financial_claim(args, ctx)
+    url = ctx.tsvc(f"/claims/{claim['id']}/financial-underwriting")
+    current = await ctx.client.get(url)
+    current.raise_for_status()
+    state = current.json()
+    if args['key'] not in {r['key'] for r in state.get('requirements', [])}:
+        return {"success": False, "message": "That requirement does not apply to this claim's financial review."}
+    previous = (state.get('checks') or {}).get(args['key']) or {}
+    if previous.get('finding') == args['finding'] and previous.get('note') == args['note'].strip():
+        return {"success": True, **state, "message": "That financial finding and rationale are already recorded. No change was made; the assigned underwriter's decision is unchanged."}
+    response = await ctx.client.post(url + '/checks', json={k:args[k] for k in ('key','finding','note')})
+    response.raise_for_status()
+    result = response.json()
+    saved = (result.get('checks') or {}).get(args['key'])
+    if not saved or saved.get('finding') != args['finding']:
+        return {"success": False, "message": "The financial finding was not verified as saved. Check live state before retrying."}
+    return {"success": True, **result,
+        "message": f"Recorded {args['key']} for claim {result.get('claim_number')}: **{saved['finding']}**. "
+            + ("The concern remains open. " if saved['finding']=='Concern' else "The requirement is complete. ")
+            + "The assigned Financial Underwriter must record the review decision; this has not approved or paid the claim."}

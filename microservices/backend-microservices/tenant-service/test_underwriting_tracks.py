@@ -64,6 +64,109 @@ class Tracks(unittest.IsolatedAsyncioTestCase):
         h = lambda u: {"authorization": "Bearer " + create_access_token({"sub": str(u.id)})}
         self.admin_h, self.med_h, self.fin_h, self.agent_h = h(self.admin), h(self.med), h(self.fin), h(self.agent)
 
+    async def test_claim_referral_backfill_reuses_pending_and_completed_cases(self):
+        from shared.models.core import Claim, ClaimStatusEnum
+        from routers.claims import open_claim_uw_case
+        async with factory() as s:
+            claim = Claim(tenant_id=self.t.id, policy_id=self.case.policy_id,
+                          claim_type="Death Claim", submitted_amount=1000,
+                          status=ClaimStatusEnum.REUNDERWRITING_REQUIRED)
+            s.add(claim); await s.flush()
+            case = await s.get(Case, self.case.caseld)
+            case.claim_id = claim.id
+            case.caseStatus = CaseStatusEnum.PENDING_DOCUMENTS
+            await s.commit()
+            for status in (CaseStatusEnum.PENDING_DOCUMENTS, CaseStatusEnum.UNDER_REVIEW,
+                           CaseStatusEnum.APPROVED, CaseStatusEnum.REJECTED, CaseStatusEnum.CLOSED):
+                case.caseStatus = status; await s.commit()
+                for _ in range(2):
+                    response = await self.http.get(f"/tenants/{self.t.id}/cases",
+                        params={"case_type": "Underwriting"}, headers=self.admin_h)
+                    self.assertEqual(response.status_code, 200, response.text)
+                    self.assertEqual(sum(row["claim_id"] == str(claim.id) for row in response.json()), 1)
+                await open_claim_uw_case(s, claim)
+                await open_claim_uw_case(s, claim)
+                await s.commit()
+                rows = (await s.exec(select(Case).where(Case.claim_id == claim.id))).all()
+                self.assertEqual([r.caseld for r in rows], [case.caseld])
+            # A deliberate later referral can start a new cycle after the old one closed.
+            await open_claim_uw_case(s, claim, start_new_review=True)
+            await s.commit()
+            rows = (await s.exec(select(Case).where(Case.claim_id == claim.id))).all()
+            self.assertEqual(len(rows), 2)
+            await open_claim_uw_case(s, claim, start_new_review=True)
+            await s.commit()
+            self.assertEqual(len((await s.exec(select(Case).where(Case.claim_id == claim.id))).all()), 2)
+
+    async def test_concurrent_claim_referral_backfill_creates_only_one_case(self):
+        from shared.models.core import Claim, ClaimStatusEnum
+        from routers.claims import open_claim_uw_case
+        async with factory() as s:
+            claim = Claim(tenant_id=self.t.id, policy_id=self.case.policy_id,
+                          claim_type="Death Claim", submitted_amount=1000,
+                          status=ClaimStatusEnum.REUNDERWRITING_REQUIRED)
+            s.add(claim); await s.commit()
+            claim_id = claim.id
+        async def backfill():
+            async with factory() as s:
+                stale_claim = await s.get(Claim, claim_id)
+                await open_claim_uw_case(s, stale_claim)
+                await open_claim_uw_case(s, stale_claim)
+                await s.commit()
+        await asyncio.gather(*(backfill() for _ in range(6)))
+        async with factory() as s:
+            self.assertEqual(len((await s.exec(select(Case).where(Case.claim_id == claim_id))).all()), 1)
+            claim = await s.get(Claim, claim_id)
+            claim.status = ClaimStatusEnum.UNDER_INVESTIGATION
+            await s.commit()
+            # A stale queue request must not create work after manager resolution.
+            await open_claim_uw_case(s, claim)
+            self.assertEqual(len((await s.exec(select(Case).where(Case.claim_id == claim_id))).all()), 1)
+
+    async def test_claim_payment_requires_finance_not_claims_manager(self):
+        from routers.claims import router as claims_router
+        from shared.models.core import Claim, ClaimStatusEnum, ClaimPayout, Artifact, ClaimProcess
+        self.app.include_router(claims_router)
+        async with factory() as s:
+            headers = {}
+            for role_name in ("ClaimsManager", "Finance"):
+                role = (await s.exec(select(Role).where(Role.name == role_name))).first() or Role(name=role_name, description="")
+                s.add(role); await s.flush()
+                user = User(tenant_id=self.t.id, role_id=role.id, email=f"{uuid4()}@x.test", username=uuid4().hex, hashed_password="x", full_name=role_name)
+                s.add(user); await s.flush()
+                headers[role_name] = {"authorization": "Bearer " + create_access_token({"sub": str(user.id)})}
+            claim = Claim(tenant_id=self.t.id, policy_id=self.case.policy_id, claim_type="Death Claim",
+                          submitted_amount=1000, approved_amount=1000, status=ClaimStatusEnum.APPROVED)
+            s.add(claim); await s.flush()
+            s.add(Artifact(tenant_id=self.t.id, claim_id=claim.id, document_type="Death Certificate", status="Accepted"))
+            await s.commit()
+        path = f"/tenants/{self.t.id}/claims/{claim.id}/payout"
+        for denied in (headers["ClaimsManager"], self.med_h, self.fin_h, self.admin_h):
+            response = await self.http.post(path, json={"amount": 1000}, headers=denied)
+            self.assertEqual(response.status_code, 403, response.text)
+        async with factory() as s:
+            self.assertEqual((await s.get(Claim, claim.id)).status, ClaimStatusEnum.APPROVED)
+            self.assertEqual((await s.exec(select(ClaimPayout).where(ClaimPayout.claim_id == claim.id))).all(), [])
+        response = await self.http.post(path, json={"amount": 1000}, headers=headers["Finance"])
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()["status"], "Settled")
+        listing = f"/tenants/{self.t.id}/claims"
+        response = await self.http.get(listing, headers=headers["Finance"])
+        self.assertEqual(response.status_code, 200, response.text)
+        row = next(c for c in response.json() if c["id"] == str(claim.id))
+        self.assertEqual(row["finance_summary"], {"authorized_at": None, "reconciled_at": None})
+        async with factory() as s:
+            from datetime import datetime
+            s.add(ClaimProcess(tenant_id=self.t.id, policy_id=self.case.policy_id, claim_id=claim.id,
+                               category="Death", event_date=datetime(2026, 10, 17).date(),
+                               authorized_at=datetime(2026, 10, 18), reconciled_at=datetime(2026, 10, 19)))
+            await s.commit()
+        response = await self.http.get(listing, headers=headers["Finance"])
+        row = next(c for c in response.json() if c["id"] == str(claim.id))
+        self.assertEqual(row["finance_summary"]["reconciled_at"], "2026-10-19T00:00:00")
+        self.assertEqual((await self.http.get(f"/tenants/{uuid4()}/claims", headers=headers["Finance"])).status_code, 403)
+
+
     async def asyncTearDown(self):
         await self.http.aclose()
 
@@ -439,6 +542,179 @@ class Tracks(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(detail.json()['read_only'])
         response=await self.http.put(self.url('medical'),json={'status':'CLEARED','note':'Attempt late change'},headers=self.med_h)
         self.assertEqual(response.status_code,409,response.text)
+
+    async def test_final_claim_resolution_is_exclusively_claims_manager_owned(self):
+        from shared.models.core import Claim, ClaimStatusEnum, CaseUnderwritingTrack, ClaimStatusHistory
+        from routers.claims import router as claims_router
+        self.app.include_router(claims_router)
+        async with factory() as session:
+            role=(await session.exec(select(Role).where(Role.name=='ClaimsManager'))).first() or Role(name='ClaimsManager',description='')
+            session.add(role);await session.flush()
+            manager=User(tenant_id=self.t.id,role_id=role.id,email=f'{uuid4()}@test.invalid',username=uuid4().hex,hashed_password='x',full_name='Final decision manager')
+            session.add(manager)
+            claim=Claim(tenant_id=self.t.id,policy_id=self.case.policy_id,claim_type='Death Claim',submitted_amount=1000,status=ClaimStatusEnum.REUNDERWRITING_REQUIRED)
+            session.add(claim);await session.flush()
+            case=await session.get(Case,self.case.caseld);case.claim_id=claim.id;session.add(case)
+            session.add(CaseUnderwritingTrack(tenant_id=self.t.id,case_id=case.caseld,track='MEDICAL',status='CLEARED',assigned_user_id=self.med.id,note='Medical evidence checked.'))
+            session.add(CaseUnderwritingTrack(tenant_id=self.t.id,case_id=case.caseld,track='FINANCIAL',status='IN_REVIEW',assigned_user_id=self.fin.id))
+            await session.commit()
+        headers={'Authorization':'Bearer '+create_access_token({'sub':str(manager.id)})}
+        extra_headers=[]
+        async with factory() as session:
+            for name in ['Underwriter','ClaimsAdjuster','SuperAdmin','Finance']:
+                role=(await session.exec(select(Role).where(Role.name==name))).first() or Role(name=name,description='')
+                session.add(role);await session.flush()
+                denied_user=User(tenant_id=self.t.id,role_id=role.id,email=f'{uuid4()}@test.invalid',username=uuid4().hex,hashed_password='x',full_name=name)
+                session.add(denied_user);await session.flush()
+                extra_headers.append({'Authorization':'Bearer '+create_access_token({'sub':str(denied_user.id)})})
+            await session.commit()
+        path=f'/tenants/{self.t.id}/claims/{claim.id}/resolve-underwriting'
+        body={'decision':'APPROVE_CONTINUE','decision_notes':'Both specialist reviews and the supporting evidence were considered.'}
+        for denied in (self.med_h,self.fin_h,self.admin_h,self.agent_h,*extra_headers):
+            response=await self.http.post(path,json=body,headers=denied)
+            self.assertEqual(response.status_code,403,response.text)
+        self.assertEqual((await self.http.post(path.replace(str(self.t.id),str(uuid4())),json=body,headers=headers)).status_code,403)
+        self.assertEqual((await self.http.post(path,json=body,headers=headers)).status_code,409)
+        async with factory() as session:
+            # A completed financial track on a different referral cannot satisfy this referral.
+            older=Case(tenant_id=self.t.id,customer_id=self.case.customer_id,policy_id=self.case.policy_id,claim_id=claim.id,
+                caseNumber='UW-OLD-'+uuid4().hex[:8],caseType=CaseTypeEnum.UNDERWRITING,caseStatus=CaseStatusEnum.CLOSED,sourceChannel=SourceChannelEnum.BRANCH,
+                createdAt=__import__('datetime').datetime(2020,1,1))
+            session.add(older);await session.flush()
+            session.add(CaseUnderwritingTrack(tenant_id=self.t.id,case_id=older.caseld,track='FINANCIAL',status='CLEARED'))
+            await session.commit()
+        self.assertEqual((await self.http.post(path,json=body,headers=headers)).status_code,409)
+        async with factory() as session:
+            review=(await session.exec(select(CaseUnderwritingTrack).where(CaseUnderwritingTrack.case_id==self.case.caseld,CaseUnderwritingTrack.track=='FINANCIAL'))).one()
+            review.status='CLEARED';review.note='Financial evidence checked.';session.add(review)
+            case=await session.get(Case,self.case.caseld);case.on_hold=True;session.add(case);await session.commit()
+        self.assertEqual((await self.http.post(path,json=body,headers=headers)).status_code,409)
+        async with factory() as session:
+            case=await session.get(Case,self.case.caseld);case.on_hold=False;session.add(case);await session.commit()
+        self.assertEqual((await self.http.post(path,json={**body,'decision_notes':'   '},headers=headers)).status_code,422)
+        response=await self.http.get(path.removesuffix('/resolve-underwriting'),headers=headers)
+        self.assertTrue(response.json()['underwriting_review']['ready'])
+        response=await self.http.post(path,json=body,headers=headers)
+        self.assertEqual(response.status_code,200,response.text)
+        self.assertEqual(response.json()['status'],'Under Investigation')
+        self.assertEqual((await self.http.post(path,json=body,headers=headers)).status_code,400)
+        async with factory() as session:
+            history=(await session.exec(select(ClaimStatusHistory).where(ClaimStatusHistory.claim_id==claim.id))).all()
+            self.assertEqual(len(history),1)
+            self.assertEqual(history[0].actor_id,manager.id)
+            self.assertEqual((await session.get(Case,self.case.caseld)).caseStatus,CaseStatusEnum.APPROVED)
+
+    async def test_claims_manager_records_only_claim_financial_findings(self):
+        from unittest.mock import patch, AsyncMock
+        from shared.models.core import Claim, ClaimStatusEnum, ClaimUnderwritingCheck, CaseUnderwritingTrack
+        from services import claim_engine
+        from routers.claim_financial_review import router
+        self.app.include_router(router)
+        async with factory() as session:
+            role=(await session.exec(select(Role).where(Role.name=='ClaimsManager'))).first() or Role(name='ClaimsManager',description='');session.add(role);await session.flush()
+            manager=User(tenant_id=self.t.id,role_id=role.id,email=f'{uuid4()}@test.invalid',username=uuid4().hex,hashed_password='x',full_name='Claims Manager')
+            session.add(manager)
+            claim=Claim(tenant_id=self.t.id,policy_id=self.case.policy_id,claim_number='CLM-SYNTHETIC',claim_type='Death Claim',submitted_amount=1000,
+                is_contestable=True,status=ClaimStatusEnum.REUNDERWRITING_REQUIRED)
+            session.add(claim);await session.flush()
+            case=await session.get(Case,self.case.caseld);case.claim_id=claim.id;session.add(case);await session.commit()
+        headers={'Authorization':'Bearer '+create_access_token({'sub':str(manager.id)})}
+        await self.http.put(self.url('financial'),json={'status':'IN_REVIEW'},headers=self.fin_h)
+        root=f'/tenants/{self.t.id}/claims/{claim.id}/financial-underwriting'
+        original=claim_engine.claim_review_requirements
+        def requirements(**kwargs):
+            kwargs['claims_terms']={'exclusions':[{'summary':'Non-disclosure.'}]}
+            return original(**kwargs)
+        with patch.object(claim_engine,'claim_review_requirements',side_effect=requirements), \
+             patch('services.underwriting_gate.claim_documents_for',AsyncMock(return_value=[])):
+            response=await self.http.get(root,headers=headers)
+            self.assertEqual(response.status_code,200,response.text)
+            self.assertEqual(response.json()['review']['assigned_user_id'],str(self.fin.id))
+            self.assertFalse(response.json()['ready_to_clear'])
+            self.assertEqual((await self.http.get(root,headers=self.admin_h)).status_code,403)
+            self.assertEqual((await self.http.get(root.replace(str(self.t.id),str(uuid4())),headers=headers)).status_code,403)
+            self.assertEqual((await self.http.get(root.replace(str(claim.id),str(uuid4())),headers=headers)).status_code,404)
+            payload={'key':'claim_exclusions','finding':'Concern','note':'Contract and claim evidence conflict.'}
+            result=await self.http.post(root+'/checks',json=payload,headers=headers)
+            self.assertEqual(result.status_code,200,result.text)
+            self.assertFalse(result.json()['ready_to_clear'])
+            payload['finding']='Clear'
+            result=await self.http.post(root+'/checks',json=payload,headers=headers)
+            self.assertEqual(result.status_code,200,result.text)
+            self.assertEqual(result.json()['checks']['claim_exclusions']['updated_by'],str(manager.id))
+            self.assertEqual(result.json()['review']['status'],'IN_REVIEW')
+            payload['key']='claim_contestability';payload['finding']='Resolved';payload['note']='Original proposal and history have been compared and reconciled.'
+            result=await self.http.post(root+'/checks',json=payload,headers=headers)
+            self.assertEqual(result.status_code,200,result.text)
+            self.assertTrue(result.json()['ready_to_clear'])
+            self.assertEqual((await self.http.put(self.url('financial'),json={'status':'CLEARED','note':'Attempt final decision'},headers=headers)).status_code,403)
+            final=await self.http.put(self.url('financial'),json={'status':'CLEARED','note':'Assigned specialist reviewed the recorded evidence.'},headers=self.fin_h)
+            self.assertEqual(final.status_code,200,final.text)
+            repeated=await self.http.post(root+'/checks',json=payload,headers=headers)
+            self.assertEqual(repeated.status_code,200,repeated.text)
+            self.assertEqual(repeated.json()['review']['status'],'CLEARED')
+
+            async with factory() as session:
+                case=await session.get(Case,self.case.caseld);case.on_hold=True;session.add(case);await session.commit()
+            self.assertEqual((await self.http.post(root+'/checks',json=payload,headers=headers)).status_code,409)
+        async with factory() as session:
+            checks=(await session.exec(select(ClaimUnderwritingCheck).where(ClaimUnderwritingCheck.case_id==self.case.caseld))).all()
+            self.assertEqual(len(checks),2)
+            self.assertTrue(all(c.track=='FINANCIAL' and c.updated_by==manager.id for c in checks))
+            track=(await session.exec(select(CaseUnderwritingTrack).where(CaseUnderwritingTrack.case_id==self.case.caseld,CaseUnderwritingTrack.track=='FINANCIAL'))).one()
+            self.assertEqual(track.assigned_user_id,self.fin.id)
+            self.assertEqual((await session.get(Claim,claim.id)).status,ClaimStatusEnum.REUNDERWRITING_REQUIRED)
+            audits=(await session.exec(select(CaseAuditTrail).where(CaseAuditTrail.caseld==self.case.caseld,CaseAuditTrail.actionPerformed=='Claims Manager recorded financial claim finding'))).all()
+            self.assertEqual(len(audits),3)
+
+    async def test_claim_checks_have_persisted_findings_and_gate_clearance(self):
+        from unittest.mock import patch, AsyncMock
+        from shared.models.core import Claim, ClaimUnderwritingCheck
+        from services import claim_engine
+        await self.http.put(self.url('financial'),json={'status':'IN_REVIEW'},headers=self.fin_h)
+        payload={'claim_checks':[{'key':'claim_exclusions','finding':'Clear','note':'Contract terms and incident evidence reviewed.'}]}
+        self.assertEqual((await self.http.put(self.url('financial'),json=payload,headers=self.fin_h)).status_code,422)
+        async with factory() as s:
+            claim=Claim(tenant_id=self.t.id,policy_id=self.case.policy_id,claim_type='Death Claim',submitted_amount=1000,is_contestable=True)
+            s.add(claim);await s.flush()
+            case=await s.get(Case,self.case.caseld);case.claim_id=claim.id;s.add(case);await s.commit()
+        original=claim_engine.claim_review_requirements
+        def requirements(**kwargs):
+            kwargs['claims_terms']={'exclusions':[{'summary':'Non-disclosure.'}]}
+            return original(**kwargs)
+        root=f'/tenants/{self.t.id}/underwriting/reviews/{self.case.caseld}'
+        with patch.object(claim_engine,'claim_review_requirements',side_effect=requirements), \
+             patch('services.underwriting_gate.claim_documents_for',AsyncMock(return_value=[])):
+            clear={'status':'CLEARED','note':'Evidence supports continuing the claim.'}
+            self.assertEqual((await self.http.put(self.url('financial'),json=clear,headers=self.fin_h)).status_code,422)
+            self.assertEqual((await self.http.put(self.url('financial'),json=payload,headers=self.med_h)).status_code,403)
+            self.assertEqual((await self.http.put(self.url('financial'),json=payload,headers=self.admin_h)).status_code,403)
+            bad={'claim_checks':[{'key':'claim_exclusions','finding':'Clear','note':'     '}]}
+            self.assertEqual((await self.http.put(self.url('financial'),json=bad,headers=self.fin_h)).status_code,422)
+            self.assertEqual((await self.http.put(self.url('financial'),json=payload,headers=self.fin_h)).status_code,200)
+            data=(await self.http.get(root,headers=self.fin_h)).json()
+            self.assertEqual(data['claim_checks']['claim_exclusions']['finding'],'Clear')
+            self.assertEqual(data['review']['status'],'IN_REVIEW')
+            self.assertEqual({r['key']:r['status'] for r in data['requirements']}['claim_exclusions'],'Completed')
+            self.assertEqual((await self.http.put(self.url('financial'),json=clear,headers=self.fin_h)).status_code,422)
+            concern={'claim_checks':[{'key':'claim_contestability','finding':'Concern','note':'Income declarations conflict with the evidence.'}]}
+            self.assertEqual((await self.http.put(self.url('financial'),json=concern,headers=self.fin_h)).status_code,200)
+            self.assertEqual((await self.http.put(self.url('financial'),json=clear,headers=self.fin_h)).status_code,422)
+            self.assertEqual((await self.http.put(self.url('financial'),json={'status':'REFERRED','note':'Refer the conflicting evidence.'},headers=self.fin_h)).status_code,200)
+            self.assertEqual((await self.http.put(self.url('financial'),json=clear,headers=self.fin_h)).status_code,422)
+            concern['claim_checks'][0]['finding']='Resolved'
+            concern['claim_checks'][0]['note']='Original proposal and verified history reconcile the difference.'
+            self.assertEqual((await self.http.put(self.url('financial'),json=concern,headers=self.fin_h)).status_code,200)
+            response=await self.http.put(self.url('financial'),json=clear,headers=self.fin_h)
+            self.assertEqual(response.status_code,200,response.text)
+            # Editing a submitted check requires the reviewer to submit the decision again.
+            self.assertEqual((await self.http.put(self.url('financial'),json=payload,headers=self.fin_h)).json()['status'],'IN_REVIEW')
+            async with factory() as s:
+                checks=(await s.exec(select(ClaimUnderwritingCheck).where(ClaimUnderwritingCheck.case_id==self.case.caseld))).all()
+                self.assertEqual(len(checks),2)
+                self.assertTrue(all(c.updated_by==self.fin.id and c.track=='FINANCIAL' for c in checks))
+                audits=(await s.exec(select(CaseAuditTrail).where(CaseAuditTrail.caseld==self.case.caseld,CaseAuditTrail.entityChanged=='claim_exclusions'))).all()
+                self.assertTrue(audits)
 
     async def test_specialists_have_working_track_tools_not_just_review_notes(self):
         root=f"/tenants/{self.t.id}/cases/{self.case.caseld}"

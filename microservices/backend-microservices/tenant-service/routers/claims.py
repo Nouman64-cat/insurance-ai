@@ -4,7 +4,7 @@ rule-engine adjudication, disbursement payouts, and reinsurance recovery.
 """
 
 from datetime import date, datetime
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -43,8 +43,6 @@ router = APIRouter(prefix="/tenants/{tenant_id}/claims", tags=["Claims"])
 from services import claim_authority as ca
 
 _CLAIMS_ROLES = set(ca.PROCESS_ROLES)
-# Who works the claim-underwriting queue in the Underwriting Workbench.
-UNDERWRITING_REVIEW_ROLES = ("Underwriter", "Medical Underwriter", "Financial Underwriter")
 
 
 async def _assert_claims_role(token: str, session: AsyncSession) -> User:
@@ -458,7 +456,10 @@ async def list_claims(
     token: str = Depends(oauth2_scheme),
     session: AsyncSession = Depends(get_session),
 ):
-    await _assert_role(token, session, _VIEW_ROLES, "Viewing claims")
+    viewer = await _assert_role(token, session, _VIEW_ROLES, "Viewing claims")
+    finance_view = await _role_name(viewer, session) == "Finance"
+    if finance_view and viewer.tenant_id != tenant_id:
+        raise HTTPException(403, "Not your organization.")
 
     stmt = select(Claim).where(Claim.tenant_id == tenant_id).order_by(Claim.created_at.desc())
     
@@ -502,6 +503,12 @@ async def list_claims(
         b.id: b for b in (await session.exec(select(Branch).where(Branch.tenant_id == tenant_id))).all()
     }
 
+    finance_processes = {}
+    if finance_view and claims:
+        from shared.models.core import ClaimProcess
+        finance_processes = {p.claim_id: p for p in (await session.exec(select(ClaimProcess).where(
+            ClaimProcess.tenant_id == tenant_id, ClaimProcess.claim_id.in_([c.id for c in claims])))).all()}
+
     results = []
     for c in claims:
         policy = await session.get(Policy, c.policy_id)
@@ -525,9 +532,35 @@ async def list_claims(
             continue
 
         art_count = len((await session.exec(select(Artifact).where(Artifact.claim_id == c.id))).all())
-        results.append(_claim_dict(c, policy, customer, adjuster, art_count, branch=branch))
+        item = _claim_dict(c, policy, customer, adjuster, art_count, branch=branch)
+        if finance_view:
+            proc = finance_processes.get(c.id)
+            item["finance_summary"] = {
+                "authorized_at": proc.authorized_at.isoformat() if proc and proc.authorized_at else None,
+                "reconciled_at": proc.reconciled_at.isoformat() if proc and proc.reconciled_at else None,
+            }
+        results.append(item)
 
     return results
+
+
+async def claim_underwriting_review_state(session: AsyncSession, claim: Claim) -> dict:
+    """Final resolution uses the latest referral's two reviews, never reviews from different cases."""
+    from shared.models.core import CaseUnderwritingTrack
+    case = (await session.exec(select(Case).where(Case.claim_id == claim.id,
+        Case.tenant_id == claim.tenant_id, Case.caseType == CaseTypeEnum.UNDERWRITING)
+        .order_by(Case.createdAt.desc()))).first()
+    if case is None:
+        return {"ready": False, "case_id": None, "reviews": {}}
+    tracks = (await session.exec(select(CaseUnderwritingTrack).where(
+        CaseUnderwritingTrack.case_id == case.caseld, CaseUnderwritingTrack.tenant_id == claim.tenant_id))).all()
+    reviews = {t.track.lower(): {"status": t.status} for t in tracks}
+    ready = (_to_claim_status_enum(claim.status) == ClaimStatusEnum.REUNDERWRITING_REQUIRED
+        and not case.on_hold
+        and str(getattr(case.caseStatus,'value',case.caseStatus)) not in {'Approved','Closed','Rejected'}
+        and all(reviews.get(t,{}).get('status') in {'CLEARED','REFERRED','DECLINED'} for t in ('medical','financial')))
+    return {"ready": ready, "case_id": str(case.caseld), "case_number": case.caseNumber,
+            "on_hold": case.on_hold, "reviews": reviews}
 
 
 @router.get("/{claim_id}", summary="Get Claim Detail")
@@ -599,6 +632,7 @@ async def get_claim_detail(
     base["status_history"] = history_list
     base["payouts"] = payout_list
     base["artifacts"] = art_list
+    base["underwriting_review"] = await claim_underwriting_review_state(session, claim)
 
     return base
 
@@ -1026,18 +1060,29 @@ class ClaimReUnderwriteRequest(BaseModel):
 
 
 class ClaimUnderwritingResolveRequest(BaseModel):
-    decision: str  # APPROVE_CONTINUE, APPROVE_WITH_EXCLUSION, APPROVE_WITH_LOADING, DECLINE_NON_DISCLOSURE
-    decision_notes: str
+    decision: Literal["APPROVE_CONTINUE", "APPROVE_WITH_EXCLUSION", "APPROVE_WITH_LOADING", "DECLINE_NON_DISCLOSURE"]
+    decision_notes: str = PydanticField(min_length=1, max_length=2000)
 
 
-async def open_claim_uw_case(session: AsyncSession, claim: Claim) -> None:
-    """The referral becomes an underwriting case ("Claim UW") in the same queue as applications: the Admin assigns its
-    medical and financial reviewers and they work it in the Workbench. A claim keeps one open case (idempotent)."""
+async def open_claim_uw_case(session: AsyncSession, claim: Claim, *, start_new_review: bool = False) -> None:
+    """Backfill only missing referrals; serialize creation across queue reads and referrals.
+
+    A terminal case still belongs to the current referral until the Claims Manager
+    resolves it. Only an explicit later referral may start another review cycle.
+    """
+    locked_claim = (await session.exec(select(Claim).where(Claim.id == claim.id,
+        Claim.tenant_id == claim.tenant_id).with_for_update()
+        .execution_options(populate_existing=True))).first()
+    if locked_claim is None or locked_claim.status != ClaimStatusEnum.REUNDERWRITING_REQUIRED:
+        return
+    existing = (await session.exec(select(Case).where(
+        Case.claim_id == claim.id, Case.tenant_id == claim.tenant_id,
+        Case.caseType == CaseTypeEnum.UNDERWRITING).order_by(Case.createdAt.desc()))).all()
+    terminal = {CaseStatusEnum.APPROVED, CaseStatusEnum.REJECTED, CaseStatusEnum.CLOSED}
+    if existing and (not start_new_review or any(c.caseStatus not in terminal for c in existing)):
+        return
     policy = await session.get(Policy, claim.policy_id)
-    open_uw = (await session.exec(select(Case).where(
-        Case.claim_id == claim.id, Case.caseType == CaseTypeEnum.UNDERWRITING,
-        Case.caseStatus.in_([CaseStatusEnum.NEW, CaseStatusEnum.IN_PROGRESS, CaseStatusEnum.UNDER_REVIEW])))).first()
-    if open_uw is None and policy is not None:
+    if policy is not None and policy.tenant_id == claim.tenant_id:
         session.add(Case(
             tenant_id=claim.tenant_id,
             customer_id=policy.customer_id,
@@ -1049,6 +1094,8 @@ async def open_claim_uw_case(session: AsyncSession, claim: Claim) -> None:
             sourceChannel=SourceChannelEnum.PORTAL,
             claim_id=claim.id,
         ))
+        # Make the new case visible to subsequent checks in this transaction.
+        await session.flush()
 
 
 @router.post("/{claim_id}/re-underwrite", summary="Refer Claim to Underwriting")
@@ -1060,7 +1107,8 @@ async def refer_claim_to_underwriting(
     session: AsyncSession = Depends(get_session),
 ):
     current_user = await _assert_claims_role(token, session)
-    claim = await session.get(Claim, claim_id)
+    claim = (await session.exec(select(Claim).where(Claim.id == claim_id,
+        Claim.tenant_id == tenant_id).with_for_update().execution_options(populate_existing=True))).first()
     if claim is None or claim.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Claim not found")
 
@@ -1071,7 +1119,8 @@ async def refer_claim_to_underwriting(
         claim.underwriting_decision_notes = f"Referral Note ({datetime.utcnow().strftime('%Y-%m-%d')}): {body.notes}"
     session.add(claim)
 
-    await open_claim_uw_case(session, claim)
+    await open_claim_uw_case(session, claim,
+        start_new_review=old_status != ClaimStatusEnum.REUNDERWRITING_REQUIRED.value)
 
     history = ClaimStatusHistory(
         tenant_id=tenant_id,
@@ -1100,23 +1149,27 @@ async def resolve_claim_underwriting(
     token: str = Depends(oauth2_scheme),
     session: AsyncSession = Depends(get_session),
 ):
-    # The review is done by the Underwriting department (Workbench > Claim Underwriting), not by the claims staff
-    # who referred it; the claim then returns to Claims for the next steps.
-    current_user = await _assert_role(token, session, UNDERWRITING_REVIEW_ROLES, "Resolving a claim underwriting review")
+    # Specialists submit their own track; only the Claims Manager records the combined resolution.
+    current_user = await _assert_role(token, session, ("ClaimsManager",), "Recording the final claim underwriting decision")
+    if current_user.tenant_id != tenant_id:
+        raise HTTPException(403, "Not your organization.")
     claim = await session.get(Claim, claim_id)
     if claim is None or claim.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Claim not found")
     if _to_claim_status_enum(claim.status) != ClaimStatusEnum.REUNDERWRITING_REQUIRED:
         raise HTTPException(status_code=400, detail="This claim is not waiting for an underwriting review.")
 
-    # With a Claim UW case, the final decision waits for both reviews (medical and financial).
-    from shared.models.core import CaseUnderwritingTrack
-    uw_case_ids = [c.caseld for c in (await session.exec(select(Case).where(Case.claim_id == claim.id, Case.caseType == CaseTypeEnum.UNDERWRITING))).all()]
-    if uw_case_ids:
-        done = {t.track for t in (await session.exec(select(CaseUnderwritingTrack).where(
-            CaseUnderwritingTrack.case_id.in_(uw_case_ids), CaseUnderwritingTrack.status.in_(["CLEARED", "REFERRED", "DECLINED"])))).all()}
-        if not {"MEDICAL", "FINANCIAL"} <= done:
-            raise HTTPException(status_code=400, detail="Both the medical and the financial review must be completed first.")
+    # Serialise with specialist review/check writes before rechecking current readiness.
+    state = await claim_underwriting_review_state(session, claim)
+    if not state['case_id']:
+        raise HTTPException(409, "No claim underwriting referral was found.")
+    case = (await session.exec(select(Case).where(Case.caseld == UUID(state['case_id']))
+        .with_for_update().execution_options(populate_existing=True))).one()
+    state = await claim_underwriting_review_state(session, claim)
+    if not state['ready']:
+        raise HTTPException(409, "Both the medical and the financial review must be completed on the current, open referral before the Claims Manager records the final decision.")
+    if not (body.decision_notes or '').strip():
+        raise HTTPException(422, "Record the Claims Manager's rationale for the final decision.")
 
     old_status = claim.status.value if hasattr(claim.status, "value") else str(claim.status)
     
@@ -1127,22 +1180,17 @@ async def resolve_claim_underwriting(
         claim.status = ClaimStatusEnum.UNDER_INVESTIGATION
 
     timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M')
-    # The reviewers' findings travel back to Claims with the decision.
+    # Record only the latest referral's findings and close that referral.
     from shared.models.core import CaseUnderwritingTrack
-    findings = []
-    for uw_case in (await session.exec(select(Case).where(Case.claim_id == claim.id, Case.caseType == CaseTypeEnum.UNDERWRITING))).all():
-        for t in (await session.exec(select(CaseUnderwritingTrack).where(CaseUnderwritingTrack.case_id == uw_case.caseld))).all():
-            findings.append(f"{t.track.title()} review {t.status}" + (f" - {t.note}" if t.note else ""))
+    tracks = (await session.exec(select(CaseUnderwritingTrack).where(
+        CaseUnderwritingTrack.case_id == case.caseld, CaseUnderwritingTrack.tenant_id == tenant_id))).all()
+    findings = [f"{t.track.title()} review {t.status}" + (f" - {t.note}" if t.note else "") for t in tracks]
     results = f" Reviews: {'; '.join(findings)}." if findings else ""
-    claim.underwriting_decision_notes = f"Underwriting Resolution [{body.decision}] ({timestamp}): {body.decision_notes}.{results}"
+    claim.underwriting_decision_notes = f"Claims Manager Resolution [{body.decision}] ({timestamp}): {body.decision_notes}.{results}"
     session.add(claim)
-    # Close the Claim UW case so it leaves the underwriting queue as decided.
-    for uw_case in (await session.exec(select(Case).where(
-            Case.claim_id == claim.id, Case.caseType == CaseTypeEnum.UNDERWRITING,
-            Case.caseStatus.not_in([CaseStatusEnum.APPROVED, CaseStatusEnum.REJECTED, CaseStatusEnum.CLOSED])))).all():
-        uw_case.caseStatus = CaseStatusEnum.REJECTED if body.decision == "DECLINE_NON_DISCLOSURE" else CaseStatusEnum.APPROVED
-        uw_case.updatedAt = datetime.utcnow()
-        session.add(uw_case)
+    case.caseStatus = CaseStatusEnum.REJECTED if body.decision == "DECLINE_NON_DISCLOSURE" else CaseStatusEnum.APPROVED
+    case.updatedAt = datetime.utcnow()
+    session.add(case)
 
     history = ClaimStatusHistory(
         tenant_id=tenant_id,

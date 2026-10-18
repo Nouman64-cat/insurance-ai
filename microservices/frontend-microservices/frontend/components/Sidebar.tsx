@@ -566,6 +566,10 @@ const SECTION_PAGES: { prefix: string; href: string }[] = [
 ];
 
 function activeSidebarHref(pathname: string, searchParams: { get(name: string): string | null }): string {
+  if (pathname === "/finance") {
+    const view = searchParams.get("view");
+    return ["payouts", "history", "reconciliation"].includes(view ?? "") ? `/finance?view=${view}` : "/finance";
+  }
   const section = SECTION_PAGES.find((p) => pathname.startsWith(p.prefix) && !pathname.startsWith("/claims/dashboard") && !pathname.startsWith("/claims/register"));
   if (section) return section.href;
   let best: { href: string; score: number } | null = null;
@@ -752,7 +756,15 @@ export function Sidebar() {
   const workingHrefs = ["/customer-service", "/acr", "/profile", "/cases", "/requests", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/underwriting", "/admin/users", "/admin/leads", "/admin/policyholders", "/plans", "/financial", "/claims", "/claims/dashboard", "/claims/register"];
   const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/roles", "/super-admin/tokens", "/super-admin/ai-agents", "/super-admin/llm-config"];
 
-  const displayGroups = (userRole === "SuperAdmin"
+  const financeIcon = (path: string) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d={path}/></svg>;
+  const financeLinks = [
+    { href: "/finance", label: "Payments dashboard", icon: financeIcon("M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z"), badge: null },
+    { href: "/finance?view=payouts", label: "Awaiting payout", icon: financeIcon("M3 5h18v14H3z M3 9h18 M7 14h3 M15 14h3"), badge: null },
+    { href: "/finance?view=reconciliation", label: "Reconciliation", icon: financeIcon("M9 11l3 3 8-8 M20 12v8H4V4h10"), badge: null },
+    { href: "/finance?view=history", label: "Payment history", icon: financeIcon("M3 11a9 9 0 1 1 2.6 7 M3 4v7h7 M12 7v5l3 2"), badge: null },
+    { href: "/profile", label: "Profile", icon: financeIcon("M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M4 21v-2a8 8 0 0 1 16 0v2"), badge: null },
+  ];
+  const displayGroups = (userRole === "Finance" ? [{ group: "Finance", links: financeLinks }] : userRole === "SuperAdmin"
     ? [
       {
         group: "PLATFORM ADMINISTRATION",
@@ -769,10 +781,11 @@ export function Sidebar() {
       : reconstructedNavGroups) as any;
 
   // We only allow drag and drop when displaying the full standard nav (not working mode or super admin flat lists, to simplify logic)
-  const isDragEnabled = userRole !== "SuperAdmin" && navMode !== "working";
+  const isDragEnabled = userRole !== "Finance" && userRole !== "SuperAdmin" && navMode !== "working";
 
   // Who may see a link: the same rules for the list and for the profile menu.
   const canSeeLink = (link: any) => {
+    if (userRole === "Finance") return financeLinks.some(item => item.href === link.href);
     if (["Medical Underwriter", "Financial Underwriter"].includes(userRole ?? "") && !["/underwriting", "/profile"].includes(link.href)) return false;
     if (link.hidden) return false;
     if (link.hideForAdmin && userRole === "Admin") return false;

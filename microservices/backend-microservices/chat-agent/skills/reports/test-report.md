@@ -69,3 +69,22 @@ remain deployment validation tasks.
 - Browser verification: signed in with a disposable synthetic SuperAdmin, saved the setting off, reloaded to verify persistence, confirmed the gateway and live runtime both reported disabled, then restored enabled. Verified subagent lists, tool search, Finance role filtering and skill search. The temporary user was removed.
 - Runtime inventory displayed **2 agents, 8 subagents, 224 tools and 23 skills**, using the database's actual configured role names.
 - Settings take effect on new chat requests within the five-second refresh interval without restarting services. The old environment toggle is ignored and removed from the example/Compose configuration.
+
+
+## Claim financial underwriting tools — 2026-10-18
+
+- Added `get_claim_financial_review` and `record_claim_financial_check` for ClaimsManager, plus the `claim-financial-underwriting` skill in the claims specialist.
+- Claims Managers can record explicit financial claim findings and rationale. The record and audit identify the actual manager; the assigned financial reviewer and claim decision remain separate.
+- Full chat suite: **3,929 passed**, excluding `test_gemini.py` (unconditional real provider invocation during collection).
+- Disposable PostgreSQL/API integration: **3 passed**, covering Claims Manager findings, specialist findings, ownership, tenant/role limits, held/closed work, concern blockers, unchanged decisions on identical retries and audit persistence.
+- Live deployed inventory: **226 tools and 24 skills**; both new tools expose ClaimsManager as their authorized role. Static route inventory regenerated: **727 routes**, 10 services and 11 client applications.
+- No production claim findings, approvals or payments were written during validation.
+
+
+## Final claim-underwriting resolution authority — 2026-10-18
+
+- `resolve_claim_underwriting` and the resolve-underwriting API now allow ClaimsManager only. Medical, Financial and general Underwriters, ClaimsAdjusters, Admin, SuperAdmin and Finance are denied.
+- Specialist UI retains its own review actions and a read-only combined summary. The final resolution control is on the Claims Manager’s claims workbench and policy-scoped claims decision step.
+- Readiness requires both submitted reviews on the latest open referral, with hold and tenant checks. Earlier referrals cannot supply a missing review. A decision rationale is mandatory and the history identifies the actual Claims Manager.
+- Verification: full chat suite **3,929 passed**; subsequent final-action role-chip regression **10 targeted tests passed**. Frontend **28 tests passed**; changed portal UI dependency graph and underwriting workbench **0 TypeScript diagnostics**. Disposable PostgreSQL/API integration **3 passed**, including final-resolution role denial, current-referral readiness, hold checks, history attribution and successful manager continuation.
+- Validation did not record a final decision on a production claim.

@@ -161,7 +161,7 @@ export default function ReviewDocuments(p: Props) {
       const files = p.documents.filter(d => d.type === doc.type);
       const checking = files.some(d => isProcessing(d.status) && !d.processing_stalled);
       const unreadable = !checking && files.some(d => d.status === "Re-submission Requested");
-      return { key: `app:${doc.type}`, title: doc.type, done: false, checking, unreadable, files, canUpload: doc.canUpload, tag: doc.tag ?? "Application", testCode: "", cardType: doc.type,
+      return { key: `app:${doc.type}`, title: doc.type, done: requiredDocuments.some(d => d.type === doc.type && d.received), checking, unreadable, files, canUpload: doc.canUpload, tag: doc.tag ?? "Application", testCode: "", cardType: doc.type,
         active: isActive(i => i.type === doc.type),
         hint: checking ? "Uploaded — we're reading it now. This usually takes a few seconds and updates by itself." : files.some(retryable) ? "The document reader could not finish. Your file is saved — retry reading it." : unreadable ? "The file couldn't be read clearly. Upload a sharper scan or the original PDF." : doc.reason,
         note: doc.canUpload ? null : doc.owner === "medical" ? "Collected by medical underwriting" : doc.owner === "financial" ? "Collected by financial underwriting" : "Collected by pre-underwriting" };
@@ -170,7 +170,7 @@ export default function ReviewDocuments(p: Props) {
       const files = p.documents.filter(d => d.type === `Medical Report: ${test.code}`);
       return { key: `test:${test.code}`, title: test.name, done: files.length > 0, checking: false, unreadable: false, files, canUpload: true, note: null, tag: null, testCode: test.code, cardType: "",
         active: isActive(i => i.testCode === test.code), hint: "Attach the results for this examination." };
-    }) : required.map((type): Row => {
+    }) : required.filter(type => !appDocs.some(doc => doc.type === type)).map((type): Row => {
       const files = p.documents.filter(d => d.type === type);
       return { key: `req:${type}`, title: type, done: requiredDocuments.some(d => d.type === type && d.received), checking: files.some(d => isProcessing(d.status) && !d.processing_stalled), unreadable: files.some(d => d.status === "Re-submission Requested"), files, canUpload: true, note: null, tag: null, testCode: type, cardType: "",
         active: isActive(i => i.type === type), hint: "Requested from the customer, or upload it here." };

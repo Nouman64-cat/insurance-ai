@@ -14,7 +14,7 @@
     "schema": {
       "properties": {
         "page_name": {
-          "description": "Exact page route. Must be one of: dashboard, submissions, cases, artifacts, underwriting, applications, claims, claims/dashboard, claims/register, reimbursements, fraud, score-engine, proposal, live-evaluation, case-summarizer, assessments, agents, financial, reports, plans, policy-issuance, policy-management/post-issuance, pre-underwriting, post-underwriting, renewals, commissions, commissions/rate-card, commissions/payees, commissions/calculator, commissions/types, commissions/bonuses, commission-ops, commission-ops/ledger, commission-ops/statements, treasury/runs, treasury/banking, treasury/settlement, treasury/holdbacks, risk/clawbacks, risk/tax, risk/secp, admin/rule-engine, admin/leads, admin/customers, admin/policyholders, admin/acquisition-sources, admin/organizations, admin/families, admin/users, super-admin/tenants, super-admin/admins, super-admin/branches, super-admin/tokens, profile",
+          "description": "Exact page route. Must be one of: dashboard, submissions, cases, artifacts, underwriting, applications, claims, claims/dashboard, claims/register, reimbursements, fraud, score-engine, proposal, live-evaluation, case-summarizer, assessments, agents, financial, reports, plans, policy-issuance, policy-management/post-issuance, pre-underwriting, post-underwriting, renewals, commissions, commissions/rate-card, commissions/payees, commissions/calculator, commissions/types, commissions/bonuses, commission-ops, commission-ops/ledger, commission-ops/statements, treasury/runs, treasury/banking, treasury/settlement, treasury/holdbacks, risk/clawbacks, risk/tax, risk/secp, admin/rule-engine, admin/leads, admin/customers, admin/policyholders, admin/acquisition-sources, admin/organizations, admin/families, admin/users, super-admin/tenants, super-admin/admins, super-admin/branches, super-admin/ai-agents, super-admin/tokens, profile",
           "title": "Page Name",
           "type": "string"
         },
@@ -5547,7 +5547,7 @@
   },
   {
     "capability_id": "resolve_claim_underwriting",
-    "description": "Close out a re-underwriting referral. DECLINE_NON_DISCLOSURE declines the\n    claim outright; the other three send it back to Under Investigation.",
+    "description": "Claims Manager only: record the final claim-underwriting decision after both specialist reviews\n    are submitted. Requires the manager's supplied decision and rationale. DECLINE_NON_DISCLOSURE declines\n    the claim; continuation returns i",
     "domain": "claims",
     "mutating": true,
     "execution": "executor",
@@ -5604,7 +5604,7 @@
             }
           ],
           "default": null,
-          "description": "The underwriter's written rationale.",
+          "description": "The Claims Manager's supplied rationale for the final decision.",
           "title": "Decision Notes"
         }
       },
@@ -5615,9 +5615,7 @@
       "type": "object"
     },
     "roles": [
-      "SuperAdmin",
-      "Admin",
-      "Underwriter"
+      "ClaimsManager"
     ]
   },
   {
@@ -5629,7 +5627,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "tool_executor",
-      "line": 6984,
+      "line": 6986,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -14081,7 +14079,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "claim_workflow_tools",
-      "line": 282,
+      "line": 304,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -14148,7 +14146,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "claim_workflow_tools",
-      "line": 326,
+      "line": 348,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -14204,7 +14202,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "claim_workflow_tools",
-      "line": 342,
+      "line": 364,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -14503,7 +14501,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "claim_workflow_tools",
-      "line": 413,
+      "line": 441,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -14600,7 +14598,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "claim_workflow_tools",
-      "line": 432,
+      "line": 460,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -14649,7 +14647,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "claim_workflow_tools",
-      "line": 438,
+      "line": 466,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -14710,7 +14708,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "claim_workflow_tools",
-      "line": 460,
+      "line": 488,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -14811,7 +14809,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "claim_workflow_tools",
-      "line": 492,
+      "line": 520,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -14933,7 +14931,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "claim_workflow_tools",
-      "line": 512,
+      "line": 540,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -15033,7 +15031,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "claim_workflow_tools",
-      "line": 537,
+      "line": 565,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -15143,7 +15141,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "claim_workflow_tools",
-      "line": 567,
+      "line": 595,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -15293,7 +15291,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "claim_workflow_tools",
-      "line": 596,
+      "line": 624,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -15341,7 +15339,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "claim_workflow_tools",
-      "line": 603,
+      "line": 631,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -15407,7 +15405,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "claim_workflow_tools",
-      "line": 620,
+      "line": 648,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -15468,7 +15466,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "claim_workflow_tools",
-      "line": 636,
+      "line": 664,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -16275,7 +16273,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "specialist_review_tools",
-      "line": 247,
+      "line": 251,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -16339,7 +16337,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "specialist_review_tools",
-      "line": 265,
+      "line": 269,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -16422,7 +16420,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "specialist_review_tools",
-      "line": 298,
+      "line": 302,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -16498,7 +16496,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "specialist_review_tools",
-      "line": 366,
+      "line": 370,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -16561,7 +16559,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "specialist_review_tools",
-      "line": 401,
+      "line": 405,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -16683,7 +16681,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "specialist_review_tools",
-      "line": 469,
+      "line": 473,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -16724,7 +16722,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "specialist_review_tools",
-      "line": 478,
+      "line": 482,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -16824,7 +16822,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "specialist_review_tools",
-      "line": 535,
+      "line": 539,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -16887,7 +16885,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "specialist_review_tools",
-      "line": 555,
+      "line": 559,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -17395,6 +17393,132 @@
       "Admin",
       "Agent",
       "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "get_claim_financial_review",
+    "description": "Claims Manager: read a referred claim's financial underwriting requirements, exclusions,\n    contestability findings, documents, assigned reviewer and readiness. This is claim review,\n    not new-policy AI financial underwriting. Read-only;",
+    "domain": "claims_workflow",
+    "mutating": false,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "claim_workflow_tools",
+      "line": 718,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "claim_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. CLM-2026-0001.",
+          "title": "Claim Number"
+        },
+        "claimant_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Claimant / policyholder name, when the number isn't known.",
+          "title": "Claimant Name"
+        }
+      },
+      "title": "ClaimLookupArgs",
+      "type": "object"
+    },
+    "roles": [
+      "ClaimsManager"
+    ]
+  },
+  {
+    "capability_id": "record_claim_financial_check",
+    "description": "Claims Manager: record explicitly supplied financial claim exclusions, waiting-period or contestability\n    findings and evidence. Concern remains unresolved. Does not clear the underwriting review, decide a claim,\n    change the assigned u",
+    "domain": "claims_workflow",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "claim_workflow_tools",
+      "line": 735,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "claim_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. CLM-2026-0001.",
+          "title": "Claim Number"
+        },
+        "claimant_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Claimant / policyholder name, when the number isn't known.",
+          "title": "Claimant Name"
+        },
+        "key": {
+          "enum": [
+            "claim_exclusions",
+            "claim_waiting_periods",
+            "claim_contestability"
+          ],
+          "title": "Key",
+          "type": "string"
+        },
+        "finding": {
+          "enum": [
+            "Clear",
+            "Resolved",
+            "Concern"
+          ],
+          "title": "Finding",
+          "type": "string"
+        },
+        "note": {
+          "description": "Human-supplied evidence and rationale. Never invent findings or supporting evidence.",
+          "maxLength": 2000,
+          "minLength": 5,
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "finding",
+        "note"
+      ],
+      "title": "RecordClaimFinancialCheckArgs",
+      "type": "object"
+    },
+    "roles": [
+      "ClaimsManager"
     ]
   }
 ]

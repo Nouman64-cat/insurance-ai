@@ -1834,6 +1834,21 @@ class CaseUnderwritingTrack(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
 
+class ClaimUnderwritingCheck(SQLModel, table=True):
+    """Human findings for each claim-review requirement, independent of AI scoring."""
+    __tablename__ = "claim_underwriting_checks"
+    __table_args__ = (UniqueConstraint("case_id", "track", "requirement_key", name="uq_claim_underwriting_check"),)
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True)
+    case_id: UUID = Field(foreign_key="cases.caseld", index=True)
+    track: str = Field(max_length=20)
+    requirement_key: str = Field(max_length=50)
+    finding: str = Field(max_length=20)
+    note: str = Field(sa_column=Column(Text, nullable=False))
+    updated_by: UUID = Field(foreign_key="users.id")
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 5. CaseHistory
 # ─────────────────────────────────────────────────────────────────────────────

@@ -1290,13 +1290,14 @@ class ResolveClaimUnderwritingArgs(BaseModel):
     decision: Literal[
         "APPROVE_CONTINUE", "APPROVE_WITH_EXCLUSION", "APPROVE_WITH_LOADING", "DECLINE_NON_DISCLOSURE"
     ] = Field(description="Underwriting's verdict on the re-underwriting referral.")
-    decision_notes: Optional[str] = Field(default=None, description="The underwriter's written rationale.")
+    decision_notes: Optional[str] = Field(default=None, description="The Claims Manager's supplied rationale for the final decision.")
 
 
 @tool(args_schema=ResolveClaimUnderwritingArgs)
 def resolve_claim_underwriting(**kwargs) -> str:
-    """Close out a re-underwriting referral. DECLINE_NON_DISCLOSURE declines the
-    claim outright; the other three send it back to Under Investigation."""
+    """Claims Manager only: record the final claim-underwriting decision after both specialist reviews
+    are submitted. Requires the manager's supplied decision and rationale. DECLINE_NON_DISCLOSURE declines
+    the claim; continuation returns it to investigation, without approving or paying it."""
     return "{}"
 
 
@@ -3020,6 +3021,14 @@ SPECIALIST_REVIEW_TOOLS = [
 ]
 
 
+@tool(args_schema=ClaimLookupArgs)
+def get_claim_financial_review(**kwargs) -> str:
+    """Claims Manager: read a referred claim's financial underwriting requirements, exclusions,
+    contestability findings, documents, assigned reviewer and readiness. This is claim review,
+    not new-policy AI financial underwriting. Read-only; no referral or decision is recorded."""
+    return "{}"
+
+
 ALL_TOOLS = [
     # navigation & discovery
     navigate_to_page,
@@ -3265,3 +3274,22 @@ ALL_TOOLS.extend([search_capabilities, get_capability_schema])
 
 from capability_tools import CAPABILITY_TOOLS
 ALL_TOOLS.extend([list_customers, *CAPABILITY_TOOLS])
+
+ALL_TOOLS.append(get_claim_financial_review)
+
+
+class RecordClaimFinancialCheckArgs(ClaimLookupArgs):
+    key: Literal["claim_exclusions", "claim_waiting_periods", "claim_contestability"]
+    finding: Literal["Clear", "Resolved", "Concern"]
+    note: str = Field(min_length=5,max_length=2000,description="Human-supplied evidence and rationale. Never invent findings or supporting evidence.")
+
+
+@tool(args_schema=RecordClaimFinancialCheckArgs)
+def record_claim_financial_check(**kwargs) -> str:
+    """Claims Manager: record explicitly supplied financial claim exclusions, waiting-period or contestability
+    findings and evidence. Concern remains unresolved. Does not clear the underwriting review, decide a claim,
+    change the assigned underwriter or operate on a new-policy application."""
+    return "{}"
+
+
+ALL_TOOLS.append(record_claim_financial_check)

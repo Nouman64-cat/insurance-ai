@@ -16,6 +16,7 @@ import {
   AuditTimeline, btnDanger, btnGhost, btnPrimary, CheckList, Chip, fmtDate, fmtDateTime, inputCls, KV, StageDot, TRACKER_TEXT,
 } from "@/components/policy/panelKit";
 import { SurrenderCard } from "@/components/policy/ExitPanel";
+import ClaimFinalUnderwritingDecision from "@/components/claims/ClaimFinalUnderwritingDecision";
 import { tx } from "@/lib/i18n/tx";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -224,7 +225,7 @@ export default function ClaimsPanel({ policyId, onChanged, onOpenExit }: Readonl
         )}
       </div>
 
-      {ws && <Workspace ws={ws} ov={ov} policyId={policyId} locked={locked} canDecide={canDecide} isManager={isManager}
+      {ws && <Workspace ws={ws} ov={ov} policyId={policyId} locked={locked} canDecide={canDecide} isManager={isManager} role={role}
         openStep={openStep} setOpenStep={setOpenStep} run={run} onClose={() => setWs(null)} />}
     </div>
   );
@@ -311,8 +312,8 @@ function Field({ label, children }: Readonly<{ label: string; children: React.Re
 // ── The seven-step workspace ─────────────────────────────────────────────────
 
 function Workspace({
-  ws, ov, policyId, locked, canDecide, isManager, openStep, setOpenStep, run, onClose,
-}: Readonly<{ ws: ClaimWorkspace; ov: ClaimsOverview; policyId: string; locked: boolean; canDecide: boolean; isManager: boolean;
+  ws, ov, policyId, locked, canDecide, isManager, role, openStep, setOpenStep, run, onClose,
+}: Readonly<{ ws: ClaimWorkspace; ov: ClaimsOverview; policyId: string; locked: boolean; canDecide: boolean; isManager: boolean; role: string | null;
   openStep: string | null; setOpenStep: (k: string | null) => void; run: Run; onClose: () => void }>) {
   const sla = SLA_TONE[ws.sla.state];
   return (
@@ -347,7 +348,7 @@ function Workspace({
               </button>
               {isOpen && (
                 <div className="px-4 pb-4 pt-3 border-t border-slate-100 bg-slate-50/40">
-                  <StepBody step={st.key} ws={ws} ov={ov} policyId={policyId} locked={locked} canDecide={canDecide} isManager={isManager} run={run} />
+                  <StepBody step={st.key} ws={ws} ov={ov} policyId={policyId} locked={locked} canDecide={canDecide} isManager={isManager} role={role} run={run} />
                 </div>
               )}
             </div>
@@ -360,14 +361,14 @@ function Workspace({
 }
 
 function StepBody({
-  step, ws, ov, policyId, locked, canDecide, isManager, run,
-}: Readonly<{ step: ClaimStage["key"]; ws: ClaimWorkspace; ov: ClaimsOverview; policyId: string; locked: boolean; canDecide: boolean; isManager: boolean; run: Run }>) {
+  step, ws, ov, policyId, locked, canDecide, isManager, role, run,
+}: Readonly<{ step: ClaimStage["key"]; ws: ClaimWorkspace; ov: ClaimsOverview; policyId: string; locked: boolean; canDecide: boolean; isManager: boolean; role: string | null; run: Run }>) {
   switch (step) {
     case "intimation": return <IntimationStep ws={ws} />;
     case "eligibility": return <EligibilityStep ws={ws} policyId={policyId} locked={locked} isManager={isManager} run={run} />;
     case "documents": return <DocumentsStep ws={ws} policyId={policyId} locked={locked} isManager={isManager} run={run} />;
     case "assessment": return <AssessmentStep ws={ws} policyId={policyId} locked={locked} run={run} />;
-    case "decision": return <DecisionStep ws={ws} policyId={policyId} locked={locked} canDecide={canDecide} isManager={isManager} run={run} />;
+    case "decision": return <DecisionStep ws={ws} policyId={policyId} locked={locked} canDecide={canDecide} isManager={isManager} role={role} run={run} />;
     case "settlement": return <SettlementStep ws={ws} ov={ov} policyId={policyId} locked={locked} canDecide={canDecide} run={run} />;
     default: return <ClosureStep ws={ws} policyId={policyId} locked={locked} run={run} />;
   }
@@ -576,7 +577,7 @@ function Line({ k, v, strong, muted }: Readonly<{ k: string; v: string; strong?:
   return <div className="flex justify-between gap-6 text-xs"><span className={strong ? "font-bold text-slate-800" : muted ? "text-slate-500" : "text-slate-600"}>{k}</span><span className={`tabular-nums ${strong ? "font-bold text-slate-900" : "text-slate-700"}`}>{v}</span></div>;
 }
 
-function DecisionStep({ ws, policyId, locked, canDecide, isManager, run }: Readonly<{ ws: ClaimWorkspace; policyId: string; locked: boolean; canDecide: boolean; isManager: boolean; run: Run }>) {
+function DecisionStep({ ws, policyId, locked, canDecide, isManager, role, run }: Readonly<{ ws: ClaimWorkspace; policyId: string; locked: boolean; canDecide: boolean; isManager: boolean; role: string | null; run: Run }>) {
   const [choice, setChoice] = useState<"Approve" | "PartialApprove" | "Reject" | "RequestInfo" | "Refer">("Approve");
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
@@ -607,6 +608,8 @@ function DecisionStep({ ws, policyId, locked, canDecide, isManager, run }: Reado
           {uw.notes && <p className="text-[11px] opacity-80">{uw.notes}</p>}
         </div>
       )}
+      {uw?.state === "in_review" && <ClaimFinalUnderwritingDecision claimId={ws.claim.id} role={role} disabled={locked}
+        onDone={async () => { await run(() => getClaimWorkspace(policyId,ws.claim.id),tx("Final decision recorded.")); }} />}
       {ws.can.refer_underwriting && uw?.state === "not_referred" && (
         <div className="flex flex-wrap items-center gap-2">
           <input value={uwReason} onChange={(e) => setUwReason(e.target.value)} placeholder={tx("What should Underwriting check? (e.g. non-disclosure of medical history)")} className={`${inputCls} flex-1 min-w-[240px]`} />

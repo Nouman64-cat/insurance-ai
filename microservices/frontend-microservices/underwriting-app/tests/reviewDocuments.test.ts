@@ -44,3 +44,34 @@ test('an unreadable document returned for resubmission remains outstanding', () 
   assert.match(text, /0 of 1 received/);
   assert.match(text, /Upload a clearer copy/);
 });
+
+
+test('claim documents shared by application and track requirements render once and count once', () => {
+  const legal = 'Legal heir / succession certificate';
+  const payee = 'Payee bank account details / cancelled cheque';
+  const original = 'Original policy documents';
+  const identity = 'Attested CNIC copies for insured and nominee(s)';
+  const requiredDocuments = [
+    { type: legal, received: false }, { type: payee, received: false },
+    { type: original, received: true }, { type: identity, received: true },
+  ];
+  const props = {
+    medical: false, disabled: false, tests: [], requiredDocuments,
+    applicationDocuments: [legal, payee].map(type => ({type, reason: 'Required for this claim by the plan.', canUpload: true, owner: null, tag: 'Claim'})),
+    documents: [original, identity].map((type, index) => ({id: String(index), name: `received-${index}.pdf`, type, status: 'Accepted', scope: 'application'})),
+    onUploadFile: async () => {}, onUploaded: () => {}, onOpen: () => {},
+  };
+  const markup = renderToStaticMarkup(React.createElement(ReviewDocuments, props));
+  const text = markup.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
+  assert.equal(markup.split(`<h4 class="text-sm font-semibold text-slate-900">${legal}</h4>`).length - 1, 1);
+  assert.equal(markup.split(`<h4 class="text-sm font-semibold text-slate-900">${payee}</h4>`).length - 1, 1);
+  assert.match(text, /2 of 4 received/);
+  assert.match(text, /2 outstanding/);
+  assert.equal((text.match(/Required for this claim by the plan\./g) || []).length, 2);
+
+  // A received document remains one row even if the caller still includes its claim metadata.
+  requiredDocuments[0].received = true;
+  const updated = renderToStaticMarkup(React.createElement(ReviewDocuments, props)).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
+  assert.match(updated, /3 of 4 received/);
+  assert.match(updated, /1 outstanding/);
+});

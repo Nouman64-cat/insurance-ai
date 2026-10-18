@@ -644,7 +644,7 @@
     "role": "SuperAdmin",
     "capability": "resolve_claim_underwriting",
     "request": "Please resolve claim underwriting.",
-    "allowed": true,
+    "allowed": false,
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
@@ -1776,6 +1776,22 @@
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
+    "id": "SuperAdmin:get_claim_financial_review",
+    "role": "SuperAdmin",
+    "capability": "get_claim_financial_review",
+    "request": "Please get claim financial review.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:record_claim_financial_check",
+    "role": "SuperAdmin",
+    "capability": "record_claim_financial_check",
+    "request": "Please record claim financial check.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
     "id": "Admin:navigate_to_page",
     "role": "Admin",
     "capability": "navigate_to_page",
@@ -2420,7 +2436,7 @@
     "role": "Admin",
     "capability": "resolve_claim_underwriting",
     "request": "Please resolve claim underwriting.",
-    "allowed": true,
+    "allowed": false,
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
@@ -3549,6 +3565,22 @@
     "capability": "transition_proposal",
     "request": "Please transition proposal.",
     "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:get_claim_financial_review",
+    "role": "Admin",
+    "capability": "get_claim_financial_review",
+    "request": "Please get claim financial review.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:record_claim_financial_check",
+    "role": "Admin",
+    "capability": "record_claim_financial_check",
+    "request": "Please record claim financial check.",
+    "allowed": false,
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
@@ -5328,6 +5360,22 @@
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
+    "id": "Agent:get_claim_financial_review",
+    "role": "Agent",
+    "capability": "get_claim_financial_review",
+    "request": "Please get claim financial review.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:record_claim_financial_check",
+    "role": "Agent",
+    "capability": "record_claim_financial_check",
+    "request": "Please record claim financial check.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
     "id": "Underwriter:navigate_to_page",
     "role": "Underwriter",
     "capability": "navigate_to_page",
@@ -5972,7 +6020,7 @@
     "role": "Underwriter",
     "capability": "resolve_claim_underwriting",
     "request": "Please resolve claim underwriting.",
-    "allowed": true,
+    "allowed": false,
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
@@ -7101,6 +7149,22 @@
     "capability": "transition_proposal",
     "request": "Please transition proposal.",
     "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:get_claim_financial_review",
+    "role": "Underwriter",
+    "capability": "get_claim_financial_review",
+    "request": "Please get claim financial review.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:record_claim_financial_check",
+    "role": "Underwriter",
+    "capability": "record_claim_financial_check",
+    "request": "Please record claim financial check.",
+    "allowed": false,
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
@@ -8876,6 +8940,22 @@
     "role": "Medical Underwriter",
     "capability": "transition_proposal",
     "request": "Please transition proposal.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:get_claim_financial_review",
+    "role": "Medical Underwriter",
+    "capability": "get_claim_financial_review",
+    "request": "Please get claim financial review.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:record_claim_financial_check",
+    "role": "Medical Underwriter",
+    "capability": "record_claim_financial_check",
+    "request": "Please record claim financial check.",
     "allowed": false,
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
@@ -10656,6 +10736,22 @@
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
+    "id": "Financial Underwriter:get_claim_financial_review",
+    "role": "Financial Underwriter",
+    "capability": "get_claim_financial_review",
+    "request": "Please get claim financial review.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:record_claim_financial_check",
+    "role": "Financial Underwriter",
+    "capability": "record_claim_financial_check",
+    "request": "Please record claim financial check.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
     "id": "ClaimsManager:navigate_to_page",
     "role": "ClaimsManager",
     "capability": "navigate_to_page",
@@ -11300,7 +11396,7 @@
     "role": "ClaimsManager",
     "capability": "resolve_claim_underwriting",
     "request": "Please resolve claim underwriting.",
-    "allowed": false,
+    "allowed": true,
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
@@ -12429,6 +12525,22 @@
     "capability": "transition_proposal",
     "request": "Please transition proposal.",
     "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:get_claim_financial_review",
+    "role": "ClaimsManager",
+    "capability": "get_claim_financial_review",
+    "request": "Please get claim financial review.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:record_claim_financial_check",
+    "role": "ClaimsManager",
+    "capability": "record_claim_financial_check",
+    "request": "Please record claim financial check.",
+    "allowed": true,
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
@@ -14204,6 +14316,22 @@
     "role": "ClaimsAdjuster",
     "capability": "transition_proposal",
     "request": "Please transition proposal.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:get_claim_financial_review",
+    "role": "ClaimsAdjuster",
+    "capability": "get_claim_financial_review",
+    "request": "Please get claim financial review.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:record_claim_financial_check",
+    "role": "ClaimsAdjuster",
+    "capability": "record_claim_financial_check",
+    "request": "Please record claim financial check.",
     "allowed": false,
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
@@ -15984,6 +16112,22 @@
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
+    "id": "CustomerService:get_claim_financial_review",
+    "role": "CustomerService",
+    "capability": "get_claim_financial_review",
+    "request": "Please get claim financial review.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:record_claim_financial_check",
+    "role": "CustomerService",
+    "capability": "record_claim_financial_check",
+    "request": "Please record claim financial check.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
     "id": "Viewer:navigate_to_page",
     "role": "Viewer",
     "capability": "navigate_to_page",
@@ -17756,6 +17900,22 @@
     "role": "Viewer",
     "capability": "transition_proposal",
     "request": "Please transition proposal.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:get_claim_financial_review",
+    "role": "Viewer",
+    "capability": "get_claim_financial_review",
+    "request": "Please get claim financial review.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:record_claim_financial_check",
+    "role": "Viewer",
+    "capability": "record_claim_financial_check",
+    "request": "Please record claim financial check.",
     "allowed": false,
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
@@ -19536,6 +19696,22 @@
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
+    "id": "Finance:get_claim_financial_review",
+    "role": "Finance",
+    "capability": "get_claim_financial_review",
+    "request": "Please get claim financial review.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:record_claim_financial_check",
+    "role": "Finance",
+    "capability": "record_claim_financial_check",
+    "request": "Please record claim financial check.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
     "id": "CustomBroker:navigate_to_page",
     "role": "CustomBroker",
     "capability": "navigate_to_page",
@@ -21308,6 +21484,22 @@
     "role": "CustomBroker",
     "capability": "transition_proposal",
     "request": "Please transition proposal.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:get_claim_financial_review",
+    "role": "CustomBroker",
+    "capability": "get_claim_financial_review",
+    "request": "Please get claim financial review.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:record_claim_financial_check",
+    "role": "CustomBroker",
+    "capability": "record_claim_financial_check",
+    "request": "Please record claim financial check.",
     "allowed": false,
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   }

@@ -262,6 +262,8 @@ DOMAIN_TOOLS: dict[str, set[str]] = {
     # The 7-step claims-management workflow (claim_workflow_tools.py). Keyword-only:
     # the fallback set is at the provider cap, and every claims keyword binds it.
     "claims_workflow": {
+        "get_claim_financial_review",
+        "record_claim_financial_check",
         "get_policy_claim_options",
         "get_claim_workflow",
         "intimate_claim",
