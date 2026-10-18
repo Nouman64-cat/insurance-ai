@@ -5061,6 +5061,7 @@ export function CopilotInterface({ compact = false }: { compact?: boolean } = {}
         }
       >
         <VoiceOverlay
+          copilotName={copilotName}
           minimized={voiceMinimized}
           onMinimize={() => setVoiceMinimized(true)}
           onRestore={() => setVoiceMinimized(false)}

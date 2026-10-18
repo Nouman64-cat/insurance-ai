@@ -108,3 +108,50 @@ test('the same spoken instruction cannot be delegated twice with different call 
   connection.receive({...event,call_id:'two'}); await tick();
   assert.equal(calls,1);connection.close();
 });
+
+test('Urdu speech gets an Urdu tool summary even in an English portal', async () => {
+  let request;
+  const {connection,events}=call(async text=>{request=text;return {message:'One approved claim awaits authorisation.'};});
+  connection.receive({type:'input_audio_buffer.speech_started',item_id:'urdu'});
+  connection.receive({type:'conversation.item.input_audio_transcription.completed',item_id:'urdu',transcript:'میرے کلیم کی تفصیل دکھائیں'});
+  connection.receive({type:'response.function_call_arguments.done',name:'platform_request',call_id:'urdu-tool',arguments:'{"request":"Show my claim"}'});
+  await tick();
+  assert.equal(request,'میرے کلیم کی تفصیل دکھائیں');
+  const reply=events.find(e=>e.type==='response.create');
+  assert.match(reply.response.instructions,/Pakistani Urdu/);
+  assert.equal(reply.response.tool_choice,'none');
+  connection.close();
+});
+
+test('Roman Urdu and brief confirmations retain Urdu, with an explicit language override', () => {
+  const {connection}=call();
+  connection.matchLanguage('mujhe claim ki details dikhao');assert.equal(connection.replyLanguage,'ur');
+  connection.matchLanguage('Yes');assert.equal(connection.replyLanguage,'ur');
+  connection.matchLanguage('Please respond in Urdu');
+  connection.matchLanguage('Show my approved claim');assert.equal(connection.replyLanguage,'ur');
+  connection.matchLanguage('Please speak English');assert.equal(connection.replyLanguage,'en');
+  connection.close();
+});
+
+test('Hindi-script transcription is not delegated as business action or consent', async () => {
+  let calls=0;
+  const {connection,captions}=call(async()=>{calls++;return {message:'Done'};});
+  connection.receive({type:'input_audio_buffer.speech_started',item_id:'bad-caption'});
+  connection.receive({type:'conversation.item.input_audio_transcription.completed',item_id:'bad-caption',transcript:'हाँ'});
+  connection.receive({type:'response.function_call_arguments.done',name:'platform_request',call_id:'bad-language',arguments:'{"request":"yes"}'});
+  await tick();
+  assert.equal(calls,0);assert.ok(captions.every(c=>!/[\u0900-\u097f]/.test(c.text)));
+  assert.equal(connection.replyLanguage,'ur');connection.close();
+});
+
+test('Hindi output is interrupted and repaired in Urdu without another business tool', () => {
+  const {connection,events,captions}=call();
+  connection.receive({type:'response.created'});
+  connection.receive({type:'response.output_audio_transcript.delta',item_id:'bad-output',delta:'नमस्ते'});
+  assert.ok(events.some(e=>e.type==='response.cancel'));
+  assert.ok(captions.every(c=>!/[\u0900-\u097f]/.test(c.text)));
+  connection.receive({type:'response.done',response:{status:'cancelled',output:[]}});
+  const reply=events.find(e=>e.type==='response.create');
+  assert.equal(reply.response.tool_choice,'none');assert.match(reply.response.instructions,/Correct the last answer into Urdu/);
+  connection.close();
+});

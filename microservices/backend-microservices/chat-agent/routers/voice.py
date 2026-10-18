@@ -23,7 +23,19 @@ TENANT_SERVICE_URL = os.getenv("TENANT_SERVICE_URL", "http://tenant-service:8001
 OPENAI_URL = "https://api.openai.com/v1"
 
 INSTRUCTIONS = """You are GetInsuredAI's live voice companion. Speak naturally and briefly,
-one or two sentences at a time. Match the user's English or Urdu, including mixed speech.
+one or two sentences at a time.
+LANGUAGE POLICY: Support English and Pakistani Urdu only, never Hindi or Devanagari.
+Detect the language from the user's CURRENT AUDIO automatically on every turn. If they
+speak Urdu, Roman Urdu or mixed Urdu/English, reply in natural Pakistani Urdu immediately,
+without asking them to select Urdu. Write Urdu captions in Urdu script. Ambiguous Urdu/Hindi
+speech in this product is Urdu. If the user clearly speaks English, reply in English.
+A brief name, identifier, yes/no or bank reference does not change the conversation language.
+An explicit request to use Urdu or English takes precedence and persists until changed.
+The portal locale sets only the opening greeting; it never overrides the spoken language.
+Platform tool results may be English: explain them in the user's spoken language while
+preserving exact names, dates, amounts, IDs and references. Never respond in Hindi.
+Background chat history is context only. Do not discuss that context or tell the user that
+there is nothing to act on; simply greet briefly and listen.
 Before a platform lookup that may take time, briefly acknowledge that you are checking,
 then call the tool. Do not imply the action has already completed.
 Never invent customer information, identifiers, money amounts, decisions, or completed actions.
@@ -84,6 +96,18 @@ async def voice_settings() -> dict:
     raise HTTPException(503, "Configure an OpenAI provider in Platform → LLM Configuration, or set OPENAI_REALTIME_API_KEY on chat-agent")
 
 
+TRANSCRIPTION_CONTEXT = "Pakistani Urdu (اردو) and English insurance conversation, sometimes code-switched. اردو گفتگو اردو رسم الخط میں ہے۔ GetInsuredAI, claims, underwriting, CNIC, IBAN, PKR."
+
+
+def transcription_config(model):
+    config = {"model": model}
+    if model != "gpt-realtime-whisper":
+        config["prompt"] = TRANSCRIPTION_CONTEXT
+    if model.startswith(("gpt-transcribe", "gpt-live-transcribe")):
+        config["languages"] = ["ur", "en"]
+    return config
+
+
 def session_config(locale, settings):
     return {
         "type": "realtime", "model": settings["model"],
@@ -92,7 +116,7 @@ def session_config(locale, settings):
         "audio": {
             "input": {
                 "noise_reduction": {"type": "near_field"},
-                "transcription": {"model": settings["transcription_model"]},
+                "transcription": transcription_config(settings["transcription_model"]),
                 "turn_detection": {"type": "semantic_vad", "eagerness": "medium", "create_response": True, "interrupt_response": True},
             },
             "output": {"voice": settings["voice"]},
@@ -186,7 +210,7 @@ async def transcribe(audio: UploadFile = File(...), authorization: str = Header(
     try:
         async with httpx.AsyncClient(timeout=60) as client:
             response = await client.post(f"{OPENAI_URL}/audio/transcriptions", headers={"Authorization": f"Bearer {settings['key']}"},
-                data={"model": settings["transcription_model"]},
+                data={"model": settings["transcription_model"], "prompt": TRANSCRIPTION_CONTEXT},
                 files={"file": (audio.filename or "recording.webm", data, audio.content_type or "audio/webm")})
     except httpx.HTTPError:
         raise HTTPException(503, "Transcription is temporarily unavailable")

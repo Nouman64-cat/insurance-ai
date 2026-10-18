@@ -159,3 +159,20 @@ class MeteringTests(unittest.IsolatedAsyncioTestCase):
 
 
 if __name__ == '__main__': unittest.main(verbosity=2)
+
+
+def test_voice_languages_prefer_urdu_and_english_without_hindi():
+    chosen = {'model': 'gpt-realtime-2.1-mini', 'voice': 'cedar', 'transcription_model': 'gpt-transcribe'}
+    config = voice.session_config('en', chosen)
+    assert config['audio']['input']['transcription']['languages'] == ['ur', 'en']
+    assert 'اردو' in config['audio']['input']['transcription']['prompt']
+    assert 'CURRENT AUDIO' in config['instructions']
+    assert 'portal locale sets only the opening greeting' in config['instructions']
+    assert 'never Hindi or Devanagari' in config['instructions']
+
+
+def test_transcription_hints_preserve_selected_model_compatibility():
+    assert voice.transcription_config('gpt-4o-transcribe')['model'] == 'gpt-4o-transcribe'
+    assert 'languages' not in voice.transcription_config('gpt-4o-transcribe')
+    assert voice.transcription_config('gpt-live-transcribe')['languages'] == ['ur', 'en']
+    assert voice.transcription_config('gpt-realtime-whisper') == {'model': 'gpt-realtime-whisper'}
