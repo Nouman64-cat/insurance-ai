@@ -266,3 +266,9 @@ export async function resolveClaimUnderwriting(
   return res.data;
 }
 
+
+
+export type FinancePayment = ClaimPayoutItem & { claim_id: string; claim_number: string; policy_number: string | null; payee_name: string | null };
+export async function listFinancePayments(filters: {search?: string; payment_status?: string; offset?: number; limit?: number} = {}): Promise<{items: FinancePayment[]; total: number}> {
+  return (await api.get(`/tenants/${tenantId()}/claims/payments`, {params: filters})).data;
+}
