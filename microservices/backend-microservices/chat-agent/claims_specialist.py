@@ -23,8 +23,9 @@ CLAIMS_TOOLS = frozenset({
     'record_claim_investigation', 'assess_claim_benefit', 'decide_claim', 'verify_claim_payees',
     'authorize_claim_disbursement', 'disburse_claim_settlement', 'reconcile_claim_settlement',
     'close_claim_file',
+    'progress_policy_exit', 'get_claim_authority_limits', 'set_claim_authority_limit',
 })
-CLAIMS_DOMAINS = frozenset({'claims', 'claims_workflow', 'workflow'})
+CLAIMS_DOMAINS = frozenset({'claims', 'claims_workflow', 'workflow', 'servicing_ops', 'desk_ops'})
 
 _EXPLICIT = re.compile(r'\b(?:claims?|claimants?|fnol|first notice of loss|CLM-[A-Z0-9-]+|(?:get|list|register|verify|adopt|intimate|decide|assess|authorize|disburse|reconcile|close|continue|start)_[a-z_]*claim[a-z_]*)\b|کلیم|دعویٰ', re.I)
 _OTHER_ACTION = re.compile(r'\b(?:create|register|add|list|issue|approve|reject|submit|cancel|collect|run)\s+(?:(?:a|an|the|new|all|individual|family|corporate|this|that)\s+){0,3}(?:customers?|leads?|proposals?|polic(?:y|ies)|underwriting|premiums?|risk assessment|users?|agents?|organizations?|plans?|cases?)\b', re.I)
@@ -62,7 +63,8 @@ def select_claims_specialist(state):
 _CLAIMS_ONLY = """
 You are the Claims Manager's assistant: you help ONLY with claims — the claims register and dashboard, a claim's
 workflow, documents, investigation, benefit assessment, decisions, payees, authorisation, disbursement,
-reconciliation, reinsurance and closure, and the policy or claimant facts a claim needs. For anything else —
+reconciliation, reinsurance and closure, the policy or claimant facts a claim needs, policy exit settlements
+(surrender, maturity, expiry) and your delegated approval limits. For anything else —
 customer acquisition or onboarding, leads, proposals, underwriting, policy issuance, premiums, commissions, users,
 groups, rules or general questions — do not offer help, do not say you can do it, and do not describe how it is
 done: reply in one or two sentences that you can only help with claims here, that their role handles claims, and
@@ -114,6 +116,8 @@ handled outside your scope. Do not invent their tool calls.
         'disburse_claim_settlement': 'Financial action: requires explicit user instruction, verified payees and prior backend authorization.',
         'reconcile_claim_settlement': 'Use actual settlement evidence; do not assume a payout is reconciled.',
         'close_claim_file': 'Only close an eligible, reconciled settlement or rejected claim when requested. Closure may send the letter.',
+        'progress_policy_exit': 'Surrender/maturity settlements: read action=status first, then one stage per instruction. Payee details and consent come from the customer; authorisation and payout are separate steps.',
+        'get_claim_authority_limits': 'Read the live approval and authorisation limits; never quote a limit from memory.',
     }
     for name, instruction in instructions.items():
         if name in allowed:

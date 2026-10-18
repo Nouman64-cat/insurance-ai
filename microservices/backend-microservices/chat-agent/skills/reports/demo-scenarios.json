@@ -1808,6 +1808,278 @@
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
+    "id": "SuperAdmin:progress_policy_renewal",
+    "role": "SuperAdmin",
+    "capability": "progress_policy_renewal",
+    "request": "Please progress policy renewal.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:progress_reinstatement",
+    "role": "SuperAdmin",
+    "capability": "progress_reinstatement",
+    "request": "Please progress reinstatement.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:progress_policy_exit",
+    "role": "SuperAdmin",
+    "capability": "progress_policy_exit",
+    "request": "Please progress policy exit.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:record_premium_collection",
+    "role": "SuperAdmin",
+    "capability": "record_premium_collection",
+    "request": "Please record premium collection.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:waive_premium_installment",
+    "role": "SuperAdmin",
+    "capability": "waive_premium_installment",
+    "request": "Please waive premium installment.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:preview_premium_restructure",
+    "role": "SuperAdmin",
+    "capability": "preview_premium_restructure",
+    "request": "Please preview premium restructure.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:restructure_premium_plan",
+    "role": "SuperAdmin",
+    "capability": "restructure_premium_plan",
+    "request": "Please restructure premium plan.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:issue_lapse_warning",
+    "role": "SuperAdmin",
+    "capability": "issue_lapse_warning",
+    "request": "Please issue lapse warning.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:set_premium_autopay",
+    "role": "SuperAdmin",
+    "capability": "set_premium_autopay",
+    "request": "Please set premium autopay.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:list_upcoming_renewals",
+    "role": "SuperAdmin",
+    "capability": "list_upcoming_renewals",
+    "request": "Please list upcoming renewals.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:get_counter_offer",
+    "role": "SuperAdmin",
+    "capability": "get_counter_offer",
+    "request": "Please get counter offer.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:make_counter_offer",
+    "role": "SuperAdmin",
+    "capability": "make_counter_offer",
+    "request": "Please make counter offer.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:record_counter_offer_response",
+    "role": "SuperAdmin",
+    "capability": "record_counter_offer_response",
+    "request": "Please record counter offer response.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:hold_underwriting_case",
+    "role": "SuperAdmin",
+    "capability": "hold_underwriting_case",
+    "request": "Please hold underwriting case.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:release_underwriting_case",
+    "role": "SuperAdmin",
+    "capability": "release_underwriting_case",
+    "request": "Please release underwriting case.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:waive_case_requirement",
+    "role": "SuperAdmin",
+    "capability": "waive_case_requirement",
+    "request": "Please waive case requirement.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:change_case_plan",
+    "role": "SuperAdmin",
+    "capability": "change_case_plan",
+    "request": "Please change case plan.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:resolve_issuance_requirement",
+    "role": "SuperAdmin",
+    "capability": "resolve_issuance_requirement",
+    "request": "Please resolve issuance requirement.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:waive_agent_confidential_report",
+    "role": "SuperAdmin",
+    "capability": "waive_agent_confidential_report",
+    "request": "Please waive agent confidential report.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:waive_medical_examination",
+    "role": "SuperAdmin",
+    "capability": "waive_medical_examination",
+    "request": "Please waive medical examination.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:list_claim_underwriting_referrals",
+    "role": "SuperAdmin",
+    "capability": "list_claim_underwriting_referrals",
+    "request": "Please list claim underwriting referrals.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:get_policy_reinsurance",
+    "role": "SuperAdmin",
+    "capability": "get_policy_reinsurance",
+    "request": "Please get policy reinsurance.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:refer_policy_to_reinsurer",
+    "role": "SuperAdmin",
+    "capability": "refer_policy_to_reinsurer",
+    "request": "Please refer policy to reinsurer.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:record_reinsurer_response",
+    "role": "SuperAdmin",
+    "capability": "record_reinsurer_response",
+    "request": "Please record reinsurer response.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:apply_reinsurer_terms",
+    "role": "SuperAdmin",
+    "capability": "apply_reinsurer_terms",
+    "request": "Please apply reinsurer terms.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:withdraw_reinsurance_referral",
+    "role": "SuperAdmin",
+    "capability": "withdraw_reinsurance_referral",
+    "request": "Please withdraw reinsurance referral.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:list_walk_in_leads",
+    "role": "SuperAdmin",
+    "capability": "list_walk_in_leads",
+    "request": "Please list walk in leads.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:acknowledge_walk_in_lead",
+    "role": "SuperAdmin",
+    "capability": "acknowledge_walk_in_lead",
+    "request": "Please acknowledge walk in lead.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:reassign_walk_in_lead",
+    "role": "SuperAdmin",
+    "capability": "reassign_walk_in_lead",
+    "request": "Please reassign walk in lead.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:list_my_acr_requests",
+    "role": "SuperAdmin",
+    "capability": "list_my_acr_requests",
+    "request": "Please list my acr requests.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:get_claim_authority_limits",
+    "role": "SuperAdmin",
+    "capability": "get_claim_authority_limits",
+    "request": "Please get claim authority limits.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:set_claim_authority_limit",
+    "role": "SuperAdmin",
+    "capability": "set_claim_authority_limit",
+    "request": "Please set claim authority limit.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:list_branches",
+    "role": "SuperAdmin",
+    "capability": "list_branches",
+    "request": "Please list branches.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "SuperAdmin:manage_branch",
+    "role": "SuperAdmin",
+    "capability": "manage_branch",
+    "request": "Please manage branch.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
     "id": "SuperAdmin:get_claim_financial_review",
     "role": "SuperAdmin",
     "capability": "get_claim_financial_review",
@@ -3629,6 +3901,278 @@
     "capability": "transition_proposal",
     "request": "Please transition proposal.",
     "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:progress_policy_renewal",
+    "role": "Admin",
+    "capability": "progress_policy_renewal",
+    "request": "Please progress policy renewal.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:progress_reinstatement",
+    "role": "Admin",
+    "capability": "progress_reinstatement",
+    "request": "Please progress reinstatement.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:progress_policy_exit",
+    "role": "Admin",
+    "capability": "progress_policy_exit",
+    "request": "Please progress policy exit.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:record_premium_collection",
+    "role": "Admin",
+    "capability": "record_premium_collection",
+    "request": "Please record premium collection.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:waive_premium_installment",
+    "role": "Admin",
+    "capability": "waive_premium_installment",
+    "request": "Please waive premium installment.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:preview_premium_restructure",
+    "role": "Admin",
+    "capability": "preview_premium_restructure",
+    "request": "Please preview premium restructure.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:restructure_premium_plan",
+    "role": "Admin",
+    "capability": "restructure_premium_plan",
+    "request": "Please restructure premium plan.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:issue_lapse_warning",
+    "role": "Admin",
+    "capability": "issue_lapse_warning",
+    "request": "Please issue lapse warning.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:set_premium_autopay",
+    "role": "Admin",
+    "capability": "set_premium_autopay",
+    "request": "Please set premium autopay.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:list_upcoming_renewals",
+    "role": "Admin",
+    "capability": "list_upcoming_renewals",
+    "request": "Please list upcoming renewals.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:get_counter_offer",
+    "role": "Admin",
+    "capability": "get_counter_offer",
+    "request": "Please get counter offer.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:make_counter_offer",
+    "role": "Admin",
+    "capability": "make_counter_offer",
+    "request": "Please make counter offer.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:record_counter_offer_response",
+    "role": "Admin",
+    "capability": "record_counter_offer_response",
+    "request": "Please record counter offer response.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:hold_underwriting_case",
+    "role": "Admin",
+    "capability": "hold_underwriting_case",
+    "request": "Please hold underwriting case.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:release_underwriting_case",
+    "role": "Admin",
+    "capability": "release_underwriting_case",
+    "request": "Please release underwriting case.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:waive_case_requirement",
+    "role": "Admin",
+    "capability": "waive_case_requirement",
+    "request": "Please waive case requirement.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:change_case_plan",
+    "role": "Admin",
+    "capability": "change_case_plan",
+    "request": "Please change case plan.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:resolve_issuance_requirement",
+    "role": "Admin",
+    "capability": "resolve_issuance_requirement",
+    "request": "Please resolve issuance requirement.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:waive_agent_confidential_report",
+    "role": "Admin",
+    "capability": "waive_agent_confidential_report",
+    "request": "Please waive agent confidential report.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:waive_medical_examination",
+    "role": "Admin",
+    "capability": "waive_medical_examination",
+    "request": "Please waive medical examination.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:list_claim_underwriting_referrals",
+    "role": "Admin",
+    "capability": "list_claim_underwriting_referrals",
+    "request": "Please list claim underwriting referrals.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:get_policy_reinsurance",
+    "role": "Admin",
+    "capability": "get_policy_reinsurance",
+    "request": "Please get policy reinsurance.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:refer_policy_to_reinsurer",
+    "role": "Admin",
+    "capability": "refer_policy_to_reinsurer",
+    "request": "Please refer policy to reinsurer.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:record_reinsurer_response",
+    "role": "Admin",
+    "capability": "record_reinsurer_response",
+    "request": "Please record reinsurer response.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:apply_reinsurer_terms",
+    "role": "Admin",
+    "capability": "apply_reinsurer_terms",
+    "request": "Please apply reinsurer terms.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:withdraw_reinsurance_referral",
+    "role": "Admin",
+    "capability": "withdraw_reinsurance_referral",
+    "request": "Please withdraw reinsurance referral.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:list_walk_in_leads",
+    "role": "Admin",
+    "capability": "list_walk_in_leads",
+    "request": "Please list walk in leads.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:acknowledge_walk_in_lead",
+    "role": "Admin",
+    "capability": "acknowledge_walk_in_lead",
+    "request": "Please acknowledge walk in lead.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:reassign_walk_in_lead",
+    "role": "Admin",
+    "capability": "reassign_walk_in_lead",
+    "request": "Please reassign walk in lead.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:list_my_acr_requests",
+    "role": "Admin",
+    "capability": "list_my_acr_requests",
+    "request": "Please list my acr requests.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:get_claim_authority_limits",
+    "role": "Admin",
+    "capability": "get_claim_authority_limits",
+    "request": "Please get claim authority limits.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:set_claim_authority_limit",
+    "role": "Admin",
+    "capability": "set_claim_authority_limit",
+    "request": "Please set claim authority limit.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:list_branches",
+    "role": "Admin",
+    "capability": "list_branches",
+    "request": "Please list branches.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Admin:manage_branch",
+    "role": "Admin",
+    "capability": "manage_branch",
+    "request": "Please manage branch.",
+    "allowed": false,
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
@@ -5456,6 +6000,278 @@
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
+    "id": "Agent:progress_policy_renewal",
+    "role": "Agent",
+    "capability": "progress_policy_renewal",
+    "request": "Please progress policy renewal.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:progress_reinstatement",
+    "role": "Agent",
+    "capability": "progress_reinstatement",
+    "request": "Please progress reinstatement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:progress_policy_exit",
+    "role": "Agent",
+    "capability": "progress_policy_exit",
+    "request": "Please progress policy exit.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:record_premium_collection",
+    "role": "Agent",
+    "capability": "record_premium_collection",
+    "request": "Please record premium collection.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:waive_premium_installment",
+    "role": "Agent",
+    "capability": "waive_premium_installment",
+    "request": "Please waive premium installment.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:preview_premium_restructure",
+    "role": "Agent",
+    "capability": "preview_premium_restructure",
+    "request": "Please preview premium restructure.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:restructure_premium_plan",
+    "role": "Agent",
+    "capability": "restructure_premium_plan",
+    "request": "Please restructure premium plan.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:issue_lapse_warning",
+    "role": "Agent",
+    "capability": "issue_lapse_warning",
+    "request": "Please issue lapse warning.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:set_premium_autopay",
+    "role": "Agent",
+    "capability": "set_premium_autopay",
+    "request": "Please set premium autopay.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:list_upcoming_renewals",
+    "role": "Agent",
+    "capability": "list_upcoming_renewals",
+    "request": "Please list upcoming renewals.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:get_counter_offer",
+    "role": "Agent",
+    "capability": "get_counter_offer",
+    "request": "Please get counter offer.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:make_counter_offer",
+    "role": "Agent",
+    "capability": "make_counter_offer",
+    "request": "Please make counter offer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:record_counter_offer_response",
+    "role": "Agent",
+    "capability": "record_counter_offer_response",
+    "request": "Please record counter offer response.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:hold_underwriting_case",
+    "role": "Agent",
+    "capability": "hold_underwriting_case",
+    "request": "Please hold underwriting case.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:release_underwriting_case",
+    "role": "Agent",
+    "capability": "release_underwriting_case",
+    "request": "Please release underwriting case.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:waive_case_requirement",
+    "role": "Agent",
+    "capability": "waive_case_requirement",
+    "request": "Please waive case requirement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:change_case_plan",
+    "role": "Agent",
+    "capability": "change_case_plan",
+    "request": "Please change case plan.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:resolve_issuance_requirement",
+    "role": "Agent",
+    "capability": "resolve_issuance_requirement",
+    "request": "Please resolve issuance requirement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:waive_agent_confidential_report",
+    "role": "Agent",
+    "capability": "waive_agent_confidential_report",
+    "request": "Please waive agent confidential report.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:waive_medical_examination",
+    "role": "Agent",
+    "capability": "waive_medical_examination",
+    "request": "Please waive medical examination.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:list_claim_underwriting_referrals",
+    "role": "Agent",
+    "capability": "list_claim_underwriting_referrals",
+    "request": "Please list claim underwriting referrals.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:get_policy_reinsurance",
+    "role": "Agent",
+    "capability": "get_policy_reinsurance",
+    "request": "Please get policy reinsurance.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:refer_policy_to_reinsurer",
+    "role": "Agent",
+    "capability": "refer_policy_to_reinsurer",
+    "request": "Please refer policy to reinsurer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:record_reinsurer_response",
+    "role": "Agent",
+    "capability": "record_reinsurer_response",
+    "request": "Please record reinsurer response.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:apply_reinsurer_terms",
+    "role": "Agent",
+    "capability": "apply_reinsurer_terms",
+    "request": "Please apply reinsurer terms.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:withdraw_reinsurance_referral",
+    "role": "Agent",
+    "capability": "withdraw_reinsurance_referral",
+    "request": "Please withdraw reinsurance referral.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:list_walk_in_leads",
+    "role": "Agent",
+    "capability": "list_walk_in_leads",
+    "request": "Please list walk in leads.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:acknowledge_walk_in_lead",
+    "role": "Agent",
+    "capability": "acknowledge_walk_in_lead",
+    "request": "Please acknowledge walk in lead.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:reassign_walk_in_lead",
+    "role": "Agent",
+    "capability": "reassign_walk_in_lead",
+    "request": "Please reassign walk in lead.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:list_my_acr_requests",
+    "role": "Agent",
+    "capability": "list_my_acr_requests",
+    "request": "Please list my acr requests.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:get_claim_authority_limits",
+    "role": "Agent",
+    "capability": "get_claim_authority_limits",
+    "request": "Please get claim authority limits.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:set_claim_authority_limit",
+    "role": "Agent",
+    "capability": "set_claim_authority_limit",
+    "request": "Please set claim authority limit.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:list_branches",
+    "role": "Agent",
+    "capability": "list_branches",
+    "request": "Please list branches.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Agent:manage_branch",
+    "role": "Agent",
+    "capability": "manage_branch",
+    "request": "Please manage branch.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
     "id": "Agent:get_claim_financial_review",
     "role": "Agent",
     "capability": "get_claim_financial_review",
@@ -7280,6 +8096,278 @@
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
+    "id": "Underwriter:progress_policy_renewal",
+    "role": "Underwriter",
+    "capability": "progress_policy_renewal",
+    "request": "Please progress policy renewal.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:progress_reinstatement",
+    "role": "Underwriter",
+    "capability": "progress_reinstatement",
+    "request": "Please progress reinstatement.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:progress_policy_exit",
+    "role": "Underwriter",
+    "capability": "progress_policy_exit",
+    "request": "Please progress policy exit.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:record_premium_collection",
+    "role": "Underwriter",
+    "capability": "record_premium_collection",
+    "request": "Please record premium collection.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:waive_premium_installment",
+    "role": "Underwriter",
+    "capability": "waive_premium_installment",
+    "request": "Please waive premium installment.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:preview_premium_restructure",
+    "role": "Underwriter",
+    "capability": "preview_premium_restructure",
+    "request": "Please preview premium restructure.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:restructure_premium_plan",
+    "role": "Underwriter",
+    "capability": "restructure_premium_plan",
+    "request": "Please restructure premium plan.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:issue_lapse_warning",
+    "role": "Underwriter",
+    "capability": "issue_lapse_warning",
+    "request": "Please issue lapse warning.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:set_premium_autopay",
+    "role": "Underwriter",
+    "capability": "set_premium_autopay",
+    "request": "Please set premium autopay.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:list_upcoming_renewals",
+    "role": "Underwriter",
+    "capability": "list_upcoming_renewals",
+    "request": "Please list upcoming renewals.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:get_counter_offer",
+    "role": "Underwriter",
+    "capability": "get_counter_offer",
+    "request": "Please get counter offer.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:make_counter_offer",
+    "role": "Underwriter",
+    "capability": "make_counter_offer",
+    "request": "Please make counter offer.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:record_counter_offer_response",
+    "role": "Underwriter",
+    "capability": "record_counter_offer_response",
+    "request": "Please record counter offer response.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:hold_underwriting_case",
+    "role": "Underwriter",
+    "capability": "hold_underwriting_case",
+    "request": "Please hold underwriting case.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:release_underwriting_case",
+    "role": "Underwriter",
+    "capability": "release_underwriting_case",
+    "request": "Please release underwriting case.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:waive_case_requirement",
+    "role": "Underwriter",
+    "capability": "waive_case_requirement",
+    "request": "Please waive case requirement.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:change_case_plan",
+    "role": "Underwriter",
+    "capability": "change_case_plan",
+    "request": "Please change case plan.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:resolve_issuance_requirement",
+    "role": "Underwriter",
+    "capability": "resolve_issuance_requirement",
+    "request": "Please resolve issuance requirement.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:waive_agent_confidential_report",
+    "role": "Underwriter",
+    "capability": "waive_agent_confidential_report",
+    "request": "Please waive agent confidential report.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:waive_medical_examination",
+    "role": "Underwriter",
+    "capability": "waive_medical_examination",
+    "request": "Please waive medical examination.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:list_claim_underwriting_referrals",
+    "role": "Underwriter",
+    "capability": "list_claim_underwriting_referrals",
+    "request": "Please list claim underwriting referrals.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:get_policy_reinsurance",
+    "role": "Underwriter",
+    "capability": "get_policy_reinsurance",
+    "request": "Please get policy reinsurance.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:refer_policy_to_reinsurer",
+    "role": "Underwriter",
+    "capability": "refer_policy_to_reinsurer",
+    "request": "Please refer policy to reinsurer.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:record_reinsurer_response",
+    "role": "Underwriter",
+    "capability": "record_reinsurer_response",
+    "request": "Please record reinsurer response.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:apply_reinsurer_terms",
+    "role": "Underwriter",
+    "capability": "apply_reinsurer_terms",
+    "request": "Please apply reinsurer terms.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:withdraw_reinsurance_referral",
+    "role": "Underwriter",
+    "capability": "withdraw_reinsurance_referral",
+    "request": "Please withdraw reinsurance referral.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:list_walk_in_leads",
+    "role": "Underwriter",
+    "capability": "list_walk_in_leads",
+    "request": "Please list walk in leads.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:acknowledge_walk_in_lead",
+    "role": "Underwriter",
+    "capability": "acknowledge_walk_in_lead",
+    "request": "Please acknowledge walk in lead.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:reassign_walk_in_lead",
+    "role": "Underwriter",
+    "capability": "reassign_walk_in_lead",
+    "request": "Please reassign walk in lead.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:list_my_acr_requests",
+    "role": "Underwriter",
+    "capability": "list_my_acr_requests",
+    "request": "Please list my acr requests.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:get_claim_authority_limits",
+    "role": "Underwriter",
+    "capability": "get_claim_authority_limits",
+    "request": "Please get claim authority limits.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:set_claim_authority_limit",
+    "role": "Underwriter",
+    "capability": "set_claim_authority_limit",
+    "request": "Please set claim authority limit.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:list_branches",
+    "role": "Underwriter",
+    "capability": "list_branches",
+    "request": "Please list branches.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Underwriter:manage_branch",
+    "role": "Underwriter",
+    "capability": "manage_branch",
+    "request": "Please manage branch.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
     "id": "Underwriter:get_claim_financial_review",
     "role": "Underwriter",
     "capability": "get_claim_financial_review",
@@ -9100,6 +10188,278 @@
     "role": "Medical Underwriter",
     "capability": "transition_proposal",
     "request": "Please transition proposal.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:progress_policy_renewal",
+    "role": "Medical Underwriter",
+    "capability": "progress_policy_renewal",
+    "request": "Please progress policy renewal.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:progress_reinstatement",
+    "role": "Medical Underwriter",
+    "capability": "progress_reinstatement",
+    "request": "Please progress reinstatement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:progress_policy_exit",
+    "role": "Medical Underwriter",
+    "capability": "progress_policy_exit",
+    "request": "Please progress policy exit.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:record_premium_collection",
+    "role": "Medical Underwriter",
+    "capability": "record_premium_collection",
+    "request": "Please record premium collection.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:waive_premium_installment",
+    "role": "Medical Underwriter",
+    "capability": "waive_premium_installment",
+    "request": "Please waive premium installment.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:preview_premium_restructure",
+    "role": "Medical Underwriter",
+    "capability": "preview_premium_restructure",
+    "request": "Please preview premium restructure.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:restructure_premium_plan",
+    "role": "Medical Underwriter",
+    "capability": "restructure_premium_plan",
+    "request": "Please restructure premium plan.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:issue_lapse_warning",
+    "role": "Medical Underwriter",
+    "capability": "issue_lapse_warning",
+    "request": "Please issue lapse warning.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:set_premium_autopay",
+    "role": "Medical Underwriter",
+    "capability": "set_premium_autopay",
+    "request": "Please set premium autopay.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:list_upcoming_renewals",
+    "role": "Medical Underwriter",
+    "capability": "list_upcoming_renewals",
+    "request": "Please list upcoming renewals.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:get_counter_offer",
+    "role": "Medical Underwriter",
+    "capability": "get_counter_offer",
+    "request": "Please get counter offer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:make_counter_offer",
+    "role": "Medical Underwriter",
+    "capability": "make_counter_offer",
+    "request": "Please make counter offer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:record_counter_offer_response",
+    "role": "Medical Underwriter",
+    "capability": "record_counter_offer_response",
+    "request": "Please record counter offer response.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:hold_underwriting_case",
+    "role": "Medical Underwriter",
+    "capability": "hold_underwriting_case",
+    "request": "Please hold underwriting case.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:release_underwriting_case",
+    "role": "Medical Underwriter",
+    "capability": "release_underwriting_case",
+    "request": "Please release underwriting case.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:waive_case_requirement",
+    "role": "Medical Underwriter",
+    "capability": "waive_case_requirement",
+    "request": "Please waive case requirement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:change_case_plan",
+    "role": "Medical Underwriter",
+    "capability": "change_case_plan",
+    "request": "Please change case plan.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:resolve_issuance_requirement",
+    "role": "Medical Underwriter",
+    "capability": "resolve_issuance_requirement",
+    "request": "Please resolve issuance requirement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:waive_agent_confidential_report",
+    "role": "Medical Underwriter",
+    "capability": "waive_agent_confidential_report",
+    "request": "Please waive agent confidential report.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:waive_medical_examination",
+    "role": "Medical Underwriter",
+    "capability": "waive_medical_examination",
+    "request": "Please waive medical examination.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:list_claim_underwriting_referrals",
+    "role": "Medical Underwriter",
+    "capability": "list_claim_underwriting_referrals",
+    "request": "Please list claim underwriting referrals.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:get_policy_reinsurance",
+    "role": "Medical Underwriter",
+    "capability": "get_policy_reinsurance",
+    "request": "Please get policy reinsurance.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:refer_policy_to_reinsurer",
+    "role": "Medical Underwriter",
+    "capability": "refer_policy_to_reinsurer",
+    "request": "Please refer policy to reinsurer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:record_reinsurer_response",
+    "role": "Medical Underwriter",
+    "capability": "record_reinsurer_response",
+    "request": "Please record reinsurer response.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:apply_reinsurer_terms",
+    "role": "Medical Underwriter",
+    "capability": "apply_reinsurer_terms",
+    "request": "Please apply reinsurer terms.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:withdraw_reinsurance_referral",
+    "role": "Medical Underwriter",
+    "capability": "withdraw_reinsurance_referral",
+    "request": "Please withdraw reinsurance referral.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:list_walk_in_leads",
+    "role": "Medical Underwriter",
+    "capability": "list_walk_in_leads",
+    "request": "Please list walk in leads.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:acknowledge_walk_in_lead",
+    "role": "Medical Underwriter",
+    "capability": "acknowledge_walk_in_lead",
+    "request": "Please acknowledge walk in lead.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:reassign_walk_in_lead",
+    "role": "Medical Underwriter",
+    "capability": "reassign_walk_in_lead",
+    "request": "Please reassign walk in lead.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:list_my_acr_requests",
+    "role": "Medical Underwriter",
+    "capability": "list_my_acr_requests",
+    "request": "Please list my acr requests.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:get_claim_authority_limits",
+    "role": "Medical Underwriter",
+    "capability": "get_claim_authority_limits",
+    "request": "Please get claim authority limits.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:set_claim_authority_limit",
+    "role": "Medical Underwriter",
+    "capability": "set_claim_authority_limit",
+    "request": "Please set claim authority limit.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:list_branches",
+    "role": "Medical Underwriter",
+    "capability": "list_branches",
+    "request": "Please list branches.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Medical Underwriter:manage_branch",
+    "role": "Medical Underwriter",
+    "capability": "manage_branch",
+    "request": "Please manage branch.",
     "allowed": false,
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
@@ -10928,6 +12288,278 @@
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
+    "id": "Financial Underwriter:progress_policy_renewal",
+    "role": "Financial Underwriter",
+    "capability": "progress_policy_renewal",
+    "request": "Please progress policy renewal.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:progress_reinstatement",
+    "role": "Financial Underwriter",
+    "capability": "progress_reinstatement",
+    "request": "Please progress reinstatement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:progress_policy_exit",
+    "role": "Financial Underwriter",
+    "capability": "progress_policy_exit",
+    "request": "Please progress policy exit.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:record_premium_collection",
+    "role": "Financial Underwriter",
+    "capability": "record_premium_collection",
+    "request": "Please record premium collection.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:waive_premium_installment",
+    "role": "Financial Underwriter",
+    "capability": "waive_premium_installment",
+    "request": "Please waive premium installment.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:preview_premium_restructure",
+    "role": "Financial Underwriter",
+    "capability": "preview_premium_restructure",
+    "request": "Please preview premium restructure.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:restructure_premium_plan",
+    "role": "Financial Underwriter",
+    "capability": "restructure_premium_plan",
+    "request": "Please restructure premium plan.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:issue_lapse_warning",
+    "role": "Financial Underwriter",
+    "capability": "issue_lapse_warning",
+    "request": "Please issue lapse warning.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:set_premium_autopay",
+    "role": "Financial Underwriter",
+    "capability": "set_premium_autopay",
+    "request": "Please set premium autopay.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:list_upcoming_renewals",
+    "role": "Financial Underwriter",
+    "capability": "list_upcoming_renewals",
+    "request": "Please list upcoming renewals.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:get_counter_offer",
+    "role": "Financial Underwriter",
+    "capability": "get_counter_offer",
+    "request": "Please get counter offer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:make_counter_offer",
+    "role": "Financial Underwriter",
+    "capability": "make_counter_offer",
+    "request": "Please make counter offer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:record_counter_offer_response",
+    "role": "Financial Underwriter",
+    "capability": "record_counter_offer_response",
+    "request": "Please record counter offer response.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:hold_underwriting_case",
+    "role": "Financial Underwriter",
+    "capability": "hold_underwriting_case",
+    "request": "Please hold underwriting case.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:release_underwriting_case",
+    "role": "Financial Underwriter",
+    "capability": "release_underwriting_case",
+    "request": "Please release underwriting case.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:waive_case_requirement",
+    "role": "Financial Underwriter",
+    "capability": "waive_case_requirement",
+    "request": "Please waive case requirement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:change_case_plan",
+    "role": "Financial Underwriter",
+    "capability": "change_case_plan",
+    "request": "Please change case plan.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:resolve_issuance_requirement",
+    "role": "Financial Underwriter",
+    "capability": "resolve_issuance_requirement",
+    "request": "Please resolve issuance requirement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:waive_agent_confidential_report",
+    "role": "Financial Underwriter",
+    "capability": "waive_agent_confidential_report",
+    "request": "Please waive agent confidential report.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:waive_medical_examination",
+    "role": "Financial Underwriter",
+    "capability": "waive_medical_examination",
+    "request": "Please waive medical examination.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:list_claim_underwriting_referrals",
+    "role": "Financial Underwriter",
+    "capability": "list_claim_underwriting_referrals",
+    "request": "Please list claim underwriting referrals.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:get_policy_reinsurance",
+    "role": "Financial Underwriter",
+    "capability": "get_policy_reinsurance",
+    "request": "Please get policy reinsurance.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:refer_policy_to_reinsurer",
+    "role": "Financial Underwriter",
+    "capability": "refer_policy_to_reinsurer",
+    "request": "Please refer policy to reinsurer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:record_reinsurer_response",
+    "role": "Financial Underwriter",
+    "capability": "record_reinsurer_response",
+    "request": "Please record reinsurer response.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:apply_reinsurer_terms",
+    "role": "Financial Underwriter",
+    "capability": "apply_reinsurer_terms",
+    "request": "Please apply reinsurer terms.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:withdraw_reinsurance_referral",
+    "role": "Financial Underwriter",
+    "capability": "withdraw_reinsurance_referral",
+    "request": "Please withdraw reinsurance referral.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:list_walk_in_leads",
+    "role": "Financial Underwriter",
+    "capability": "list_walk_in_leads",
+    "request": "Please list walk in leads.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:acknowledge_walk_in_lead",
+    "role": "Financial Underwriter",
+    "capability": "acknowledge_walk_in_lead",
+    "request": "Please acknowledge walk in lead.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:reassign_walk_in_lead",
+    "role": "Financial Underwriter",
+    "capability": "reassign_walk_in_lead",
+    "request": "Please reassign walk in lead.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:list_my_acr_requests",
+    "role": "Financial Underwriter",
+    "capability": "list_my_acr_requests",
+    "request": "Please list my acr requests.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:get_claim_authority_limits",
+    "role": "Financial Underwriter",
+    "capability": "get_claim_authority_limits",
+    "request": "Please get claim authority limits.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:set_claim_authority_limit",
+    "role": "Financial Underwriter",
+    "capability": "set_claim_authority_limit",
+    "request": "Please set claim authority limit.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:list_branches",
+    "role": "Financial Underwriter",
+    "capability": "list_branches",
+    "request": "Please list branches.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Financial Underwriter:manage_branch",
+    "role": "Financial Underwriter",
+    "capability": "manage_branch",
+    "request": "Please manage branch.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
     "id": "Financial Underwriter:get_claim_financial_review",
     "role": "Financial Underwriter",
     "capability": "get_claim_financial_review",
@@ -12748,6 +14380,278 @@
     "role": "ClaimsManager",
     "capability": "transition_proposal",
     "request": "Please transition proposal.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:progress_policy_renewal",
+    "role": "ClaimsManager",
+    "capability": "progress_policy_renewal",
+    "request": "Please progress policy renewal.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:progress_reinstatement",
+    "role": "ClaimsManager",
+    "capability": "progress_reinstatement",
+    "request": "Please progress reinstatement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:progress_policy_exit",
+    "role": "ClaimsManager",
+    "capability": "progress_policy_exit",
+    "request": "Please progress policy exit.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:record_premium_collection",
+    "role": "ClaimsManager",
+    "capability": "record_premium_collection",
+    "request": "Please record premium collection.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:waive_premium_installment",
+    "role": "ClaimsManager",
+    "capability": "waive_premium_installment",
+    "request": "Please waive premium installment.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:preview_premium_restructure",
+    "role": "ClaimsManager",
+    "capability": "preview_premium_restructure",
+    "request": "Please preview premium restructure.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:restructure_premium_plan",
+    "role": "ClaimsManager",
+    "capability": "restructure_premium_plan",
+    "request": "Please restructure premium plan.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:issue_lapse_warning",
+    "role": "ClaimsManager",
+    "capability": "issue_lapse_warning",
+    "request": "Please issue lapse warning.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:set_premium_autopay",
+    "role": "ClaimsManager",
+    "capability": "set_premium_autopay",
+    "request": "Please set premium autopay.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:list_upcoming_renewals",
+    "role": "ClaimsManager",
+    "capability": "list_upcoming_renewals",
+    "request": "Please list upcoming renewals.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:get_counter_offer",
+    "role": "ClaimsManager",
+    "capability": "get_counter_offer",
+    "request": "Please get counter offer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:make_counter_offer",
+    "role": "ClaimsManager",
+    "capability": "make_counter_offer",
+    "request": "Please make counter offer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:record_counter_offer_response",
+    "role": "ClaimsManager",
+    "capability": "record_counter_offer_response",
+    "request": "Please record counter offer response.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:hold_underwriting_case",
+    "role": "ClaimsManager",
+    "capability": "hold_underwriting_case",
+    "request": "Please hold underwriting case.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:release_underwriting_case",
+    "role": "ClaimsManager",
+    "capability": "release_underwriting_case",
+    "request": "Please release underwriting case.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:waive_case_requirement",
+    "role": "ClaimsManager",
+    "capability": "waive_case_requirement",
+    "request": "Please waive case requirement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:change_case_plan",
+    "role": "ClaimsManager",
+    "capability": "change_case_plan",
+    "request": "Please change case plan.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:resolve_issuance_requirement",
+    "role": "ClaimsManager",
+    "capability": "resolve_issuance_requirement",
+    "request": "Please resolve issuance requirement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:waive_agent_confidential_report",
+    "role": "ClaimsManager",
+    "capability": "waive_agent_confidential_report",
+    "request": "Please waive agent confidential report.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:waive_medical_examination",
+    "role": "ClaimsManager",
+    "capability": "waive_medical_examination",
+    "request": "Please waive medical examination.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:list_claim_underwriting_referrals",
+    "role": "ClaimsManager",
+    "capability": "list_claim_underwriting_referrals",
+    "request": "Please list claim underwriting referrals.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:get_policy_reinsurance",
+    "role": "ClaimsManager",
+    "capability": "get_policy_reinsurance",
+    "request": "Please get policy reinsurance.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:refer_policy_to_reinsurer",
+    "role": "ClaimsManager",
+    "capability": "refer_policy_to_reinsurer",
+    "request": "Please refer policy to reinsurer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:record_reinsurer_response",
+    "role": "ClaimsManager",
+    "capability": "record_reinsurer_response",
+    "request": "Please record reinsurer response.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:apply_reinsurer_terms",
+    "role": "ClaimsManager",
+    "capability": "apply_reinsurer_terms",
+    "request": "Please apply reinsurer terms.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:withdraw_reinsurance_referral",
+    "role": "ClaimsManager",
+    "capability": "withdraw_reinsurance_referral",
+    "request": "Please withdraw reinsurance referral.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:list_walk_in_leads",
+    "role": "ClaimsManager",
+    "capability": "list_walk_in_leads",
+    "request": "Please list walk in leads.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:acknowledge_walk_in_lead",
+    "role": "ClaimsManager",
+    "capability": "acknowledge_walk_in_lead",
+    "request": "Please acknowledge walk in lead.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:reassign_walk_in_lead",
+    "role": "ClaimsManager",
+    "capability": "reassign_walk_in_lead",
+    "request": "Please reassign walk in lead.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:list_my_acr_requests",
+    "role": "ClaimsManager",
+    "capability": "list_my_acr_requests",
+    "request": "Please list my acr requests.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:get_claim_authority_limits",
+    "role": "ClaimsManager",
+    "capability": "get_claim_authority_limits",
+    "request": "Please get claim authority limits.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:set_claim_authority_limit",
+    "role": "ClaimsManager",
+    "capability": "set_claim_authority_limit",
+    "request": "Please set claim authority limit.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:list_branches",
+    "role": "ClaimsManager",
+    "capability": "list_branches",
+    "request": "Please list branches.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsManager:manage_branch",
+    "role": "ClaimsManager",
+    "capability": "manage_branch",
+    "request": "Please manage branch.",
     "allowed": false,
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
@@ -14576,6 +16480,278 @@
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
+    "id": "ClaimsAdjuster:progress_policy_renewal",
+    "role": "ClaimsAdjuster",
+    "capability": "progress_policy_renewal",
+    "request": "Please progress policy renewal.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:progress_reinstatement",
+    "role": "ClaimsAdjuster",
+    "capability": "progress_reinstatement",
+    "request": "Please progress reinstatement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:progress_policy_exit",
+    "role": "ClaimsAdjuster",
+    "capability": "progress_policy_exit",
+    "request": "Please progress policy exit.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:record_premium_collection",
+    "role": "ClaimsAdjuster",
+    "capability": "record_premium_collection",
+    "request": "Please record premium collection.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:waive_premium_installment",
+    "role": "ClaimsAdjuster",
+    "capability": "waive_premium_installment",
+    "request": "Please waive premium installment.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:preview_premium_restructure",
+    "role": "ClaimsAdjuster",
+    "capability": "preview_premium_restructure",
+    "request": "Please preview premium restructure.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:restructure_premium_plan",
+    "role": "ClaimsAdjuster",
+    "capability": "restructure_premium_plan",
+    "request": "Please restructure premium plan.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:issue_lapse_warning",
+    "role": "ClaimsAdjuster",
+    "capability": "issue_lapse_warning",
+    "request": "Please issue lapse warning.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:set_premium_autopay",
+    "role": "ClaimsAdjuster",
+    "capability": "set_premium_autopay",
+    "request": "Please set premium autopay.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:list_upcoming_renewals",
+    "role": "ClaimsAdjuster",
+    "capability": "list_upcoming_renewals",
+    "request": "Please list upcoming renewals.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:get_counter_offer",
+    "role": "ClaimsAdjuster",
+    "capability": "get_counter_offer",
+    "request": "Please get counter offer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:make_counter_offer",
+    "role": "ClaimsAdjuster",
+    "capability": "make_counter_offer",
+    "request": "Please make counter offer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:record_counter_offer_response",
+    "role": "ClaimsAdjuster",
+    "capability": "record_counter_offer_response",
+    "request": "Please record counter offer response.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:hold_underwriting_case",
+    "role": "ClaimsAdjuster",
+    "capability": "hold_underwriting_case",
+    "request": "Please hold underwriting case.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:release_underwriting_case",
+    "role": "ClaimsAdjuster",
+    "capability": "release_underwriting_case",
+    "request": "Please release underwriting case.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:waive_case_requirement",
+    "role": "ClaimsAdjuster",
+    "capability": "waive_case_requirement",
+    "request": "Please waive case requirement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:change_case_plan",
+    "role": "ClaimsAdjuster",
+    "capability": "change_case_plan",
+    "request": "Please change case plan.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:resolve_issuance_requirement",
+    "role": "ClaimsAdjuster",
+    "capability": "resolve_issuance_requirement",
+    "request": "Please resolve issuance requirement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:waive_agent_confidential_report",
+    "role": "ClaimsAdjuster",
+    "capability": "waive_agent_confidential_report",
+    "request": "Please waive agent confidential report.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:waive_medical_examination",
+    "role": "ClaimsAdjuster",
+    "capability": "waive_medical_examination",
+    "request": "Please waive medical examination.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:list_claim_underwriting_referrals",
+    "role": "ClaimsAdjuster",
+    "capability": "list_claim_underwriting_referrals",
+    "request": "Please list claim underwriting referrals.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:get_policy_reinsurance",
+    "role": "ClaimsAdjuster",
+    "capability": "get_policy_reinsurance",
+    "request": "Please get policy reinsurance.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:refer_policy_to_reinsurer",
+    "role": "ClaimsAdjuster",
+    "capability": "refer_policy_to_reinsurer",
+    "request": "Please refer policy to reinsurer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:record_reinsurer_response",
+    "role": "ClaimsAdjuster",
+    "capability": "record_reinsurer_response",
+    "request": "Please record reinsurer response.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:apply_reinsurer_terms",
+    "role": "ClaimsAdjuster",
+    "capability": "apply_reinsurer_terms",
+    "request": "Please apply reinsurer terms.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:withdraw_reinsurance_referral",
+    "role": "ClaimsAdjuster",
+    "capability": "withdraw_reinsurance_referral",
+    "request": "Please withdraw reinsurance referral.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:list_walk_in_leads",
+    "role": "ClaimsAdjuster",
+    "capability": "list_walk_in_leads",
+    "request": "Please list walk in leads.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:acknowledge_walk_in_lead",
+    "role": "ClaimsAdjuster",
+    "capability": "acknowledge_walk_in_lead",
+    "request": "Please acknowledge walk in lead.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:reassign_walk_in_lead",
+    "role": "ClaimsAdjuster",
+    "capability": "reassign_walk_in_lead",
+    "request": "Please reassign walk in lead.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:list_my_acr_requests",
+    "role": "ClaimsAdjuster",
+    "capability": "list_my_acr_requests",
+    "request": "Please list my acr requests.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:get_claim_authority_limits",
+    "role": "ClaimsAdjuster",
+    "capability": "get_claim_authority_limits",
+    "request": "Please get claim authority limits.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:set_claim_authority_limit",
+    "role": "ClaimsAdjuster",
+    "capability": "set_claim_authority_limit",
+    "request": "Please set claim authority limit.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:list_branches",
+    "role": "ClaimsAdjuster",
+    "capability": "list_branches",
+    "request": "Please list branches.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "ClaimsAdjuster:manage_branch",
+    "role": "ClaimsAdjuster",
+    "capability": "manage_branch",
+    "request": "Please manage branch.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
     "id": "ClaimsAdjuster:get_claim_financial_review",
     "role": "ClaimsAdjuster",
     "capability": "get_claim_financial_review",
@@ -16396,6 +18572,278 @@
     "role": "CustomerService",
     "capability": "transition_proposal",
     "request": "Please transition proposal.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:progress_policy_renewal",
+    "role": "CustomerService",
+    "capability": "progress_policy_renewal",
+    "request": "Please progress policy renewal.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:progress_reinstatement",
+    "role": "CustomerService",
+    "capability": "progress_reinstatement",
+    "request": "Please progress reinstatement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:progress_policy_exit",
+    "role": "CustomerService",
+    "capability": "progress_policy_exit",
+    "request": "Please progress policy exit.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:record_premium_collection",
+    "role": "CustomerService",
+    "capability": "record_premium_collection",
+    "request": "Please record premium collection.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:waive_premium_installment",
+    "role": "CustomerService",
+    "capability": "waive_premium_installment",
+    "request": "Please waive premium installment.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:preview_premium_restructure",
+    "role": "CustomerService",
+    "capability": "preview_premium_restructure",
+    "request": "Please preview premium restructure.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:restructure_premium_plan",
+    "role": "CustomerService",
+    "capability": "restructure_premium_plan",
+    "request": "Please restructure premium plan.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:issue_lapse_warning",
+    "role": "CustomerService",
+    "capability": "issue_lapse_warning",
+    "request": "Please issue lapse warning.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:set_premium_autopay",
+    "role": "CustomerService",
+    "capability": "set_premium_autopay",
+    "request": "Please set premium autopay.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:list_upcoming_renewals",
+    "role": "CustomerService",
+    "capability": "list_upcoming_renewals",
+    "request": "Please list upcoming renewals.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:get_counter_offer",
+    "role": "CustomerService",
+    "capability": "get_counter_offer",
+    "request": "Please get counter offer.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:make_counter_offer",
+    "role": "CustomerService",
+    "capability": "make_counter_offer",
+    "request": "Please make counter offer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:record_counter_offer_response",
+    "role": "CustomerService",
+    "capability": "record_counter_offer_response",
+    "request": "Please record counter offer response.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:hold_underwriting_case",
+    "role": "CustomerService",
+    "capability": "hold_underwriting_case",
+    "request": "Please hold underwriting case.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:release_underwriting_case",
+    "role": "CustomerService",
+    "capability": "release_underwriting_case",
+    "request": "Please release underwriting case.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:waive_case_requirement",
+    "role": "CustomerService",
+    "capability": "waive_case_requirement",
+    "request": "Please waive case requirement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:change_case_plan",
+    "role": "CustomerService",
+    "capability": "change_case_plan",
+    "request": "Please change case plan.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:resolve_issuance_requirement",
+    "role": "CustomerService",
+    "capability": "resolve_issuance_requirement",
+    "request": "Please resolve issuance requirement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:waive_agent_confidential_report",
+    "role": "CustomerService",
+    "capability": "waive_agent_confidential_report",
+    "request": "Please waive agent confidential report.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:waive_medical_examination",
+    "role": "CustomerService",
+    "capability": "waive_medical_examination",
+    "request": "Please waive medical examination.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:list_claim_underwriting_referrals",
+    "role": "CustomerService",
+    "capability": "list_claim_underwriting_referrals",
+    "request": "Please list claim underwriting referrals.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:get_policy_reinsurance",
+    "role": "CustomerService",
+    "capability": "get_policy_reinsurance",
+    "request": "Please get policy reinsurance.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:refer_policy_to_reinsurer",
+    "role": "CustomerService",
+    "capability": "refer_policy_to_reinsurer",
+    "request": "Please refer policy to reinsurer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:record_reinsurer_response",
+    "role": "CustomerService",
+    "capability": "record_reinsurer_response",
+    "request": "Please record reinsurer response.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:apply_reinsurer_terms",
+    "role": "CustomerService",
+    "capability": "apply_reinsurer_terms",
+    "request": "Please apply reinsurer terms.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:withdraw_reinsurance_referral",
+    "role": "CustomerService",
+    "capability": "withdraw_reinsurance_referral",
+    "request": "Please withdraw reinsurance referral.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:list_walk_in_leads",
+    "role": "CustomerService",
+    "capability": "list_walk_in_leads",
+    "request": "Please list walk in leads.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:acknowledge_walk_in_lead",
+    "role": "CustomerService",
+    "capability": "acknowledge_walk_in_lead",
+    "request": "Please acknowledge walk in lead.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:reassign_walk_in_lead",
+    "role": "CustomerService",
+    "capability": "reassign_walk_in_lead",
+    "request": "Please reassign walk in lead.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:list_my_acr_requests",
+    "role": "CustomerService",
+    "capability": "list_my_acr_requests",
+    "request": "Please list my acr requests.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:get_claim_authority_limits",
+    "role": "CustomerService",
+    "capability": "get_claim_authority_limits",
+    "request": "Please get claim authority limits.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:set_claim_authority_limit",
+    "role": "CustomerService",
+    "capability": "set_claim_authority_limit",
+    "request": "Please set claim authority limit.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:list_branches",
+    "role": "CustomerService",
+    "capability": "list_branches",
+    "request": "Please list branches.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomerService:manage_branch",
+    "role": "CustomerService",
+    "capability": "manage_branch",
+    "request": "Please manage branch.",
     "allowed": false,
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
@@ -18224,6 +20672,278 @@
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
+    "id": "Viewer:progress_policy_renewal",
+    "role": "Viewer",
+    "capability": "progress_policy_renewal",
+    "request": "Please progress policy renewal.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:progress_reinstatement",
+    "role": "Viewer",
+    "capability": "progress_reinstatement",
+    "request": "Please progress reinstatement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:progress_policy_exit",
+    "role": "Viewer",
+    "capability": "progress_policy_exit",
+    "request": "Please progress policy exit.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:record_premium_collection",
+    "role": "Viewer",
+    "capability": "record_premium_collection",
+    "request": "Please record premium collection.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:waive_premium_installment",
+    "role": "Viewer",
+    "capability": "waive_premium_installment",
+    "request": "Please waive premium installment.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:preview_premium_restructure",
+    "role": "Viewer",
+    "capability": "preview_premium_restructure",
+    "request": "Please preview premium restructure.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:restructure_premium_plan",
+    "role": "Viewer",
+    "capability": "restructure_premium_plan",
+    "request": "Please restructure premium plan.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:issue_lapse_warning",
+    "role": "Viewer",
+    "capability": "issue_lapse_warning",
+    "request": "Please issue lapse warning.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:set_premium_autopay",
+    "role": "Viewer",
+    "capability": "set_premium_autopay",
+    "request": "Please set premium autopay.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:list_upcoming_renewals",
+    "role": "Viewer",
+    "capability": "list_upcoming_renewals",
+    "request": "Please list upcoming renewals.",
+    "allowed": true,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:get_counter_offer",
+    "role": "Viewer",
+    "capability": "get_counter_offer",
+    "request": "Please get counter offer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:make_counter_offer",
+    "role": "Viewer",
+    "capability": "make_counter_offer",
+    "request": "Please make counter offer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:record_counter_offer_response",
+    "role": "Viewer",
+    "capability": "record_counter_offer_response",
+    "request": "Please record counter offer response.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:hold_underwriting_case",
+    "role": "Viewer",
+    "capability": "hold_underwriting_case",
+    "request": "Please hold underwriting case.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:release_underwriting_case",
+    "role": "Viewer",
+    "capability": "release_underwriting_case",
+    "request": "Please release underwriting case.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:waive_case_requirement",
+    "role": "Viewer",
+    "capability": "waive_case_requirement",
+    "request": "Please waive case requirement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:change_case_plan",
+    "role": "Viewer",
+    "capability": "change_case_plan",
+    "request": "Please change case plan.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:resolve_issuance_requirement",
+    "role": "Viewer",
+    "capability": "resolve_issuance_requirement",
+    "request": "Please resolve issuance requirement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:waive_agent_confidential_report",
+    "role": "Viewer",
+    "capability": "waive_agent_confidential_report",
+    "request": "Please waive agent confidential report.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:waive_medical_examination",
+    "role": "Viewer",
+    "capability": "waive_medical_examination",
+    "request": "Please waive medical examination.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:list_claim_underwriting_referrals",
+    "role": "Viewer",
+    "capability": "list_claim_underwriting_referrals",
+    "request": "Please list claim underwriting referrals.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:get_policy_reinsurance",
+    "role": "Viewer",
+    "capability": "get_policy_reinsurance",
+    "request": "Please get policy reinsurance.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:refer_policy_to_reinsurer",
+    "role": "Viewer",
+    "capability": "refer_policy_to_reinsurer",
+    "request": "Please refer policy to reinsurer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:record_reinsurer_response",
+    "role": "Viewer",
+    "capability": "record_reinsurer_response",
+    "request": "Please record reinsurer response.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:apply_reinsurer_terms",
+    "role": "Viewer",
+    "capability": "apply_reinsurer_terms",
+    "request": "Please apply reinsurer terms.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:withdraw_reinsurance_referral",
+    "role": "Viewer",
+    "capability": "withdraw_reinsurance_referral",
+    "request": "Please withdraw reinsurance referral.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:list_walk_in_leads",
+    "role": "Viewer",
+    "capability": "list_walk_in_leads",
+    "request": "Please list walk in leads.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:acknowledge_walk_in_lead",
+    "role": "Viewer",
+    "capability": "acknowledge_walk_in_lead",
+    "request": "Please acknowledge walk in lead.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:reassign_walk_in_lead",
+    "role": "Viewer",
+    "capability": "reassign_walk_in_lead",
+    "request": "Please reassign walk in lead.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:list_my_acr_requests",
+    "role": "Viewer",
+    "capability": "list_my_acr_requests",
+    "request": "Please list my acr requests.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:get_claim_authority_limits",
+    "role": "Viewer",
+    "capability": "get_claim_authority_limits",
+    "request": "Please get claim authority limits.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:set_claim_authority_limit",
+    "role": "Viewer",
+    "capability": "set_claim_authority_limit",
+    "request": "Please set claim authority limit.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:list_branches",
+    "role": "Viewer",
+    "capability": "list_branches",
+    "request": "Please list branches.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Viewer:manage_branch",
+    "role": "Viewer",
+    "capability": "manage_branch",
+    "request": "Please manage branch.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
     "id": "Viewer:get_claim_financial_review",
     "role": "Viewer",
     "capability": "get_claim_financial_review",
@@ -20048,6 +22768,278 @@
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },
   {
+    "id": "Finance:progress_policy_renewal",
+    "role": "Finance",
+    "capability": "progress_policy_renewal",
+    "request": "Please progress policy renewal.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:progress_reinstatement",
+    "role": "Finance",
+    "capability": "progress_reinstatement",
+    "request": "Please progress reinstatement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:progress_policy_exit",
+    "role": "Finance",
+    "capability": "progress_policy_exit",
+    "request": "Please progress policy exit.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:record_premium_collection",
+    "role": "Finance",
+    "capability": "record_premium_collection",
+    "request": "Please record premium collection.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:waive_premium_installment",
+    "role": "Finance",
+    "capability": "waive_premium_installment",
+    "request": "Please waive premium installment.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:preview_premium_restructure",
+    "role": "Finance",
+    "capability": "preview_premium_restructure",
+    "request": "Please preview premium restructure.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:restructure_premium_plan",
+    "role": "Finance",
+    "capability": "restructure_premium_plan",
+    "request": "Please restructure premium plan.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:issue_lapse_warning",
+    "role": "Finance",
+    "capability": "issue_lapse_warning",
+    "request": "Please issue lapse warning.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:set_premium_autopay",
+    "role": "Finance",
+    "capability": "set_premium_autopay",
+    "request": "Please set premium autopay.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:list_upcoming_renewals",
+    "role": "Finance",
+    "capability": "list_upcoming_renewals",
+    "request": "Please list upcoming renewals.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:get_counter_offer",
+    "role": "Finance",
+    "capability": "get_counter_offer",
+    "request": "Please get counter offer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:make_counter_offer",
+    "role": "Finance",
+    "capability": "make_counter_offer",
+    "request": "Please make counter offer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:record_counter_offer_response",
+    "role": "Finance",
+    "capability": "record_counter_offer_response",
+    "request": "Please record counter offer response.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:hold_underwriting_case",
+    "role": "Finance",
+    "capability": "hold_underwriting_case",
+    "request": "Please hold underwriting case.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:release_underwriting_case",
+    "role": "Finance",
+    "capability": "release_underwriting_case",
+    "request": "Please release underwriting case.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:waive_case_requirement",
+    "role": "Finance",
+    "capability": "waive_case_requirement",
+    "request": "Please waive case requirement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:change_case_plan",
+    "role": "Finance",
+    "capability": "change_case_plan",
+    "request": "Please change case plan.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:resolve_issuance_requirement",
+    "role": "Finance",
+    "capability": "resolve_issuance_requirement",
+    "request": "Please resolve issuance requirement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:waive_agent_confidential_report",
+    "role": "Finance",
+    "capability": "waive_agent_confidential_report",
+    "request": "Please waive agent confidential report.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:waive_medical_examination",
+    "role": "Finance",
+    "capability": "waive_medical_examination",
+    "request": "Please waive medical examination.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:list_claim_underwriting_referrals",
+    "role": "Finance",
+    "capability": "list_claim_underwriting_referrals",
+    "request": "Please list claim underwriting referrals.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:get_policy_reinsurance",
+    "role": "Finance",
+    "capability": "get_policy_reinsurance",
+    "request": "Please get policy reinsurance.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:refer_policy_to_reinsurer",
+    "role": "Finance",
+    "capability": "refer_policy_to_reinsurer",
+    "request": "Please refer policy to reinsurer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:record_reinsurer_response",
+    "role": "Finance",
+    "capability": "record_reinsurer_response",
+    "request": "Please record reinsurer response.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:apply_reinsurer_terms",
+    "role": "Finance",
+    "capability": "apply_reinsurer_terms",
+    "request": "Please apply reinsurer terms.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:withdraw_reinsurance_referral",
+    "role": "Finance",
+    "capability": "withdraw_reinsurance_referral",
+    "request": "Please withdraw reinsurance referral.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:list_walk_in_leads",
+    "role": "Finance",
+    "capability": "list_walk_in_leads",
+    "request": "Please list walk in leads.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:acknowledge_walk_in_lead",
+    "role": "Finance",
+    "capability": "acknowledge_walk_in_lead",
+    "request": "Please acknowledge walk in lead.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:reassign_walk_in_lead",
+    "role": "Finance",
+    "capability": "reassign_walk_in_lead",
+    "request": "Please reassign walk in lead.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:list_my_acr_requests",
+    "role": "Finance",
+    "capability": "list_my_acr_requests",
+    "request": "Please list my acr requests.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:get_claim_authority_limits",
+    "role": "Finance",
+    "capability": "get_claim_authority_limits",
+    "request": "Please get claim authority limits.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:set_claim_authority_limit",
+    "role": "Finance",
+    "capability": "set_claim_authority_limit",
+    "request": "Please set claim authority limit.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:list_branches",
+    "role": "Finance",
+    "capability": "list_branches",
+    "request": "Please list branches.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "Finance:manage_branch",
+    "role": "Finance",
+    "capability": "manage_branch",
+    "request": "Please manage branch.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
     "id": "Finance:get_claim_financial_review",
     "role": "Finance",
     "capability": "get_claim_financial_review",
@@ -21868,6 +24860,278 @@
     "role": "CustomBroker",
     "capability": "transition_proposal",
     "request": "Please transition proposal.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:progress_policy_renewal",
+    "role": "CustomBroker",
+    "capability": "progress_policy_renewal",
+    "request": "Please progress policy renewal.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:progress_reinstatement",
+    "role": "CustomBroker",
+    "capability": "progress_reinstatement",
+    "request": "Please progress reinstatement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:progress_policy_exit",
+    "role": "CustomBroker",
+    "capability": "progress_policy_exit",
+    "request": "Please progress policy exit.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:record_premium_collection",
+    "role": "CustomBroker",
+    "capability": "record_premium_collection",
+    "request": "Please record premium collection.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:waive_premium_installment",
+    "role": "CustomBroker",
+    "capability": "waive_premium_installment",
+    "request": "Please waive premium installment.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:preview_premium_restructure",
+    "role": "CustomBroker",
+    "capability": "preview_premium_restructure",
+    "request": "Please preview premium restructure.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:restructure_premium_plan",
+    "role": "CustomBroker",
+    "capability": "restructure_premium_plan",
+    "request": "Please restructure premium plan.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:issue_lapse_warning",
+    "role": "CustomBroker",
+    "capability": "issue_lapse_warning",
+    "request": "Please issue lapse warning.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:set_premium_autopay",
+    "role": "CustomBroker",
+    "capability": "set_premium_autopay",
+    "request": "Please set premium autopay.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:list_upcoming_renewals",
+    "role": "CustomBroker",
+    "capability": "list_upcoming_renewals",
+    "request": "Please list upcoming renewals.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:get_counter_offer",
+    "role": "CustomBroker",
+    "capability": "get_counter_offer",
+    "request": "Please get counter offer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:make_counter_offer",
+    "role": "CustomBroker",
+    "capability": "make_counter_offer",
+    "request": "Please make counter offer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:record_counter_offer_response",
+    "role": "CustomBroker",
+    "capability": "record_counter_offer_response",
+    "request": "Please record counter offer response.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:hold_underwriting_case",
+    "role": "CustomBroker",
+    "capability": "hold_underwriting_case",
+    "request": "Please hold underwriting case.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:release_underwriting_case",
+    "role": "CustomBroker",
+    "capability": "release_underwriting_case",
+    "request": "Please release underwriting case.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:waive_case_requirement",
+    "role": "CustomBroker",
+    "capability": "waive_case_requirement",
+    "request": "Please waive case requirement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:change_case_plan",
+    "role": "CustomBroker",
+    "capability": "change_case_plan",
+    "request": "Please change case plan.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:resolve_issuance_requirement",
+    "role": "CustomBroker",
+    "capability": "resolve_issuance_requirement",
+    "request": "Please resolve issuance requirement.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:waive_agent_confidential_report",
+    "role": "CustomBroker",
+    "capability": "waive_agent_confidential_report",
+    "request": "Please waive agent confidential report.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:waive_medical_examination",
+    "role": "CustomBroker",
+    "capability": "waive_medical_examination",
+    "request": "Please waive medical examination.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:list_claim_underwriting_referrals",
+    "role": "CustomBroker",
+    "capability": "list_claim_underwriting_referrals",
+    "request": "Please list claim underwriting referrals.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:get_policy_reinsurance",
+    "role": "CustomBroker",
+    "capability": "get_policy_reinsurance",
+    "request": "Please get policy reinsurance.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:refer_policy_to_reinsurer",
+    "role": "CustomBroker",
+    "capability": "refer_policy_to_reinsurer",
+    "request": "Please refer policy to reinsurer.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:record_reinsurer_response",
+    "role": "CustomBroker",
+    "capability": "record_reinsurer_response",
+    "request": "Please record reinsurer response.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:apply_reinsurer_terms",
+    "role": "CustomBroker",
+    "capability": "apply_reinsurer_terms",
+    "request": "Please apply reinsurer terms.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:withdraw_reinsurance_referral",
+    "role": "CustomBroker",
+    "capability": "withdraw_reinsurance_referral",
+    "request": "Please withdraw reinsurance referral.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:list_walk_in_leads",
+    "role": "CustomBroker",
+    "capability": "list_walk_in_leads",
+    "request": "Please list walk in leads.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:acknowledge_walk_in_lead",
+    "role": "CustomBroker",
+    "capability": "acknowledge_walk_in_lead",
+    "request": "Please acknowledge walk in lead.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:reassign_walk_in_lead",
+    "role": "CustomBroker",
+    "capability": "reassign_walk_in_lead",
+    "request": "Please reassign walk in lead.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:list_my_acr_requests",
+    "role": "CustomBroker",
+    "capability": "list_my_acr_requests",
+    "request": "Please list my acr requests.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:get_claim_authority_limits",
+    "role": "CustomBroker",
+    "capability": "get_claim_authority_limits",
+    "request": "Please get claim authority limits.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:set_claim_authority_limit",
+    "role": "CustomBroker",
+    "capability": "set_claim_authority_limit",
+    "request": "Please set claim authority limit.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:list_branches",
+    "role": "CustomBroker",
+    "capability": "list_branches",
+    "request": "Please list branches.",
+    "allowed": false,
+    "validation": "authorization_and_schema; owning-service execution requires separate evidence"
+  },
+  {
+    "id": "CustomBroker:manage_branch",
+    "role": "CustomBroker",
+    "capability": "manage_branch",
+    "request": "Please manage branch.",
     "allowed": false,
     "validation": "authorization_and_schema; owning-service execution requires separate evidence"
   },

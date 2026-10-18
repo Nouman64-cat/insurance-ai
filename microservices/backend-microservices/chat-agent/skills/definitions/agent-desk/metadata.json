@@ -1,0 +1,62 @@
+{
+  "id": "agent-desk",
+  "purpose": "Work the walk-in lead queue (acknowledge, and reassign for managers) and the agent's confidential-report request inbox.",
+  "intents": [
+    "walk-in leads",
+    "walk in lead",
+    "acknowledge lead",
+    "reassign lead",
+    "my acr requests",
+    "confidential report requests",
+    "pending acr"
+  ],
+  "capabilities": [
+    "list_walk_in_leads",
+    "acknowledge_walk_in_lead",
+    "reassign_walk_in_lead",
+    "list_my_acr_requests"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "Agent",
+    "Underwriter"
+  ],
+  "prerequisites": [
+    "Authenticated role and tenant scope",
+    "Live owning-service record for the policy, application or desk item"
+  ],
+  "business_rules": [
+    "An agent sees and acknowledges only leads assigned to them.",
+    "Only a manager reassigns a lead, and only to an available agent.",
+    "Explicit user instruction is required for mutations; backend gates remain authoritative."
+  ],
+  "lifecycle_source": "tenant-service/routers/walk_in_leads.py; tenant-service/routers/agent_confidential_report.py; desk_operations.py",
+  "approvals": "role_operations.TOOL_ROLES mirrors the owning router; the shared permission gate and owning-service checks apply.",
+  "recovery": [
+    "Ask for missing details or offer verified choices; never fill a decision, answer or reference in.",
+    "Read the live case before retrying; an unknown mutation outcome is verified, never replayed."
+  ],
+  "verification": "Report only backend-confirmed outcomes; a skipped step is reported as skipped.",
+  "tests": [
+    "test_role_operations.py",
+    "test_skills.py::test_all_skills_validate_and_cover_inventory"
+  ],
+  "steps": [
+    {
+      "id": "queue",
+      "capability": "list_walk_in_leads",
+      "depends_on": []
+    },
+    {
+      "id": "acknowledge",
+      "capability": "acknowledge_walk_in_lead",
+      "depends_on": [
+        "queue"
+      ]
+    }
+  ],
+  "unsupported": [
+    "Running the routing sweep from chat"
+  ]
+}

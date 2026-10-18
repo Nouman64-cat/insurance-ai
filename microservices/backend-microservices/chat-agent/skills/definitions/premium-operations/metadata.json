@@ -1,0 +1,68 @@
+{
+  "id": "premium-operations",
+  "purpose": "Record premiums already received, waive instalments, restructure billing frequency, issue lapse warnings and manage auto-debit on in-force policies.",
+  "intents": [
+    "record premium",
+    "premium received",
+    "collect instalment",
+    "waive instalment",
+    "waive installment",
+    "restructure premium",
+    "billing frequency",
+    "lapse warning",
+    "autopay",
+    "auto debit"
+  ],
+  "capabilities": [
+    "record_premium_collection",
+    "waive_premium_installment",
+    "preview_premium_restructure",
+    "restructure_premium_plan",
+    "issue_lapse_warning",
+    "set_premium_autopay"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "Agent",
+    "Underwriter",
+    "CustomerService"
+  ],
+  "prerequisites": [
+    "Authenticated role and tenant scope",
+    "Live owning-service record for the policy, application or desk item"
+  ],
+  "business_rules": [
+    "A collection is recorded only for funds already received, with the real method and reference.",
+    "Waivers need the user's reason; a restructure is previewed before it is applied.",
+    "Explicit user instruction is required for mutations; backend gates remain authoritative."
+  ],
+  "lifecycle_source": "tenant-service/routers/post_issuance.py; servicing_operations.py",
+  "approvals": "role_operations.TOOL_ROLES mirrors the owning router; the shared permission gate and owning-service checks apply.",
+  "recovery": [
+    "Ask for missing details or offer verified choices; never fill a decision, answer or reference in.",
+    "Read the live case before retrying; an unknown mutation outcome is verified, never replayed."
+  ],
+  "verification": "Report only backend-confirmed outcomes; a skipped step is reported as skipped.",
+  "tests": [
+    "test_role_operations.py",
+    "test_skills.py::test_all_skills_validate_and_cover_inventory"
+  ],
+  "steps": [
+    {
+      "id": "preview",
+      "capability": "preview_premium_restructure",
+      "depends_on": []
+    },
+    {
+      "id": "apply",
+      "capability": "restructure_premium_plan",
+      "depends_on": [
+        "preview"
+      ]
+    }
+  ],
+  "unsupported": [
+    "Charging a card or wallet, or simulating a gateway payment, from chat"
+  ]
+}

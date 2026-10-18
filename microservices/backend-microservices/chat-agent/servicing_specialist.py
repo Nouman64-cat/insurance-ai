@@ -19,8 +19,12 @@ SERVICING_TOOLS = frozenset({
     'preview_policy_renewal', 'submit_policy_renewal', 'get_reinstatement_requirements',
     'submit_reinstatement_request', 'get_reinstatement_status', 'preview_policy_exit',
     'submit_policy_exit_request', 'get_exit_status',
+    # Back-office stages of an open case, and premium operations (servicing_operations.py).
+    'progress_policy_renewal', 'progress_reinstatement', 'progress_policy_exit', 'record_premium_collection',
+    'waive_premium_installment', 'preview_premium_restructure', 'restructure_premium_plan', 'issue_lapse_warning',
+    'set_premium_autopay', 'list_upcoming_renewals',
 })
-SERVICING_DOMAINS = frozenset({'servicing', 'workflow'})
+SERVICING_DOMAINS = frozenset({'servicing', 'servicing_ops', 'workflow'})
 _EXPLICIT = re.compile(r'\b(?:policy servicing|policy exit|cancel (?:a |the |this )?policy|lapsed policy|overdue premiums?|premium arrears|post[- ]issuance|surrender|free[- ]look|cooling[- ]off|reinstat\w*|renew(?:al|als|ing)?|endorse\w*|premium (?:schedule|reminder|instalment|installment)s?|payment receipts?|welcome (?:kit|pack|email)|policy delivery|delivery status|portal (?:access|invitation|account)|onboarding status|(?:get|retry|send|provision|preview|submit)_(?:policy_(?:delivery|endorsement|renewal|exit)|premium_|payment_receipt|onboarding|portal_|reinstatement|renewal_|endorsement_|exit_)[a-z_]*)\b|سرنڈر|تجدید', re.I)
 _EXCLUDED = re.compile(r'\b(?:claims?|fnol|commissions?|brokerage|rate cards?|renewal rates?|agent earnings?|group|family|corporate|census|bulk|underwrit(?:e|ing)|proposals?|risk assessment|pre[- ]issuance|issue (?:a |the |this )?policy|service request|support ticket|rule engine)\b|کلیم|کمیشن', re.I)
 _INTAKE = re.compile(r'\b(?:add|create|register|delete|list)\s+(?:(?:a|an|the|new|all)\s+){0,2}(?:customers?|leads?|users?|agents?)\b', re.I)
@@ -78,6 +82,12 @@ activation, group/family contracts, claims and commissions are outside your scop
         'preview_policy_exit': 'Explain free-look and surrender terms, deductions and estimates using contractual tool results; never promise a payout.',
         'submit_policy_exit_request': 'Only on explicit instruction for the chosen exit type. A surrender question or estimate never authorizes termination.',
         'get_exit_status': 'Distinguish pending request, approval, policy termination and actual settlement/refund.',
+        'progress_policy_renewal': 'Work one stage per instruction on the open renewal; start with action=status. A decision, acceptance or payment must come from the user, never be assumed.',
+        'progress_reinstatement': "Work one stage per instruction; read status first. Declaration answers are the signer's own; never answer a question for them.",
+        'progress_policy_exit': 'Work one stage per instruction; read status first. Consent, payee details and the settlement answer come from the customer; authorisation and payout stay separate steps.',
+        'record_premium_collection': 'Only for money already received: the user must give the method and real reference and confirm the funds arrived.',
+        'waive_premium_installment': 'Only on explicit instruction with the reason the user gives.',
+        'restructure_premium_plan': 'Show preview_premium_restructure first; apply only on explicit instruction.',
     }
     for name, instruction in instructions.items():
         if name in allowed:

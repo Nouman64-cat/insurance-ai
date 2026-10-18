@@ -7,14 +7,16 @@ def select(text: str, role: str, platform: str = "web", previous=(), scope=None,
     permitted = authorized(role, platform, scope)
     terms = words(text)
     ranked = []
-    isolated = {"finance": {"finance-payments", "finance-reconciliation", "failure-recovery"},"medical_underwriting": {"medical-underwriting"},
-                "financial_underwriting": {"financial-underwriting"},
-                "final_underwriting": {"final-underwriting", "pre-underwriting", "document-intelligence"},
-                "claims": {"claims-management", "claim-financial-underwriting", "failure-recovery"},
+    isolated = {"finance": {"finance-payments", "finance-reconciliation", "failure-recovery"},"medical_underwriting": {"medical-underwriting", "underwriting-decisions"},
+                "financial_underwriting": {"financial-underwriting", "underwriting-decisions"},
+                "final_underwriting": {"final-underwriting", "pre-underwriting", "document-intelligence", "underwriting-decisions"},
+                "claims": {"claims-management", "claim-financial-underwriting", "policy-exit-processing", "claims-authority", "failure-recovery"},
                 "commission": {"commissions", "failure-recovery"},
                 "group": {"corporate-insurance", "failure-recovery"},
-                "servicing": {"policy-servicing", "premium-management", "failure-recovery"},
-                "underwriting": {"individual-insurance", "pre-underwriting", "final-underwriting", "policy-issuance", "document-intelligence", "failure-recovery"}}
+                "servicing": {"policy-servicing", "premium-management", "premium-operations", "renewal-processing",
+                              "reinstatement-processing", "policy-exit-processing", "failure-recovery"},
+                "underwriting": {"individual-insurance", "pre-underwriting", "final-underwriting", "policy-issuance", "document-intelligence",
+                                 "underwriting-decisions", "reinsurance-management", "failure-recovery"}}
     for skill in metadata():
         if specialist in isolated and skill.id not in isolated[specialist]:
             continue

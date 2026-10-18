@@ -1,0 +1,64 @@
+{
+  "id": "policy-exit-processing",
+  "purpose": "Work an open surrender, maturity or expiry exit through eligibility, consent, settlement calculation and acceptance, payee verification, authorisation, payout, reconciliation and closure.",
+  "intents": [
+    "process surrender",
+    "surrender settlement",
+    "maturity settlement",
+    "exit consent",
+    "verify payee",
+    "authorise settlement",
+    "authorize settlement",
+    "exit payout",
+    "close exit"
+  ],
+  "capabilities": [
+    "progress_policy_exit"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "Underwriter",
+    "ClaimsManager",
+    "ClaimsAdjuster"
+  ],
+  "prerequisites": [
+    "Authenticated role and tenant scope",
+    "Live owning-service record for the policy, application or desk item"
+  ],
+  "business_rules": [
+    "Each stage runs only when the exit case's can-flags allow it.",
+    "Authorising the settlement and waiving exit documents need a Claims Manager or Admin.",
+    "Consent, payee details and the settlement answer come from the customer; nothing is inferred.",
+    "Explicit user instruction is required for mutations; backend gates remain authoritative."
+  ],
+  "lifecycle_source": "tenant-service/routers/policy_exit.py; servicing_operations.py",
+  "approvals": "role_operations.TOOL_ROLES mirrors the owning router; the shared permission gate and owning-service checks apply.",
+  "recovery": [
+    "Ask for missing details or offer verified choices; never fill a decision, answer or reference in.",
+    "Read the live case before retrying; an unknown mutation outcome is verified, never replayed."
+  ],
+  "verification": "Report only backend-confirmed outcomes; a skipped step is reported as skipped.",
+  "tests": [
+    "test_role_operations.py",
+    "test_skills.py::test_all_skills_validate_and_cover_inventory"
+  ],
+  "steps": [
+    {
+      "id": "read_case",
+      "capability": "progress_policy_exit",
+      "depends_on": []
+    },
+    {
+      "id": "authorise",
+      "capability": "progress_policy_exit",
+      "depends_on": [
+        "read_case"
+      ]
+    }
+  ],
+  "unsupported": [
+    "Uploading exit documents (use the policy workspace)",
+    "Recording a policy loan from chat"
+  ]
+}

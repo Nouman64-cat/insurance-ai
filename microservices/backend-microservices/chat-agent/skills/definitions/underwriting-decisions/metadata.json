@@ -1,0 +1,80 @@
+{
+  "id": "underwriting-decisions",
+  "purpose": "Underwriter decisions beyond the gate journey: counter-offers and the customer's response, underwriting holds, requirement and gate waivers, plan changes, pre-issuance requirements and the claim re-underwriting queue.",
+  "intents": [
+    "counter offer",
+    "revised terms",
+    "customer accepts offer",
+    "hold case",
+    "put on hold",
+    "release hold",
+    "waive requirement",
+    "waive acr",
+    "waive medical exam",
+    "change plan",
+    "verify requirement",
+    "claim referrals",
+    "re-underwriting queue"
+  ],
+  "capabilities": [
+    "get_counter_offer",
+    "make_counter_offer",
+    "record_counter_offer_response",
+    "hold_underwriting_case",
+    "release_underwriting_case",
+    "waive_case_requirement",
+    "change_case_plan",
+    "resolve_issuance_requirement",
+    "waive_agent_confidential_report",
+    "waive_medical_examination",
+    "list_claim_underwriting_referrals"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "Agent",
+    "Underwriter",
+    "Medical Underwriter",
+    "Financial Underwriter",
+    "CustomerService"
+  ],
+  "prerequisites": [
+    "Authenticated role and tenant scope",
+    "Live owning-service record for the policy, application or desk item"
+  ],
+  "business_rules": [
+    "Every hold, waiver and counter-offer carries the underwriter's own reason.",
+    "A counter-offer response is recorded only when the customer gave it; declining closes the application.",
+    "A plan change is previewed before it is applied.",
+    "Explicit user instruction is required for mutations; backend gates remain authoritative."
+  ],
+  "lifecycle_source": "tenant-service/routers/pre_issuance.py; tenant-service/routers/cases.py; tenant-service/routers/agent_confidential_report.py; tenant-service/routers/medical_exam.py; underwriting_operations.py",
+  "approvals": "role_operations.TOOL_ROLES mirrors the owning router; the shared permission gate and owning-service checks apply.",
+  "recovery": [
+    "Ask for missing details or offer verified choices; never fill a decision, answer or reference in.",
+    "Read the live case before retrying; an unknown mutation outcome is verified, never replayed."
+  ],
+  "verification": "Report only backend-confirmed outcomes; a skipped step is reported as skipped.",
+  "tests": [
+    "test_role_operations.py",
+    "test_skills.py::test_all_skills_validate_and_cover_inventory"
+  ],
+  "steps": [
+    {
+      "id": "read_offer",
+      "capability": "get_counter_offer",
+      "depends_on": []
+    },
+    {
+      "id": "record_response",
+      "capability": "record_counter_offer_response",
+      "depends_on": [
+        "read_offer"
+      ]
+    }
+  ],
+  "unsupported": [
+    "Approving or declining the application (final-underwriting)",
+    "Waiving on the underwriter's behalf without a stated reason"
+  ]
+}

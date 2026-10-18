@@ -160,8 +160,9 @@ def test_mobile_agent_stops_at_the_medical_exam_gate():
 
 def test_admin_scope_respects_platform_and_claims_authority():
     from capability_tools import PLATFORM_TOOLS
+    from role_operations import SUPERADMIN_ONLY
     denied = {n for n in TOOL_NAMES if not is_role_allowed(n, "Admin")}
-    expected = set(PLATFORM_TOOLS) | {name for name, roles in permission.CLAIM_AUTHORITY_ROLES.items() if "Admin" not in roles}
+    expected = set(PLATFORM_TOOLS) | set(SUPERADMIN_ONLY) | {name for name, roles in permission.CLAIM_AUTHORITY_ROLES.items() if "Admin" not in roles}
     assert denied == expected & set(TOOL_NAMES)
 
 

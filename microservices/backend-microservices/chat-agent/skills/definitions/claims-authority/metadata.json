@@ -1,0 +1,59 @@
+{
+  "id": "claims-authority",
+  "purpose": "Read and (Admin) change the delegated claims authority matrix: approval and settlement-authorisation limits for adjusters and managers.",
+  "intents": [
+    "claims authority",
+    "approval limit",
+    "authorisation limit",
+    "authorization limit",
+    "delegated authority",
+    "claim limits"
+  ],
+  "capabilities": [
+    "get_claim_authority_limits",
+    "set_claim_authority_limit"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "ClaimsManager",
+    "ClaimsAdjuster"
+  ],
+  "prerequisites": [
+    "Authenticated role and tenant scope",
+    "Live owning-service record for the policy, application or desk item"
+  ],
+  "business_rules": [
+    "Only Admin and SuperAdmin change limits; changes are recorded with who made them.",
+    "Limits configure authority; they never approve or pay a claim.",
+    "Explicit user instruction is required for mutations; backend gates remain authoritative."
+  ],
+  "lifecycle_source": "tenant-service/routers/claims.py (/claims/authority); tenant-service/services/claim_authority.py; desk_operations.py",
+  "approvals": "role_operations.TOOL_ROLES mirrors the owning router; the shared permission gate and owning-service checks apply.",
+  "recovery": [
+    "Ask for missing details or offer verified choices; never fill a decision, answer or reference in.",
+    "Read the live case before retrying; an unknown mutation outcome is verified, never replayed."
+  ],
+  "verification": "Report only backend-confirmed outcomes; a skipped step is reported as skipped.",
+  "tests": [
+    "test_role_operations.py",
+    "test_skills.py::test_all_skills_validate_and_cover_inventory"
+  ],
+  "steps": [
+    {
+      "id": "read",
+      "capability": "get_claim_authority_limits",
+      "depends_on": []
+    },
+    {
+      "id": "change",
+      "capability": "set_claim_authority_limit",
+      "depends_on": [
+        "read"
+      ]
+    }
+  ],
+  "unsupported": [
+    "Changing which role executes payment (Finance)"
+  ]
+}

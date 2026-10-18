@@ -1,0 +1,59 @@
+{
+  "id": "renewal-processing",
+  "purpose": "Work an open individual renewal through notice, risk review, customer acceptance, premium receipt, reconciliation and completion; list upcoming renewals.",
+  "intents": [
+    "process renewal",
+    "renewal notice",
+    "renewal risk",
+    "renewal acceptance",
+    "renewal premium",
+    "complete renewal",
+    "cancel renewal",
+    "upcoming renewals",
+    "expiring policies"
+  ],
+  "capabilities": [
+    "progress_policy_renewal",
+    "list_upcoming_renewals"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "Agent",
+    "Underwriter",
+    "CustomerService",
+    "Viewer"
+  ],
+  "prerequisites": [
+    "Authenticated role and tenant scope",
+    "Live owning-service record for the policy, application or desk item"
+  ],
+  "business_rules": [
+    "A renewal is opened with submit_policy_renewal; each later stage runs only when the case's can-flags allow it.",
+    "The underwriter records the risk decision; the customer's acceptance and the premium receipt are recorded as reported, never assumed.",
+    "Cover continues only after the premium is reconciled and the renewal completed.",
+    "Explicit user instruction is required for mutations; backend gates remain authoritative."
+  ],
+  "lifecycle_source": "tenant-service/routers/renewals.py; tenant-service/routers/policies.py; servicing_operations.py",
+  "approvals": "role_operations.TOOL_ROLES mirrors the owning router; the shared permission gate and owning-service checks apply.",
+  "recovery": [
+    "Ask for missing details or offer verified choices; never fill a decision, answer or reference in.",
+    "Read the live case before retrying; an unknown mutation outcome is verified, never replayed."
+  ],
+  "verification": "Report only backend-confirmed outcomes; a skipped step is reported as skipped.",
+  "tests": [
+    "test_role_operations.py",
+    "test_skills.py::test_all_skills_validate_and_cover_inventory"
+  ],
+  "steps": [
+    {
+      "id": "read_case",
+      "capability": "progress_policy_renewal",
+      "depends_on": []
+    }
+  ],
+  "unsupported": [
+    "Driving the payment gateway or charging the customer from chat",
+    "Group scheme renewals (corporate-insurance)"
+  ]
+}

@@ -3314,6 +3314,10 @@ ALL_TOOLS.extend([search_capabilities, get_capability_schema])
 from capability_tools import CAPABILITY_TOOLS
 ALL_TOOLS.extend([list_customers, *CAPABILITY_TOOLS])
 
+# Role operations with a staff UI but no chat capability until now (role_operations.py).
+from role_operations import ROLE_OPERATION_TOOLS
+ALL_TOOLS.extend(ROLE_OPERATION_TOOLS)
+
 ALL_TOOLS.append(get_claim_financial_review)
 
 

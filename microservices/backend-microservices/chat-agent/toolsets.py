@@ -529,3 +529,8 @@ DOMAIN_TOOLS["platform"] = set(PLATFORM_TOOLS)
 DOMAIN_TOOLS["proposal_payment"] = set(PROPOSAL_TOOLS)
 DOMAIN_KEYWORDS["platform"] = ("tenant", "platform", "llm", "model", "token usage", "global role")
 DOMAIN_KEYWORDS["proposal_payment"] = ("initial premium", "payment proof", "payment link", "submit proposal", "proposal review")
+
+# Role operations (role_operations.py): servicing back office, underwriting decisions and desk work.
+from role_operations import DOMAINS as _ROLE_OPERATION_DOMAINS, KEYWORDS as _ROLE_OPERATION_KEYWORDS
+DOMAIN_TOOLS.update({name: set(tools) for name, tools in _ROLE_OPERATION_DOMAINS.items()})
+DOMAIN_KEYWORDS.update(_ROLE_OPERATION_KEYWORDS)

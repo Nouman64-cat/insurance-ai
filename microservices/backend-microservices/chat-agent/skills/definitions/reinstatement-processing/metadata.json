@@ -1,0 +1,54 @@
+{
+  "id": "reinstatement-processing",
+  "purpose": "Work an open reinstatement request through arrears, the signed health declaration, assessment, underwriting decision, terms response, arrears receipt and cover restoration.",
+  "intents": [
+    "process reinstatement",
+    "reinstatement declaration",
+    "good health declaration",
+    "reinstatement decision",
+    "reinstatement terms",
+    "restore cover",
+    "reinstatement payment",
+    "withdraw reinstatement"
+  ],
+  "capabilities": [
+    "progress_reinstatement"
+  ],
+  "roles": [
+    "SuperAdmin",
+    "Admin",
+    "Underwriter"
+  ],
+  "prerequisites": [
+    "Authenticated role and tenant scope",
+    "Live owning-service record for the policy, application or desk item"
+  ],
+  "business_rules": [
+    "Every declaration question must carry the signer's own answer and the declaration must be signed.",
+    "Only underwriting roles record the decision; revised terms need the customer's response.",
+    "Cover is restored only after approval, receipt of arrears and a clean eligibility re-check.",
+    "Explicit user instruction is required for mutations; backend gates remain authoritative."
+  ],
+  "lifecycle_source": "tenant-service/routers/reinstatement.py; servicing_operations.py",
+  "approvals": "role_operations.TOOL_ROLES mirrors the owning router; the shared permission gate and owning-service checks apply.",
+  "recovery": [
+    "Ask for missing details or offer verified choices; never fill a decision, answer or reference in.",
+    "Read the live case before retrying; an unknown mutation outcome is verified, never replayed."
+  ],
+  "verification": "Report only backend-confirmed outcomes; a skipped step is reported as skipped.",
+  "tests": [
+    "test_role_operations.py",
+    "test_skills.py::test_all_skills_validate_and_cover_inventory"
+  ],
+  "steps": [
+    {
+      "id": "read_case",
+      "capability": "progress_reinstatement",
+      "depends_on": []
+    }
+  ],
+  "unsupported": [
+    "Uploading reinstatement evidence files (use the policy workspace)",
+    "Answering declaration questions on the customer's behalf"
+  ]
+}

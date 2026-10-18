@@ -7016,6 +7016,9 @@ import finance_tools  # noqa: E402,F401
 import commission_tools  # noqa: E402,F401
 import profile_risk_tools  # noqa: E402,F401
 import specialist_review_tools  # noqa: E402,F401
+import servicing_operations  # noqa: E402,F401
+import underwriting_operations  # noqa: E402,F401
+import desk_operations  # noqa: E402,F401
 
 
 @handles("search_capabilities")

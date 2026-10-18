@@ -4828,7 +4828,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "finance_tools",
-      "line": 34,
+      "line": 40,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -4872,7 +4872,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "finance_tools",
-      "line": 59,
+      "line": 65,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -4920,7 +4920,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "finance_tools",
-      "line": 67,
+      "line": 73,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -4976,7 +4976,7 @@
     "verification": "Backend result required; registration is not live-service validation.",
     "handler_source": {
       "module": "finance_tools",
-      "line": 88,
+      "line": 94,
       "verification": "implemented handler; execution evidence tracked separately"
     },
     "schema": {
@@ -17602,6 +17602,3229 @@
       "Admin",
       "Agent",
       "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "progress_policy_renewal",
+    "description": "Work an open individual renewal case one stage at a time: status, send the notice, re-evaluate risk,\n    record the underwriter's risk decision, record the customer's acceptance, record a premium already received\n    (manual, with its real ",
+    "domain": "servicing_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "servicing_operations",
+      "line": 92,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "payment_method": {
+          "anyOf": [
+            {
+              "enum": [
+                "Cash",
+                "Cheque",
+                "BankTransfer",
+                "JazzCash",
+                "Easypaisa",
+                "Card"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How the customer actually paid.",
+          "title": "Payment Method"
+        },
+        "payment_reference": {
+          "anyOf": [
+            {
+              "maxLength": 150,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The bank/receipt reference the user read off the real payment. Never invent one.",
+          "title": "Payment Reference"
+        },
+        "payment_confirmed": {
+          "default": false,
+          "description": "True only when the user confirms the funds were actually received.",
+          "title": "Payment Confirmed",
+          "type": "boolean"
+        },
+        "policy_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. POLICY-2026-0001",
+          "title": "Policy Number"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The policyholder's CNIC.",
+          "title": "Cnic"
+        },
+        "policyholder_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policyholder Name"
+        },
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The application (APP-/CASE-) the policy came from.",
+          "title": "Case Number"
+        },
+        "action": {
+          "default": "status",
+          "enum": [
+            "status",
+            "send_notice",
+            "evaluate_risk",
+            "record_risk_decision",
+            "record_acceptance",
+            "record_payment",
+            "reconcile_payment",
+            "complete",
+            "cancel"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "channel": {
+          "anyOf": [
+            {
+              "enum": [
+                "Email",
+                "SMS",
+                "WhatsApp",
+                "Letter"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Channel"
+        },
+        "decision": {
+          "anyOf": [
+            {
+              "enum": [
+                "Approve",
+                "ApproveWithLoading",
+                "Decline"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decision"
+        },
+        "loading_pct": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 500,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Loading Pct"
+        },
+        "accepted": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The customer's answer to the renewal terms, as they gave it.",
+          "title": "Accepted"
+        },
+        "acceptance_method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How the customer answered, e.g. Portal, Branch, Phone.",
+          "title": "Acceptance Method"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The user's own rationale. Never invent it.",
+          "title": "Note"
+        }
+      },
+      "title": "RenewalStepArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "progress_reinstatement",
+    "description": "Work an open reinstatement request one stage at a time: status, recalculate arrears, record the signed\n    health declaration (answers exactly as given), rerun the assessment, record the underwriter's decision, record\n    the customer's res",
+    "domain": "servicing_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "servicing_operations",
+      "line": 194,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "payment_method": {
+          "anyOf": [
+            {
+              "enum": [
+                "Cash",
+                "Cheque",
+                "BankTransfer",
+                "JazzCash",
+                "Easypaisa",
+                "Card"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How the customer actually paid.",
+          "title": "Payment Method"
+        },
+        "payment_reference": {
+          "anyOf": [
+            {
+              "maxLength": 150,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The bank/receipt reference the user read off the real payment. Never invent one.",
+          "title": "Payment Reference"
+        },
+        "payment_confirmed": {
+          "default": false,
+          "description": "True only when the user confirms the funds were actually received.",
+          "title": "Payment Confirmed",
+          "type": "boolean"
+        },
+        "policy_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. POLICY-2026-0001",
+          "title": "Policy Number"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The policyholder's CNIC.",
+          "title": "Cnic"
+        },
+        "policyholder_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policyholder Name"
+        },
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The application (APP-/CASE-) the policy came from.",
+          "title": "Case Number"
+        },
+        "action": {
+          "default": "status",
+          "enum": [
+            "status",
+            "recalculate_arrears",
+            "record_declaration",
+            "rerun_assessment",
+            "record_decision",
+            "record_terms_response",
+            "record_payment",
+            "restore_cover",
+            "withdraw"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "answers": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "boolean"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Declaration question key -> the answer the signer gave.",
+          "title": "Answers"
+        },
+        "answer_details": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Details the signer gave for adverse answers.",
+          "title": "Answer Details"
+        },
+        "signed_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Signed By"
+        },
+        "signature_method": {
+          "anyOf": [
+            {
+              "enum": [
+                "Wet",
+                "ESign",
+                "Portal"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Signature Method"
+        },
+        "signature_confirmed": {
+          "default": false,
+          "description": "True only when the user confirms the declaration is signed.",
+          "title": "Signature Confirmed",
+          "type": "boolean"
+        },
+        "decision": {
+          "anyOf": [
+            {
+              "enum": [
+                "Approve",
+                "ApproveWithTerms",
+                "RequestEvidence",
+                "Decline"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decision"
+        },
+        "loading_pct": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 500,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Loading Pct"
+        },
+        "exclusions": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exclusions"
+        },
+        "evidence_requested": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Labels of the evidence the underwriter asks for.",
+          "title": "Evidence Requested"
+        },
+        "accepted": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The customer's answer to revised terms.",
+          "title": "Accepted"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The user's own rationale. Never invent it.",
+          "title": "Note"
+        }
+      },
+      "title": "ReinstatementStepArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "progress_policy_exit",
+    "description": "Work an open policy exit (surrender, maturity, expiry) one stage at a time: status, re-verify eligibility,\n    decide an extension, waive a document, record consent, calculate the settlement, record the customer's answer,\n    verify the pay",
+    "domain": "servicing_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "servicing_operations",
+      "line": 298,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "$defs": {
+        "Recoverable": {
+          "properties": {
+            "label": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Label",
+              "type": "string"
+            },
+            "amount": {
+              "minimum": 0,
+              "title": "Amount",
+              "type": "number"
+            },
+            "note": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Note"
+            }
+          },
+          "required": [
+            "label",
+            "amount"
+          ],
+          "title": "Recoverable",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "policy_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. POLICY-2026-0001",
+          "title": "Policy Number"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The policyholder's CNIC.",
+          "title": "Cnic"
+        },
+        "policyholder_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policyholder Name"
+        },
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The application (APP-/CASE-) the policy came from.",
+          "title": "Case Number"
+        },
+        "action": {
+          "default": "status",
+          "enum": [
+            "status",
+            "reverify_eligibility",
+            "decide_extension",
+            "waive_document",
+            "record_consent",
+            "calculate_settlement",
+            "record_settlement_response",
+            "verify_payee",
+            "authorize_settlement",
+            "disburse_settlement",
+            "reconcile_settlement",
+            "close",
+            "cancel"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "extension_decision": {
+          "anyOf": [
+            {
+              "enum": [
+                "Declined",
+                "Redirect"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Extension Decision"
+        },
+        "document": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The document to waive, by name.",
+          "title": "Document"
+        },
+        "consent_given_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Consent Given By"
+        },
+        "consent_method": {
+          "anyOf": [
+            {
+              "enum": [
+                "Signed form",
+                "Portal",
+                "Branch (in person)",
+                "Phone (recorded)"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Consent Method"
+        },
+        "consent_confirmed": {
+          "default": false,
+          "description": "True only when the customer accepted every exit declaration.",
+          "title": "Consent Confirmed",
+          "type": "boolean"
+        },
+        "recoverables": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Recoverable"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Deductions the user lists, e.g. an outstanding loan.",
+          "title": "Recoverables"
+        },
+        "accepted": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The customer's answer to the settlement quote.",
+          "title": "Accepted"
+        },
+        "payee_cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Payee Cnic"
+        },
+        "bank_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bank Name"
+        },
+        "account_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Account Title"
+        },
+        "iban": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Iban"
+        },
+        "payee_verified": {
+          "default": false,
+          "description": "True only when the user has checked the payee against evidence.",
+          "title": "Payee Verified",
+          "type": "boolean"
+        },
+        "payout_method": {
+          "anyOf": [
+            {
+              "enum": [
+                "Bank Transfer",
+                "Pay Order",
+                "JazzCash",
+                "Easypaisa"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Payout Method"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The user's own rationale. Never invent it.",
+          "title": "Note"
+        }
+      },
+      "title": "ExitStepArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter",
+      "ClaimsManager",
+      "ClaimsAdjuster"
+    ]
+  },
+  {
+    "capability_id": "record_premium_collection",
+    "description": "Record a premium instalment the customer has ALREADY paid (cash, cheque, transfer) against the schedule,\n    with its real reference. Issues the receipt and revives a grace-period policy once arrears clear. Never charges\n    the customer or",
+    "domain": "servicing_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "servicing_operations",
+      "line": 406,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "payment_method": {
+          "anyOf": [
+            {
+              "enum": [
+                "Cash",
+                "Cheque",
+                "BankTransfer",
+                "JazzCash",
+                "Easypaisa",
+                "Card"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How the customer actually paid.",
+          "title": "Payment Method"
+        },
+        "payment_reference": {
+          "anyOf": [
+            {
+              "maxLength": 150,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The bank/receipt reference the user read off the real payment. Never invent one.",
+          "title": "Payment Reference"
+        },
+        "payment_confirmed": {
+          "default": false,
+          "description": "True only when the user confirms the funds were actually received.",
+          "title": "Payment Confirmed",
+          "type": "boolean"
+        },
+        "policy_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. POLICY-2026-0001",
+          "title": "Policy Number"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The policyholder's CNIC.",
+          "title": "Cnic"
+        },
+        "policyholder_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policyholder Name"
+        },
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The application (APP-/CASE-) the policy came from.",
+          "title": "Case Number"
+        },
+        "installment_no": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which instalment. Omit to be shown the outstanding ones.",
+          "title": "Installment No"
+        }
+      },
+      "title": "CollectPremiumArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "waive_premium_installment",
+    "description": "Waive one outstanding premium instalment with a stated reason. A waived instalment is no longer arrears.",
+    "domain": "servicing_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "servicing_operations",
+      "line": 427,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "policy_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. POLICY-2026-0001",
+          "title": "Policy Number"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The policyholder's CNIC.",
+          "title": "Cnic"
+        },
+        "policyholder_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policyholder Name"
+        },
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The application (APP-/CASE-) the policy came from.",
+          "title": "Case Number"
+        },
+        "installment_no": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which instalment. Omit to be shown the outstanding ones.",
+          "title": "Installment No"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Why it is waived (goodwill, correction). Required.",
+          "title": "Reason"
+        }
+      },
+      "title": "WaiveInstalmentArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "preview_premium_restructure",
+    "description": "Preview changing a policy's billing frequency mid-term: the new instalments and amounts. Saves nothing.",
+    "domain": "servicing_ops",
+    "mutating": false,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "servicing_operations",
+      "line": 448,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "policy_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. POLICY-2026-0001",
+          "title": "Policy Number"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The policyholder's CNIC.",
+          "title": "Cnic"
+        },
+        "policyholder_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policyholder Name"
+        },
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The application (APP-/CASE-) the policy came from.",
+          "title": "Case Number"
+        },
+        "frequency": {
+          "enum": [
+            "Annual",
+            "SemiAnnual",
+            "Quarterly"
+          ],
+          "title": "Frequency",
+          "type": "string"
+        }
+      },
+      "required": [
+        "frequency"
+      ],
+      "title": "RestructureArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Agent",
+      "Underwriter",
+      "CustomerService"
+    ]
+  },
+  {
+    "capability_id": "restructure_premium_plan",
+    "description": "Change a policy's billing frequency mid-term. Paid instalments are kept; the outstanding amount is rebuilt\n    into the new cadence. State the preview first.",
+    "domain": "servicing_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "servicing_operations",
+      "line": 457,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "policy_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. POLICY-2026-0001",
+          "title": "Policy Number"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The policyholder's CNIC.",
+          "title": "Cnic"
+        },
+        "policyholder_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policyholder Name"
+        },
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The application (APP-/CASE-) the policy came from.",
+          "title": "Case Number"
+        },
+        "frequency": {
+          "enum": [
+            "Annual",
+            "SemiAnnual",
+            "Quarterly"
+          ],
+          "title": "Frequency",
+          "type": "string"
+        }
+      },
+      "required": [
+        "frequency"
+      ],
+      "title": "RestructureArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "issue_lapse_warning",
+    "description": "Generate the formal lapse-warning letter for a policy in grace with unpaid arrears, and log it as a final notice.",
+    "domain": "servicing_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "servicing_operations",
+      "line": 468,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "description": "Any one field identifies the issued policy.",
+      "properties": {
+        "policy_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. POLICY-2026-0001",
+          "title": "Policy Number"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The policyholder's CNIC.",
+          "title": "Cnic"
+        },
+        "policyholder_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policyholder Name"
+        },
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The application (APP-/CASE-) the policy came from.",
+          "title": "Case Number"
+        }
+      },
+      "title": "PolicyRef",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "set_premium_autopay",
+    "description": "Turn the policy's standing payment instruction (auto-debit) on or off, as the customer asked.",
+    "domain": "servicing_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "servicing_operations",
+      "line": 486,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "policy_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. POLICY-2026-0001",
+          "title": "Policy Number"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The policyholder's CNIC.",
+          "title": "Cnic"
+        },
+        "policyholder_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policyholder Name"
+        },
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The application (APP-/CASE-) the policy came from.",
+          "title": "Case Number"
+        },
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "title": "AutopayArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "list_upcoming_renewals",
+    "description": "List in-force individual policies expiring within the window (and those in grace), soonest first.",
+    "domain": "servicing_ops",
+    "mutating": false,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "servicing_operations",
+      "line": 500,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "days": {
+          "default": 90,
+          "description": "Look-ahead window in days.",
+          "maximum": 365,
+          "minimum": 1,
+          "title": "Days",
+          "type": "integer"
+        }
+      },
+      "title": "UpcomingRenewalsArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Agent",
+      "Underwriter",
+      "CustomerService",
+      "Viewer"
+    ]
+  },
+  {
+    "capability_id": "get_counter_offer",
+    "description": "Read the counter-offer (revised terms) on an application: type, revised premium, validity and response.",
+    "domain": "underwriting_ops",
+    "mutating": false,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "underwriting_operations",
+      "line": 88,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "description": "Any one field identifies the application.",
+      "properties": {
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Case Number"
+        },
+        "applicant_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Applicant Name"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cnic"
+        }
+      },
+      "title": "CaseRef",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Agent",
+      "Underwriter",
+      "CustomerService"
+    ]
+  },
+  {
+    "capability_id": "make_counter_offer",
+    "description": "Underwriter: offer the applicant revised terms (loading, exclusion, reduced cover or another plan) instead of\n    standard acceptance, with a stated reason. The customer must accept before issuance.",
+    "domain": "underwriting_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "underwriting_operations",
+      "line": 102,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Case Number"
+        },
+        "applicant_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Applicant Name"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cnic"
+        },
+        "offer_type": {
+          "enum": [
+            "Loading",
+            "Exclusion",
+            "ReducedSumAssured",
+            "PlanSubstitution"
+          ],
+          "title": "Offer Type",
+          "type": "string"
+        },
+        "revised_loading_pct": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 500,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revised Loading Pct"
+        },
+        "revised_coverage_amount": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revised Coverage Amount"
+        },
+        "revised_product_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revised Product Name"
+        },
+        "exclusions": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exclusions"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The underwriter's rationale. Required.",
+          "title": "Reason"
+        },
+        "valid_days": {
+          "anyOf": [
+            {
+              "maximum": 90,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid Days"
+        },
+        "replace_existing": {
+          "default": false,
+          "description": "True only when the user wants a pending offer superseded.",
+          "title": "Replace Existing",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "offer_type"
+      ],
+      "title": "CounterOfferArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "record_counter_offer_response",
+    "description": "Record the customer's own acceptance or refusal of a pending counter-offer. Declining ends the application\n    as Not Taken Up.",
+    "domain": "underwriting_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "underwriting_operations",
+      "line": 128,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Case Number"
+        },
+        "applicant_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Applicant Name"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cnic"
+        },
+        "accepted": {
+          "title": "Accepted",
+          "type": "boolean"
+        },
+        "customer_confirmed": {
+          "default": false,
+          "description": "True only when the customer gave this answer themselves.",
+          "title": "Customer Confirmed",
+          "type": "boolean"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        }
+      },
+      "required": [
+        "accepted"
+      ],
+      "title": "CounterOfferResponseArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Agent",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "hold_underwriting_case",
+    "description": "Put an application's underwriting on hold where it stands. Every step is frozen until it is released.",
+    "domain": "underwriting_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "underwriting_operations",
+      "line": 148,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Case Number"
+        },
+        "applicant_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Applicant Name"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cnic"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Why underwriting is paused. Required.",
+          "title": "Reason"
+        }
+      },
+      "title": "HoldArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "release_underwriting_case",
+    "description": "Release a held application; underwriting resumes from the same step.",
+    "domain": "underwriting_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "underwriting_operations",
+      "line": 162,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Case Number"
+        },
+        "applicant_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Applicant Name"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cnic"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        }
+      },
+      "title": "ReleaseArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "waive_case_requirement",
+    "description": "Underwriter: waive one underwriting requirement on an application, with a reason recorded on the case.",
+    "domain": "underwriting_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "underwriting_operations",
+      "line": 173,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Case Number"
+        },
+        "applicant_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Applicant Name"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cnic"
+        },
+        "requirement": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The requirement code or category to waive.",
+          "title": "Requirement"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Why it is waived. Required.",
+          "title": "Reason"
+        }
+      },
+      "title": "CaseRequirementArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "change_case_plan",
+    "description": "Underwriter: move an application's proposal to another plan, cover or term. Previews the impact unless\n    apply=true.",
+    "domain": "underwriting_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "underwriting_operations",
+      "line": 196,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Case Number"
+        },
+        "applicant_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Applicant Name"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cnic"
+        },
+        "plan_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The plan to move the proposal to.",
+          "title": "Plan Name"
+        },
+        "coverage_amount": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Coverage Amount"
+        },
+        "term_years": {
+          "anyOf": [
+            {
+              "maximum": 60,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Term Years"
+        },
+        "dependent_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dependent Name"
+        },
+        "dependent_dob": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dependent Dob"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "apply": {
+          "default": false,
+          "description": "False previews the impact; True applies it on the user's instruction.",
+          "title": "Apply",
+          "type": "boolean"
+        }
+      },
+      "title": "ChangePlanArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "resolve_issuance_requirement",
+    "description": "Underwriter: verify a submitted pre-issuance requirement after reviewing it, or waive it with a reason.",
+    "domain": "underwriting_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "underwriting_operations",
+      "line": 232,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Case Number"
+        },
+        "applicant_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Applicant Name"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cnic"
+        },
+        "requirement": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The pre-issuance requirement, by name.",
+          "title": "Requirement"
+        },
+        "action": {
+          "enum": [
+            "verify",
+            "waive"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Required to waive.",
+          "title": "Note"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "IssuanceRequirementArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "waive_agent_confidential_report",
+    "description": "Underwriter: waive the agent's confidential report gate when it will not arrive, with a recorded reason.",
+    "domain": "underwriting_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "underwriting_operations",
+      "line": 264,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Case Number"
+        },
+        "applicant_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Applicant Name"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cnic"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Why it is waived. Required.",
+          "title": "Reason"
+        }
+      },
+      "title": "WaiverArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "waive_medical_examination",
+    "description": "Underwriter or Medical Underwriter: waive the medical examination on an application, with a recorded reason.",
+    "domain": "underwriting_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "underwriting_operations",
+      "line": 269,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Case Number"
+        },
+        "applicant_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Applicant Name"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cnic"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Why it is waived. Required.",
+          "title": "Reason"
+        }
+      },
+      "title": "WaiverArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter",
+      "Medical Underwriter"
+    ]
+  },
+  {
+    "capability_id": "list_claim_underwriting_referrals",
+    "description": "Claims the claims department referred back to underwriting for a re-underwriting verdict, oldest first.",
+    "domain": "underwriting_ops",
+    "mutating": false,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "underwriting_operations",
+      "line": 274,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {},
+      "title": "EmptyArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter",
+      "Medical Underwriter",
+      "Financial Underwriter"
+    ]
+  },
+  {
+    "capability_id": "get_policy_reinsurance",
+    "description": "Read an application's reinsurance position: retention, treaty and facultative share, any live referral,\n    expected terms and the reinsurer panel.",
+    "domain": "underwriting_ops",
+    "mutating": false,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "underwriting_operations",
+      "line": 305,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "description": "Any one field identifies the application.",
+      "properties": {
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Case Number"
+        },
+        "applicant_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Applicant Name"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cnic"
+        }
+      },
+      "title": "CaseRef",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "refer_policy_to_reinsurer",
+    "description": "Underwriter: refer an application to a panel reinsurer for facultative terms.",
+    "domain": "underwriting_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "underwriting_operations",
+      "line": 316,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Case Number"
+        },
+        "applicant_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Applicant Name"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cnic"
+        },
+        "reinsurer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The panel reinsurer, by code or name.",
+          "title": "Reinsurer"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        }
+      },
+      "title": "ReinsuranceReferArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "record_reinsurer_response",
+    "description": "Underwriter: record the reinsurer's actual reply to a referral, exactly as received.",
+    "domain": "underwriting_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "underwriting_operations",
+      "line": 335,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Case Number"
+        },
+        "applicant_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Applicant Name"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cnic"
+        },
+        "decision": {
+          "enum": [
+            "Accept",
+            "AcceptWithLoading",
+            "AcceptWithExclusion",
+            "Postpone",
+            "Decline"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "reinsurer_reference": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reinsurer Reference"
+        },
+        "extra_mortality_pct": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Extra Mortality Pct"
+        },
+        "extra_premium_per_mille": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Extra Premium Per Mille"
+        },
+        "exclusions": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exclusions"
+        },
+        "conditions": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Conditions"
+        }
+      },
+      "required": [
+        "decision"
+      ],
+      "title": "ReinsurerResponseArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "apply_reinsurer_terms",
+    "description": "Underwriter: apply the reinsurer's recorded terms to the application (may raise a counter-offer).",
+    "domain": "underwriting_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "underwriting_operations",
+      "line": 352,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Case Number"
+        },
+        "applicant_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Applicant Name"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cnic"
+        },
+        "valid_days": {
+          "anyOf": [
+            {
+              "maximum": 90,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid Days"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        }
+      },
+      "title": "ApplyReinsurerTermsArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "withdraw_reinsurance_referral",
+    "description": "Underwriter: withdraw an open reinsurance referral.",
+    "domain": "underwriting_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "underwriting_operations",
+      "line": 362,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "case_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Case Number"
+        },
+        "applicant_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Applicant Name"
+        },
+        "cnic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cnic"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "title": "WithdrawReferralArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "list_walk_in_leads",
+    "description": "List walk-in leads routed from the branch/portal: who is assigned, acknowledgement due, overdue and escalated.\n    An agent sees only their own.",
+    "domain": "desk_ops",
+    "mutating": false,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "desk_operations",
+      "line": 47,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "queue": {
+          "default": "pending",
+          "enum": [
+            "all",
+            "pending",
+            "escalated",
+            "unassigned",
+            "mine"
+          ],
+          "title": "Queue",
+          "type": "string"
+        }
+      },
+      "title": "WalkInQueueArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Agent",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "acknowledge_walk_in_lead",
+    "description": "Acknowledge a walk-in lead assigned to you, stopping its escalation clock.",
+    "domain": "desk_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "desk_operations",
+      "line": 71,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "lead_reference": {
+          "description": "The walk-in lead's reference, e.g. WL-2026-0007, or the customer's name.",
+          "title": "Lead Reference",
+          "type": "string"
+        }
+      },
+      "required": [
+        "lead_reference"
+      ],
+      "title": "WalkInLeadArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Agent",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "reassign_walk_in_lead",
+    "description": "Manager: hand a walk-in lead to another available agent; the new agent is notified.",
+    "domain": "desk_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "desk_operations",
+      "line": 85,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "lead_reference": {
+          "description": "The walk-in lead's reference, e.g. WL-2026-0007, or the customer's name.",
+          "title": "Lead Reference",
+          "type": "string"
+        },
+        "agent_name": {
+          "description": "The available agent to hand the lead to.",
+          "title": "Agent Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "lead_reference",
+        "agent_name"
+      ],
+      "title": "ReassignLeadArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "list_my_acr_requests",
+    "description": "The agent confidential reports you have been asked to file, newest first.",
+    "domain": "desk_ops",
+    "mutating": false,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "desk_operations",
+      "line": 108,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "include_submitted": {
+          "default": false,
+          "title": "Include Submitted",
+          "type": "boolean"
+        }
+      },
+      "title": "ACRRequestsArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "Agent",
+      "Underwriter"
+    ]
+  },
+  {
+    "capability_id": "get_claim_authority_limits",
+    "description": "Read the delegated claims authority matrix: how much an adjuster and a manager may approve and authorise.",
+    "domain": "desk_ops",
+    "mutating": false,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "desk_operations",
+      "line": 132,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {},
+      "title": "EmptyArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin",
+      "ClaimsManager",
+      "ClaimsAdjuster"
+    ]
+  },
+  {
+    "capability_id": "set_claim_authority_limit",
+    "description": "Admin: change a claims role's approval or settlement-authorisation limit. Unchanged limits are kept.",
+    "domain": "desk_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "desk_operations",
+      "line": 138,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "role_name": {
+          "enum": [
+            "ClaimsAdjuster",
+            "ClaimsManager"
+          ],
+          "title": "Role Name",
+          "type": "string"
+        },
+        "approve_limit": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "const": "unlimited",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "PKR, or 'unlimited'. Omit to keep the current limit.",
+          "title": "Approve Limit"
+        },
+        "authorize_limit": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "const": "unlimited",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "PKR, or 'unlimited'. Omit to keep the current limit.",
+          "title": "Authorize Limit"
+        }
+      },
+      "required": [
+        "role_name"
+      ],
+      "title": "ClaimAuthorityArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin"
+    ]
+  },
+  {
+    "capability_id": "list_branches",
+    "description": "List the organisation's branches and offices.",
+    "domain": "desk_ops",
+    "mutating": false,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "desk_operations",
+      "line": 162,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {},
+      "title": "EmptyArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin",
+      "Admin"
+    ]
+  },
+  {
+    "capability_id": "manage_branch",
+    "description": "SuperAdmin: create a branch or update an existing branch's details. Deleting a branch stays in the console.",
+    "domain": "desk_ops",
+    "mutating": true,
+    "execution": "executor",
+    "verification": "Backend result required; registration is not live-service validation.",
+    "handler_source": {
+      "module": "desk_operations",
+      "line": 176,
+      "verification": "implemented handler; execution evidence tracked separately"
+    },
+    "schema": {
+      "properties": {
+        "action": {
+          "enum": [
+            "create",
+            "update"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "branch_code": {
+          "description": "Existing code to update, or the new branch's code.",
+          "maxLength": 50,
+          "minLength": 1,
+          "title": "Branch Code",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "city": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "City"
+        },
+        "branch_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "HEAD_OFFICE",
+                "REGIONAL_OFFICE",
+                "BRANCH",
+                "LIAISON_OFFICE"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Branch Type"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Region"
+        },
+        "address": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Address"
+        },
+        "contact_person": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contact Person"
+        },
+        "contact_phone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contact Phone"
+        },
+        "contact_email": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contact Email"
+        }
+      },
+      "required": [
+        "action",
+        "branch_code"
+      ],
+      "title": "BranchArgs",
+      "type": "object"
+    },
+    "roles": [
+      "SuperAdmin"
     ]
   },
   {
