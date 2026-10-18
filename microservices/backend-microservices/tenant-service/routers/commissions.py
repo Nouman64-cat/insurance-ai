@@ -13,9 +13,10 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 from routers.auth import _get_current_user, _role_name, oauth2_scheme
-from services.agent_commission import AGENT_COMMISSION_RULE_SET_CODE
-from services.commission_engine import accrue_receipt, automatic_assignment
-from shared.models.core import AcquisitionSource, Customer, User, InsurancePlan, Policy, PremiumReceipt
+from services.agent_commission import AGENT_COMMISSION_RULE_SET_CODE, commission_rate
+from services.commission_engine import accrue_receipt, automatic_assignment, payable_from, resolve_allocation
+from shared.commissions.calculator import money
+from shared.models.core import AcquisitionSource, Customer, User, InsurancePlan, Policy, PremiumReceipt, PremiumSchedule
 from shared.models.commission import (CommissionAccrual, CommissionAgreement, CommissionAssignment,
     CommissionEarning, CommissionPlanRule, CommissionDisbursement, CommissionDisbursementItem)
 
@@ -262,6 +263,81 @@ async def assign(tenant_id: UUID, policy_id: UUID, body: AssignmentsIn, user=Dep
     session.add_all(rows)
     await session.commit()
     return rows
+
+
+class RatePreviewIn(BaseModel):
+    """A hypothetical premium for an individual policy. Fields mirror what RS-COM-002 rules test."""
+    policy_year: int = Field(1, ge=1, le=100)
+    installment_number: int = Field(1, ge=1, le=1200)
+    premium_amount: Decimal = Field(Decimal(0), ge=0, max_digits=18, decimal_places=2)
+    insurance_type: str | None = Field(None, max_length=50)
+    product_name: str | None = Field(None, max_length=255)
+    source_type: str = Field('AGENT', max_length=50)
+    channel_code: str | None = Field(None, max_length=100)
+    source_code: str | None = Field(None, max_length=50)
+
+
+def decision_out(decision, base):
+    rate = decision['rate']
+    return {'rule_set_code': AGENT_COMMISSION_RULE_SET_CODE, 'rule_code': decision['rule_code'],
+            'rule_version': decision['rule_version'], 'reason': decision['reason'], 'recurring': decision['recurring'],
+            'withholding_tax_pct': decision['withholding_tax_pct'], 'rate_pct': None if rate is None else f'{rate.normalize():f}',
+            'payable': rate is not None,
+            'gross_amount': None if rate is None else str(money(Decimal(base) * rate / 100))}
+
+
+@router.post('/rate-preview')
+async def rate_preview(tenant_id: UUID, body: RatePreviewIn, identity=Depends(caller), session: AsyncSession = Depends(get_session)):
+    """What RS-COM-002 pays on a hypothetical premium. Read-only: nothing is committed."""
+    context = {'category': 'Individual', 'insurance_type': body.insurance_type, 'product_name': body.product_name,
+               'coverage_amount': None, 'term_years': None, 'policy_year': body.policy_year,
+               'premium_type': 'FIRST_YEAR' if body.policy_year == 1 else 'RENEWAL',
+               'installment_number': body.installment_number, 'is_first_premium': body.installment_number == 1,
+               'premium_amount': float(body.premium_amount), 'source_type': body.source_type,
+               'source_code': body.source_code, 'channel_code': body.channel_code or body.source_type}
+    try:
+        decision = await commission_rate(session, tenant_id, context)
+    except ValueError as exc:
+        return {'matched': False, 'reason': str(exc), 'context': context}
+    return {'matched': True, **decision_out(decision, body.premium_amount), 'context': context}
+
+
+@router.get('/policies/{policy_id}/preview')
+async def policy_preview(tenant_id: UUID, policy_id: UUID, schedule_id: UUID | None = None,
+                         installment: int | None = Query(None, ge=1, le=1200),
+                         amount: Decimal | None = Query(None, ge=0, max_digits=18, decimal_places=2),
+                         user=Depends(admin), session: AsyncSession = Depends(get_session)):
+    """What a premium on this policy would post, using the same path as receipt posting. Writes nothing.
+    Defaults to the earliest unpaid installment (the first one when all are paid) and its amount due."""
+    policy = (await session.exec(select(Policy).where(Policy.id == policy_id, Policy.tenant_id == tenant_id))).first()
+    if not policy:
+        raise HTTPException(404, 'Policy not found')
+    schedules = list((await session.exec(select(PremiumSchedule).where(PremiumSchedule.policy_id == policy.id).order_by(
+        PremiumSchedule.due_date, PremiumSchedule.created_at))).all())
+    if schedule_id or installment:
+        schedule = next((x for x in schedules if x.id == schedule_id), None) if schedule_id else \
+            (schedules[installment - 1] if installment <= len(schedules) else None)
+        if not schedule:
+            raise HTTPException(404, 'Installment not found on this policy')
+    else:
+        schedule = next((x for x in schedules if x.amount_paid < x.amount_due), schedules[0] if schedules else None)
+    head = {'policy_id': policy.id, 'policy_number': policy.policy_number, 'product_name': policy.product_name}
+    if not schedule:
+        return {**head, 'ready': False, 'reason': 'The policy has no premium installments yet'}
+    base = money(amount if amount is not None else schedule.amount_due)
+    head.update(schedule_id=schedule.id, due_date=schedule.due_date, basis_amount=str(base))
+    try:
+        year, installment, automatic, _, resolved, amounts = await resolve_allocation(session, policy, schedule, base)
+    except ValueError as exc:
+        return {**head, 'ready': False, 'reason': str(exc)}
+    today = date.today()
+    return {**head, 'ready': True, 'policy_year': year, 'installment_number': installment,
+            'is_first_premium': installment == 1, 'allocation_method': 'AUTO_AGENT' if automatic else 'POLICY_ASSIGNMENT',
+            'producers': [{'source_id': source.id, 'payee_name': source.name, 'payee_code': source.code,
+                           'split_pct': str(assignment.split_pct), **decision_out(decision, base),
+                           'gross_amount': str(amounts[source.id]) if decision['rate'] is not None else None,
+                           'disburse_date_if_collected_today': payable_from(source, today) if decision['rate'] is not None else None}
+                          for assignment, source, decision, _ in resolved]}
 
 
 def scoped_earnings(tenant_id, identity, source_id=None, date_from=None, date_to=None):

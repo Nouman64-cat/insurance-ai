@@ -19,7 +19,7 @@ The pilot keeps one conversation/checkpoint and the exact authenticated executio
 - Explicit commission, agent earnings, rate-card and commission-ledger requests route to the specialist, including Urdu commission keywords.
 - Financial follow-ups and selection answers keep commission context. New customer, underwriting and claim actions route back to the main assistant. Mixed requests containing an out-of-domain mutation stay with the main assistant.
 - Routing is deterministic and conservative. It does not add a router LLM round trip. This is a bounded first-domain pilot, not a general semantic multi-agent supervisor.
-- The specialist can bind at most **20 tools**, filtered further by user role/platform. An Admin's previous isolated commission-domain scope bound **70 tools** in the inspected registry. Mixed main-assistant turns can bind a different number.
+- The specialist can bind at most **30 tools** (expanded on 19 October for live rule edits, previews and payout batches), filtered further by user role/platform. An Admin's previous isolated commission-domain scope bound **70 tools** in the inspected registry. Mixed main-assistant turns can bind a different number.
 - Onboarding, underwriting, issuance and claim mutations are excluded. Out-of-scope or unauthorized tool calls are rejected before they enter the shared executor, even if the model invents one.
 - Every permitted call still passes through the existing permission gate and the domain API's authorization, maker–checker, idempotency and transaction checks. No financial approval is delegated to model judgment.
 - Provider failures do not silently retry through a broader tool scope. Provider fallback and existing bounded retry/empty-response handling are retained.

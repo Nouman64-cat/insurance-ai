@@ -1737,36 +1737,46 @@ def list_commission_payees(**kwargs) -> str:
 
 class RateCardArgs(BaseModel):
     segment: Optional[Literal["individual", "group", "family"]] = Field(
-        default=None, description="Defaults to individual."
+        default=None, description="Defaults to individual. Only individual policies earn agent commission today."
     )
-    policy_year: Optional[int] = Field(default=None, description="1 = first year. Defaults to 1.")
-    premium_type: Optional[Literal["FIRST_YEAR", "RENEWAL", "SINGLE_PREMIUM"]] = None
+    policy_year: Optional[int] = Field(default=None, ge=1, le=100, description="1 = first year. Defaults to 1.")
+    premium_number: Optional[int] = Field(
+        default=None, ge=1, le=1200, description="Which premium: 1 = first after issuance, 2+ = later. Defaults to 1 in year 1 and 2 in later years.")
+    premium_amount: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False, description="Premium in PKR, to show the commission amount.")
+    insurance_type: Optional[str] = Field(default=None, description="e.g. TERM_LIFE, if the rules differ by product type.")
+    product_name: Optional[str] = None
+    channel: Optional[str] = Field(default=None, description="Producer channel, e.g. AGENT, BROKER, BANCASSURANCE. Defaults to AGENT.")
 
 
 @tool(args_schema=RateCardArgs)
 def get_commission_rate_card(**kwargs) -> str:
-    """Look up the applicable statutory commission rate from the rule engine
-    (SECP Insurance Rules 2017 rate card). Use for "what commission does a
-    first-year individual policy pay?"."""
+    """What commission an agent earns on a premium, from the live Agent Commission rules
+    (RS-COM-002) in the rule engine: the rate, whether later premiums also earn (recurring),
+    and the amount for a given premium. Use for "what commission does an agent get on
+    the first premium?", "is commission recurring?", "what's paid in year 2?"."""
     return "{}"
 
 
-class CalculateCommissionArgs(BaseModel):
-    policy_number: Optional[str] = None
+class PolicyClaimLookupArgs(BaseModel):
+    policy_number: Optional[str] = Field(default=None, description="e.g. PL-2026-0001.")
+    policyholder_name: Optional[str] = None
     cnic: Optional[str] = None
-    applicant_name: Optional[str] = None
+
+
+
+class CalculateCommissionArgs(PolicyClaimLookupArgs):
     collected_premium: Optional[float] = Field(
-        default=None, description="Premium collected. Defaults to the policy's own premium."
-    )
-    policy_year: Optional[int] = Field(default=None, description="Defaults to 1.")
+        default=None, ge=0, allow_inf_nan=False, description="Premium to calculate on. Defaults to the installment's amount due.")
+    premium_number: Optional[int] = Field(
+        default=None, ge=1, le=1200, description="Which installment (1 = first premium). Defaults to the next unpaid one.")
 
 
 @tool(args_schema=CalculateCommissionArgs)
 def calculate_commission(**kwargs) -> str:
-    """Compute the full commission waterfall for one policy — the producer's
-    commission, every hierarchy override above them, channel partner and
-    referral fees, and tax withholding. Use for "what does this policy pay
-    out?", "break down the commission on Ahmed's policy"."""
+    """Preview what a premium on one policy would pay its producers: who earns, the
+    rule and rate applied, the amount, and when it becomes payable. Runs the same
+    calculation as posting, without writing anything. Use for "what does this policy
+    pay the agent?", "how much commission on Ahmed's next premium?"."""
     return "{}"
 
 
@@ -1803,95 +1813,147 @@ def get_commission_summary() -> str:
 
 
 class CreatePayoutRunArgs(BaseModel):
-    period: Optional[str] = Field(default=None, description="YYYY-MM. Defaults to the current month.")
-    channel: Optional[str] = Field(default=None, description="Restrict to one channel. Omit for all.")
+    payee_name: Optional[str] = Field(default=None, description="Restrict to one producer (name or code). Omit for all.")
+    period: Optional[str] = Field(default=None, description="YYYY-MM: only earnings posted in that month. Omit for all.")
 
 
 @tool(args_schema=CreatePayoutRunArgs)
 def create_payout_run(**kwargs) -> str:
-    """Assemble every due commission tranche for a period into a payout run,
-    ready for approval. This is the MAKER half of maker-checker — it does not
-    release any money."""
+    """Put every commission earning that is payable now (past its payout date, policy in
+    force and out of free-look) into a disbursement batch and submit it for approval.
+    The MAKER half of maker-checker: a different administrator must approve, and payment
+    is recorded separately after it is actually made. Moves no money."""
     return "{}"
 
 
 class ApprovePayoutRunArgs(BaseModel):
-    run_id: str = Field(description="The payout run to approve.")
+    run_id: str = Field(description="The disbursement batch to approve (its ID or first 8 characters).")
 
 
 @tool(args_schema=ApprovePayoutRunArgs)
 def approve_payout_run(**kwargs) -> str:
-    """Approve a payout run, releasing its tranches for disbursement. This is
-    the CHECKER half of maker-checker and moves real money — always state the
-    run's period, payee count and net total before calling it."""
+    """Approve a submitted commission disbursement batch — the CHECKER half of maker-checker;
+    the batch creator cannot approve their own. State the batch's earnings count and gross
+    total before calling it. Approval does not pay: payment is recorded in the portal after
+    the external transfer completes."""
     return "{}"
 
 
-# ── Commission Types & Rate Card Rules ─────────────────────────────────────
+class ListPayoutRunsArgs(BaseModel):
+    status: Optional[Literal["DRAFT", "SUBMITTED", "APPROVED", "PAID", "REJECTED", "CANCELLED"]] = None
+
+
+@tool(args_schema=ListPayoutRunsArgs)
+def list_payout_runs(**kwargs) -> str:
+    """List commission disbursement batches with status, gross total and payment reference."""
+    return "{}"
+
+
+class PayableCommissionsArgs(BaseModel):
+    payee_name: Optional[str] = Field(default=None, description="Restrict to one producer (name or code).")
+
+
+@tool(args_schema=PayableCommissionsArgs)
+def list_payable_commissions(**kwargs) -> str:
+    """Commission earnings not yet in a disbursement batch: which are payable now and which
+    are held, with each one's payout date and hold reason (e.g. payable from 15 Nov,
+    free-look). Use for "what commission is due?", "when is Bilal's commission paid?"."""
+    return "{}"
+
+
+# ── Agent commission rules (rule set RS-COM-002 in the rule engine) ─────────
 
 class ListCommissionRulesArgs(BaseModel):
-    channel: Optional[str] = Field(default=None, description="DIRECT_AGENCY, BANCASSURANCE, BROKER, CORPORATE_AGENT, DIGITAL_DIRECT or REFERRAL.")
-    segment: Optional[str] = Field(default=None, description="individual, group, family.")
-    payee_type: Optional[str] = Field(default=None, description="AGENT, SALES_MANAGER, BRANCH_MANAGER, AGENCY, BROKER, BANK_PARTNER, BANK_SALES_OFFICER, REFERRAL_PARTNER.")
-    search: Optional[str] = Field(default=None, description="Search term for rule ID, name or description.")
+    search: Optional[str] = Field(default=None, description="Filter by rule code or name.")
 
 
 @tool(args_schema=ListCommissionRulesArgs)
 def list_commission_rules(**kwargs) -> str:
-    """List commission rate card rules — channel rates, policy year bands, SECP statutory caps and payee roles."""
+    """List the Agent Commission rules (RS-COM-002): each rule's conditions, commission %
+    on the first premium, whether it recurs on later premiums (rate and years), withholding
+    tax, and whether a draft with unpublished changes exists."""
     return "{}"
 
 
+_COMMISSION_CONDITIONS = ('JSON list of conditions, e.g. [{"field": "channel_code", "operator": "eq", "value": "BROKER"}]. '
+    "Fields: category, insurance_type, product_name, policy_year, premium_type (FIRST_YEAR/RENEWAL), installment_number, "
+    "is_first_premium, premium_amount, coverage_amount, term_years, source_type, source_code, channel_code. "
+    "Operators: eq, neq, gt, gte, lt, lte, between, in, contains.")
+
+
 class CreateCommissionRuleArgs(BaseModel):
-    id: Optional[str] = Field(default=None, description="Unique rule ID, e.g. COM-AG-IND-Y1.")
-    channel: str = Field(description="Distribution channel code, e.g. DIRECT_AGENCY.")
-    target_role: str = Field(description="Target payee role, e.g. AGENT, SALES_MANAGER.")
-    policy_segment: str = Field(description="Policy segment: individual, group, family.")
-    premium_type: str = Field(description="FIRST_YEAR, RENEWAL, SINGLE_PREMIUM.")
-    policy_year: int = Field(default=1, description="Policy year band (1 = 1st year).")
-    commission_rate: float = Field(description="Commission rate percentage, e.g. 45.0 for 45%.")
-    description: Optional[str] = Field(default=None, description="Rule description.")
-    secp_ref: Optional[str] = Field(default=None, description="SECP circular reference.")
-    ref_status: Optional[str] = Field(default="STATUTORY", description="STATUTORY or CONTRACTUAL.")
+    rule_code: str = Field(description="Unique code, e.g. COM-AGT-BROKER.")
+    name: str = Field(description="Plain name, e.g. 'Broker policies'.")
+    commission_pct: float = Field(ge=0, le=100, description="% of the first premium after issuance, e.g. 25.")
+    commission_recurring: bool = Field(default=False, description="Whether later premiums also earn.")
+    recurring_commission_pct: Optional[float] = Field(default=None, ge=0, le=100, description="% on later premiums. Defaults to commission_pct.")
+    recurring_years: Optional[int] = Field(default=None, ge=1, description="Last policy year that earns. Omit for no limit.")
+    withholding_tax_pct: Optional[float] = Field(default=None, ge=0, le=100)
+    conditions_json: Optional[str] = Field(default=None, description=_COMMISSION_CONDITIONS + " Omit to match every individual premium.")
+    priority: Optional[int] = Field(default=None, description="Lower runs first; the first matching rule decides. Defaults to 50.")
+    reason: Optional[str] = Field(default=None, description="Why — shown wherever the rule applies.")
 
 
 @tool(args_schema=CreateCommissionRuleArgs)
 def create_commission_rule(**kwargs) -> str:
-    """Create a new commission type / rate card rule in the commission engine. Use this tool whenever the user asks to add or create a new commission type, commission rate card, or commission rule."""
+    """Add an agent commission rule to a DRAFT of RS-COM-002 (opened automatically). Not live
+    until deploy_commission_rules. Use for "add a commission rule", "brokers get 20%"."""
     return "{}"
 
 
-
 class UpdateCommissionRuleArgs(BaseModel):
-    rule_id: str = Field(description="The ID of the commission rule to update, e.g. COM-AG-IND-Y1.")
-    commission_rate: Optional[float] = Field(default=None, description="Updated commission rate percentage.")
-    description: Optional[str] = Field(default=None, description="Updated description.")
-    is_active: Optional[bool] = Field(default=None, description="Set active status.")
+    rule_code: str = Field(description="The commission rule, e.g. COM-AGT-IND.")
+    commission_pct: Optional[float] = Field(default=None, ge=0, le=100, description="New % on the first premium.")
+    commission_recurring: Optional[bool] = Field(default=None, description="True: later premiums also earn. False: first premium only.")
+    recurring_commission_pct: Optional[float] = Field(default=None, ge=0, le=100, description="New % on later premiums.")
+    recurring_years: Optional[int] = Field(default=None, ge=0, description="Last policy year that earns; 0 removes the limit.")
+    withholding_tax_pct: Optional[float] = Field(default=None, ge=0, le=100)
+    conditions_json: Optional[str] = Field(default=None, description="Replaces all conditions. " + _COMMISSION_CONDITIONS)
+    priority: Optional[int] = None
+    name: Optional[str] = None
+    reason: Optional[str] = None
 
 
 @tool(args_schema=UpdateCommissionRuleArgs)
 def update_commission_rule(**kwargs) -> str:
-    """Update an existing commission rate card rule in the engine."""
+    """Change an agent commission rule — rate, recurring on/off, recurring rate or years,
+    conditions — in a DRAFT of RS-COM-002 (opened automatically, copying the live rules).
+    Other fields are kept. Not live until deploy_commission_rules."""
     return "{}"
 
 
-class DeleteCommissionRuleArgs(BaseModel):
-    rule_id: str = Field(description="The ID of the commission rule to delete.")
+class CommissionRuleCodeArgs(BaseModel):
+    rule_code: str = Field(description="The commission rule, e.g. COM-AGT-IND.")
 
 
-@tool(args_schema=DeleteCommissionRuleArgs)
+@tool(args_schema=CommissionRuleCodeArgs)
 def delete_commission_rule(**kwargs) -> str:
-    """Delete a commission rate card rule from the engine."""
+    """Remove an agent commission rule from the RS-COM-002 draft. Not live until deployed."""
     return "{}"
 
 
-class ToggleCommissionRuleActiveArgs(BaseModel):
-    rule_id: str = Field(description="The ID of the commission rule to toggle active/inactive.")
-
-
-@tool(args_schema=ToggleCommissionRuleActiveArgs)
+@tool(args_schema=CommissionRuleCodeArgs)
 def toggle_commission_rule_active(**kwargs) -> str:
-    """Toggle the active status of a commission rate card rule."""
+    """Switch an agent commission rule on or off in the RS-COM-002 draft. Not live until deployed."""
+    return "{}"
+
+
+@tool(args_schema=EmptyArgs)
+def deploy_commission_rules() -> str:
+    """Make the RS-COM-002 draft live. Every premium posted afterwards uses the new rates;
+    already-posted earnings never change. Summarise the draft's rules before calling it."""
+    return "{}"
+
+
+class SetProducerStartDateArgs(BaseModel):
+    payee_name: str = Field(description="The agent or producer (name or code).")
+    start_date: str = Field(description="YYYY-MM-DD the producer started. Its day of month is their payout day.")
+
+
+@tool(args_schema=SetProducerStartDateArgs)
+def set_producer_start_date(**kwargs) -> str:
+    """Set an agent's (acquisition source's) start date. Commission earned in a month is
+    payable on that day of the following month. Applies to earnings posted from now on."""
     return "{}"
 
 
@@ -2552,10 +2614,6 @@ def get_workflow_timeline(**kwargs) -> str:
 ClaimCategory = Literal["Death", "AccidentalDeath", "Disability", "Hospitalization"]
 
 
-class PolicyClaimLookupArgs(BaseModel):
-    policy_number: Optional[str] = Field(default=None, description="e.g. PL-2026-0001.")
-    policyholder_name: Optional[str] = None
-    cnic: Optional[str] = None
 
 
 @tool(args_schema=PolicyClaimLookupArgs)
@@ -3253,11 +3311,15 @@ ALL_TOOLS = [
     get_commission_summary,
     create_payout_run,
     approve_payout_run,
+    list_payout_runs,
+    list_payable_commissions,
     list_commission_rules,
     create_commission_rule,
     update_commission_rule,
     delete_commission_rule,
     toggle_commission_rule_active,
+    deploy_commission_rules,
+    set_producer_start_date,
     list_incentive_schemes,
     create_incentive_scheme,
     update_incentive_scheme,

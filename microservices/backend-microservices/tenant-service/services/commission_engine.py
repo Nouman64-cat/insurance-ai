@@ -39,6 +39,53 @@ async def automatic_assignment(session, policy, configuration=None):
         source_id=(preferred or sources)[0].id, split_pct=100, created_by=agent.id)
 
 
+async def resolve_allocation(session, policy, schedule, base_amount):
+    """Who earns what on one premium of `base_amount` against `schedule`.
+
+    Returns (policy_year, installment, automatic, assignments, resolved, amounts) where
+    resolved is [(assignment, source, decision, context)]. Raises ValueError on missing
+    configuration. Writes nothing: posting and previews share this path.
+    """
+    if policy.master_policy_id or policy.family_policy_id:
+        raise ValueError("Group and family allocation is not enabled; no member-level commission posted")
+    if str(getattr(policy.status, 'value', policy.status)) not in {
+        'Issued', 'Active', 'GracePeriod', 'Lapsed', 'Cancelled', 'Matured', 'Surrendered', 'Expired',
+    }:
+        raise ValueError("Commission requires an issued policy; a quote or pending payment does not earn commission")
+    if not policy.effective_date:
+        raise ValueError("Receipt needs a policy inception date and installment")
+    if not schedule or schedule.policy_id != policy.id:
+        raise ValueError("Receipt installment does not belong to this policy")
+    year = policy_year(policy.effective_date, schedule.due_date)
+    # The policy's earliest installment is the first premium after issuance (top-ups included).
+    installments = list((await session.exec(select(PremiumSchedule.id).where(
+        PremiumSchedule.policy_id == policy.id).order_by(PremiumSchedule.due_date, PremiumSchedule.created_at))).all())
+    installment = installments.index(schedule.id) + 1
+    assignments = list((await session.exec(select(CommissionAssignment).where(
+        CommissionAssignment.tenant_id == policy.tenant_id,
+        CommissionAssignment.policy_id == policy.id,
+    ))).all())
+    automatic = not assignments
+    if automatic:
+        assignments = [await automatic_assignment(session, policy)]
+    inputs = []
+    resolved = []
+    for assignment in assignments:
+        source = await session.get(AcquisitionSource, assignment.source_id)
+        if not source or source.tenant_id != policy.tenant_id or not source.is_active:
+            raise ValueError("Producer is missing or inactive")
+        context = commission_context(policy, source, premium=money(base_amount), policy_year=year, installment=installment)
+        decision = await commission_rate(session, policy.tenant_id, context)
+        inputs.append((source.id, decision["rate"] or 0, assignment.split_pct))
+        resolved.append((assignment, source, decision, context))
+    return year, installment, automatic, assignments, resolved, allocate(base_amount, inputs)
+
+
+def payable_from(source, earned_on):
+    """The producer's start day-of-month in the month after earning (creation date when unset)."""
+    return disburse_date(earned_on, source.start_date or source.created_at.date())
+
+
 async def accrue_receipt(session, receipt):
     await session.flush()
     # All commission writes for a policy (including assignment changes) use this
@@ -61,31 +108,8 @@ async def accrue_receipt(session, receipt):
         if not policy.effective_date or not receipt.schedule_id:
             raise ValueError("Receipt needs a policy inception date and installment")
         schedule = await session.get(PremiumSchedule, receipt.schedule_id)
-        if not schedule or schedule.policy_id != policy.id:
-            raise ValueError("Receipt installment does not belong to this policy")
-        year = policy_year(policy.effective_date, schedule.due_date)
-        # The policy's earliest installment is the first premium after issuance (top-ups included).
-        installments = list((await session.exec(select(PremiumSchedule.id).where(
-            PremiumSchedule.policy_id == policy.id).order_by(PremiumSchedule.due_date, PremiumSchedule.created_at))).all())
-        installment = installments.index(schedule.id) + 1
-        assignments = list((await session.exec(select(CommissionAssignment).where(
-            CommissionAssignment.tenant_id == receipt.tenant_id,
-            CommissionAssignment.policy_id == policy.id,
-        ))).all())
-        automatic = not assignments
-        if automatic:
-            assignments = [await automatic_assignment(session, policy)]
-        inputs = []
-        resolved = []
-        for assignment in assignments:
-            source = await session.get(AcquisitionSource, assignment.source_id)
-            if not source or source.tenant_id != receipt.tenant_id or not source.is_active:
-                raise ValueError("Producer is missing or inactive")
-            context = commission_context(policy, source, premium=money(receipt.base_amount), policy_year=year, installment=installment)
-            decision = await commission_rate(session, receipt.tenant_id, context)
-            inputs.append((source.id, decision["rate"] or 0, assignment.split_pct))
-            resolved.append((assignment, source, decision, context))
-        amounts = allocate(receipt.base_amount, inputs)
+        year, installment, automatic, assignments, resolved, amounts = await resolve_allocation(
+            session, policy, schedule, receipt.base_amount)
     except ValueError as exc:
         accrual.status, accrual.reason = "EXCEPTION", str(exc)
         session.add(accrual)
@@ -104,12 +128,11 @@ async def accrue_receipt(session, receipt):
         session.add_all(assignments)
     earned_on = receipt.created_at.date()
     for assignment, source, decision, context in payable:
-        payout_anchor = source.start_date or source.created_at.date()
         session.add(CommissionEarning(
             tenant_id=receipt.tenant_id, accrual_id=accrual.id, policy_id=policy.id,
             receipt_id=receipt.id, source_id=source.id,
             rule_set_code=AGENT_COMMISSION_RULE_SET_CODE, rule_code=decision["rule_code"], rule_version=decision["rule_version"],
-            disburse_date=disburse_date(earned_on, payout_anchor),
+            disburse_date=payable_from(source, earned_on),
             basis_amount=money(receipt.base_amount), gross_amount=amounts[source.id],
             rate_pct=decision["rate"], split_pct=assignment.split_pct, policy_year=year,
             snapshot={

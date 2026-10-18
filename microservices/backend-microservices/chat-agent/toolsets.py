@@ -284,6 +284,11 @@ DOMAIN_TOOLS: dict[str, set[str]] = {
     # Commission agreements, producer splits and accrual exceptions (commission_tools.py).
     # Keyword-only for the same reason; every commission keyword binds it.
     "commission_admin": {
+        "deploy_commission_rules",
+        "set_producer_start_date",
+        "list_payable_commissions",
+        "list_payout_runs",
+
         "get_customer_commission_setup",
         "list_commission_agreements",
         "create_commission_agreement",

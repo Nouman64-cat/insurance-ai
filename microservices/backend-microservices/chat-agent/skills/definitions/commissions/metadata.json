@@ -1,6 +1,6 @@
 {
   "id": "commissions",
-  "purpose": "Inspect commission rules, agreements, earnings and authorized payout runs.",
+  "purpose": "Configure live commission rules, preview producer earnings, investigate accrual exceptions and manage independently approved payout batches.",
   "intents": [
     "commission",
     "brokerage",
@@ -8,7 +8,17 @@
     "earning",
     "payee",
     "incentive",
-    "commission payout"
+    "commission payout",
+    "recurring commission",
+    "first premium commission",
+    "commission rules draft",
+    "deploy commission rules",
+    "producer payout day",
+    "payable commissions",
+    "payout run",
+    "disbursement batch",
+    "commission exception",
+    "agent statement"
   ],
   "capabilities": [
     "approve_commission_agreement",
@@ -21,6 +31,7 @@
     "create_payout_run",
     "delete_commission_rule",
     "delete_incentive_scheme",
+    "deploy_commission_rules",
     "explain_commission_earning",
     "get_agent_statement",
     "get_commission_ledger",
@@ -33,7 +44,10 @@
     "list_commission_payees",
     "list_commission_rules",
     "list_incentive_schemes",
+    "list_payable_commissions",
+    "list_payout_runs",
     "reconcile_commission_receipts",
+    "set_producer_start_date",
     "toggle_commission_rule_active",
     "toggle_incentive_scheme_active",
     "update_commission_rule",
@@ -54,10 +68,15 @@
     "Live owning-service state and required record identifiers"
   ],
   "business_rules": [
-    "Preserve backend lifecycle rules, record ownership and approval requirements.",
-    "A skill never adds permissions or simulates success."
+    "RS-COM-002 is the source of posting rates; legacy agreements do not set live rates.",
+    "Rule changes remain drafts until explicitly deployed; existing earnings retain their snapshotted rates.",
+    "Only individual policies currently accrue commission; recurring commissions depend on the matched rule.",
+    "Preview is read-only. Receipt reconciliation retries exceptions and must not duplicate posted earnings.",
+    "A different administrator approves a submitted payout batch; approval does not record an external payment.",
+    "Agents see only their own earnings; administration requires Admin or SuperAdmin through the existing role gate.",
+    "Never infer permission to deploy or approve from a read request, and never invent financial facts."
   ],
-  "lifecycle_source": "lifecycle.py; tenant-service/routers/cases.py",
+  "lifecycle_source": "tenant-service/routers/commissions.py; routers/commission_disbursements.py; services/commission_engine.py; services/agent_commission.py",
   "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",
   "recovery": [
     "Ask for missing parameters; offer verified choices for ambiguous records.",
@@ -67,7 +86,10 @@
   "verification": "Report completion only from confirmed backend success. Read fresh record state when needed; registration alone is not execution verification.",
   "tests": [
     "test_skills.py::test_all_skills_validate_and_cover_inventory",
-    "test_skills.py::test_generated_role_scenarios"
+    "test_skills.py::test_generated_role_scenarios",
+    "test_commission_tools.py",
+    "test_commission_specialist.py",
+    "tenant-service/test_commission_earnings.py"
   ],
   "steps": [
     {
@@ -76,5 +98,9 @@
       "depends_on": []
     }
   ],
-  "unsupported": []
+  "unsupported": [
+    "Bank transfers from chat; record verified external payments in the commission portal.",
+    "Automated net/tax computation, clawbacks, and group/family commission allocation.",
+    "Persistent incentive schemes: unavailable until an owning-service implementation exists."
+  ]
 }

@@ -451,20 +451,23 @@ shows the fund. Never say "premium" for Takaful — it is a contribution."""
 
 DOMAIN_PROMPTS["commission"] = """
 ## COMMISSION EARNINGS
-The commission backend posts accrued gross earnings from recorded premium receipts
-and approved contractual producer agreements. The portal is /commissions.
-Use **list_commission_payees**, **get_commission_ledger**, **get_agent_statement**
-and **get_commission_summary** for persisted data. Statements use posting dates.
-Never infer payment from policy status. Premium receipts automatically allocate
-to the assigned agent when an approved plan rate applies; explicit policy splits
-take priority. Disbursement batches in /commissions need independent approval and
-an external payment confirmation. Only PAID means payment has been recorded.
-Bank transfers, tax, clawbacks, incentives and group/family allocation are not automated.
-**get_commission_rate_card** explains agreement configuration; rates are not
-statutory defaults. One administrator drafts an agreement; a different
-administrator approves it. Do not use underwriting rule tools to alter these
-agreements. Prototype mutation/calculator tools return an unavailable result;
-never describe them as having changed a financial record.
+Use persisted facts from **list_commission_payees**, **get_commission_ledger**,
+**get_agent_statement** and **get_commission_summary**.
+Rates come from live rule set RS-COM-002, not legacy agreements. Recorded individual
+premium receipts allocate to the assigned agent unless explicit producer splits exist.
+The first premium earns the first rate; later premiums earn only under a recurring rule.
+**get_commission_rate_card** previews a hypothetical premium; **calculate_commission**
+previews an actual policy installment. Previews create no financial records.
+**list_commission_rules** distinguishes live and draft rules. Commission-specific
+create/update/delete/toggle tools edit a draft; deploying the commission rules makes it
+live only on explicit instruction. Existing earnings retain their rate snapshots.
+Payable-commission checks explain payout-date, policy and free-look holds.
+**create_payout_run** creates and submits an eligible batch; a different administrator
+uses **approve_payout_run**. Payout-run listings report actual state. Approval does
+not pay: the portal records payment after the actual external transfer. Keep accrued,
+payable, approved and PAID distinct. Never infer payment from policy status.
+Bank transfers, calculated net/tax, clawbacks, incentives and group/family allocation
+are unavailable. Role and confirmation gates remain authoritative.
 """
 
 DOMAIN_PROMPTS["claims_workflow"] = """
@@ -497,25 +500,20 @@ Reads: **get_policy_claim_options** (cover periods, benefits, claims on a policy
 bank detail — ask for it. Each result carries the next legal steps as buttons."""
 
 DOMAIN_PROMPTS["commission_admin"] = """
-
 ## COMMISSION ADMINISTRATION
-For an individual customer's assigned agent, source, or commission readiness, start
-with **get_customer_commission_setup** using customer_name or customer_id. A customer
-UUID is never a CNIC. Quick leads may have no CNIC; do not request one for this read.
-Commission posts per premium RECEIPT: receipt base × agreement rate (first-year or
-renewal) × producer split. A receipt uses an explicit policy allocation, or automatically
-assigns the customer's agent at 100% under the latest approved rate linked to its
-catalog plan. Missing/ambiguous agents or rates become exceptions. Plan rates are
-configured once in /commissions. Posted policy allocations remain frozen.
-- **list_commission_agreements**, **create_commission_agreement** (DRAFT; never assume
-  a rate), **approve_commission_agreement** (a DIFFERENT admin; approved = immutable —
-  change terms with a new version).
-- **get_policy_commission_split** / **assign_policy_producers** (splits total 100%;
-  frozen after the first posting; group and family policies are not supported yet).
-- **list_commission_exceptions** → fix the cause → **reconcile_commission_receipts**.
-- **explain_commission_earning** — how one earning was calculated (agents: own only).
-Disbursement approval/payment recording is available in /commissions. Do not claim
-money moved: PAID is manual external-payment confirmation, not a bank integration."""
+**deploy_commission_rules** explicitly publishes a commission draft. **list_payable_commissions**
+shows payout-date and eligibility holds; **list_payout_runs** reports batch state.
+**explain_commission_earning** explains persisted receipt-backed earnings.
+Use **get_customer_commission_setup** and **get_policy_commission_split** for readiness.
+**assign_policy_producers** needs real active producers with positive splits totalling
+100%; posted assignments are frozen. **set_producer_start_date** sets the payout day
+for future earnings only; use the actual date provided by the human.
+**list_commission_exceptions** explains missing configuration; fix that evidence before
+**reconcile_commission_receipts** retries accrual. It never records a payment.
+RS-COM-002 rules determine live rates. Legacy agreement tools manage historical records
+only and must never be presented as a prerequisite for current commission posting.
+A payout batch requires independent approval, then separate external payment recording.
+"""
 
 DOMAIN_PROMPTS["profile_risk"] = """
 
