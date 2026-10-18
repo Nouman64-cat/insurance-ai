@@ -28,3 +28,15 @@ test('complete and skipped stages do not become active and all-done count stays 
   const awaitingReconciliation=stages.map((s,i)=>i===5?{state:'action'}:s);
   assert.equal(claimStepIndex('Settled',awaitingReconciliation,steps,'Settled'),5);
 });
+
+for (const status of ['Approved','Partial Approval']) {
+  test(`${status} starts settlement even when old workflow eligibility is pending`,()=>{
+    const stages=steps.map((_,i)=>({key:['intimation','eligibility','documents','assessment','decision','settlement','closure'][i],state:i===0?'complete':'pending'}));
+    assert.equal(claimStepIndex(status,stages,steps,status),5);
+    assert.equal(claimStepIndex(status,null,['New','Triaged','Under Investigation','Approved','Settled'],status),4);
+  });
+}
+test('settled claim awaits reconciliation or closure, never stale eligibility',()=>{
+  const stages=steps.map((_,i)=>({key:['intimation','eligibility','documents','assessment','decision','settlement','closure'][i],state:i===5?'complete':'pending'}));
+  assert.equal(claimStepIndex('Settled',stages,steps,'Settled'),6);
+});

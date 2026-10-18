@@ -877,7 +877,7 @@ def project_stages(proc: ClaimProcess, claim: Claim, *, payout_total: float = 0.
         rows.append(_stage("decision", "Claims decision", "complete", "Rejected", proc.decision_reason or "", 5))
     elif approved:
         label = "Partially approved" if (st == "Partial Approval" or proc.decision == "PartialApprove") else "Approved"
-        rows.append(_stage("decision", "Claims decision", "complete", label, f"PKR {proc.decision_amount:,.0f}", 5))
+        rows.append(_stage("decision", "Claims decision", "complete", label, f"PKR {(proc.decision_amount or claim.approved_amount or 0):,.0f}", 5))
     elif st == "Referred to Manager":
         rows.append(_stage("decision", "Claims decision", "action", "Referred to manager", "Awaiting a claims manager", 5))
     elif proc.assessed_at and investigated and docs["complete"]:
@@ -908,6 +908,12 @@ def project_stages(proc: ClaimProcess, claim: Claim, *, payout_total: float = 0.
         rows.append(_stage("closure", "Claim closure", "action", "Ready to close", "", 7))
     else:
         rows.append(_stage("closure", "Claim closure", "not_started", "Not started", "", 7))
+    if approved and not closed:
+        # Older register approvals may not have workflow timestamps. Reflect
+        # the recorded decision without fabricating verification or assessment.
+        rows = [({**row, "state": "skipped", "label": "Not recorded",
+                  "detail": "The claim has an approval decision; this earlier workflow step has no completion record."}
+                 if row["key"] in {"eligibility", "documents", "assessment"} and row["state"] not in ("complete", "skipped") else row) for row in rows]
     if closed:
         # Register-only transitions can close a claim without filling the newer
         # workflow timestamps. Do not reopen those steps or invent completed reviews.

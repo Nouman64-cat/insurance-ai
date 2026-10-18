@@ -1239,6 +1239,45 @@ async def _derive_payees(session: AsyncSession, policy: Policy, claim: Claim, pr
 # Step 6 — settlement
 # ══════════════════════════════════════════════════════════════════════════════
 
+@router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/settlement/prepare")
+async def prepare_claim_settlement(
+    tenant_id: UUID, policy_id: UUID, claim_id: UUID, request: Request,
+    user=Depends(require_roles(*ca.AUTHORIZE_ROLES)), session: AsyncSession = Depends(get_session),
+):
+    """Prepare verified-source payees for an already-approved register/workflow claim.
+    Does not approve a claim, verify a payee or authorise payment."""
+    if not user.is_active or user.tenant_id != tenant_id:
+        raise HTTPException(403, "Prepare settlement only in your own organization.")
+    policy = await _get_policy(session, tenant_id, policy_id)
+    claim = (await session.exec(select(Claim).where(Claim.id == claim_id).with_for_update().execution_options(populate_existing=True))).first()
+    if not claim or claim.policy_id != policy_id or claim.tenant_id != tenant_id:
+        raise HTTPException(404, "Claim not found on this policy.")
+    if _cstatus(claim) not in (ClaimStatusEnum.APPROVED, ClaimStatusEnum.PARTIAL_APPROVAL) or claim.approved_amount <= 0:
+        raise HTTPException(409, "Prepare settlement only for an approved unpaid claim.")
+    proc = (await session.exec(select(ClaimProcess).where(ClaimProcess.claim_id == claim_id))).first()
+    if proc is None:
+        category = next((key for key, item in cfg.CLAIM_CATEGORIES.items() if item['claim_type'] == claim.claim_type), None)
+        if not category:
+            raise HTTPException(409, "Open this claim in the claims workflow and select its category first.")
+        customer = await session.get(Customer, policy.customer_id)
+        proc = ClaimProcess(tenant_id=tenant_id, policy_id=policy_id, claim_id=claim_id,
+            category=category, segment=eng._segment(policy), event_date=claim.incident_date or (claim.reported_date.date() if hasattr(claim.reported_date, "date") else claim.reported_date),
+            covered_person_name=customer.name if customer else None, covered_person_relationship="Self")
+        session.add(proc)
+        await session.flush()
+    await _assert_underwriting_cleared(session, claim, proc)
+    events = []
+    if proc.authorized_at or proc.disbursed_at:
+        return await _workspace(session, policy, claim, proc)
+    if not proc.payees_json:
+        proc.payees_json = await _derive_payees(session, policy, claim, proc, claim.approved_amount)
+        _touch(proc)
+        events.append(_audit(session, policy, claim, proc, "ClaimSettlementPrepared", _actor(user), {"amount": claim.approved_amount}))
+    await session.commit()
+    await _publish(request, policy, events)
+    return await _workspace(session, policy, claim, proc)
+
+
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/settlement/payees")
 async def verify_payees(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID,
@@ -1250,8 +1289,13 @@ async def verify_payees(
     """Verify the rightful payee(s): identity (CNIC, matched to the nominee on record) and
     bank details (IBAN format, account title). A payee is verified only when every
     blocking check passes; a mismatching account title needs a note."""
+    if not user.is_active or user.tenant_id != tenant_id:
+        raise HTTPException(403, "Work settlement only in your own organization using an active account.")
     policy = await _get_policy(session, tenant_id, policy_id)
+    await session.exec(select(Claim).where(Claim.id == claim_id).with_for_update())
     claim, proc = await _get_claim(session, policy_id, claim_id)
+    await session.refresh(claim)
+    await session.refresh(proc)
     if _cstatus(claim) not in (ClaimStatusEnum.APPROVED, ClaimStatusEnum.PARTIAL_APPROVAL):
         raise HTTPException(409, "Payees are verified once the claim is approved and before it is paid.")
     await _assert_underwriting_cleared(session, claim, proc)
@@ -1298,8 +1342,13 @@ async def authorize_disbursement(
 ):
     """Authorise the disbursement of the approved amount to the verified payees: the settlement approval, within the
     manager's delegated authorisation limit. Finance then executes the payment."""
+    if not user.is_active or user.tenant_id != tenant_id:
+        raise HTTPException(403, "Work settlement only in your own organization using an active account.")
     policy = await _get_policy(session, tenant_id, policy_id)
+    await session.exec(select(Claim).where(Claim.id == claim_id).with_for_update())
     claim, proc = await _get_claim(session, policy_id, claim_id)
+    await session.refresh(claim)
+    await session.refresh(proc)
     if _cstatus(claim) not in (ClaimStatusEnum.APPROVED, ClaimStatusEnum.PARTIAL_APPROVAL):
         raise HTTPException(409, "Only an approved claim can be authorised for payment.")
     await _assert_underwriting_cleared(session, claim, proc)
