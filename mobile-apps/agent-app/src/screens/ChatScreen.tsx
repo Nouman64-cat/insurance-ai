@@ -21,22 +21,13 @@ import { useSession } from '../context/SessionContext';
 import { useNotifications } from '../notifications/NotificationContext';
 import { sendChatMessage, resumeChatThread, ChatMessage, ChatInterrupt, QuickAction } from '../api/chat';
 import { Screen, ScreenHeader, Text, Pressable, ConfirmDialog } from '../components/ui';
+import ChatMarkdown from '../components/ChatMarkdown';
 import { RootStackParamList, MainTabParamList } from '../navigation/AppNavigator';
 
 type ChatNavigationProp = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList, 'Chat'>,
   NativeStackNavigationProp<RootStackParamList>
 >;
-
-// Splits message text on URLs so each link can be rendered as its own
-// tappable-to-copy span instead of being stuck inside unselectable body text.
-// (Deliberately a non-global regex for the per-part .test() below — a global
-// regex's `lastIndex` state would make alternating calls flip-flop wrongly.)
-const URL_PATTERN = /https?:\/\/[^\s]+/;
-const splitTextAndLinks = (text: string): Array<{ text: string; isLink: boolean }> => {
-  const parts = text.split(new RegExp(`(${URL_PATTERN.source})`, 'g'));
-  return parts.filter(Boolean).map((part) => ({ text: part, isLink: URL_PATTERN.test(part) }));
-};
 
 // This app doesn't have a native form for tools that need one (e.g. the
 // Agent Confidential Report) — decline gracefully instead of hanging on a
@@ -124,8 +115,8 @@ export default function ChatScreen() {
       let streamError: string | null = null;
 
       const callbacks = {
-        onToken: (token: string) => {
-          accumulated += token;
+        onText: (text: string) => {
+          accumulated = text;
           if (!mounted.current) return;
           setMessages((prev) => prev.map((m) => (m.id === replyId ? { ...m, text: accumulated } : m)));
         },
@@ -302,36 +293,9 @@ export default function ChatScreen() {
             ]}
           >
             {item.text ? (
-              <Text
-                variant="body"
-                style={
-                  isUser
-                    ? { color: colors.tone.brand.onSolid }
-                    : errored
-                    ? { color: colors.tone.danger.on }
-                    : undefined
-                }
-              >
-                {splitTextAndLinks(item.text).map((part, index) =>
-                  part.isLink ? (
-                    <Text
-                      key={index}
-                      variant="body"
-                      onPress={() => copyLink(part.text)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Copy link ${part.text}`}
-                      style={[
-                        styles.link,
-                        { color: isUser ? colors.tone.brand.onSolid : colors.tone.accent.on },
-                      ]}
-                    >
-                      {part.text}
-                    </Text>
-                  ) : (
-                    <React.Fragment key={index}>{part.text}</React.Fragment>
-                  )
-                )}
-              </Text>
+              isUser ? <Text variant="body" selectable style={{ color: colors.tone.brand.onSolid }}>{item.text}</Text> : (
+                <ChatMarkdown text={item.text} color={errored ? colors.tone.danger.on : undefined} onLinkPress={copyLink} />
+              )
             ) : item.isStreaming ? (
               <View style={styles.thinking}>
                 <ActivityIndicator size="small" color={colors.tone.accent.solid} />

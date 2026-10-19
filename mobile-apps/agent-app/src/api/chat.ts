@@ -1,4 +1,5 @@
 import api from './api';
+import { applyChatTextEvent, chatText, emptyChatText, parseChatEvents } from '../lib/chatStream';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DEFAULT_LOCALE, LOCALE_STORAGE_KEY } from '../i18n/config';
 
@@ -26,7 +27,7 @@ export interface ChatInterrupt {
 }
 
 export interface StreamCallbacks {
-  onToken: (token: string) => void;
+  onText: (text: string) => void;
   onQuickActions?: (actions: QuickAction[]) => void;
   onInterrupt?: (interrupt: ChatInterrupt) => void;
   onError?: (message: string) => void;
@@ -55,22 +56,13 @@ const consumeSSE = async (response: Response, callbacks: StreamCallbacks): Promi
   }
 
   const rawText = await response.text();
-  const lines = rawText.split('\n\n');
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith('data: ')) continue;
-
-    let json: any;
-    try {
-      json = JSON.parse(trimmed.slice(6));
-    } catch {
-      continue; // malformed chunk — skip rather than abort the whole turn
-    }
-
+  let textState = emptyChatText();
+  for (const json of parseChatEvents(rawText)) {
     switch (json.type) {
       case 'token':
-        if (json.content) callbacks.onToken(json.content);
+      case 'message_discard':
+        textState = applyChatTextEvent(textState, json);
+        callbacks.onText(chatText(textState));
         break;
       case 'quick_actions':
         if (json.actions && callbacks.onQuickActions) callbacks.onQuickActions(json.actions);

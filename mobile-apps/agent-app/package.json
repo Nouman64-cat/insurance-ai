@@ -7,7 +7,8 @@
     "android": "ELECTRON_DISABLE_SANDBOX=1 NODE_OPTIONS=\"--require ./fix-dns.js\" expo start --android",
     "ios": "ELECTRON_DISABLE_SANDBOX=1 NODE_OPTIONS=\"--require ./fix-dns.js\" expo start --ios",
     "web": "ELECTRON_DISABLE_SANDBOX=1 NODE_OPTIONS=\"--require ./fix-dns.js\" expo start --web",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:chat": "node --test tests/chat.test.cjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -22,6 +23,7 @@
     "expo-clipboard": "~57.0.2",
     "expo-font": "~57.0.4",
     "expo-status-bar": "~57.0.1",
+    "markdown-it": "^15.0.3",
     "react": "19.2.3",
     "react-hook-form": "^7.52.1",
     "react-native": "0.86.3",
