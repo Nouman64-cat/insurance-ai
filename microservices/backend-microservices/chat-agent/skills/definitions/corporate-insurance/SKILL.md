@@ -1,5 +1,7 @@
 # Corporate Insurance
 
+Availability: Creating family and corporate customers is coming soon, including demo data and converting an individual into a new family. Say this clearly and suggest individual customer creation, which is available now. Do not collect unavailable creation details, offer creation forms, call creation tools or bypass the restriction through group-scheme setup. Do not create an individual without the user's request. Existing group records may still be viewed and serviced within role permissions.
+
 Operate employer group life and Takaful schemes through existing group contracts.
 
 Use the group journey for scheme → benefit classes → census → underwriting → quote acceptance → master policy → enrollment/payment. Preview endorsements and group claim payouts first. Preserve FCL and member exceptions. Do not force the individual proposal process onto a group scheme.

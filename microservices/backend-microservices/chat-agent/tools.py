@@ -420,7 +420,7 @@ class AddOrganizationArgs(BaseModel):
 
 @tool(args_schema=AddOrganizationArgs)
 def add_organization(**kwargs) -> str:
-    """Add a corporate / group-life client organization."""
+    """Corporate customer creation is coming soon. Suggest available individual customer creation instead; no organization is created."""
     return "{}"
 
 
@@ -453,7 +453,7 @@ class PrepareFamilyInsuranceArgs(BaseModel):
 
 @tool(args_schema=PrepareFamilyInsuranceArgs)
 def prepare_family_insurance(**kwargs) -> str:
-    """Prepare family insurance for an existing individual customer without changing their current proposal. Opens a prefilled review form."""
+    """Family customer creation/conversion is coming soon. Suggest available individual customer creation; no family form is opened."""
     return ""
 
 
@@ -480,8 +480,7 @@ class AddFamilyGroupArgs(BaseModel):
 
 @tool(args_schema=AddFamilyGroupArgs)
 def add_family_group(**kwargs) -> str:
-    """Add a family insurance group, optionally enrolling members into a floater
-    policy at the same time."""
+    """Family customer creation is coming soon. Suggest available individual customer creation instead; no family is created."""
     return "{}"
 
 

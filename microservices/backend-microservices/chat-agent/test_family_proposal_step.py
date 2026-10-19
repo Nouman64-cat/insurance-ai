@@ -1,6 +1,4 @@
-"""A family added with members (demo data included) goes through the Proposal stage before
-pre-underwriting, exactly like an individual customer: the tool hands the browser a
-`proposal_journey` instead of offering the underwriting button straight away.
+"""Family creation is coming soon; generated household data still obeys domain invariants.
 
 Run with:  python -m pytest services/chat-agent/test_family_proposal_step.py -q
 """
@@ -64,25 +62,17 @@ def _run(args):
         tool_executor._shared_client = saved
 
 
-def test_family_with_demo_data_starts_at_the_proposal_not_underwriting():
+def test_demo_family_creation_is_coming_soon_instead_of_starting_a_proposal():
     result = _run({"use_demo_data": True})
-    assert result["success"]
-    journey = result["proposal_journey"]
-    n = len(journey["case_numbers"])
-    assert journey["family_group_id"] == "fam-1" and n >= 1 and journey["case_numbers"] == [f"CASE-{i}" for i in range(1, n + 1)]
-    # The browser needs each member's case id to offer the guided / workspace options per member.
-    assert [c["case_id"] for c in journey["cases"]] == [f"id-{i}" for i in range(1, n + 1)]
-    assert all(c["name"] and c["case_number"] for c in journey["cases"])
-    assert journey["cases"][0]["relationship"] == "Self"            # the head is underwritten first
-    assert "of the death benefit" in result["message"]               # the nominee shares are shown
-    labels = [a["label"] for a in result["quick_actions"]]
-    assert "Start underwriting for family" not in labels, "underwriting must wait for the proposal steps"
-    assert "proposal" in result["message"].lower()
+    assert not result["success"] and result["error_code"] == "coming_soon"
+    assert "proposal_journey" not in result
+    assert result["quick_actions"][0]["payload"] == "Add a new individual customer"
 
 
-def test_a_family_without_members_has_no_proposal_yet():
+def test_a_family_without_members_is_also_coming_soon():
     result = _run({"name": "Empty Family"})
-    assert result["success"] and "proposal_journey" not in result
+    assert not result["success"] and result["error_code"] == "coming_soon"
+    assert "proposal_journey" not in result
 
 
 def test_demo_family_only_insures_the_head_and_maybe_the_spouse_and_shares_total_100():

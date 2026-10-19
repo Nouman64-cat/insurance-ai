@@ -1,4 +1,5 @@
 "use client";
+import { useEffect, useRef } from "react";
 import { tx } from "@/lib/i18n/tx";
 
 export type EntryEntityType = "INDIVIDUAL" | "FAMILY" | "CORPORATE";
@@ -31,24 +32,50 @@ interface Props {
 }
 
 export default function AddEntryChooser({ entityType, onClose, onSelect }: Props) {
+  const closeButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!entityType) return;
+    const previous = document.activeElement as HTMLElement | null;
+    closeButton.current?.focus();
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", dismiss);
+    return () => {
+      document.removeEventListener("keydown", dismiss);
+      previous?.focus();
+    };
+  }, [entityType, onClose]);
   if (!entityType) return null;
+  const comingSoon = entityType !== "INDIVIDUAL";
   const meta = ENTITY_META[entityType];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-5">
+      <div role="dialog" aria-modal="true" aria-labelledby="add-entry-title" className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-5">
         <div className="flex justify-between items-start">
           <div>
-            <h3 className="text-lg font-bold text-slate-900">{tx(meta.title)}</h3>
-            <p className="text-xs text-slate-500 mt-0.5">{tx("How much do you want to capture right now?")}</p>
+            <h3 id="add-entry-title" className="text-lg font-bold text-slate-900">{tx(meta.title)}</h3>
+            <p className="text-xs text-slate-500 mt-0.5">{tx(comingSoon ? "Coming soon" : "How much do you want to capture right now?")}</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-full p-1 transition-colors">
+          <button ref={closeButton} type="button" aria-label={tx("Close")} onClick={onClose} className="text-slate-400 hover:text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-full p-1 transition-colors">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
+        {comingSoon ? (
+          <div className="space-y-5">
+            <div className="rounded-xl border border-blue-100 bg-blue-50 p-5">
+              <p className="text-base font-semibold text-blue-900">{tx("Coming soon")}</p>
+              <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                {tx(entityType === "FAMILY" ? "Adding family leads is coming soon. You can still add individual leads." : "Adding corporate leads is coming soon. You can still add individual leads.")}
+              </p>
+            </div>
+            <button type="button" onClick={onClose} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">{tx("Close")}</button>
+          </div>
+        ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <button
             type="button"
@@ -78,6 +105,7 @@ export default function AddEntryChooser({ entityType, onClose, onSelect }: Props
             <p className="text-xs text-slate-500 mt-1 leading-relaxed">{meta.fullHint}</p>
           </button>
         </div>
+        )}
       </div>
     </div>
   );

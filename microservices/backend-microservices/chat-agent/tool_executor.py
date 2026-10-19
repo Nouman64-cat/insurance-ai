@@ -175,6 +175,14 @@ class _ScopedClient:
 
 def handles(name: str):
     def register(fn: Handler) -> Handler:
+        # Guard registered handlers too: group workflows may call them directly.
+        from customer_availability import COMING_SOON_TOOLS, coming_soon_result
+        if name in COMING_SOON_TOOLS:
+            from functools import wraps
+            @wraps(fn)
+            async def unavailable(args, ctx):
+                return coming_soon_result(name)
+            fn = unavailable
         _HANDLERS[name] = fn
         return fn
     return register
@@ -4202,8 +4210,6 @@ _STAGES: list[tuple[tuple[str, ...], str, str, list[dict]]] = [
 
 _DEFAULT_ACTIONS = [
     {"label": "Add individual", "actionType": "submit", "payload": "Add a new individual customer"},
-    {"label": "Add family", "actionType": "submit", "payload": "Add a family group with generic data"},
-    {"label": "Add corporate", "actionType": "submit", "payload": "Add a corporate organization"},
     {"label": "Try demo data", "actionType": "submit", "payload": "Run the full workflow with demo data"},
     {"label": "View all cases", "actionType": "navigate", "payload": "underwriting"},
 ]
@@ -4636,6 +4642,11 @@ async def _execute_tool_once(name: str, args: dict[str, Any], ctx: ExecCtx) -> d
     handler = _HANDLERS.get(name)
     if handler is None:
         return {"success": False, "error": f"Unknown function: {name}"}
+
+    from customer_availability import coming_soon_result
+    unavailable = coming_soon_result(name)
+    if unavailable:
+        return unavailable
 
     # run_risk_assessment fans out to the risk engine's 3-LLM-call pipeline,
     # and add_family_group / add_organization run concurrent risk engine calls

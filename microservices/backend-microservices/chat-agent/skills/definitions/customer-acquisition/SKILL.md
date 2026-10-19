@@ -1,5 +1,7 @@
 # Customer Acquisition
 
+Availability: Creating family and corporate customers is coming soon, including demo data and converting an individual into a new family. Say this clearly and suggest individual customer creation, which is available now. Do not collect unavailable creation details, offer creation forms, call creation tools or bypass the restriction through group-scheme setup. Do not create an individual without the user's request. Existing group records may still be viewed and serviced within role permissions.
+
 Create, find, update and assign customers and acquisition sources.
 
 Resolve actual records, execute only authorized named tools, and use backend results to identify the next valid action.

@@ -353,6 +353,11 @@ async def create_demo_corporate(ctx: Ctx, agent: Optional[dict]) -> dict:
 
     Demo mode only. All or nothing, like the full-detail form: if any step fails, the company is deleted again
     so no half-built corporate is left on the Leads board."""
+    from customer_availability import coming_soon_result
+    unavailable = coming_soon_result("add_organization")
+    if unavailable:
+        return unavailable
+
     if not is_demo():
         return {"success": False, "error": "Demo data is only available in demo mode — give me the company's real details instead."}
 
@@ -455,20 +460,8 @@ async def _create_group_scheme(args: dict, ctx: Ctx) -> dict:
     org = await find_organization(args, ctx)
     created_org = False
     if org is None:
-        if not args.get("create_if_missing"):
-            org = await require_organization(args, ctx)        # raises ChoiceNeeded with a "create it" chip
-        from tool_executor import _HANDLERS   # late: add_organization is registered by tool_executor itself
-        made = await _HANDLERS["add_organization"]({
-            "name": args.get("organization_name") or args.get("name"),
-            "contact_person": args.get("contact_person"), "contact_email": args.get("contact_email"),
-            "contact_phone": args.get("contact_phone"), "agent_name": args.get("agent_name"),
-            "agent_id": args.get("agent_id"), "no_agent": args.get("no_agent"),
-        }, ctx)
-        if not made.get("success"):
-            return made                                        # e.g. the "which agent owns this lead?" picker
-        res = await ctx.client.get(ctx.tsvc(f"/organizations/{made['organization_id']}"))
-        res.raise_for_status()
-        org, created_org = res.json(), True
+        from customer_availability import coming_soon_result
+        return coming_soon_result("add_organization")
 
     existing = await find_scheme(org, args, ctx)
     if existing is not None and existing.get("status") in _ACTIVE_BLOCKING and not args.get("new_scheme"):

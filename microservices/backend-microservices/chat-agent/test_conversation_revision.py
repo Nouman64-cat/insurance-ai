@@ -71,21 +71,23 @@ class RevisionTests(unittest.IsolatedAsyncioTestCase):
   for text in ['No','cancel','Partial approval','He had a back injury','something went wrong at the hospital',
                'PL-2026-0006 — Ahmed Malik (Salary Protection Plan, cover PKR 10,500,000)','Natural / illness']:
    self.assertFalse(is_revision_text(text), text)
- async def test_prepare_family_is_read_only_and_links_existing_customer(self):
+ async def test_prepare_family_reports_coming_soon_without_reading_customer(self):
   from types import SimpleNamespace
   customer='11111111-1111-4111-8111-111111111111'
   response=SimpleNamespace(raise_for_status=lambda:None,json=lambda:{'id':customer,'cnic':'3520212345678'})
   client=SimpleNamespace(get=AsyncMock(return_value=response))
   ctx=SimpleNamespace(client=client,tsvc=lambda p:p)
   result=await _prepare_family_insurance({'customer_id':customer},ctx)
-  self.assertIn('head='+customer,result['quick_actions'][0]['payload'])
-  self.assertIn('unchanged',result['message'])
- async def test_existing_family_is_reused(self):
+  self.assertEqual(result['error_code'],'coming_soon')
+  client.get.assert_not_awaited()
+  self.assertEqual(result['quick_actions'][0]['payload'],'Add a new individual customer')
+ async def test_family_conversion_remains_unavailable_for_existing_customers(self):
   from types import SimpleNamespace
   response=SimpleNamespace(raise_for_status=lambda:None,json=lambda:{'family_group_id':'existing-family'})
   ctx=SimpleNamespace(client=SimpleNamespace(get=AsyncMock(return_value=response)),tsvc=lambda p:p)
   result=await _prepare_family_insurance({'customer_id':'11111111-1111-4111-8111-111111111111'},ctx)
-  self.assertEqual(result['quick_actions'][0]['payload'],'admin/families/existing-family')
+  self.assertEqual(result['error_code'],'coming_soon')
+  ctx.client.get.assert_not_awaited()
 if __name__=='__main__':unittest.main()
 
 

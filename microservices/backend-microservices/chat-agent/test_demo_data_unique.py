@@ -106,10 +106,10 @@ def test_a_placeholder_cnic_is_never_registered():
     assert "Generate a new demo customer" in labels
 
 
-def test_a_family_with_placeholder_cnics_is_refused_and_real_demo_families_are_not():
+def test_family_creation_is_unavailable_before_validating_member_cnics():
     members = [{"name": "A", "cnic": "12345-6789012-3", "relationship": "Self"}]
     client, result = _run("add_family_group", {"name": "X", "members": members})
-    assert not result["success"] and "placeholder" in result["error"].lower() and client.posted == []
+    assert not result["success"] and result["error_code"] == "coming_soon" and client.posted == []
 
 
 def test_demo_customer_gets_a_named_demo_inbox_email():
