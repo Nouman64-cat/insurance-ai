@@ -375,7 +375,11 @@ def _state(name: str, **args) -> dict:
             "group_audit": [], "group_blocking_actions": []}
 
 
-async def _start(name: str, **args) -> dict:
+async def _start(name: str, *, existing: bool = True, **args) -> dict:
+    # Servicing tests operate on an existing company; chatbot creation is unavailable.
+    fake = await tool_executor._shared_client()
+    if existing and not any(o["name"] == name for o in fake.orgs.values()):
+        fake.add_org(name)
     return await _graph("g_scheme").ainvoke(_state(name, **args))
 
 
@@ -552,22 +556,12 @@ async def test_start_on_an_existing_scheme_continues_it():
 
 
 @_sync
-async def test_missing_agent_is_a_question_not_a_crash():
-    with backend("demo"):
-        # No such organization and no agent given: add_organization asks which agent
-        # owns the lead; the journey carries that picker out instead of failing blind.
-        async def picker(args, ctx):
-            return {"success": False, "error": "Who is the agent associated with this lead?",
-                    "quick_actions": [{"label": "Agent One", "actionType": "submit", "payload": "agent one"}]}
-
-        original = tool_executor._HANDLERS["add_organization"]
-        tool_executor._HANDLERS["add_organization"] = picker
-        try:
-            res = _result(await _start("Brand New Co", no_agent=False))
-        finally:
-            tool_executor._HANDLERS["add_organization"] = original
-        assert not res["success"] and "agent" in res["error"].lower() and _labels(res) == ["Agent One"], res
-        print("PASS test_missing_agent_is_a_question_not_a_crash")
+async def test_unknown_company_returns_coming_soon_without_agent_intake():
+    with backend("demo") as fake:
+        res = _result(await _start("Brand New Co", existing=False, no_agent=False))
+        assert not res["success"] and "coming soon" in res["error"]
+        assert not fake.orgs and not fake.schemes
+        assert _labels(res) == ["Add individual customer"]
 
 
 @_sync
@@ -612,7 +606,7 @@ async def test_census_upload_hands_the_browser_real_ids():
 async def test_scheme_creation_guards():
     with backend("demo") as fake:
         res = await _call("create_group_scheme", organization_name="Ghost Corp")
-        assert not res["success"] and "couldn't find" in res["error"] and "Create Ghost Corp" in _labels(res)
+        assert not res["success"] and res["error_code"] == "coming_soon" and _labels(res) == ["Add individual customer"]
         fake.add_org("Real Corp")
         bad = await _call("create_group_scheme", organization_name="Real Corp", plan_code="TERM_LIFE")
         assert not bad["success"] and "isn't a group plan" in bad["error"]
@@ -627,7 +621,8 @@ async def test_scheme_creation_guards():
 async def test_every_stage_reports_itself_to_the_process_graph():
     """routers/chat.py turns journey_done / journey_next into the UI's animated
     process graph — each node must announce its own stage and the next one."""
-    with backend("demo"):
+    with backend("demo") as fake:
+        fake.add_org("Graph Co")
         s = _state("Graph Co", use_demo_data=True)
         expected = [("g_scheme", "g_benefits"), ("g_benefits", "g_census"), ("g_census", "g_underwrite"),
                     ("g_underwrite", "g_quote"), ("g_quote", "g_acceptance")]
@@ -644,15 +639,14 @@ async def test_every_stage_reports_itself_to_the_process_graph():
 
 
 @_sync
-async def test_add_organization_offers_the_group_scheme_to_admins_only():
-    with backend("demo"):
-        for role, expect in (("Admin", True), ("SuperAdmin", True), ("Underwriter", False)):
+async def test_add_organization_is_coming_soon_for_authorised_roles():
+    with backend("demo") as fake:
+        for role in ("Admin", "SuperAdmin", "Underwriter"):
             res = await tool_executor.execute_tool(
                 "add_organization", {"name": f"Offer Co {role}", "no_agent": True},
                 tool_executor.ExecCtx(tenant_id=TENANT, jwt_token="", role=role))
-            assert res["success"], res
-            assert ("Start group scheme" in _labels(res)) is expect, (role, _labels(res))
-        print("PASS test_add_organization_offers_the_group_scheme_to_admins_only")
+            assert not res["success"] and res["error_code"] == "coming_soon", res
+        assert not fake.orgs and not fake.schemes
 
 
 async def _live_scheme(fake, name="Endorse Co"):
@@ -891,42 +885,21 @@ async def test_a_census_that_is_already_enrolled_is_not_asked_for_again():
 
 
 @_sync
-async def test_demo_data_for_a_corporate_builds_the_whole_scheme_and_hands_the_ui_its_summary():
-    """Chat → Corporate → Add demo data: a company, its policy, classes and 10 enrolled employees, and the same
-    organization_enrolled summary (with the id the Continue button needs) the full-detail form produces."""
+async def test_demo_corporate_creation_is_coming_soon_without_a_summary():
     with backend("demo") as fake:
         res = await _call("add_organization", use_demo_data=True, no_agent=True)
-        assert res["success"] and res["employees_enrolled"] == 10, res
-        scheme = fake.only_scheme()
-        assert len(fake.members[scheme["id"]]) == 10 and len(fake.classes[scheme["id"]]) == 3
-        assert scheme["organization_id"] == res["organization_id"] and scheme["plan_code"] == "GROUP_LIFE"
-        summary = res["organization_enrolled"]
-        assert summary["organization_id"] == res["organization_id"] and summary["employee_count"] == 10 and summary["demo"] is True
-        assert summary["name"] == fake.orgs[res["organization_id"]]["name"]
-        roster = summary["employees"]          # the table the page shows under the summary
-        assert len(roster) == 10 and all(r["name"] and r["benefit_class"] and r["coverage_amount"] for r in roster), roster
-        assert {r["name"] for r in roster} == {m["name"] for m in fake.members[scheme["id"]]}
-        assert "quick_actions" not in res or not res["quick_actions"]      # the buttons come from the UI summary, once
-        assert "do NOT describe next steps" in res["message"]
-        # A second call is a different company.
-        again = await _call("add_organization", use_demo_data=True, no_agent=True)
-        assert again["organization_id"] != res["organization_id"] and again["organization_name"] != res["organization_name"]
-        print("PASS test_demo_data_for_a_corporate_builds_the_whole_scheme_and_hands_the_ui_its_summary")
+        assert not res["success"] and res["error_code"] == "coming_soon"
+        assert "organization_enrolled" not in res
+        assert not fake.orgs and not fake.schemes
 
 
 @_sync
-async def test_demo_corporate_is_all_or_nothing_and_demo_only():
-    with backend("demo") as fake:
-        fake.fail_paths.add("/census/confirm")
-        res = await _call("add_organization", use_demo_data=True, no_agent=True)
-        assert not res["success"] and "Nothing was saved" in res["error"]
-        assert not fake.orgs and not fake.schemes, "the half-built company must be deleted again"
-    with backend("prod") as fake:
-        res = await _call("add_organization", use_demo_data=True, no_agent=True)
-        assert not res["success"] and "demo mode" in res["error"] and not fake.orgs
-        assert permission.missing_args("add_organization", {"use_demo_data": True}) == []     # no name is asked for
-        assert permission.missing_args("add_organization", {}) == ["name"]
-        print("PASS test_demo_corporate_is_all_or_nothing_and_demo_only")
+async def test_corporate_creation_is_unavailable_in_demo_and_production():
+    for mode in ("demo", "prod"):
+        with backend(mode) as fake:
+            res = await _call("add_organization", use_demo_data=True, no_agent=True)
+            assert not res["success"] and res["error_code"] == "coming_soon"
+            assert not fake.orgs and not fake.schemes
 
 
 def test_the_continue_button_calls_the_journey_directly_for_that_exact_company():

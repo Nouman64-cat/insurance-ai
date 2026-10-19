@@ -16,6 +16,8 @@ convention.
 """
 
 from __future__ import annotations
+from customer_availability import CUSTOMER_CREATION_POLICY, coming_soon_result
+
 
 import asyncio
 import json
@@ -137,11 +139,11 @@ derails the resume.
 
 ## MANUAL STEP-BY-STEP (when the user drives one stage at a time)
 
-When the user changes direction, revise the pending plan rather than restarting intake. Reuse known customer identifiers and supplied details. Never silently delete, cancel, or replace a saved proposal. For an existing individual customer who wants family insurance, use prepare_family_insurance with their customer_id. This opens a prefilled family form and reuses the customer by CNIC at enrolment. Ask for missing family members and obtain explicit submission. Do not invent relatives, generate demo data, or rerun customer creation unless the user explicitly requests it. If a proposal is already submitted or issued, explain that its existing workflow remains separate and do not imply that it was converted.
+When the user changes direction, revise the pending plan rather than restarting intake. Reuse known customer identifiers and supplied details. Never silently delete, cancel, or replace a saved proposal. For an existing individual customer who wants to create family insurance, explain that family creation is coming soon and suggest available individual customer creation. Do not open a family form or collect relatives. If a proposal is already submitted or issued, explain that its existing workflow remains separate and do not imply that it was converted.
 
 An individual customer has ONE open proposal. Switching to another plan is not a new proposal: if the tool refuses because a proposal is already open, relay that and its Change Plan guidance; never say a plan was "changed" unless a tool result says it was changed. When asked for a customer's plan, give the ONE plan the tool returns (get_case_details `plan`, the one the Proposals page shows) — never list several plans for one customer, and never guess why a screen shows a particular one. Explain causes only from tool results; if they don't say, say you don't know.
 
-1. **add_customer / add_organization / add_family_group** → Register the applicant. **CRITICAL:** If the user asks to "add a customer" but does not specify the type, call **resolve_customer_type** — do NOT ask which type it is yourself in plain text, the tool presents Individual / Corporate (Organization) / Family group as clickable buttons and its result tells you which of `add_customer` / `add_organization` / `add_family_group` to call next.
+1. **add_customer** → Register an individual applicant. Family and corporate creation are coming soon; suggest individual creation instead. **CRITICAL:** If the user asks to "add a customer" but does not specify the type, call **resolve_customer_type** — do NOT ask which type it is yourself in plain text, the tool presents Individual / Corporate (Organization) / Family group as clickable buttons and its result explains availability. Only individual creation is available; family and corporate selections must return coming soon, without intake forms or demo creation.
 2. create_proposal → NEVER ask the user to type product details manually. If you don't know the product_name, just call the tool with the applicant's name/CNIC and the system will automatically fetch the catalog and present the user with plan buttons to click.
 3. For individuals, submit/review the proposal and receive the initial premium BEFORE opening underwriting. If these actions have no registered capability, use the proposal UI and explain the blocker; never simulate submission or payment. `create_case` opens underwriting only when the backend prerequisites are satisfied. Families and corporate schemes follow their own contracts.
 4. **Pre-Underwriting Gates (Strictly Sequential 5 Gates):**
@@ -214,14 +216,7 @@ customer/family/organization WITHOUT giving you their real CNIC/details:
   pattern). quick_start_workflow generates a genuinely random CNIC/name every call so repeated demo
   requests never collide with an existing record; a hand-invented CNIC always collides eventually.
   Add full_journey=true if they want the whole flow exercised.
-- For CORPORATE customers, DO NOT use quick_start_workflow and DO NOT invent company or employee data yourself — call
-  **add_organization** with `use_demo_data=true` and no name. The tool generates a fresh company with its Group Life
-  policy, benefit classes and 10 employees, and the browser then shows the summary and the "Continue the group scheme"
-  button, so reply with one short sentence only.
-- For FAMILY customers, DO NOT use quick_start_workflow and DO NOT invent member data yourself —
-  call **add_family_group** with `use_demo_data=true` and no `members` list. The tool generates a
-  fresh, randomly-varied family (different names/CNICs every time) so repeated demo requests never
-  collide with an existing record.
+- Family and corporate customer creation, including demo requests, is coming soon. Suggest available individual customer creation instead.
 - The "make something up" license covers the CUSTOMER's own fields only — it never extends to
   agent_name/agent_email. That must stay a real Agent-role user or be left unset; see above.
 
@@ -628,7 +623,7 @@ ROLE_RESTRICTION_TEMPLATE = (
 # in the prompt — permission_gate blocks the call and returns the "no access"
 # message before a tool can run, and the model is only ever bound tools it is
 # actually allowed. The prompt was belt-and-braces on top of a hard gate.
-_SYSTEM_PROMPT_CACHED = SYSTEM_PROMPT.format(pages=catalogue())
+_SYSTEM_PROMPT_CACHED = SYSTEM_PROMPT.format(pages=catalogue()) + "\n\n" + CUSTOMER_CREATION_POLICY
 
 # One message per platform, appended only where it changes what the model
 # should SAY (the mobile app has to hand off to the web portal). Kept to two
@@ -1735,6 +1730,12 @@ async def _permission_gate(state: ChatState) -> Command:
                   "required_roles": required_roles}
         return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
 
+    # Respond before intake/required-field prompts or any creation side effects.
+    unavailable = coming_soon_result(name)
+    if unavailable:
+        return back_to_agent({"messages": [_tool_result_message(name, call_id, unavailable)],
+                              "lead_tool": None, "lead_intake": False})
+
     # An agent picked at the start of intake rides along on the create call.
     # Cleared once consumed so a later, unrelated "add a customer" asks again.
     consumed_lead_agent = False
@@ -1808,8 +1809,8 @@ async def _permission_gate(state: ChatState) -> Command:
         # (display, tool to call next, url slug for the leads-page form chooser)
         choices = [
             ("Individual", "add_customer", "individual"),
-            ("Corporate (Organization)", "add_organization", "corporate"),
-            ("Family group", "add_family_group", "family"),
+            ("Corporate (Organization) — Coming soon", "add_organization", "corporate"),
+            ("Family group — Coming soon", "add_family_group", "family"),
         ]
         go_back_chip = {"label": "← Go back", "actionType": "submit", "payload": "Go back"}
         order = [k for k, present in (("source", bool(source_choices)), ("agent", bool(agent_choices)), ("type", True)) if present]
@@ -1922,7 +1923,7 @@ async def _permission_gate(state: ChatState) -> Command:
                     echo = f"{_source_echo(lead_source)} "
                 answer = _ask_choice(
                     name, args,
-                    f"{echo}Is this an Individual, a Corporate (Organization), or a Family group?",
+                    f"{echo}Individual customer creation is available now. Family and corporate creation are coming soon. Which customer type?",
                     [(display, tool) for display, tool, _ in choices],
                     extra_actions=extras,
                 )
@@ -1934,6 +1935,10 @@ async def _permission_gate(state: ChatState) -> Command:
         resolved = next((c for c in choices if c[1] == _match_choice(answer, [(d, t) for d, t, _ in choices])), None)
         if resolved:
             display, resolved_tool, slug = resolved
+            unavailable = coming_soon_result(resolved_tool)
+            if unavailable:
+                return back_to_agent({"messages": [_tool_result_message(name, call_id, unavailable)],
+                                      "lead_tool": None, "lead_intake": False})
             # The form opens with this agent already selected (agent_email is
             # read by the leads page's quick-lead form) instead of unassigned.
             form_path = f"admin/leads?add={slug}"

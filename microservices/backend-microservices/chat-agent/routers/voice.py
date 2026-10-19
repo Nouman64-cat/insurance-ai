@@ -11,6 +11,7 @@ import websockets
 from fastapi import APIRouter, File, Header, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 from providers import resolve
+from customer_availability import CUSTOMER_CREATION_POLICY
 import usage
 
 log = logging.getLogger("chat-agent.voice")
@@ -111,7 +112,7 @@ def transcription_config(model):
 def session_config(locale, settings):
     return {
         "type": "realtime", "model": settings["model"],
-        "instructions": INSTRUCTIONS + ("\nStart in Urdu." if locale == "ur" else "\nStart in English."),
+        "instructions": INSTRUCTIONS + "\n" + CUSTOMER_CREATION_POLICY + ("\nStart in Urdu." if locale == "ur" else "\nStart in English."),
         "max_output_tokens": 512,
         "audio": {
             "input": {

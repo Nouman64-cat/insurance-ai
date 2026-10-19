@@ -20,7 +20,6 @@ import CustomerFormModal from "@/components/entities/CustomerFormModal";
 import CustomerQuickLeadModal from "@/components/entities/CustomerQuickLeadModal";
 import { notifyParentPortal } from "@/lib/agent/portalMessage";
 import { sendLeadToDraft, isEmbedded } from "@/lib/sendToDraft";
-import FamilyFullEntryModal from "@/components/entities/FamilyFullEntryModal";
 import FamilyFormModal from "@/components/entities/FamilyFormModal";
 import { leadAnnouncementsPaused } from "@/lib/leadAnnouncements";
 import OrganizationFormModal from "@/components/entities/OrganizationFormModal";
@@ -226,7 +225,6 @@ export default function LeadsHubPage() {
     activeFilterChips.push({ key: "source", label, onRemove: () => setSourceFilter("") });
   }
 
-  const [familyConversionOpen, setFamilyConversionOpen] = useState(false);
   // Inline "Add" flows — replaces navigation to separate customer/family/organization pages.
   const [chooserType, setChooserType] = useState<EntryEntityType | null>(null);
   const [activeAdd, setActiveAdd] = useState<{ type: EntryEntityType; mode: "quick" | "full" } | null>(null);
@@ -302,8 +300,7 @@ export default function LeadsHubPage() {
     if (addType === "individual") {
       setChooserType("INDIVIDUAL");
     } else if (addType === "family") {
-      if (searchParams.get("head")) setFamilyConversionOpen(true);
-      else setChooserType("FAMILY");
+      setChooserType("FAMILY");
     } else if (addType === "corporate") {
       setChooserType("CORPORATE");
     }
@@ -1367,7 +1364,7 @@ export default function LeadsHubPage() {
         entityType={chooserType}
         onClose={() => setChooserType(null)}
         onSelect={(mode) => {
-          if (chooserType) setActiveAdd({ type: chooserType, mode });
+          if (chooserType === "INDIVIDUAL") setActiveAdd({ type: chooserType, mode });
           setChooserType(null);
         }}
       />
@@ -1417,7 +1414,6 @@ export default function LeadsHubPage() {
           }}
         />
       )}
-      <FamilyFullEntryModal open={familyConversionOpen} onClose={() => setFamilyConversionOpen(false)} onSaved={(message) => { setFamilyConversionOpen(false); setNotice(message); fetchLeads(); }} />
       <FamilyFormModal
         open={activeAdd?.type === "FAMILY"}
         mode={activeAdd?.type === "FAMILY" ? activeAdd.mode : "quick"}

@@ -1,6 +1,8 @@
 // Urdu page text: customer, family and organization entry forms (quick lead, full entry, edit), the family roster
 // editor, ACR, IPP, e-application customization and verification. Keyed by the exact English wording; see ../ur-text.ts.
 const entities: Record<string, string> = {
+  "Adding family leads is coming soon. You can still add individual leads.": "فیملی لیڈز شامل کرنے کی سہولت جلد آ رہی ہے۔ آپ ابھی انفرادی لیڈز شامل کر سکتے ہیں۔",
+  "Adding corporate leads is coming soon. You can still add individual leads.": "کارپوریٹ لیڈز شامل کرنے کی سہولت جلد آ رہی ہے۔ آپ ابھی انفرادی لیڈز شامل کر سکتے ہیں۔",
   // ── Add entry chooser & quick forms ───────────────────────────────────────
   "Add Individual": "فرد شامل کریں",
   "Add Family": "فیملی شامل کریں",
