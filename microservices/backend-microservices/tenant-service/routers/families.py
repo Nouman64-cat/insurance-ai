@@ -75,8 +75,8 @@ from shared.models.core import (
     VerificationFinding,
 )
 from shared.pricing.calculator import calculate_premium
-from routers.auth import optional_oauth2_scheme, source_scope
-from routers.users import verify_admin   # reuse existing Admin guard — tenant-scoped for Admin, cross-tenant for SuperAdmin
+from routers.auth import optional_oauth2_scheme, source_scope, lead_agent_filter
+from routers.users import verify_admin, verify_tenant_member  # Reads check membership; mutations keep the Admin guard.
 
 logger = logging.getLogger("tenant-service.families")
 
@@ -275,7 +275,7 @@ async def create_family_group(
 @router.get(
     "/{tenant_id}/families",
     response_model=List[FamilyGroupRead],
-    dependencies=[Depends(verify_admin)],
+    dependencies=[Depends(verify_tenant_member)],
 )
 async def list_family_groups(
     tenant_id: UUID,
@@ -292,6 +292,7 @@ async def list_family_groups(
 ):
     query = select(FamilyGroup).where(FamilyGroup.tenant_id == tenant_id)
     scope = await source_scope(token, session)
+    assigned_agent_id = await lead_agent_filter(token, session, assigned_agent_id, scope)
     if scope is not None:
         query = query.where(FamilyGroup.acquisition_source_id.in_(scope))
     term = (search or "").strip()

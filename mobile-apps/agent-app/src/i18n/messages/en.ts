@@ -39,7 +39,7 @@ const en = {
     signIn: 'Sign in',
     signedIn: 'Signed in',
     secure: 'Secure, encrypted connection',
-    footer: 'RIZVIZ Insurance · Agent Portal',
+    footer: 'GetInsuredAI · Agent Portal',
   },
   settings: {
     title: 'Settings',
@@ -78,7 +78,7 @@ const en = {
     about: 'About',
     aboutSubtitle: 'Version and build information',
     signOutSubtitle: 'You will need to sign in again',
-    footer: 'RIZVIZ Agent Portal · v1.0.0',
+    footer: 'GetInsuredAI Agent Portal · v1.0.0',
   },
 };
 

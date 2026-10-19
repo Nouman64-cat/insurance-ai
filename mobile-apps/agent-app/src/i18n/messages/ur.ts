@@ -42,7 +42,7 @@ const ur: Messages = {
     signIn: 'سائن اِن',
     signedIn: 'سائن اِن ہو گیا',
     secure: 'محفوظ، خفیہ کردہ کنکشن',
-    footer: 'RIZVIZ انشورنس · ایجنٹ پورٹل',
+    footer: 'GetInsuredAI · ایجنٹ پورٹل',
   },
   settings: {
     title: 'ترتیبات',
@@ -81,7 +81,7 @@ const ur: Messages = {
     about: 'تعارف',
     aboutSubtitle: 'ورژن اور بلڈ کی معلومات',
     signOutSubtitle: 'آپ کو دوبارہ سائن اِن کرنا ہوگا',
-    footer: 'RIZVIZ ایجنٹ پورٹل · v1.0.0',
+    footer: 'GetInsuredAI ایجنٹ پورٹل · v1.0.0',
   },
 };
 

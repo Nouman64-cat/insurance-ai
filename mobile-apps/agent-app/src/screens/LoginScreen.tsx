@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import {
   View,
+  Image,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
@@ -80,10 +81,13 @@ export default function LoginScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={[styles.column, !isCompact ? styles.columnWide : null]}>
-            {/* Perfectly Aligned Brand Header */}
+            {/* Official GetInsuredAI identity */}
             <View style={styles.brand}>
+              <View style={styles.logoFrame}>
+                <Image source={require('../../assets/logo-mark.png')} style={styles.logo} resizeMode="contain" accessibilityLabel="GetInsuredAI logo" />
+              </View>
               <Text align="center" style={[styles.brandTitle, { color: colors.text }]}>
-                RIZVIZ
+                GetInsuredAI
               </Text>
               <Text
                 align="center"
@@ -110,7 +114,7 @@ export default function LoginScreen() {
             <Card padding="xl" style={[styles.formCard, shadow(1)]}>
               <Field
                 label={t('login.email')}
-                placeholder="agent@rizviz.com"
+                placeholder="agent@example.com"
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoComplete="email"
@@ -206,11 +210,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.xxl,
   },
+  logoFrame: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: radii.xl,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  logo: {
+    width: 72,
+    height: 80,
+  },
   brandTitle: {
     fontSize: 34,
     lineHeight: 40,
     fontWeight: '900',
-    letterSpacing: 5,
+    letterSpacing: -0.5,
     textAlign: 'center',
     marginBottom: 2,
   },

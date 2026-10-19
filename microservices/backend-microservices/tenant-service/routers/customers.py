@@ -21,8 +21,8 @@ from shared.models.core import (
 )
 from services import document_requests as docreq
 from shared.pricing.calculator import calculate_premium
-from routers.auth import optional_oauth2_scheme, source_scope
-from routers.users import verify_admin   # reuse existing Admin guard
+from routers.auth import optional_oauth2_scheme, source_scope, lead_agent_filter
+from routers.users import verify_admin, verify_tenant_member  # Reads check membership; mutations keep the Admin guard.
 
 # A customer counts as a policyholder only once a policy is actually bound and in-force.
 # APPROVED is intentionally excluded — it means "approved by underwriting but not yet issued",
@@ -236,7 +236,7 @@ async def create_customer(
 @router.get(
     "/{tenant_id}/customers",
     response_model=list[CustomerRead],
-    dependencies=[Depends(verify_admin)],
+    dependencies=[Depends(verify_tenant_member)],
 )
 async def list_customers(
     tenant_id: UUID,
@@ -267,6 +267,7 @@ async def list_customers(
         # family/corporate member from also appearing as its own INDIVIDUAL lead.
         query = query.where(Customer.organization_id.is_(None)).where(Customer.family_group_id.is_(None))
     scope = await source_scope(token, session)
+    assigned_agent_id = await lead_agent_filter(token, session, assigned_agent_id, scope)
     if scope is not None:
         query = query.where(Customer.acquisition_source_id.in_(scope))
 

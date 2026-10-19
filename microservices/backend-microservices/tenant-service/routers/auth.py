@@ -80,6 +80,21 @@ async def _role_name(user: User, session: AsyncSession) -> str:
     return role.name if role else "Viewer"
 
 
+async def lead_agent_filter(token: Optional[str], session: AsyncSession, requested: Optional[UUID],
+                            source_ids: Optional[set[UUID]]) -> Optional[UUID]:
+    """Agents without a source see their own assignments, regardless of a client filter.
+
+    Source-linked logins are already restricted to their source book; staff keep
+    the existing optional assigned-agent filter. Tenant membership is checked by
+    the read endpoint's authentication dependency.
+    """
+    if token and source_ids is None:
+        user = await _get_current_user(token, session)
+        if await _role_name(user, session) == "Agent":
+            return user.id
+    return requested
+
+
 async def _me_payload(
     user: User, profile: UserProfile | None, role_name: str, session: AsyncSession
 ) -> dict:
