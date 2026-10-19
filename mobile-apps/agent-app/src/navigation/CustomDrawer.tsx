@@ -10,7 +10,7 @@ import { useSession } from '../context/SessionContext';
 import { useNotifications } from '../notifications/NotificationContext';
 import { Text, Pressable, Avatar, Badge, ConfirmDialog, Divider } from '../components/ui';
 
-const LOGO = require('../assets/rizvi.png');
+const LOGO = require('../../assets/logo-horizontal.png');
 
 interface DrawerLink {
   route: string;
@@ -59,8 +59,8 @@ export default function CustomDrawer(props: DrawerContentComponentProps) {
         showsVerticalScrollIndicator={false}
       >
         <View style={[styles.header, { paddingTop: insets.top + spacing.xl }]}>
-          <View style={[styles.logoPlate, { backgroundColor: colors.surfaceSunken }, shadow(0)]}>
-            <Image source={LOGO} style={styles.logo} resizeMode="contain" accessibilityLabel="RIZVIZ" />
+          <View style={[styles.logoPlate, { backgroundColor: '#FFFFFF' }, shadow(0)]}>
+            <Image source={LOGO} style={styles.logo} resizeMode="contain" accessibilityLabel="GetInsuredAI" />
           </View>
 
           <View style={styles.identity}>
@@ -186,8 +186,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   logo: {
-    width: 108,
-    height: 39,
+    width: 192,
+    height: 50,
   },
   identity: {
     flexDirection: 'row',

@@ -311,7 +311,52 @@ def add_customer(**kwargs) -> str:
     return "{}"
 
 
+class RecordLeadArgs(BaseModel):
+    first_name: str
+    phone: str = Field(description="Customer's actual phone number. Do not invent contact details.")
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+    cnic: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    gender: Optional[Literal["Male", "Female", "Other"]] = None
+    occupation: Optional[str] = None
+    declared_income: Optional[float] = Field(default=None, ge=0)
+    city: Optional[str] = None
+    province: Optional[str] = None
+
+
+@tool(args_schema=RecordLeadArgs)
+def record_lead(**kwargs) -> str:
+    """Quickly record an individual lead using their real name and phone. Save only supplied demographics; no proposal, case, underwriting or fabricated measurements. Auto-assigned to the signed-in agent."""
+    return "{}"
+
+
+class SelectCustomerPlanArgs(BaseModel):
+    customer_id: Optional[str] = None
+    customer_name: Optional[str] = None
+    cnic: Optional[str] = None
+    plan_id: Optional[str] = Field(default=None, description="A plan ID explicitly chosen from the live eligible catalogue. Omit to compare plans first.")
+    coverage_amount: Optional[float] = Field(default=None, gt=0)
+    term_years: Optional[int] = Field(default=None, gt=0)
+
+
+@tool(args_schema=SelectCustomerPlanArgs)
+def select_customer_plan(**kwargs) -> str:
+    """Compare live individual plans using the lead's recorded age and demographic profile. Save the user's selected plan, coverage and term on the lead only. Never creates a proposal or underwriting case. Ask for missing DOB, cover or term."""
+    return "{}"
+
+
 class UpdateCustomerArgs(BaseModel):
+    new_cnic: Optional[str] = Field(default=None, description="Corrected actual CNIC. Identify the existing record by customer_id or current CNIC/name; do not create another customer.")
+    customer_id: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    gender: Optional[Literal["Male", "Female", "Other"]] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
     send_to_draft: bool = Field(default=False, description="Set true for send draft / move lead to proposals. Creates a draft proposal without opening or advancing an underwriting case.")
     cnic: Optional[str] = None
     name: Optional[str] = None
@@ -2886,13 +2931,13 @@ class CustomerRiskAssessmentArgs(BaseModel):
 
 @tool(args_schema=CustomerRiskAssessmentArgs)
 def run_customer_risk_assessment(**kwargs) -> str:
-    """Run and SAVE the lead/customer profile risk assessment, exactly like the lead page Risk Assessment button. Uses the stored selected plan and profile. No proposal, underwriting case or documents required. Distinct from final case underwriting (run_risk_assessment). Admin/SuperAdmin only."""
+    """Run and SAVE the lead/customer profile risk assessment, exactly like the lead page Risk Assessment button. Uses the stored selected plan and profile. No proposal, underwriting case or documents required. Distinct from final case underwriting (run_risk_assessment). Admin/SuperAdmin and scoped acquisition Agents."""
     return "{}"
 
 
 @tool(args_schema=CustomerRiskAssessmentArgs)
 def get_customer_risk_assessment(**kwargs) -> str:
-    """Read the saved lead/customer risk assessment and whether it is outdated. Does not run or save an assessment. No proposal or case required. Admin/SuperAdmin only."""
+    """Read the saved lead/customer risk assessment and whether it is outdated. Does not run or save an assessment. No proposal or case required. Admin/SuperAdmin and scoped acquisition Agents."""
     return "{}"
 
 
@@ -3241,6 +3286,8 @@ ALL_TOOLS = [
     # customers
     resolve_customer_type,
     add_customer,
+    record_lead,
+    select_customer_plan,
     update_customer,
     bulk_add_customers,
     # users / orgs / families

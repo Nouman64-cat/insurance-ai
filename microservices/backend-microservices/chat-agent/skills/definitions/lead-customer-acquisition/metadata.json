@@ -1,0 +1,57 @@
+{
+  "id": "lead-customer-acquisition",
+  "purpose": "Help agents capture, find and edit leads accurately, assess demographic risk and select insurance plans without proposals or underwriting.",
+  "intents": [
+    "record lead",
+    "quick lead",
+    "find customer",
+    "edit lead",
+    "demographic risk",
+    "select insurance plan"
+  ],
+  "capabilities": [
+    "record_lead",
+    "list_customers",
+    "list_leads",
+    "update_customer",
+    "list_insurance_plans",
+    "select_customer_plan",
+    "run_customer_risk_assessment",
+    "get_customer_risk_assessment",
+    "assess_customer_risk_profile"
+  ],
+  "roles": [
+    "Agent"
+  ],
+  "prerequisites": [
+    "Authenticated JWT and tenant scope",
+    "Existing role/platform allow-list",
+    "Live owning-service state and required record identifiers"
+  ],
+  "business_rules": [
+    "Only scoped individual leads are created or edited; family and corporate creation is coming soon.",
+    "Do not invent demographic facts, medical measurements or customer declarations.",
+    "Plan selection changes the lead only. No proposals, cases, approvals, claims, commissions or payments."
+  ],
+  "lifecycle_source": "tenant-service/routers/customers.py; acquisition_tools.py; profile_risk_tools.py",
+  "approvals": "permission.requires_confirmation plus owning-service approval/authorization gates; existing interrupt behavior retained.",
+  "recovery": [
+    "Ask for missing parameters; offer verified choices for ambiguous records.",
+    "Preserve completed steps; verify unknown mutation outcomes before retry.",
+    "Explain unsupported operations and route to the appropriate workspace or authorized staff."
+  ],
+  "verification": "Report completion only from confirmed backend success. Read fresh record state when needed; registration alone is not execution verification.",
+  "tests": [
+    "test_agent_acquisition.py"
+  ],
+  "steps": [
+    {
+      "id": "lookup",
+      "capability": "list_customers",
+      "depends_on": []
+    }
+  ],
+  "unsupported": [
+    "Proposal creation, underwriting, medical examination, issuance, claims, commissions and payments"
+  ]
+}

@@ -302,7 +302,7 @@ def test_gate_refused_for_unassigned_underwriters_offers_the_assignment():
         raise httpx.HTTPStatusError("409", request=req, response=httpx.Response(409, json={"detail": detail}, request=req))
     with patch.dict(_HANDLERS, {"verify_e_application": refused}):
         from tool_executor import ExecCtx
-        out = asyncio.run(execute_tool("verify_e_application", {"case_number": "APP-2026-77760C"}, ExecCtx(tenant_id="t", jwt_token="")))
+        out = asyncio.run(execute_tool("verify_e_application", {"case_number": "APP-2026-77760C"}, ExecCtx(tenant_id="t", jwt_token="", role="Admin")))
     assert out["error"] == detail["message"] and out["error_code"] == "conflict"
     assert [q["payload"] for q in out["quick_actions"]] == ["Assign the medical review of case APP-2026-77760C",
                                                             "Assign the financial review of case APP-2026-77760C"]

@@ -9,6 +9,7 @@ the graph checks before a tool ever runs.
 from env_mode import is_demo
 
 MUTATING_TOOLS = {
+    "record_lead", "select_customer_plan",
     "prepare_claim_settlement",
     "run_customer_risk_assessment",
     "pay_authorized_claim", "reconcile_finance_claim",
@@ -352,6 +353,7 @@ CLIENT_EXECUTED_TOOLS = {"upload_document"}
 # that are optional/inferable (e.g. create_case's applicant lookup, which can
 # proceed on cnic OR applicant_name).
 REQUIRED_ARGS: dict[str, list[str]] = {
+    "record_lead": ["first_name", "phone"],
     "create_commission_rule": ["rule_code", "name", "commission_pct"],
     "update_commission_rule": ["rule_code"],
     "delete_commission_rule": ["rule_code"],
@@ -430,6 +432,8 @@ REQUIRED_ARGS: dict[str, list[str]] = {
 # Tools that emit progress steps worth showing in the UI's process graph, with
 # the label each step gets. Everything else falls back to a humanised tool name.
 STEP_LABELS: dict[str, str] = {
+    "record_lead": "Recording lead",
+    "select_customer_plan": "Selecting a lead insurance plan",
     "get_finance_dashboard": "Checking Finance queues",
     "get_claim_payment_details": "Checking claim payment details",
     "pay_authorized_claim": "Recording authorised settlement payment",
@@ -690,72 +694,17 @@ def is_destructive(tool_name: str) -> bool:
     return tool_name in DESTRUCTIVE_TOOLS
 
 
-AGENT_ALLOWED_TOOLS = {
-    # Their own commission. The earnings API scopes an Agent to their own
-    # acquisition source, so these can never show another producer's money.
-    "get_agent_statement",
-    "get_commission_ledger",
-    "explain_commission_earning",
-    # What the commission rules pay (RS-COM-002); the rate-preview API is open to staff and agents.
-    "get_commission_rate_card",
-    # Lead Generation & Customer Intake
-    "resolve_customer_type",
-    "add_customer",
-    "update_customer",
-    "add_organization",
-    "add_family_group",
-    "prepare_family_insurance",
-    "bulk_add_customers",
-    "quick_start_workflow",
-    "list_leads",
-    "list_customers",
-    "assess_customer_risk_profile",
-    "list_organizations",
-    "list_family_groups",
-    "create_case",
-    "list_cases",
-    "get_case_details",
-    "add_case_comment",
-    # Proposals & Document Collection
-    "create_proposal",
-    "list_quotes",
-    "list_insurance_plans",
-    "upload_document",
-    "get_document_checklist",
-    "list_artifacts",
-    # Pre-Underwriting Field Steps (Agent Field Roles)
-    "get_pre_underwriting_status",
-    "verify_e_application",
-    "submit_agent_confidential_report",
-    # Discovery & Navigation
-    "navigate_to_page",
-    "show_record",
-    "search_records",
-    "get_dashboard_stats",
-    "get_workflow_recommendation",
-    # Evidence collection & recovery
-    "request_missing_documents",
-    "link_document_to_requirement",
-    "get_medical_report_status",
-    "get_operation_status",
-    "resume_operation",
-    "get_service_health",
-    "diagnose_connection",
-    # Records & member journeys (pre-underwriting scope, so the field app has them too)
-    "resolve_insurance_record",
-    "preview_application_transition",
-    "get_member_workflow_matrix",
-    "resume_member_workflow",
-    "get_workflow_timeline",
-    # Raising and following requests and tickets
-    "create_service_request",
-    "get_service_request",
-    "add_request_attachment",
-    "submit_service_request",
-    "create_support_ticket",
-    "get_support_ticket",
-    "add_ticket_comment",
+AGENT_ACQUISITION_TOOLS = {
+    "list_walk_in_leads", "acknowledge_walk_in_lead",
+    "record_lead", "select_customer_plan", "resolve_customer_type", "add_customer", "update_customer",
+    "list_customers", "list_leads", "list_insurance_plans", "assess_customer_risk_profile",
+    "run_customer_risk_assessment", "get_customer_risk_assessment",
+    "search_capabilities", "get_capability_schema",
+    # Kept to explain coming-soon behavior for old conversations, never to create groups.
+    "add_family_group", "add_organization", "prepare_family_insurance",
 }
+
+AGENT_ALLOWED_TOOLS = AGENT_ACQUISITION_TOOLS
 
 # Servicing an issued policy is post-issuance work: Agent on the web portal only.
 # Contract changes, portal credentials and policy exits stay with staff.
@@ -780,20 +729,8 @@ AGENT_WEB_ONLY_TOOLS = {
     "get_work_queue",
 }
 
-# The agent-app mobile client is Agent-only and covers onboarding through
-# Gate 5 (Medical Examination booking) — everything from AI Risk Assessment
-# onward (risk engine, OCR/document-audit decisioning, approval, pre-issuance,
-# policy issuance, payment) stays web-portal-only. Deliberately excludes
-# run_pre_underwriting_clearance / the autonomous-journey tools: those
-# fabricate/auto-fill gates instead of collecting the field agent's real ACR
-# and the customer's real e-app/medical-exam submissions, which would defeat
-# the point of a field agent driving this from their own device.
-AGENT_MOBILE_ALLOWED_TOOLS = AGENT_ALLOWED_TOOLS | {
-    "run_compliance_screening",
-    "override_compliance_screening",
-    "run_insurance_history_check",
-    "assess_medical_examination",
-}
+# The field copilot is acquisition-only on both mobile and web.
+AGENT_MOBILE_ALLOWED_TOOLS = AGENT_ACQUISITION_TOOLS
 
 # Tools blocked on mobile even though they'd be allowed for this role on web —
 # used only to give the mobile client a friendlier "wrong app for this step"
@@ -1162,7 +1099,12 @@ def is_role_allowed(tool_name: str, role: str, platform: str = "web") -> bool:
     registries above defaulted to *permitted* for unrecognised roles, and
     Underwriter was a deny-list that auto-granted anything newly added.
     """
-    # Match the owning customer risk-profile endpoints, which require verify_admin.
+    if role == "Agent":
+        if tool_name in {"search_capabilities", "get_capability_schema"}:
+            from skills import enabled
+            return enabled()
+        return tool_name in AGENT_ACQUISITION_TOOLS
+    # Staff risk access; Agents were handled above with scoped acquisition permission.
     if tool_name in {"run_customer_risk_assessment", "get_customer_risk_assessment"}:
         return role in ADMIN_ROLES
     if tool_name in {"search_capabilities", "get_capability_schema"}:
@@ -1192,7 +1134,7 @@ def is_role_allowed(tool_name: str, role: str, platform: str = "web") -> bool:
     if role == "Agent":
         if platform == "mobile":
             return tool_name in AGENT_MOBILE_ALLOWED_TOOLS
-        return tool_name in AGENT_ALLOWED_TOOLS or tool_name in AGENT_WEB_ONLY_TOOLS
+        return tool_name in AGENT_ACQUISITION_TOOLS
     if role == "Underwriter":
         if tool_name in ADMIN_ONLY_TOOLS:
             return False

@@ -165,7 +165,7 @@ def test_preview_never_writes():
 def test_agent_cannot_apply_a_contract_change():
     from permission import is_role_allowed
     assert not is_role_allowed("submit_policy_endorsement", "Agent")
-    assert is_role_allowed("preview_policy_endorsement", "Agent")
+    assert not is_role_allowed("preview_policy_endorsement", "Agent")
     assert not is_role_allowed("preview_policy_endorsement", "Agent", "mobile")
 
 

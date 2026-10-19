@@ -21,8 +21,8 @@ from shared.models.core import (
 )
 from services import document_requests as docreq
 from shared.pricing.calculator import calculate_premium
-from routers.auth import optional_oauth2_scheme, source_scope, lead_agent_filter
-from routers.users import verify_admin, verify_tenant_member  # Reads check membership; mutations keep the Admin guard.
+from routers.auth import optional_oauth2_scheme, source_scope, lead_agent_filter, _get_current_user, _role_name
+from routers.users import verify_admin, verify_tenant_member, verify_customer_acquisition  # Reads check membership; mutations keep the Admin guard.
 
 # A customer counts as a policyholder only once a policy is actually bound and in-force.
 # APPROVED is intentionally excluded — it means "approved by underwriting but not yet issued",
@@ -132,11 +132,21 @@ async def _enforce_early_knockout(
     )
 
 
+
+async def _check_acquisition_access(customer, tenant_id, token, session):
+    scope = await source_scope(token, session)
+    assigned = await lead_agent_filter(token, session, None, scope)
+    if (not customer or customer.tenant_id != tenant_id
+            or (scope is not None and customer.acquisition_source_id not in scope)
+            or (assigned is not None and customer.assigned_agent_id != assigned)):
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+
 @router.post(
     "/{tenant_id}/customers",
     response_model=CustomerRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(verify_admin)],
+    dependencies=[Depends(verify_customer_acquisition)],
 )
 async def create_customer(
     tenant_id: UUID,
@@ -145,6 +155,17 @@ async def create_customer(
     session: AsyncSession = Depends(get_session),
     token: Optional[str] = Depends(optional_oauth2_scheme),
 ) -> Customer:
+    actor = await _get_current_user(token, session)
+    is_agent = await _role_name(actor, session) == "Agent"
+    if is_agent:
+        if body.profile_status not in (None, ProfileStatusEnum.LEAD, ProfileStatusEnum.PROSPECT, ProfileStatusEnum.UNDERWRITING_READY):
+            raise HTTPException(status_code=403, detail="Agents record leads; proposal and policy transitions require the owning team.")
+        body.assigned_agent_id = actor.id
+        # Unrecorded measurements and smoking status must remain unknown.
+        for field in ("is_smoker", "height_cm", "weight_kg"):
+            if field not in body.model_fields_set:
+                setattr(body, field, None)
+
     # 1. Verify tenant exists and is active
     tenant = await session.get(Tenant, tenant_id)
     if not tenant or not tenant.is_active:
@@ -211,9 +232,9 @@ async def create_customer(
         marital_status  = body.marital_status,
         occupation      = body.occupation,
         declared_income = body.declared_income,
-        is_smoker       = body.is_smoker if body.is_smoker is not None else False,
-        height_cm       = body.height_cm if body.height_cm is not None else 170.0,
-        weight_kg       = body.weight_kg if body.weight_kg is not None else 70.0,
+        is_smoker       = body.is_smoker if is_agent else (body.is_smoker if body.is_smoker is not None else False),
+        height_cm       = body.height_cm if is_agent else (body.height_cm if body.height_cm is not None else 170.0),
+        weight_kg       = body.weight_kg if is_agent else (body.weight_kg if body.weight_kg is not None else 70.0),
         profile_status  = status_val,
         acquisition_source_id = acquisition_source_id,
         branch_id       = resolved_branch_id,
@@ -389,7 +410,7 @@ async def get_customer_stats(
 @router.get(
     "/{tenant_id}/customers/{customer_id}",
     response_model=CustomerRead,
-    dependencies=[Depends(verify_admin)],
+    dependencies=[Depends(verify_customer_acquisition)],
 )
 async def get_customer(
     tenant_id: UUID,
@@ -403,6 +424,7 @@ async def get_customer(
         .options(selectinload(Customer.acquisition_source))
     )
     customer = result.first()
+    await _check_acquisition_access(customer, tenant_id, token, session)
     scope = await source_scope(token, session)
     if not customer or customer.tenant_id != tenant_id or (scope is not None and customer.acquisition_source_id not in scope):
         raise HTTPException(
@@ -451,6 +473,7 @@ async def _risk_profile_inputs(session: AsyncSession, tenant_id: UUID, customer_
                                coverage: Optional[float]):
     """(customer, profile dict for services.profile_risk, cover considered, plan name)."""
     customer = await session.get(Customer, customer_id)
+    await _check_acquisition_access(customer, tenant_id, token, session)
     scope = await source_scope(token, session)
     if not customer or customer.tenant_id != tenant_id or (scope is not None and customer.acquisition_source_id not in scope):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
@@ -498,7 +521,7 @@ async def _run_risk_profile(session: AsyncSession, tenant_id: UUID, customer_id:
 
 @router.get(
     "/{tenant_id}/customers/{customer_id}/risk-profile",
-    dependencies=[Depends(verify_admin)],
+    dependencies=[Depends(verify_customer_acquisition)],
 )
 async def get_customer_risk_profile(
     tenant_id: UUID,
@@ -514,7 +537,7 @@ async def get_customer_risk_profile(
 
 @router.post(
     "/{tenant_id}/customers/{customer_id}/risk-profile",
-    dependencies=[Depends(verify_admin)],
+    dependencies=[Depends(verify_customer_acquisition)],
 )
 async def run_customer_risk_profile(
     tenant_id: UUID,
@@ -543,7 +566,7 @@ async def run_customer_risk_profile(
 
 @router.get(
     "/{tenant_id}/customers/{customer_id}/risk-profile/latest",
-    dependencies=[Depends(verify_admin)],
+    dependencies=[Depends(verify_customer_acquisition)],
 )
 async def latest_customer_risk_profile(
     tenant_id: UUID,
@@ -921,7 +944,7 @@ async def _policy_in_scope(
 @router.put(
     "/{tenant_id}/customers/{customer_id}",
     response_model=CustomerRead,
-    dependencies=[Depends(verify_admin)],
+    dependencies=[Depends(verify_customer_acquisition)],
 )
 async def update_customer(
     tenant_id: UUID,
@@ -938,6 +961,22 @@ async def update_customer(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Customer not found"
         )
+    await _check_acquisition_access(customer, tenant_id, token, session)
+    actor = await _get_current_user(token, session)
+    if await _role_name(actor, session) == "Agent":
+        if customer.profile_status in (ProfileStatusEnum.DRAFT, ProfileStatusEnum.POLICYHOLDER):
+            raise HTTPException(status_code=403, detail="Only lead-stage profiles may be edited by acquisition agents.")
+        if (body.clear_acquisition_source
+                or (body.assigned_agent_id is not None and body.assigned_agent_id != customer.assigned_agent_id)
+                or (body.acquisition_source_id is not None and body.acquisition_source_id != customer.acquisition_source_id)
+                or body.profile_status in (ProfileStatusEnum.DRAFT, ProfileStatusEnum.POLICYHOLDER)):
+            raise HTTPException(status_code=403, detail="Agents cannot reassign leads or advance proposals/policies.")
+        if body.details is not None:
+            for field in ("risk_assessment",):
+                if field in body.details and body.details[field] != (customer.details or {}).get(field):
+                    raise HTTPException(status_code=403, detail="Use the lead risk assessment action to record findings.")
+            body.details = {**(customer.details or {}), **body.details}
+
     was_draft = customer.profile_status == ProfileStatusEnum.DRAFT
 
     # Moving a lead to another source (or back to Direct) changes who can see it, so a login that is itself

@@ -48,8 +48,10 @@ def test_every_operation_is_registered_classified_and_labelled(name):
 @pytest.mark.parametrize("role", ROLES)
 @pytest.mark.parametrize("name", NAMES)
 def test_grants_are_exactly_the_mirrored_router_roles(name, role):
-    assert is_role_allowed(name, role) == (role in TOOL_ROLES[name])
-    assert is_role_allowed(name, role, "mobile") == (role in TOOL_ROLES[name])
+    from permission import AGENT_ACQUISITION_TOOLS
+    expected = role in TOOL_ROLES[name] and (role != 'Agent' or name in AGENT_ACQUISITION_TOOLS)
+    assert is_role_allowed(name, role) == expected
+    assert is_role_allowed(name, role, "mobile") == expected
 
 
 def test_no_read_only_or_finance_role_can_mutate_through_an_operation():
@@ -61,7 +63,7 @@ def test_no_read_only_or_finance_role_can_mutate_through_an_operation():
     assert not is_role_allowed("waive_agent_confidential_report", "Medical Underwriter")
     assert is_role_allowed("waive_medical_examination", "Medical Underwriter")
     assert not is_role_allowed("make_counter_offer", "Agent")
-    assert is_role_allowed("record_counter_offer_response", "Agent")
+    assert not is_role_allowed("record_counter_offer_response", "Agent")
 
 
 def test_handler_rechecks_role_and_validates_before_any_call():

@@ -264,7 +264,7 @@ def test_duplicate_payment_request_reuses_existing_link():
             return httpx.Response(200, json={'status': 'Pending', 'link': 'http://example.test/pay/synthetic', 'link_expired': False}, request=req)
         async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
             with patch('tool_executor._shared_client', AsyncMock(return_value=client)):
-                result = await execute_tool('request_initial_premium', {'policy_id': str(uuid4())}, ExecCtx('a', 'tok', 'Agent'))
+                result = await execute_tool('request_initial_premium', {'policy_id': str(uuid4())}, ExecCtx('a', 'tok', 'Admin'))
         assert result['success'] and result['skipped']
         assert calls == ['GET']
     run(work())

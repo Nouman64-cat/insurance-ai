@@ -153,7 +153,9 @@ def test_lead_assessment_routing_and_binding(text):
     assert 'profile_risk' in UNDERWRITING_DOMAINS
     assert 'run_customer_risk_assessment' in MUTATING_TOOLS
     assert 'get_customer_risk_assessment' in SAFE_TOOLS
-    for role in ['Viewer', 'Agent', 'Underwriter', 'ClaimsManager', 'Finance', 'Medical Underwriter', 'Financial Underwriter']:
+    assert is_role_allowed('run_customer_risk_assessment', 'Agent')
+    assert is_role_allowed('get_customer_risk_assessment', 'Agent')
+    for role in ['Viewer', 'Underwriter', 'ClaimsManager', 'Finance', 'Medical Underwriter', 'Financial Underwriter']:
         assert not is_role_allowed('run_customer_risk_assessment', role)
         assert not is_role_allowed('get_customer_risk_assessment', role)
 

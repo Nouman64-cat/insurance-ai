@@ -12,7 +12,7 @@ import {
   SectionHeader,
 } from '../components/ui';
 
-const LOGO = require('../assets/rizvi.png');
+const LOGO = require('../../assets/logo-horizontal.png');
 
 const CAPABILITIES: { icon: 'people-outline' | 'chatbubble-ellipses-outline' | 'shield-checkmark-outline' | 'sync-outline'; title: string; description: string }[] = [
   {
@@ -43,14 +43,14 @@ export default function AboutScreen() {
   return (
     <Screen header={<ScreenHeader title="About" leading="menu" />}>
       <Card padding="xl" style={styles.hero}>
-        <View style={[styles.logoPlate, { backgroundColor: colors.surfaceSunken }]}>
-          <Image source={LOGO} style={styles.logo} resizeMode="contain" accessibilityLabel="RIZVIZ" />
+        <View style={[styles.logoPlate, { backgroundColor: '#FFFFFF' }]}>
+          <Image source={LOGO} style={styles.logo} resizeMode="contain" accessibilityLabel="GetInsuredAI" />
         </View>
         <Text variant="title2" align="center" style={styles.title}>
-          RIZVIZ Agent Portal
+          GetInsuredAI Agent Portal
         </Text>
         <Text variant="callout" color="muted" align="center" style={styles.blurb}>
-          The field companion for RIZVIZ insurance agents — from the first phone call through
+          The field companion for insurance agents using GetInsuredAI — from the first phone call through
           underwriting to policy issuance, on the same data the web portal uses.
         </Text>
       </Card>
@@ -81,7 +81,7 @@ export default function AboutScreen() {
       </Card>
 
       <Text variant="caption" color="subtle" align="center" style={styles.footer}>
-        © {new Date().getFullYear()} RIZVIZ Insurance. All rights reserved.
+        © {new Date().getFullYear()} GetInsuredAI. All rights reserved.
       </Text>
     </Screen>
   );
@@ -100,8 +100,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   logo: {
-    width: 156,
-    height: 56,
+    width: 220,
+    height: 57,
   },
   title: {
     marginBottom: spacing.sm,

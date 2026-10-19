@@ -80,7 +80,7 @@ def _run(tool, args, mode="demo"):
         return {"id": "a1", "full_name": "An Agent"}, None
     saved_agent, tool_executor._resolve_lead_agent = tool_executor._resolve_lead_agent, _agent
     try:
-        ctx = tool_executor.ExecCtx(tenant_id="t", jwt_token="", role="Agent")
+        ctx = tool_executor.ExecCtx(tenant_id="t", jwt_token="", role="Admin" if tool == "quick_start_workflow" else "Agent")
         return client, asyncio.run(tool_executor.execute_tool(tool, args, ctx))
     finally:
         tool_executor._shared_client, tool_executor._resolve_lead_agent = saved, saved_agent

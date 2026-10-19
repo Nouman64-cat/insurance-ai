@@ -10,7 +10,7 @@ from conversation_revision import select_plan, revision_message, is_revision_tex
 from tool_executor import _prepare_family_insurance, Ctx
 
 class RevisionTests(unittest.IsolatedAsyncioTestCase):
- async def gate(self, answer, name="create_proposal", args=None, role="Agent"):
+ async def gate(self, answer, name="create_proposal", args=None, role="Admin"):
   builder=StateGraph(ChatState)
   builder.add_node('permission_gate',graph.permission_gate)
   builder.add_node('agent',lambda state:{})

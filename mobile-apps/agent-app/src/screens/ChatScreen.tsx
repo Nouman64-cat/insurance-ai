@@ -51,13 +51,13 @@ const newThreadId = () => Math.random().toString(36).slice(2, 9);
 const WELCOME: ChatMessage = {
   id: 'welcome',
   role: 'assistant',
-  text: "I'm your underwriting copilot. I can onboard applicants, run risk assessments, or pull up case details. What would you like to do?",
+  text: "I'm your Lead & Customer Acquisition Copilot. I help you record leads quickly, find and edit customer details, assess demographic risk, and choose insurance plans. What would you like to do?",
   quickActions: [
-    { label: 'Add a customer', actionType: 'submit', payload: 'Add a new customer' },
-    { label: 'Start underwriting', actionType: 'submit', payload: 'Start underwriting journey for a customer' },
-    { label: 'Create a proposal', actionType: 'submit', payload: 'Create a proposal for a customer' },
-    { label: 'Pending cases', actionType: 'submit', payload: 'Show me all pending cases' },
-    { label: 'Run risk assessment', actionType: 'submit', payload: 'Run risk assessment' },
+    { label: 'Record a lead', actionType: 'submit', payload: 'Help me record a new individual lead with their name and phone' },
+    { label: 'Find a customer', actionType: 'submit', payload: 'Help me find one of my leads or customers' },
+    { label: 'Edit lead details', actionType: 'submit', payload: 'Help me edit a lead’s demographic or contact details' },
+    { label: 'Assess lead risk', actionType: 'submit', payload: 'Run a demographic lead risk assessment, without an underwriting case' },
+    { label: 'Compare plans', actionType: 'submit', payload: 'Help select an insurance plan based on a lead’s demographics and needs' },
   ],
 };
 
@@ -387,8 +387,10 @@ export default function ChatScreen() {
       contentContainerStyle={{ paddingBottom: 0 }}
       header={
         <ScreenHeader
-          title="Copilot"
-          subtitle={sending ? 'Thinking…' : `Underwriting assistant for ${user?.fullName ?? 'you'}`}
+          title="Lead & Customer Acquisition Copilot"
+          titleLines={3}
+          showSyncButton={false}
+          subtitle={sending ? 'Thinking…' : `Lead acquisition assistant for ${user?.fullName ?? 'you'}`}
           leading="menu"
           actions={[
             {

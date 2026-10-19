@@ -902,7 +902,13 @@ async def _list_customers(args: dict, ctx: Ctx) -> dict:
     rows = res.json()
 
     if args.get("search"):
-        rows = [r for r in rows if _matches(r, args["search"], ("cnic", "first_name", "last_name"))]
+        needle = str(args["search"]).strip().casefold()
+        digits = re.sub(r"\D", "", needle)
+        def matches_customer(row):
+            contact = (row.get("details") or {}).get("contact") or {}
+            text = " ".join(str(v or "") for v in (_full_name(row), row.get("cnic"), contact.get("email"), contact.get("mobile_number"))).casefold()
+            return needle in text or bool(digits and len(digits) >= 3 and any(digits in re.sub(r"\D", "", str(v or "")) for v in (row.get("cnic"), contact.get("mobile_number"))))
+        rows = [row for row in rows if matches_customer(row)]
     if args.get("segment"):
         rows = [r for r in rows if (r.get("segment") or "individual") == args["segment"]]
 
@@ -1604,6 +1610,10 @@ async def _add_customer(args: dict, ctx: Ctx) -> dict:
         )
 
     payload = _customer_payload(args)
+    if ctx.exec_ctx.role == "Agent":
+        for field in ("declared_income", "is_smoker", "height_cm", "weight_kg"):
+            if args.get(field) is None:
+                payload.pop(field, None)
     payload["assigned_agent_id"] = agent.get("id") if agent else None
     try:
         res = await ctx.client.post(ctx.tsvc("/customers"), json=payload)
@@ -1627,6 +1637,9 @@ async def _add_customer(args: dict, ctx: Ctx) -> dict:
             )
         raise
     data = res.json()
+    if ctx.exec_ctx.role == "Agent":
+        from acquisition_tools import lead_result
+        return lead_result(data)
     name = f"{args.get('first_name')} {args.get('last_name')}".strip()
     cnic = args.get("cnic")
     route = build_route("admin/leads", cnic)
@@ -1644,11 +1657,14 @@ async def _add_customer(args: dict, ctx: Ctx) -> dict:
 
 @handles("update_customer")
 async def _update_customer(args: dict, ctx: Ctx) -> dict:
-    res = await ctx.client.get(ctx.tsvc("/customers"))
-    res.raise_for_status()
-    customer = _find_customer(res.json(), args.get("cnic"), args.get("name"))
-    if not customer:
-        raise LookupError(f"No customer found for \"{args.get('name') or args.get('cnic')}\".")
+    if args.get("send_to_draft") and ctx.exec_ctx.role == "Agent":
+        return {"success": False, "error_code": "forbidden", "retryable": False,
+                "message": "This copilot records leads and selects plans; proposal creation belongs to the responsible team."}
+    from profile_risk_tools import _customer
+    customer = await _customer({"customer_id": args.get("customer_id"), "customer_name": args.get("name"),
+                                "cnic": args.get("cnic")}, ctx, "Update")
+    if "success" in customer:
+        return customer
 
     if args.get("send_to_draft"):
         detail_res = await ctx.client.get(ctx.tsvc(f"/customers/{customer['id']}"))
@@ -1671,18 +1687,26 @@ async def _update_customer(args: dict, ctx: Ctx) -> dict:
                 "navigate": {"route": "proposal", "entity_id": customer.get("cnic", ""), "highlight": True},
                 "quick_actions": [{"label": "Open Proposals", "actionType": "navigate", "payload": "proposal"}]}
 
-    updates = {k: v for k, v in {
-        "occupation": args.get("occupation"),
-        "declared_income": _as_float(args.get("declared_income")),
-        "is_smoker": args.get("is_smoker"),
-        "height_cm": _as_float(args.get("height_cm")),
-        "weight_kg": _as_float(args.get("weight_kg")),
-    }.items() if v is not None}
+    if args.get("new_cnic") and is_placeholder_cnic(args["new_cnic"]):
+        return {"success": False, "error_code": "validation", "message": "Provide the customer’s actual CNIC; a placeholder cannot replace their identity."}
+    updates = {k: args[k] for k in ("first_name", "last_name", "date_of_birth", "gender", "occupation",
+               "declared_income", "is_smoker", "height_cm", "weight_kg", "city", "province")
+               if args.get(k) is not None}
+    if args.get("new_cnic"):
+        updates["cnic"] = args["new_cnic"]
+    if args.get("phone") or args.get("email"):
+        detail_res = await ctx.client.get(ctx.tsvc(f"/customers/{customer['id']}"))
+        detail_res.raise_for_status()
+        details = dict(detail_res.json().get("details") or {})
+        contact = dict(details.get("contact") or {})
+        if args.get("phone"):
+            contact["mobile_number"] = args["phone"]
+        if args.get("email"):
+            contact["email"] = args["email"]
+        updates["details"] = {**details, "contact": contact}
     if not updates:
         return {"success": False, "message": "Nothing to update — tell me which field to change."}
-
-    merged = {**customer, **updates}
-    put = await ctx.client.put(ctx.tsvc(f"/customers/{customer['id']}"), json=_customer_payload(merged))
+    put = await ctx.client.put(ctx.tsvc(f"/customers/{customer['id']}"), json=updates)
     put.raise_for_status()
 
     name = _full_name(customer)
@@ -6969,6 +6993,7 @@ import workflow_tools  # noqa: E402,F401
 import claim_workflow_tools  # noqa: E402,F401
 import finance_tools  # noqa: E402,F401
 import commission_tools  # noqa: E402,F401
+import acquisition_tools  # noqa: E402,F401
 import profile_risk_tools  # noqa: E402,F401
 import specialist_review_tools  # noqa: E402,F401
 import servicing_operations  # noqa: E402,F401

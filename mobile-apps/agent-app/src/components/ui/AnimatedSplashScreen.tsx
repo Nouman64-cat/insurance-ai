@@ -145,7 +145,7 @@ export default function AnimatedSplashScreen({
           }}
         >
           <Text style={[styles.brandTitle, { color: colors.text }]}>
-            RIZVIZ
+            GetInsuredAI
           </Text>
           <Text variant="callout" color="muted" align="center" style={styles.subtitleText}>
             {subtitle}
@@ -187,10 +187,10 @@ const styles = StyleSheet.create({
     borderRadius: 60,
   },
   brandTitle: {
-    fontSize: 42,
-    lineHeight: 48,
+    fontSize: 34,
+    lineHeight: 42,
     fontWeight: '900',
-    letterSpacing: 6,
+    letterSpacing: -0.5,
     textAlign: 'center',
   },
   subtitleText: {

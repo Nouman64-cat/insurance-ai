@@ -289,13 +289,13 @@ def test_settlement_authority_matches_backend_separation_of_duties():
     assert not is_role_allowed("decide_claim", "Underwriter") and is_role_allowed("get_claim_workflow", "Underwriter")
 
 
-def test_commission_administration_is_admin_only_but_agents_see_their_own_earnings():
+def test_commission_work_is_outside_the_agent_acquisition_copilot():
     for role in ("Agent", "Underwriter", "Viewer", "ClaimsManager"):
         for tool in ("get_customer_commission_setup", "list_commission_agreements", "list_commission_exceptions", "assign_policy_producers"):
             assert not is_role_allowed(tool, role), f"{role} may run {tool}"
     for platform in ("web", "mobile"):
-        assert is_role_allowed("explain_commission_earning", "Agent", platform)
-        assert is_role_allowed("get_agent_statement", "Agent", platform)
+        assert not is_role_allowed("explain_commission_earning", "Agent", platform)
+        assert not is_role_allowed("get_agent_statement", "Agent", platform)
 
 
 def test_quick_lead_commission_setup_uses_customer_uuid_without_cnic_or_writes():

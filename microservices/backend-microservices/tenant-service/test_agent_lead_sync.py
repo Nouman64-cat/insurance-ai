@@ -43,7 +43,8 @@ class AgentLeadSyncTests(unittest.IsolatedAsyncioTestCase):
             return self.actors[token]
 
         self.patches = [patch.object(auth, '_get_current_user', current_user),
-                        patch.object(users, '_get_current_user', current_user)]
+                        patch.object(users, '_get_current_user', current_user),
+                        patch.object(customers, '_get_current_user', current_user)]
         for p in self.patches:
             p.start()
         self.app = FastAPI()
@@ -112,6 +113,63 @@ class AgentLeadSyncTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.get(self.path('users/'), headers={'Authorization': 'Bearer agent'})
         self.assertEqual(response.status_code, 403, response.text)
         self.assertIn('Only an Admin', response.text)
+
+    async def test_agent_record_access_is_scoped_for_edits_and_risk(self):
+        mine = SimpleNamespace(tenant_id=self.tenant, assigned_agent_id=self.agent_id, acquisition_source_id=None)
+        other = SimpleNamespace(tenant_id=self.tenant, assigned_agent_id=self.other_id, acquisition_source_id=None)
+        await customers._check_acquisition_access(mine, self.tenant, 'agent', self.session)
+        with self.assertRaises(HTTPException) as error:
+            await customers._check_acquisition_access(other, self.tenant, 'agent', self.session)
+        self.assertEqual(error.exception.status_code, 404)
+        source_id = uuid4()
+        self.session.source_ids = [source_id]
+        other.acquisition_source_id = source_id
+        await customers._check_acquisition_access(other, self.tenant, 'agent', self.session)
+        other.acquisition_source_id = uuid4()
+        with self.assertRaises(HTTPException):
+            await customers._check_acquisition_access(other, self.tenant, 'agent', self.session)
+
+    async def test_acquisition_guard_accepts_agents_but_not_viewers(self):
+        await users.verify_customer_acquisition(self.tenant, 'agent', self.session)
+        self.actors['viewer'] = SimpleNamespace(id=uuid4(), tenant_id=self.tenant, role_id='Viewer', is_active=True)
+        with self.assertRaises(HTTPException) as error:
+            await users.verify_customer_acquisition(self.tenant, 'viewer', self.session)
+        self.assertEqual(error.exception.status_code, 403)
+
+    async def test_agent_edit_cannot_move_lead_into_proposal_or_reassign_it(self):
+        from schemas import CustomerUpdate
+        from shared.models.core import Customer, ProfileStatusEnum
+        customer = Customer(id=uuid4(), tenant_id=self.tenant, name='Ali', assigned_agent_id=self.agent_id,
+                            profile_status=ProfileStatusEnum.LEAD)
+        original_get = self.session.get
+        async def get(model, key):
+            return customer if model is Customer else await original_get(model, key)
+        self.session.get = get
+        for body in (CustomerUpdate(profile_status='DRAFT'), CustomerUpdate(assigned_agent_id=self.other_id)):
+            with self.assertRaises(HTTPException) as error:
+                await customers.update_customer(self.tenant, customer.id, body, SimpleNamespace(),
+                                                override_knockout_reason=None, session=self.session, token='agent')
+            self.assertEqual(error.exception.status_code, 403)
+
+    async def test_quick_capture_forces_agent_ownership_and_leaves_unknown_facts_empty(self):
+        from schemas import CustomerCreate
+        from shared.models.core import Tenant
+        original_get = self.session.get
+        async def get(model, key):
+            return SimpleNamespace(is_active=True) if model is Tenant else await original_get(model, key)
+        self.session.get = get
+        self.session.add = lambda value: None
+        async def noop(*args): pass
+        self.session.commit = noop
+        self.session.refresh = noop
+        customer = await customers.create_customer(self.tenant,
+            CustomerCreate(first_name='Ali', assigned_agent_id=self.other_id, details={'contact': {'mobile_number': '+923001234567'}}),
+            SimpleNamespace(), self.session, 'agent')
+        self.assertEqual(customer.assigned_agent_id, self.agent_id)
+        self.assertIsNone(customer.dob)
+        self.assertIsNone(customer.height_cm)
+        self.assertIsNone(customer.weight_kg)
+        self.assertIsNone(customer.is_smoker)
 
 
 if __name__ == '__main__':

@@ -153,6 +153,15 @@ async def verify_tenant_member(
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot access another tenant's data.")
 
 
+async def verify_customer_acquisition(tenant_id: UUID, token: str = Depends(oauth2_scheme),
+                                      session: AsyncSession = Depends(get_session)) -> None:
+    await verify_tenant_member(tenant_id, token, session)
+    user = await _get_current_user(token, session)
+    role = await session.get(Role, user.role_id)
+    if not role or role.name not in ("Admin", "SuperAdmin", "Agent"):
+        raise HTTPException(status_code=403, detail="Customer acquisition requires an Agent or Admin.")
+
+
 async def _acting(token: str, session: AsyncSession) -> tuple[User, str]:
     """The signed-in user and their role name (verify_admin has already checked they may manage users)."""
     user = await _get_current_user(token, session)

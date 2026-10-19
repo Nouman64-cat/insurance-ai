@@ -586,26 +586,28 @@ DOMAIN_PROMPTS["support"] = """
 """
 
 
-AGENT_ROLE_RESTRICTION_TEMPLATE = (
-    "\n\nCRITICAL ROLE & AUTHORIZATION INSTRUCTION: The current active user's role is 'Agent'. "
-    "As an Agent, your authorized scope is strictly limited to LEAD GENERATION and PROPOSAL CREATION (adding/updating customers, creating cases, generating policy proposals/quotes, and uploading required documents).\n"
-    "- You MUST NOT perform Underwriting (risk assessments, automated underwriting journeys, approving/rejecting cases, or updating case statuses).\n"
-    "- You MUST NOT perform Pre-Issuance or Post-Issuance actions (pre-issuance verification, policy contract drafting, payment confirmation, or active policy status tracking).\n"
-    "If the user asks you to perform underwriting or policy issuance actions, respond directly: 'Currently, you have no access to do this, ask your manager.'"
-)
+AGENT_ACQUISITION_PROMPT = """You are the Lead & Customer Acquisition Copilot for insurance agents.
+Your only job is to record individual leads quickly and accurately, search their live records,
+edit supplied profile/contact/demographic fields, run demographic lead risk screening and help
+select insurance plans. Use record_lead for quick capture with the real name and phone; other
+facts may be added later using update_customer. Never invent a DOB, CNIC, income, health fact,
+measurement, customer declaration or contact. Preserve existing details; ask only for missing facts.
+Use list_customers/list_leads to search and resolve ambiguous names before updates.
+Use run_customer_risk_assessment to run/save a demographic profile assessment and
+get_customer_risk_assessment to read it. This assessment requires no proposal, underwriting case
+or documents. Explain missing facts and advisory results; it is not final underwriting.
+Use select_customer_plan without plan_id to compare live age-eligible plans. Ask about the customer's
+needs, affordability, desired coverage and term. Explain choices from the live catalogue and recorded
+risk profile. Save a plan only after the user selects it and supplies coverage and term. Selection stays
+on the lead; no proposal or case is created. State what eligibility facts are still missing.
+Do not create or advance proposals, cases, pre-underwriting gates, medical exams, claims, commissions,
+payments or policies. Explain that those tasks belong to the responsible portal/team, while you can help
+with lead acquisition. Never suggest Start underwriting, Create proposal, or a demo end-to-end journey.
+Use concise, helpful replies in the user's language. Never claim a record was saved without tool success.
+"""
 
-AGENT_MOBILE_ROLE_RESTRICTION_TEMPLATE = (
-    "\n\nCRITICAL ROLE & AUTHORIZATION INSTRUCTION: The current active user is an Agent on the "
-    "mobile field app. Your authorized scope covers onboarding a case end-to-end through pre-underwriting: "
-    "lead/customer intake, proposals, and all 5 pre-underwriting gates (E-Application, Agent's Confidential "
-    "Report, Compliance/PEP screening, Initial Premium Payment, Insurance History, and Medical Examination "
-    "booking).\n"
-    "- You MUST NOT run AI Risk Assessment, or anything after it — case approval/rejection, pre-issuance "
-    "verification, policy drafting/issuance, or payment confirmation.\n"
-    "If the user asks for one of those, respond warmly and directly: this app covers onboarding through the "
-    "Medical Examination step; once that's booked, AI Risk Assessment and everything after happens on the web "
-    "portal."
-)
+AGENT_ROLE_RESTRICTION_TEMPLATE = AGENT_ACQUISITION_PROMPT
+AGENT_MOBILE_ROLE_RESTRICTION_TEMPLATE = AGENT_ACQUISITION_PROMPT
 
 ROLE_RESTRICTION_TEMPLATE = (
     "\n\nCRITICAL SECURITY INSTRUCTION: The current user's role is '{role}'. They are NOT an "
@@ -614,7 +616,8 @@ ROLE_RESTRICTION_TEMPLATE = (
 )
 
 
-# The system prompt is built ONCE and is byte-identical for every role and
+# The shared staff prompt is cached once. Agent acquisition uses a separate bounded prompt.
+# The shared prefix is byte-identical across staff roles and
 # platform. That is deliberate: the prompt plus the tool schemas form the
 # cacheable prefix of every request, and the old per-role variants fragmented
 # that prefix six ways, so each role paid full price for its own cache entry.
@@ -648,6 +651,8 @@ def _build_prompt(role: str, platform: str = "web", domains: frozenset[str] | No
     hitting; and only for domains whose tools are actually bound, so the prompt
     never advertises a tool the model cannot call.
     """
+    if role == "Agent":
+        return AGENT_ACQUISITION_PROMPT + "\n" + CUSTOMER_CREATION_POLICY + (_URDU_SUFFIX if locale == "ur" else "")
     prompt = _SYSTEM_PROMPT_CACHED
     from skills import enabled as skills_enabled
     if not skills_enabled():
@@ -696,7 +701,7 @@ def _llm(cfg: dict, role: str = "Admin", platform: str = "web",
     allowed = get_tools_for_role(role, platform)
     if tool_scope is not None:
         allowed = [t for t in allowed if t.name in tool_scope]
-    if domains is not None:
+    if domains is not None and role != "Agent":
         in_scope = tool_names_for(domains) | set(capability_names)
         allowed = [t for t in allowed if t.name in in_scope]
     if len(allowed) > MAX_BOUND_TOOLS:
@@ -943,6 +948,10 @@ async def agent_node(state: ChatState, config: RunnableConfig = None) -> dict:
                capability_names=binding_names(state) if skills_enabled() else frozenset())
     thread_id = ((config or {}).get("configurable") or {}).get("thread_id")
 
+    if user_role == "Agent":
+        names = frozenset(t.name for t in get_tools_for_role(user_role, platform))
+        return await _complete_agent_turn(llm, messages, state, thread_id, next_sticky,
+                                          allowed_names=names, scope_label="lead and customer acquisition")
     return await _complete_agent_turn(llm, messages, state, thread_id, next_sticky)
 
 
@@ -1708,10 +1717,8 @@ async def _permission_gate(state: ChatState) -> Command:
     if not is_role_allowed(name, state["user_role"], platform):
         if platform == "mobile" and name in MOBILE_PORTAL_ONLY_TOOLS:
             msg = (
-                "This app covers onboarding through Gate 5 (Medical Examination). "
-                "Once the medical exam is booked, AI Risk Assessment and everything after it "
-                "— review, approval, and policy issuance — happens on the web portal. "
-                "Please continue there for this step."
+                "This copilot supports lead capture, search, editing, demographic risk screening and plan selection only. "
+                "Case underwriting and other operations belong to the responsible portal team."
             )
         else:
             seen_role = state.get("user_role") or "none (not sent by the client)"

@@ -20,6 +20,7 @@ export interface HeaderAction {
 
 export interface ScreenHeaderProps {
   title: string;
+  titleLines?: number;
   subtitle?: string;
   /**
    * Leading affordance. `auto` picks `back` when the navigator can go back and
@@ -53,6 +54,7 @@ const LEADING_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
  */
 export default function ScreenHeader({
   title,
+  titleLines = 1,
   subtitle,
   leading = 'auto',
   onLeadingPress,
@@ -115,7 +117,7 @@ export default function ScreenHeader({
         ) : null}
 
         <View style={styles.titleBlock}>
-          <Text variant="title1" numberOfLines={1} accessibilityRole="header">
+          <Text variant={titleLines > 1 ? "title3" : "title1"} numberOfLines={titleLines} accessibilityRole="header">
             {title}
           </Text>
           {subtitle ? (

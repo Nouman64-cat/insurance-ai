@@ -45,10 +45,10 @@ async def _assess_customer_risk_profile(args: dict, ctx: Ctx) -> dict:
     if res.status_code == 404:
         return {"success": False, "message": "That customer isn't in your scope."}
     res.raise_for_status()
-    return _format_profile(customer, res.json())
+    return _format_profile(customer, res.json(), getattr(getattr(ctx, "exec_ctx", None), "role", "") == "Agent")
 
 
-def _format_profile(customer: dict, r: dict) -> dict:
+def _format_profile(customer: dict, r: dict, acquisition: bool = False) -> dict:
     cover = (f" for **PKR {r['cover_considered']:,.0f}**" + (f" ({r['plan_considered']})" if r.get("plan_considered") else "")
              if r.get("cover_considered") else "")
     parts = [f"**Risk profile — {r['name']}**{cover}",
@@ -82,8 +82,10 @@ def _format_profile(customer: dict, r: dict) -> dict:
     parts.append(f"_Risks decided by rule set {rs.get('code', 'RS-RISK-001')} v{rs.get('version', '')} (Rule Engine). "
                  "Screening view from the profile; the underwriting decision is made on the proposal._")
     actions = []
-    if (customer.get("details") or {}).get("pending_plan") or r.get("plan_considered"):
+    if not acquisition and ((customer.get("details") or {}).get("pending_plan") or r.get("plan_considered")):
         actions.append(_chip("Create proposal", f"Create the proposal for {_full_name(customer)} (customer_id {customer['id']})"))
+    if acquisition:
+        actions.append(_chip("Select insurance plan", f"Compare insurance plans for customer_id {customer['id']}"))
     actions.append({"label": "Open customer", "actionType": "navigate", "payload": "admin/leads"})
     return {"success": True, "message": "\n\n".join(parts), "risk_profile": r, "quick_actions": actions}
 
@@ -98,7 +100,7 @@ async def _run_customer_risk_assessment(args: dict, ctx: Ctx) -> dict:
     res = await ctx.client.post(ctx.tsvc(f"/customers/{customer['id']}/risk-profile"))
     res.raise_for_status()
     r = res.json()
-    result = _format_profile(customer, r)
+    result = _format_profile(customer, r, getattr(getattr(ctx, "exec_ctx", None), "role", "") == "Agent")
     result["message"] = "Lead risk assessment saved.\n\n" + result["message"]
     result["last_action"] = _action("run_customer_risk_assessment", "customer",
                                     customer.get("cnic") or customer["id"], "admin/leads",
@@ -117,7 +119,7 @@ async def _get_customer_risk_assessment(args: dict, ctx: Ctx) -> dict:
     if r is None:
         return {"success": True, "assessment": None,
                 "message": f"No saved lead risk assessment for {_full_name(customer)}. You can run one without creating a proposal or underwriting case."}
-    result = _format_profile(customer, r)
+    result = _format_profile(customer, r, getattr(getattr(ctx, "exec_ctx", None), "role", "") == "Agent")
     status = "Saved lead risk assessment"
     if r.get("assessed_at"):
         status += f" ({r['assessed_at']})"

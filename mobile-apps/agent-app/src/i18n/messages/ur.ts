@@ -1,7 +1,7 @@
 import type { Messages } from './en';
 
 // Urdu UI text. Industry terms Pakistani insurers use in English (policy, lead, proposal, underwriting) are kept as
-// Urdu loanwords; brand names (RIZVIZ) and acronyms (SECP) stay in Latin script.
+// Urdu loanwords; brand names (GetInsuredAI) and acronyms (SECP) stay in Latin script.
 const ur: Messages = {
   common: {
     agent: 'ایجنٹ',

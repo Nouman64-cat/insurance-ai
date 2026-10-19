@@ -28,6 +28,9 @@ ADMIN_ROLES = ("Admin", "SuperAdmin")
 
 
 def _specialist_selection(state):
+    if state.get('user_role') == 'Agent':
+        return {'active_specialist': None, 'specialist_handoff': None}
+
     # A Medical or Financial Underwriter's role is one track: their own subagent handles every message,
     # and a Claims Manager's every message goes to the claims specialist.
     track = select_track_specialist(state) or PINNED_SPECIALIST.get(state.get('user_role') or '')
@@ -75,6 +78,9 @@ def route_coordinator(state):
 
 
 def coordinator_node(state):
+    if state.get('user_role') == 'Agent':
+        return {'active_specialist': None, 'specialist_handoff': None,
+                'selected_skills': ['lead-customer-acquisition']}
     result = _specialist_selection(state)
     from skills import enabled
     if not enabled():

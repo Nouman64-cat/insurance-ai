@@ -108,7 +108,7 @@ export default function HelpScreen() {
       ))}
 
       <Text variant="caption" color="subtle" align="center" style={styles.footer}>
-        RIZVIZ Agent Portal · v1.0.0
+        GetInsuredAI Agent Portal · v1.0.0
       </Text>
     </Screen>
   );
