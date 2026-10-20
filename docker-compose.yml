@@ -13,6 +13,11 @@ volumes:
   memgraph-data:
   kafka-data:
   request-attachments:
+  # Audit signing (Stage 2). Four separate volumes so each trust boundary is explicit:
+  audit-keys:         # encrypted Ed25519 private keys: mounted ONLY into audit-signer
+  audit-secrets:      # the key passphrase: mounted only into audit-signer (read-only) and the one-off init job
+  audit-signer-state: # the signer's own trusted record of the last checkpoint per chain: audit-signer only
+  audit-checkpoints:  # signed checkpoint files + the trusted key registry: audit-signer writes, audit-service reads (read-only)
 
     # ─────────────────────────────────────────────────────────────────────────────
     # Re-usable FastAPI service defaults
@@ -130,6 +135,7 @@ services:
       CHAT_AGENT_URL: http://chat-agent:8006
       REQUEST_MANAGEMENT_SERVICE_URL: http://request-management-service:8007 # /request-management/* is proxied there
       CUSTOMER_MANAGEMENT_URL: http://customer-management:8009 # /customer-management/v1/* is proxied there
+      AUDIT_SERVICE_URL: http://audit-service:8020 # /audit/v1/* is proxied there
     depends_on:
       kafka:
         condition: service_healthy
@@ -159,6 +165,7 @@ services:
       OCR_ENGINE_URL: http://ocr-engine:8004
       RISK_ENGINE_URL: http://risk-engine:8002
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      AUDIT_ENABLED: ${AUDIT_ENABLED:-true} # business changes are captured as audit intents (services/audit_capture.py)
       OPENSANCTIONS_API_KEY: ${OPENSANCTIONS_API_KEY}
       # Customer portal: provisioning hands accounts to Customer Management (PORTAL_PROVISIONING_MODE=legacy turns that off).
       CUSTOMER_MANAGEMENT_URL: http://customer-management:8009
@@ -290,6 +297,7 @@ services:
       TENANT_SERVICE_URL: http://tenant-service:8001
       REQUEST_MGMT_SERVICE_KEY: ${REQUEST_MGMT_SERVICE_KEY:-}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      AUDIT_ENABLED: ${AUDIT_ENABLED:-true}
     depends_on:
       kafka:
         condition: service_healthy
@@ -359,6 +367,8 @@ services:
       CUSTOMER_SERVICE_URL: http://customer-service:8008
       ENV_VAR: ${ENV_VAR:-}   # demo: walk-ins skip the email code
       CM_WALKIN_DEV_OTP: ${CM_WALKIN_DEV_OTP:-}   # development only; ignored when CM_ENV=production
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092 # audit intents are relayed to the Audit Service over Kafka
+      AUDIT_ENABLED: ${AUDIT_ENABLED:-true}
     depends_on:
       tenant-service:
         condition: service_started
@@ -371,6 +381,142 @@ services:
       retries: 5
       start_period: 20s
 
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Audit Service — the centralized, tenant-isolated, SHA-256 hash-chained audit ledger
+  # Schema `audit` in the shared Postgres; the app role can read and append, never UPDATE or DELETE.
+  # Events arrive from the services' transactional outboxes over Kafka (insurance.audit.events.v1).
+  # Public API (via the gateway): /audit/v1/...  ·  Direct (dev): http://localhost:8030/v1/healthz
+  # ───────────────────────────────────────────────────────────────────────────
+  # Creates the audit schema and its two database roles, then exits. Safe to repeat.
+  audit-provision:
+    build:
+      context: .
+      dockerfile: microservices/backend-microservices/audit-service/Dockerfile
+    restart: "no"
+    networks: [insurance-net]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    env_file: [.env]
+    command: ["python", "-m", "app.provision"]
+    environment:
+      AUDIT_PROVISION_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+      AUDIT_DB_OWNER_PASSWORD: ${AUDIT_DB_OWNER_PASSWORD:-}
+      AUDIT_DB_APP_PASSWORD: ${AUDIT_DB_APP_PASSWORD:-}
+      AUDIT_DB_SIGNER_PASSWORD: ${AUDIT_DB_SIGNER_PASSWORD:-}
+
+  audit-service:
+    <<: *fastapi-defaults
+    build:
+      context: .
+      dockerfile: microservices/backend-microservices/audit-service/Dockerfile
+    container_name: insurance-audit-service
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8020", "--reload"]
+    ports:
+      - "8030:8020"
+    volumes:
+      - ./microservices/backend-microservices/audit-service:/app
+      - ./shared:/app/shared
+      - audit-checkpoints:/var/lib/audit-checkpoints:ro
+    environment:
+      PYTHONPATH: /app
+      WATCHFILES_FORCE_POLLING: "true"
+      AUDIT_DATABASE_URL: postgresql+asyncpg://audit_app:${AUDIT_DB_APP_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+      AUDIT_MIGRATION_DATABASE_URL: postgresql+asyncpg://audit_owner:${AUDIT_DB_OWNER_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+      TENANT_SERVICE_URL: http://tenant-service:8001
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      AUDIT_CONSUMER_ENABLED: ${AUDIT_CONSUMER_ENABLED:-true}
+      AUDIT_VERIFY_ENABLED: ${AUDIT_VERIFY_ENABLED:-true}
+      AUDIT_VERIFY_INTERVAL_SECONDS: ${AUDIT_VERIFY_INTERVAL_SECONDS:-21600}
+      AUDIT_READ_ROLES: ${AUDIT_READ_ROLES:-Admin,SuperAdmin}
+      # Stage 2: signed checkpoints. The Audit Service never holds a private key; it asks audit-signer, and reads the
+      # protected checkpoint store READ-ONLY.
+      AUDIT_SIGNING_ENABLED: ${AUDIT_SIGNING_ENABLED:-true}
+      AUDIT_SIGNING_PROVIDER: ${AUDIT_SIGNING_PROVIDER:-local}
+      AUDIT_SIGNER_URL: http://audit-signer:8021
+      AUDIT_SIGNER_SERVICE_KEY: ${AUDIT_SIGNER_SERVICE_KEY:-}
+      AUDIT_CHECKPOINT_EVENT_THRESHOLD: ${AUDIT_CHECKPOINT_EVENT_THRESHOLD:-500}
+      AUDIT_CHECKPOINT_INTERVAL_SECONDS: ${AUDIT_CHECKPOINT_INTERVAL_SECONDS:-900}
+      AUDIT_CHECKPOINT_DIRECTORY: /var/lib/audit-checkpoints
+      AUDIT_ENVIRONMENT_LABEL: ${AUDIT_ENVIRONMENT_LABEL:-local-dev}
+      AUDIT_TRUST_ANCHOR_FINGERPRINT: ${AUDIT_TRUST_ANCHOR_FINGERPRINT:-}
+    depends_on:
+      kafka:
+        condition: service_healthy
+      tenant-service:
+        condition: service_started
+      audit-provision:
+        condition: service_completed_successfully # schema and roles exist before migrations run
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8020/v1/healthz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Audit checkpoint signer (Stage 2) ─────────────────────────────────────────────────────────────────────
+  # The ONLY service that holds a private key. It has no published port, does not read the application's .env, runs as an
+  # unprivileged user on a read-only filesystem, reads the ledger with a read-only database role, and accepts requests only
+  # from the Audit Service (HMAC-signed). First-time setup: `docker compose run --rm audit-signer-init` (see audit-service/README.md).
+  audit-signer:
+    build:
+      context: .
+      dockerfile: microservices/backend-microservices/audit-signer/Dockerfile
+    container_name: insurance-audit-signer
+    restart: unless-stopped
+    networks: [insurance-net]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      AUDIT_SIGNER_DATABASE_URL: postgresql+asyncpg://audit_signer:${AUDIT_DB_SIGNER_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+      AUDIT_SIGNER_SERVICE_KEY: ${AUDIT_SIGNER_SERVICE_KEY:-}
+      AUDIT_SIGNER_ID: ${AUDIT_SIGNER_ID:-audit-signer-local}
+      AUDIT_KEY_DIRECTORY: /run/audit-keys
+      AUDIT_KEY_PASSPHRASE_FILE: /run/audit-secrets/key-passphrase
+      AUDIT_CHECKPOINT_DIRECTORY: /var/lib/audit-checkpoints
+      AUDIT_SIGNER_STATE_DIRECTORY: /var/lib/audit-signer
+      AUDIT_CHECKPOINT_MAX_EVENTS: ${AUDIT_CHECKPOINT_MAX_EVENTS:-5000}
+      AUDIT_TRUST_ANCHOR_FINGERPRINT: ${AUDIT_TRUST_ANCHOR_FINGERPRINT:-}
+    volumes:
+      - audit-keys:/run/audit-keys
+      - audit-secrets:/run/audit-secrets:ro
+      - audit-signer-state:/var/lib/audit-signer
+      - audit-checkpoints:/var/lib/audit-checkpoints
+    depends_on:
+      audit-provision:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8021/v1/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # One-off, explicit key initialisation for THIS installation: creates the Ed25519 key pair + trust root once, and refuses
+  # to run again. Keys are never generated by an ordinary container start.
+  audit-signer-init:
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: microservices/backend-microservices/audit-signer/Dockerfile
+    restart: "no"
+    networks: [insurance-net]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    command: ["python", "-m", "shared.audit.signer.cli", "init"]
+    environment:
+      AUDIT_SIGNER_DATABASE_URL: postgresql+asyncpg://audit_signer:${AUDIT_DB_SIGNER_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
+      AUDIT_SIGNER_ID: ${AUDIT_SIGNER_ID:-audit-signer-local}
+      AUDIT_KEY_DIRECTORY: /run/audit-keys
+      AUDIT_KEY_PASSPHRASE_FILE: /run/audit-secrets/key-passphrase
+      AUDIT_CHECKPOINT_DIRECTORY: /var/lib/audit-checkpoints
+      AUDIT_SIGNER_STATE_DIRECTORY: /var/lib/audit-signer
+    volumes:
+      - audit-keys:/run/audit-keys
+      - audit-secrets:/run/audit-secrets
+      - audit-signer-state:/var/lib/audit-signer
+      - audit-checkpoints:/var/lib/audit-checkpoints
 
   # Customer portal (individual policyholders) — http://localhost:3009
   # Self-contained Next.js app (it imports nothing from the staff app). The browser talks only to this app; it holds the
@@ -404,12 +550,18 @@ services:
 
   customer-service:
     <<: *fastapi-defaults
-    build: ./microservices/backend-microservices/customer-service
+    build:
+      context: . # repository root: the image also carries shared/audit (audit event contract and outbox helpers)
+      dockerfile: microservices/backend-microservices/customer-service/Dockerfile
     ports:
       - "8018:8008"
     volumes:
       - ./microservices/backend-microservices/customer-service:/app
+      - ./shared:/app/shared
     environment:
+      PYTHONPATH: /app
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092 # audit intents are relayed to the Audit Service over Kafka
+      AUDIT_ENABLED: ${AUDIT_ENABLED:-true}
       CS_DATABASE_URL: postgresql+asyncpg://customer_service_app:${CS_DB_APP_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
       CS_MIGRATION_DATABASE_URL: postgresql+asyncpg://customer_service_owner:${CS_DB_OWNER_PASSWORD:-unset}@host.docker.internal:5432/${POSTGRES_DB:-insurance-ai}
       TENANT_SERVICE_URL: http://tenant-service:8001
@@ -431,7 +583,9 @@ services:
   # Creates the customer_service schema and its two database users in the existing database, then exits. Runs on
   # every `docker compose up` (it is safe to repeat) and customer-service waits for it to finish.
   customer-service-provision:
-    build: ./microservices/backend-microservices/customer-service
+    build:
+      context: .
+      dockerfile: microservices/backend-microservices/customer-service/Dockerfile
     restart: "no"
     networks: [insurance-net]
     extra_hosts: ["host.docker.internal:host-gateway"]

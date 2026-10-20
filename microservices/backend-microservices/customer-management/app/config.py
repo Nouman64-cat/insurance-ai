@@ -23,6 +23,10 @@ class Settings:
     schema: str = field(default_factory=lambda: os.environ.get("CM_DB_SCHEMA", "customer_management"))
     run_migrations_on_start: bool = field(default_factory=lambda: _bool("CM_RUN_MIGRATIONS", True))
 
+    # Audit trail: every security event is mirrored by an audit intent (same transaction) relayed to the Audit Service.
+    audit_enabled: bool = field(default_factory=lambda: _bool("AUDIT_ENABLED", True))
+    kafka_bootstrap: str = field(default_factory=lambda: os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092"))
+
     tenant_service_url: str = field(default_factory=lambda: os.environ.get("TENANT_SERVICE_URL", "http://tenant-service:8001").rstrip("/"))
     # Customer Management -> tenant-service (signs). tenant-service -> Customer Management (verifies). Two keys, one per direction.
     to_tenant_key: str = field(default_factory=lambda: os.environ.get("CM_TO_TENANT_KEY", ""))

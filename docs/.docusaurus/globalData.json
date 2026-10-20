@@ -1,0 +1,107 @@
+{
+  "docusaurus-plugin-content-docs": {
+    "default": {
+      "path": "/insurance-ai/",
+      "versions": [
+        {
+          "name": "current",
+          "label": "Next",
+          "isLast": true,
+          "path": "/insurance-ai/",
+          "mainDocId": "intro",
+          "docs": [
+            {
+              "id": "architecture",
+              "path": "/insurance-ai/architecture",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "artifacts",
+              "path": "/insurance-ai/artifacts",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "cases",
+              "path": "/insurance-ai/cases",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "chat-agent",
+              "path": "/insurance-ai/chat-agent",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "client-apps",
+              "path": "/insurance-ai/client-apps",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "commission-earnings",
+              "path": "/insurance-ai/commission-earnings",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "contributing",
+              "path": "/insurance-ai/contributing",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "data-flow",
+              "path": "/insurance-ai/data-flow",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "db-schemas",
+              "path": "/insurance-ai/db-schemas",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "fraud-layer",
+              "path": "/insurance-ai/fraud-layer",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "intro",
+              "path": "/insurance-ai/",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "LLM_COST_ESTIMATE",
+              "path": "/insurance-ai/LLM_COST_ESTIMATE"
+            },
+            {
+              "id": "llm-providers",
+              "path": "/insurance-ai/llm-providers",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "policy-lifecycle",
+              "path": "/insurance-ai/policy-lifecycle",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "services",
+              "path": "/insurance-ai/services",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "stack",
+              "path": "/insurance-ai/stack",
+              "sidebar": "mainSidebar"
+            }
+          ],
+          "draftIds": [],
+          "sidebars": {
+            "mainSidebar": {
+              "link": {
+                "path": "/insurance-ai/",
+                "label": "intro"
+              }
+            }
+          }
+        }
+      ],
+      "breadcrumbs": true
+    }
+  }
+}

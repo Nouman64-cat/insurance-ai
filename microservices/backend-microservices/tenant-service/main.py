@@ -51,6 +51,7 @@ from database import _session_factory
 from migrate import run_migrations
 from ocr_worker import start_ocr_worker
 from services.case_events import publish_data_changed
+from services.audit_capture import AuditContextMiddleware, audit_status, install_capture, start_audit_relay
 from routers.tenants import router as tenants_router
 from routers.branches import router as branches_router
 from routers.users import router as users_router
@@ -105,6 +106,10 @@ from routers.walk_in_leads import router as walk_in_leads_router
 from shared.models.core import Role
 
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
+
+# Audit trail: every significant business change is captured at ORM flush time into the transactional audit_outbox
+# (same transaction as the change); the relay below publishes it to Kafka for the Audit Service.
+install_capture()
 
 # ── Standard RBAC roles seeded once at startup ────────────────────────────────
 
@@ -181,6 +186,7 @@ async def lifespan(app: FastAPI):
     # OCR worker — background asyncio task
     stop_event = asyncio.Event()
     worker_task = start_ocr_worker(stop_event)
+    audit_relay_task = start_audit_relay(stop_event, producer)
 
     # Group scheme renewals — daily job, opt-in (GROUP_RENEWAL_SCHEDULER=true).
     group_renewal_task = start_group_renewal_scheduler(stop_event, _session_factory)
@@ -201,6 +207,8 @@ async def lifespan(app: FastAPI):
     # Graceful shutdown
     stop_event.set()
     await worker_task
+    if audit_relay_task is not None:
+        await audit_relay_task
     await delivery_task
     if walkin_task is not None:
         await walkin_task
@@ -254,6 +262,9 @@ async def announce_writes(request: Request, call_next):
             ))
     return response
 
+
+# Who is acting + the request's correlation id, for the audit events this request produces (services/audit_capture.py).
+app.add_middleware(AuditContextMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -322,6 +333,12 @@ app.include_router(walk_in_leads_router)
 @app.get("/health", tags=["Ops"])
 async def health_check():
     return {"service": "tenant-service", "status": "healthy"}
+
+
+@app.get("/health/audit", tags=["Ops"])
+async def audit_health():
+    """Audit pipeline health: undelivered audit intents (outbox) and capture failures."""
+    return await audit_status()
 
 
 @app.get("/roles", tags=["Roles"])

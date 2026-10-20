@@ -1,0 +1,28 @@
+{
+  "id": "fraud-layer",
+  "title": "Fraud Detection Layer",
+  "description": "The fraud detection layer is a purpose-built graph intelligence system that sits inside the Risk Engine. It combines a Memgraph graph database (relationship detection) with Google Gemini 2.5 Flash (probabilistic scoring) to catch coordinated fraud rings that purely statistical models miss.",
+  "source": "@site/docs/fraud-layer.md",
+  "sourceDirName": ".",
+  "slug": "/fraud-layer",
+  "permalink": "/insurance-ai/fraud-layer",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 5,
+  "frontMatter": {
+    "id": "fraud-layer",
+    "title": "Fraud Detection Layer",
+    "sidebar_position": 5
+  },
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Artifact Upload & OCR",
+    "permalink": "/insurance-ai/artifacts"
+  },
+  "next": {
+    "title": "AI Copilot (Chat Agent)",
+    "permalink": "/insurance-ai/chat-agent"
+  }
+}

@@ -104,6 +104,9 @@ app = FastAPI(
 # ─────────────────────────────────────────────────────────────────────────────
 
 app.add_middleware(CORSMiddleware, **cors_options())
+# Outermost: stamps X-Correlation-Id on every request so audit events from different services line up (correlation.py).
+from correlation import CorrelationIdMiddleware
+app.add_middleware(CorrelationIdMiddleware)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Global error handler — keeps error responses consistent
@@ -842,6 +845,29 @@ async def _stream_request_management_events(request: Request, headers: dict):
 
     return StreamingResponse(relay(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"})
+
+
+# ── Audit Service (microservices/backend-microservices/audit-service) ─────────
+# Read-only audit trail and chain verification at /audit/v1/... The caller's Authorization header is forwarded as-is;
+# the service verifies it against /auth/me itself (Admin: own tenant, SuperAdmin: all), so nothing here is trusted.
+# Only the public, versioned API is reachable. Audit records are written by the services' outboxes, never by a client.
+AUDIT_SERVICE_URL = os.environ.get("AUDIT_SERVICE_URL", "http://audit-service:8020")
+
+
+@app.api_route("/audit/{path:path}", methods=["GET", "POST"], include_in_schema=False)
+async def proxy_audit(path: str, request: Request):
+    if not path.startswith("v1/"):
+        return JSONResponse(status_code=404, content={"detail": "Unknown Audit API version"})
+    headers = {k: v for k, v in request.headers.items() if k.lower() not in _HOP_HEADERS}
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.request(request.method, f"{AUDIT_SERVICE_URL}/{path}", headers=headers,
+                                        params=request.query_params, content=await request.body(), timeout=120.0)
+        except httpx.HTTPError:
+            return JSONResponse(status_code=502, content={"detail": "The audit service is unavailable. Try again shortly."})
+    out_headers = {k: v for k, v in resp.headers.items()
+                   if k.lower() not in _HOP_HEADERS and not k.lower().startswith("access-control-") and k.lower() != "content-encoding"}
+    return Response(content=resp.content, status_code=resp.status_code, headers=out_headers)
 
 
 # Customer Service validates tenant identity and ticket access in its own backend.

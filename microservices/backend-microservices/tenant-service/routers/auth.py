@@ -8,6 +8,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
+from services.audit_capture import record as audit_record, record_standalone as audit_standalone
 from services.case_events import publish_data_changed
 from schemas import ChangePasswordRequest, ProfileUpdate
 from typing import Optional
@@ -133,6 +134,12 @@ async def login_for_access_token(
     # Retrieve user by email (username field in form_data maps to email)
     user = (await session.exec(select(User).where(User.email == form_data.username))).first()
     if not user or user.is_deleted or not _pwd.verify(form_data.password, user.hashed_password):
+        # Durable even though the request fails: a refused sign-in is exactly what an audit trail is for.
+        await audit_standalone(module="administration", action="auth.login.failed", entity_type="user",
+                               entity_id=user.id if user else None, tenant_id=user.tenant_id if user else None,
+                               outcome="FAILURE", actor_type="USER",
+                               metadata={"reason": "unknown_account" if not user else ("account_removed" if user.is_deleted else "wrong_password"),
+                                         "email": form_data.username})
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -147,6 +154,9 @@ async def login_for_access_token(
     user.last_login = datetime.utcnow()
     user.is_verified = True
     session.add(user)
+    await audit_record(session, module="administration", action="auth.login.succeeded", entity_type="user", entity_id=user.id,
+                       tenant_id=user.tenant_id, actor_id=str(user.id), actor_type="USER", actor_role=await _role_name(user, session),
+                       metadata={"first_login": first_login, "actor_name": user.full_name})
     await session.commit()
 
     # An acquisition source's login turns from "invited" to "active" on its first sign-in. Tell the tenant's open
@@ -240,6 +250,9 @@ async def verify_superadmin(
     user = await _get_current_user(token, session)
     role = await session.get(Role, user.role_id)
     if not role or role.name != "SuperAdmin":
+        await audit_standalone(module="administration", action="access.denied", entity_type="endpoint", outcome="DENIED",
+                               tenant_id=user.tenant_id, actor_id=str(user.id), actor_type="USER", actor_role=role.name if role else None,
+                               metadata={"required_roles": ["SuperAdmin"]})
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="SuperAdmin privileges required",
@@ -259,6 +272,9 @@ def require_roles(*allowed_role_names: str):
         user = await _get_current_user(token, session)
         role_name = await _role_name(user, session)
         if role_name not in allowed_role_names:
+            await audit_standalone(module="administration", action="access.denied", entity_type="endpoint", outcome="DENIED",
+                                   tenant_id=user.tenant_id, actor_id=str(user.id), actor_type="USER", actor_role=role_name,
+                                   metadata={"required_roles": list(allowed_role_names)})
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"This action requires one of: {', '.join(allowed_role_names)} (you are {role_name}).",

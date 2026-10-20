@@ -1,0 +1,26 @@
+{
+  "id": "commission-earnings",
+  "title": "Commission Earnings",
+  "description": "The portal at /commissions now reads persisted accrued gross earnings from the tenant service. The mobile commission screen and copilot ledger, summary, payee and statement tools use that same backend. A policy's status never implies a commission payment.",
+  "source": "@site/docs/commission-earnings.md",
+  "sourceDirName": ".",
+  "slug": "/commission-earnings",
+  "permalink": "/insurance-ai/commission-earnings",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "commission-earnings",
+    "title": "Commission Earnings"
+  },
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Underwriting & Policy Lifecycle",
+    "permalink": "/insurance-ai/policy-lifecycle"
+  },
+  "next": {
+    "title": "Case Management",
+    "permalink": "/insurance-ai/cases"
+  }
+}

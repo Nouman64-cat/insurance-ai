@@ -29,6 +29,7 @@ from app import db, tenant_client
 from app.config import settings
 from app.records import audit, j, now, outbox
 from app.types.registry import TYPES, get_type
+from shared.audit.outbox import KafkaPublisher as AuditPublisher, OutboxRelay
 from shared.events.kafka_events import REQUEST_EVENTS_TOPIC
 
 log = logging.getLogger("request-management.workers")
@@ -417,7 +418,11 @@ async def ensure_topic() -> None:
         await admin.close()
 
 
+audit_relay: Optional[OutboxRelay] = None   # publishes audit intents to the Audit Service's topic (see shared/audit/outbox.py)
+
+
 def start(stop: asyncio.Event) -> list[asyncio.Task]:
+    global audit_relay
     async def relay_loop() -> None:
         while not stop.is_set():
             publisher = KafkaPublisher(settings.kafka_bootstrap)
@@ -430,7 +435,11 @@ def start(stop: asyncio.Event) -> list[asyncio.Task]:
             finally:
                 await publisher.stop()
 
-    return [
+    tasks = []
+    if settings.audit_enabled:
+        audit_relay = OutboxRelay(db.transaction, AuditPublisher(settings.kafka_bootstrap), name="request-management audit")
+        tasks.append(asyncio.create_task(audit_relay.run(stop), name="audit-outbox-relay"))
+    return tasks + [
         asyncio.create_task(relay_loop(), name="outbox-relay"),
         asyncio.create_task(_consume("executor", stop), name="executor"),
         asyncio.create_task(_consume("notifier", stop), name="notifier"),

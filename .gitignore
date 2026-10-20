@@ -143,3 +143,7 @@ output
 tmp
 medical-reports
 test-data
+# Audit signing material must never be committed
+/.audit-protected/
+/.protected-data/
+*.pem

@@ -1,0 +1,28 @@
+{
+  "id": "policy-lifecycle",
+  "title": "Underwriting & Policy Lifecycle",
+  "description": "This page walks a policy from lead to claim and names the router that owns each step. All routes are under /tenants/ and reach the Tenant Service through the API Gateway.",
+  "source": "@site/docs/policy-lifecycle.md",
+  "sourceDirName": ".",
+  "slug": "/policy-lifecycle",
+  "permalink": "/insurance-ai/policy-lifecycle",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 5,
+  "frontMatter": {
+    "id": "policy-lifecycle",
+    "title": "Underwriting & Policy Lifecycle",
+    "sidebar_position": 5
+  },
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Database Schemas",
+    "permalink": "/insurance-ai/db-schemas"
+  },
+  "next": {
+    "title": "Commission Earnings",
+    "permalink": "/insurance-ai/commission-earnings"
+  }
+}

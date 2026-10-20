@@ -1,0 +1,24 @@
+{
+  "id": "contributing",
+  "title": "Contributing",
+  "description": "Full team guide: Git Branch and Commit Naming Convention (ClickUp).",
+  "source": "@site/docs/contributing.md",
+  "sourceDirName": ".",
+  "slug": "/contributing",
+  "permalink": "/insurance-ai/contributing",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 13,
+  "frontMatter": {
+    "id": "contributing",
+    "title": "Contributing",
+    "sidebar_position": 13
+  },
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Client Apps",
+    "permalink": "/insurance-ai/client-apps"
+  }
+}

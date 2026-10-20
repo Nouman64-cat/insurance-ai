@@ -1,0 +1,27 @@
+# Optional override: keep the audit signing material in a host directory you choose (for example on an encrypted disk or a
+# separately backed-up location) instead of Docker-managed named volumes.
+#
+#   export HOST_PROTECTED_DATA_DIR=/srv/insurance-ai-protected        # Linux/macOS
+#   $env:HOST_PROTECTED_DATA_DIR = "D:\insurance-ai-protected"          # Windows PowerShell
+#   mkdir -p "$HOST_PROTECTED_DATA_DIR"/audit/{keys,secrets,state,checkpoints}
+#   docker compose -f docker-compose.yml -f docker-compose.protected-dir.yml up -d
+#
+# Layout:  <HOST_PROTECTED_DATA_DIR>/audit/keys/        encrypted private keys   (audit-signer only)
+#          <HOST_PROTECTED_DATA_DIR>/audit/secrets/     key passphrase           (audit-signer only)
+#          <HOST_PROTECTED_DATA_DIR>/audit/state/       signer state             (audit-signer only)
+#          <HOST_PROTECTED_DATA_DIR>/audit/checkpoints/<environment_id>/<tenant_id>/checkpoint-000001.json
+# The directory must be OUTSIDE the Git repository. Docker Desktop (Windows/macOS) must be allowed to share it. On Linux the
+# directories must be writable by uid 10001 (the signer user): sudo chown -R 10001 "$HOST_PROTECTED_DATA_DIR"/audit
+volumes:
+  audit-keys:
+    driver: local
+    driver_opts: {type: none, o: bind, device: "${HOST_PROTECTED_DATA_DIR:?set HOST_PROTECTED_DATA_DIR}/audit/keys"}
+  audit-secrets:
+    driver: local
+    driver_opts: {type: none, o: bind, device: "${HOST_PROTECTED_DATA_DIR:?set HOST_PROTECTED_DATA_DIR}/audit/secrets"}
+  audit-signer-state:
+    driver: local
+    driver_opts: {type: none, o: bind, device: "${HOST_PROTECTED_DATA_DIR:?set HOST_PROTECTED_DATA_DIR}/audit/state"}
+  audit-checkpoints:
+    driver: local
+    driver_opts: {type: none, o: bind, device: "${HOST_PROTECTED_DATA_DIR:?set HOST_PROTECTED_DATA_DIR}/audit/checkpoints"}

@@ -9,7 +9,9 @@ from uuid import UUID, uuid4
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from app.config import settings
 from app.errors import ApiError, not_found
+from shared.audit.outbox import build_intent, enqueue
 
 
 def now() -> datetime:
@@ -57,6 +59,29 @@ async def audit(conn: AsyncConnection, *, tenant_id: UUID, request_id: Optional[
     """), {"id": uuid4(), "tenant": tenant_id, "request": request_id, "type": event_type, "actor": actor_id,
            "actor_name": actor_name, "actor_role": actor_role, "rev": revision_no, "fr": from_review, "tr": to_review,
            "fe": from_execution, "te": to_execution, "reason": reason, "data": j(data or {})})
+    # The same fact, as a tamper-evident ledger entry: queued in this transaction, so it commits with the action.
+    if not settings.audit_enabled:
+        return
+    await enqueue(conn, _audit_intent(tenant_id=tenant_id, request_id=request_id, event_type=event_type, actor_id=actor_id,
+                                      actor_name=actor_name, actor_role=actor_role, revision_no=revision_no,
+                                      review=(from_review, to_review), execution=(from_execution, to_execution),
+                                      reason=reason, data=data or {}))
+
+
+def _audit_intent(*, tenant_id: UUID, request_id: Optional[UUID], event_type: str, actor_id: Optional[UUID], actor_name: str,
+                  actor_role: Optional[str], revision_no: Optional[int], review: tuple, execution: tuple, reason: Optional[str],
+                  data: dict):
+    routing = event_type.startswith("ROUTING_RULE")
+    previous = {k: v for k, v in (("review_status", review[0]), ("execution_status", execution[0])) if v}
+    new = {k: v for k, v in (("review_status", review[1]), ("execution_status", execution[1])) if v}
+    meta = {"actor_name": actor_name, "revision_no": revision_no, "reason": reason, "data": data}
+    return build_intent(
+        "request-management", module="customers_leads", action=f"request.{event_type.lower()}",
+        entity_type="routing_rule" if routing else "request",
+        entity_id=(data.get("rule_id") or data.get("id")) if routing else request_id,
+        tenant_id=tenant_id, case_id=None, previous_value=previous or None, new_value=new or None, metadata=meta,
+        actor_id=str(actor_id) if actor_id else None, actor_type="USER" if actor_id else "SYSTEM", actor_role=actor_role,
+    )
 
 
 async def outbox(conn: AsyncConnection, *, tenant_id: UUID, request_id: Optional[UUID], event_type: str, data: dict) -> UUID:

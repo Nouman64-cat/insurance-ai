@@ -1,0 +1,28 @@
+{
+  "id": "chat-agent",
+  "title": "AI Copilot (Chat Agent)",
+  "description": "The copilot is a conversational agent embedded in the web portal (and the agent app's Chat screen) that can look things up, onboard leads, run the underwriting and claims pipelines, and navigate the UI — while every mutating action is gated in code, not just in the prompt.",
+  "source": "@site/docs/chat-agent.md",
+  "sourceDirName": ".",
+  "slug": "/chat-agent",
+  "permalink": "/insurance-ai/chat-agent",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 10,
+  "frontMatter": {
+    "id": "chat-agent",
+    "title": "AI Copilot (Chat Agent)",
+    "sidebar_position": 10
+  },
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Fraud Detection Layer",
+    "permalink": "/insurance-ai/fraud-layer"
+  },
+  "next": {
+    "title": "LLM Providers & Token Usage",
+    "permalink": "/insurance-ai/llm-providers"
+  }
+}

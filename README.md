@@ -157,9 +157,11 @@ insurance-ai/
 │       ├── customer-management/  # FastAPI customer portal back end
 │       ├── customer-service/     # FastAPI service desk, isolated PostgreSQL schema, :8018
 │       ├── request-management-service/ # FastAPI request workflows, isolated PostgreSQL schema, :8017
+│       ├── audit-service/        # FastAPI hash-chained audit ledger, isolated PostgreSQL schema `audit`, :8030
 │       └── decision-engine/
 ├── shared/                       # Python code shared by the backend microservices
 │   ├── models/
+│   ├── audit/                    # audit event contract, sanitizer, transactional outbox + relay
 │   ├── events/
 │   ├── services/
 │   └── underwriting/
@@ -274,6 +276,24 @@ docker compose up -d frontend                   # the portal, where sign-in happ
 | `SSO_COOKIE_NAME` / `SSO_COOKIE_DOMAIN` | all three            | As for the Automation Chat above                           |
 
 Details, the shared-code setup, production builds and benchmarking: [`microservices/frontend-microservices/underwriting-app/README.md`](microservices/frontend-microservices/underwriting-app/README.md).
+
+## Audit Trail
+
+Significant activity across the platform is recorded in a centralized, tenant-isolated, append-only **audit ledger** whose events are
+chained with SHA-256, so edited, deleted or reordered records are detected by verification. Services queue audit intents in a transactional
+outbox (same transaction as the business change), relay them over Kafka (`insurance.audit.events.v1`), and the Audit Service
+(`microservices/backend-microservices/audit-service/`, schema `audit`) assigns sequence numbers and hashes. Tenant admins read their tenant's
+trail, and run chain verification, under **Administration → Security & Compliance → Audit Trail**; the platform administrator sees every chain.
+
+Before the first start add `AUDIT_DB_OWNER_PASSWORD` and `AUDIT_DB_APP_PASSWORD` to `.env` (see `.env.example`); `docker compose up -d audit-service`
+creates the schema and roles. Hash specification, guarantees, **security limits**, API, operations and manual tamper test:
+[service README](microservices/backend-microservices/audit-service/README.md).
+
+**Signed checkpoints (Stage 2).** Every 500 events or 15 minutes per chain, an isolated `audit-signer` container (the only holder of a private key) re-verifies the
+chain and signs a checkpoint with Ed25519; copies are kept outside PostgreSQL, so history can no longer be silently rewritten by someone who controls only the database.
+One-time per installation: `docker compose run --rm audit-signer-init` (each developer gets their own keys; nothing secret is committed). See the
+[Stage 2 section of the service README](microservices/backend-microservices/audit-service/README.md#stage-2-signed-checkpoints) for the trust model, key backup/rotation, and
+the manual end-to-end guide.
 
 ## Request Management
 

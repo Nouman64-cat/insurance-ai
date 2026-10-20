@@ -3,7 +3,8 @@ from enum import Enum
 from typing import Any, List, Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, Enum as SQLEnum, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Column, DateTime, Enum as SQLEnum, Index, Integer, JSON, String, Text, UniqueConstraint, func, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, Relationship, SQLModel
 
 import os
@@ -4032,3 +4033,20 @@ class PlatformAgentConfig(SQLModel, table=True):
     skill_agent_enabled: bool = Field(default=True, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_by: Optional[UUID] = Field(default=None)
+
+
+class AuditOutbox(SQLModel, table=True):
+    """Transactional outbox for audit intents (shared/audit/outbox.py; the DDL there and this model describe the same
+    table). A row is written in the same transaction as the business change it records and published to Kafka by the
+    outbox relay; it is not itself an audit record (the Audit Service's ledger is). Registered here so that every
+    database built from this metadata has it, including disposable test databases."""
+    __tablename__ = "audit_outbox"
+    __table_args__ = (Index("audit_outbox_pending", "created_at", postgresql_where=text("published_at IS NULL")),)
+
+    id: UUID = Field(primary_key=True)
+    tenant_id: Optional[UUID] = Field(default=None)
+    payload: dict = Field(sa_column=Column(JSONB, nullable=False))
+    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False))
+    published_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    publish_attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False, server_default="0"))
+    last_error: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
