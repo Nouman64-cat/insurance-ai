@@ -202,9 +202,9 @@ export const auditApi = {
     (await api.get<SequenceInfo>(`/audit/v1/chains/${encodeURIComponent(chainId)}/sequence/${sequence}`)).data,
   facets: async () => (await api.get<Facets>("/audit/v1/events/facets")).data,
   demoEnabled: async () => (await api.get<{ enabled: boolean }>("/audit/v1/demo/status")).data.enabled,
-  demoDelete: async (eventId: string) => (await api.post(`/audit/v1/demo/events/${eventId}/delete`)).data,
+  demoDelete: async (eventId: string) => (await api.post<{ chain_id: string; sequence_number: number }>(`/audit/v1/demo/events/${eventId}/delete`)).data,
   demoBin: async () => (await api.get<{ items: RecycledEvent[] }>("/audit/v1/demo/recycle-bin")).data.items,
-  demoRestore: async (binId: string) => (await api.post(`/audit/v1/demo/recycle-bin/${binId}/restore`)).data,
+  demoRestore: async (binId: string) => (await api.post<{ chain_id: string; sequence_number: number }>(`/audit/v1/demo/recycle-bin/${binId}/restore`)).data,
   chains: async () => (await api.get<{ items: ChainSummary[] }>("/audit/v1/chains")).data.items,
   status: async () => (await api.get<OpsStatus>("/audit/v1/ops/status")).data,
   verify: async (body: { chain_id?: string; tenant_id?: string } = {}) =>

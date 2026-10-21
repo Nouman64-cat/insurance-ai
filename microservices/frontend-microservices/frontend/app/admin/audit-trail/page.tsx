@@ -151,7 +151,9 @@ export default function AuditTrailPage() {
 
   // Demo tools changed the ledger: refresh the list and the status panels. Integrity is NOT re-checked here: that happens on
   // the scheduled run (every AUDIT_VERIFY_INTERVAL_SECONDS) or when someone clicks Verify, so the old result stays until then.
-  const ledgerChanged = () => {
+  // The list shows every chain, but Verify checks the selected one: switch to the chain that changed so it is the one checked.
+  const ledgerChanged = (changedChainId: string) => {
+    setChainId(changedChainId);
     loadSummary();
     loadEvents();
   };
@@ -270,7 +272,7 @@ export default function AuditTrailPage() {
           onNarrow={narrow}
           tenantLabel={tenantLabel}
           demo={demo}
-          onDeleted={() => { setSelectedId(null); ledgerChanged(); }}
+          onDeleted={(cid) => { setSelectedId(null); ledgerChanged(cid); }}
         />
       )}
 

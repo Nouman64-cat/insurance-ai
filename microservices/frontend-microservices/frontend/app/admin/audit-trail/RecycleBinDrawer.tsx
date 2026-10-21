@@ -9,7 +9,7 @@ import { ModuleBadge, OutcomeBadge, actorLabel } from "./EventTable";
 interface Props {
   onClose: () => void;
   /** Called after an event has been put back, so the page can reload the list and the integrity panels. */
-  onRestored: () => void;
+  onRestored: (chainId: string) => void;
   tenantLabel: (tenantId: string | null) => string;
 }
 
@@ -42,9 +42,9 @@ export default function RecycleBinDrawer({ onClose, onRestored, tenantLabel }: P
     setBusy(binId);
     setError("");
     try {
-      await auditApi.demoRestore(binId);
+      const { chain_id } = await auditApi.demoRestore(binId);
       await load();
-      onRestored();
+      onRestored(chain_id);
     } catch (err) {
       setError(errorMessage(err, tx("Could not restore this event.")));
     } finally {

@@ -44,7 +44,8 @@ interface Props {
   tenantLabel: (tenantId: string | null) => string;
   /** Demo only (ENV_VAR=demo): show a button that deletes this event so the integrity checks can be seen catching it. */
   demo?: boolean;
-  onDeleted?: () => void;
+  /** Called with the chain the event belonged to, so the page can point verification at it. */
+  onDeleted?: (chainId: string) => void;
 }
 
 export default function EventDrawer({ eventId, onClose, onOpen, onNarrow, tenantLabel, demo = false, onDeleted }: Props) {
@@ -55,8 +56,8 @@ export default function EventDrawer({ eventId, onClose, onOpen, onNarrow, tenant
     setDeleting(true);
     setDeleteError("");
     try {
-      await auditApi.demoDelete(eventId);
-      onDeleted?.();
+      const { chain_id } = await auditApi.demoDelete(eventId);
+      onDeleted?.(chain_id);
     } catch (err) {
       setDeleteError(errorMessage(err, tx("Could not delete this event.")));
       setConfirming(false);
