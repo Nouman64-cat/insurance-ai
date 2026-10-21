@@ -191,7 +191,7 @@
     "layers": ["L1", "L4", "L5"],
     "source": {"kind": "code", "reference": "thread ownership check in the chat stream and resume endpoints", "verification": "code_verified",
       "code_refs": ["microservices/backend-microservices/chat-agent/routers/chat.py::_owner_mismatch", "microservices/backend-microservices/chat-agent/routers/chat.py::chat_stream"]},
-    "metadata": {"interface": "chat", "env_mode": "any",
+    "metadata": {"interface": "api", "env_mode": "any",
       "truth": [{"oracle": "source_contains", "inputs": {"path": "microservices/backend-microservices/chat-agent/routers/chat.py", "text": "This conversation belongs to another user."}, "expect": true}]}
   }
 ]

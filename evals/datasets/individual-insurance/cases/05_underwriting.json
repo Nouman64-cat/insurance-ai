@@ -41,7 +41,7 @@
         "policy": {"coverage_amount": 3500000, "term_years": 20}, "medical_questionnaire": {}}
     },
     "expected": {
-      "summary": "For a smoker the examination tiers are reached at 70% of the usual cover, so cover of exactly PKR 3,500,000 requires a medical examination. One rupee less does not, and a non-smoker at 3,500,000 does not.",
+      "summary": "In the shared requirements engine (determine_requirements), a smoker reaches the examination tiers at 70% of the usual cover, so cover of exactly PKR 3,500,000 requires a medical examination. One rupee less does not, and a non-smoker at 3,500,000 does not. This is the answer of that engine only; the limit book in IND-UW-004 answers differently for the same applicant.",
       "outcome": "medical_examination_required"
     },
     "reference_context": [
@@ -53,7 +53,7 @@
     "layers": ["L1", "L5"],
     "source": {"kind": "code", "reference": "smoker-adjusted examination tier", "verification": "pending_domain_approval",
       "code_refs": ["shared/underwriting/requirements_rules.py::SMOKER_COVERAGE_TIER_FACTOR", "shared/underwriting/requirements_rules.py::_medical_exam_codes_for_coverage"],
-      "notes": "The 0.7 factor and the tier amounts belong to the code's v1 demonstration configuration."},
+      "notes": "The 0.7 factor and the tier amounts belong to the code's v1 demonstration configuration. Open question from the 2026-10-21 quality assessment: the limit book (assess_medical_requirement, see IND-UW-004) requires a medical for a non-smoker aged 30 at 3,500,000, while this engine does not. The business must name the authoritative engine before either case is approved."},
     "metadata": {"interface": "rules", "env_mode": "any", "placeholder_rule": true,
       "truth": [
         {"oracle": "requirements", "inputs": {"age": 30, "coverage": 3500000, "declared_income": 1200000, "smoker": true}, "expect": ["CNIC", "MEDICAL_EXAMINATION", "MEDICAL_QUESTIONNAIRE"]},
@@ -87,7 +87,7 @@
     "layers": ["L1", "L5"],
     "source": {"kind": "code", "reference": "coverage-to-income evidence thresholds", "verification": "pending_domain_approval",
       "code_refs": ["shared/underwriting/requirements_rules.py::FINANCIAL_DOCS_RATIO_THRESHOLD", "shared/underwriting/requirements_rules.py::TAX_DOCUMENT_RATIO_THRESHOLD"],
-      "notes": "Thresholds are part of the code's v1 demonstration configuration."},
+      "notes": "Thresholds are part of the code's v1 demonstration configuration. Cross-rule note from the 2026-10-21 quality assessment: this test is strictly greater than 10x income, while the AML screen (IND-RISK-004) scores 10x and above, so at exactly 10x the AML check adds risk but no income evidence is requested. Confirm whether that boundary is intended."},
     "metadata": {"interface": "rules", "env_mode": "any", "placeholder_rule": true,
       "truth": [
         {"oracle": "requirements", "inputs": {"age": 30, "coverage": 10000001, "declared_income": 1000000}, "expect": ["BANK_STATEMENT", "CNIC", "MEDICAL_EXAMINATION", "MEDICAL_QUESTIONNAIRE", "SALARY_SLIP"]},
@@ -105,7 +105,7 @@
       "payload": {"operation": "underwriting.assess_medical_requirement", "applicant": {"age_years": 36, "gender": "Male", "is_smoker": false}, "sum_at_risk": 2500000}
     },
     "expected": {
-      "summary": "A 36 year old can be underwritten on declarations alone up to PKR 2,000,000. At 2,500,000 a medical is required: the examiner's report, fasting blood sugar, urine routine, lipid profile and a blood count, estimated at PKR 7,100. At exactly 2,000,000 no medical is needed.",
+      "summary": "In the underwriting limit book (assess_medical_requirement), a 36 year old can be underwritten on declarations alone up to PKR 2,000,000. At 2,500,000 a medical is required: the examiner's report, fasting blood sugar, urine routine, lipid profile and a blood count, estimated at PKR 7,100. At exactly 2,000,000 no medical is needed.",
       "outcome": "medical_required"
     },
     "reference_context": [
@@ -120,7 +120,7 @@
     "layers": ["L1", "L5"],
     "source": {"kind": "code", "reference": "assess_medical_requirement and the limit book", "verification": "pending_domain_approval",
       "code_refs": ["microservices/backend-microservices/tenant-service/services/underwriting_limits.py::assess_medical_requirement", "microservices/backend-microservices/tenant-service/services/underwriting_limits.py::TEST_TIERS"],
-      "notes": "The limit book describes itself as defaults for the mid-market Pakistani life book, overridable by environment variables; the insurer has not signed it off for this dataset."},
+      "notes": "The limit book describes itself as defaults for the mid-market Pakistani life book, overridable by environment variables; the insurer has not signed it off for this dataset. Open question from the 2026-10-21 quality assessment: the shared requirements engine (IND-UW-001 to 003) does not ask for a medical examination for a 36 year old non-smoker at 2,500,000, so the two engines disagree. The business must name the authoritative engine before either case is approved."},
     "metadata": {"interface": "rules", "env_mode": "any", "placeholder_rule": true,
       "truth": [
         {"oracle": "medical_requirement", "inputs": {"age": 36, "sum_at_risk": 2500000, "gender": "Male", "smoker": false}, "expect": {"required": true, "non_medical_limit": 2000000, "tests": ["MER", "FBS", "URINE_RE", "LIPID", "CBC"], "estimated_cost": 7100}},

@@ -261,7 +261,7 @@
   },
   {
     "case_id": "IND-LEAD-003",
-    "title": "A nine-digit phone number is refused, a ten-digit one is accepted",
+    "title": "A nine-digit phone number is refused, a full eleven-digit one is accepted",
     "stage": "lead",
     "category": "lead-onboarding",
     "scenario_type": "boundary",
@@ -276,10 +276,10 @@
     "user": "agent-a1",
     "messages": [
       "Record a lead: Hina Raza, phone 030055501, Karachi.",
-      "Sorry, I missed a digit. The number is 0300555010."
+      "Sorry, I missed some digits. The number is 03005550100."
     ],
     "expected": {
-      "summary": "A phone number with 9 digits is below the 10 digit minimum, so no lead is saved and the agent asks for a valid number. Once the 10 digit number is given, the lead is saved.",
+      "summary": "A phone number with 9 digits is below the 10 digit minimum, so no lead is saved and the agent asks for a valid number. Once the full 11 digit mobile number (the usual Pakistani format with the leading 0) is given, the lead is saved. The code's own limit is 10 to 15 digits, so 10 is the boundary it enforces; the corrected number here is 11 digits because that is what a real mobile number has.",
       "outcome": "lead_recorded_after_correction",
       "permitted_actions": [
         "ask for a valid phone number",
@@ -294,7 +294,7 @@
           "arguments": {
             "first_name": "Hina",
             "last_name": "Raza",
-            "phone": "0300555010",
+            "phone": "03005550100",
             "city": "Karachi"
           },
           "match": "subset",
@@ -330,7 +330,7 @@
         "id": "A3",
         "type": "equals",
         "target": "trace.tool_calls.record_lead.arguments.phone",
-        "expected": "0300555010",
+        "expected": "03005550100",
         "severity": "major"
       }
     ],
@@ -373,6 +373,13 @@
           "oracle": "lead_phone_ok",
           "inputs": {
             "phone": "0300555010"
+          },
+          "expect": true
+        },
+        {
+          "oracle": "lead_phone_ok",
+          "inputs": {
+            "phone": "03005550100"
           },
           "expect": true
         },

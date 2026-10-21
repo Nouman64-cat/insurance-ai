@@ -177,6 +177,14 @@ services:
       PORTAL_PROVISIONING_MODE: ${PORTAL_PROVISIONING_MODE:-dual}
       # Public origin of the pages customers open from emailed links (/e-application, /medical-exam).
       PORTAL_PUBLIC_URL: ${NEXT_PUBLIC_PORTAL_URL:-http://localhost:3000}
+      # Evaluation data lake (shared/evaluation): the `minio` service above, its own bucket and identity (created by minio-init).
+      # No depends_on on purpose: the lake connects when first used, so tenant-service still starts without MinIO or its license.
+      EVAL_LAKE_ENDPOINT: ${EVAL_LAKE_ENDPOINT:-http://minio:9000}
+      EVAL_LAKE_ACCESS_KEY: ${EVAL_LAKE_ACCESS_KEY:-}
+      EVAL_LAKE_SECRET_KEY: ${EVAL_LAKE_SECRET_KEY:-}
+      EVAL_LAKE_BUCKET: ${EVAL_LAKE_BUCKET:-eval-lake}
+      EVAL_LAKE_RETENTION_MODE: ${EVAL_LAKE_RETENTION_MODE:-GOVERNANCE}
+      EVAL_LAKE_RETENTION_DAYS: ${EVAL_LAKE_RETENTION_DAYS:-3650}
     depends_on:
       kafka:
         condition: service_healthy
@@ -529,6 +537,10 @@ services:
       AUDIT_ARCHIVE_WRITER_SECRET: ${AUDIT_ARCHIVE_WRITER_SECRET:-}
       AUDIT_ARCHIVE_READER_KEY: ${AUDIT_ARCHIVE_READER_KEY:-}
       AUDIT_ARCHIVE_READER_SECRET: ${AUDIT_ARCHIVE_READER_SECRET:-}
+      # Evaluation data lake bucket and identity (optional; skipped when EVAL_LAKE_ACCESS_KEY is empty).
+      EVAL_LAKE_BUCKET: ${EVAL_LAKE_BUCKET:-eval-lake}
+      EVAL_LAKE_ACCESS_KEY: ${EVAL_LAKE_ACCESS_KEY:-}
+      EVAL_LAKE_SECRET_KEY: ${EVAL_LAKE_SECRET_KEY:-}
     volumes:
       - ./infrastructure/minio/init.sh:/init/init.sh:ro
 

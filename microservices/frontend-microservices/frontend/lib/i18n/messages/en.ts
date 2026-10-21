@@ -94,6 +94,7 @@ const en = {
     "Token Economy": "Token Economy",
     "AI Agents": "AI Agents",
     "LLM Configuration": "LLM Configuration",
+    "Golden Datasets": "Golden Datasets",
     "Profile": "Profile",
     "Commission Admin": "Commission Admin",
     "Commission Types": "Commission Types",

@@ -69,7 +69,7 @@
     "input": {"payload": {"operation": "rules.early_check", "body": {"occupation": "Retired Army Officer", "age": 58}}},
     "expected": {
       "summary": "Today the rule matches the word 'army' anywhere in the occupation, so a retired officer is declined exactly like a serving soldier. Whether retired personnel should be declined is a business question that has not been answered, so this case records the current behaviour and is pending domain approval.",
-      "outcome": "DECLINE (current behaviour, business owner to confirm)"
+      "outcome": "DECLINE"
     },
     "reference_context": [
       {"source": "tenant-service/routers/rules.py::_KNOCKOUT_RULE_SET", "kind": "code", "text": "Matching is a case-insensitive substring on the free-text occupation; the rule has no concept of retired or former."}
@@ -81,7 +81,7 @@
     "layers": ["L1", "L4", "L5"],
     "source": {"kind": "code", "reference": "KO-OCC-01 keyword match on 'army'", "verification": "pending_domain_approval",
       "code_refs": ["microservices/backend-microservices/tenant-service/routers/rules.py::_KNOCKOUT_RULE_SET"],
-      "notes": "Reports what the code does. Do not treat this as the approved answer: if the business decides retired personnel are insurable, this case's expected outcome changes."},
+      "notes": "Reports what the code does. Do not treat this as the approved answer: if the business decides retired personnel are insurable, this case's expected outcome changes. The same substring match also declines civilian occupations that merely contain a keyword (for example 'Naval Architect', 'Accountant at Fauji Fertilizer', 'Border Customs Clerk', 'Salvation Army volunteer'), found by the 2026-10-21 quality assessment; the rule needs a business and engineering decision, and when it changes this case and RISK-001 must be re-derived."},
     "metadata": {"interface": "api", "env_mode": "any", "placeholder_rule": true,
       "truth": [{"oracle": "knockout", "inputs": {"occupation": "Retired Army Officer", "age": 58}, "expect": {"decision": "DECLINE", "rule_codes": ["KO-OCC-01"]}}]}
   },
@@ -109,7 +109,7 @@
     "layers": ["L1", "L4", "L5"],
     "source": {"kind": "code", "reference": "_screen_aml scoring", "verification": "pending_domain_approval",
       "code_refs": ["microservices/backend-microservices/tenant-service/services/compliance_engine.py::_screen_aml"],
-      "notes": "The signals, weights and thresholds are internal heuristics, not an approved AML programme."},
+      "notes": "The signals, weights and thresholds are internal heuristics, not an approved AML programme. Cross-rule note from the 2026-10-21 quality assessment: this check scores 10x income and above (>=), while underwriting asks for income evidence only above 10x (>, see IND-UW-003). Confirm whether that boundary is intended."},
     "metadata": {"interface": "api", "env_mode": "any", "placeholder_rule": true,
       "truth": [
         {"oracle": "aml", "inputs": {"occupation": "Money exchange dealer", "declared_income": 1000000, "coverage": 10000000}, "expect": {"status": "Flagged", "score": 85}},

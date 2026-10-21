@@ -96,6 +96,7 @@ const ur: Messages = {
     "Token Economy": "ٹوکن اکانومی",
     "AI Agents": "اے آئی ایجنٹس",
     "LLM Configuration": "LLM کنفیگریشن",
+    "Golden Datasets": "گولڈن ڈیٹا سیٹس",
     "Profile": "پروفائل",
     "Commission Admin": "کمیشن ایڈمن",
     "Commission Types": "کمیشن کی اقسام",

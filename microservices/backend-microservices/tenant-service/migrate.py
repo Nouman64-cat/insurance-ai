@@ -1515,15 +1515,12 @@ MIGRATIONS: list[tuple[str, str]] = [
      "ADD COLUMN IF NOT EXISTS rule_code VARCHAR(100), ADD COLUMN IF NOT EXISTS rule_version VARCHAR(50)"),
     ("v70e — commission_earnings.disburse_date", "ALTER TABLE commission_earnings ADD COLUMN IF NOT EXISTS disburse_date DATE"),
     ("v70f — index commission_earnings.disburse_date", "CREATE INDEX IF NOT EXISTS ix_commission_earnings_disburse_date ON commission_earnings (disburse_date)"),
-<<<<<<< HEAD
     # Audit trail: the transactional outbox the Audit Service's intents are written to (shared/audit/outbox.py).
     ("v71a — audit_outbox (audit intents committed with the business change, published to Kafka by the relay)", _AUDIT_OUTBOX_DDL[0]),
     ("v71b — audit_outbox pending index", _AUDIT_OUTBOX_DDL[1]),
-=======
     # Evaluation data lake (shared/models/evaluation.py): a published dataset version can never be changed. The tables come
     # from create_all; these steps add the triggers that enforce it (every step is safe to run again).
-    *[(f"v71{chr(97 + i)} — {label}", sql) for i, (label, sql) in enumerate(EVAL_IMMUTABILITY_DDL)],
->>>>>>> feat/eval-harness
+    *[(f"v72{chr(97 + i)} — {label}", sql) for i, (label, sql) in enumerate(EVAL_IMMUTABILITY_DDL)],
 ]
 
 

@@ -8,6 +8,7 @@
         --name "Individual Insurance, single turn" --workflow individual-insurance --turn-mode single_turn
     docker compose exec tenant-service python eval_lake_cli.py ingest individual-single-turn /app/cases.jsonl
     docker compose exec tenant-service python eval_lake_cli.py promote individual-single-turn
+    docker compose exec tenant-service python eval_lake_cli.py fixtures individual-single-turn /app/fixtures
     docker compose exec tenant-service python eval_lake_cli.py approve individual-single-turn --as-user admin@example.com
     docker compose exec tenant-service python eval_lake_cli.py publish individual-single-turn 1.0.0 --as-user admin@example.com
     docker compose exec tenant-service python eval_lake_cli.py verify [slug] [--deep]
@@ -19,6 +20,7 @@ The browser-based Dataset Manager (a later stage) uses the same DataLake; this i
 import argparse
 import asyncio
 import json
+import mimetypes
 import os
 import sys
 from datetime import datetime, timedelta, timezone
@@ -123,6 +125,29 @@ async def run(args) -> int:
             for r in result.rejects[:20]:
                 print(f"    position {r['position']}: {r['error']}")
             return 0
+        if args.command == "fixtures":
+            # Upload the files in a folder that the dataset's Silver cases reference (publish refuses a case whose fixture is missing).
+            rows = (await session.exec(select(EvalCase).where(EvalCase.dataset_id == dataset.id, EvalCase.tier == "silver"))).all()
+            refs = sorted({ref for r in rows for ref in (r.content.get("input") or {}).get("fixture_refs") or []})
+            absent = [ref for ref in refs if not os.path.isfile(os.path.join(args.directory, ref))]
+            if absent:
+                raise LakeValidationError(f"not found in {args.directory}: " + ", ".join(absent))
+            # A zero-byte file is accepted only when the folder's manifest.json declares it empty on purpose.
+            manifest_path = os.path.join(args.directory, "manifest.json")
+            declared = {}
+            if os.path.isfile(manifest_path):
+                with open(manifest_path) as f:
+                    declared = {e["key"]: e.get("size_bytes") for e in json.load(f).get("fixtures", [])}
+            for ref in refs:
+                with open(os.path.join(args.directory, ref), "rb") as f:
+                    data = f.read()
+                content_type = mimetypes.guess_type(ref)[0] or "application/octet-stream"
+                row = await lake.put_fixture(session, dataset, fixture_key=ref, data=data, filename=ref, content_type=content_type,
+                                             kind="payload" if content_type == "application/json" else "document",
+                                             allow_empty=declared.get(ref) == 0)
+                print(f"    {ref}  {len(data)} bytes  sha256 {row.sha256[:12]}")
+            print(f"stored {len(refs)} fixture(s) for {dataset.slug}")
+            return 0
         if args.command == "promote":
             report = await lake.promote_to_silver(session, dataset, ingestion_id=UUID(args.ingestion) if args.ingestion else None)
             print(f"batch {report.batch_id}: {report.accepted} to Silver, {report.rejected} rejected ({report.duplicates} duplicates)")
@@ -167,6 +192,7 @@ def main() -> int:
     c.add_argument("--workflow", required=True); c.add_argument("--turn-mode", required=True, choices=["single_turn", "multi_turn"])
     i = sub.add_parser("ingest"); i.add_argument("slug"); i.add_argument("file")
     i.add_argument("--source-type", default="import", choices=["import", "synthetic", "trace", "manual"]); i.add_argument("--source-ref")
+    fx = sub.add_parser("fixtures"); fx.add_argument("slug"); fx.add_argument("directory")
     pr = sub.add_parser("promote"); pr.add_argument("slug"); pr.add_argument("--ingestion")
     a = sub.add_parser("approve"); a.add_argument("slug"); a.add_argument("--as-user", required=True); a.add_argument("--note")
     pu = sub.add_parser("publish"); pu.add_argument("slug"); pu.add_argument("version"); pu.add_argument("--as-user", required=True)

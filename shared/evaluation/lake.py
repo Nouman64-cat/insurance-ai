@@ -423,12 +423,13 @@ class DataLake:
 
     async def put_fixture(self, session: AsyncSession, dataset: EvalDataset, *, fixture_key: str, data: bytes, filename: str,
                           content_type: str = "application/json", kind: str = "payload", description: Optional[str] = None,
-                          created_by: Optional[UUID] = None) -> EvalFixture:
+                          created_by: Optional[UUID] = None, allow_empty: bool = False) -> EvalFixture:
         """Store a synthetic fixture under its checksum and point `fixture_key` at it. Changing a fixture adds a new object;
-        a published version keeps the checksum it pinned."""
+        a published version keeps the checksum it pinned. An empty fixture is refused unless `allow_empty` says it is the
+        point (a zero-byte upload an edge case sends on purpose)."""
         if not _FIXTURE_KEY.match(fixture_key):
             raise LakeValidationError(f"fixture key {fixture_key!r} is not valid (letters, digits, dot, dash, underscore; up to 120)")
-        if not data:
+        if not data and not allow_empty:
             raise LakeValidationError("the fixture is empty")
         await self.ensure_ready()
         digest = sha256_hex(data)

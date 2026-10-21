@@ -356,3 +356,6 @@ async def list_roles():
 
 from routers.claim_financial_review import router as claim_financial_review_router
 app.include_router(claim_financial_review_router)
+
+from routers.eval_datasets import router as eval_datasets_router
+app.include_router(eval_datasets_router)

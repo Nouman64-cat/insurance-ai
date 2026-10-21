@@ -1032,6 +1032,12 @@ async def proxy_platform_llm_config(path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/platform/llm-config{path}")
 
 
+# Evaluation dataset manager (SuperAdmin). tenant-service enforces the SuperAdmin JWT; the gateway only forwards.
+@app.api_route("/eval/datasets{path:path}", methods=["GET", "POST", "PUT", "OPTIONS"], include_in_schema=False)
+async def proxy_eval_datasets(path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/eval/datasets{path}")
+
+
 @app.api_route("/agent/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)
 async def proxy_agent(path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/agent/{path}")
