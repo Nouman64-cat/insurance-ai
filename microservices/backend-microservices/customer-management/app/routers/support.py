@@ -28,12 +28,16 @@ class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
-async def _call(p: Principal, method: str, path: str, body: Optional[dict] = None) -> Any:
+async def _call(p: Principal, method: str, path: str, body: Optional[dict] = None, operation_key: Optional[str] = None) -> Any:
     if not settings.support_key:
         raise ApiError(503, "SUPPORT_UNAVAILABLE", "Support tickets are not available right now.")
     data = json.dumps(body).encode() if body is not None else b""
-    headers = {**sign(settings.support_key, method, path, data, caller="customer-management"), "content-type": "application/json",
-               "x-portal-tenant": str(p.tenant_id), "x-portal-customer": str(p.customer_id), "x-portal-name": (p.display_name or "Customer")[:120].encode("ascii", "ignore").decode() or "Customer"}
+    context = {"x-portal-tenant": str(p.tenant_id), "x-portal-customer": str(p.customer_id),
+               "x-portal-name": (p.display_name or "Customer")[:120].encode("ascii", "ignore").decode() or "Customer"}
+    if operation_key:
+        context["Idempotency-Key"] = operation_key
+    headers = {**sign(settings.support_key, method, path, data, caller="customer-management", bound_headers=context),
+               "content-type": "application/json"}
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             r = await client.request(method, settings.support_url + path, content=data, headers=headers)
@@ -66,7 +70,7 @@ def _idem(key: Optional[str]) -> UUID:
     try:
         return uuid.UUID(key or "")
     except ValueError:
-        raise validation("An Idempotency-Key header (a UUID) is required")
+        raise ApiError(400, "IDEMPOTENCY_KEY_INVALID", "An Idempotency-Key header (a UUID) is required")
 
 
 @router.get("/tickets")
@@ -80,7 +84,7 @@ async def create_ticket(body: TicketIn, p: Principal = Depends(current_customer)
     if body.policy_id:                       # must be one of this customer's own policies (404 otherwise, like anywhere else in the portal)
         c = tenant_client.get_client()
         await c.get(f"{c.scope(p.tenant_id, p.customer_id)}/policies/{body.policy_id}")
-    return await _call(p, "POST", BASE, {**body.model_dump(mode="json", exclude_none=True), "idempotency_key": str(key)})
+    return await _call(p, "POST", BASE, body.model_dump(mode="json", exclude_none=True), operation_key=str(key))
 
 
 @router.get("/tickets/{ticket_id}")

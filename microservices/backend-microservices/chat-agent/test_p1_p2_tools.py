@@ -50,7 +50,7 @@ class FakeClient:
 
 def _ctx(client, role="Admin", platform="web"):
     return Ctx(client=client, tenant_id=TENANT,
-               exec_ctx=ExecCtx(tenant_id=TENANT, jwt_token="x" * 40, role=role, platform=platform))
+               exec_ctx=ExecCtx(tenant_id=TENANT, jwt_token="x" * 40, role=role, platform=platform, operation_id="test-tool-call-1"))
 
 
 def _run(coro):

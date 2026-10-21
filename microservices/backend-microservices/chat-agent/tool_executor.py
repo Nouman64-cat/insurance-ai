@@ -57,10 +57,15 @@ class ExecCtx:
     current_org_id: Optional[str] = None
     # web | mobile — lets a tool that runs another step re-check that step's RBAC.
     platform: str = "web"
+    # Checkpointed tool-call id; retries and resume retain this identity.
+    operation_id: Optional[str] = None
 
     @property
     def headers(self) -> dict[str, str]:
         h = {"X-Tenant-Id": self.tenant_id or DEFAULT_TENANT_ID}
+        if self.operation_id:
+            from uuid import uuid5, NAMESPACE_URL
+            h["Idempotency-Key"] = str(uuid5(NAMESPACE_URL, f"getinsuredai:{self.tenant_id}:{self.operation_id}"))
         if self.jwt_token:
             h["Authorization"] = f"Bearer {self.jwt_token}"
         return h

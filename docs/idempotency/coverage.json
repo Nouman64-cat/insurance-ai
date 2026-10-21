@@ -1,0 +1,4732 @@
+[
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 207,
+    "handler": "login",
+    "method": "POST",
+    "router_path": "/auth/token",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 230,
+    "handler": "seed_admin",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/setup",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 243,
+    "handler": "create_user",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/users",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 283,
+    "handler": "update_user",
+    "method": "PATCH",
+    "router_path": "/tenants/{tenant_id}/users/{user_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 293,
+    "handler": "delete_user",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/users/{user_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 300,
+    "handler": "create_customer",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/customers",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 320,
+    "handler": "delete_customer",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/customers/{customer_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 325,
+    "handler": "update_customer",
+    "method": "PUT",
+    "router_path": "/tenants/{tenant_id}/customers/{customer_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 332,
+    "handler": "create_case",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 356,
+    "handler": "update_case",
+    "method": "PUT",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 361,
+    "handler": "delete_case",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 366,
+    "handler": "update_case_status",
+    "method": "PATCH",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/status",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 371,
+    "handler": "assign_case",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/assignments",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 376,
+    "handler": "add_case_comment",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/comments",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 394,
+    "handler": "run_case_compliance",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/compliance/run",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 406,
+    "handler": "upload_artifact",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/artifacts",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 433,
+    "handler": "update_artifact",
+    "method": "PATCH",
+    "router_path": "/tenants/{tenant_id}/artifacts/{artifact_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 443,
+    "handler": "delete_artifact",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/artifacts/{artifact_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 454,
+    "handler": "invite_e_application",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/e-application/invite",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 482,
+    "handler": "public_save_e_application",
+    "method": "PUT",
+    "router_path": "/public/e-application/{raw_token}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 491,
+    "handler": "public_submit_e_application",
+    "method": "POST",
+    "router_path": "/public/e-application/{raw_token}/submit",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 510,
+    "handler": "public_upload_document",
+    "method": "POST",
+    "router_path": "/public/documents/{raw_token}/upload",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 519,
+    "handler": "public_submit_documents",
+    "method": "POST",
+    "router_path": "/public/documents/{raw_token}/submit",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 530,
+    "handler": "assess_medical_exam",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/medical-exam/assess",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 539,
+    "handler": "invite_medical_exam",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/medical-exam/invite",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 567,
+    "handler": "public_book_medical_exam",
+    "method": "POST",
+    "router_path": "/public/medical-exam/{raw_token}/book",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 577,
+    "handler": "lab_upload_medical_report",
+    "method": "POST",
+    "router_path": "/public/medical-lab/{raw_token}/reports",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 582,
+    "handler": "lab_auto_upload_medical_report",
+    "method": "POST",
+    "router_path": "/public/medical-lab/{raw_token}/reports/auto",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 587,
+    "handler": "lab_complete_medical_exam",
+    "method": "POST",
+    "router_path": "/public/medical-lab/{raw_token}/complete",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 592,
+    "handler": "issue_lab_link",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/medical-exam/lab-link",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 597,
+    "handler": "ai_review_medical_reports",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/medical-exam/ai-review",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 606,
+    "handler": "confirm_medical_reports",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/medical-exam/confirm-reports",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 615,
+    "handler": "record_medical_result",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/medical-exam/result",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 624,
+    "handler": "waive_medical_exam",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/medical-exam/waive",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 644,
+    "handler": "run_insurance_history",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/insurance-history/run",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 673,
+    "handler": "refer_to_reinsurer",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/reinsurance/refer",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 682,
+    "handler": "record_reinsurer_response",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/reinsurance/response",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 691,
+    "handler": "apply_reinsurer_terms",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/reinsurance/apply",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 711,
+    "handler": "upsert_acr",
+    "method": "PUT",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/acr",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 720,
+    "handler": "submit_acr",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/acr/submit",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 729,
+    "handler": "request_acr",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/acr/request",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 738,
+    "handler": "waive_acr",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/acr/waive",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 747,
+    "handler": "reinstate_acr",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/acr/waive",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 776,
+    "handler": "initiate_ipp",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/ipp/initiate",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 785,
+    "handler": "confirm_ipp",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/ipp/confirm",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 1087,
+    "handler": "create_tenant",
+    "method": "POST",
+    "router_path": "/tenants",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 1124,
+    "handler": "update_tenant",
+    "method": "PATCH",
+    "router_path": "/tenants/{tenant_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 1134,
+    "handler": "delete_tenant",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 1149,
+    "handler": "create_branch",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/branches",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 1176,
+    "handler": "update_branch",
+    "method": "PATCH",
+    "router_path": "/branches/{branch_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 1186,
+    "handler": "delete_branch",
+    "method": "DELETE",
+    "router_path": "/branches/{branch_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/main.py",
+    "line": 1220,
+    "handler": "submit_specialist_questionnaire",
+    "method": "POST",
+    "router_path": "/public/underwriting-questionnaire/{raw_token}/submit",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/routers/chat.py",
+    "line": 51,
+    "handler": "chat_stream",
+    "method": "POST",
+    "router_path": "/chat/stream",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/routers/chat.py",
+    "line": 56,
+    "handler": "chat_resume",
+    "method": "POST",
+    "router_path": "/chat/resume",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/routers/chat.py",
+    "line": 61,
+    "handler": "chat_title",
+    "method": "POST",
+    "router_path": "/chat/title",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/routers/chat.py",
+    "line": 74,
+    "handler": "chat_execute_tool",
+    "method": "POST",
+    "router_path": "/chat/execute-tool",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/routers/chat.py",
+    "line": 88,
+    "handler": "voice_proxy",
+    "method": "POST",
+    "router_path": "/chat/voice/{path}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/routers/evaluate.py",
+    "line": 126,
+    "handler": "evaluate",
+    "method": "POST",
+    "router_path": "/evaluate",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/routers/evaluate.py",
+    "line": 291,
+    "handler": "evaluate_stream",
+    "method": "POST",
+    "router_path": "/evaluate/stream",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/routers/quote.py",
+    "line": 355,
+    "handler": "update_quote",
+    "method": "PATCH",
+    "router_path": "/quotes/{quote_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/routers/quote.py",
+    "line": 444,
+    "handler": "get_quote",
+    "method": "POST",
+    "router_path": "/quote",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/routers/suggest.py",
+    "line": 13,
+    "handler": "suggest_plan",
+    "method": "POST",
+    "router_path": "/suggest-plan",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/routers/summarize.py",
+    "line": 42,
+    "handler": "underwriter_note",
+    "method": "POST",
+    "router_path": "/summarize/underwriter-note",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/routers/summarize.py",
+    "line": 47,
+    "handler": "underwriting",
+    "method": "POST",
+    "router_path": "/summarize/underwriting",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/routers/summarize.py",
+    "line": 52,
+    "handler": "summarize",
+    "method": "POST",
+    "router_path": "/summarize",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/api-gateway/routers/summarize.py",
+    "line": 57,
+    "handler": "summarize_stream",
+    "method": "POST",
+    "router_path": "/summarize/stream",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/audit-service/app/api/archive.py",
+    "line": 153,
+    "handler": "verify",
+    "method": "POST",
+    "router_path": "/v1/archive/verify",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/audit-service/app/api/archive.py",
+    "line": 173,
+    "handler": "verify_chain",
+    "method": "POST",
+    "router_path": "/v1/archive/verify-chain",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/audit-service/app/api/archive.py",
+    "line": 241,
+    "handler": "retry_job",
+    "method": "POST",
+    "router_path": "/v1/archive/jobs/{job_id}/retry",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/audit-service/app/api/archive.py",
+    "line": 259,
+    "handler": "run",
+    "method": "POST",
+    "router_path": "/v1/archive/run",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/audit-service/app/api/archive.py",
+    "line": 287,
+    "handler": "request_retrieval",
+    "method": "POST",
+    "router_path": "/v1/archive/retrievals",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/audit-service/app/api/archive.py",
+    "line": 375,
+    "handler": "set_policy",
+    "method": "PUT",
+    "router_path": "/v1/archive/policies",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/audit-service/app/api/archive.py",
+    "line": 407,
+    "handler": "place_hold",
+    "method": "POST",
+    "router_path": "/v1/archive/holds",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/audit-service/app/api/archive.py",
+    "line": 432,
+    "handler": "release_hold",
+    "method": "POST",
+    "router_path": "/v1/archive/holds/{hold_id}/release",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/audit-service/app/api/archive.py",
+    "line": 468,
+    "handler": "cleanup",
+    "method": "POST",
+    "router_path": "/v1/archive/cleanup",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/audit-service/app/api/checkpoints.py",
+    "line": 132,
+    "handler": "verify_checkpoint",
+    "method": "POST",
+    "router_path": "/v1/checkpoints/{checkpoint_id}/verify",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/audit-service/app/api/checkpoints.py",
+    "line": 162,
+    "handler": "verify_chain_anchored",
+    "method": "POST",
+    "router_path": "/v1/checkpoints/verify",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/audit-service/app/api/checkpoints.py",
+    "line": 170,
+    "handler": "create_checkpoint",
+    "method": "POST",
+    "router_path": "/v1/checkpoints/create",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/audit-service/app/api/checkpoints.py",
+    "line": 192,
+    "handler": "rotate_key",
+    "method": "POST",
+    "router_path": "/v1/signing/rotate",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/audit-service/app/api/demo.py",
+    "line": 31,
+    "handler": "delete_event",
+    "method": "POST",
+    "router_path": "/v1/demo/events/{event_id}/delete",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/audit-service/app/api/demo.py",
+    "line": 41,
+    "handler": "restore_event",
+    "method": "POST",
+    "router_path": "/v1/demo/recycle-bin/{bin_id}/restore",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/audit-service/app/api/verification.py",
+    "line": 61,
+    "handler": "run_verification",
+    "method": "POST",
+    "router_path": "/v1/verification/run",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/audit-service/app/api/verification.py",
+    "line": 67,
+    "handler": "run_all",
+    "method": "POST",
+    "router_path": "/v1/verification/run-all",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/chat-agent/routers/chat.py",
+    "line": 243,
+    "handler": "chat_stream",
+    "method": "POST",
+    "router_path": "/chat/stream",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/chat-agent/routers/chat.py",
+    "line": 306,
+    "handler": "chat_resume",
+    "method": "POST",
+    "router_path": "/chat/resume",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/chat-agent/routers/chat.py",
+    "line": 320,
+    "handler": "chat_title",
+    "method": "POST",
+    "router_path": "/chat/title",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/chat-agent/routers/chat.py",
+    "line": 333,
+    "handler": "chat_execute_tool",
+    "method": "POST",
+    "router_path": "/chat/execute-tool",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/chat-agent/routers/chat.py",
+    "line": 352,
+    "handler": "bulk_underwriting_stream",
+    "method": "POST",
+    "router_path": "/chat/bulk-underwriting/stream",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/chat-agent/routers/voice.py",
+    "line": 184,
+    "handler": "voice_session",
+    "method": "POST",
+    "router_path": "/chat/voice/session",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/chat-agent/routers/voice.py",
+    "line": 205,
+    "handler": "transcribe",
+    "method": "POST",
+    "router_path": "/chat/voice/transcribe",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/auth.py",
+    "line": 43,
+    "handler": "login",
+    "method": "POST",
+    "router_path": "/v1/auth/login",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/auth.py",
+    "line": 49,
+    "handler": "refresh",
+    "method": "POST",
+    "router_path": "/v1/auth/refresh",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/auth.py",
+    "line": 54,
+    "handler": "logout",
+    "method": "POST",
+    "router_path": "/v1/auth/logout",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/auth.py",
+    "line": 78,
+    "handler": "first_change",
+    "method": "POST",
+    "router_path": "/v1/auth/password/first-change",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/auth.py",
+    "line": 90,
+    "handler": "change_password",
+    "method": "POST",
+    "router_path": "/v1/auth/password/change",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/auth.py",
+    "line": 106,
+    "handler": "preferences",
+    "method": "PATCH",
+    "router_path": "/v1/me/preferences",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/family.py",
+    "line": 127,
+    "handler": "submit_request",
+    "method": "POST",
+    "router_path": "/v1/family/{family_id}/requests",
+    "observed_protection": "existing idempotency reference",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/family.py",
+    "line": 163,
+    "handler": "withdraw_request",
+    "method": "POST",
+    "router_path": "/v1/family/requests/{request_id}/withdraw",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/internal.py",
+    "line": 33,
+    "handler": "put_account",
+    "method": "PUT",
+    "router_path": "/internal/v1/accounts",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/internal.py",
+    "line": 57,
+    "handler": "suspend",
+    "method": "POST",
+    "router_path": "/internal/v1/accounts/{account_id}/suspend",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/internal.py",
+    "line": 65,
+    "handler": "release",
+    "method": "POST",
+    "router_path": "/internal/v1/accounts/{account_id}/release",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/portal.py",
+    "line": 187,
+    "handler": "pay",
+    "method": "POST",
+    "router_path": "/v1/policies/{policy_id}/premiums/{schedule_id}/pay",
+    "observed_protection": "existing idempotency reference",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/portal.py",
+    "line": 307,
+    "handler": "submit_claim",
+    "method": "POST",
+    "router_path": "/v1/policies/{policy_id}/claims",
+    "observed_protection": "existing idempotency reference",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/portal.py",
+    "line": 331,
+    "handler": "request_surrender",
+    "method": "POST",
+    "router_path": "/v1/policies/{policy_id}/surrender",
+    "observed_protection": "existing idempotency reference",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/portal.py",
+    "line": 343,
+    "handler": "upload_claim_document",
+    "method": "POST",
+    "router_path": "/v1/claims/{claim_id}/documents/{doc_key}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/portal.py",
+    "line": 399,
+    "handler": "update_contact",
+    "method": "PATCH",
+    "router_path": "/v1/profile/contact",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/portal.py",
+    "line": 436,
+    "handler": "mark_read",
+    "method": "POST",
+    "router_path": "/v1/notifications/read",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/portal.py",
+    "line": 463,
+    "handler": "renewal_acceptance",
+    "method": "POST",
+    "router_path": "/v1/policies/{policy_id}/renewal/acceptance",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/support.py",
+    "line": 82,
+    "handler": "create_ticket",
+    "method": "POST",
+    "router_path": "/v1/support/tickets",
+    "observed_protection": "existing idempotency reference",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/support.py",
+    "line": 96,
+    "handler": "reply",
+    "method": "POST",
+    "router_path": "/v1/support/tickets/{ticket_id}/reply",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/support.py",
+    "line": 102,
+    "handler": "withdraw",
+    "method": "POST",
+    "router_path": "/v1/support/tickets/{ticket_id}/withdraw",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/support.py",
+    "line": 108,
+    "handler": "reopen",
+    "method": "POST",
+    "router_path": "/v1/support/tickets/{ticket_id}/reopen",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/walk_in.py",
+    "line": 121,
+    "handler": "otp_request",
+    "method": "POST",
+    "router_path": "/v1/walk-in/otp/request",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/walk_in.py",
+    "line": 159,
+    "handler": "otp_verify",
+    "method": "POST",
+    "router_path": "/v1/walk-in/otp/verify",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/walk_in.py",
+    "line": 195,
+    "handler": "logout",
+    "method": "POST",
+    "router_path": "/v1/walk-in/logout",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/walk_in.py",
+    "line": 215,
+    "handler": "update_profile",
+    "method": "PATCH",
+    "router_path": "/v1/walk-in/profile",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/walk_in.py",
+    "line": 241,
+    "handler": "submit_application",
+    "method": "POST",
+    "router_path": "/v1/walk-in/application",
+    "observed_protection": "existing idempotency reference",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/walk_in.py",
+    "line": 299,
+    "handler": "pay_proof",
+    "method": "POST",
+    "router_path": "/v1/walk-in/pay/{token}/proof",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-management/app/routers/walk_in.py",
+    "line": 320,
+    "handler": "pay_declare",
+    "method": "POST",
+    "router_path": "/v1/walk-in/pay/{token}/declare",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-service/main.py",
+    "line": 171,
+    "handler": "create",
+    "method": "POST",
+    "router_path": "/v1/tickets",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-service/main.py",
+    "line": 200,
+    "handler": "comment",
+    "method": "POST",
+    "router_path": "/v1/tickets/{id}/comments",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-service/main.py",
+    "line": 209,
+    "handler": "change",
+    "method": "POST",
+    "router_path": "/v1/tickets/{id}/status",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-service/main.py",
+    "line": 218,
+    "handler": "assign",
+    "method": "POST",
+    "router_path": "/v1/tickets/{id}/assignment",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-service/main.py",
+    "line": 231,
+    "handler": "seed_demo",
+    "method": "POST",
+    "router_path": "/v1/demo/seed",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-service/main.py",
+    "line": 273,
+    "handler": "portal_create",
+    "method": "POST",
+    "router_path": "/internal/v1/portal/tickets",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-service/main.py",
+    "line": 285,
+    "handler": "portal_reply",
+    "method": "POST",
+    "router_path": "/internal/v1/portal/tickets/{id}/reply",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-service/main.py",
+    "line": 288,
+    "handler": "portal_withdraw",
+    "method": "POST",
+    "router_path": "/internal/v1/portal/tickets/{id}/withdraw",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/customer-service/main.py",
+    "line": 292,
+    "handler": "portal_reopen",
+    "method": "POST",
+    "router_path": "/internal/v1/portal/tickets/{id}/reopen",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/ocr-engine/main.py",
+    "line": 197,
+    "handler": "extract_text",
+    "method": "POST",
+    "router_path": "/extract",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/ocr-engine/main.py",
+    "line": 562,
+    "handler": "extract_customer_fields",
+    "method": "POST",
+    "router_path": "/extract-customer",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/ocr-engine/main.py",
+    "line": 769,
+    "handler": "extract_family_fields",
+    "method": "POST",
+    "router_path": "/extract-family",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/ocr-engine/main.py",
+    "line": 951,
+    "handler": "extract_organization_fields",
+    "method": "POST",
+    "router_path": "/extract-organization",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/ocr-engine/main.py",
+    "line": 1014,
+    "handler": "extract_text_stream",
+    "method": "POST",
+    "router_path": "/extract/stream",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/ocr-engine/main.py",
+    "line": 1038,
+    "handler": "extract_text_from_path",
+    "method": "POST",
+    "router_path": "/extract-from-path",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/ocr-engine/main.py",
+    "line": 1130,
+    "handler": "extract_structured",
+    "method": "POST",
+    "router_path": "/extract-structured",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/request-management-service/app/api/routes.py",
+    "line": 110,
+    "handler": "create",
+    "method": "POST",
+    "router_path": "/v1/requests",
+    "observed_protection": "existing idempotency reference",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/request-management-service/app/api/routes.py",
+    "line": 126,
+    "handler": "update_draft",
+    "method": "PUT",
+    "router_path": "/v1/requests/{request_id}/draft",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/request-management-service/app/api/routes.py",
+    "line": 157,
+    "handler": "add_comment",
+    "method": "POST",
+    "router_path": "/v1/requests/{request_id}/comments",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/request-management-service/app/api/routes.py",
+    "line": 163,
+    "handler": "upload",
+    "method": "POST",
+    "router_path": "/v1/requests/{request_id}/attachments",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/request-management-service/app/api/routes.py",
+    "line": 195,
+    "handler": "mark_read",
+    "method": "POST",
+    "router_path": "/v1/notifications/{notification_id}/read",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/request-management-service/app/api/routes.py",
+    "line": 203,
+    "handler": "mark_all_read",
+    "method": "POST",
+    "router_path": "/v1/notifications/read-all",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/request-management-service/app/api/routes.py",
+    "line": 218,
+    "handler": "create_rule",
+    "method": "POST",
+    "router_path": "/v1/routing-rules",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/request-management-service/app/api/routes.py",
+    "line": 223,
+    "handler": "update_rule",
+    "method": "PUT",
+    "router_path": "/v1/routing-rules/{rule_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/request-management-service/app/api/routes.py",
+    "line": 228,
+    "handler": "deactivate_rule",
+    "method": "POST",
+    "router_path": "/v1/routing-rules/{rule_id}/deactivate",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/risk-engine/main.py",
+    "line": 130,
+    "handler": "evaluate",
+    "method": "POST",
+    "router_path": "/evaluate",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/risk-engine/main.py",
+    "line": 173,
+    "handler": "evaluate_financial",
+    "method": "POST",
+    "router_path": "/evaluate/financial",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/risk-engine/main.py",
+    "line": 188,
+    "handler": "evaluate_stream",
+    "method": "POST",
+    "router_path": "/evaluate/stream",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/risk-engine/main.py",
+    "line": 242,
+    "handler": "suggest_plan_endpoint",
+    "method": "POST",
+    "router_path": "/suggest-plan",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/risk-engine/main.py",
+    "line": 258,
+    "handler": "evaluate_claim_underwriting",
+    "method": "POST",
+    "router_path": "/evaluate/claim-underwriting",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/acquisition_sources.py",
+    "line": 222,
+    "handler": "create_acquisition_source",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/acquisition-sources",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/acquisition_sources.py",
+    "line": 283,
+    "handler": "send_source_credentials",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/acquisition-sources/{source_id}/send-credentials",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/acquisition_sources.py",
+    "line": 356,
+    "handler": "update_acquisition_source",
+    "method": "PUT",
+    "router_path": "/tenants/{tenant_id}/acquisition-sources/{source_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/acquisition_sources.py",
+    "line": 398,
+    "handler": "delete_acquisition_source",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/acquisition-sources/{source_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/agent.py",
+    "line": 25,
+    "handler": "suggest_actions",
+    "method": "POST",
+    "router_path": "/agent/suggest-actions",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/agent_confidential_report.py",
+    "line": 151,
+    "handler": "upsert_acr",
+    "method": "PUT",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/acr",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/agent_confidential_report.py",
+    "line": 188,
+    "handler": "submit_acr",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/acr/submit",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/agent_confidential_report.py",
+    "line": 356,
+    "handler": "request_acr",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/acr/request",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/agent_confidential_report.py",
+    "line": 425,
+    "handler": "waive_acr",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/acr/waive",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/agent_confidential_report.py",
+    "line": 464,
+    "handler": "reinstate_acr",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/acr/waive",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/agent_config.py",
+    "line": 43,
+    "handler": "update_agent_config",
+    "method": "PUT",
+    "router_path": "/platform/agent-config",
+    "observed_protection": "conflict handling",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/artifacts.py",
+    "line": 117,
+    "handler": "upload_artifact",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/artifacts",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/artifacts.py",
+    "line": 215,
+    "handler": "upload_claim_artifact",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/claims/{claim_id}/artifacts",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/artifacts.py",
+    "line": 582,
+    "handler": "update_artifact",
+    "method": "PATCH",
+    "router_path": "/tenants/{tenant_id}/artifacts/{artifact_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/artifacts.py",
+    "line": 621,
+    "handler": "delete_artifact",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/artifacts/{artifact_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/auth.py",
+    "line": 129,
+    "handler": "login_for_access_token",
+    "method": "POST",
+    "router_path": "/auth/token",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/auth.py",
+    "line": 192,
+    "handler": "update_own_profile",
+    "method": "PATCH",
+    "router_path": "/auth/me",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/auth.py",
+    "line": 224,
+    "handler": "change_own_password",
+    "method": "POST",
+    "router_path": "/auth/change-password",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/branches.py",
+    "line": 22,
+    "handler": "create_branch",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/branches",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/branches.py",
+    "line": 79,
+    "handler": "update_branch",
+    "method": "PATCH",
+    "router_path": "/branches/{branch_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/branches.py",
+    "line": 103,
+    "handler": "delete_branch",
+    "method": "DELETE",
+    "router_path": "/branches/{branch_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/cases.py",
+    "line": 118,
+    "handler": "create_case",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/cases.py",
+    "line": 788,
+    "handler": "run_case_compliance",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/compliance/run",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/cases.py",
+    "line": 854,
+    "handler": "update_case",
+    "method": "PUT",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/cases.py",
+    "line": 878,
+    "handler": "delete_case",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/cases.py",
+    "line": 934,
+    "handler": "hold_case",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/hold",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/cases.py",
+    "line": 957,
+    "handler": "release_case",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/release",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/cases.py",
+    "line": 980,
+    "handler": "update_case_status",
+    "method": "PATCH",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/status",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/cases.py",
+    "line": 1108,
+    "handler": "assign_case",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/assignments",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/cases.py",
+    "line": 1193,
+    "handler": "add_case_comment",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/comments",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/cases.py",
+    "line": 1279,
+    "handler": "determine_case_requirements",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/requirements/determine",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/cases.py",
+    "line": 1312,
+    "handler": "waive_case_requirement",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/requirements/{requirement_id}/waive",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/cases.py",
+    "line": 1356,
+    "handler": "get_underwriting_evidence",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/underwriting/evidence",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/cases.py",
+    "line": 1396,
+    "handler": "advance_case_workflow",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/workflow/advance",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/cases.py",
+    "line": 1432,
+    "handler": "change_case_plan",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/change-plan",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claim_financial_review.py",
+    "line": 56,
+    "handler": "record_claim_financial_check",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/claims/{claim_id}/financial-underwriting/checks",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claim_workflow.py",
+    "line": 669,
+    "handler": "register_claim",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/claims-management",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claim_workflow.py",
+    "line": 731,
+    "handler": "adopt_claim",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/adopt",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claim_workflow.py",
+    "line": 768,
+    "handler": "reverify_eligibility",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/eligibility/verify",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claim_workflow.py",
+    "line": 786,
+    "handler": "override_eligibility",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/eligibility/override",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claim_workflow.py",
+    "line": 834,
+    "handler": "receive_document",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/documents/{key}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claim_workflow.py",
+    "line": 883,
+    "handler": "waive_document",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/documents/{key}/waive",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claim_workflow.py",
+    "line": 907,
+    "handler": "reject_document",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/documents/{key}/reject",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claim_workflow.py",
+    "line": 932,
+    "handler": "request_more_documents",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/documents",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claim_workflow.py",
+    "line": 1010,
+    "handler": "add_finding",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/investigation/finding",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claim_workflow.py",
+    "line": 1034,
+    "handler": "complete_investigation",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/investigation/complete",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claim_workflow.py",
+    "line": 1069,
+    "handler": "assess_claim",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/assessment",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claim_workflow.py",
+    "line": 1120,
+    "handler": "decide_claim",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/decision",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claim_workflow.py",
+    "line": 1243,
+    "handler": "prepare_claim_settlement",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/settlement/prepare",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claim_workflow.py",
+    "line": 1282,
+    "handler": "verify_payees",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/settlement/payees",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claim_workflow.py",
+    "line": 1337,
+    "handler": "authorize_disbursement",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/settlement/authorize",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claim_workflow.py",
+    "line": 1372,
+    "handler": "disburse_claim",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/settlement/disburse",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claim_workflow.py",
+    "line": 1420,
+    "handler": "reconcile_settlement",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/settlement/reconcile",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claim_workflow.py",
+    "line": 1526,
+    "handler": "close_claim",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/close",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claim_workflow.py",
+    "line": 1593,
+    "handler": "send_claim_letter",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/confirmation/send",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claims.py",
+    "line": 461,
+    "handler": "set_claim_authority",
+    "method": "PUT",
+    "router_path": "/tenants/{tenant_id}/claims/authority",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claims.py",
+    "line": 484,
+    "handler": "create_claim",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/claims",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claims.py",
+    "line": 784,
+    "handler": "update_claim_status",
+    "method": "PATCH",
+    "router_path": "/tenants/{tenant_id}/claims/{claim_id}/status",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claims.py",
+    "line": 865,
+    "handler": "adjudicate_claim",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/claims/{claim_id}/adjudicate",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claims.py",
+    "line": 1050,
+    "handler": "create_claim_payout",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/claims/{claim_id}/payout",
+    "observed_protection": "not established",
+    "integration_status": "SHARED_DATABASE_ADAPTER",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claims.py",
+    "line": 1083,
+    "handler": "refer_claim_to_reinsurance",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/claims/{claim_id}/reinsurance-refer",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claims.py",
+    "line": 1187,
+    "handler": "refer_claim_to_underwriting",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/claims/{claim_id}/re-underwrite",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/claims.py",
+    "line": 1230,
+    "handler": "resolve_claim_underwriting",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/claims/{claim_id}/resolve-underwriting",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/commission_disbursements.py",
+    "line": 134,
+    "handler": "create",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/commissions/disbursements",
+    "observed_protection": "row lock",
+    "integration_status": "SHARED_DATABASE_ADAPTER",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/commission_disbursements.py",
+    "line": 186,
+    "handler": "submit",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/commissions/disbursements/{batch_id}/submit",
+    "observed_protection": "not established",
+    "integration_status": "SHARED_DATABASE_ADAPTER",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/commission_disbursements.py",
+    "line": 198,
+    "handler": "approve",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/commissions/disbursements/{batch_id}/approve",
+    "observed_protection": "not established",
+    "integration_status": "SHARED_DATABASE_ADAPTER",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/commission_disbursements.py",
+    "line": 212,
+    "handler": "reject",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/commissions/disbursements/{batch_id}/reject",
+    "observed_protection": "not established",
+    "integration_status": "SHARED_DATABASE_ADAPTER",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/commission_disbursements.py",
+    "line": 228,
+    "handler": "record_payment",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/commissions/disbursements/{batch_id}/record-payment",
+    "observed_protection": "not established",
+    "integration_status": "SHARED_DATABASE_ADAPTER",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/commissions.py",
+    "line": 93,
+    "handler": "create_plan_rule",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/commissions/plan-rules",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/commissions.py",
+    "line": 205,
+    "handler": "create_agreement",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/commissions/agreements",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/commissions.py",
+    "line": 217,
+    "handler": "approve_agreement",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/commissions/agreements/{agreement_id}/approve",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/commissions.py",
+    "line": 241,
+    "handler": "assign",
+    "method": "PUT",
+    "router_path": "/tenants/{tenant_id}/commissions/policies/{policy_id}/assignments",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/commissions.py",
+    "line": 290,
+    "handler": "rate_preview",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/commissions/rate-preview",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/commissions.py",
+    "line": 409,
+    "handler": "update_earning",
+    "method": "PATCH",
+    "router_path": "/tenants/{tenant_id}/commissions/earnings/{earning_id}",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/commissions.py",
+    "line": 486,
+    "handler": "reconcile",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/commissions/reconcile",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customer_portal_family.py",
+    "line": 357,
+    "handler": "submit_family_request",
+    "method": "POST",
+    "router_path": "/internal/customer-portal/v1<dynamic>",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customer_portal_family.py",
+    "line": 456,
+    "handler": "withdraw_family_request",
+    "method": "POST",
+    "router_path": "/internal/customer-portal/v1<dynamic>",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customer_portal_family.py",
+    "line": 502,
+    "handler": "renewal_acceptance",
+    "method": "POST",
+    "router_path": "/internal/customer-portal/v1<dynamic>",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customer_portal_internal.py",
+    "line": 240,
+    "handler": "update_contact",
+    "method": "PATCH",
+    "router_path": "/internal/customer-portal/v1/tenants/{tenant_id}/customers/{customer_id}/profile/contact",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customer_portal_internal.py",
+    "line": 545,
+    "handler": "pay_installment",
+    "method": "POST",
+    "router_path": "/internal/customer-portal/v1/tenants/{tenant_id}/customers/{customer_id}/policies/{policy_id}/premiums/{schedule_id}/pay",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customer_portal_internal.py",
+    "line": 781,
+    "handler": "intimate_claim",
+    "method": "POST",
+    "router_path": "/internal/customer-portal/v1/tenants/{tenant_id}/customers/{customer_id}/policies/{policy_id}/claims",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customer_portal_internal.py",
+    "line": 882,
+    "handler": "request_surrender",
+    "method": "POST",
+    "router_path": "/internal/customer-portal/v1/tenants/{tenant_id}/customers/{customer_id}/policies/{policy_id}/surrender",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customer_portal_internal.py",
+    "line": 905,
+    "handler": "upload_claim_document",
+    "method": "POST",
+    "router_path": "/internal/customer-portal/v1/tenants/{tenant_id}/customers/{customer_id}/claims/{claim_id}/documents/{key}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customer_portal_internal.py",
+    "line": 1041,
+    "handler": "portal_sync",
+    "method": "POST",
+    "router_path": "/internal/customer-portal/v1/tenants/{tenant_id}/customers/{customer_id}/portal-sync",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customer_portal_walkin.py",
+    "line": 101,
+    "handler": "otp_email",
+    "method": "POST",
+    "router_path": "/internal/customer-portal/v1/walk-in/otp-email",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customer_portal_walkin.py",
+    "line": 140,
+    "handler": "submit_lead",
+    "method": "POST",
+    "router_path": "/internal/customer-portal/v1/walk-in/leads",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customer_portal_walkin.py",
+    "line": 466,
+    "handler": "pay_declare",
+    "method": "POST",
+    "router_path": "/internal/customer-portal/v1/walk-in/pay/{token}/declare",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customer_portal_walkin.py",
+    "line": 474,
+    "handler": "pay_upload_proof",
+    "method": "POST",
+    "router_path": "/internal/customer-portal/v1/walk-in/pay/{token}/proof",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customers.py",
+    "line": 151,
+    "handler": "create_customer",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/customers",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customers.py",
+    "line": 542,
+    "handler": "run_customer_risk_profile",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/customers/{customer_id}/risk-profile",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customers.py",
+    "line": 694,
+    "handler": "create_customer_policy",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/customers/{customer_id}/policies",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customers.py",
+    "line": 744,
+    "handler": "delete_customer",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/customers/{customer_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customers.py",
+    "line": 784,
+    "handler": "delete_customer_policy",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/customers/{customer_id}/policies/{policy_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customers.py",
+    "line": 808,
+    "handler": "update_customer_policy",
+    "method": "PUT",
+    "router_path": "/tenants/{tenant_id}/customers/{customer_id}/policies/{policy_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customers.py",
+    "line": 866,
+    "handler": "renew_policy_document_request",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/customers/{customer_id}/policies/{policy_id}/document-request/renew",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customers.py",
+    "line": 884,
+    "handler": "send_policy_document_request",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/customers/{customer_id}/policies/{policy_id}/document-request/send",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/customers.py",
+    "line": 949,
+    "handler": "update_customer",
+    "method": "PUT",
+    "router_path": "/tenants/{tenant_id}/customers/{customer_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/demo.py",
+    "line": 32,
+    "handler": "reset_funnel",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/demo/reset-funnel",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/document_requests.py",
+    "line": 63,
+    "handler": "public_submit_documents",
+    "method": "POST",
+    "router_path": "/public/documents/{raw_token}/submit",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/document_requests.py",
+    "line": 90,
+    "handler": "public_upload_document",
+    "method": "POST",
+    "router_path": "/public/documents/{raw_token}/upload",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/e_application.py",
+    "line": 219,
+    "handler": "invite_e_application",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/e-application/invite",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/e_application.py",
+    "line": 242,
+    "handler": "invite_e_application_part",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/e-application/{part}/invite",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/e_application.py",
+    "line": 328,
+    "handler": "update_custom_questions",
+    "method": "PUT",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/e-application/custom-questions",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/e_application.py",
+    "line": 360,
+    "handler": "verify_e_application",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/e-application/verify",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/e_application.py",
+    "line": 516,
+    "handler": "public_save_e_application",
+    "method": "PUT",
+    "router_path": "/public/e-application/{raw_token}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/e_application.py",
+    "line": 562,
+    "handler": "public_submit_e_application",
+    "method": "POST",
+    "router_path": "/public/e-application/{raw_token}/submit",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/families.py",
+    "line": 255,
+    "handler": "create_family_group",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/families",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/families.py",
+    "line": 375,
+    "handler": "update_family_group",
+    "method": "PATCH",
+    "router_path": "/tenants/{tenant_id}/families/{family_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/families.py",
+    "line": 397,
+    "handler": "delete_family_group",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/families/{family_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/families.py",
+    "line": 461,
+    "handler": "delete_family_member",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/families/{family_id}/members/{member_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/families.py",
+    "line": 547,
+    "handler": "create_floater_policy",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/families/{family_id}/floater-policies",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/families.py",
+    "line": 577,
+    "handler": "create_life_bundle_policy",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/families/{family_id}/life-bundle-policies",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/families.py",
+    "line": 640,
+    "handler": "update_family_policy",
+    "method": "PATCH",
+    "router_path": "/tenants/{tenant_id}/families/{family_id}/family-policies/{fp_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/families.py",
+    "line": 677,
+    "handler": "delete_family_policy",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/families/{family_id}/family-policies/{fp_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/families.py",
+    "line": 841,
+    "handler": "update_family_nominee",
+    "method": "PATCH",
+    "router_path": "/tenants/{tenant_id}/families/{family_id}/family-policies/{fp_id}/nominees/{nominee_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/families.py",
+    "line": 895,
+    "handler": "delete_family_nominee",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/families/{family_id}/family-policies/{fp_id}/nominees/{nominee_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/families.py",
+    "line": 912,
+    "handler": "validate_floater_members",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/families/{family_id}/floater-policies/{fp_id}/members/validate",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/families.py",
+    "line": 944,
+    "handler": "confirm_floater_members",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/families/{family_id}/floater-policies/{fp_id}/members/confirm",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/families.py",
+    "line": 1156,
+    "handler": "validate_life_bundle_members",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/families/{family_id}/life-bundle-policies/{fp_id}/members/validate",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/families.py",
+    "line": 1188,
+    "handler": "confirm_life_bundle_members",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/families/{family_id}/life-bundle-policies/{fp_id}/members/confirm",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_census_upload.py",
+    "line": 26,
+    "handler": "parse_census_upload",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}/census/parse",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_claims.py",
+    "line": 101,
+    "handler": "open_group_claim",
+    "method": "POST",
+    "router_path": "<dynamic>",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_claims.py",
+    "line": 199,
+    "handler": "preview_split_endpoint",
+    "method": "POST",
+    "router_path": "<dynamic>",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_claims.py",
+    "line": 210,
+    "handler": "group_payout",
+    "method": "POST",
+    "router_path": "<dynamic>",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_coverages.py",
+    "line": 52,
+    "handler": "add_class_coverage",
+    "method": "POST",
+    "router_path": "/tenants<dynamic>",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_coverages.py",
+    "line": 70,
+    "handler": "remove_class_coverage",
+    "method": "DELETE",
+    "router_path": "/tenants<dynamic>",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_endorsements.py",
+    "line": 48,
+    "handler": "preview",
+    "method": "POST",
+    "router_path": "/tenants<dynamic>",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_endorsements.py",
+    "line": 59,
+    "handler": "create",
+    "method": "POST",
+    "router_path": "/tenants<dynamic>",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_endorsements.py",
+    "line": 86,
+    "handler": "resolve",
+    "method": "POST",
+    "router_path": "/tenants<dynamic>",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_endorsements.py",
+    "line": 101,
+    "handler": "settle",
+    "method": "POST",
+    "router_path": "/tenants<dynamic>",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_policies.py",
+    "line": 343,
+    "handler": "add_group_dependent",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}/members/{member_id}/dependents",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_policies.py",
+    "line": 398,
+    "handler": "delete_group_dependent",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}/members/{member_id}/dependents/{dependent_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_policies.py",
+    "line": 424,
+    "handler": "replace_group_beneficiaries",
+    "method": "PUT",
+    "router_path": "/tenants/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}/members/{member_id}/beneficiaries",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_policies.py",
+    "line": 488,
+    "handler": "generate_group_quote_endpoint",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}/quotes",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_policies.py",
+    "line": 595,
+    "handler": "accept_group_quote",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}/quotes/{quote_id}/accept",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_policies.py",
+    "line": 615,
+    "handler": "decline_group_quote",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}/quotes/{quote_id}/decline",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_policies.py",
+    "line": 645,
+    "handler": "issue_master_policy",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}/issue",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_policies.py",
+    "line": 744,
+    "handler": "record_group_payment",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}/payments",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_renewals.py",
+    "line": 57,
+    "handler": "start_renewal",
+    "method": "POST",
+    "router_path": "/tenants<dynamic>",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_renewals.py",
+    "line": 83,
+    "handler": "census_refresh",
+    "method": "POST",
+    "router_path": "/tenants<dynamic>",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_renewals.py",
+    "line": 97,
+    "handler": "renewal_quote",
+    "method": "POST",
+    "router_path": "/tenants<dynamic>",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_renewals.py",
+    "line": 116,
+    "handler": "accept_renewal",
+    "method": "POST",
+    "router_path": "/tenants<dynamic>",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_renewals.py",
+    "line": 126,
+    "handler": "decline_renewal",
+    "method": "POST",
+    "router_path": "/tenants<dynamic>",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_renewals.py",
+    "line": 136,
+    "handler": "renewal_payment",
+    "method": "POST",
+    "router_path": "/tenants<dynamic>",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/group_renewals.py",
+    "line": 149,
+    "handler": "run_cycle",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/group-renewals/run",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/initial_premium_payment.py",
+    "line": 318,
+    "handler": "initiate_ipp",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/ipp/initiate",
+    "observed_protection": "not established",
+    "integration_status": "SHARED_DATABASE_ADAPTER",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/initial_premium_payment.py",
+    "line": 331,
+    "handler": "confirm_ipp",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/ipp/confirm",
+    "observed_protection": "not established",
+    "integration_status": "SHARED_DATABASE_ADAPTER",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/initial_premium_payment.py",
+    "line": 368,
+    "handler": "initiate_policy_ipp",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/ipp/initiate",
+    "observed_protection": "not established",
+    "integration_status": "SHARED_DATABASE_ADAPTER",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/initial_premium_payment.py",
+    "line": 381,
+    "handler": "confirm_policy_ipp",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/ipp/confirm",
+    "observed_protection": "not established",
+    "integration_status": "SHARED_DATABASE_ADAPTER",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/initial_premium_payment.py",
+    "line": 403,
+    "handler": "request_policy_payment",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/ipp/request",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/initial_premium_payment.py",
+    "line": 432,
+    "handler": "review_policy_payment_proof",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/ipp/review",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/initial_premium_payment.py",
+    "line": 466,
+    "handler": "remind_policy_payment",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/ipp/remind",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/initial_premium_payment.py",
+    "line": 494,
+    "handler": "mark_policy_payment_received",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/ipp/mark-received",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/initial_premium_payment.py",
+    "line": 527,
+    "handler": "withdraw_policy_payment_request",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/ipp/withdraw",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/insurance_history.py",
+    "line": 135,
+    "handler": "run_insurance_history",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/insurance-history/run",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/insurance_history.py",
+    "line": 247,
+    "handler": "clear_insurance_history",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/insurance-history/clear",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/insurance_history.py",
+    "line": 279,
+    "handler": "fail_insurance_history",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/insurance-history/fail",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/insurance_plans.py",
+    "line": 48,
+    "handler": "create_insurance_plan",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/insurance-plans",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/insurance_plans.py",
+    "line": 101,
+    "handler": "update_insurance_plan",
+    "method": "PATCH",
+    "router_path": "/tenants/{tenant_id}/insurance-plans/{plan_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/insurance_plans.py",
+    "line": 139,
+    "handler": "upload_policy_wording",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/insurance-plans/{plan_id}/policy-wording",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/insurance_plans.py",
+    "line": 179,
+    "handler": "remove_policy_wording",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/insurance-plans/{plan_id}/policy-wording",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/insurance_plans.py",
+    "line": 196,
+    "handler": "delete_insurance_plan",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/insurance-plans/{plan_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/insurance_plans.py",
+    "line": 208,
+    "handler": "seed_default_plans",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/insurance-plans/seed-defaults",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/llm_config.py",
+    "line": 328,
+    "handler": "update_live_voice_config",
+    "method": "PUT",
+    "router_path": "/platform/llm-config/tasks/live-voice",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/llm_config.py",
+    "line": 358,
+    "handler": "test_live_voice_config",
+    "method": "POST",
+    "router_path": "/platform/llm-config/tasks/live-voice/test",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/llm_config.py",
+    "line": 404,
+    "handler": "update_ocr_config",
+    "method": "PUT",
+    "router_path": "/platform/llm-config/tasks/ocr",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/llm_config.py",
+    "line": 450,
+    "handler": "update_llm_config",
+    "method": "PUT",
+    "router_path": "/platform/llm-config/{provider}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/llm_config.py",
+    "line": 511,
+    "handler": "test_llm_config",
+    "method": "POST",
+    "router_path": "/platform/llm-config/{provider}/test",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/medical_exam.py",
+    "line": 215,
+    "handler": "create_panel_clinic",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/panel-clinics",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/medical_exam.py",
+    "line": 372,
+    "handler": "assess_medical_exam",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/medical-exam/assess",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/medical_exam.py",
+    "line": 504,
+    "handler": "invite_medical_exam",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/medical-exam/invite",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/medical_exam.py",
+    "line": 582,
+    "handler": "schedule_medical_exam",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/medical-exam/schedule",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/medical_exam.py",
+    "line": 648,
+    "handler": "ai_review_medical_reports",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/medical-exam/ai-review",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/medical_exam.py",
+    "line": 697,
+    "handler": "record_medical_result",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/medical-exam/result",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/medical_exam.py",
+    "line": 774,
+    "handler": "confirm_medical_reports",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/medical-exam/confirm-reports",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/medical_exam.py",
+    "line": 824,
+    "handler": "waive_medical_exam",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/medical-exam/waive",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/medical_exam.py",
+    "line": 1028,
+    "handler": "public_book_medical_exam",
+    "method": "POST",
+    "router_path": "/public/medical-exam/{raw_token}/book",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/medical_exam.py",
+    "line": 1075,
+    "handler": "issue_lab_link",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/medical-exam/lab-link",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/medical_exam.py",
+    "line": 1139,
+    "handler": "lab_upload_medical_report",
+    "method": "POST",
+    "router_path": "/public/medical-lab/{raw_token}/reports",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/medical_exam.py",
+    "line": 1155,
+    "handler": "lab_auto_upload_medical_report",
+    "method": "POST",
+    "router_path": "/public/medical-lab/{raw_token}/reports/auto",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/medical_exam.py",
+    "line": 1179,
+    "handler": "lab_complete_medical_exam",
+    "method": "POST",
+    "router_path": "/public/medical-lab/{raw_token}/complete",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/organizations.py",
+    "line": 295,
+    "handler": "create_organization",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/organizations",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/organizations.py",
+    "line": 482,
+    "handler": "delete_organization_employee",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/organizations/{org_id}/employees/{employee_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/organizations.py",
+    "line": 506,
+    "handler": "update_organization",
+    "method": "PATCH",
+    "router_path": "/tenants/{tenant_id}/organizations/{org_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/organizations.py",
+    "line": 528,
+    "handler": "delete_organization",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/organizations/{org_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/organizations.py",
+    "line": 564,
+    "handler": "create_master_policy",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/organizations/{org_id}/master-policies",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/organizations.py",
+    "line": 623,
+    "handler": "update_master_policy",
+    "method": "PATCH",
+    "router_path": "/tenants/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/organizations.py",
+    "line": 664,
+    "handler": "delete_master_policy",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/organizations.py",
+    "line": 726,
+    "handler": "create_benefit_class",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}/benefit-classes",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/organizations.py",
+    "line": 801,
+    "handler": "delete_benefit_class",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}/benefit-classes/{class_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/organizations.py",
+    "line": 830,
+    "handler": "validate_employee_census",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}/census/validate",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/organizations.py",
+    "line": 860,
+    "handler": "confirm_employee_census",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}/census/confirm",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/policies.py",
+    "line": 832,
+    "handler": "issue_policy",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/issue",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/policies.py",
+    "line": 1048,
+    "handler": "initiate_payment",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/payments/initiate",
+    "observed_protection": "row lock",
+    "integration_status": "SHARED_DATABASE_ADAPTER",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/policies.py",
+    "line": 1122,
+    "handler": "apply_prepaid",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/payments/apply-prepaid",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/policies.py",
+    "line": 1169,
+    "handler": "confirm_payment",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/payments/confirm",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/policy_exit.py",
+    "line": 472,
+    "handler": "record_loan",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/exit/loans",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/policy_exit.py",
+    "line": 543,
+    "handler": "open_exit",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/exit",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/policy_exit.py",
+    "line": 579,
+    "handler": "reverify",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/eligibility/verify",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/policy_exit.py",
+    "line": 597,
+    "handler": "decide_extension",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/extension",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/policy_exit.py",
+    "line": 650,
+    "handler": "receive_document",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/documents/{key}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/policy_exit.py",
+    "line": 686,
+    "handler": "waive_document",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/documents/{key}/waive",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/policy_exit.py",
+    "line": 724,
+    "handler": "record_consent",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/consent",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/policy_exit.py",
+    "line": 758,
+    "handler": "calculate",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/settlement/calculate",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/policy_exit.py",
+    "line": 821,
+    "handler": "accept_settlement",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/settlement/accept",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/policy_exit.py",
+    "line": 854,
+    "handler": "verify_payee",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/settlement/payee",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/policy_exit.py",
+    "line": 900,
+    "handler": "authorize",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/settlement/authorize",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/policy_exit.py",
+    "line": 946,
+    "handler": "disburse",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/settlement/disburse",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/policy_exit.py",
+    "line": 979,
+    "handler": "reconcile",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/settlement/reconcile",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/policy_exit.py",
+    "line": 1061,
+    "handler": "close_exit",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/close",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/policy_exit.py",
+    "line": 1125,
+    "handler": "send_letter",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/confirmation/send",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/policy_exit.py",
+    "line": 1154,
+    "handler": "cancel_exit",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/cancel",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/policy_exit.py",
+    "line": 1175,
+    "handler": "sweep_exits",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/exits/sweep",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 156,
+    "handler": "cancel_within_free_look",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/free-look/cancel",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 301,
+    "handler": "retry_failed_delivery",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/onboarding/delivery/retry",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 319,
+    "handler": "reset_onboarding",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/onboarding/reset",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 375,
+    "handler": "assign_policyholder_id",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/onboarding/policyholder-id",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 404,
+    "handler": "generate_welcome_kit",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/onboarding/welcome-kit",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 464,
+    "handler": "provision_portal",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/onboarding/portal",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 562,
+    "handler": "set_onboarding_contact",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/onboarding/contact",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 608,
+    "handler": "send_welcome",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/onboarding/send-welcome",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 685,
+    "handler": "acknowledge_onboarding",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/onboarding/acknowledge",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 797,
+    "handler": "collect_installment",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/premiums/{schedule_id}/collect",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 895,
+    "handler": "bulk_collect_premiums",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/premiums/bulk-collect",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 1038,
+    "handler": "remind_installment",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/premiums/{schedule_id}/remind",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 1106,
+    "handler": "waive_installment",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/premiums/{schedule_id}/waive",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 1142,
+    "handler": "monitor_premiums",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/premiums/monitor",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 1194,
+    "handler": "set_autopay",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/premiums/autopay",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 1231,
+    "handler": "demo_seed_premiums",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/premiums/demo-seed",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 1389,
+    "handler": "restructure_plan",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/premiums/restructure",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 1427,
+    "handler": "lapse_warning_letter",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/premiums/lapse-warning",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 1463,
+    "handler": "send_issuance_email",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/issuance/send-email",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 1632,
+    "handler": "endorse_nominees",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/endorsements/nominees",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 1677,
+    "handler": "endorse_address",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/endorsements/address",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 1712,
+    "handler": "endorse_sum_assured",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/endorsements/sum-assured",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 1744,
+    "handler": "endorse_riders",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/endorsements/riders",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 1867,
+    "handler": "endorse_contact",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/endorsements/contact",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/post_issuance.py",
+    "line": 1903,
+    "handler": "email_endorsement",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/endorsements/{endorsement_id}/email",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/pre_issuance.py",
+    "line": 216,
+    "handler": "create_counter_offer",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/counter-offer",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/pre_issuance.py",
+    "line": 321,
+    "handler": "accept_counter_offer",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/counter-offer/accept",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/pre_issuance.py",
+    "line": 361,
+    "handler": "decline_counter_offer",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/counter-offer/decline",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/pre_issuance.py",
+    "line": 453,
+    "handler": "create_requirements",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/requirements",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/pre_issuance.py",
+    "line": 508,
+    "handler": "submit_requirement",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/requirements/{req_id}/submit",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/pre_issuance.py",
+    "line": 525,
+    "handler": "verify_requirement",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/requirements/{req_id}/verify",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/pre_issuance.py",
+    "line": 543,
+    "handler": "waive_requirement",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/requirements/{req_id}/waive",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/pre_issuance.py",
+    "line": 593,
+    "handler": "run_compliance",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/compliance/run",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/pre_issuance.py",
+    "line": 617,
+    "handler": "clear_compliance",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/compliance/{check_id}/clear",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/pre_issuance.py",
+    "line": 640,
+    "handler": "fail_compliance",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/compliance/{check_id}/fail",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/pre_issuance.py",
+    "line": 725,
+    "handler": "replace_beneficiaries",
+    "method": "PUT",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/beneficiaries",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/pre_issuance.py",
+    "line": 822,
+    "handler": "generate_documents",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/documents/generate",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/reinstatement.py",
+    "line": 264,
+    "handler": "open_reinstatement",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/reinstatement",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/reinstatement.py",
+    "line": 323,
+    "handler": "recalculate_arrears",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/reinstatement/{case_id}/arrears/recalculate",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/reinstatement.py",
+    "line": 371,
+    "handler": "submit_declaration",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/reinstatement/{case_id}/declaration",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/reinstatement.py",
+    "line": 418,
+    "handler": "rerun_assessment",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/reinstatement/{case_id}/assessment",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/reinstatement.py",
+    "line": 453,
+    "handler": "receive_evidence",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/reinstatement/{case_id}/evidence/{key}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/reinstatement.py",
+    "line": 552,
+    "handler": "record_decision",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/reinstatement/{case_id}/decision",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/reinstatement.py",
+    "line": 612,
+    "handler": "respond_to_terms",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/reinstatement/{case_id}/terms/respond",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/reinstatement.py",
+    "line": 646,
+    "handler": "collect_reinstatement_payment",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/reinstatement/{case_id}/payment",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/reinstatement.py",
+    "line": 829,
+    "handler": "restore_coverage",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/reinstatement/{case_id}/restore",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/reinstatement.py",
+    "line": 896,
+    "handler": "withdraw_reinstatement",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/reinstatement/{case_id}/withdraw",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/reinstatement.py",
+    "line": 946,
+    "handler": "send_confirmation",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/reinstatement/{case_id}/confirmation/send",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/reinsurance.py",
+    "line": 178,
+    "handler": "create_reinsurer",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/reinsurers",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/reinsurance.py",
+    "line": 347,
+    "handler": "refer_to_reinsurer",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/reinsurance/refer",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/reinsurance.py",
+    "line": 477,
+    "handler": "record_reinsurer_response",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/reinsurance/response",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/reinsurance.py",
+    "line": 540,
+    "handler": "apply_reinsurer_terms",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/reinsurance/apply",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/reinsurance.py",
+    "line": 711,
+    "handler": "withdraw_referral",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/reinsurance/withdraw",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/renewals.py",
+    "line": 454,
+    "handler": "open_renewal",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/renewals",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/renewals.py",
+    "line": 547,
+    "handler": "issue_renewal_notice",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/renewals/{case_id}/notice",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/renewals.py",
+    "line": 584,
+    "handler": "reevaluate_risk",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/renewals/{case_id}/risk/evaluate",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/renewals.py",
+    "line": 636,
+    "handler": "decide_risk",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/renewals/{case_id}/risk/decision",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/renewals.py",
+    "line": 680,
+    "handler": "capture_acceptance",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/renewals/{case_id}/acceptance",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/renewals.py",
+    "line": 719,
+    "handler": "collect_renewal_premium",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/renewals/{case_id}/payment",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/renewals.py",
+    "line": 748,
+    "handler": "reconcile_payment",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/renewals/{case_id}/reconcile",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/renewals.py",
+    "line": 878,
+    "handler": "complete_renewal",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/renewals/{case_id}/complete",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/renewals.py",
+    "line": 969,
+    "handler": "send_renewal_confirmation",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/renewals/{case_id}/confirmation/send",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/renewals.py",
+    "line": 1008,
+    "handler": "cancel_renewal",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/policies/{policy_id}/renewals/{case_id}/cancel",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/renewals.py",
+    "line": 1037,
+    "handler": "sweep_renewals",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/renewals/sweep",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/request_management_internal.py",
+    "line": 131,
+    "handler": "apply_profile_correction",
+    "method": "POST",
+    "router_path": "/internal/request-management/tenants/{tenant_id}/customers/{customer_id}/profile-corrections",
+    "observed_protection": "row lock; existing idempotency reference",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/roles.py",
+    "line": 84,
+    "handler": "create_role",
+    "method": "POST",
+    "router_path": "/roles",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/roles.py",
+    "line": 96,
+    "handler": "update_role",
+    "method": "PUT",
+    "router_path": "/roles/{role_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/roles.py",
+    "line": 122,
+    "handler": "delete_role",
+    "method": "DELETE",
+    "router_path": "/roles/{role_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/rules.py",
+    "line": 1252,
+    "handler": "create_category",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/rules/categories",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/rules.py",
+    "line": 1264,
+    "handler": "create_subcategory",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/rules/categories/{category_id}/subcategories",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/rules.py",
+    "line": 1276,
+    "handler": "create_eligibility_profile",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/rules/subcategories/{subcategory_id}/eligibility-profiles",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/rules.py",
+    "line": 1292,
+    "handler": "delete_category",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/rules/categories/{category_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/rules.py",
+    "line": 1304,
+    "handler": "delete_subcategory",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/rules/subcategories/{subcategory_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/rules.py",
+    "line": 1316,
+    "handler": "delete_rule_set",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/rules/sets/{rule_set_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/rules.py",
+    "line": 1417,
+    "handler": "create_rule_set",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/rules/sets",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/rules.py",
+    "line": 1522,
+    "handler": "create_rule_version",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/rules/sets/{rule_set_id}/versions",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/rules.py",
+    "line": 1579,
+    "handler": "update_version_status",
+    "method": "PATCH",
+    "router_path": "/tenants/{tenant_id}/rules/versions/{version_id}/status",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/rules.py",
+    "line": 1609,
+    "handler": "add_rule_to_version",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/rules/versions/{version_id}/rules",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/rules.py",
+    "line": 1643,
+    "handler": "update_rule",
+    "method": "PUT",
+    "router_path": "/tenants/{tenant_id}/rules/versions/{version_id}/rules/{rule_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/rules.py",
+    "line": 1679,
+    "handler": "delete_rule",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/rules/rules/{rule_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/rules.py",
+    "line": 1714,
+    "handler": "suggest_values_endpoint",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/rules/suggest-values",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/rules.py",
+    "line": 1724,
+    "handler": "evaluate_rule_endpoint",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/rules/evaluate",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/rules.py",
+    "line": 1745,
+    "handler": "early_check_endpoint",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/rules/early-check",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/rules.py",
+    "line": 1755,
+    "handler": "evaluate_scope_endpoint",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/rules/evaluate-scope",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/tenants.py",
+    "line": 23,
+    "handler": "create_tenant",
+    "method": "POST",
+    "router_path": "/tenants/",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/tenants.py",
+    "line": 102,
+    "handler": "update_tenant",
+    "method": "PATCH",
+    "router_path": "/tenants/{tenant_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/tenants.py",
+    "line": 134,
+    "handler": "delete_tenant",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/tokens.py",
+    "line": 47,
+    "handler": "record_token_usage",
+    "method": "POST",
+    "router_path": "/tokens/usage",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/underwriting_questionnaires.py",
+    "line": 56,
+    "handler": "invite",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/underwriting-questionnaire/invite",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/underwriting_questionnaires.py",
+    "line": 94,
+    "handler": "submit",
+    "method": "POST",
+    "router_path": "/public/underwriting-questionnaire/{raw_token}/submit",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/underwriting_tracks.py",
+    "line": 112,
+    "handler": "update_track",
+    "method": "PUT",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/underwriting-tracks/{track}",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/underwriting_tracks.py",
+    "line": 540,
+    "handler": "record_claim_underwriting_outcome",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/claim-underwriting-outcome",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/underwriting_tracks.py",
+    "line": 567,
+    "handler": "upload_specialist_document",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/underwriting-documents",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/underwriting_tracks.py",
+    "line": 628,
+    "handler": "waive_specialist_claim_document",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/underwriting-documents/waive",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/underwriting_tracks.py",
+    "line": 674,
+    "handler": "retry_specialist_document",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/underwriting-documents/{artifact_id}/retry",
+    "observed_protection": "row lock",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/underwriting_tracks.py",
+    "line": 727,
+    "handler": "demo_mark_documents_uploaded",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/underwriting-documents/demo-complete",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/underwriting_tracks.py",
+    "line": 777,
+    "handler": "waive_e_application_part",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/e-application/{part_name}/waive",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/underwriting_tracks.py",
+    "line": 860,
+    "handler": "run_financial_underwriting",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/financial-underwriting/run",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/underwriting_tracks.py",
+    "line": 998,
+    "handler": "classify_specialist_documents",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/underwriting-documents/classify",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/underwriting_tracks.py",
+    "line": 1105,
+    "handler": "run_claim_track_ai",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/cases/{case_id}/claim-underwriting/{track}/run",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/users.py",
+    "line": 191,
+    "handler": "seed_admin",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/setup",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/users.py",
+    "line": 272,
+    "handler": "create_user",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/users/",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/users.py",
+    "line": 428,
+    "handler": "update_user",
+    "method": "PATCH",
+    "router_path": "/tenants/{tenant_id}/users/{user_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/users.py",
+    "line": 521,
+    "handler": "delete_user",
+    "method": "DELETE",
+    "router_path": "/tenants/{tenant_id}/users/{user_id}",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/walk_in_leads.py",
+    "line": 80,
+    "handler": "acknowledge_lead",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/walk-in-leads/{lead_id}/acknowledge",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/walk_in_leads.py",
+    "line": 96,
+    "handler": "reassign_lead",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/walk-in-leads/{lead_id}/reassign",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/tenant-service/routers/walk_in_leads.py",
+    "line": 113,
+    "handler": "run_sweep",
+    "method": "POST",
+    "router_path": "/tenants/{tenant_id}/walk-in-leads/sweep",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/text-summarizer/main.py",
+    "line": 195,
+    "handler": "summarize_text",
+    "method": "POST",
+    "router_path": "/summarize",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/text-summarizer/main.py",
+    "line": 202,
+    "handler": "summarize_underwriting",
+    "method": "POST",
+    "router_path": "/summarize/underwriting",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/text-summarizer/main.py",
+    "line": 211,
+    "handler": "summarize_underwriter_note",
+    "method": "POST",
+    "router_path": "/summarize/underwriter-note",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  },
+  {
+    "file": "microservices/backend-microservices/text-summarizer/main.py",
+    "line": 220,
+    "handler": "summarize_text_stream",
+    "method": "POST",
+    "router_path": "/summarize/stream",
+    "observed_protection": "not established",
+    "integration_status": "PENDING_REVIEW",
+    "test_status": "See README test evidence; endpoint coverage not inferred"
+  }
+]

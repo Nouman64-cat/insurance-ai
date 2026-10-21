@@ -167,6 +167,7 @@ async def cancel_within_free_look(
     is moved ACTIVE → CANCELLED, with the refund captured in the audit event.
     """
     policy = await _get_policy(session, tenant_id, policy_id)
+    await session.refresh(policy, with_for_update=True)
 
     if _st(policy) != PolicyStatusEnum.ACTIVE.value:
         raise HTTPException(400, f"Free-look cancellation needs an in-force policy (current: {_st(policy)})")
@@ -182,7 +183,7 @@ async def cancel_within_free_look(
     if deduction > 0 and not (body.medical_exam_note or "").strip():
         raise HTTPException(400, "Say which medical examination the deduction is for (e.g. the lab invoice reference).")
     refund_amount = round(premium_paid - deduction, 2)
-    refund = payment_gateway.refund_payment(refund_amount)
+    refund = payment_gateway.refund_payment(refund_amount, reference=payment_gateway.operation_reference("free-look-refund", policy.id))
 
     try:
         # Reverse the collected installments so the ledger reflects the refund.

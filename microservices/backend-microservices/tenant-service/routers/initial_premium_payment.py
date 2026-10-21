@@ -25,6 +25,8 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
+from shared.idempotency.http import database_operation
+from services.idempotency import premium_identity
 from routers.auth import decode_access_token, oauth2_scheme
 from services import payment_gateway, payment_requests
 from shared.models.core import (
@@ -182,13 +184,25 @@ async def _initiate(session: AsyncSession, tenant_id: UUID, policy_id: UUID, cas
     if tenant is None or not tenant.is_active:
         raise HTTPException(status_code=404, detail="Tenant not found or inactive")
 
+    # Serialize initiation on the durable policy, including requests with different keys.
+    policy = (await session.exec(select(Policy).where(Policy.id == policy_id, Policy.tenant_id == tenant_id).with_for_update())).first()
+    if policy is None:
+        raise HTTPException(404, "Policy not found")
     ipp = await _find_ipp(session, tenant_id, case_id, policy_id)
     if ipp is not None and ipp.status == IPPStatusEnum.REALIZED:
         raise HTTPException(status_code=409, detail="Initial premium has already been paid for this case.")
 
-    amount, breakdown = await _premium_for(session, tenant_id, policy_id)
+    # An existing provider reference names the original amount/channel. Repricing
+    # it on retry would turn the same provider identity into a different charge.
+    if ipp is not None and ipp.reference:
+        amount, breakdown = ipp.amount, ipp.breakdown_json
+    else:
+        amount, breakdown = await _premium_for(session, tenant_id, policy_id)
     try:
-        intent = payment_gateway.initiate_payment(amount, method)
+        if ipp and ipp.reference and method and payment_gateway._coerce_method(method).value != ipp.method:
+            raise HTTPException(409, "An initiated payment already exists with a different method.")
+        intent = payment_gateway.initiate_payment(amount, ipp.method if ipp and ipp.reference else method,
+            reference=ipp.reference if ipp and ipp.reference else payment_gateway.operation_reference("initial-premium", policy_id, method))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -234,7 +248,11 @@ async def _initiate(session: AsyncSession, tenant_id: UUID, policy_id: UUID, cas
 
 
 async def _confirm(session: AsyncSession, tenant_id: UUID, policy_id: Optional[UUID], case_id: Optional[UUID], body: IPPConfirmRequest) -> IPPRead:
+    if policy_id is not None:
+        await session.exec(select(Policy).where(Policy.id == policy_id, Policy.tenant_id == tenant_id).with_for_update())
     ipp = await _find_ipp(session, tenant_id, case_id, policy_id)
+    if ipp is not None:
+        await session.refresh(ipp, with_for_update=True)
     if ipp is None:
         raise HTTPException(status_code=404, detail="No initial premium payment has been initiated for this case yet.")
     if ipp.status == IPPStatusEnum.REALIZED:
@@ -267,6 +285,24 @@ async def _confirm(session: AsyncSession, tenant_id: UUID, policy_id: Optional[U
     return _to_read(ipp)
 
 
+# Preserve financial outcome; retrieve transient links/notes from the authorized
+# domain record rather than copying them into the durable idempotency receipt.
+IPP_RECEIPT_FIELDS = ("status", "amount", "method", "reference", "initiated_at", "realized_at")
+
+
+async def _replay_confirmation(values, receipt):
+    session, tenant = values["session"], values["tenant_id"]
+    policy_id, case_id = values.get("policy_id"), values.get("case_id")
+    if case_id is not None:
+        case = await _get_case(session, tenant, case_id)
+        owner = await owner_case_id(session, case, "ipp")
+        policy_id, case_id = (case.policy_id if owner == case.caseld else None), owner
+    ipp = await _find_ipp(session, tenant, case_id, policy_id)
+    if ipp is None:
+        raise HTTPException(404, "Initial premium record no longer available")
+    return {**_to_read(ipp).model_dump(mode="json"), **receipt}
+
+
 # ── by case (the original, underwriting-side entry points) ────────────────────
 
 @router.get("/tenants/{tenant_id}/cases/{case_id}/ipp", response_model=IPPRead)
@@ -278,6 +314,7 @@ async def get_ipp(tenant_id: UUID, case_id: UUID, token: str = Depends(oauth2_sc
 
 
 @router.post("/tenants/{tenant_id}/cases/{case_id}/ipp/initiate", response_model=IPPInitiateResponse)
+@database_operation("tenant.premium.initiate_ipp", response_fields=("amount", "payment", "available_payment_methods"), authorize=premium_identity)
 async def initiate_ipp(tenant_id: UUID, case_id: UUID, body: IPPInitiateRequest, token: str = Depends(oauth2_scheme),
                        session: AsyncSession = Depends(get_session)):
     await _get_current_user_id(token)
@@ -289,6 +326,8 @@ async def initiate_ipp(tenant_id: UUID, case_id: UUID, body: IPPInitiateRequest,
 
 
 @router.post("/tenants/{tenant_id}/cases/{case_id}/ipp/confirm", response_model=IPPRead)
+@database_operation("tenant.premium.confirm_ipp", response_fields=tuple(IPPRead.model_fields),
+                    receipt_fields=IPP_RECEIPT_FIELDS, replay_response=_replay_confirmation, authorize=premium_identity)
 async def confirm_ipp(tenant_id: UUID, case_id: UUID, body: IPPConfirmRequest, token: str = Depends(oauth2_scheme),
                       session: AsyncSession = Depends(get_session)):
     await _get_current_user_id(token)
@@ -325,6 +364,7 @@ async def get_policy_ipp(tenant_id: UUID, policy_id: UUID, token: str = Depends(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/ipp/initiate", response_model=IPPInitiateResponse)
+@database_operation("tenant.premium.initiate_policy_ipp", response_fields=("amount", "payment", "available_payment_methods"), authorize=premium_identity)
 async def initiate_policy_ipp(tenant_id: UUID, policy_id: UUID, body: IPPInitiateRequest, token: str = Depends(oauth2_scheme),
                               session: AsyncSession = Depends(get_session)):
     await _get_current_user_id(token)
@@ -336,6 +376,8 @@ async def initiate_policy_ipp(tenant_id: UUID, policy_id: UUID, body: IPPInitiat
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/ipp/confirm", response_model=IPPRead)
+@database_operation("tenant.premium.confirm_policy_ipp", response_fields=tuple(IPPRead.model_fields),
+                    receipt_fields=IPP_RECEIPT_FIELDS, replay_response=_replay_confirmation, authorize=premium_identity)
 async def confirm_policy_ipp(tenant_id: UUID, policy_id: UUID, body: IPPConfirmRequest, token: str = Depends(oauth2_scheme),
                              session: AsyncSession = Depends(get_session)):
     await _get_current_user_id(token)

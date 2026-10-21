@@ -16,6 +16,7 @@ replacing the two functions below — the router contract stays identical.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import secrets
 from dataclasses import dataclass, field
@@ -95,6 +96,12 @@ def generate_reference(method: PaymentMethodEnum) -> str:
     return f"{prefix}-{secrets.token_hex(4).upper()}"
 
 
+def operation_reference(operation: str, resource_id, method=None) -> str:
+    """Stable PSP identity for a single-use business obligation (no PII)."""
+    digest = hashlib.sha256(f"{operation}:{resource_id}".encode()).hexdigest()[:32].upper()
+    return f"{_METHOD_PREFIX[_coerce_method(method)]}-{digest}"
+
+
 def available_methods() -> list[dict]:
     """Channels an agent/customer can pick at the payment step."""
     return [{"code": m.value, "label": m.value} for m in PaymentMethodEnum]
@@ -146,7 +153,7 @@ def require_payer_reference(supplied: Optional[str], expected: Optional[str]) ->
         )
 
 
-def refund_payment(amount: float, method=None) -> PaymentIntent:
+def refund_payment(amount: float, method=None, *, reference: Optional[str] = None) -> PaymentIntent:
     """Simulate a reversal of a settled payment back to the original payer.
 
     Used by the free-look full-refund exit. The mock always succeeds and settles
@@ -157,7 +164,7 @@ def refund_payment(amount: float, method=None) -> PaymentIntent:
     """
     m = _coerce_method(method)
     intent = PaymentIntent(
-        reference=f"RFND-{secrets.token_hex(4).upper()}",
+        reference=reference or f"RFND-{secrets.token_hex(4).upper()}",
         method=m,
         amount=float(amount),
     )

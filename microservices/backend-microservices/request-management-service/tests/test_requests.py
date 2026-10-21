@@ -322,6 +322,7 @@ class Lifecycle(World):
         # Duplicate create with the same key returns the same draft.
         body = {"request_type": "general", "title": "Same thing", "payload": {"category": "OTHER", "description": "Just one of these please"}}
         self.assertEqual(await service.create_draft(me, body, "create-key-1"), await service.create_draft(me, body, "create-key-1"))
+        await self.expect(service.create_draft(me, {**body, "title": "Changed payload"}, "create-key-1"), "IDEMPOTENCY_CONFLICT")
         # Execution: the same event delivered twice applies once.
         await self.claim(self.uw1, rid)
         await self.approve(self.uw1, rid)
@@ -331,6 +332,17 @@ class Lifecycle(World):
         self.assertEqual(len(self.fake.correction_calls), 1)
         self.assertEqual((await self.detail(self.agent, rid))["execution_status"], "SUCCEEDED")
         self.assertEqual(self.fake.customers[self.customer]["details"]["contact"]["email"], "new@example.test")
+
+    async def test_replay_rechecks_current_reviewer_permission(self):
+        from dataclasses import replace
+        rid = await self.correction()
+        detail = await self.claim(self.uw1, rid)
+        reviewer = await self.me(self.uw1)
+        body = {"expected_version": detail["version"], "revision_no": 1, "reason": "Verified correction"}
+        first = await service.decide(reviewer, rid, "APPROVED", body, "approval-key-1")
+        self.assertEqual(first, await service.decide(reviewer, rid, "APPROVED", body, "approval-key-1"))
+        await self.expect(service.decide(replace(reviewer, role="Viewer"), rid, "APPROVED", body,
+                                         "approval-key-1"), "ACTION_NOT_ALLOWED")
 
     async def test_crash_after_domain_update_does_not_apply_twice(self):
         rid = await self.correction()

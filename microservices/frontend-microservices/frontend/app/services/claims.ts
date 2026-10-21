@@ -1,3 +1,4 @@
+import { runOperation, browserOperationScope, operationHeaders } from "@/lib/idempotency";
 import api from "./api";
 
 const tenantId = () =>
@@ -212,8 +213,8 @@ export async function createClaimPayout(
   payload: ClaimPayoutRequest
 ): Promise<any> {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/claims/${claimId}/payout`, payload);
-  return res.data;
+  return runOperation(browserOperationScope(), `claim-payout:${claimId}`, async key =>
+    (await api.post(`/tenants/${tid}/claims/${claimId}/payout`, payload, {headers: operationHeaders(key)})).data);
 }
 
 export async function referClaimToReinsurance(claimId: string): Promise<any> {

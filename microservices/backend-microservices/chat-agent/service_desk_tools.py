@@ -7,7 +7,7 @@ the chat forwards the caller's token through the API gateway
 behalf. What this module adds is the conversation's view of them:
 
   - one request / ticket resolved by reference, or a choice;
-  - an idempotency key derived from the content, so a repeated click or a
+  - an idempotency key from the checkpointed tool operation, so a repeated click or a
     resumed step returns the same request instead of a duplicate;
   - status kept apart from the policy it concerns: an approved request is not
     an applied change until its execution has SUCCEEDED, and a resolved ticket
@@ -30,6 +30,13 @@ from tool_executor import ChoiceNeeded, Ctx, _action, _full_name, _parse_json_ar
 
 _RM = "/request-management/v1"
 _CS = "/customer-service/v1"
+
+
+def _operation_key(ctx: Ctx, step: str) -> str:
+    operation = ctx.exec_ctx.operation_id
+    if not operation:
+        raise ValueError("A durable tool operation ID is required for this mutation")
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"getinsuredai:{ctx.tenant_id}:{operation}:{step}"))
 
 
 def _key(*parts: Any) -> str:
@@ -152,7 +159,7 @@ async def _create_service_request(args: dict, ctx: Ctx) -> dict:
     body = {"request_type": rtype, "title": title or "Service request", "priority": args.get("priority") or "NORMAL",
             "payload": payload}
     res = await _rm(ctx, "post", "/requests", json=body,
-                    headers={"Idempotency-Key": _key("rm-create", ctx.exec_ctx.jwt_token[-24:], body)[:100]})
+                    headers={"Idempotency-Key": _operation_key(ctx, "request-create")})
     if (err := _service_error(res)):
         return err
     r = res.json()
@@ -254,7 +261,7 @@ async def _submit_service_request(args: dict, ctx: Ctx) -> dict:
     if args.get("reviewer_id"):
         body["reviewer_id"] = args["reviewer_id"]
     res = await _rm(ctx, "post", f"/requests/{r['id']}/{action}", json=body,
-                    headers={"Idempotency-Key": _key(action, r["id"], r.get("current_revision_no"))[:100]})
+                    headers={"Idempotency-Key": _operation_key(ctx, action + ":" + r["id"])})
     if (err := _service_error(res)):
         return err
     done = res.json()
@@ -327,8 +334,7 @@ async def _create_support_ticket(args: dict, ctx: Ctx) -> dict:
         body["customer_id"] = (await _customer_id(args, ctx))["id"]
     if args.get("conversation_summary"):
         body["description"] += f"\n\nConversation summary:\n{args['conversation_summary']}"
-    body["idempotency_key"] = _uuid_key("cs-create", ctx.exec_ctx.jwt_token[-24:], body)
-    res = await _cs(ctx, "post", "/tickets", json=body)
+    res = await _cs(ctx, "post", "/tickets", json=body, headers={"Idempotency-Key": _operation_key(ctx, "ticket-create")})
     if (err := _service_error(res)):
         return err
     t = res.json()

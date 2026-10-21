@@ -14,12 +14,16 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
+from shared.idempotency.http import database_operation
 from routers.commissions import admin
 from shared.models.core import Policy, AcquisitionSource
 from shared.models.commission import (CommissionEarning, CommissionDisbursement,
     CommissionDisbursementItem, CommissionDisbursementEvent)
 
 router = APIRouter(prefix='/tenants/{tenant_id}/commissions/disbursements', tags=['Commission disbursements'])
+
+
+REPLAY_FIELDS = ('id', 'tenant_id', 'status', 'gross_amount', 'created_by', 'approved_by', 'paid_by', 'payment_reference', 'created_at', 'submitted_at', 'approved_at', 'paid_at')
 
 
 def hold_reason(policy, source):
@@ -126,6 +130,7 @@ async def check_batch(session, tenant_id, batch):
 
 
 @router.post('', status_code=201)
+@database_operation("tenant.commission.create", response_fields=REPLAY_FIELDS, status_code=201, resource_type="commission_disbursement")
 async def create(tenant_id: UUID, body: BatchIn, user=Depends(admin), session: AsyncSession = Depends(get_session)):
     rows = (await session.exec(select(CommissionEarning).where(
         CommissionEarning.tenant_id == tenant_id, CommissionEarning.id.in_(body.earning_ids)
@@ -177,6 +182,7 @@ async def detail(tenant_id: UUID, batch_id: UUID, user=Depends(admin), session: 
 
 
 @router.post('/{batch_id}/submit')
+@database_operation("tenant.commission.submit", response_fields=REPLAY_FIELDS, status_code=200, resource_type="commission_disbursement")
 async def submit(tenant_id: UUID, batch_id: UUID, user=Depends(admin), session: AsyncSession = Depends(get_session)):
     row = await batch_for_update(session, tenant_id, batch_id)
     if row.status != 'DRAFT' or row.created_by != user.id:
@@ -188,6 +194,7 @@ async def submit(tenant_id: UUID, batch_id: UUID, user=Depends(admin), session: 
 
 
 @router.post('/{batch_id}/approve')
+@database_operation("tenant.commission.approve", response_fields=REPLAY_FIELDS, status_code=200, resource_type="commission_disbursement")
 async def approve(tenant_id: UUID, batch_id: UUID, user=Depends(admin), session: AsyncSession = Depends(get_session)):
     row = await batch_for_update(session, tenant_id, batch_id)
     if row.created_by == user.id:
@@ -201,6 +208,7 @@ async def approve(tenant_id: UUID, batch_id: UUID, user=Depends(admin), session:
 
 
 @router.post('/{batch_id}/reject')
+@database_operation("tenant.commission.reject", response_fields=REPLAY_FIELDS, status_code=200, resource_type="commission_disbursement")
 async def reject(tenant_id: UUID, batch_id: UUID, body: ReasonIn, user=Depends(admin), session: AsyncSession = Depends(get_session)):
     row = await batch_for_update(session, tenant_id, batch_id)
     if row.status not in {'DRAFT', 'SUBMITTED', 'APPROVED'}:
@@ -216,6 +224,7 @@ async def reject(tenant_id: UUID, batch_id: UUID, body: ReasonIn, user=Depends(a
 
 
 @router.post('/{batch_id}/record-payment')
+@database_operation("tenant.commission.record_payment", response_fields=REPLAY_FIELDS, status_code=200, resource_type="commission_disbursement")
 async def record_payment(tenant_id: UUID, batch_id: UUID, body: PaymentIn, user=Depends(admin), session: AsyncSession = Depends(get_session)):
     row = await batch_for_update(session, tenant_id, batch_id)
     if not body.confirmed:

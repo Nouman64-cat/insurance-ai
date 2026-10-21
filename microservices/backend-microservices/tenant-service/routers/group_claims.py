@@ -19,6 +19,8 @@ from pydantic import BaseModel, Field
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from shared.idempotency.http import database_operation
+from services.idempotency import payout_identity
 from database import get_session
 from routers.auth import oauth2_scheme
 from routers.claims import (
@@ -39,6 +41,7 @@ from services.group_claims import (
 )
 from shared.models.core import (
     Claim,
+    ClaimPayout,
     Customer,
     GroupMember,
     GroupMemberDependent,
@@ -206,7 +209,34 @@ async def preview_split_endpoint(tenant_id: UUID, claim_id: UUID, body: SplitReq
         raise _http(exc) from exc
 
 
+def _payout_receipt(payload):
+    return {key: payload[key] for key in ("claim_id", "claim_number", "total", "source")} | {
+        "payout_ids": [p["id"] for p in payload["payouts"]]}
+
+
+def _payout_response(row):
+    return {"id": str(row.id), "payee": row.payee_name, "relationship": row.payee_relationship,
+            "share_pct": row.share_pct, "amount": row.amount, "reference_number": row.reference_number}
+
+
+async def _replay_payout(values, receipt):
+    # Preserve the original payee order without copying personal data into receipts.
+    rows = list((await values["session"].exec(select(ClaimPayout).where(
+        ClaimPayout.tenant_id == values["tenant_id"], ClaimPayout.claim_id == values["claim_id"],
+        ClaimPayout.id.in_([UUID(id_) for id_ in receipt["payout_ids"]])))).all())
+    by_id = {str(row.id): row for row in rows}
+    if any(id_ not in by_id for id_ in receipt["payout_ids"]):
+        raise HTTPException(409, "Original payout records are no longer available")
+    return {key: receipt[key] for key in ("claim_id", "claim_number", "total", "source")} | {
+        "override_reason": values["body"].override_reason if receipt["source"] == "override" else None,
+        "payouts": [_payout_response(by_id[id_]) for id_ in receipt["payout_ids"]]}
+
+
 @router.post(_CLAIM + "/group-payout", status_code=status.HTTP_201_CREATED)
+@database_operation("tenant.claim.group_payout", status_code=201, authorize=payout_identity,
+    response_fields=("claim_id", "claim_number", "total", "source", "override_reason", "payouts"),
+    receipt_fields=("claim_id", "claim_number", "total", "source", "payout_ids"),
+    receipt_builder=_payout_receipt, replay_response=_replay_payout)
 async def group_payout(tenant_id: UUID, claim_id: UUID, body: GroupPayoutRequest, current_user: User = Depends(claims_user),
                        session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """Disburse an approved claim to its payees — the nominees by their shares (or an
@@ -240,6 +270,5 @@ async def group_payout(tenant_id: UUID, claim_id: UUID, body: GroupPayoutRequest
     return {
         "claim_id": str(claim.id), "claim_number": claim.claim_number, "total": round(sum(p["amount"] for p in payouts), 2),
         "source": split["source"], "override_reason": split["override_reason"],
-        "payouts": [{"id": str(r.id), "payee": r.payee_name, "relationship": r.payee_relationship, "share_pct": r.share_pct,
-                     "amount": r.amount, "reference_number": r.reference_number} for r in rows],
+        "payouts": [_payout_response(r) for r in rows],
     }

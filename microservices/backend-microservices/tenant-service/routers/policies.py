@@ -23,6 +23,8 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
+from shared.idempotency.http import database_operation
+from services.idempotency import premium_identity
 from routers.auth import optional_oauth2_scheme, source_scope
 from services import payment_gateway
 from services.env_mode import is_demo
@@ -891,7 +893,7 @@ async def issue_policy(
 
     # Payment intent for whatever is still outstanding. Nothing to raise when the
     # initial premium already covered the contract.
-    intent = payment_gateway.initiate_payment(balance_due) if not fully_prepaid else None
+    intent = payment_gateway.initiate_payment(balance_due, reference=payment_gateway.operation_reference("policy-issuance", policy_id)) if not fully_prepaid else None
 
     # ── Atomic draft transaction ─────────────────────────────────────────────
     try:
@@ -1042,6 +1044,7 @@ async def issue_policy(
 # the pending installment's payment_reference to the chosen channel's intent.
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/payments/initiate", dependencies=[Depends(_policy_in_scope)])
+@database_operation("tenant.premium.remaining_initiate", response_fields=("policy_id", "amount_due", "premium_total", "amount_already_paid", "payment", "available_payment_methods"), authorize=premium_identity)
 async def initiate_payment(
     tenant_id: UUID, policy_id: UUID,
     body: PaymentInitiateRequest,
@@ -1061,7 +1064,7 @@ async def initiate_payment(
     if balance <= 0:
         raise HTTPException(409, "No outstanding first-premium balance")
     try:
-        intent = payment_gateway.initiate_payment(float(balance), body.method)
+        intent = payment_gateway.initiate_payment(float(balance), body.method, reference=schedule.payment_reference or payment_gateway.operation_reference("premium-installment", schedule.id, body.method))
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
