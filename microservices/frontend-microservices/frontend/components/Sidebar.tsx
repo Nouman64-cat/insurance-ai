@@ -454,7 +454,7 @@ const NAV_ITEMS = [
         superAdminOnly: true,
       },
       {
-        // Tenant administrators see their own tenant's trail; the platform administrator sees every chain.
+        // Platform administrator only: the audit trail spans every tenant's chain.
         href: "#security-compliance",
         label: "Security & Compliance",
         icon: (
@@ -464,8 +464,7 @@ const NAV_ITEMS = [
           </svg>
         ),
         badge: null,
-        adminOnly: true,
-        superAdminToo: true,
+        superAdminOnly: true,
         subLinks: [
           { href: "/admin/audit-trail", label: "Audit Trail" },
         ],

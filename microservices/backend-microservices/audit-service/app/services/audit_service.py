@@ -22,7 +22,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select, text, tuple_
 
 from app import db
-from app.models import events
+from app.models import event_sources, events
 from app.services import hash_chain
 from shared.audit.schema import AuditIntent
 
@@ -66,9 +66,10 @@ def _record(intent: AuditIntent, *, env: UUID, chain_id: str, sequence: int, pre
     return record
 
 
-async def append_to_chain(conn, intents: Sequence[AuditIntent]) -> list[AppendResult]:
+async def append_to_chain(conn, intents: Sequence[AuditIntent], clock: Optional[Callable[[], datetime]] = None) -> list[AppendResult]:
     """Append intents that all belong to ONE chain (same tenant). Runs in the caller's transaction, which must be
-    committed or rolled back as a whole. Results are in input order."""
+    committed or rolled back as a whole. Results are in input order. `clock` is only for tests (aged events)."""
+    clock = clock or (lambda: datetime.now(timezone.utc))
     if not intents:
         return []
     tenant_id = intents[0].tenant_id
@@ -83,9 +84,9 @@ async def append_to_chain(conn, intents: Sequence[AuditIntent]) -> list[AppendRe
     found = {
         (row.service_name, row.source_event_id): row
         for row in (await conn.execute(
-            select(events.c.event_id, events.c.chain_id, events.c.sequence_number, events.c.current_hash,
-                   events.c.service_name, events.c.source_event_id)
-            .where(tuple_(events.c.service_name, events.c.source_event_id).in_(list(keys))))).all()
+            select(event_sources.c.event_id, event_sources.c.chain_id, event_sources.c.sequence_number, event_sources.c.current_hash,
+                   event_sources.c.service_name, event_sources.c.source_event_id)
+            .where(tuple_(event_sources.c.service_name, event_sources.c.source_event_id).in_(list(keys))))).all()
     }
 
     results: list[AppendResult] = []
@@ -107,7 +108,7 @@ async def append_to_chain(conn, intents: Sequence[AuditIntent]) -> list[AppendRe
             continue
         sequence += 1
         record = _record(intent, env=env, chain_id=chain_id, sequence=sequence, previous_hash=previous_hash,
-                         recorded_at=datetime.now(timezone.utc))
+                         recorded_at=clock())
         previous_hash = record["current_hash"]
         rows.append(record)
         result = AppendResult(APPENDED, intent.source_event_id, record["event_id"], chain_id, sequence, record["current_hash"])
@@ -119,17 +120,35 @@ async def append_to_chain(conn, intents: Sequence[AuditIntent]) -> list[AppendRe
     return results
 
 
-async def ingest(intents: Sequence[AuditIntent], transaction: Optional[Callable] = None) -> list[AppendResult]:
+_partitions_ready: set[tuple[str, str]] = set()
+
+
+async def ensure_partition(at: datetime) -> None:
+    """Make sure the monthly partition for `at` exists. Done in its own short transaction BEFORE the append transaction, so partition
+    DDL never runs while a chain row lock is held. Cached per database and month."""
+    key = (str(db.engine().url.database), at.astimezone(timezone.utc).strftime("%Y%m"))
+    if key in _partitions_ready:
+        return
+    async with db.transaction() as conn:
+        await conn.execute(text("SELECT ensure_event_partition(:t)"), {"t": at})
+    _partitions_ready.add(key)
+
+
+async def ingest(intents: Sequence[AuditIntent], transaction: Optional[Callable] = None,
+                 clock: Optional[Callable[[], datetime]] = None) -> list[AppendResult]:
     """Append intents, one transaction per chain. Idempotent: running it again with the same intents appends nothing.
     Results are in input order. A database failure raises; nothing from the failing chain is committed."""
     transaction = transaction or db.transaction
+    clock = clock or (lambda: datetime.now(timezone.utc))
+    if intents:
+        await ensure_partition(clock())
     groups: dict[Optional[UUID], list[int]] = {}
     for index, intent in enumerate(intents):
         groups.setdefault(intent.tenant_id, []).append(index)
     out: list[Optional[AppendResult]] = [None] * len(intents)
     for indexes in groups.values():
         async with transaction() as conn:
-            results = await append_to_chain(conn, [intents[i] for i in indexes])
+            results = await append_to_chain(conn, [intents[i] for i in indexes], clock)
         for i, result in zip(indexes, results):
             out[i] = result
     return out  # type: ignore[return-value]

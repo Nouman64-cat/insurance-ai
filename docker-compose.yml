@@ -18,6 +18,10 @@ volumes:
   audit-secrets:      # the key passphrase: mounted only into audit-signer (read-only) and the one-off init job
   audit-signer-state: # the signer's own trusted record of the last checkpoint per chain: audit-signer only
   audit-checkpoints:  # signed checkpoint files + the trusted key registry: audit-signer writes, audit-service reads (read-only)
+  # Audit archive (Stage 3)
+  aistor-data:          # the cold-storage objects (encrypted audit archives) on MinIO AIStor Free; survives container recreation
+  audit-archive-keys:   # the archive master key (KEK): mounted READ-ONLY into audit-service; written only by the one-off init job
+  audit-archive-work:   # scratch space for building archives (bounded, deleted after each job)
 
     # ─────────────────────────────────────────────────────────────────────────────
     # Re-usable FastAPI service defaults
@@ -417,6 +421,8 @@ services:
       - ./microservices/backend-microservices/audit-service:/app
       - ./shared:/app/shared
       - audit-checkpoints:/var/lib/audit-checkpoints:ro
+      - audit-archive-keys:/run/audit-archive-keys:ro
+      - audit-archive-work:/var/lib/audit-archive-work
     environment:
       PYTHONPATH: /app
       WATCHFILES_FORCE_POLLING: "true"
@@ -427,7 +433,7 @@ services:
       AUDIT_CONSUMER_ENABLED: ${AUDIT_CONSUMER_ENABLED:-true}
       AUDIT_VERIFY_ENABLED: ${AUDIT_VERIFY_ENABLED:-true}
       AUDIT_VERIFY_INTERVAL_SECONDS: ${AUDIT_VERIFY_INTERVAL_SECONDS:-21600}
-      AUDIT_READ_ROLES: ${AUDIT_READ_ROLES:-Admin,SuperAdmin}
+      AUDIT_READ_ROLES: ${AUDIT_READ_ROLES:-SuperAdmin}
       # Stage 2: signed checkpoints. The Audit Service never holds a private key; it asks audit-signer, and reads the
       # protected checkpoint store READ-ONLY.
       AUDIT_SIGNING_ENABLED: ${AUDIT_SIGNING_ENABLED:-true}
@@ -439,6 +445,29 @@ services:
       AUDIT_CHECKPOINT_DIRECTORY: /var/lib/audit-checkpoints
       AUDIT_ENVIRONMENT_LABEL: ${AUDIT_ENVIRONMENT_LABEL:-local-dev}
       AUDIT_TRUST_ANCHOR_FINGERPRINT: ${AUDIT_TRUST_ANCHOR_FINGERPRINT:-}
+      # Stage 3: archive and retention. MinIO identities are least-privilege (writer: no delete; reader: read-only); the root account is not here.
+      AUDIT_ARCHIVING_ENABLED: ${AUDIT_ARCHIVING_ENABLED:-true}
+      AUDIT_HOT_RETENTION_MONTHS: ${AUDIT_HOT_RETENTION_MONTHS:-6}
+      AUDIT_ARCHIVE_SCHEDULE: ${AUDIT_ARCHIVE_SCHEDULE:-monthly}
+      AUDIT_ARCHIVE_COMPRESSION: ${AUDIT_ARCHIVE_COMPRESSION:-zstd}
+      AUDIT_ARCHIVE_STORAGE_PROVIDER: ${AUDIT_ARCHIVE_STORAGE_PROVIDER:-minio}
+      AUDIT_AUTO_HOT_CLEANUP: ${AUDIT_AUTO_HOT_CLEANUP:-false}
+      AUDIT_ARCHIVE_S3_ENDPOINT: ${AUDIT_ARCHIVE_S3_ENDPOINT:-http://minio:9000}
+      AUDIT_ARCHIVE_BUCKET: ${AUDIT_ARCHIVE_BUCKET:-insurance-audit-archive}
+      AUDIT_ARCHIVE_WRITER_KEY: ${AUDIT_ARCHIVE_WRITER_KEY:-}
+      AUDIT_ARCHIVE_WRITER_SECRET: ${AUDIT_ARCHIVE_WRITER_SECRET:-}
+      AUDIT_ARCHIVE_READER_KEY: ${AUDIT_ARCHIVE_READER_KEY:-}
+      AUDIT_ARCHIVE_READER_SECRET: ${AUDIT_ARCHIVE_READER_SECRET:-}
+      AUDIT_ARCHIVE_KEY_DIRECTORY: /run/audit-archive-keys
+      AUDIT_ARCHIVE_WORK_DIRECTORY: /var/lib/audit-archive-work
+      AUDIT_ARCHIVE_LOCK_MODE: ${AUDIT_ARCHIVE_LOCK_MODE:-GOVERNANCE}
+      AUDIT_ARCHIVE_LOCK_DAYS: ${AUDIT_ARCHIVE_LOCK_DAYS:-30}
+      AUDIT_ARCHIVE_INTERVAL_SECONDS: ${AUDIT_ARCHIVE_INTERVAL_SECONDS:-300}
+      AUDIT_CLEANUP_MODE: ${AUDIT_CLEANUP_MODE:-detach}
+      AUDIT_CLEANUP_SAFETY_DAYS: ${AUDIT_CLEANUP_SAFETY_DAYS:-7}
+      # Development only (refused unless AUDIT_ENVIRONMENT_LABEL=local-dev): archive anything older than N seconds instead of the month window.
+      AUDIT_ARCHIVE_TEST_MODE: ${AUDIT_ARCHIVE_TEST_MODE:-false}
+      AUDIT_ARCHIVE_TEST_HOT_SECONDS: ${AUDIT_ARCHIVE_TEST_HOT_SECONDS:-120}
     depends_on:
       kafka:
         condition: service_healthy
@@ -452,6 +481,69 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  # ── MinIO AIStor Free: cold storage for archived audit events (Stage 3) ──────────────────────────────────
+  # Single-node AIStor Free, pinned to an exact release. It needs a FREE LICENSE FILE that stays outside the repository: download it from
+  # MinIO and point AISTOR_LICENSE_FILE (in .env) at it, e.g. /home/<you>/.config/insurance-ai/minio.license (chmod 600). Without it the
+  # container refuses to start with an explanatory message. Reachable only from the Docker network and from localhost (ports bound to
+  # 127.0.0.1). The bucket is private, versioned and Object-Lock-enabled; the application uses separate writer and reader identities.
+  minio:
+    image: quay.io/minio/aistor/minio:RELEASE.2026-09-19T17-05-25Z
+    container_name: insurance-minio
+    restart: unless-stopped
+    networks: [insurance-net]
+    # Refuse to start without explicit root credentials and a license rather than silently using a default account or a trial.
+    entrypoint: ["/bin/sh", "-c", "test -n \"$$MINIO_ROOT_USER\" -a \"$${#MINIO_ROOT_PASSWORD}\" -ge 16 || { echo 'MINIO_ROOT_USER and a MINIO_ROOT_PASSWORD of 16+ characters must be set in .env' >&2; exit 1; }; test -s /run/license/minio.license || { echo 'AIStor Free license file missing: set AISTOR_LICENSE_FILE in .env to the license file downloaded from MinIO (see README, Stage 3)' >&2; exit 1; }; exec minio server /data --address :9000 --console-address :9001 --license /run/license/minio.license"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
+    ports:
+      - "127.0.0.1:9000:9000"   # S3 API (host tools)
+      - "127.0.0.1:9001:9001"   # web console
+    volumes:
+      - aistor-data:/data
+      - ${AISTOR_LICENSE_FILE:-/dev/null}:/run/license/minio.license:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # One-off, idempotent: creates the private versioned Object-Lock bucket and the least-privilege identities (writer: put/get/list,
+  # NO delete; reader: get/list). Uses the root credentials, which no other service ever receives.
+  minio-init:
+    image: quay.io/minio/aistor/minio:RELEASE.2026-09-19T17-05-25Z
+    restart: "no"
+    networks: [insurance-net]
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/init/init.sh"]
+    environment:
+      MINIO_ENDPOINT: ${AUDIT_ARCHIVE_S3_ENDPOINT:-http://minio:9000}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
+      AUDIT_ARCHIVE_BUCKET: ${AUDIT_ARCHIVE_BUCKET:-insurance-audit-archive}
+      AUDIT_ARCHIVE_WRITER_KEY: ${AUDIT_ARCHIVE_WRITER_KEY:-}
+      AUDIT_ARCHIVE_WRITER_SECRET: ${AUDIT_ARCHIVE_WRITER_SECRET:-}
+      AUDIT_ARCHIVE_READER_KEY: ${AUDIT_ARCHIVE_READER_KEY:-}
+      AUDIT_ARCHIVE_READER_SECRET: ${AUDIT_ARCHIVE_READER_SECRET:-}
+    volumes:
+      - ./infrastructure/minio/init.sh:/init/init.sh:ro
+
+  # One-off, explicit: creates the archive master key for THIS installation (never on an ordinary start; refuses to run twice).
+  audit-archive-init:
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: microservices/backend-microservices/audit-service/Dockerfile
+    restart: "no"
+    command: ["python", "-m", "app.archive.cli", "init-keys"]
+    environment:
+      AUDIT_ARCHIVE_KEY_DIRECTORY: /run/audit-archive-keys
+    volumes:
+      - audit-archive-keys:/run/audit-archive-keys
 
   # ── Audit checkpoint signer (Stage 2) ─────────────────────────────────────────────────────────────────────
   # The ONLY service that holds a private key. It has no published port, does not read the application's .env, runs as an

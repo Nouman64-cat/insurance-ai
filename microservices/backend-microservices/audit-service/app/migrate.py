@@ -56,6 +56,22 @@ async def apply_grants(conn, schema: str) -> None:
     await conn.execute(text(f'REVOKE ALL ON ALL SEQUENCES IN SCHEMA "{schema}" FROM {app_role}'))
     await conn.execute(text(f'GRANT USAGE ON SEQUENCE "{schema}".dead_letters_id_seq TO {app_role}'))
     await conn.execute(text(f'GRANT EXECUTE ON FUNCTION "{schema}".ensure_chain(UUID), "{schema}".lock_chain(TEXT) TO {app_role}'))
+    # Stage 3: monthly partitions are created through a function (the app role has no DDL rights); the pre-partition copy of events,
+    # kept for rollback, is not accessible to the application or the signer.
+    await conn.execute(text(f'GRANT EXECUTE ON FUNCTION "{schema}".ensure_event_partition(TIMESTAMPTZ) TO {app_role}'))
+    for role in (app_role, os.environ.get("AUDIT_DB_SIGNER_ROLE", "audit_signer")):
+        if (await conn.execute(text("SELECT 1 FROM pg_roles WHERE rolname = :r"), {"r": role})).first():
+            await conn.execute(text(f'DO $$ BEGIN IF to_regclass(\'"{schema}".events_legacy_v1\') IS NOT NULL THEN EXECUTE \'REVOKE ALL ON "{schema}".events_legacy_v1 FROM {role}\'; END IF; END $$'))
+    # Stage 3: archive catalog, jobs, policies, holds, retrieval staging. Catalog rows and policies are insert-only (plus one guarded
+    # column each); jobs and retrievals carry mutable state; only staging rows can be deleted (they are temporary copies).
+    await conn.execute(text(f'GRANT INSERT ON "{schema}".retention_policies, "{schema}".legal_holds, "{schema}".archive_jobs, "{schema}".archive_catalog, '
+                            f'"{schema}".archive_verifications, "{schema}".archive_runs, "{schema}".archive_retrievals, "{schema}".archive_staging TO {app_role}'))
+    await conn.execute(text(f'GRANT UPDATE ON "{schema}".archive_jobs, "{schema}".archive_runs, "{schema}".archive_retrievals TO {app_role}'))
+    await conn.execute(text(f'GRANT UPDATE (superseded_at) ON "{schema}".retention_policies TO {app_role}'))
+    await conn.execute(text(f'GRANT UPDATE (released_at, released_by, release_reason) ON "{schema}".legal_holds TO {app_role}'))
+    await conn.execute(text(f'GRANT UPDATE (cleanup_approved_at) ON "{schema}".archive_catalog TO {app_role}'))
+    await conn.execute(text(f'GRANT DELETE ON "{schema}".archive_staging TO {app_role}'))
+    await conn.execute(text(f'GRANT EXECUTE ON FUNCTION "{schema}".remove_event_partition(DATE, TEXT), "{schema}".list_event_partitions() TO {app_role}'))
     # Stage 2: signed checkpoints. The app role records them (insert-only), keeps its scheduler state, and may mark a key retired.
     await conn.execute(text(f'GRANT INSERT ON "{schema}".checkpoints, "{schema}".checkpoint_alerts, "{schema}".anchor_verification_runs, "{schema}".signing_keys TO {app_role}'))
     await conn.execute(text(f'GRANT INSERT, UPDATE ON "{schema}".checkpoint_state TO {app_role}'))

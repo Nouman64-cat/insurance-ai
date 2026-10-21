@@ -13,8 +13,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app import db, migrate
-from app.api import checkpoints, events, ops, verification
+from app import db, demo_tools, migrate
+from app.api import archive as archive_api, checkpoints, demo as demo_api, events, ops, verification
+from app.archive import service as archive_service
+from app.archive.scheduler import ArchiveScheduler
 from app.checkpoints.generator import CheckpointGenerator
 from app.checkpoints.scheduler import CheckpointScheduler
 from app.signing.signer_factory import get_signer
@@ -32,6 +34,10 @@ async def lifespan(app: FastAPI):
     if settings.run_migrations_on_start and settings.migration_database_url:
         applied = await migrate.run()
         log.info("migrations applied: %s", applied or "none (up to date)")
+    try:
+        await demo_tools.prepare()
+    except Exception as exc:   # demo tools are optional; the ledger must start regardless
+        log.error("demo tools unavailable: %s", exc)
     stop = asyncio.Event()
     tasks: list[asyncio.Task] = []
     app.state.consumer = None
@@ -50,10 +56,19 @@ async def lifespan(app: FastAPI):
         tasks.append(asyncio.create_task(CheckpointScheduler(app.state.generator).run(stop), name="audit-checkpoints"))
         if settings.verify_enabled:
             tasks.append(asyncio.create_task(integrity_verifier.scheduler(stop), name="audit-anchored-verifier"))
+    app.state.archive = None
+    if settings.archiving_enabled and signer is not None:
+        try:
+            services = archive_service.build(settings, signer, f"{socket.gethostname()}-{uuid.uuid4().hex[:8]}")
+            app.state.archive = services
+            tasks.append(asyncio.create_task(ArchiveScheduler(services).run(stop), name="audit-archive"))
+        except Exception as exc:   # archiving is optional infrastructure: the ledger, checkpoints and verification keep running without it
+            log.error("archiving is DISABLED: %s", exc)
     yield
     stop.set()
     await asyncio.gather(*tasks, return_exceptions=True)
     await db.dispose()
+    await demo_tools.dispose()
 
 
 app = FastAPI(
@@ -66,3 +81,7 @@ app.include_router(events.router)
 app.include_router(verification.router)
 app.include_router(ops.router)
 app.include_router(checkpoints.router)
+app.include_router(archive_api.router)
+app.include_router(demo_api.status_router)
+if demo_tools.enabled():   # DEMO ONLY: the delete/restore routes do not exist in any other environment
+    app.include_router(demo_api.router)

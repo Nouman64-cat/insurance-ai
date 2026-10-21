@@ -8,12 +8,14 @@ from sqlalchemy import text
 from app import auth
 from app.main import app
 from app.verification import signature_verifier as sv
-from tests.signing_support import StageTwoCase
+from tests.signing_support import StageTwoCase, override_settings
 
 
 class CheckpointApiCase(StageTwoCase):
     async def asyncSetUp(self):
         await super().asyncSetUp()
+        self._roles = override_settings(read_roles=frozenset({"Admin", "SuperAdmin"}))   # tenant Admin access is opt-in
+        self._roles.__enter__()
         await self.signer.init()
         auth.clear_cache()
         self.tenant_a, self.tenant_b = uuid4(), uuid4()
@@ -39,6 +41,7 @@ class CheckpointApiCase(StageTwoCase):
         auth.fetch_me = self._fetch
         auth.clear_cache()
         app.state.signer = app.state.generator = None
+        self._roles.__exit__(None, None, None)
         await super().asyncTearDown()
 
     def add_user(self, role, tenant):
@@ -100,6 +103,52 @@ class TenantIsolationTests(CheckpointApiCase):
         mine = (await self.get("/v1/checkpoints/status", self.admin_a)).json()["alerts"]
         self.assertEqual([a["message"] for a in mine], ["my tenant"])
         self.assertEqual(len((await self.get("/v1/checkpoints/status", self.super)).json()["alerts"]), 2)
+
+
+class AlertLifecycleTests(CheckpointApiCase):
+    async def alerts(self, token):
+        return (await self.get("/v1/checkpoints/status", token)).json()["alerts"]
+
+    async def test_an_alert_is_open_only_while_its_problem_exists(self):
+        from app.signing.interface import SigningError
+
+        class Down:
+            async def sign_checkpoint(self, *a, **k):
+                raise SigningError("KEY_UNAVAILABLE", "no signing key has been initialised")
+
+        await self.signer.generator("w", signer=Down()).checkpoint_chain(self.chain_a)
+        [alert] = await self.alerts(self.admin_a)
+        self.assertEqual((alert["kind"], alert["open"]), ("SIGNER_KEY_UNAVAILABLE", True))
+        await self.checkpoint(self.chain_a)                                  # the signer is back and the checkpoint succeeds
+        alerts = await self.alerts(self.admin_a)
+        self.assertEqual([(a["kind"], a["open"]) for a in alerts], [("CHECKPOINT_RECOVERED", False), ("SIGNER_KEY_UNAVAILABLE", False)])
+        self.assertFalse(any(a["open"] for a in alerts))
+
+    async def test_only_the_newest_alert_of_a_still_failing_chain_is_open_and_other_chains_are_unaffected(self):
+        from app import db
+        from app.checkpoints import repository as repo
+        async with db.transaction() as conn:
+            await repo.ensure_state(conn, self.chain_a)
+            await conn.execute(text("UPDATE checkpoint_state SET alert_open = TRUE WHERE chain_id = :c"), {"c": self.chain_a})
+            await repo.add_alert(conn, self.chain_a, str(self.tenant_a), "STORAGE_FAILED", "CRITICAL", "older incident")
+            await repo.add_alert(conn, self.chain_a, str(self.tenant_a), "STORAGE_FAILED", "CRITICAL", "current incident")
+            await repo.add_alert(conn, self.chain_b, str(self.tenant_b), "SIGNING_FAILED", "CRITICAL", "resolved elsewhere")
+        mine = {a["message"]: a["open"] for a in await self.alerts(self.admin_a)}
+        self.assertEqual(mine, {"current incident": True, "older incident": False})
+        self.assertEqual({a["message"]: a["open"] for a in await self.alerts(self.admin_b)}, {"resolved elsewhere": False})
+
+    async def test_a_verification_alert_closes_when_the_chain_verifies_again(self):
+        await self.checkpoint(self.chain_a)
+        path = self.signer.checkpoints_dir / str(await self.environment_id()) / str(self.tenant_a) / "checkpoint-000001.json"
+        saved = path.read_bytes()
+        path.chmod(0o644)
+        path.unlink()
+        self.assertEqual((await self.post("/v1/checkpoints/verify", self.admin_a)).json()["state"], sv.MISSING_CHECKPOINT)
+        [alert] = [a for a in await self.alerts(self.admin_a) if a["kind"].startswith("VERIFICATION_")]
+        self.assertTrue(alert["open"])
+        path.write_bytes(saved)                                              # the protected copy is restored from backup
+        self.assertEqual((await self.post("/v1/checkpoints/verify", self.admin_a)).json()["state"], sv.VERIFIED)
+        self.assertFalse([a for a in await self.alerts(self.admin_a) if a["open"]])
 
 
 class ProgressAndHistoryTests(CheckpointApiCase):

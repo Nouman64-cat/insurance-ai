@@ -136,7 +136,8 @@ export default function CheckpointPanel({ chainId, isSuperAdmin }: Props) {
   const pending = latest ? latest.pending_events : progress?.pending_events ?? 0;
   const signerProblem = typeof status.signer?.problem === "string" ? status.signer.problem : status.signer && status.signer.problem === true ? tx("The signer reports a problem.") : "";
   const activeKey = status.signer?.active_key ?? status.registry?.keys.find((k) => k.status === "ACTIVE");
-  const openAlerts = status.alerts.filter((a) => a.severity !== "INFO").slice(0, 4);
+  const openAlerts = status.alerts.filter((a) => a.open).slice(0, 4);
+  const resolvedAlerts = status.alerts.filter((a) => a.severity !== "INFO" && !a.open).length;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
@@ -243,6 +244,10 @@ export default function CheckpointPanel({ chainId, isSuperAdmin }: Props) {
               <p className="mt-2 text-[11px] text-slate-400">{tx("A checkpoint is created after {0} new events or {1} minutes, whichever comes first.", { 0: progress?.event_threshold ?? 500, 1: Math.round((progress?.interval_seconds ?? 900) / 60) })}</p>
             </div>
           </div>
+
+          {openAlerts.length === 0 && resolvedAlerts > 0 && (
+            <p className="text-[11px] text-slate-400">{tx("No open alerts. {0} earlier alert(s) were resolved; they remain in the audit record.", { 0: resolvedAlerts })}</p>
+          )}
 
           {openAlerts.length > 0 && (
             <ul aria-label={tx("Checkpoint alerts")} className="space-y-1 rounded-lg border border-rose-200 bg-rose-50/40 p-3 text-xs text-slate-700">

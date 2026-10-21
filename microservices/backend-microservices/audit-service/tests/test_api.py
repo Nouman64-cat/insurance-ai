@@ -8,6 +8,7 @@ from sqlalchemy import text
 from app import auth
 from app.main import app
 from app.services import audit_service
+from tests.signing_support import override_settings
 from tests.support import LedgerCase, intent
 
 
@@ -16,6 +17,8 @@ class ApiCase(LedgerCase):
 
     async def asyncSetUp(self):
         await super().asyncSetUp()
+        self._roles = override_settings(read_roles=frozenset({"Admin", "SuperAdmin"}))   # tenant Admin access is opt-in
+        self._roles.__enter__()
         auth.clear_cache()
         self.tenant_a, self.tenant_b = uuid4(), uuid4()
         self.users: dict[str, dict] = {}
@@ -50,6 +53,7 @@ class ApiCase(LedgerCase):
         await self.client.aclose()
         auth.fetch_me = self._original
         auth.clear_cache()
+        self._roles.__exit__(None, None, None)
         await super().asyncTearDown()
 
     def add_user(self, role, tenant, active=True) -> str:
@@ -85,6 +89,22 @@ class AccessControlTests(ApiCase):
                 with self.subTest(path=path):
                     self.assertEqual((await self.get(path, token)).status_code, 403)
             self.assertEqual((await self.post("/v1/verification/run", token)).status_code, 403)
+
+    async def test_by_default_only_the_super_admin_may_read(self):
+        """Tenant Admin access is opt-in (AUDIT_READ_ROLES=Admin,SuperAdmin); the shipped default is SuperAdmin only."""
+        import os
+        from unittest import mock
+        from app.config import Settings
+        with mock.patch.dict(os.environ):
+            os.environ.pop("AUDIT_READ_ROLES", None)
+            default_roles = Settings().read_roles
+        self.assertEqual(default_roles, frozenset({"SuperAdmin"}))
+        with override_settings(read_roles=default_roles):
+            for path in ("/v1/events", "/v1/chains", "/v1/events/facets", "/v1/ops/status", "/v1/demo/status"):
+                with self.subTest(path=path):
+                    self.assertEqual((await self.get(path, self.token_admin_a)).status_code, 403)
+                    self.assertEqual((await self.get(path, self.token_super)).status_code, 200)
+            self.assertEqual((await self.post("/v1/verification/run", self.token_admin_a)).status_code, 403)
 
     async def test_inactive_and_tenantless_admin_accounts_are_refused(self):
         self.assertEqual((await self.get("/v1/events", self.token_inactive)).status_code, 403)

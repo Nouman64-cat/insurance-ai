@@ -6,3 +6,5 @@ pydantic==2.13.4
 httpx==0.28.1
 aiokafka
 cryptography>=42,<50
+zstandard>=0.22,<1
+boto3>=1.34,<2

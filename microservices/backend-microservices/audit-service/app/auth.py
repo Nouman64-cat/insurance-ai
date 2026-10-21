@@ -1,7 +1,8 @@
 """Who is calling, and what part of the ledger they may see.
 
 Verified with tenant-service's /auth/me on the caller's own token (the same check the portal, Request Management and
-Customer Service rely on); nothing the browser says about itself is trusted. Only the roles in AUDIT_READ_ROLES get in:
+Customer Service rely on); nothing the browser says about itself is trusted. Only the roles in AUDIT_READ_ROLES get in
+(default: SuperAdmin only; the Admin rule below applies when AUDIT_READ_ROLES includes Admin):
 
   Admin       their own tenant's chain, read-only (an X-Tenant-Id that disagrees with the session is rejected);
   SuperAdmin  every chain, including the platform chain;

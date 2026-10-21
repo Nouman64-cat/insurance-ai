@@ -55,6 +55,17 @@ events = Table(
     Column("hash_version", SmallInteger, nullable=False),
 )
 
+event_sources = Table(
+    "event_sources", metadata,
+    Column("service_name", Text, primary_key=True),
+    Column("source_event_id", Text, primary_key=True),
+    Column("event_id", UUID(as_uuid=True), nullable=False),
+    Column("chain_id", Text, nullable=False),
+    Column("sequence_number", BigInteger, nullable=False),
+    Column("current_hash", Text, nullable=False),
+    Column("recorded_at", DateTime(timezone=True), nullable=False),
+)
+
 dead_letters = Table(
     "dead_letters", metadata,
     Column("id", BigInteger, primary_key=True),

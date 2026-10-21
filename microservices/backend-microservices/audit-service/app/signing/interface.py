@@ -25,8 +25,17 @@ class SignedCheckpoint:
     idempotent: bool        # True when this was already signed (crash recovery / repeated request)
 
 
+@dataclass
+class SignedArchive:
+    envelope: dict          # manifest, canonical manifest, hash, signature, key id (shared/audit/archive_manifest.py)
+    path: str               # relative path of the protected copy
+    replica: str
+    idempotent: bool
+
+
 class CheckpointSigner(Protocol):
     async def sign_checkpoint(self, chain_id: str, *, end_sequence: Optional[int] = None, proposal: Optional[dict] = None) -> SignedCheckpoint: ...
+    async def sign_archive(self, manifest: dict) -> SignedArchive: ...
     async def status(self) -> dict: ...
     async def public_keys(self) -> dict: ...
     async def rotate(self) -> dict: ...

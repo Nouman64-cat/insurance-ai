@@ -14,11 +14,12 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 from uuid import uuid4
 
+from shared.audit import archive_manifest as am
 from shared.audit import checkpoint as cp
 from shared.audit import hashing
 from shared.audit.signer.config import SignerSettings
 from shared.audit.signer.errors import SignerError
-from shared.audit.signer.files import AlreadyExists, CheckpointStore
+from shared.audit.signer.files import AlreadyExists, ArchiveManifestStore, CheckpointStore
 from shared.audit.signer.key_manager import KeyManager
 from shared.audit.signer.source import DbEventSource
 from shared.audit.signer.state import SignerState
@@ -36,6 +37,8 @@ class SignerService:
         self.settings, self.source, self.clock = settings, source, clock
         self.store = CheckpointStore(settings.checkpoint_dir)
         self.replica = CheckpointStore(settings.replica_dir) if settings.replica_dir else None
+        self.archives = ArchiveManifestStore(settings.checkpoint_dir)
+        self.archive_replica = ArchiveManifestStore(settings.replica_dir) if settings.replica_dir else None
         self.state = SignerState(settings.state_dir)
         self.keys = KeyManager(settings.key_dir, settings.passphrase_file, self.store, settings.signer_id, settings.trust_anchor_fingerprint)
 
@@ -156,8 +159,11 @@ class SignerService:
                 if prev_end:  # history before this checkpoint must still be the history the last checkpoint committed to
                     anchor_event = await snap.event(chain_id, prev_end)
                     if anchor_event is None:
-                        raise SignerError("CHAIN_TRUNCATED", f"event {prev_end}, committed by checkpoint {prev_number}, is no longer in the ledger", 409)
-                    if anchor_event["current_hash"] != previous["last_event_hash"]:
+                        # Events may legitimately have left hot storage, but only after being archived: a manifest THIS signer signed must
+                        # name exactly this event (as the end of the archive) with exactly the hash the checkpoint committed to.
+                        if not self._archived_boundary(env, tenant, registry, prev_end, previous["last_event_hash"]):
+                            raise SignerError("CHAIN_TRUNCATED", f"event {prev_end}, committed by checkpoint {prev_number}, is no longer in the ledger", 409)
+                    elif anchor_event["current_hash"] != previous["last_event_hash"]:
                         raise SignerError("ANCHOR_MISMATCH", f"event {prev_end} no longer matches what checkpoint {prev_number} signed: history was rewritten", 409)
 
                 existing = self.store.read(env, tenant, number)
@@ -188,7 +194,7 @@ class SignerService:
                 envelope = cp.make_envelope(payload, cp.sign_payload(private, payload))
                 return self._store(envelope, env, tenant, chain_id)
 
-    async def _recompute(self, snap, chain_id: str, chain, prev_end: int, end: int, anchor_hash: str) -> str:
+    async def _recompute(self, snap, chain_id: str, chain, prev_end: int, end: int, anchor_hash: str, digest: Optional[am.EventsDigest] = None) -> str:
         running, expected = anchor_hash, prev_end + 1
         async for row in snap.events(chain_id, prev_end, end):
             if row["sequence_number"] != expected:
@@ -206,6 +212,8 @@ class SignerService:
             if calculated != row["current_hash"]:
                 raise SignerError("HASH_CHAIN_BROKEN", f"event {expected} does not match its recorded hash", 409)
             running, expected = row["current_hash"], expected + 1
+            if digest is not None:
+                digest.update(running)
         if expected - 1 != end:
             raise SignerError("SEQUENCE_GAP", f"events {expected}..{end} are missing from the ledger", 409)
         return running
@@ -251,3 +259,153 @@ class SignerService:
 
     def _relative(self, path: Path) -> str:
         return str(Path(path).relative_to(self.store.root))
+
+    # ── archives ─────────────────────────────────────────────────────────────────
+    def _archived_boundary(self, env: str, tenant: Optional[str], registry: TrustRegistry, sequence: int, event_hash: str) -> bool:
+        """True if a signed archive manifest in protected storage ends exactly at `sequence` with `event_hash` (trusted without the ledger)."""
+        for number in reversed(self.archives.numbers(env, tenant)):
+            envelope = self.archives.read(env, tenant, number)
+            try:
+                self._check_stored_archive(envelope, registry)
+            except SignerError:
+                continue
+            m = envelope["manifest"]
+            if m["start_sequence"] <= sequence <= m["end_sequence"]:
+                # Within a signed archive the event is accounted for. If it is the archive's last event its hash is checked outright; otherwise
+                # the checkpoint's own signed hash (our trusted state) stands, and the archive was signed after this signer re-read the range.
+                return m["last_event_hash"] == event_hash if m["end_sequence"] == sequence else True
+            if m["end_sequence"] < sequence:
+                return False
+        return False
+
+    @staticmethod
+    def _check_stored_archive(envelope: Optional[dict], registry: TrustRegistry) -> dict:
+        problem = am.check_envelope(envelope) if envelope else "missing"
+        if problem:
+            raise SignerError("ARCHIVE_STATE_UNUSABLE", f"a stored archive manifest is unusable: {problem}", 500)
+        m = envelope["manifest"]
+        key = registry.get(m["signing_key_id"])
+        if key is None or not key.valid_at(m["signed_at"]) or not am.verify_manifest(key.public_key, m, envelope["signature"]):
+            raise SignerError("ARCHIVE_STATE_UNUSABLE", f"stored archive {m['archive_number']} has no valid trusted signature", 500)
+        return envelope
+
+    def _previous_archive(self, chain_id: str, env: str, tenant: Optional[str], registry: TrustRegistry) -> Optional[dict]:
+        numbers = self.archives.numbers(env, tenant)
+        previous: Optional[dict] = None
+        for expected, number in enumerate(numbers, start=1):
+            if number != expected:
+                raise SignerError("ARCHIVE_STATE_UNUSABLE", f"protected storage is missing archive manifest {expected}", 500)
+            envelope = self._check_stored_archive(self.archives.read(env, tenant, number), registry)
+            m = envelope["manifest"]
+            want_prev = previous["manifest_hash"] if previous else am.archive_genesis_hash(chain_id)
+            want_start = previous["manifest"]["end_sequence"] + 1 if previous else 1
+            if m["chain_id"] != chain_id or m["previous_archive_hash"] != want_prev or m["start_sequence"] != want_start or m["archive_number"] != number:
+                raise SignerError("ARCHIVE_STATE_UNUSABLE", f"stored archive manifest {number} is not linked to its predecessor", 500)
+            previous = envelope
+        return previous
+
+    def _coverage(self, env: str, tenant: Optional[str], m: dict) -> None:
+        """The archive must end on a signed checkpoint boundary and name exactly the checkpoints that cover it: re-derived from OUR store."""
+        cov = m["covered_checkpoints"]
+        digest, previous_end = am.CheckpointsDigest(), m["start_sequence"] - 1
+        for number in range(cov["first_number"], cov["last_number"] + 1):
+            envelope = self.store.read(env, tenant, number)
+            problem = cp.check_envelope(envelope) if envelope else "missing"
+            if problem:
+                raise SignerError("COVERAGE_MISMATCH", f"checkpoint {number} needed to cover the archive is unusable: {problem}", 409)
+            p = envelope["payload"]
+            if p["chain_id"] != m["chain_id"] or p["start_sequence"] != previous_end + 1:
+                raise SignerError("COVERAGE_MISMATCH", f"checkpoint {number} does not continue the archive range", 409)
+            previous_end = p["end_sequence"]
+            digest.update(envelope["checkpoint_hash"])
+            last = envelope
+        if previous_end != m["end_sequence"] or last["payload"]["last_event_hash"] != m["last_event_hash"]:
+            raise SignerError("COVERAGE_MISMATCH", "the archive does not end exactly on a signed checkpoint boundary", 409)
+        if digest.hexdigest() != cov["digest"]:
+            raise SignerError("COVERAGE_MISMATCH", "the named checkpoints are not the ones in protected storage", 409)
+
+    async def sign_archive(self, proposed: dict) -> dict:
+        """Sign an archive manifest. The signer verifies, from its own trusted state and the ledger, that: the chain/tenant/environment are
+        real and consistent; the archive follows the previous signed archive exactly; its range is covered by signed checkpoints and ends on a
+        boundary; and the events in the ledger for the range hash to the claimed last hash and digest. It signs nothing else."""
+        try:
+            claim = am.check_proposed(proposed)
+        except am.ManifestFormatError as exc:
+            raise SignerError("MANIFEST_INVALID", str(exc), 400) from exc
+        env = await self.source.environment_id()
+        self._require_matching_registry(env)
+        if claim["environment_id"] != env:
+            raise SignerError("ENVIRONMENT_MISMATCH", "the manifest names a different environment than this database", 409)
+        trusted_key, private = self.keys.active(env)
+        registry = self.keys.registry(env)
+        chain_id = claim["chain_id"]
+        async with self.state.lock("archive:" + chain_id):
+            async with self.source.snapshot() as snap:
+                chain = await snap.chain(chain_id)
+                if chain is None:
+                    raise SignerError("CHAIN_NOT_FOUND", "no such chain", 404)
+                if str(chain["environment_id"]) != env or hashing.chain_id_for(chain["environment_id"], chain["tenant_id"]) != chain_id \
+                        or chain["genesis_hash"] != hashing.genesis_hash(chain_id):
+                    raise SignerError("CHAIN_IDENTITY_MISMATCH", "the chain's identity is not consistent with its environment and tenant", 409)
+                tenant = str(chain["tenant_id"]) if chain["tenant_id"] else None
+                if tenant != claim["tenant_id"]:
+                    raise SignerError("TENANT_MISMATCH", "the manifest names a different tenant than the chain", 409)
+                if not trusted_key.covers_tenant(tenant):
+                    raise SignerError("KEY_NOT_AUTHORISED", "the active key is not authorised for this tenant", 403)
+
+                previous = self._previous_archive(chain_id, env, tenant, registry)
+                number = (previous["manifest"]["archive_number"] if previous else 0) + 1
+                existing = self.archives.read(env, tenant, claim["archive_number"]) if claim["archive_number"] <= number else None
+                if existing is not None:   # signed and stored before a crash, or asked twice: adopt only if it is the SAME archive
+                    self._check_stored_archive(existing, registry)
+                    old = {k: v for k, v in existing["manifest"].items() if k in am.PROPOSED_FIELDS}
+                    if old != claim:
+                        raise SignerError("ARCHIVE_EXISTS", f"archive manifest {claim['archive_number']} was already signed with different content; it is never replaced", 409)
+                    return {"envelope": existing, "path": self._archive_relative(env, tenant, claim["archive_number"]),
+                            "replica": self._archive_replica(existing, env, tenant), "idempotent": True}
+                want_prev = previous["manifest_hash"] if previous else am.archive_genesis_hash(chain_id)
+                want_first = previous["manifest"]["last_event_hash"] if previous else hashing.genesis_hash(chain_id)
+                want_start = previous["manifest"]["end_sequence"] + 1 if previous else 1
+                for name, want, got in (("archive_number", number, claim["archive_number"]), ("start_sequence", want_start, claim["start_sequence"]),
+                                        ("previous_archive_hash", want_prev, claim["previous_archive_hash"]),
+                                        ("first_previous_hash", want_first, claim["first_previous_hash"])):
+                    if want != got:
+                        raise SignerError("PROPOSAL_MISMATCH", f"the proposed {name} does not follow the last signed archive", 409)
+                if claim["end_sequence"] > chain["head_sequence"]:
+                    raise SignerError("EVENTS_NOT_RECORDED", f"the ledger has only {chain['head_sequence']} events", 409)
+                self._coverage(env, tenant, claim)
+
+                digest = am.EventsDigest()
+                last_hash = await self._recompute(snap, chain_id, chain, claim["start_sequence"] - 1, claim["end_sequence"], want_first, digest)
+                if last_hash != claim["last_event_hash"] or digest.hexdigest() != claim["events_digest"]:
+                    raise SignerError("PROPOSAL_MISMATCH", "the events in the ledger do not match the manifest's last hash or events digest", 409)
+
+                signed_at = max(hashing.format_timestamp(self.clock()), previous["manifest"]["signed_at"] if previous else "")
+                manifest = am.build_manifest(claim, signed_at=signed_at, signer_id=trusted_key.signer_id, signing_key_id=trusted_key.key_id,
+                                             key_version=trusted_key.key_version)
+                envelope = am.make_envelope(manifest, am.sign_manifest(private, manifest))
+                try:
+                    path = self.archives.write(env, tenant, number, envelope)
+                except AlreadyExists as exc:
+                    raise SignerError("ARCHIVE_EXISTS", "an archive manifest with this number already exists; it is never overwritten", 409) from exc
+                except OSError as exc:
+                    raise SignerError("STORAGE_FAILED", f"the protected store is not writable: {exc}", 503) from exc
+                log.info("signed archive %s #%d events %d..%d", chain_id, number, claim["start_sequence"], claim["end_sequence"])
+                return {"envelope": envelope, "path": self._relative(path), "replica": self._archive_replica(envelope, env, tenant), "idempotent": False}
+
+    def _archive_relative(self, env: str, tenant: Optional[str], number: int) -> str:
+        return str(self.archives.path(env, tenant, number).relative_to(self.store.root.resolve()))
+
+    def _archive_replica(self, envelope: dict, env: str, tenant: Optional[str]) -> str:
+        if self.archive_replica is None:
+            return "not_configured"
+        number = envelope["manifest"]["archive_number"]
+        try:
+            self.archive_replica.write(env, tenant, number, envelope)
+            return "ok"
+        except AlreadyExists:
+            return "ok" if self.archive_replica.read(env, tenant, number) == envelope else "conflict"
+        except Exception as exc:
+            if self.settings.replica_required:
+                raise SignerError("REPLICA_FAILED", f"the required replica could not be written: {exc}", 503) from exc
+            return f"failed: {type(exc).__name__}"

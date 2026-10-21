@@ -135,6 +135,35 @@ async def verify_chain(chain_id: str, *, from_sequence: int = 1, to_sequence: Op
             return _finish(result.invalid(GENESIS_MISMATCH, 0, stored=chain.genesis_hash, expected=genesis), started)
 
         previous_hash = genesis if from_sequence == 1 else trusted_previous_hash.lower()  # type: ignore[union-attr]
+        if from_sequence == 1 and trusted_previous_hash is None:
+            # Old events may have been archived and removed from hot storage (Stage 3). The remaining chain is then verified from the
+            # archive boundary: the hot chain must start exactly after an archived range and link to that range's last hash. Whether the
+            # boundary itself is genuine is the anchored verifier's job (it checks the signed manifest); a boundary with no catalog entry is
+            # simply missing history and is reported below as a sequence gap.
+            first_hot = (await conn.execute(text("SELECT min(sequence_number) FROM events WHERE chain_id = :c"), {"c": chain_id})).scalar_one()
+            # No hot events at all but a recorded history: everything has been archived, the hot chain resumes right after the head.
+            start_hot = first_hot if first_hot is not None else (chain.head_sequence + 1 if chain.head_sequence > 0 else None)
+            if start_hot is not None and start_hot > 1:
+                # the archive holding the last event that left hot storage (an archive often extends past the partitions already removed)
+                boundary = (await conn.execute(text("""SELECT archive_id, archive_number, start_sequence, end_sequence, last_event_hash
+                                                       FROM archive_catalog WHERE chain_id = :c AND start_sequence <= :e AND end_sequence >= :e"""),
+                                               {"c": chain_id, "e": start_hot - 1})).first()
+                if boundary is not None:
+                    if boundary.end_sequence == start_hot - 1:
+                        previous_hash, source = boundary.last_event_hash, "the archive's last event hash"
+                    else:
+                        # The archive ends later than the hot chain starts: the starting hash is the first hot event's own previous_hash. It is
+                        # not independently stored, but it is part of that event's hash, which every later signed checkpoint commits to, so
+                        # altering it is caught by anchored verification; the archive itself proves the removed events (deep verification).
+                        previous_hash = (await conn.execute(text("SELECT previous_hash FROM events WHERE chain_id = :c AND sequence_number = :s"),
+                                                            {"c": chain_id, "s": start_hot})).scalar_one_or_none()
+                        source = "the first hot event's previous_hash (authenticated by later signed checkpoints)"
+                    if previous_hash is not None:
+                        from_sequence = start_hot
+                        result.from_sequence = start_hot
+                        result.details["archived_prefix"] = {"through_sequence": start_hot - 1, "archive_number": boundary.archive_number,
+                                                              "archive_id": str(boundary.archive_id), "boundary_hash": previous_hash, "boundary_source": source,
+                                                              "note": "events before this point are in cold storage; the hot chain is verified from the archive boundary"}
         expected = from_sequence
         cursor = from_sequence - 1
         while True:

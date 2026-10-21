@@ -150,10 +150,39 @@ async def add_alert(conn, chain_id: Optional[str], tenant_id: Optional[str], kin
 
 
 async def list_alerts(conn, tenant_id: Optional[str], unrestricted: bool, limit: int = 20) -> list[dict]:
+    """Recent alerts, newest first, each flagged `open` while its condition still exists.
+
+    * checkpoint-creation failures (signer/key/storage/integrity) are open only while that chain's checkpointing is still failing
+      (checkpoint_state.alert_open) and only the newest such alert of the chain counts; a CHECKPOINT_RECOVERED entry closes them;
+    * VERIFICATION_<state> alerts are open only while the chain's latest anchored verification still has that state;
+    * informational entries (key rotated, recovered) are never open."""
     where, params = ("", {"l": limit}) if unrestricted else ("WHERE tenant_id = CAST(:t AS uuid)", {"t": tenant_id, "l": limit})
     rows = (await conn.execute(text(f"SELECT * FROM checkpoint_alerts {where} ORDER BY raised_at DESC, id DESC LIMIT :l"), params)).mappings().all()
-    return [{"id": r["id"], "chain_id": r["chain_id"], "kind": r["kind"], "severity": r["severity"], "message": r["message"],
-             "detail": r["detail"], "raised_at": format_timestamp(r["raised_at"])} for r in rows]
+    failing = {r["chain_id"] for r in (await conn.execute(text("SELECT chain_id FROM checkpoint_state WHERE alert_open"))).mappings().all()}
+    latest_state = {r["chain_id"]: r["state"] for r in (await conn.execute(text(
+        "SELECT DISTINCT ON (chain_id) chain_id, state FROM anchor_verification_runs ORDER BY chain_id, finished_at DESC"))).mappings().all()}
+    failing_archive_chains = {r[0] for r in (await conn.execute(text("SELECT DISTINCT chain_id FROM archive_jobs WHERE state = 'FAILED'"))).all()}
+    counted: set = set()
+    counted_archive: set = set()
+    out = []
+    for r in rows:
+        kind, chain = r["kind"], r["chain_id"]
+        if r["severity"] == "INFO":
+            is_open = False
+        elif kind.startswith("ARCHIVE_"):
+            is_open = chain in failing_archive_chains and chain not in counted_archive
+            if is_open:
+                counted_archive.add(chain)
+        elif kind.startswith("VERIFICATION_"):
+            is_open = latest_state.get(chain) == kind[len("VERIFICATION_"):]
+        elif chain is not None and chain in failing and chain not in counted:
+            is_open = True
+            counted.add(chain)
+        else:
+            is_open = False
+        out.append({"id": r["id"], "chain_id": chain, "kind": kind, "severity": r["severity"], "message": r["message"],
+                    "detail": r["detail"], "raised_at": format_timestamp(r["raised_at"]), "open": is_open})
+    return out
 
 
 async def progress_for_scope(conn, unrestricted: bool, tenant_id: Optional[str]) -> list:

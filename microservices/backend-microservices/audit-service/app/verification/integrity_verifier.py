@@ -25,6 +25,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import text
 
 from app import db
+from app.archive import verify as archive_verify
 from app.checkpoints import repository as repo
 from app.checkpoints.storage import TrustedStorage
 from app.config import settings
@@ -32,6 +33,7 @@ from app.services import chain_verifier
 from app.trust import key_registry
 from app.verification import signature_verifier as sv
 from app.verification.signature_verifier import Finding
+from shared.audit import archive_manifest as am
 from shared.audit import checkpoint as cp
 from shared.audit.hashing import format_timestamp
 from shared.audit.trust import RegistryError
@@ -51,6 +53,8 @@ class AnchoredResult:
     pending_events: int = 0
     checkpoints_checked: int = 0
     last_checkpoint_number: Optional[int] = None
+    archives_checked: int = 0
+    archived_through: Optional[int] = None
     findings: list[Finding] = field(default_factory=list)
     hash_chain: dict = field(default_factory=dict)
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -62,7 +66,8 @@ class AnchoredResult:
             "chain_id": self.chain_id, "tenant_id": self.tenant_id, "state": self.state,
             "hash_chain_valid": self.hash_chain_valid, "signatures_valid": self.signatures_valid, "signer_trusted": self.signer_trusted,
             "anchored": self.anchored, "pending_events": self.pending_events, "checkpoints_checked": self.checkpoints_checked,
-            "last_checkpoint_number": self.last_checkpoint_number, "findings": [f.to_api() for f in self.findings],
+            "last_checkpoint_number": self.last_checkpoint_number, "archives_checked": self.archives_checked,
+            "archived_through": self.archived_through, "findings": [f.to_api() for f in self.findings],
             "hash_chain": self.hash_chain, "verified_at": format_timestamp(self.finished_at or self.started_at), "duration_ms": self.duration_ms,
         }
 
@@ -125,7 +130,9 @@ async def verify_anchored(chain_id: str, *, storage: Optional[TrustedStorage] = 
         _evaluate_trusted(trusted, registry, chain_id, env, result, findings)
         db_by_number = {r.checkpoint_number: r for r in db_rows}
         _compare_database(trusted, db_by_number, registry, chain_id, env, result.tenant_id, findings)
-        await _check_anchors(engine, chain_id, trusted, head, findings)
+        archived = await _check_archives(engine, storage, chain_id, env, result.tenant_id, trusted, findings)
+        result.archives_checked, result.archived_through = archived["checked"], archived["through"] or None
+        await _check_anchors(engine, chain_id, trusted, head, findings, archived)
     elif db_rows and registry is None and not any(f.code.startswith("TRUSTED_") for f in findings):
         findings.append(Finding(sv.VERIFICATION_FAILED, "NO_TRUSTED_REGISTRY", "database checkpoints exist but there is no trusted registry to verify them against"))
 
@@ -197,15 +204,83 @@ def _compare_database(trusted: list[tuple[int, dict]], db_by_number: dict, regis
                                     f"checkpoint {number} is in the database but its protected copy is missing from trusted storage", number, "trusted_storage"))
 
 
-async def _check_anchors(engine, chain_id: str, trusted: list[tuple[int, dict]], head: int, findings: list[Finding]) -> None:
+# manifest finding code -> verification state
+_ARCHIVE_STATE = {"UNTRUSTED_SIGNER": sv.UNTRUSTED_SIGNER, "MANIFEST_SIGNATURE_INVALID": sv.INVALID_SIGNATURE, "TRUSTED_REGISTRY_UNAVAILABLE": sv.VERIFICATION_FAILED,
+                  "TRUSTED_STORAGE_UNAVAILABLE": sv.VERIFICATION_FAILED}
+
+
+async def _check_archives(engine, storage: TrustedStorage, chain_id: str, env: str, tenant: Optional[str], trusted: list[tuple[int, dict]],
+                          findings: list[Finding]) -> dict:
+    """Stage 3: archived history is anchored by SIGNED MANIFESTS from the protected store, never by the catalog table. Returns what the
+    signed manifests prove: {"through": highest archived sequence, "ranges": [(first_checkpoint, last_checkpoint)], "checked": n}."""
+    out = {"through": 0, "ranges": [], "checked": 0}
+    numbers = storage.archive_numbers(env, tenant)
+    async with engine.connect() as conn:
+        rows = {r["archive_number"]: dict(r) for r in (await conn.execute(text("SELECT * FROM archive_catalog WHERE chain_id = :c"), {"c": chain_id})).mappings().all()}
+        first_hot = (await conn.execute(text("SELECT min(sequence_number) FROM events WHERE chain_id = :c"), {"c": chain_id})).scalar_one()
+        head = (await conn.execute(text("SELECT head_sequence FROM chains WHERE chain_id = :c"), {"c": chain_id})).scalar_one()
+    if first_hot is None and head > 0:
+        first_hot = head + 1          # every event has been archived and removed: the hot ledger resumes right after the head
+    checkpoints = {n: e for n, e in trusted}
+    previous: Optional[dict] = None
+    for expected, number in enumerate(numbers, start=1):
+        if number != expected:
+            findings.append(Finding(sv.MISSING_CHECKPOINT, "ARCHIVE_MANIFEST_NUMBER_GAP", f"signed archive manifest {expected} is missing from protected storage", expected, "trusted_storage"))
+            break
+        envelope = storage.read_archive(env, tenant, number)
+        problems: list[archive_verify.Finding] = []
+        if envelope is None or envelope.get("unreadable"):
+            findings.append(Finding(sv.MISSING_CHECKPOINT, "ARCHIVE_MANIFEST_UNREADABLE", f"signed archive manifest {number} is missing or unreadable", number, "trusted_storage"))
+            break
+        manifest = archive_verify.check_manifest_envelope(storage, envelope, rows.get(number), env, tenant, problems, number)
+        for pf in problems:
+            findings.append(Finding(_ARCHIVE_STATE.get(pf.code, sv.CHECKPOINT_MISMATCH), "ARCHIVE_" + pf.code, pf.message, number, "trusted_storage"))
+        if manifest is None:
+            break
+        want_prev = previous["manifest_hash"] if previous else am.archive_genesis_hash(chain_id)
+        want_start = previous["manifest"]["end_sequence"] + 1 if previous else 1
+        if manifest["previous_archive_hash"] != want_prev or manifest["start_sequence"] != want_start or manifest["archive_number"] != number or manifest["chain_id"] != chain_id:
+            findings.append(Finding(sv.CHECKPOINT_MISMATCH, "ARCHIVE_CHAIN_BROKEN", f"archive {number} does not follow archive {number - 1}", number, "trusted_storage"))
+            break
+        cov = manifest["covered_checkpoints"]
+        digest, cursor, ok = am.CheckpointsDigest(), manifest["start_sequence"] - 1, True
+        for n in range(cov["first_number"], cov["last_number"] + 1):
+            e = checkpoints.get(n)
+            if e is None or e["payload"]["start_sequence"] != cursor + 1:
+                ok = False
+                break
+            cursor = e["payload"]["end_sequence"]
+            digest.update(e["checkpoint_hash"])
+        if not ok or cursor != manifest["end_sequence"] or digest.hexdigest() != cov["digest"] or checkpoints[cov["last_number"]]["payload"]["last_event_hash"] != manifest["last_event_hash"]:
+            findings.append(Finding(sv.CHECKPOINT_MISMATCH, "ARCHIVE_NOT_ON_CHECKPOINT_BOUNDARY", f"archive {number} does not end on the signed checkpoints it names", number, "trusted_storage"))
+            break
+        previous = envelope
+        out["through"], out["checked"] = manifest["end_sequence"], out["checked"] + 1
+        out["ranges"].append((cov["first_number"], cov["last_number"]))
+        if number not in rows:
+            findings.append(Finding(sv.MISSING_CHECKPOINT, "ARCHIVE_MISSING_FROM_CATALOG", f"signed archive {number} exists in protected storage but is missing from the catalog", number, "database"))
+    for number in rows:
+        if number not in numbers:
+            findings.append(Finding(sv.CHECKPOINT_MISMATCH, "ARCHIVE_NOT_SIGNED", f"catalog archive {number} has no signed manifest in protected storage; it is not trusted", number, "database"))
+    if first_hot is not None and first_hot > 1 and out["through"] < first_hot - 1:
+        findings.append(Finding(sv.CHECKPOINT_MISMATCH, "HISTORY_NOT_ARCHIVED",
+                                f"events before sequence {first_hot} are not in the ledger and no signed archive covers sequences {out['through'] + 1}..{first_hot - 1}", None, "database"))
+    return out
+
+
+async def _check_anchors(engine, chain_id: str, trusted: list[tuple[int, dict]], head: int, findings: list[Finding], archived: Optional[dict] = None) -> None:
     ends = {env["payload"]["end_sequence"]: (n, env["payload"]["last_event_hash"]) for n, env in trusted if "payload" in env}
     if not ends:
         return
+    archived = archived or {"through": 0, "ranges": []}
     async with engine.connect() as conn:
         rows = (await conn.execute(text("SELECT sequence_number, current_hash FROM events WHERE chain_id = :c AND sequence_number = ANY(:s)"),
                                    {"c": chain_id, "s": list(ends)})).all()
     found = {r.sequence_number: r.current_hash for r in rows}
     for end, (number, expected) in sorted(ends.items()):
+        covered = any(first <= number <= last for first, last in archived["ranges"])
+        if end not in found and covered:
+            continue                       # moved to cold storage: anchored by the signed archive manifest that names this checkpoint
         if end not in found:
             findings.append(Finding(sv.CHECKPOINT_MISMATCH, "CHAIN_TRUNCATED",
                                     f"event {end}, signed in checkpoint {number}, is no longer in the ledger (history was deleted or truncated; the ledger has {head} events)", number, "database"))

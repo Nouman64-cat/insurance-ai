@@ -17,7 +17,8 @@ def get_signer(settings: Settings) -> Optional[CheckpointSigner]:
         return None
     provider = settings.signing_provider
     if provider == "local":
-        return LocalSignerClient(settings.signer_url, settings.signer_service_key, settings.signer_timeout_seconds)
+        return LocalSignerClient(settings.signer_url, settings.signer_service_key, settings.signer_timeout_seconds,
+                                 archive_timeout=settings.archive_signer_timeout_seconds)
     if provider in RESERVED:
         raise UnsupportedProvider(f"signing provider {provider!r} is reserved for a later stage; use AUDIT_SIGNING_PROVIDER=local")
     raise UnsupportedProvider(f"unknown signing provider {provider!r}")

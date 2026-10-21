@@ -158,10 +158,13 @@ insurance-ai/
 │       ├── customer-service/     # FastAPI service desk, isolated PostgreSQL schema, :8018
 │       ├── request-management-service/ # FastAPI request workflows, isolated PostgreSQL schema, :8017
 │       ├── audit-service/        # FastAPI hash-chained audit ledger, isolated PostgreSQL schema `audit`, :8030
+│       ├── audit-signer/         # isolated Ed25519 signer for audit checkpoints and archive manifests (internal only)
 │       └── decision-engine/
+├── infrastructure/
+│   └── minio/                # MinIO AIStor bootstrap for the audit archive (bucket, Object Lock, identities)
 ├── shared/                       # Python code shared by the backend microservices
 │   ├── models/
-│   ├── audit/                    # audit event contract, sanitizer, transactional outbox + relay
+│   ├── audit/                    # audit event contract, sanitizer, transactional outbox + relay, checkpoint/archive manifests, signer
 │   ├── events/
 │   ├── services/
 │   └── underwriting/
@@ -294,6 +297,24 @@ chain and signs a checkpoint with Ed25519; copies are kept outside PostgreSQL, s
 One-time per installation: `docker compose run --rm audit-signer-init` (each developer gets their own keys; nothing secret is committed). See the
 [Stage 2 section of the service README](microservices/backend-microservices/audit-service/README.md#stage-2-signed-checkpoints) for the trust model, key backup/rotation, and
 the manual end-to-end guide.
+
+**Archive & cold storage (Stage 3).** Events older than the hot window (default 6 months) are moved by the Audit Service into **compressed (zstd), encrypted (AES-256-GCM) and signed**
+archives in a local **MinIO AIStor Free** bucket (private, versioned, Object Lock). They stay searchable and verifiable (Audit Trail → **Archive & retention**), retention policies
+and legal holds are configurable, and only fully archived, re-verified months can be removed from PostgreSQL (a separate, confirmed step; automatic cleanup is off by default).
+One-time per installation, with the AIStor Free license file kept **outside** the repository:
+
+```bash
+# .env: MINIO_ROOT_USER, MINIO_ROOT_PASSWORD (16+ chars), AUDIT_ARCHIVE_WRITER_KEY/SECRET, AUDIT_ARCHIVE_READER_KEY/SECRET, AISTOR_LICENSE_FILE=<path to your license file>
+docker compose up -d minio
+docker compose run --rm minio-init            # private bucket + Object Lock + least-privilege identities (idempotent)
+docker compose run --rm audit-archive-init    # archive master key, created once; back it up separately
+docker compose up -d audit-service audit-signer
+docker compose exec audit-service python -m app.archive.cli status
+```
+
+MinIO listens on `127.0.0.1:9000` (S3 API) and `http://localhost:9001` (console, root credentials from `.env`); both are reachable from this machine only. See the
+[Stage 3 section of the service README](microservices/backend-microservices/audit-service/README.md#stage-3-archival-retention-and-cold-storage) for setup, ports,
+Docker commands, backup/restore, troubleshooting, configuration and the trust model.
 
 ## Request Management
 
@@ -459,6 +480,9 @@ A physical device must use an address reachable from the device rather than `loc
 | Customer Service App | http://localhost:3008 |
 | Customer Service Backend | http://localhost:8018 |
 | Request Management Service | http://localhost:8017 |
+| Audit Service   | http://localhost:8030 (via the gateway: `/audit/v1`) |
+| MinIO AIStor S3 API (audit archive) | http://127.0.0.1:9000 (this machine only) |
+| MinIO Console   | http://localhost:9001 (root credentials from `.env`) |
 | Documentation   | http://localhost:4991 |
 | Kafka UI        | http://localhost:8090 |
 | Memgraph Lab    | http://localhost:3001 |

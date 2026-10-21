@@ -9,7 +9,7 @@ from typing import Optional
 
 import httpx
 
-from app.signing.interface import SignedCheckpoint, SigningError
+from app.signing.interface import SignedArchive, SignedCheckpoint, SigningError
 from shared.security import service_auth
 
 CALLER = "audit-service"
@@ -17,10 +17,12 @@ RETRYABLE_HTTP = {429, 500, 502, 503, 504}
 
 
 class LocalSignerClient:
-    def __init__(self, base_url: str, service_key: str, timeout: float = 60.0, transport: Optional[httpx.AsyncBaseTransport] = None):
+    def __init__(self, base_url: str, service_key: str, timeout: float = 60.0, transport: Optional[httpx.AsyncBaseTransport] = None,
+                 archive_timeout: float = 900.0):
         self.base_url, self.service_key, self.timeout, self.transport = base_url.rstrip("/"), service_key, timeout, transport
+        self.archive_timeout = archive_timeout
 
-    async def _call(self, method: str, path: str, payload: Optional[dict] = None) -> dict:
+    async def _call(self, method: str, path: str, payload: Optional[dict] = None, timeout: Optional[float] = None) -> dict:
         body = json.dumps(payload).encode() if payload is not None else b""
         try:
             headers = service_auth.sign(self.service_key, method, path, body, caller=CALLER)
@@ -28,7 +30,7 @@ class LocalSignerClient:
             raise SigningError("SIGNER_NOT_CONFIGURED", "AUDIT_SIGNER_SERVICE_KEY is not set", retryable=False) from None
         headers["content-type"] = "application/json"
         try:
-            async with httpx.AsyncClient(base_url=self.base_url, timeout=self.timeout, transport=self.transport) as client:
+            async with httpx.AsyncClient(base_url=self.base_url, timeout=timeout or self.timeout, transport=self.transport) as client:
                 response = await client.request(method, path, content=body or None, headers=headers)
         except httpx.HTTPError as exc:
             raise SigningError("SIGNER_UNAVAILABLE", f"the signer cannot be reached ({type(exc).__name__})") from exc
@@ -49,6 +51,10 @@ class LocalSignerClient:
             body["proposal"] = proposal
         result = await self._call("POST", "/v1/checkpoints/sign", body)
         return SignedCheckpoint(result["envelope"], result["path"], result["replica"], result["idempotent"])
+
+    async def sign_archive(self, manifest: dict) -> SignedArchive:
+        result = await self._call("POST", "/v1/archives/sign", {"manifest": manifest}, timeout=self.archive_timeout)
+        return SignedArchive(result["envelope"], result["path"], result["replica"], result["idempotent"])
 
     async def status(self) -> dict:
         try:

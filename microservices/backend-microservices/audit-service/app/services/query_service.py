@@ -9,7 +9,9 @@ from uuid import UUID
 from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.models import chains, events, verification_runs
+from app.models import chains, event_sources, events, verification_runs
+from app import demo_tools
+from app.services import source_recovery
 from app.services.hash_chain import format_timestamp
 
 PLATFORM = "platform"
@@ -126,6 +128,64 @@ async def get_event(conn, event_id: UUID, scope: Scope) -> Optional[dict]:
         out[label] = None if neighbour is None else {
             "event_id": str(neighbour.event_id), "sequence_number": neighbour.sequence_number,
             "current_hash": neighbour.current_hash, "previous_hash": neighbour.previous_hash, "action": neighbour.action}
+    return out
+
+
+async def get_missing_event(conn, chain_id: str, sequence: int, scope: Scope, recover: bool = True) -> Optional[dict]:
+    """What the database still knows about a sequence number a verification flagged as missing.
+
+    The event row itself is gone; its original source message may still be recoverable from Kafka. Three independent
+    records survive: the idempotency index (event id, source service and source id, time, hash), and the neighbours on
+    either side, whose previous_hash must equal the missing event's hash. If those agree, the gap is a deletion of
+    exactly that event, not a corrupted link."""
+    chain = (await conn.execute(select(chains.c.chain_id, chains.c.tenant_id, chains.c.environment_id, chains.c.genesis_hash)
+                                .where(chains.c.chain_id == chain_id))).first()
+    if chain is None or (not scope.unrestricted and (scope.tenant_id is None or chain.tenant_id != scope.tenant_id)):
+        return None
+
+    present = (await conn.execute(
+        select(events.c.event_id).where(events.c.chain_id == chain_id, events.c.sequence_number == sequence))).first()
+    source = (await conn.execute(
+        select(event_sources).where(event_sources.c.chain_id == chain_id, event_sources.c.sequence_number == sequence))).first()
+
+    async def neighbour(seq: int) -> Optional[dict]:
+        row = (await conn.execute(
+            select(events.c.event_id, events.c.sequence_number, events.c.current_hash, events.c.previous_hash, events.c.action)
+            .where(events.c.chain_id == chain_id, events.c.sequence_number == seq))).first()
+        return None if row is None else {
+            "event_id": str(row.event_id), "sequence_number": row.sequence_number, "current_hash": row.current_hash,
+            "previous_hash": row.previous_hash, "action": row.action}
+
+    previous_event, next_event = await neighbour(sequence - 1), await neighbour(sequence + 1)
+    recorded = None if source is None else {
+        "event_id": str(source.event_id), "service_name": source.service_name, "source_event_id": source.source_event_id,
+        "recorded_at": format_timestamp(source.recorded_at), "current_hash": source.current_hash}
+    expected_hash = next_event["previous_hash"] if next_event else None
+    out = {
+        "chain_id": chain_id, "sequence_number": sequence,
+        "present": present is not None, "event_id": str(present.event_id) if present else None,
+        "recorded": recorded, "expected_hash": expected_hash,
+        "hash_confirmed": bool(recorded and expected_hash and recorded["current_hash"] == expected_hash),
+        "previous_event": previous_event, "next_event": next_event,
+        "recovered": None,
+    }
+    if recover and present is None:
+        parked = await demo_tools.bin_entry(chain_id, sequence)   # demo mode only: the exact row, no broker needed
+        if parked:
+            out["recovered"] = {"event": parked["event"], "source": "recycle_bin", "partition": None, "offset": None,
+                                "hash_verified": parked["hash_verified"]}
+    if recover and present is None and out["recovered"] is None and source is not None and (previous_event or sequence == 1):
+        found = await source_recovery.recover(
+            source_service=source.service_name, source_event_id=source.source_event_id, recorded_at=source.recorded_at,
+            event_id=source.event_id, environment_id=chain.environment_id, chain_id=chain_id, sequence=sequence,
+            previous_hash=previous_event["current_hash"] if previous_event else chain.genesis_hash)
+        if found and found["record"]["tenant_id"] == chain.tenant_id:
+            record = found["record"]
+            # The proof: the hash recomputed from the recovered fields is the hash the ledger recorded for this sequence.
+            out["recovered"] = {
+                "event": event_to_api(record), "source": "kafka", "partition": found["partition"], "offset": found["offset"],
+                "hash_verified": record["current_hash"] == source.current_hash,
+            }
     return out
 
 

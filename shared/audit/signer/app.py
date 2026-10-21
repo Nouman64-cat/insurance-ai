@@ -29,6 +29,11 @@ class SignRequest(BaseModel):
     proposal: Optional[dict] = None
 
 
+class ArchiveSignRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    manifest: dict      # the proposed manifest (shared/audit/archive_manifest.PROPOSED_FIELDS): checked, never signed blindly
+
+
 def create_app(service: Optional[SignerService] = None, settings: Optional[SignerSettings] = None) -> FastAPI:
     settings = settings or SignerSettings()
     svc = service or SignerService(settings, DbEventSource(settings.database_url, settings.schema))
@@ -63,6 +68,10 @@ def create_app(service: Optional[SignerService] = None, settings: Optional[Signe
     @app.post("/v1/checkpoints/sign", dependencies=[Depends(authenticated)])
     async def sign(body: SignRequest):
         return await svc.sign_checkpoint(body.chain_id, end_sequence=body.end_sequence, proposal=body.proposal)
+
+    @app.post("/v1/archives/sign", dependencies=[Depends(authenticated)])
+    async def sign_archive(body: ArchiveSignRequest):
+        return await svc.sign_archive(body.manifest)
 
     @app.post("/v1/keys/rotate", dependencies=[Depends(authenticated)])
     async def rotate():

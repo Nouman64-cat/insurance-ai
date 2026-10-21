@@ -46,6 +46,35 @@ export interface AuditEventDetail extends AuditEvent {
   next_event: NeighbourEvent | null;
 }
 
+/** What the ledger still knows about a sequence number (the event row itself may be gone). */
+export interface SequenceInfo {
+  chain_id: string;
+  sequence_number: number;
+  present: boolean;
+  event_id: string | null;
+  recorded: { event_id: string; service_name: string; source_event_id: string; recorded_at: string; current_hash: string } | null;
+  expected_hash: string | null;
+  hash_confirmed: boolean;
+  archived?: { archive_id: string; archive_number: number; start_sequence: number; end_sequence: number } | null;
+  recovered?: {
+    event: AuditEvent;
+    source: "kafka" | "recycle_bin";
+    partition: number | null;
+    offset: number | null;
+    hash_verified: boolean;
+  } | null;
+  previous_event: NeighbourEvent | null;
+  next_event: NeighbourEvent | null;
+}
+
+/** Demo-only (ENV_VAR=demo): a deleted event parked in the recycle bin, with its full original content. */
+export interface RecycledEvent {
+  bin_id: string;
+  deleted_at: string;
+  deleted_by: string | null;
+  event: AuditEvent;
+}
+
 export interface EventPage {
   items: AuditEvent[];
   total: number;
@@ -169,7 +198,13 @@ export const auditApi = {
   events: async (f: EventFilters, page: number, pageSize: number) =>
     (await api.get<EventPage>("/audit/v1/events", { params: toParams(f, page, pageSize) })).data,
   event: async (id: string) => (await api.get<AuditEventDetail>(`/audit/v1/events/${id}`)).data,
+  sequence: async (chainId: string, sequence: number) =>
+    (await api.get<SequenceInfo>(`/audit/v1/chains/${encodeURIComponent(chainId)}/sequence/${sequence}`)).data,
   facets: async () => (await api.get<Facets>("/audit/v1/events/facets")).data,
+  demoEnabled: async () => (await api.get<{ enabled: boolean }>("/audit/v1/demo/status")).data.enabled,
+  demoDelete: async (eventId: string) => (await api.post(`/audit/v1/demo/events/${eventId}/delete`)).data,
+  demoBin: async () => (await api.get<{ items: RecycledEvent[] }>("/audit/v1/demo/recycle-bin")).data.items,
+  demoRestore: async (binId: string) => (await api.post(`/audit/v1/demo/recycle-bin/${binId}/restore`)).data,
   chains: async () => (await api.get<{ items: ChainSummary[] }>("/audit/v1/chains")).data.items,
   status: async () => (await api.get<OpsStatus>("/audit/v1/ops/status")).data,
   verify: async (body: { chain_id?: string; tenant_id?: string } = {}) =>
@@ -248,6 +283,8 @@ export interface CheckpointAlert {
   severity: "CRITICAL" | "WARNING" | "INFO";
   message: string;
   raised_at: string;
+  /** True only while the problem still exists; resolved alerts stay in the record but are not shown as current. */
+  open: boolean;
 }
 
 export interface CheckpointStatus {
@@ -463,3 +500,164 @@ export function changeRows(previous: Record<string, unknown> | null, next: Recor
 export function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
 }
+
+// ── Archive & retention (Stage 3) ────────────────────────────────────────────
+
+export type JobState = "ELIGIBLE" | "VERIFYING" | "EXPORTING" | "UPLOADING" | "VALIDATING" | "ARCHIVED" | "HOT_CLEANUP_ELIGIBLE" | "HOT_CLEANUP_COMPLETED" | "FAILED";
+
+export interface ArchiveJob {
+  job_id: string;
+  chain_id: string;
+  tenant_id: string | null;
+  archive_number: number;
+  start_sequence: number;
+  end_sequence: number;
+  event_count: number;
+  state: JobState;
+  resume_state: JobState | null;
+  attempts: number;
+  last_error_code: string | null;
+  last_error: string | null;
+  next_attempt_at: string | null;
+  cleanup_after: string | null;
+  updated_at: string;
+}
+
+export interface ArchiveEntry {
+  archive_id: string;
+  chain_id: string;
+  tenant_id: string | null;
+  archive_number: number;
+  start_sequence: number;
+  end_sequence: number;
+  event_count: number;
+  size_bytes: number;
+  uncompressed_bytes: number;
+  ratio: number | null;
+  compression_algorithm: string;
+  encryption_algorithm: string;
+  first_occurred_at: string;
+  last_occurred_at: string;
+  modules: string[];
+  lock_mode: string | null;
+  lock_retain_until: string | null;
+  retention_until: string | null;
+  cleanup_approved_at: string | null;
+  created_at: string;
+  verifications?: ArchiveVerificationRecord[];
+}
+
+export interface ArchiveVerificationRecord {
+  kind: string;
+  state: "VERIFIED" | "FAILED";
+  code: string | null;
+  verified_at: string;
+  requested_by: string | null;
+}
+
+export interface ArchiveVerificationResult {
+  archive_id: string;
+  state: "VERIFIED" | "FAILED";
+  deep: boolean;
+  findings: Array<{ code: string; message: string }>;
+  details: Record<string, unknown>;
+  duration_ms: number;
+}
+
+export interface ArchivePolicy {
+  category: string;
+  hot_retention_months: number;
+  cold_retention_years: number | null;
+  allow_hot_cleanup: boolean;
+  approved: boolean;
+  scope: string;
+}
+
+export interface LegalHold {
+  hold_id: string;
+  tenant_id: string | null;
+  chain_id: string | null;
+  reason: string;
+  case_reference: string | null;
+  placed_by: string;
+  placed_at: string;
+  active: boolean;
+}
+
+export interface ArchiveStatus {
+  enabled: boolean;
+  config: { hot_retention_months: number; schedule: string; compression: string; encryption: string; bucket: string; auto_hot_cleanup: boolean;
+            cleanup_mode: string; cleanup_safety_days: number; object_lock_mode: string; object_lock_days: number; test_mode: boolean };
+  storage: { reachable: boolean; versioning: boolean | null; object_lock: boolean | null; private: boolean | null; problem: string | null } | null;
+  master_key: { available: boolean } | null;
+  summary: { archives: number; archived_events: number; stored_bytes: number; uncompressed_bytes: number; compression_ratio: number | null;
+             first_event_at: string | null; last_event_at: string | null; last_archived_at: string | null; cleanup_approved: number; jobs: Record<string, number> };
+  hot: { events: number; oldest_event_at: string | null; newest_recorded_at: string | null };
+  pending_jobs: ArchiveJob[];
+  failed_jobs: ArchiveJob[];
+  recent_jobs: ArchiveJob[];
+  holds: LegalHold[];
+  policies: ArchivePolicy[];
+  partitions: Array<{ partition: string; month: string; events: number; bytes: number }> | null;
+}
+
+export interface RetrievalCriteria {
+  chain_id?: string; entity_id?: string; actor_id?: string; case_id?: string; module?: string; action?: string; since?: string; until?: string;
+  from_sequence?: number; to_sequence?: number;
+}
+
+export interface Retrieval {
+  retrieval_id: string;
+  state: "PENDING" | "RUNNING" | "READY" | "FAILED" | "EXPIRED";
+  criteria: RetrievalCriteria;
+  archives: Array<{ archive_id: string; archive_number: number }>;
+  event_count: number;
+  verified: boolean | null;
+  error: string | null;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface ArchivedEvent extends AuditEvent {
+  archived: true;
+  verified: true;
+  archive_id: string;
+}
+
+export interface CleanupPartition {
+  partition: string; month: string; events: number; status: "REMOVABLE" | "BLOCKED" | "KEEP" | "EMPTY"; reasons: string[]; action?: string;
+}
+
+export const archiveApi = {
+  status: async () => (await api.get<ArchiveStatus>("/audit/v1/archive/status")).data,
+  catalog: async (page: number, pageSize: number, chainId?: string) =>
+    (await api.get<{ items: ArchiveEntry[]; total: number }>("/audit/v1/archive/catalog", { params: { page, page_size: pageSize, chain_id: chainId || undefined } })).data,
+  detail: async (id: string) => (await api.get<ArchiveEntry>(`/audit/v1/archive/catalog/${id}`)).data,
+  verify: async (id: string, deep: boolean) => (await api.post<ArchiveVerificationResult>("/audit/v1/archive/verify", { archive_id: id, deep })).data,
+  evidence: async (id: string) => (await api.get<Blob>(`/audit/v1/archive/catalog/${id}/evidence`, { responseType: "blob" })).data,
+  retry: async (jobId: string) => (await api.post(`/audit/v1/archive/jobs/${jobId}/retry`, {})).data,
+  plan: async (dryRun: boolean) => (await api.post<{ dry_run: boolean; planned: Array<{ chain_id: string; start_sequence: number; end_sequence: number }> }>("/audit/v1/archive/run", { dry_run: dryRun })).data,
+  retrieve: async (criteria: RetrievalCriteria) => (await api.post<Retrieval>("/audit/v1/archive/retrievals", criteria)).data,
+  retrieval: async (id: string) => (await api.get<Retrieval>(`/audit/v1/archive/retrievals/${id}`)).data,
+  retrievalEvents: async (id: string, page: number, pageSize: number) =>
+    (await api.get<{ items: ArchivedEvent[]; total: number }>(`/audit/v1/archive/retrievals/${id}/events`, { params: { page, page_size: pageSize } })).data,
+  placeHold: async (body: { tenant_id?: string; chain_id?: string; reason: string; case_reference?: string }) => (await api.post<LegalHold>("/audit/v1/archive/holds", body)).data,
+  releaseHold: async (id: string, reason: string) => (await api.post<LegalHold>(`/audit/v1/archive/holds/${id}/release`, { reason })).data,
+  cleanupPlan: async () => (await api.get<{ partitions: CleanupPartition[]; automatic: boolean; mode: string }>("/audit/v1/archive/cleanup/plan")).data,
+  cleanup: async (dryRun: boolean) =>
+    (await api.post<{ removed_months: string[]; partitions: CleanupPartition[] }>("/audit/v1/archive/cleanup", dryRun ? { dry_run: true } : { dry_run: false, confirm: "REMOVE-HOT-PARTITIONS" })).data,
+};
+
+export function formatBytes(n: number | null | undefined): string {
+  if (n == null) return "—";
+  if (n < 1024) return `${n} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = n / 1024, i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v.toFixed(v >= 100 ? 0 : 1)} ${units[i]}`;
+}
+
+export const JOB_LABEL: Record<JobState, string> = {
+  ELIGIBLE: "Planned", VERIFYING: "Verifying", EXPORTING: "Exporting", UPLOADING: "Uploading", VALIDATING: "Validating", ARCHIVED: "Archived",
+  HOT_CLEANUP_ELIGIBLE: "Ready for hot cleanup", HOT_CLEANUP_COMPLETED: "Hot copy removed", FAILED: "Failed",
+};

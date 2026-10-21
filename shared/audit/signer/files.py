@@ -10,6 +10,7 @@ from shared.audit.signer.errors import SignerError
 
 _UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _FILE = re.compile(r"^checkpoint-(\d{6,12})\.json$")
+_ARCHIVE_FILE = re.compile(r"^archive-(\d{6,12})\.json$")
 
 
 class AlreadyExists(SignerError):
@@ -142,3 +143,26 @@ class CheckpointStore:
 
     def write_registry(self, data: dict) -> None:
         replace_atomic(self.registry_path, dumps(data), mode=0o444)
+
+
+class ArchiveManifestStore(CheckpointStore):
+    """<root>/archives/<environment_id>/<tenant_id | platform>/archive-000001.json : signed archive manifests, same rules as checkpoints
+    (written once, never overwritten, durable). Lives under the same protected root, outside PostgreSQL."""
+
+    def directory(self, environment_id: str, tenant_id: Optional[str]) -> Path:
+        env, tenant = self._component(environment_id, "environment_id"), self._component(tenant_id, "tenant_id")
+        path = (self.root / "archives" / env / tenant).resolve()
+        if (self.root.resolve() / "archives") not in path.parents:
+            raise SignerError("BAD_IDENTIFIER", "path escapes the archive manifest store", 400)
+        return path
+
+    def path(self, environment_id: str, tenant_id: Optional[str], number: int) -> Path:
+        if not isinstance(number, int) or not 1 <= number <= 10**9:
+            raise SignerError("BAD_IDENTIFIER", "archive number out of range", 400)
+        return self.directory(environment_id, tenant_id) / f"archive-{number:06d}.json"
+
+    def numbers(self, environment_id: str, tenant_id: Optional[str]) -> list[int]:
+        directory = self.directory(environment_id, tenant_id)
+        if not directory.is_dir():
+            return []
+        return sorted(int(m.group(1)) for f in directory.iterdir() if (m := _ARCHIVE_FILE.match(f.name)))

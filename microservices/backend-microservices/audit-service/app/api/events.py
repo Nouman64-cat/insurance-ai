@@ -4,7 +4,8 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from sqlalchemy import text
 
 from app import db
 from app.auth import Identity, current_identity, scope_for
@@ -64,6 +65,23 @@ async def get_event(event_id: UUID, identity: Identity = Depends(current_identit
     if event is None:
         raise HTTPException(404, "Audit event not found")
     return event
+
+
+@router.get("/chains/{chain_id}/sequence/{sequence}", summary="What survives about one sequence number (used when a verification reports it missing)")
+async def get_sequence(chain_id: str, sequence: int = Path(ge=1), identity: Identity = Depends(current_identity)):
+    async with db.engine().connect() as conn:
+        found = await query_service.get_missing_event(conn, chain_id, sequence, scope_for(identity))
+    if found is None:
+        raise HTTPException(404, "Chain not found")
+    found["archived"] = None
+    if not found.get("present"):   # not "missing" if it moved to cold storage: say which signed archive holds it
+        async with db.engine().connect() as conn:
+            arch = (await conn.execute(text("""SELECT archive_id, archive_number, start_sequence, end_sequence FROM archive_catalog
+                                               WHERE chain_id = :c AND start_sequence <= :s AND end_sequence >= :s"""), {"c": chain_id, "s": sequence})).first()
+        if arch is not None:
+            found["archived"] = {"archive_id": str(arch.archive_id), "archive_number": arch.archive_number,
+                                 "start_sequence": arch.start_sequence, "end_sequence": arch.end_sequence}
+    return found
 
 
 @router.get("/chains", summary="The chains you can see, with head and latest verification")
