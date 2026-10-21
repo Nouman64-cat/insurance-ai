@@ -1,5 +1,6 @@
 "use client";
 
+import { runOperation, browserOperationScope, operationHeaders } from "@/lib/idempotency";
 import { displayDate } from '../../lib/dateDisplay';
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -101,9 +102,10 @@ export default function ClaimsPanel({ tenantId, orgId, mp }: PanelProps) {
     setSplit((await api.post<PayoutSplit>(`/tenants/${tenantId}/claims/${c.id}/payout-split`, overrideBody())).data);
   });
   const pay = (c: GroupClaim) => run("Pay", async () => {
-    const res = await api.post(`/tenants/${tenantId}/claims/${c.id}/group-payout`, {
-      ...overrideBody(), reference_number: payRef.trim() || undefined, confirm_no_nominee: confirmNoNominee,
-    });
+    const res = await runOperation(browserOperationScope(), `group-payout:${c.id}`, operationKey =>
+      api.post(`/tenants/${tenantId}/claims/${c.id}/group-payout`, {
+        ...overrideBody(), reference_number: payRef.trim() || undefined, confirm_no_nominee: confirmNoNominee,
+      }, { headers: operationHeaders(operationKey) }));
     setNotice(tx("{0} paid: {1} to {2} payee{3}.", { 0: res.data.claim_number, 1: pkr(res.data.total), 2: res.data.payouts.length, 3: res.data.payouts.length === 1 ? "" : "s" }));
     setSplit(null); setOverride(null); await load();
   });

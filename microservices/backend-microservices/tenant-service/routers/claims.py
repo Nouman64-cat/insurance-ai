@@ -13,6 +13,8 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
+from shared.idempotency.http import database_operation
+from services.idempotency import payout_identity
 from routers.auth import _get_current_user, _role_name, oauth2_scheme
 from shared.models.core import (
     ClaimAuthorityLimit,
@@ -957,6 +959,7 @@ async def adjudicate_claim(
 async def assert_claim_payable(session: AsyncSession, tenant_id: UUID, claim: Claim, amount: float) -> None:
     """The gates every disbursement passes: an approved claim, at least one document,
     and no more than was approved. Raises the same 400s the payout endpoint always did."""
+    await session.refresh(claim, with_for_update=True)
     if claim.status not in (ClaimStatusEnum.APPROVED, ClaimStatusEnum.PARTIAL_APPROVAL):
         raise HTTPException(
             status_code=400,
@@ -1043,6 +1046,7 @@ async def settle_claim_with_payouts(
 
 
 @router.post("/{claim_id}/payout", status_code=201, summary="Initiate Claim Disbursement Payout")
+@database_operation("tenant.claim.payout", response_fields=("id", "claim_id", "amount", "method", "status", "reference_number", "initiated_at", "completed_at"), status_code=201, resource_type="claim_payout", authorize=payout_identity)
 async def create_claim_payout(
     tenant_id: UUID,
     claim_id: UUID,

@@ -59,6 +59,7 @@ async def test_concurrent_initiations_both_succeed_and_leave_one_row():
         results = await asyncio.gather(*[_initiate(tenant_id, case_id) for _ in range(6)], return_exceptions=True)
         failures = [r for r in results if isinstance(r, Exception)]
         assert not failures, failures
+        assert len({r.payment["reference"] for r in results}) == 1, "Retries must keep the same provider reference"
         async with _session_factory() as session:
             rows = (await session.exec(select(InitialPremiumPayment).where(InitialPremiumPayment.case_id == case_id))).all()
             assert len(rows) == 1 and rows[0].status == IPPStatusEnum.INITIATED and rows[0].amount > 0

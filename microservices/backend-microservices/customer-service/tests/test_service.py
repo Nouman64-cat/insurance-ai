@@ -7,6 +7,10 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 import main, migrate, provision
 
+async def await_ticket(client, payload):
+ body=dict(payload); key=body.pop('idempotency_key')
+ return await client.post('/v1/tickets',json=body,headers={'Idempotency-Key':key})
+
 class Tickets(unittest.IsolatedAsyncioTestCase):
  async def asyncSetUp(self):
   self.db='cs_test_'+uuid4().hex[:10]
@@ -29,10 +33,21 @@ class Tickets(unittest.IsolatedAsyncioTestCase):
   await self.admin.dispose()
  async def ticket(self):
   self.payload={'title':'Test enquiry','description':'Please explain policy servicing','idempotency_key':str(uuid4())}
-  r=await self.client.post('/v1/tickets',json=self.payload);self.assertEqual(r.status_code,200,r.text);return r.json()
+  r=await await_ticket(self.client, self.payload);self.assertEqual(r.status_code,200,r.text);return r.json()
+ async def test_header_is_required_and_payload_key_is_not_accepted(self):
+  body={'title':'Header test','description':'A valid ticket description'}
+  self.assertEqual((await self.client.post('/v1/tickets',json=body)).status_code,400)
+  self.assertEqual((await self.client.post('/v1/tickets',json=body,headers={'Idempotency-Key':'bad'})).status_code,400)
+  key=str(uuid4())
+  first=await self.client.post('/v1/tickets',json=body,headers={'Idempotency-Key':key})
+  self.assertEqual(first.status_code,200,first.text)
+  other=await self.client.post('/v1/tickets',json=body,headers={'Idempotency-Key':str(uuid4())})
+  self.assertNotEqual(first.json()['id'],other.json()['id'])
+  self.assertEqual((await self.client.post('/v1/tickets',json={**body,'idempotency_key':key},headers={'Idempotency-Key':key})).status_code,422)
+
  async def test_idempotency_and_payload_conflict(self):
-  t=await self.ticket();r=await self.client.post('/v1/tickets',json=self.payload);self.assertEqual(t['id'],r.json()['id'])
-  self.payload['title']='Different enquiry';self.assertEqual((await self.client.post('/v1/tickets',json=self.payload)).status_code,409)
+  t=await self.ticket();r=await await_ticket(self.client, self.payload);self.assertEqual(t['id'],r.json()['id'])
+  self.payload['title']='Different enquiry';self.assertEqual((await await_ticket(self.client, self.payload)).status_code,409)
  async def test_tenant_and_requester_isolation(self):
   t=await self.ticket();self.user['id']=str(uuid4())
   self.assertEqual((await self.client.get('/v1/tickets/'+t['id'])).status_code,404)
@@ -67,7 +82,7 @@ class Tickets(unittest.IsolatedAsyncioTestCase):
   client=AsyncMock();client.get.return_value=httpx.Response(403)
   with patch('main.httpx.AsyncClient') as factory:
    factory.return_value.__aenter__.return_value=client
-   self.assertEqual((await self.client.post('/v1/tickets',json=payload)).status_code,422)
+   self.assertEqual((await await_ticket(self.client, payload)).status_code,422)
   self.assertEqual((await self.client.get('/v1/tickets')).json()['total'],0)
  async def test_demo_seed_is_guarded_and_idempotent(self):
   self.user.update(staff=True,can_work=True,role_name='Admin')
@@ -86,7 +101,7 @@ class Tickets(unittest.IsolatedAsyncioTestCase):
    self.assertFalse((await c.execute(text("SELECT has_table_privilege(current_user,'customer_service.events','UPDATE')"))).scalar())
 
  async def make(self,title,priority='NORMAL'):
-  r=await self.client.post('/v1/tickets',json={'title':title,'description':'Please look into this one','priority':priority,'idempotency_key':str(uuid4())});self.assertEqual(r.status_code,200,r.text);return r.json()
+  r=await await_ticket(self.client, {'title':title,'description':'Please look into this one','priority':priority,'idempotency_key':str(uuid4())});self.assertEqual(r.status_code,200,r.text);return r.json()
  async def test_views_and_summary_tell_the_desk_what_needs_a_person(self):
   self.user.update(staff=True,can_work=True,role_name='CustomerService')
   a=await self.make('Late one','URGENT');b=await self.make('Taken one');c=await self.make('Waiting one');d=await self.make('Done one')
@@ -122,10 +137,16 @@ class Tickets(unittest.IsolatedAsyncioTestCase):
   import json,sys
   sys.path.insert(0,'/app/shared_copy') if False else None
   import hashlib,hmac,time
+  operation_key=body.get('idempotency_key') if body else None
+  body={k:v for k,v in body.items() if k!='idempotency_key'} if body is not None else None
   data=json.dumps(body).encode() if body is not None else b''
   ts=str(int(time.time()));key=key if key is not None else os.environ['CS_PORTAL_KEY']
   sig=hmac.new(key.encode(),f"{ts}\n{method}\n{path}\n{hashlib.sha256(data).hexdigest()}".encode(),hashlib.sha256).hexdigest()
   h={'x-service-signature':sig,'x-service-timestamp':ts,'x-service-caller':'customer-management','x-portal-tenant':tenant or self.tenant,'x-portal-customer':customer or self.cust,'x-portal-name':'Sana Customer','content-type':'application/json'}
+  if operation_key: h['Idempotency-Key']=operation_key
+  from shared.security.service_auth import sign
+  context={k:v for k,v in h.items() if k.startswith('x-portal-') or k=='Idempotency-Key'}
+  h.update(sign(key,method,path,data,caller='customer-management',bound_headers=context))
   return self.client.request(method,path,content=data,headers=h)
  async def test_portal_customer_tickets(self):
   os.environ.setdefault('CS_PORTAL_KEY','k'*32);self.tenant=str(uuid4());self.cust=str(uuid4());B='/internal/v1/portal/tickets'
@@ -167,14 +188,18 @@ class Tickets(unittest.IsolatedAsyncioTestCase):
    self.assertEqual((await self.client.get('/v1/tickets',headers=h)).status_code,401)                       # off: no way in without signing in
   with patch.object(main,'OPEN_DESK',True),patch.object(main,'OPEN_TENANT',tenant):
    self.assertEqual((await self.client.get('/v1/tickets')).status_code,401)                                 # needs the open-desk header
-   self.assertEqual((await self.client.get('/v1/tickets',headers={**h,'authorization':'Bearer x'})).status_code,401)   # a token means normal sign-in
+   # Keep this auth-path test independent of a live tenant-service's availability.
+   from unittest.mock import AsyncMock
+   with patch('main.httpx.AsyncClient') as auth_client:
+    auth_client.return_value.__aenter__.return_value.get = AsyncMock(return_value=httpx.Response(401))
+    self.assertEqual((await self.client.get('/v1/tickets',headers={**h,'authorization':'Bearer x'})).status_code,401)
    me=(await self.client.get('/v1/me',headers=h)).json();self.assertEqual((me['role_name'],me['tenant_id'],me['can_work']),('ServiceDesk',tenant,True))
    # a customer's ticket in that tenant, then the desk works it; another tenant's ticket stays invisible
    cust=str(uuid4());other=str(uuid4())
    body={'title':'Portal question','description':'Where is my receipt please','idempotency_key':str(uuid4())}
    async with main.engine.begin() as c:
     for t_,n in ((tenant,'mine'),(other,'theirs')):
-     await main.insert_ticket(main.Create(**{**body,'idempotency_key':str(uuid4())}),{'id':cust,'tenant_id':t_,'full_name':n,'email':n})
+     await main.insert_ticket(main.Create(**{k:v for k,v in body.items() if k!='idempotency_key'}),{'id':cust,'tenant_id':t_,'full_name':n,'email':n},uuid4())
    items=(await self.client.get('/v1/tickets',headers=h)).json()['items'];self.assertEqual([i['requester_name'] for i in items],['mine'])
    i=items[0];ok=await self.client.post(f"/v1/tickets/{i['id']}/assignment",json={'version':i['version'],'user_id':str(main.OPEN_ACTOR)},headers=h);self.assertEqual(ok.status_code,200,ok.text)
    self.assertEqual((await self.client.post(f"/v1/tickets/{i['id']}/comments",json={'body':'Sent it to you'},headers=h)).status_code,200)

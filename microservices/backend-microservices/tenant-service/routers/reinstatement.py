@@ -907,7 +907,7 @@ async def withdraw_reinstatement(
 
     refund_ref = None
     if case.payment_realized_at and case.payment_amount > 0:
-        refund = payment_gateway.refund_payment(case.payment_amount)
+        refund = payment_gateway.refund_payment(case.payment_amount, reference=payment_gateway.operation_reference("reinstatement-refund", case.id))
         refund_ref = refund.reference
         case.refund_reference = refund_ref
     case.status = "Withdrawn"

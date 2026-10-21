@@ -2178,6 +2178,9 @@ async def run_migrations() -> None:
         # 3. Create any tables that do not yet exist (fully idempotent).
         await conn.run_sync(SQLModel.metadata.create_all)
         log.info("create_all complete")
+        # Additive service-owned idempotency migration; no existing identities are dropped.
+        from shared.idempotency.models import metadata as idempotency_metadata
+        await conn.run_sync(idempotency_metadata.create_all)
 
     # 2. Apply column / index changes to existing tables in individual transactions.
     v2_done = await _rule_engine_v2_applied()

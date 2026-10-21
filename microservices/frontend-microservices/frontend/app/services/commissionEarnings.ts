@@ -1,3 +1,4 @@
+import { operationHeaders } from "@/lib/idempotency";
 import api from './api';
 
 export interface CommissionValues { rate_pct: string; gross_amount: string; disburse_date: string | null }
@@ -53,11 +54,11 @@ export const reconcileReceipts = async (receipt_ids: string[]) => (await api.pos
 export const loadDisbursementCandidates = async (offset = 0) => (await api.get<DisbursementCandidates>(`${base()}/disbursements/eligible`, {...auth(), params: {offset}})).data;
 export const loadDisbursements = async (offset = 0) => (await api.get<Disbursement[]>(`${base()}/disbursements`, {...auth(), params: {offset}})).data;
 export const loadDisbursement = async (id: string) => (await api.get<DisbursementDetail>(`${base()}/disbursements/${id}`, auth())).data;
-export const createDisbursement = async (earning_ids: string[]) => (await api.post<Disbursement>(`${base()}/disbursements`, {earning_ids}, auth())).data;
-export const submitDisbursement = async (id: string) => (await api.post(`${base()}/disbursements/${id}/submit`, {}, auth())).data;
-export const approveDisbursement = async (id: string) => (await api.post(`${base()}/disbursements/${id}/approve`, {}, auth())).data;
-export const rejectDisbursement = async (id: string, reason: string) => (await api.post(`${base()}/disbursements/${id}/reject`, {reason}, auth())).data;
-export const recordDisbursementPayment = async (id: string, payment_reference: string, confirmed: boolean) => (await api.post(`${base()}/disbursements/${id}/record-payment`, {payment_reference, confirmed}, auth())).data;
+export const createDisbursement = async (earning_ids: string[], operationKey: string) => (await api.post<Disbursement>(`${base()}/disbursements`, {earning_ids}, {headers: {...auth().headers, ...operationHeaders(operationKey)}})).data;
+export const submitDisbursement = async (id: string, operationKey: string) => (await api.post(`${base()}/disbursements/${id}/submit`, {}, {headers: {...auth().headers, ...operationHeaders(operationKey)}})).data;
+export const approveDisbursement = async (id: string, operationKey: string) => (await api.post(`${base()}/disbursements/${id}/approve`, {}, {headers: {...auth().headers, ...operationHeaders(operationKey)}})).data;
+export const rejectDisbursement = async (id: string, reason: string, operationKey: string) => (await api.post(`${base()}/disbursements/${id}/reject`, {reason}, {headers: {...auth().headers, ...operationHeaders(operationKey)}})).data;
+export const recordDisbursementPayment = async (id: string, payment_reference: string, confirmed: boolean, operationKey: string) => (await api.post(`${base()}/disbursements/${id}/record-payment`, {payment_reference, confirmed}, {headers: {...auth().headers, ...operationHeaders(operationKey)}})).data;
 
 export const updateEarning = async (id: string, body: {rate_pct: string; disburse_date: string; reason: string; expected_revision: number}) =>
   (await api.patch<Earning>(`${base()}/earnings/${encodeURIComponent(id)}`, body, auth())).data;

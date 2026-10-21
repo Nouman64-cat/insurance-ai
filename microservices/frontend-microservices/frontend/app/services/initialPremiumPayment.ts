@@ -1,3 +1,4 @@
+import { runOperation, browserOperationScope, operationHeaders } from "@/lib/idempotency";
 import api from "./api";
 
 const tenantId = () => (typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "");
@@ -57,16 +58,18 @@ export function initiatePolicyIPP(policyId: string, method?: string): Promise<In
   const key = `${policyId}|${method ?? ""}`;
   const running = initiating.get(key);
   if (running) return running;
-  const request = api
-    .post(`/tenants/${tenantId()}/policies/${policyId}/ipp/initiate`, { method })
-    .then((res) => res.data as Initiation)
+  const request = runOperation(browserOperationScope(), `ipp-initiate:${policyId}`, async operationKey =>
+    (await api.post(`/tenants/${tenantId()}/policies/${policyId}/ipp/initiate`, { method }, {headers: operationHeaders(operationKey)})).data as Initiation)
     .finally(() => initiating.delete(key));
   initiating.set(key, request);
   return request;
 }
 
 export async function confirmPolicyIPP(policyId: string, opts: { method?: string; reference?: string; realize?: boolean } = {}): Promise<IPP> {
-  return (await api.post(`/tenants/${tenantId()}/policies/${policyId}/ipp/confirm`, { realize: true, ...opts })).data;
+  return runOperation(browserOperationScope(), `ipp-confirm:${policyId}`, async operationKey =>
+    (await api.post(`/tenants/${tenantId()}/policies/${policyId}/ipp/confirm`, { realize: true, ...opts },
+      { headers: operationHeaders(operationKey) })).data);
+
 }
 
 /** Ask the customer to pay: sends them a secure link by email (and shows it in their walk-in portal). Calling it again renews the link. */

@@ -1,3 +1,4 @@
+import { runOperation, browserOperationScope, operationHeaders } from "@/lib/idempotency";
 import api from "./api";
 
 const tenantId = () =>
@@ -269,12 +270,14 @@ export async function initiatePayment(
   method?: string
 ): Promise<{ policy_id: string; amount_due: number; payment: PaymentIntent; available_payment_methods: PaymentMethod[] }> {
   const tid = tenantId();
+  return runOperation(browserOperationScope(), `premium-initiate:${policyId}`, async key => {
   const res = await api.post(
     `/tenants/${tid}/policies/${policyId}/payments/initiate`,
     { method },
-    { headers: { "X-Tenant-Id": tid } }
+    { headers: { "X-Tenant-Id": tid, ...operationHeaders(key) } }
   );
   return res.data;
+  });
 }
 
 export async function confirmPayment(

@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 import migrate
 import re, asyncio
+from shared.idempotency.http import required_uuid_header
 from shared.audit.context import CorrelationContextMiddleware
 from shared.audit.outbox import KafkaPublisher as AuditPublisher, OutboxRelay, build_intent, enqueue
 
@@ -75,7 +76,6 @@ class Create(Strict):
     priority:Literal['LOW','NORMAL','HIGH','URGENT']='NORMAL'
     customer_id:UUID|None=None
     policy_id:UUID|None=None
-    idempotency_key:UUID
 class Change(Strict):
     version:int=Field(ge=1)
     status:Literal['OPEN','IN_PROGRESS','WAITING_CUSTOMER','RESOLVED','CLOSED','CANCELLED']
@@ -168,7 +168,8 @@ async def listing(page:int=Query(1,ge=1),page_size:int=Query(20,ge=1,le=100),sta
         rows=(await c.execute(text("SELECT *, (due_at<now() AND status NOT IN ('RESOLVED','CLOSED','CANCELLED')) AS overdue FROM customer_service.tickets WHERE "+where+" ORDER BY "+order+" LIMIT :limit OFFSET :offset"),args)).mappings().all()
     return {'items':[dict(r) for r in rows],'total':total,'page':page,'page_size':page_size}
 @app.post('/v1/tickets')
-async def create(body:Create,u=Depends(identity)):
+async def create(body:Create,request:Request,u=Depends(identity)):
+    key=required_uuid_header(request)
     # Validate linked records through the owning service using the caller's credentials.
     async with httpx.AsyncClient(timeout=15) as client:
         for kind,id in [('customers',body.customer_id),('policies',body.policy_id)]:
@@ -177,10 +178,10 @@ async def create(body:Create,u=Depends(identity)):
                 except httpx.HTTPError: raise HTTPException(503,'Record validation unavailable')
                 if r.status_code!=200: raise HTTPException(422,'Linked record is unavailable or inaccessible')
                 if kind=='policies' and body.customer_id and str(r.json().get('customer_id'))!=str(body.customer_id): raise HTTPException(422,'Policy does not belong to the selected customer')
-    return await insert_ticket(body,u)
-async def insert_ticket(body,u):
+    return await insert_ticket(body,u,key)
+async def insert_ticket(body,u,key):
     """Create the ticket (idempotent on the key). Shared by staff/portal users and by customers signed in to the customer portal."""
-    args=body.model_dump();args.update(id=uuid4(),t=UUID(u['tenant_id']),r=UUID(u['id']),n=u.get('full_name') or u['email'],due=datetime.now(timezone.utc)+timedelta(hours={'LOW':120,'NORMAL':72,'HIGH':24,'URGENT':4}[body.priority]))
+    args=body.model_dump();args.update(idempotency_key=key,id=uuid4(),t=UUID(u['tenant_id']),r=UUID(u['id']),n=u.get('full_name') or u['email'],due=datetime.now(timezone.utc)+timedelta(hours={'LOW':120,'NORMAL':72,'HIGH':24,'URGENT':4}[body.priority]))
     async with engine.begin() as c:
         row=(await c.execute(text("INSERT INTO customer_service.tickets(id,tenant_id,requester_id,requester_name,customer_id,policy_id,title,description,category,priority,idempotency_key,due_at) VALUES (:id,:t,:r,:n,:customer_id,:policy_id,:title,:description,:category,:priority,:idempotency_key,:due) ON CONFLICT(tenant_id,requester_id,idempotency_key) DO NOTHING RETURNING *"),args)).mappings().first()
         if row: await event(c,row['id'],u,'CREATED',body.description)
@@ -245,8 +246,11 @@ async def portal_identity(req: Request):
     ts=req.headers.get('x-service-timestamp',''); sig=req.headers.get('x-service-signature','')
     path=req.url.path+('?'+req.url.query if req.url.query else '')
     body=await req.body()
-    ok=bool(key) and req.headers.get('x-service-caller')=='customer-management' and ts.isdigit() and abs(time.time()-int(ts))<=300 and \
-        hmac.compare_digest(hmac.new(key.encode(),f"{ts}\n{req.method.upper()}\n{path}\n{hashlib.sha256(body).hexdigest()}".encode(),hashlib.sha256).hexdigest(),sig)
+    from shared.security.service_auth import verify
+    ok=req.headers.get('x-service-caller')=='customer-management' and verify(key,req.method,path,body,req.headers)
+    # The operation key must be bound to the signature, otherwise a captured
+    # request could be replayed with a new key to create another ticket.
+    if req.headers.get('idempotency-key') and req.headers.get('x-service-signature-version')!='2': ok=False
     if not ok: raise HTTPException(401,'Invalid service signature')
     try: t=UUID(req.headers['x-portal-tenant']); cid=UUID(req.headers['x-portal-customer'])
     except (KeyError,ValueError): raise HTTPException(400,'Customer not named')
@@ -257,7 +261,6 @@ class PortalCreate(Strict):
     description:str=Field(min_length=10,max_length=5000)
     category:Literal['GENERAL','POLICY_SERVICING','BILLING','CLAIM_ENQUIRY','COMPLAINT','DOCUMENTS']='GENERAL'
     policy_id:UUID|None=None
-    idempotency_key:UUID
 class PortalReply(Strict):
     body:str=Field(min_length=1,max_length=5000)
 @app.get('/internal/v1/portal/tickets')
@@ -267,10 +270,11 @@ async def portal_list(u=Depends(portal_identity)):
         rows=(await c.execute(text("SELECT id,title,category,status,priority,created_at,updated_at,policy_id,(due_at<now() AND status NOT IN ('RESOLVED','CLOSED','CANCELLED')) AS overdue FROM customer_service.tickets WHERE "+where+" ORDER BY updated_at DESC LIMIT 100"),args)).mappings().all()
     return {'items':[dict(r) for r in rows]}
 @app.post('/internal/v1/portal/tickets')
-async def portal_create(body:PortalCreate,u=Depends(portal_identity)):
+async def portal_create(body:PortalCreate,request:Request,u=Depends(portal_identity)):
+    key=required_uuid_header(request)
     # priority and the customer link are decided here, not by the browser; the policy was checked by Customer Management
-    full=Create(title=body.title,description=body.description,category=body.category,priority='NORMAL',customer_id=UUID(u['id']),policy_id=body.policy_id,idempotency_key=body.idempotency_key)
-    return await insert_ticket(full,u)
+    full=Create(title=body.title,description=body.description,category=body.category,priority='NORMAL',customer_id=UUID(u['id']),policy_id=body.policy_id)
+    return await insert_ticket(full,u,key)
 def portal_view(d):
     keep=('id','title','description','category','status','resolution','created_at','updated_at','policy_id','version')
     return {**{k:d.get(k) for k in keep},'events':[{k:e[k] for k in ('id','actor_name','kind','body','created_at')} for e in d.get('events',[]) if e['kind'] in ('CREATED','REPLY','STATUS')]}

@@ -83,6 +83,29 @@ async def _bump(conn: AsyncConnection, request_id: UUID, **fields: Any) -> None:
 
 
 async def _replay(conn, identity, scope, key, body) -> Optional[dict]:
+    if not key:
+        return None
+    # A receipt proves an earlier action, not the caller's current permission.
+    # Check capability without reapplying the old version/status transition.
+    action, request_id = scope.split(":", 1)
+    req = await records.load_request(conn, UUID(request_id), identity.tenant_id)
+    rel = workflow.relation(identity, req)
+    if not rel.can_view:
+        raise ApiError(404, "NOT_FOUND", "Request not found")
+    rtype = get_type(req["request_type"])
+    if action == "submit":
+        allowed = rel.is_requester and identity.role in rtype.submit_roles
+    elif action == "resubmit":
+        allowed = rel.is_requester
+    elif action in ("approve", "reject"):
+        allowed = rel.can_review_type and rel.is_assignee and not rel.is_requester
+    elif action == "retry":
+        allowed = not rel.is_requester and (rel.is_admin or (
+            rel.can_review_type and req.get("decided_by") == identity.user_id))
+    else:
+        allowed = False
+    if not allowed:
+        raise forbidden("You're not allowed to do this on this request.", code="ACTION_NOT_ALLOWED", action=action)
     return await records.idempotent_replay(conn, tenant_id=identity.tenant_id, actor_id=identity.user_id, scope=scope, key=key, body=body)
 
 
@@ -101,14 +124,22 @@ async def create_draft(identity: Identity, body: dict, idem_key: Optional[str]) 
     title, priority = _title(body.get("title")), _priority(body.get("priority"))
     payload = rtype.parse(body.get("payload") or {}, partial=True)
     request_id = uuid4()
+    from shared.idempotency import reserve, complete, fingerprint, IdempotencyError
+    reservation = None
     try:
         async with db.transaction() as conn:
             if idem_key:
+                reservation = await reserve(conn, scope_id=f"tenant:{identity.tenant_id}", operation="request.create",
+                    key=idem_key, request_hash=fingerprint(body, actor_id=identity.user_id))
+                if reservation.replay:
+                    return UUID(reservation.response['request_id'])
                 existing = (await conn.execute(text(
                     "SELECT id FROM requests WHERE tenant_id = :t AND requester_id = :u AND create_key = :k"
                 ), {"t": identity.tenant_id, "u": identity.user_id, "k": idem_key})).scalar()
                 if existing:
-                    return existing
+                    # The pre-migration key has no immutable request fingerprint.
+                    # Do not silently reuse it for a potentially different draft.
+                    raise ApiError(409, "LEGACY_IDEMPOTENCY_REVIEW_REQUIRED", "This legacy operation already exists; open the existing request.")
             reference = await records.next_reference(conn, identity.tenant_id)
             await conn.execute(text("""
                 INSERT INTO requests (id, tenant_id, reference_no, request_type, title, priority, requester_id, requester_name,
@@ -123,15 +154,11 @@ async def create_draft(identity: Identity, body: dict, idem_key: Optional[str]) 
             """), {"id": uuid4(), "r": request_id, "t": identity.tenant_id, "p": j(payload), "u": identity.user_id})
             await audit(conn, tenant_id=identity.tenant_id, request_id=request_id, event_type="CREATED", actor_id=identity.user_id,
                         actor_name=identity.name, actor_role=identity.role, revision_no=1, to_review="DRAFT", to_execution="NOT_APPLICABLE")
-    except IntegrityError:
-        # The same Idempotency-Key raced in twice: the first one won.
-        async with db.transaction() as conn:
-            existing = (await conn.execute(text(
-                "SELECT id FROM requests WHERE tenant_id = :t AND requester_id = :u AND create_key = :k"
-            ), {"t": identity.tenant_id, "u": identity.user_id, "k": idem_key})).scalar()
-        if existing:
-            return existing
-        raise
+            if reservation:
+                await complete(conn, reservation, http_status=200, response={"request_id": str(request_id)},
+                               resource_type="service_request", resource_id=request_id)
+    except IdempotencyError as exc:
+        raise ApiError(exc.status, exc.code, exc.code, {"retry_after": exc.retry_after}) from exc
     return request_id
 
 
