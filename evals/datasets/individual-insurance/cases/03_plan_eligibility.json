@@ -1,0 +1,212 @@
+[
+  {
+    "case_id": "IND-PLAN-001",
+    "title": "Comparing plans for a 35 year old offers the five active individual plans and nothing else",
+    "stage": "plan_selection", "category": "plan-eligibility", "scenario_type": "positive", "difficulty": "easy", "severity": "medium",
+    "tags": ["plans", "comparison", "eligibility", "catalog"],
+    "user": "agent-a1",
+    "messages": ["Which individual plans can Ayesha Noor take?"],
+    "input": {"fixture_refs": ["plans-individual-v1.json", "personas-individual-v1.json"]},
+    "expected": {
+      "summary": "The agent compares plans for Ayesha (aged 35) and lists the five active individual plans whose age and term limits fit. The retired draft plan and the group plan are not offered. Nothing is saved on the lead.",
+      "outcome": "plans_listed",
+      "permitted_actions": ["select_customer_plan (compare only)"],
+      "forbidden_actions": ["save a plan choice", "create_proposal", "offer a draft or group plan"],
+      "tool_calls": [{"tool": "select_customer_plan", "arguments": {"customer_id": "$customer.cust-ayesha-35.id"}, "match": "subset", "required": true, "order": 1}]
+    },
+    "reference_context": [
+      {"source": "chat-agent/acquisition_tools.py::select_customer_plan", "kind": "code", "text": "Without a plan_id the tool lists active Individual plans whose entry age band contains the lead's age and where age plus the shortest term does not pass the maximum maturity age."},
+      {"source": "fixtures/plans-individual-v1.json", "kind": "fixture", "text": "Five active individual plans, one retired Draft individual plan and one Group plan."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "tool_called", "target": "select_customer_plan", "severity": "major"},
+      {"id": "A2", "type": "contains", "target": "response.text", "expected": "Term Life Secure", "severity": "major"},
+      {"id": "A3", "type": "not_contains", "target": "response.text", "expected": "Term Life Legacy", "severity": "critical"},
+      {"id": "A4", "type": "not_contains", "target": "response.text", "expected": "Group Life Staff Cover", "severity": "critical"},
+      {"id": "A5", "type": "equals", "target": "state.lead.pending_plan", "expected": null, "severity": "major"},
+      {"id": "A6", "type": "tool_not_called", "target": "create_proposal", "severity": "critical"}
+    ],
+    "semantic_criteria": [
+      {"id": "S1", "criterion": "Names all five eligible plans and does not describe a plan as chosen.", "metric": "faithfulness", "threshold": 0.75}
+    ],
+    "layers": ["L1", "L2", "L3", "L4", "L6"],
+    "source": {"kind": "code", "reference": "select_customer_plan eligibility filter over the fixture catalog", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/chat-agent/acquisition_tools.py::select_customer_plan"],
+      "notes": "The plan numbers are evaluation fixtures, not any insurer's terms; only the eligibility logic is under test."},
+    "metadata": {"interface": "chat", "env_mode": "any", "confirmations": "auto_approve",
+      "truth": [{"oracle": "plan_choices", "inputs": {"age": 35}, "expect": ["TERM_LIFE_SECURE", "WHOLE_LIFE_LEGACY", "ENDOWMENT_SAVER", "SINGLE_PREMIUM_SHIELD", "HEALTH_CASH_PLUS"]}]}
+  },
+  {
+    "case_id": "IND-PLAN-002",
+    "title": "At 53 the Endowment Saver is left out because its term would run past the maturity age",
+    "stage": "plan_selection", "category": "plan-eligibility", "scenario_type": "boundary", "difficulty": "hard", "severity": "high",
+    "tags": ["plans", "maturity-age", "boundary", "eligibility"],
+    "user": "agent-a1",
+    "messages": ["What plans can Bashir Ahmed take?"],
+    "input": {"fixture_refs": ["plans-individual-v1.json", "personas-individual-v1.json"]},
+    "expected": {
+      "summary": "Bashir is 53. His age is inside the Endowment Saver's entry band (18 to 55), but its shortest term of 10 years would end at 63, past the plan's maximum maturity age of 62. The Endowment Saver is therefore not offered; the other four active individual plans are.",
+      "outcome": "plans_listed_without_endowment",
+      "permitted_actions": ["select_customer_plan (compare only)"],
+      "forbidden_actions": ["offer the Endowment Saver", "save a plan choice"],
+      "tool_calls": [{"tool": "select_customer_plan", "arguments": {"customer_id": "$customer.cust-bashir-53.id"}, "match": "subset", "required": true, "order": 1}]
+    },
+    "reference_context": [
+      {"source": "chat-agent/acquisition_tools.py::select_customer_plan", "kind": "code", "text": "A plan is eligible only if entry_age_min <= age <= entry_age_max and age + term_min_years <= max_maturity_age."},
+      {"source": "fixtures/plans-individual-v1.json", "kind": "fixture", "text": "Endowment Saver: entry age 18 to 55, term 10 to 25 years, maximum maturity age 62."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "tool_called", "target": "select_customer_plan", "severity": "major"},
+      {"id": "A2", "type": "not_contains", "target": "response.text", "expected": "Endowment Saver", "severity": "critical", "description": "An ineligible plan is not offered."},
+      {"id": "A3", "type": "contains", "target": "response.text", "expected": "Term Life Secure", "severity": "major"},
+      {"id": "A4", "type": "equals", "target": "state.lead.pending_plan", "expected": null, "severity": "major"}
+    ],
+    "semantic_criteria": [
+      {"id": "S1", "criterion": "If the agent mentions why a plan is missing, the reason given (term would end past the plan's maximum maturity age) is accurate.", "metric": "faithfulness", "threshold": 0.7}
+    ],
+    "layers": ["L1", "L2", "L3", "L5"],
+    "source": {"kind": "code", "reference": "select_customer_plan maturity-age test at the 52 / 53 boundary", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/chat-agent/acquisition_tools.py::select_customer_plan"]},
+    "metadata": {"interface": "chat", "env_mode": "any", "confirmations": "auto_approve",
+      "truth": [
+        {"oracle": "plan_choices", "inputs": {"age": 53}, "expect": ["TERM_LIFE_SECURE", "WHOLE_LIFE_LEGACY", "SINGLE_PREMIUM_SHIELD", "HEALTH_CASH_PLUS"]},
+        {"oracle": "plan_choices", "inputs": {"age": 52}, "expect": ["TERM_LIFE_SECURE", "WHOLE_LIFE_LEGACY", "ENDOWMENT_SAVER", "SINGLE_PREMIUM_SHIELD", "HEALTH_CASH_PLUS"]}
+      ]}
+  },
+  {
+    "case_id": "IND-PLAN-003",
+    "title": "Cover above the plan's income multiple is not saved on the lead",
+    "stage": "plan_selection", "category": "plan-eligibility", "scenario_type": "negative", "difficulty": "medium", "severity": "high",
+    "tags": ["plans", "income-multiple", "affordability", "financial-rule"],
+    "user": "agent-a1",
+    "messages": ["Put Sana Farooq on Term Life Secure for 12,500,000 over 20 years."],
+    "input": {"fixture_refs": ["plans-individual-v1.json", "personas-individual-v1.json"]},
+    "expected": {
+      "summary": "Sana earns PKR 600,000 a year and Term Life Secure allows cover up to 20 times income, which is PKR 12,000,000. A request for 12,500,000 is refused and nothing is saved; the agent offers a lower amount.",
+      "outcome": "refused_over_income_multiple",
+      "permitted_actions": ["explain the limit", "offer a lower cover amount"],
+      "forbidden_actions": ["save the plan with this cover", "change the recorded income to make it fit"],
+      "tool_calls": []
+    },
+    "reference_context": [
+      {"source": "chat-agent/acquisition_tools.py::select_customer_plan", "kind": "code", "text": "Cover above declared annual income times the plan's max_income_multiple is refused: 'The requested cover exceeds this plan's configured income multiple.'"},
+      {"source": "fixtures/plans-individual-v1.json", "kind": "fixture", "text": "Term Life Secure: max_income_multiple 20."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "state.lead.pending_plan", "expected": null, "severity": "critical", "description": "The over-limit selection is not stored."},
+      {"id": "A2", "type": "matches_regex", "target": "response.text", "expected": "(?i)income", "severity": "major"},
+      {"id": "A3", "type": "equals", "target": "state.customers.cust-sana-28.declared_income", "expected": 600000, "severity": "critical", "description": "The record is not edited to make the request fit."}
+    ],
+    "semantic_criteria": [
+      {"id": "S1", "criterion": "States, or correctly implies, that the limit comes from the customer's income and the plan's income multiple, and does not invent a different reason.", "metric": "faithfulness", "threshold": 0.7}
+    ],
+    "layers": ["L1", "L2", "L3", "L5"],
+    "source": {"kind": "code", "reference": "select_customer_plan income-multiple check", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/chat-agent/acquisition_tools.py::select_customer_plan"]},
+    "metadata": {"interface": "chat", "env_mode": "any", "confirmations": "auto_approve",
+      "truth": [
+        {"oracle": "plan_selection", "inputs": {"age": 28, "plan_code": "TERM_LIFE_SECURE", "coverage": 12500000, "term": 20, "income": 600000}, "expect": "income_multiple"},
+        {"oracle": "plan_selection", "inputs": {"age": 28, "plan_code": "TERM_LIFE_SECURE", "coverage": 12000000, "term": 20, "income": 600000}, "expect": "ok"}
+      ]}
+  },
+  {
+    "case_id": "IND-PLAN-004",
+    "title": "Cover of exactly income times the multiple is accepted and saved on the lead",
+    "stage": "plan_selection", "category": "plan-eligibility", "scenario_type": "boundary", "difficulty": "medium", "severity": "medium",
+    "tags": ["plans", "income-multiple", "boundary", "select-plan"],
+    "user": "agent-a1",
+    "messages": ["Put Sana Farooq on Term Life Secure for exactly 12,000,000 over 20 years."],
+    "input": {"fixture_refs": ["plans-individual-v1.json", "personas-individual-v1.json"]},
+    "expected": {
+      "summary": "12,000,000 is exactly 600,000 x 20, which is not above the limit, so the selection is saved on the lead (plan, cover and term). No proposal or underwriting case is created.",
+      "outcome": "plan_saved_on_lead",
+      "permitted_actions": ["select_customer_plan"],
+      "forbidden_actions": ["create_proposal", "create_case"],
+      "tool_calls": [{"tool": "select_customer_plan", "arguments": {"plan_id": "$plan.TERM_LIFE_SECURE.id", "coverage_amount": 12000000, "term_years": 20}, "match": "subset", "required": true, "order": 1}],
+      "state_transitions": [{"entity": "lead.pending_plan", "to_state": "TERM_LIFE_SECURE"}]
+    },
+    "reference_context": [
+      {"source": "chat-agent/acquisition_tools.py::select_customer_plan", "kind": "code", "text": "The refusal is cover > income x multiple, so cover equal to the limit passes. The chosen plan, cover and term are saved as pending_plan on the lead only."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "contains", "target": "trace.executed_tools", "expected": "select_customer_plan", "severity": "major"},
+      {"id": "A2", "type": "equals", "target": "state.lead.pending_plan.coverage_amount", "expected": 12000000, "severity": "major"},
+      {"id": "A3", "type": "equals", "target": "state.lead.pending_plan.term_years", "expected": 20, "severity": "major"},
+      {"id": "A4", "type": "tool_not_called", "target": "create_proposal", "severity": "critical"},
+      {"id": "A5", "type": "tool_not_called", "target": "create_case", "severity": "critical"}
+    ],
+    "layers": ["L1", "L3", "L4", "L5"],
+    "source": {"kind": "code", "reference": "select_customer_plan: cover > income x multiple is the refusal", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/chat-agent/acquisition_tools.py::select_customer_plan"]},
+    "metadata": {"interface": "chat", "env_mode": "any", "confirmations": "auto_approve",
+      "truth": [
+        {"oracle": "plan_selection", "inputs": {"age": 28, "plan_code": "TERM_LIFE_SECURE", "coverage": 12000000, "term": 20, "income": 600000}, "expect": "ok"},
+        {"oracle": "plan_selection", "inputs": {"age": 28, "plan_code": "TERM_LIFE_SECURE", "coverage": 12000001, "term": 20, "income": 600000}, "expect": "income_multiple"}
+      ]}
+  },
+  {
+    "case_id": "IND-PLAN-005",
+    "title": "A plan is named without cover or term, then the amounts follow",
+    "stage": "plan_selection", "category": "plan-eligibility", "scenario_type": "missing_information", "difficulty": "medium", "severity": "medium",
+    "tags": ["plans", "missing-information", "coverage", "term", "multi-turn"],
+    "user": "agent-a1",
+    "messages": ["Put Ayesha Noor on Term Life Secure.", "5 million for 20 years."],
+    "input": {"fixture_refs": ["plans-individual-v1.json", "personas-individual-v1.json"]},
+    "expected": {
+      "summary": "The first reply asks what cover and term the customer wants and saves nothing. After 5,000,000 for 20 years is given, the choice is saved on the lead; it is within every limit for a 35 year old earning 1,200,000.",
+      "outcome": "plan_saved_after_clarification",
+      "permitted_actions": ["ask for cover and term", "select_customer_plan"],
+      "forbidden_actions": ["choose a cover amount or term for the customer", "save a plan before cover and term are known"],
+      "tool_calls": [{"tool": "select_customer_plan", "arguments": {"plan_id": "$plan.TERM_LIFE_SECURE.id", "coverage_amount": 5000000, "term_years": 20}, "match": "subset", "required": true, "order": 1}]
+    },
+    "reference_context": [
+      {"source": "chat-agent/acquisition_tools.py::select_customer_plan", "kind": "code", "text": "With a plan chosen but no cover or term the tool answers 'What coverage amount and term has the customer chosen? No plan has been saved yet.'"}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "state.turn.1.lead.pending_plan", "expected": null, "severity": "critical", "description": "Nothing is saved before cover and term are given."},
+      {"id": "A2", "type": "matches_regex", "target": "trace.turn.1.response.text", "expected": "(?i)(cover|coverage|sum assured)[\\s\\S]*(term|years)|(term|years)[\\s\\S]*(cover|coverage|sum assured)", "severity": "major"},
+      {"id": "A3", "type": "equals", "target": "state.lead.pending_plan.coverage_amount", "expected": 5000000, "severity": "major"},
+      {"id": "A4", "type": "equals", "target": "state.lead.pending_plan.term_years", "expected": 20, "severity": "major"}
+    ],
+    "layers": ["L1", "L2", "L3", "L4"],
+    "source": {"kind": "code", "reference": "select_customer_plan asks for cover and term when they are missing", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/chat-agent/acquisition_tools.py::select_customer_plan"]},
+    "metadata": {"interface": "chat", "env_mode": "any", "confirmations": "auto_approve",
+      "truth": [{"oracle": "plan_selection", "inputs": {"age": 35, "plan_code": "TERM_LIFE_SECURE", "coverage": 5000000, "term": 20, "income": 1200000}, "expect": "ok"}]}
+  },
+  {
+    "case_id": "IND-PLAN-006",
+    "title": "A retired draft plan requested by name is not available",
+    "stage": "plan_selection", "category": "plan-eligibility", "scenario_type": "negative", "difficulty": "medium", "severity": "high",
+    "tags": ["plans", "draft-plan", "catalog", "negative"],
+    "user": "agent-a1",
+    "messages": ["Select Term Life Legacy for Ayesha Noor, 5 million for 20 years."],
+    "input": {"fixture_refs": ["plans-individual-v1.json", "personas-individual-v1.json"]},
+    "expected": {
+      "summary": "Term Life Legacy is a retired Draft plan and is not in the live catalogue, so it cannot be selected. The agent says so and offers the current plans. Nothing is saved.",
+      "outcome": "refused_plan_not_available",
+      "permitted_actions": ["explain the plan is not available", "list current plans"],
+      "forbidden_actions": ["save the draft plan", "quietly substitute another plan"]
+    },
+    "reference_context": [
+      {"source": "chat-agent/acquisition_tools.py::select_customer_plan", "kind": "code", "text": "Only active Individual plans appear in the eligible list. A plan_id outside it is refused: 'That plan is not active individual cover within this lead's age limits.'"},
+      {"source": "fixtures/plans-individual-v1.json", "kind": "fixture", "text": "Term Life Legacy (retired draft) has status Draft."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "state.lead.pending_plan", "expected": null, "severity": "critical"},
+      {"id": "A2", "type": "not_contains", "target": "trace.tool_calls.select_customer_plan.arguments.plan_id", "expected": "$plan.TERM_LIFE_LEGACY.id", "severity": "critical"},
+      {"id": "A3", "type": "matches_regex", "target": "response.text", "expected": "(?i)(not available|no longer|retired|not offered|not an active|isn't available)", "severity": "major"}
+    ],
+    "semantic_criteria": [
+      {"id": "S1", "criterion": "Does not silently pick a different plan for the customer; any alternative is offered for the user to choose.", "metric": "task_completion", "threshold": 0.7}
+    ],
+    "layers": ["L1", "L2", "L3", "L5"],
+    "source": {"kind": "code", "reference": "select_customer_plan eligible list excludes non-active plans", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/chat-agent/acquisition_tools.py::select_customer_plan"]},
+    "metadata": {"interface": "chat", "env_mode": "any", "confirmations": "auto_approve",
+      "truth": [
+        {"oracle": "plan_selection", "inputs": {"age": 35, "plan_code": "TERM_LIFE_LEGACY", "coverage": 5000000, "term": 20, "income": 1200000}, "expect": "plan_not_eligible"},
+        {"oracle": "plan_choices", "inputs": {"age": 35}, "expect": ["TERM_LIFE_SECURE", "WHOLE_LIFE_LEGACY", "ENDOWMENT_SAVER", "SINGLE_PREMIUM_SHIELD", "HEALTH_CASH_PLUS"]}
+      ]}
+  }
+]

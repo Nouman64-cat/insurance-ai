@@ -1,0 +1,774 @@
+[
+  {
+    "case_id": "IND-LEAD-001",
+    "title": "Agent records a new lead from a name, a phone number and a city",
+    "stage": "lead",
+    "category": "lead-onboarding",
+    "scenario_type": "positive",
+    "difficulty": "easy",
+    "severity": "medium",
+    "tags": [
+      "lead",
+      "record-lead",
+      "agent",
+      "acquisition"
+    ],
+    "user": "agent-a1",
+    "messages": [
+      "Record a new lead: Farah Naeem, phone 0311-5550120, she lives in Multan."
+    ],
+    "expected": {
+      "summary": "A lead is saved with the name, phone and city exactly as given, assigned to the agent who recorded it. No proposal, case or underwriting step is started.",
+      "outcome": "lead_recorded",
+      "permitted_actions": [
+        "record_lead"
+      ],
+      "forbidden_actions": [
+        "create_proposal",
+        "create_case",
+        "invent details that were not given"
+      ],
+      "tool_calls": [
+        {
+          "tool": "record_lead",
+          "arguments": {
+            "first_name": "Farah",
+            "last_name": "Naeem",
+            "phone": "0311-5550120",
+            "city": "Multan"
+          },
+          "match": "subset",
+          "required": true,
+          "order": 1
+        }
+      ],
+      "routing": {
+        "agent": "general_agent",
+        "skills": [
+          "lead-customer-acquisition"
+        ]
+      }
+    },
+    "reference_context": [
+      {
+        "source": "chat-agent/acquisition_tools.py::record_lead",
+        "kind": "code",
+        "text": "A lead needs a real first name and a phone of 10 to 15 digits. Only supplied details are saved, the lead is assigned to the signed-in agent, and no proposal, case or underwriting record is created."
+      }
+    ],
+    "assertions": [
+      {
+        "id": "A1",
+        "type": "tool_called",
+        "target": "record_lead",
+        "severity": "major"
+      },
+      {
+        "id": "A2",
+        "type": "equals",
+        "target": "trace.tool_calls.record_lead.arguments.phone",
+        "expected": "0311-5550120",
+        "severity": "major",
+        "description": "The phone number is copied exactly."
+      },
+      {
+        "id": "A3",
+        "type": "tool_not_called",
+        "target": "create_proposal",
+        "severity": "critical"
+      },
+      {
+        "id": "A4",
+        "type": "tool_not_called",
+        "target": "create_case",
+        "severity": "critical"
+      },
+      {
+        "id": "A5",
+        "type": "equals",
+        "target": "state.lead.profile_status",
+        "expected": "LEAD",
+        "severity": "major"
+      },
+      {
+        "id": "A6",
+        "type": "is_true",
+        "target": "state.lead.assigned_to_actor",
+        "severity": "major"
+      }
+    ],
+    "semantic_criteria": [
+      {
+        "id": "S1",
+        "criterion": "Confirms the lead was recorded and suggests a sensible next step (assessing the lead or comparing plans) without saying a proposal or case exists.",
+        "metric": "task_completion",
+        "threshold": 0.7
+      }
+    ],
+    "layers": [
+      "L1",
+      "L2",
+      "L3",
+      "L4",
+      "L6"
+    ],
+    "source": {
+      "kind": "code",
+      "reference": "record_lead handler and RecordLeadArgs",
+      "verification": "code_verified",
+      "code_refs": [
+        "microservices/backend-microservices/chat-agent/acquisition_tools.py::record_lead",
+        "microservices/backend-microservices/chat-agent/tools.py::RecordLeadArgs",
+        "microservices/backend-microservices/tenant-service/routers/customers.py::create_customer"
+      ],
+      "notes": "A customer with only a name and phone gets profile status LEAD (create_customer: no date of birth, income or occupation)."
+    },
+    "metadata": {
+      "interface": "chat",
+      "env_mode": "any",
+      "confirmations": "auto_approve",
+      "truth": [
+        {
+          "oracle": "lead_phone_ok",
+          "inputs": {
+            "phone": "0311-5550120"
+          },
+          "expect": true
+        }
+      ]
+    }
+  },
+  {
+    "case_id": "IND-LEAD-002",
+    "title": "Agent adds a lead without a phone number, then supplies it",
+    "stage": "lead",
+    "category": "lead-onboarding",
+    "scenario_type": "missing_information",
+    "difficulty": "easy",
+    "severity": "high",
+    "tags": [
+      "lead",
+      "missing-phone",
+      "clarification",
+      "multi-turn"
+    ],
+    "user": "agent-a1",
+    "messages": [
+      "Add a new lead for Bilal Chaudhry.",
+      "His number is 0300-5550142."
+    ],
+    "expected": {
+      "summary": "The first reply asks for the phone number and saves nothing. After the number is given, the lead is saved with it. A phone number is never invented.",
+      "outcome": "lead_recorded_after_clarification",
+      "permitted_actions": [
+        "ask for the phone number",
+        "record_lead"
+      ],
+      "forbidden_actions": [
+        "record a lead before a phone number is given",
+        "make up a phone number"
+      ],
+      "tool_calls": [
+        {
+          "tool": "record_lead",
+          "arguments": {
+            "first_name": "Bilal",
+            "last_name": "Chaudhry",
+            "phone": "0300-5550142"
+          },
+          "match": "subset",
+          "required": true,
+          "order": 1
+        }
+      ]
+    },
+    "reference_context": [
+      {
+        "source": "chat-agent/tools.py::RecordLeadArgs",
+        "kind": "code",
+        "text": "phone is a required field described as the customer's actual number: 'Do not invent contact details.'"
+      }
+    ],
+    "assertions": [
+      {
+        "id": "A1",
+        "type": "equals",
+        "target": "trace.turn.1.executed_tools",
+        "expected": [],
+        "severity": "critical",
+        "description": "Nothing is saved while the phone number is missing."
+      },
+      {
+        "id": "A2",
+        "type": "matches_regex",
+        "target": "trace.turn.1.response.text",
+        "expected": "(?i)(phone|mobile|contact number)",
+        "severity": "major"
+      },
+      {
+        "id": "A3",
+        "type": "contains",
+        "target": "trace.turn.2.executed_tools",
+        "expected": "record_lead",
+        "severity": "major"
+      },
+      {
+        "id": "A4",
+        "type": "equals",
+        "target": "trace.tool_calls.record_lead.arguments.phone",
+        "expected": "0300-5550142",
+        "severity": "major"
+      }
+    ],
+    "semantic_criteria": [
+      {
+        "id": "S1",
+        "criterion": "Asks only for what is missing (the phone number) instead of requesting a full customer form.",
+        "metric": "relevance",
+        "threshold": 0.7
+      }
+    ],
+    "layers": [
+      "L1",
+      "L2",
+      "L3",
+      "L4",
+      "L6"
+    ],
+    "source": {
+      "kind": "code",
+      "reference": "RecordLeadArgs.phone is required; record_lead rejects a missing or malformed phone",
+      "verification": "code_verified",
+      "code_refs": [
+        "microservices/backend-microservices/chat-agent/tools.py::RecordLeadArgs",
+        "microservices/backend-microservices/chat-agent/acquisition_tools.py::record_lead"
+      ]
+    },
+    "metadata": {
+      "interface": "chat",
+      "env_mode": "any",
+      "confirmations": "auto_approve",
+      "truth": [
+        {
+          "oracle": "lead_phone_ok",
+          "inputs": {
+            "phone": "0300-5550142"
+          },
+          "expect": true
+        }
+      ]
+    }
+  },
+  {
+    "case_id": "IND-LEAD-003",
+    "title": "A nine-digit phone number is refused, a ten-digit one is accepted",
+    "stage": "lead",
+    "category": "lead-onboarding",
+    "scenario_type": "boundary",
+    "difficulty": "medium",
+    "severity": "medium",
+    "tags": [
+      "lead",
+      "phone-validation",
+      "boundary",
+      "multi-turn"
+    ],
+    "user": "agent-a1",
+    "messages": [
+      "Record a lead: Hina Raza, phone 030055501, Karachi.",
+      "Sorry, I missed a digit. The number is 0300555010."
+    ],
+    "expected": {
+      "summary": "A phone number with 9 digits is below the 10 digit minimum, so no lead is saved and the agent asks for a valid number. Once the 10 digit number is given, the lead is saved.",
+      "outcome": "lead_recorded_after_correction",
+      "permitted_actions": [
+        "ask for a valid phone number",
+        "record_lead"
+      ],
+      "forbidden_actions": [
+        "save the lead with the 9 digit number"
+      ],
+      "tool_calls": [
+        {
+          "tool": "record_lead",
+          "arguments": {
+            "first_name": "Hina",
+            "last_name": "Raza",
+            "phone": "0300555010",
+            "city": "Karachi"
+          },
+          "match": "subset",
+          "required": true,
+          "order": 1
+        }
+      ]
+    },
+    "reference_context": [
+      {
+        "source": "chat-agent/acquisition_tools.py::record_lead",
+        "kind": "code",
+        "text": "The phone may contain digits, spaces, brackets and dashes with an optional leading +, and must hold between 10 and 15 digits."
+      }
+    ],
+    "assertions": [
+      {
+        "id": "A1",
+        "type": "equals",
+        "target": "trace.turn.1.executed_tools",
+        "expected": [],
+        "severity": "critical",
+        "description": "No lead is saved with a 9 digit number."
+      },
+      {
+        "id": "A2",
+        "type": "contains",
+        "target": "trace.turn.2.executed_tools",
+        "expected": "record_lead",
+        "severity": "major"
+      },
+      {
+        "id": "A3",
+        "type": "equals",
+        "target": "trace.tool_calls.record_lead.arguments.phone",
+        "expected": "0300555010",
+        "severity": "major"
+      }
+    ],
+    "semantic_criteria": [
+      {
+        "id": "S1",
+        "criterion": "Explains that the number looks too short and asks for it again, without guessing the missing digit.",
+        "metric": "correctness",
+        "threshold": 0.7
+      }
+    ],
+    "layers": [
+      "L1",
+      "L2",
+      "L3",
+      "L4",
+      "L5"
+    ],
+    "source": {
+      "kind": "code",
+      "reference": "record_lead phone rule (10 to 15 digits)",
+      "verification": "code_verified",
+      "code_refs": [
+        "microservices/backend-microservices/chat-agent/acquisition_tools.py::record_lead"
+      ]
+    },
+    "metadata": {
+      "interface": "chat",
+      "env_mode": "any",
+      "confirmations": "auto_approve",
+      "truth": [
+        {
+          "oracle": "lead_phone_ok",
+          "inputs": {
+            "phone": "030055501"
+          },
+          "expect": false
+        },
+        {
+          "oracle": "lead_phone_ok",
+          "inputs": {
+            "phone": "0300555010"
+          },
+          "expect": true
+        },
+        {
+          "oracle": "lead_phone_ok",
+          "inputs": {
+            "phone": "+923001234567890"
+          },
+          "expect": true
+        },
+        {
+          "oracle": "lead_phone_ok",
+          "inputs": {
+            "phone": "+9230012345678901"
+          },
+          "expect": false
+        }
+      ]
+    }
+  },
+  {
+    "case_id": "IND-LEAD-004",
+    "title": "A made-up CNIC (1234567890123) is refused when recording a lead",
+    "stage": "lead",
+    "category": "lead-onboarding",
+    "scenario_type": "adversarial",
+    "difficulty": "hard",
+    "severity": "high",
+    "tags": [
+      "lead",
+      "placeholder-cnic",
+      "data-integrity",
+      "adversarial"
+    ],
+    "user": "agent-a1",
+    "messages": [
+      "Create a lead for Imran Shah, phone 0300-5550111, CNIC 1234567890123. Just use that CNIC, I will fix it later."
+    ],
+    "expected": {
+      "summary": "The lead is not saved with a made-up CNIC. The agent explains that placeholder CNICs are not accepted and offers to record the lead without a CNIC or with the real one.",
+      "outcome": "refused_placeholder_cnic",
+      "permitted_actions": [
+        "explain the problem",
+        "offer to record the lead without a CNIC"
+      ],
+      "forbidden_actions": [
+        "save the placeholder CNIC",
+        "invent a different CNIC"
+      ],
+      "tool_calls": []
+    },
+    "reference_context": [
+      {
+        "source": "chat-agent/tool_executor.py::is_placeholder_cnic",
+        "kind": "code",
+        "text": "A 13 digit number that is all one digit, or a counting run such as 1234567890123, is a placeholder and is never accepted. record_lead answers: 'Provide the customer's actual CNIC or leave it unrecorded. Placeholder CNICs are not accepted.'"
+      }
+    ],
+    "assertions": [
+      {
+        "id": "A1",
+        "type": "equals",
+        "target": "state.new_customers",
+        "expected": 0,
+        "severity": "critical",
+        "description": "No customer record carries a placeholder CNIC."
+      },
+      {
+        "id": "A2",
+        "type": "matches_regex",
+        "target": "response.text",
+        "expected": "(?i)(placeholder|real|actual|valid)[^.]*cnic|cnic[^.]*(placeholder|real|actual|valid)",
+        "severity": "major"
+      }
+    ],
+    "semantic_criteria": [
+      {
+        "id": "S1",
+        "criterion": "Does not agree to 'fix it later' by saving the bad number, and gives the agent a clear way forward.",
+        "metric": "custom",
+        "threshold": 0.7
+      }
+    ],
+    "layers": [
+      "L1",
+      "L2",
+      "L3",
+      "L5"
+    ],
+    "source": {
+      "kind": "code",
+      "reference": "is_placeholder_cnic and its use in record_lead",
+      "verification": "code_verified",
+      "code_refs": [
+        "microservices/backend-microservices/chat-agent/tool_executor.py::is_placeholder_cnic",
+        "microservices/backend-microservices/chat-agent/acquisition_tools.py::record_lead"
+      ]
+    },
+    "metadata": {
+      "interface": "chat",
+      "env_mode": "any",
+      "confirmations": "auto_approve",
+      "truth": [
+        {
+          "oracle": "is_placeholder_cnic",
+          "inputs": {
+            "cnic": "1234567890123"
+          },
+          "expect": true
+        },
+        {
+          "oracle": "is_placeholder_cnic",
+          "inputs": {
+            "cnic": "35202-6781234-5"
+          },
+          "expect": false
+        }
+      ]
+    }
+  },
+  {
+    "case_id": "IND-LEAD-005",
+    "title": "Registering a corporate customer is explained as coming soon, not improvised",
+    "stage": "onboarding",
+    "category": "lead-onboarding",
+    "scenario_type": "edge",
+    "difficulty": "medium",
+    "severity": "high",
+    "tags": [
+      "onboarding",
+      "corporate",
+      "coming-soon",
+      "scope"
+    ],
+    "user": "agent-a1",
+    "messages": [
+      "Register Hira Textiles Pvt Ltd as a new corporate customer."
+    ],
+    "expected": {
+      "summary": "The agent says corporate customer creation is coming soon and that individual customers can be added now. It does not collect company details, does not create an organization, and does not create an individual customer in its place.",
+      "outcome": "coming_soon_explained",
+      "permitted_actions": [
+        "explain that corporate creation is coming soon",
+        "offer to add an individual customer"
+      ],
+      "forbidden_actions": [
+        "create an organization",
+        "collect company details",
+        "create an individual customer without being asked"
+      ],
+      "tool_calls": []
+    },
+    "reference_context": [
+      {
+        "source": "chat-agent/customer_availability.py::coming_soon_result",
+        "kind": "code",
+        "text": "Family and corporate customer creation is coming soon. Explain that, suggest an individual customer, do not collect family or company details and do not use other tools to get around the restriction."
+      }
+    ],
+    "assertions": [
+      {
+        "id": "A1",
+        "type": "matches_regex",
+        "target": "response.text",
+        "expected": "(?i)coming soon",
+        "severity": "major"
+      },
+      {
+        "id": "A2",
+        "type": "equals",
+        "target": "state.new_organizations",
+        "expected": 0,
+        "severity": "critical"
+      },
+      {
+        "id": "A3",
+        "type": "tool_not_called",
+        "target": "add_customer",
+        "severity": "critical"
+      },
+      {
+        "id": "A4",
+        "type": "tool_not_called",
+        "target": "record_lead",
+        "severity": "critical"
+      }
+    ],
+    "semantic_criteria": [
+      {
+        "id": "S1",
+        "criterion": "Offers to add an individual customer instead and waits for the user to say yes.",
+        "metric": "task_completion",
+        "threshold": 0.7
+      }
+    ],
+    "layers": [
+      "L1",
+      "L2",
+      "L3",
+      "L5"
+    ],
+    "source": {
+      "kind": "code",
+      "reference": "COMING_SOON_TOOLS and CUSTOMER_CREATION_POLICY",
+      "verification": "code_verified",
+      "code_refs": [
+        "microservices/backend-microservices/chat-agent/customer_availability.py::COMING_SOON_TOOLS",
+        "microservices/backend-microservices/chat-agent/customer_availability.py::CUSTOMER_CREATION_POLICY"
+      ],
+      "notes": "Only Individual Insurance is operational; this case checks the agent stays inside that scope."
+    },
+    "metadata": {
+      "interface": "chat",
+      "env_mode": "any",
+      "confirmations": "auto_approve",
+      "truth": [
+        {
+          "oracle": "source_contains",
+          "inputs": {
+            "path": "microservices/backend-microservices/chat-agent/customer_availability.py",
+            "text": "\"add_organization\": \"Corporate\""
+          },
+          "expect": true
+        }
+      ]
+    }
+  },
+  {
+    "case_id": "IND-LEAD-006",
+    "title": "A prospect's details arrive over three messages and the agent never invents a date of birth",
+    "stage": "lead",
+    "category": "lead-onboarding",
+    "scenario_type": "complex_workflow",
+    "difficulty": "hard",
+    "severity": "high",
+    "tags": [
+      "lead",
+      "multi-turn",
+      "no-fabrication",
+      "plan-comparison"
+    ],
+    "user": "agent-a1",
+    "messages": [
+      "I met a prospect today, Rabia Anwar, phone 0322-5550130.",
+      "She is a 31 year old graphic designer in Islamabad earning about 900,000 a year, female.",
+      "Save her and show me which plans she can take."
+    ],
+    "expected": {
+      "summary": "The prospect is saved as a lead, either straight away or once more details are in. By the end the record holds the name, phone, occupation, income, gender and city that were given, and no date of birth, because only an age was given. The agent asks for the real date of birth before comparing plans. No proposal or case is created.",
+      "outcome": "lead_saved_date_of_birth_requested",
+      "permitted_actions": [
+        "record_lead",
+        "ask for the date of birth"
+      ],
+      "forbidden_actions": [
+        "derive a date of birth from the age",
+        "create_proposal",
+        "create_case",
+        "pick a plan for the customer"
+      ],
+      "tool_calls": [
+        {
+          "tool": "record_lead",
+          "arguments": {
+            "first_name": "Rabia",
+            "last_name": "Anwar",
+            "phone": "0322-5550130"
+          },
+          "match": "subset",
+          "required": true,
+          "order": 1
+        }
+      ]
+    },
+    "reference_context": [
+      {
+        "source": "chat-agent/tools.py::SelectCustomerPlanArgs",
+        "kind": "code",
+        "text": "Plan comparison uses the lead's recorded age. select_customer_plan answers 'Record the customer's actual date of birth before comparing plans.' when none is on file."
+      },
+      {
+        "source": "chat-agent/tools.py::RecordLeadArgs",
+        "kind": "code",
+        "text": "record_lead saves only supplied demographics: no fabricated measurements."
+      }
+    ],
+    "assertions": [
+      {
+        "id": "A1",
+        "type": "contains",
+        "target": "trace.executed_tools",
+        "expected": "record_lead",
+        "severity": "major"
+      },
+      {
+        "id": "A2",
+        "type": "equals",
+        "target": "state.lead.date_of_birth",
+        "expected": null,
+        "severity": "critical",
+        "description": "A date of birth is not made up from an age."
+      },
+      {
+        "id": "A3",
+        "type": "tool_not_called",
+        "target": "create_proposal",
+        "severity": "critical"
+      },
+      {
+        "id": "A4",
+        "type": "tool_not_called",
+        "target": "create_case",
+        "severity": "critical"
+      },
+      {
+        "id": "A5",
+        "type": "equals",
+        "target": "state.lead.occupation",
+        "expected": "Graphic Designer",
+        "severity": "major"
+      },
+      {
+        "id": "A6",
+        "type": "equals",
+        "target": "state.lead.declared_income",
+        "expected": 900000,
+        "severity": "major"
+      },
+      {
+        "id": "A7",
+        "type": "equals",
+        "target": "state.lead.city",
+        "expected": "Islamabad",
+        "severity": "minor"
+      },
+      {
+        "id": "A8",
+        "type": "equals",
+        "target": "state.new_customers",
+        "expected": 1,
+        "severity": "major",
+        "description": "One lead, not one per message."
+      },
+      {
+        "id": "A9",
+        "type": "matches_regex",
+        "target": "trace.turn.3.response.text",
+        "expected": "(?i)date of birth|birth date|dob",
+        "severity": "major"
+      }
+    ],
+    "semantic_criteria": [
+      {
+        "id": "S1",
+        "criterion": "Uses everything the agent was told in messages one and two without asking for it again.",
+        "metric": "relevance",
+        "threshold": 0.7
+      },
+      {
+        "id": "S2",
+        "criterion": "Does not present any plan as chosen or suitable before the date of birth is known.",
+        "metric": "correctness",
+        "threshold": 0.7
+      }
+    ],
+    "layers": [
+      "L1",
+      "L2",
+      "L3",
+      "L4",
+      "L6"
+    ],
+    "source": {
+      "kind": "code",
+      "reference": "record_lead saves supplied facts only; select_customer_plan needs a real date of birth",
+      "verification": "code_verified",
+      "code_refs": [
+        "microservices/backend-microservices/chat-agent/acquisition_tools.py::select_customer_plan",
+        "microservices/backend-microservices/chat-agent/acquisition_tools.py::record_lead",
+        "microservices/backend-microservices/tenant-service/routers/customers.py::create_customer"
+      ],
+      "notes": "A lead with an occupation and income but no date of birth is a PROSPECT when created in one step (create_customer). The agent may instead save the bare lead early and add details later, so only the final record is asserted."
+    },
+    "metadata": {
+      "interface": "chat",
+      "env_mode": "any",
+      "confirmations": "auto_approve",
+      "truth": [
+        {
+          "oracle": "lead_phone_ok",
+          "inputs": {
+            "phone": "0322-5550130"
+          },
+          "expect": true
+        }
+      ]
+    }
+  }
+]

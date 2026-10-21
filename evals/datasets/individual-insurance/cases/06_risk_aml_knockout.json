@@ -1,0 +1,178 @@
+[
+  {
+    "case_id": "IND-RISK-001",
+    "title": "An armed forces occupation is declined at the early knockout check",
+    "stage": "risk", "category": "risk-aml-knockout", "scenario_type": "negative", "difficulty": "easy", "severity": "high",
+    "tags": ["risk", "early-knockout", "occupation", "decline"],
+    "user": "agent-a1",
+    "input": {"payload": {"operation": "rules.early_check", "body": {"occupation": "Soldier", "age": 30}}},
+    "expected": {
+      "summary": "The early check declines the applicant under rule KO-OCC-01 with the stated reason that life cover cannot be offered for an armed forces, border or weapon-carrying occupation.",
+      "outcome": "DECLINE",
+      "forbidden_actions": ["continue to underwriting", "refer the applicant instead of declining"]
+    },
+    "reference_context": [
+      {"source": "tenant-service/routers/rules.py::_KNOCKOUT_RULE_SET", "kind": "code", "text": "KO-OCC-01 declines when the occupation contains any of a list of armed forces and border keywords (soldier, army, navy, fauji, border and others), matched case-insensitively as a substring."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.decision", "expected": "DECLINE", "severity": "critical"},
+      {"id": "A2", "type": "equals", "target": "result.rule_codes", "expected": ["KO-OCC-01"], "severity": "major"},
+      {"id": "A3", "type": "contains", "target": "result.reasons", "expected": "life cover cannot be offered", "severity": "major"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "the seeded early knockout rule set RS-ELG-002", "verification": "pending_domain_approval",
+      "code_refs": ["microservices/backend-microservices/tenant-service/routers/rules.py::_KNOCKOUT_RULE_SET", "microservices/backend-microservices/tenant-service/services/early_knockout.py::early_check"],
+      "notes": "The code describes the keyword lists and age band as starting values for the compliance and underwriting team to confirm."},
+    "metadata": {"interface": "api", "env_mode": "any", "placeholder_rule": true,
+      "truth": [
+        {"oracle": "knockout", "inputs": {"occupation": "Soldier", "age": 30}, "expect": {"decision": "DECLINE", "rule_codes": ["KO-OCC-01"]}},
+        {"oracle": "knockout", "inputs": {"occupation": "Teacher", "age": 30}, "expect": {"decision": "PROCEED", "rule_codes": []}}
+      ]}
+  },
+  {
+    "case_id": "IND-RISK-002",
+    "title": "Entry age 66 is declined, 65 and 18 pass, 17 is declined",
+    "stage": "risk", "category": "risk-aml-knockout", "scenario_type": "boundary", "difficulty": "medium", "severity": "high",
+    "tags": ["risk", "early-knockout", "entry-age", "boundary"],
+    "user": "agent-a1",
+    "input": {"payload": {"operation": "rules.early_check", "body": {"occupation": "Teacher", "age": 66}}},
+    "expected": {
+      "summary": "An applicant aged 66 is outside the insurable entry band of 18 to 65 and is declined under rule KO-AGE-01. Ages 18 and 65 proceed; age 17 is declined.",
+      "outcome": "DECLINE",
+      "forbidden_actions": ["continue to underwriting at age 66"]
+    },
+    "reference_context": [
+      {"source": "tenant-service/routers/rules.py::_KNOCKOUT_RULE_SET", "kind": "code", "text": "KO-AGE-01 declines when age is below 18 or above 65: 'Applicant's age is outside the insurable entry band (18–65).'"}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.decision", "expected": "DECLINE", "severity": "critical"},
+      {"id": "A2", "type": "equals", "target": "result.rule_codes", "expected": ["KO-AGE-01"], "severity": "major"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "KO-AGE-01 in the seeded early knockout rule set", "verification": "pending_domain_approval",
+      "code_refs": ["microservices/backend-microservices/tenant-service/routers/rules.py::_KNOCKOUT_RULE_SET"],
+      "notes": "The 18 to 65 band is one of the starting values the code asks the business to confirm. Individual plans in the fixture catalog also have their own, narrower entry bands."},
+    "metadata": {"interface": "api", "env_mode": "any", "placeholder_rule": true,
+      "truth": [
+        {"oracle": "knockout", "inputs": {"occupation": "Teacher", "age": 66}, "expect": {"decision": "DECLINE", "rule_codes": ["KO-AGE-01"]}},
+        {"oracle": "knockout", "inputs": {"occupation": "Teacher", "age": 65}, "expect": {"decision": "PROCEED"}},
+        {"oracle": "knockout", "inputs": {"occupation": "Teacher", "age": 18}, "expect": {"decision": "PROCEED"}},
+        {"oracle": "knockout", "inputs": {"occupation": "Teacher", "age": 17}, "expect": {"decision": "DECLINE", "rule_codes": ["KO-AGE-01"]}}
+      ]}
+  },
+  {
+    "case_id": "IND-RISK-003",
+    "title": "A retired army officer matches the armed forces rule by keyword",
+    "stage": "risk", "category": "risk-aml-knockout", "scenario_type": "conflicting_data", "difficulty": "hard", "severity": "medium",
+    "tags": ["risk", "early-knockout", "occupation", "ambiguity", "business-decision"],
+    "user": "agent-a1",
+    "input": {"payload": {"operation": "rules.early_check", "body": {"occupation": "Retired Army Officer", "age": 58}}},
+    "expected": {
+      "summary": "Today the rule matches the word 'army' anywhere in the occupation, so a retired officer is declined exactly like a serving soldier. Whether retired personnel should be declined is a business question that has not been answered, so this case records the current behaviour and is pending domain approval.",
+      "outcome": "DECLINE (current behaviour, business owner to confirm)"
+    },
+    "reference_context": [
+      {"source": "tenant-service/routers/rules.py::_KNOCKOUT_RULE_SET", "kind": "code", "text": "Matching is a case-insensitive substring on the free-text occupation; the rule has no concept of retired or former."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.decision", "expected": "DECLINE", "severity": "major"},
+      {"id": "A2", "type": "equals", "target": "result.rule_codes", "expected": ["KO-OCC-01"], "severity": "major"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "KO-OCC-01 keyword match on 'army'", "verification": "pending_domain_approval",
+      "code_refs": ["microservices/backend-microservices/tenant-service/routers/rules.py::_KNOCKOUT_RULE_SET"],
+      "notes": "Reports what the code does. Do not treat this as the approved answer: if the business decides retired personnel are insurable, this case's expected outcome changes."},
+    "metadata": {"interface": "api", "env_mode": "any", "placeholder_rule": true,
+      "truth": [{"oracle": "knockout", "inputs": {"occupation": "Retired Army Officer", "age": 58}, "expect": {"decision": "DECLINE", "rule_codes": ["KO-OCC-01"]}}]}
+  },
+  {
+    "case_id": "IND-RISK-004",
+    "title": "A money exchange dealer asking for ten times income is flagged by the AML screen",
+    "stage": "risk", "category": "risk-aml-knockout", "scenario_type": "positive", "difficulty": "medium", "severity": "high",
+    "tags": ["risk", "aml", "screening", "affordability", "compliance"],
+    "user": "uw-a1",
+    "input": {
+      "payload": {"operation": "compliance.screen_aml", "customer": {"occupation": "Money exchange dealer", "declared_income": 1000000}, "policy": {"coverage_amount": 10000000}}
+    },
+    "expected": {
+      "summary": "The AML screen scores 85: 45 for a high-risk occupation signal ('money exchange') and 40 because the cover is 10 times declared income. 85 is between the flag level (60) and the fail level (90), so the check is Flagged for manual review, not passed and not failed.",
+      "outcome": "Flagged",
+      "forbidden_actions": ["pass the check", "fail the application without review"]
+    },
+    "reference_context": [
+      {"source": "tenant-service/services/compliance_engine.py::_screen_aml", "kind": "code", "text": "Score: +45 for a high-risk occupation token, +40 if cover is 10 or more times income (+20 from 6 times), +25 if income is unknown, +15 for cover of PKR 20M or more. 60 or more is Flagged, 90 or more Failed."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.status", "expected": "Flagged", "severity": "critical"},
+      {"id": "A2", "type": "numeric_close", "target": "result.score", "expected": 85, "tolerance": 0.01, "severity": "major"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "_screen_aml scoring", "verification": "pending_domain_approval",
+      "code_refs": ["microservices/backend-microservices/tenant-service/services/compliance_engine.py::_screen_aml"],
+      "notes": "The signals, weights and thresholds are internal heuristics, not an approved AML programme."},
+    "metadata": {"interface": "api", "env_mode": "any", "placeholder_rule": true,
+      "truth": [
+        {"oracle": "aml", "inputs": {"occupation": "Money exchange dealer", "declared_income": 1000000, "coverage": 10000000}, "expect": {"status": "Flagged", "score": 85}},
+        {"oracle": "aml", "inputs": {"occupation": "Crypto trader", "declared_income": 500000, "coverage": 25000000}, "expect": {"status": "Failed", "score": 100}},
+        {"oracle": "aml", "inputs": {"occupation": "Teacher", "declared_income": 1200000, "coverage": 5000000}, "expect": {"status": "Passed", "score": 0}}
+      ]}
+  },
+  {
+    "case_id": "IND-RISK-005",
+    "title": "A name containing a watchlist token is flagged for manual review, not declined",
+    "stage": "risk", "category": "risk-aml-knockout", "scenario_type": "edge", "difficulty": "hard", "severity": "high",
+    "tags": ["risk", "sanctions", "pep", "watchlist", "manual-review"],
+    "user": "uw-a1",
+    "input": {"payload": {"operation": "compliance.screen_sanctions", "customer": {"name": "Dawood Ahmed Siddiqui"}}},
+    "expected": {
+      "summary": "With no live OpenSanctions key configured, the internal watchlist is used. 'Dawood' is on it, and it is also a common name, so the check is Flagged as a potential match needing manual review. It is neither passed nor treated as a confirmed hit; a compliance officer decides.",
+      "outcome": "Flagged",
+      "forbidden_actions": ["pass the check", "decline the applicant automatically"]
+    },
+    "reference_context": [
+      {"source": "tenant-service/services/compliance_engine.py::_screen_sanctions_internal", "kind": "code", "text": "A name containing any watchlist token (case-insensitive) is Flagged with score 100: 'Potential name match - manual review required.' The list is described as fictional."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.status", "expected": "Flagged", "severity": "critical"},
+      {"id": "A2", "type": "equals", "target": "result.details.source", "expected": "internal", "severity": "major"},
+      {"id": "A3", "type": "not_equals", "target": "result.status", "expected": "Failed", "severity": "major"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "the internal fallback watchlist screen", "verification": "pending_domain_approval",
+      "code_refs": ["microservices/backend-microservices/tenant-service/services/compliance_engine.py::_screen_sanctions_internal", "microservices/backend-microservices/tenant-service/services/pep_screening.py::screen_person"],
+      "notes": "Applies only while OPENSANCTIONS_API_KEY is unset. The watchlist is fictional by the code's own description."},
+    "metadata": {"interface": "api", "env_mode": "any", "placeholder_rule": true, "requires": "OPENSANCTIONS_API_KEY unset",
+      "truth": [
+        {"oracle": "sanctions_internal", "inputs": {"name": "Dawood Ahmed Siddiqui"}, "expect": "Flagged"},
+        {"oracle": "sanctions_internal", "inputs": {"name": "Ayesha Noor"}, "expect": "Passed"}
+      ]}
+  },
+  {
+    "case_id": "IND-RISK-006",
+    "title": "A missing or short CNIC cannot pass the SECP identity screen",
+    "stage": "risk", "category": "risk-aml-knockout", "scenario_type": "missing_information", "difficulty": "easy", "severity": "medium",
+    "tags": ["risk", "secp", "cnic", "identity", "screening"],
+    "user": "uw-a1",
+    "input": {"payload": {"operation": "compliance.screen_secp", "customer": {"cnic": null}}},
+    "expected": {
+      "summary": "With no CNIC the SECP identity check is Flagged with score 50: identity verification could not complete. A CNIC with fewer than 13 digits is treated the same way, and a well-formed one passes.",
+      "outcome": "Flagged"
+    },
+    "reference_context": [
+      {"source": "tenant-service/services/compliance_engine.py::_screen_secp", "kind": "code", "text": "A CNIC that is missing or does not hold 13 digits is Flagged (score 50). Otherwise the check passes."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.status", "expected": "Flagged", "severity": "major"},
+      {"id": "A2", "type": "numeric_close", "target": "result.score", "expected": 50, "tolerance": 0.01, "severity": "minor"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "_screen_secp CNIC completeness check", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/tenant-service/services/compliance_engine.py::_screen_secp"]},
+    "metadata": {"interface": "api", "env_mode": "any",
+      "truth": [
+        {"oracle": "secp", "inputs": {"cnic": null}, "expect": "Flagged"},
+        {"oracle": "secp", "inputs": {"cnic": "3520267812"}, "expect": "Flagged"},
+        {"oracle": "secp", "inputs": {"cnic": "35202-6781234-5"}, "expect": "Passed"}
+      ]}
+  }
+]

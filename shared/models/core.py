@@ -3921,6 +3921,11 @@ from shared.models.commission import (  # noqa: E402,F401
 # Register tenant-service's Request Management integration table (see request_integration.py).
 from shared.models.request_integration import CustomerProfileCorrection  # noqa: E402,F401
 
+# Register the evaluation data lake tables (see evaluation.py and docs/evaluation/architecture.md).
+from shared.models.evaluation import (  # noqa: E402,F401
+    EvalCase, EvalDataset, EvalDatasetVersion, EvalFixture, EvalIngestion, EvalStorageObject, EvalVersionCase,
+)
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # WALK-IN LEADS (customer portal self-service)

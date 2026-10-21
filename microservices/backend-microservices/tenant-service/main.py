@@ -195,6 +195,11 @@ async def lifespan(app: FastAPI):
     from services.lead_routing import start_sweeper
     walkin_task = start_sweeper(stop_event, _session_factory) if os.environ.get("WALKIN_SWEEP", "true").lower() == "true" else None
 
+    # Evaluation data lake (MinIO): prepare the bucket and settle any dataset publication a restart interrupted.
+    # Never blocks or fails startup; the lake is also prepared on first use.
+    from services.eval_lake import warm_up_lake
+    lake_task = asyncio.create_task(warm_up_lake())
+
     # ── STAGE B — POST-ISSUANCE LIFECYCLE (renewal scheduler) ──────────────────
     # Daily state machine (ACTIVE → GracePeriod → Lapsed + renewals). Runs AFTER
     # a policy is issued. Temporarily disabled for now — re-enable with the import
@@ -205,6 +210,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Graceful shutdown
+    lake_task.cancel()
     stop_event.set()
     await worker_task
     if audit_relay_task is not None:

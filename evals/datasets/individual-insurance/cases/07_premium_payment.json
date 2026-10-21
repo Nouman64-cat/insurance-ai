@@ -1,0 +1,195 @@
+[
+  {
+    "case_id": "IND-PAY-001",
+    "title": "Annual premium for PKR 5,000,000 of Term Life Secure at age 35",
+    "stage": "premium_payment", "category": "premium-payment", "scenario_type": "positive", "difficulty": "easy", "severity": "high",
+    "tags": ["premium", "quotation", "pricing", "arithmetic"],
+    "user": "agent-a1",
+    "input": {
+      "payload": {"operation": "quotes.calculate", "plan_code": "TERM_LIFE_SECURE", "coverage_amount": 5000000, "term_years": 20,
+        "applicant": {"age_years": 35, "is_smoker": false, "height_cm": 162, "weight_kg": 58}},
+      "fixture_refs": ["plans-individual-v1.json"]
+    },
+    "expected": {
+      "summary": "Base premium is 5,000,000 / 1,000 x 3.5 = PKR 17,500 with no age, smoker or BMI loading. Add the policy fee of 500, stamp duty of 1% (180) and sales tax of 16% (2,880) on the 18,000 subtotal: the annual premium is PKR 21,060. The term is not a multiplier.",
+      "outcome": "premium_quoted"
+    },
+    "reference_context": [
+      {"source": "shared/pricing/calculator.py::calculate_premium", "kind": "code", "text": "base = cover/1000 x rate x age factor; loading = base x (smoker - 1) + base x (bmi - 1) + base x loading%; subtotal = base + loading + policy fee; total = subtotal + stamp duty (1%) + sales tax (16%) on the subtotal."},
+      {"source": "fixtures/plans-individual-v1.json", "kind": "fixture", "text": "Term Life Secure: base_premium_rate 3.5 per 1,000, smoker factor 1.6."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "numeric_close", "target": "result.base_premium", "expected": 17500, "tolerance": 0.02, "severity": "critical"},
+      {"id": "A2", "type": "numeric_close", "target": "result.loading_applied", "expected": 0, "tolerance": 0.02, "severity": "major"},
+      {"id": "A3", "type": "numeric_close", "target": "result.total_premium", "expected": 21060, "tolerance": 0.02, "severity": "critical"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "shared pricing calculator, checked against an independent calculation", "verification": "pending_domain_approval",
+      "code_refs": ["shared/pricing/calculator.py::calculate_premium", "microservices/backend-microservices/tenant-service/services/pricing_engine.py"],
+      "notes": "The arithmetic is confirmed by a second implementation written from the formula. The age bands and the plan rates are described in the code as v1 placeholder approximations, so the figures are not business-approved prices."},
+    "metadata": {"interface": "api", "env_mode": "any", "placeholder_rule": true, "arithmetic_verified": true,
+      "truth": [{"oracle": "premium_plan", "inputs": {"plan_code": "TERM_LIFE_SECURE", "coverage": 5000000, "age": 35, "smoker": false, "height_cm": 162, "weight_kg": 58},
+        "expect": {"age_factor": 1.0, "bmi_factor": 1.0, "base_premium": 17500.0, "loading_applied": 0.0, "policy_fee": 500.0, "stamp_duty_amount": 180.0, "tax_amount": 2880.0, "total_premium": 21060.0}}]}
+  },
+  {
+    "case_id": "IND-PAY-002",
+    "title": "The premium steps up at age 36, when the age band changes from 1.0 to 1.3",
+    "stage": "premium_payment", "category": "premium-payment", "scenario_type": "boundary", "difficulty": "medium", "severity": "high",
+    "tags": ["premium", "age-band", "boundary", "pricing"],
+    "user": "agent-a1",
+    "input": {
+      "payload": {"operation": "quotes.calculate", "plan_code": "TERM_LIFE_SECURE", "coverage_amount": 5000000, "term_years": 20,
+        "applicant": {"age_years": 36, "is_smoker": false, "height_cm": 176, "weight_kg": 75}},
+      "fixture_refs": ["plans-individual-v1.json"]
+    },
+    "expected": {
+      "summary": "Age 36 falls in the 36 to 45 band, factor 1.3, so base premium is 17,500 x 1.3 = PKR 22,750. With the 500 fee, 232.50 stamp duty and 3,720 tax the annual premium is PKR 27,202.50, higher than the 21,060 charged at 35.",
+      "outcome": "premium_quoted"
+    },
+    "reference_context": [
+      {"source": "shared/pricing/calculator.py::_AGE_BANDS", "kind": "code", "text": "Age factor bands by lower bound: 18 0.8, 26 1.0, 36 1.3, 46 1.8, 56 2.5, 66 3.5."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "numeric_close", "target": "result.base_premium", "expected": 22750, "tolerance": 0.02, "severity": "critical"},
+      {"id": "A2", "type": "numeric_close", "target": "result.total_premium", "expected": 27202.5, "tolerance": 0.02, "severity": "critical"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "calculator age bands at the 35 / 36 boundary", "verification": "pending_domain_approval",
+      "code_refs": ["shared/pricing/calculator.py::_AGE_BANDS", "shared/pricing/calculator.py::calculate_age_factor"],
+      "notes": "Bands are v1 placeholder approximations per the calculator's own description."},
+    "metadata": {"interface": "api", "env_mode": "any", "placeholder_rule": true, "arithmetic_verified": true,
+      "truth": [
+        {"oracle": "premium_plan", "inputs": {"plan_code": "TERM_LIFE_SECURE", "coverage": 5000000, "age": 36, "smoker": false, "height_cm": 176, "weight_kg": 75},
+          "expect": {"age_factor": 1.3, "bmi_factor": 1.0, "base_premium": 22750.0, "stamp_duty_amount": 232.5, "tax_amount": 3720.0, "total_premium": 27202.5}},
+        {"oracle": "premium_plan", "inputs": {"plan_code": "TERM_LIFE_SECURE", "coverage": 5000000, "age": 35, "smoker": false, "height_cm": 176, "weight_kg": 75},
+          "expect": {"age_factor": 1.0, "total_premium": 21060.0}}
+      ]}
+  },
+  {
+    "case_id": "IND-PAY-003",
+    "title": "A smoker with a low BMI pays loadings for both on top of the age band",
+    "stage": "premium_payment", "category": "premium-payment", "scenario_type": "complex_workflow", "difficulty": "hard", "severity": "high",
+    "tags": ["premium", "smoker-loading", "bmi-loading", "pricing", "arithmetic"],
+    "user": "agent-a1",
+    "input": {
+      "payload": {"operation": "quotes.calculate", "plan_code": "TERM_LIFE_SECURE", "coverage_amount": 5000000, "term_years": 20,
+        "applicant": {"age_years": 36, "is_smoker": true, "height_cm": 170, "weight_kg": 50}},
+      "fixture_refs": ["plans-individual-v1.json"]
+    },
+    "expected": {
+      "summary": "Base premium is 22,750 (age factor 1.3). The smoker loading is 22,750 x 0.6 = 13,650 and the BMI loading, because BMI 17.3 is below 18.5, is 22,750 x 0.15 = 3,412.50; loading totals 17,062.50 and the risk premium is 39,812.50. With the 500 fee, stamp duty 403.12 and tax 6,450 the annual premium is PKR 47,165.62.",
+      "outcome": "premium_quoted"
+    },
+    "reference_context": [
+      {"source": "shared/pricing/calculator.py::calculate_premium", "kind": "code", "text": "Loading is additive: smoker (factor - 1) and BMI (1.15 - 1 outside 18.5 to 24.9) are each applied to the same base premium, not compounded."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "numeric_close", "target": "result.loading_applied", "expected": 17062.5, "tolerance": 0.02, "severity": "critical"},
+      {"id": "A2", "type": "numeric_close", "target": "result.total_premium", "expected": 47165.62, "tolerance": 0.02, "severity": "critical"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "calculator loadings, checked against an independent calculation", "verification": "pending_domain_approval",
+      "code_refs": ["shared/pricing/calculator.py::calculate_premium", "shared/pricing/calculator.py::calculate_bmi_factor"],
+      "notes": "Additive loading is how the code works; the smoker factor, BMI band and age bands are v1 placeholders. A second implementation agrees to within a paisa; stamp duty rounds half-to-even in the code (403.12) and half-up in the check (403.13)."},
+    "metadata": {"interface": "api", "env_mode": "any", "placeholder_rule": true, "arithmetic_verified": true,
+      "truth": [{"oracle": "premium_plan", "inputs": {"plan_code": "TERM_LIFE_SECURE", "coverage": 5000000, "age": 36, "smoker": true, "height_cm": 170, "weight_kg": 50},
+        "expect": {"age_factor": 1.3, "bmi_factor": 1.15, "smoker_multiplier": 1.6, "base_premium": 22750.0, "loading_applied": 17062.5, "risk_premium": 39812.5, "policy_fee": 500.0, "stamp_duty_amount": 403.12, "tax_amount": 6450.0, "total_premium": 47165.62}}]}
+  },
+  {
+    "case_id": "IND-PAY-004",
+    "title": "A payment cannot be confirmed without the transaction reference it was issued",
+    "stage": "premium_payment", "category": "premium-payment", "scenario_type": "negative", "difficulty": "medium", "severity": "critical",
+    "tags": ["payment", "confirmation", "transaction-reference", "financial-control", "strict-mode"],
+    "user": "agent-a1",
+    "input": {
+      "payload": {"operation": "ipp.confirm", "policy": "pol-proposed-saad-ipp-initiated", "body": {}},
+      "fixture_refs": ["policies-claims-v1.json", "personas-individual-v1.json"]
+    },
+    "expected": {
+      "summary": "Outside demo mode the first premium is only realised against the transaction reference given when the payment was initiated. Confirming with no reference is refused with a 400, and the payment stays Initiated.",
+      "outcome": "confirmation_refused",
+      "forbidden_actions": ["mark the payment received on the caller's say-so"]
+    },
+    "reference_context": [
+      {"source": "tenant-service/services/payment_gateway.py::require_payer_reference", "kind": "code", "text": "Outside demo mode a payment is never settled on the caller's say-so alone; confirming needs the reference issued at initiation."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.status_code", "expected": 400, "severity": "critical"},
+      {"id": "A2", "type": "contains", "target": "result.detail", "expected": "Payment cannot be confirmed without the transaction reference", "severity": "major"},
+      {"id": "A3", "type": "equals", "target": "state.ipp.status", "expected": "Initiated", "severity": "critical", "description": "No money is recorded as received."}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "require_payer_reference", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/tenant-service/services/payment_gateway.py::require_payer_reference", "microservices/backend-microservices/tenant-service/routers/initial_premium_payment.py"],
+      "notes": "Strict mode only. With ENV_VAR=demo the mock gateway settles immediately and this check is skipped."},
+    "metadata": {"interface": "api", "env_mode": "strict",
+      "truth": [{"oracle": "source_contains", "inputs": {"path": "microservices/backend-microservices/tenant-service/services/payment_gateway.py", "text": "Payment cannot be confirmed without the transaction reference issued for this payment."}, "expect": true}]}
+  },
+  {
+    "case_id": "IND-PAY-005",
+    "title": "A second payment attempt after the initial premium was paid is refused",
+    "stage": "premium_payment", "category": "premium-payment", "scenario_type": "edge", "difficulty": "medium", "severity": "critical",
+    "tags": ["payment", "duplicate-payment", "idempotency", "financial-control"],
+    "user": "agent-a1",
+    "input": {
+      "payload": {"operation": "ipp.initiate", "policy": "pol-proposed-nida-ipp-paid", "body": {"method": "JazzCash"}},
+      "fixture_refs": ["policies-claims-v1.json", "personas-individual-v1.json"]
+    },
+    "expected": {
+      "summary": "The initial premium for this proposal is already realised. Starting another payment is refused with a 409 that says it has already been paid, so the customer cannot be charged twice and the recorded payment is untouched.",
+      "outcome": "conflict",
+      "forbidden_actions": ["start a second payment", "change the recorded amount, method or reference"]
+    },
+    "reference_context": [
+      {"source": "tenant-service/routers/initial_premium_payment.py::_initiate", "kind": "code", "text": "If a realised payment already exists, initiating answers 409 'Initial premium has already been paid for this case.'"}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.status_code", "expected": 409, "severity": "critical"},
+      {"id": "A2", "type": "contains", "target": "result.detail", "expected": "already been paid", "severity": "major"},
+      {"id": "A3", "type": "equals", "target": "state.ipp.method", "expected": "BankTransfer", "severity": "critical", "description": "The recorded payment is unchanged."},
+      {"id": "A4", "type": "equals", "target": "state.ipp.status", "expected": "Realized", "severity": "critical"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "_initiate and _confirm duplicate guards", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/tenant-service/routers/initial_premium_payment.py::_initiate"]},
+    "metadata": {"interface": "api", "env_mode": "any",
+      "truth": [
+        {"oracle": "source_contains", "inputs": {"path": "microservices/backend-microservices/tenant-service/routers/initial_premium_payment.py", "text": "Initial premium has already been paid for this case."}, "expect": true},
+        {"oracle": "payment_methods", "inputs": {}, "expect": ["JazzCash", "Easypaisa", "Card", "BankTransfer"]}
+      ]}
+  },
+  {
+    "case_id": "IND-PAY-006",
+    "title": "The first payment is 20% of the premium, and the other 80% is due at issuance",
+    "stage": "premium_payment", "category": "premium-payment", "scenario_type": "complex_workflow", "difficulty": "medium", "severity": "high",
+    "tags": ["payment", "premium-split", "initial-premium", "rule-engine"],
+    "user": "agent-a1",
+    "input": {
+      "payload": {"operation": "ipp.initiate", "policy": "pol-proposed-zainab", "body": {"method": "JazzCash"}},
+      "fixture_refs": ["policies-claims-v1.json", "personas-individual-v1.json", "plans-individual-v1.json"]
+    },
+    "expected": {
+      "summary": "Zainab's total first premium by the platform formula is PKR 21,060 (age 30, normal BMI, cover 5,000,000). The seeded split rule collects 20% before underwriting: PKR 4,212.00 now, with PKR 16,848.00, plus any loading underwriting adds, due at issuance.",
+      "outcome": "payment_initiated_for_upfront_share"
+    },
+    "reference_context": [
+      {"source": "tenant-service/services/payment_split.py::PAYMENT_SPLIT_RULE_SET", "kind": "code", "text": "Rule PAY-SPLIT-01 asks for 20% before underwriting and leaves 80% to be paid at policy issuance. With no matching rule the whole premium is collected up front."},
+      {"source": "tenant-service/routers/initial_premium_payment.py::_premium_for", "kind": "code", "text": "The amount collected is the split's upfront share of the premium priced without underwriting loading."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "numeric_close", "target": "result.amount", "expected": 4212, "tolerance": 0.02, "severity": "critical"},
+      {"id": "A2", "type": "numeric_close", "target": "state.ipp.breakdown.split.remaining_amount", "expected": 16848, "tolerance": 0.02, "severity": "critical"},
+      {"id": "A3", "type": "numeric_close", "target": "state.ipp.breakdown.split.upfront_pct", "expected": 20, "tolerance": 0.01, "severity": "major"},
+      {"id": "A4", "type": "numeric_close", "target": "state.ipp.breakdown.total_premium", "expected": 21060, "tolerance": 0.02, "severity": "major"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "RS-PAY-001 split rule and the shared premium formula", "verification": "pending_domain_approval",
+      "code_refs": ["microservices/backend-microservices/tenant-service/services/payment_split.py::PAYMENT_SPLIT_RULE_SET", "microservices/backend-microservices/tenant-service/routers/initial_premium_payment.py::_premium_for"],
+      "notes": "The 20/80 rule is a seeded example that admins edit in the rule engine; it is not an approved commercial term."},
+    "metadata": {"interface": "api", "env_mode": "any", "placeholder_rule": true, "arithmetic_verified": true,
+      "truth": [
+        {"oracle": "premium_plan", "inputs": {"plan_code": "TERM_LIFE_SECURE", "coverage": 5000000, "age": 30, "smoker": false, "height_cm": 160, "weight_kg": 55}, "expect": {"total_premium": 21060.0}},
+        {"oracle": "payment_split", "inputs": {"total": 21060}, "expect": {"upfront_pct": 20, "upfront_amount": 4212.0, "remaining_amount": 16848.0}}
+      ]}
+  }
+]

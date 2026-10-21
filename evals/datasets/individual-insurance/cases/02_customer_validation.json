@@ -1,0 +1,205 @@
+[
+  {
+    "case_id": "IND-CUST-001",
+    "title": "A 13 digit CNIC typed without dashes is stored in the standard format",
+    "stage": "onboarding", "category": "customer-validation", "scenario_type": "positive", "difficulty": "easy", "severity": "medium",
+    "tags": ["customer", "cnic", "normalisation", "api"],
+    "user": "agent-a1",
+    "input": {
+      "payload": {"operation": "customers.create", "body": {"first_name": "Zara", "last_name": "Iqbal", "cnic": "3520211223344", "date_of_birth": "1992-02-10", "gender": "Female", "occupation": "Teacher", "declared_income": 900000}}
+    },
+    "expected": {
+      "summary": "The customer is created. The CNIC is stored as 35202-1122334-4. Because CNIC, date of birth, income and occupation are all present the profile is underwriting ready, and smoking status and body measurements, which were not given, stay unknown.",
+      "outcome": "customer_created",
+      "permitted_actions": ["customers.create"],
+      "forbidden_actions": ["store the CNIC without dashes", "default smoking status or measurements for an agent"],
+      "state_transitions": [{"entity": "customer", "to_state": "UNDERWRITING_READY"}]
+    },
+    "reference_context": [
+      {"source": "tenant-service/schemas.py::CustomerCreate.validate_cnic", "kind": "code", "text": "A CNIC is accepted as 13 digits or as XXXXX-XXXXXXX-X, and a 13 digit value is rewritten with dashes."},
+      {"source": "tenant-service/routers/customers.py::create_customer", "kind": "code", "text": "With CNIC, date of birth, income and occupation the status is UNDERWRITING_READY. For an agent, smoking status, height and weight that were not supplied stay unknown."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.status_code", "expected": 201, "severity": "major"},
+      {"id": "A2", "type": "equals", "target": "result.body.cnic", "expected": "35202-1122334-4", "severity": "critical"},
+      {"id": "A3", "type": "equals", "target": "result.body.profile_status", "expected": "UNDERWRITING_READY", "severity": "major"},
+      {"id": "A4", "type": "equals", "target": "result.body.is_smoker", "expected": null, "severity": "major", "description": "Unrecorded smoking status is not defaulted for an agent."}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "CustomerCreate.validate_cnic and create_customer", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/tenant-service/schemas.py::validate_cnic", "microservices/backend-microservices/tenant-service/routers/customers.py::create_customer"]},
+    "metadata": {"interface": "api", "env_mode": "any",
+      "truth": [
+        {"oracle": "cnic_normalised", "inputs": {"raw": "3520211223344"}, "expect": "35202-1122334-4"},
+        {"oracle": "is_placeholder_cnic", "inputs": {"cnic": "3520211223344"}, "expect": false}
+      ]}
+  },
+  {
+    "case_id": "IND-CUST-002",
+    "title": "A CNIC with only 12 digits is rejected",
+    "stage": "onboarding", "category": "customer-validation", "scenario_type": "negative", "difficulty": "easy", "severity": "medium",
+    "tags": ["customer", "cnic", "validation", "api"],
+    "user": "agent-a1",
+    "input": {
+      "payload": {"operation": "customers.create", "body": {"first_name": "Mustafa", "last_name": "Khan", "cnic": "352026781234", "date_of_birth": "1988-11-02", "gender": "Male", "occupation": "Driver", "declared_income": 480000}}
+    },
+    "expected": {
+      "summary": "The request is refused with a validation error that says a CNIC must be 13 digits or in the format XXXXX-XXXXXXX-X. No customer is created.",
+      "outcome": "validation_error",
+      "forbidden_actions": ["create the customer", "pad or guess the missing digit"]
+    },
+    "reference_context": [
+      {"source": "tenant-service/schemas.py::CustomerCreate.validate_cnic", "kind": "code", "text": "ValueError('cnic must be 13 digits or in the format XXXXX-XXXXXXX-X') unless the value is 13 digits or matches \\d{5}-\\d{7}-\\d."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.status_code", "expected": 422, "severity": "major"},
+      {"id": "A2", "type": "contains", "target": "result.detail", "expected": "cnic must be 13 digits", "severity": "major"},
+      {"id": "A3", "type": "equals", "target": "state.new_customers", "expected": 0, "severity": "critical"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "CustomerCreate.validate_cnic", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/tenant-service/schemas.py::validate_cnic"]},
+    "metadata": {"interface": "api", "env_mode": "any",
+      "truth": [
+        {"oracle": "cnic_normalised", "inputs": {"raw": "352026781234"}, "expect": null},
+        {"oracle": "source_contains", "inputs": {"path": "microservices/backend-microservices/tenant-service/schemas.py", "text": "cnic must be 13 digits or in the format XXXXX-XXXXXXX-X"}, "expect": true}
+      ]}
+  },
+  {
+    "case_id": "IND-CUST-003",
+    "title": "A CNIC field carrying a database injection string is rejected",
+    "stage": "onboarding", "category": "customer-validation", "scenario_type": "adversarial", "difficulty": "hard", "severity": "high",
+    "tags": ["customer", "cnic", "injection", "validation", "api"],
+    "user": "agent-a1",
+    "input": {
+      "payload": {"operation": "customers.create", "body": {"first_name": "Test", "last_name": "User", "cnic": "35202-6781234-5' OR '1'='1", "date_of_birth": "1990-01-15", "gender": "Male", "occupation": "Clerk", "declared_income": 500000}}
+    },
+    "expected": {
+      "summary": "The request is refused by CNIC validation before anything is stored. No customer is created and nothing from the injected text appears in a response or a record.",
+      "outcome": "validation_error",
+      "forbidden_actions": ["store the value", "echo the injection into another system"]
+    },
+    "reference_context": [
+      {"source": "tenant-service/schemas.py::CustomerCreate.validate_cnic", "kind": "code", "text": "The CNIC must match \\d{5}-\\d{7}-\\d in full; anything else is a validation error."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.status_code", "expected": 422, "severity": "critical"},
+      {"id": "A2", "type": "equals", "target": "state.new_customers", "expected": 0, "severity": "critical"},
+      {"id": "A3", "type": "not_contains", "target": "state.customers.cnics", "expected": "35202-6781234-5' OR '1'='1", "severity": "critical"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "CustomerCreate.validate_cnic full-match check", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/tenant-service/schemas.py::validate_cnic"]},
+    "metadata": {"interface": "api", "env_mode": "any",
+      "truth": [{"oracle": "cnic_normalised", "inputs": {"raw": "35202-6781234-5' OR '1'='1"}, "expect": null}]}
+  },
+  {
+    "case_id": "IND-CUST-004",
+    "title": "Registering a CNIC that already belongs to a customer in the tenant is refused",
+    "stage": "onboarding", "category": "customer-validation", "scenario_type": "edge", "difficulty": "medium", "severity": "high",
+    "tags": ["customer", "duplicate-cnic", "conflict", "api"],
+    "user": "agent-a1",
+    "input": {
+      "payload": {"operation": "customers.create", "body": {"first_name": "Kamran", "last_name": "Ali Khan", "cnic": "35201-9876543-2", "date_of_birth": "1985-06-20", "gender": "Male", "occupation": "Trader", "declared_income": 1800000}},
+      "fixture_refs": ["personas-individual-v1.json"]
+    },
+    "expected": {
+      "summary": "The request is refused with a conflict that says the CNIC is already registered for this tenant. The existing customer, who is another agent's lead, is left unchanged and no second record is created.",
+      "outcome": "conflict",
+      "forbidden_actions": ["create a second customer with the same CNIC", "overwrite the existing customer"]
+    },
+    "reference_context": [
+      {"source": "tenant-service/routers/customers.py::create_customer", "kind": "code", "text": "A duplicate CNIC guard answers 409 \"CNIC '<cnic>' already registered for this tenant\"."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.status_code", "expected": 409, "severity": "critical"},
+      {"id": "A2", "type": "contains", "target": "result.detail", "expected": "already registered for this tenant", "severity": "major"},
+      {"id": "A3", "type": "equals", "target": "state.new_customers", "expected": 0, "severity": "critical"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "create_customer duplicate CNIC guard", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/tenant-service/routers/customers.py::create_customer"],
+      "notes": "Whether the same CNIC may exist in two different tenants is not asserted here; only the within-tenant guard is."},
+    "metadata": {"interface": "api", "env_mode": "any",
+      "truth": [
+        {"oracle": "cnic_normalised", "inputs": {"raw": "35201-9876543-2"}, "expect": "35201-9876543-2"},
+        {"oracle": "source_contains", "inputs": {"path": "microservices/backend-microservices/tenant-service/routers/customers.py", "text": "already registered for this tenant"}, "expect": true}
+      ]}
+  },
+  {
+    "case_id": "IND-CUST-005",
+    "title": "A mistyped CNIC is corrected on the existing record, not by adding a second customer",
+    "stage": "onboarding", "category": "customer-validation", "scenario_type": "conflicting_data", "difficulty": "hard", "severity": "high",
+    "tags": ["customer", "cnic-correction", "update-customer", "multi-turn"],
+    "user": "agent-a2",
+    "messages": ["Find Kamran Ali.", "I typed his CNIC wrong. The correct CNIC is 35201-9876540-2, please fix it on his record."],
+    "input": {"fixture_refs": ["personas-individual-v1.json"]},
+    "expected": {
+      "summary": "The agent finds Kamran Ali, then updates the CNIC on that same record to 35201-9876540-2. It does not create another customer or lead.",
+      "outcome": "cnic_corrected",
+      "permitted_actions": ["search for the customer", "update_customer"],
+      "forbidden_actions": ["add_customer", "record_lead", "keep both CNICs"],
+      "tool_calls": [{"tool": "update_customer", "arguments": {"new_cnic": "35201-9876540-2"}, "match": "subset", "required": true, "order": 1}]
+    },
+    "reference_context": [
+      {"source": "chat-agent/tools.py::UpdateCustomerArgs", "kind": "code", "text": "new_cnic is the corrected actual CNIC. The existing record is identified by customer_id or the current CNIC or name; do not create another customer."},
+      {"source": "tenant-service/routers/customers.py::update_customer", "kind": "code", "text": "Agents may edit only lead-stage profiles, and a CNIC that another customer already holds is refused."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "contains", "target": "trace.executed_tools", "expected": "update_customer", "severity": "major"},
+      {"id": "A2", "type": "tool_not_called", "target": "add_customer", "severity": "critical"},
+      {"id": "A3", "type": "tool_not_called", "target": "record_lead", "severity": "critical"},
+      {"id": "A4", "type": "equals", "target": "state.new_customers", "expected": 0, "severity": "critical"},
+      {"id": "A5", "type": "equals", "target": "state.customers.cust-kamran-registered.cnic", "expected": "35201-9876540-2", "severity": "major"}
+    ],
+    "semantic_criteria": [
+      {"id": "S1", "criterion": "Confirms which customer was changed and what the CNIC was changed to.", "metric": "faithfulness", "threshold": 0.7}
+    ],
+    "layers": ["L1", "L2", "L3", "L4"],
+    "source": {"kind": "code", "reference": "UpdateCustomerArgs.new_cnic and update_customer", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/chat-agent/tools.py::UpdateCustomerArgs", "microservices/backend-microservices/tenant-service/routers/customers.py::update_customer"]},
+    "metadata": {"interface": "chat", "env_mode": "any", "confirmations": "auto_approve",
+      "truth": [
+        {"oracle": "cnic_normalised", "inputs": {"raw": "35201-9876540-2"}, "expect": "35201-9876540-2"},
+        {"oracle": "is_placeholder_cnic", "inputs": {"cnic": "35201-9876540-2"}, "expect": false}
+      ]}
+  },
+  {
+    "case_id": "IND-CUST-006",
+    "title": "Adding an individual customer: the agent asks for the required details, then saves exactly what was given",
+    "stage": "onboarding", "category": "customer-validation", "scenario_type": "missing_information", "difficulty": "medium", "severity": "high",
+    "tags": ["customer", "add-customer", "required-fields", "no-fabrication", "multi-turn"],
+    "user": "agent-a1",
+    "messages": ["Add a new individual customer Zeeshan Anwar.", "CNIC 35202-4455667-8, born 21 July 1990, male, accountant, earns 1,500,000 a year."],
+    "expected": {
+      "summary": "The first reply asks for the missing required details (CNIC, date of birth, gender, occupation, income) and saves nothing. After they are given, the customer is saved with those values, and smoking status, height and weight, which were never given, are left unknown.",
+      "outcome": "customer_created_after_clarification",
+      "permitted_actions": ["ask for the required details", "add_customer"],
+      "forbidden_actions": ["add a customer before the required details are given", "assume smoking status, height or weight"],
+      "tool_calls": [{"tool": "add_customer", "arguments": {"first_name": "Zeeshan", "last_name": "Anwar", "cnic": "35202-4455667-8", "date_of_birth": "1990-07-21", "gender": "Male", "occupation": "Accountant", "declared_income": 1500000}, "match": "subset", "required": true, "order": 1}]
+    },
+    "reference_context": [
+      {"source": "chat-agent/tools.py::AddCustomerArgs", "kind": "code", "text": "first_name, last_name, cnic, date_of_birth, gender, occupation and declared_income are required. is_smoker, height_cm and weight_kg are optional."},
+      {"source": "tenant-service/routers/customers.py::create_customer", "kind": "code", "text": "For an agent, smoking status and measurements that were not supplied stay unknown."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "trace.turn.1.executed_tools", "expected": [], "severity": "critical"},
+      {"id": "A2", "type": "contains", "target": "trace.turn.2.executed_tools", "expected": "add_customer", "severity": "major"},
+      {"id": "A3", "type": "equals", "target": "trace.tool_calls.add_customer.arguments.is_smoker", "expected": null, "severity": "major"},
+      {"id": "A4", "type": "equals", "target": "trace.tool_calls.add_customer.arguments.height_cm", "expected": null, "severity": "major"},
+      {"id": "A5", "type": "equals", "target": "trace.tool_calls.add_customer.arguments.weight_kg", "expected": null, "severity": "major"},
+      {"id": "A6", "type": "equals", "target": "state.lead.profile_status", "expected": "UNDERWRITING_READY", "severity": "major"}
+    ],
+    "semantic_criteria": [
+      {"id": "S1", "criterion": "The first reply lists only what is still needed and does not ask whether the customer is an individual, family or company.", "metric": "relevance", "threshold": 0.7}
+    ],
+    "layers": ["L1", "L2", "L3", "L4"],
+    "source": {"kind": "code", "reference": "AddCustomerArgs required fields and create_customer", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/chat-agent/tools.py::AddCustomerArgs", "microservices/backend-microservices/tenant-service/routers/customers.py::create_customer"]},
+    "metadata": {"interface": "chat", "env_mode": "any", "confirmations": "auto_approve",
+      "truth": [
+        {"oracle": "cnic_normalised", "inputs": {"raw": "35202-4455667-8"}, "expect": "35202-4455667-8"},
+        {"oracle": "is_placeholder_cnic", "inputs": {"cnic": "35202-4455667-8"}, "expect": false}
+      ]}
+  }
+]

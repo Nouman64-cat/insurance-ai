@@ -1,0 +1,209 @@
+[
+  {
+    "case_id": "IND-UW-001",
+    "title": "A modest cover for a healthy 30 year old needs only identity and the questionnaire",
+    "stage": "underwriting", "category": "underwriting", "scenario_type": "positive", "difficulty": "easy", "severity": "medium",
+    "tags": ["underwriting", "requirements", "evidence", "rules"],
+    "user": "uw-a1",
+    "input": {
+      "payload": {"operation": "underwriting.determine_requirements",
+        "applicant": {"age_years": 30, "is_smoker": false, "height_cm": 170, "weight_kg": 65, "declared_income": 1200000},
+        "policy": {"coverage_amount": 3000000, "term_years": 20}, "medical_questionnaire": {}}
+    },
+    "expected": {
+      "summary": "Cover of PKR 3,000,000 is below the first medical examination tier, the cover is 2.5 times income so no financial evidence is asked for, and nothing is declared on the questionnaire. Only identity and the medical questionnaire are required.",
+      "outcome": "requirements_determined"
+    },
+    "reference_context": [
+      {"source": "shared/underwriting/requirements_rules.py::determine_requirements", "kind": "code", "text": "Identity and the medical questionnaire are always required. A medical examination starts at cover of 5,000,000 (3,500,000 for a smoker). Financial evidence is asked for above 10 times income."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.required_codes", "expected": ["CNIC", "MEDICAL_QUESTIONNAIRE"], "severity": "major"},
+      {"id": "A2", "type": "not_contains", "target": "result.required_codes", "expected": "MEDICAL_EXAMINATION", "severity": "major"},
+      {"id": "A3", "type": "not_contains", "target": "result.required_codes", "expected": "SALARY_SLIP", "severity": "major"}
+    ],
+    "layers": ["L1", "L5"],
+    "source": {"kind": "code", "reference": "determine_requirements and its coverage and ratio tiers", "verification": "pending_domain_approval",
+      "code_refs": ["shared/underwriting/requirements_rules.py::determine_requirements", "shared/underwriting/requirements_rules.py::MEDICAL_EXAM_COVERAGE_TIERS"],
+      "notes": "What the code does today is reproduced exactly. The tier amounts are described in the code as a v1 demonstration configuration, not an actuarially reviewed rule set, so the business has not approved them yet."},
+    "metadata": {"interface": "rules", "env_mode": "any", "placeholder_rule": true,
+      "truth": [{"oracle": "requirements", "inputs": {"age": 30, "coverage": 3000000, "declared_income": 1200000}, "expect": ["CNIC", "MEDICAL_QUESTIONNAIRE"]}]}
+  },
+  {
+    "case_id": "IND-UW-002",
+    "title": "A smoker reaches the medical examination tier at 3,500,000, not 5,000,000",
+    "stage": "underwriting", "category": "underwriting", "scenario_type": "boundary", "difficulty": "medium", "severity": "high",
+    "tags": ["underwriting", "requirements", "smoker", "boundary"],
+    "user": "uw-a1",
+    "input": {
+      "payload": {"operation": "underwriting.determine_requirements",
+        "applicant": {"age_years": 30, "is_smoker": true, "height_cm": 170, "weight_kg": 65, "declared_income": 1200000},
+        "policy": {"coverage_amount": 3500000, "term_years": 20}, "medical_questionnaire": {}}
+    },
+    "expected": {
+      "summary": "For a smoker the examination tiers are reached at 70% of the usual cover, so cover of exactly PKR 3,500,000 requires a medical examination. One rupee less does not, and a non-smoker at 3,500,000 does not.",
+      "outcome": "medical_examination_required"
+    },
+    "reference_context": [
+      {"source": "shared/underwriting/requirements_rules.py::_medical_exam_codes_for_coverage", "kind": "code", "text": "A smoker's cover is divided by 0.7 before it is compared with the tiers, so the 5,000,000 tier is reached at 3,500,000."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.required_codes", "expected": ["CNIC", "MEDICAL_EXAMINATION", "MEDICAL_QUESTIONNAIRE"], "severity": "critical"}
+    ],
+    "layers": ["L1", "L5"],
+    "source": {"kind": "code", "reference": "smoker-adjusted examination tier", "verification": "pending_domain_approval",
+      "code_refs": ["shared/underwriting/requirements_rules.py::SMOKER_COVERAGE_TIER_FACTOR", "shared/underwriting/requirements_rules.py::_medical_exam_codes_for_coverage"],
+      "notes": "The 0.7 factor and the tier amounts belong to the code's v1 demonstration configuration."},
+    "metadata": {"interface": "rules", "env_mode": "any", "placeholder_rule": true,
+      "truth": [
+        {"oracle": "requirements", "inputs": {"age": 30, "coverage": 3500000, "declared_income": 1200000, "smoker": true}, "expect": ["CNIC", "MEDICAL_EXAMINATION", "MEDICAL_QUESTIONNAIRE"]},
+        {"oracle": "requirements", "inputs": {"age": 30, "coverage": 3499999, "declared_income": 1200000, "smoker": true}, "expect": ["CNIC", "MEDICAL_QUESTIONNAIRE"]},
+        {"oracle": "requirements", "inputs": {"age": 30, "coverage": 3500000, "declared_income": 1200000, "smoker": false}, "expect": ["CNIC", "MEDICAL_QUESTIONNAIRE"]},
+        {"oracle": "requirements", "inputs": {"age": 30, "coverage": 5000000, "declared_income": 1200000, "smoker": false}, "expect": ["CNIC", "MEDICAL_EXAMINATION", "MEDICAL_QUESTIONNAIRE"]}
+      ]}
+  },
+  {
+    "case_id": "IND-UW-003",
+    "title": "Cover just above ten times income asks for salary and bank evidence",
+    "stage": "underwriting", "category": "underwriting", "scenario_type": "boundary", "difficulty": "medium", "severity": "high",
+    "tags": ["underwriting", "requirements", "financial-evidence", "coverage-to-income"],
+    "user": "uw-a1",
+    "input": {
+      "payload": {"operation": "underwriting.determine_requirements",
+        "applicant": {"age_years": 30, "is_smoker": false, "height_cm": 170, "weight_kg": 65, "declared_income": 1000000},
+        "policy": {"coverage_amount": 10000001, "term_years": 20}, "medical_questionnaire": {}}
+    },
+    "expected": {
+      "summary": "At exactly ten times income no financial evidence is needed. One rupee above, a salary slip and a bank statement become required, alongside the medical examination the cover amount already calls for.",
+      "outcome": "financial_evidence_required"
+    },
+    "reference_context": [
+      {"source": "shared/underwriting/requirements_rules.py::FINANCIAL_DOCS_RATIO_THRESHOLD", "kind": "code", "text": "The ratio test is strictly greater than 10 for salary and bank evidence, and strictly greater than 20 for tax evidence."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.required_codes", "expected": ["BANK_STATEMENT", "CNIC", "MEDICAL_EXAMINATION", "MEDICAL_QUESTIONNAIRE", "SALARY_SLIP"], "severity": "critical"},
+      {"id": "A2", "type": "not_contains", "target": "result.required_codes", "expected": "TAX_DOCUMENT", "severity": "major"}
+    ],
+    "layers": ["L1", "L5"],
+    "source": {"kind": "code", "reference": "coverage-to-income evidence thresholds", "verification": "pending_domain_approval",
+      "code_refs": ["shared/underwriting/requirements_rules.py::FINANCIAL_DOCS_RATIO_THRESHOLD", "shared/underwriting/requirements_rules.py::TAX_DOCUMENT_RATIO_THRESHOLD"],
+      "notes": "Thresholds are part of the code's v1 demonstration configuration."},
+    "metadata": {"interface": "rules", "env_mode": "any", "placeholder_rule": true,
+      "truth": [
+        {"oracle": "requirements", "inputs": {"age": 30, "coverage": 10000001, "declared_income": 1000000}, "expect": ["BANK_STATEMENT", "CNIC", "MEDICAL_EXAMINATION", "MEDICAL_QUESTIONNAIRE", "SALARY_SLIP"]},
+        {"oracle": "requirements", "inputs": {"age": 30, "coverage": 10000000, "declared_income": 1000000}, "expect": ["CNIC", "MEDICAL_EXAMINATION", "MEDICAL_QUESTIONNAIRE"]},
+        {"oracle": "requirements", "inputs": {"age": 30, "coverage": 20000001, "declared_income": 1000000}, "expect": ["BANK_STATEMENT", "CNIC", "ECG", "LAB_REPORTS", "MEDICAL_EXAMINATION", "MEDICAL_QUESTIONNAIRE", "SALARY_SLIP", "TAX_DOCUMENT"]}
+      ]}
+  },
+  {
+    "case_id": "IND-UW-004",
+    "title": "Cover above the age band's non-medical limit orders the standard test panel",
+    "stage": "underwriting", "category": "underwriting", "scenario_type": "positive", "difficulty": "medium", "severity": "high",
+    "tags": ["underwriting", "non-medical-limit", "medical-panel", "tests"],
+    "user": "med-uw-a1",
+    "input": {
+      "payload": {"operation": "underwriting.assess_medical_requirement", "applicant": {"age_years": 36, "gender": "Male", "is_smoker": false}, "sum_at_risk": 2500000}
+    },
+    "expected": {
+      "summary": "A 36 year old can be underwritten on declarations alone up to PKR 2,000,000. At 2,500,000 a medical is required: the examiner's report, fasting blood sugar, urine routine, lipid profile and a blood count, estimated at PKR 7,100. At exactly 2,000,000 no medical is needed.",
+      "outcome": "medical_required"
+    },
+    "reference_context": [
+      {"source": "tenant-service/services/underwriting_limits.py::NON_MEDICAL_LIMITS", "kind": "code", "text": "Age 36 to 40: non-medical limit PKR 2,000,000. Above it the test tiers apply; at or above PKR 2,000,000 a metabolic panel (lipid profile, blood count) is added to the standard breach panel."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "is_true", "target": "result.required", "severity": "critical"},
+      {"id": "A2", "type": "equals", "target": "result.non_medical_limit", "expected": 2000000, "severity": "major"},
+      {"id": "A3", "type": "equals", "target": "result.tests", "expected": ["MER", "FBS", "URINE_RE", "LIPID", "CBC"], "severity": "major"},
+      {"id": "A4", "type": "numeric_close", "target": "result.estimated_cost", "expected": 7100, "tolerance": 0.01, "severity": "minor"}
+    ],
+    "layers": ["L1", "L5"],
+    "source": {"kind": "code", "reference": "assess_medical_requirement and the limit book", "verification": "pending_domain_approval",
+      "code_refs": ["microservices/backend-microservices/tenant-service/services/underwriting_limits.py::assess_medical_requirement", "microservices/backend-microservices/tenant-service/services/underwriting_limits.py::TEST_TIERS"],
+      "notes": "The limit book describes itself as defaults for the mid-market Pakistani life book, overridable by environment variables; the insurer has not signed it off for this dataset."},
+    "metadata": {"interface": "rules", "env_mode": "any", "placeholder_rule": true,
+      "truth": [
+        {"oracle": "medical_requirement", "inputs": {"age": 36, "sum_at_risk": 2500000, "gender": "Male", "smoker": false}, "expect": {"required": true, "non_medical_limit": 2000000, "tests": ["MER", "FBS", "URINE_RE", "LIPID", "CBC"], "estimated_cost": 7100}},
+        {"oracle": "medical_requirement", "inputs": {"age": 36, "sum_at_risk": 2000000, "gender": "Male", "smoker": false}, "expect": {"required": false, "tests": []}},
+        {"oracle": "medical_requirement", "inputs": {"age": 61, "sum_at_risk": 100000, "gender": "Male", "smoker": false}, "expect": {"required": true, "non_medical_limit": 0, "tests": ["MER", "FBS", "URINE_RE", "LIPID", "HBA1C", "ECG", "CXR"]}}
+      ]}
+  },
+  {
+    "case_id": "IND-UW-005",
+    "title": "A medical decline cannot be outweighed by good finances",
+    "stage": "underwriting", "category": "underwriting", "scenario_type": "complex_workflow", "difficulty": "hard", "severity": "critical",
+    "tags": ["underwriting", "decision-engine", "precedence", "decline"],
+    "user": "uw-a1",
+    "input": {
+      "payload": {"operation": "underwriting.decide",
+        "requirements_satisfied": true,
+        "medical": {"risk_class": "Decline", "risk_score": 40},
+        "financial": {"financially_justified": true, "referral_required": false},
+        "fraud": {"severity": "Low", "probability": 0.05, "investigation_required": false},
+        "findings": []}
+    },
+    "expected": {
+      "summary": "The decision is Decline. The engine is a sequence of checks, not a weighted average, so strong finances and a low fraud signal do not cancel a medical Decline. Missing requirements come first (Request Additional Evidence) and a serious fraud signal comes next (Fraud Investigation).",
+      "outcome": "Decline",
+      "forbidden_actions": ["average the three assessments into a score", "approve with a loading"]
+    },
+    "reference_context": [
+      {"source": "shared/underwriting/decision_rules.py::decide", "kind": "code", "text": "Order of checks: requirements not satisfied, fraud investigation, medium fraud, medical Decline, medical Postpone, medical review, financial justification, high verification findings, loading, financial referral, medium findings, otherwise Auto Approve."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.decision", "expected": "Decline", "severity": "critical"},
+      {"id": "A2", "type": "not_equals", "target": "result.decision", "expected": "Auto Approve", "severity": "critical"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "decide() rule chain", "verification": "code_verified",
+      "code_refs": ["shared/underwriting/decision_rules.py::decide"],
+      "notes": "The ordering is the documented design of the engine (severe risk is never cancelled by a favourable score); the outcome for each input is run against the real function."},
+    "metadata": {"interface": "rules", "env_mode": "any",
+      "truth": [
+        {"oracle": "decide", "inputs": {"medical_class": "Decline", "justified": true}, "expect": "Decline"},
+        {"oracle": "decide", "inputs": {"fraud_severity": "High", "fraud_probability": 0.9, "fraud_investigation": true}, "expect": "Fraud Investigation"},
+        {"oracle": "decide", "inputs": {"requirements_satisfied": false, "medical_class": "Decline"}, "expect": "Request Additional Evidence"},
+        {"oracle": "decide", "inputs": {"medical_class": "Substandard", "medical_loading": 25}, "expect": "Approve with Loading"}
+      ]}
+  },
+  {
+    "case_id": "IND-UW-006",
+    "title": "Income on a salary slip is 40% below the declared income",
+    "stage": "underwriting", "category": "underwriting", "scenario_type": "conflicting_data", "difficulty": "hard", "severity": "high",
+    "tags": ["underwriting", "income-verification", "discrepancy", "human-review"],
+    "user": "fin-uw-a1",
+    "input": {
+      "payload": {"operation": "underwriting.verify_profile",
+        "declared_income": 1200000, "verified_income_source": "salary-slip-ayesha-60k.png", "verified_monthly_income": 60000},
+      "fixture_refs": ["salary-slip-ayesha-60k.png", "personas-individual-v1.json"]
+    },
+    "expected": {
+      "summary": "A slip showing PKR 60,000 a month is PKR 720,000 a year against 1,200,000 declared: 40% lower. That is a Medium severity finding on declared income, and with everything else clean it sends the case to Human Review instead of approving it.",
+      "outcome": "income_discrepancy_flagged",
+      "forbidden_actions": ["auto-approve", "overwrite the declared income with the slip's figure"]
+    },
+    "reference_context": [
+      {"source": "shared/underwriting/verification.py::_income_severity", "kind": "code", "text": "A difference of 15% is Low, 30% Medium and 50% High, measured against the declared income."},
+      {"source": "fixtures/salary-slip-ayesha-60k.png", "kind": "fixture", "text": "Synthetic salary slip, monthly gross PKR 60,000."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.findings.0.field", "expected": "declared_income", "severity": "major"},
+      {"id": "A2", "type": "equals", "target": "result.findings.0.severity", "expected": "Medium", "severity": "critical"},
+      {"id": "A3", "type": "equals", "target": "result.decision", "expected": "Human Review", "severity": "major"},
+      {"id": "A4", "type": "equals", "target": "state.customers.cust-ayesha-35.declared_income", "expected": 1200000, "severity": "critical", "description": "The declared figure is kept; the two values are shown side by side."}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "verify_profile income bands and decide()", "verification": "code_verified",
+      "code_refs": ["shared/underwriting/verification.py::verify_profile", "shared/underwriting/decision_rules.py::decide"],
+      "notes": "The percentage bands are constants in the module; the arithmetic (480,000 / 1,200,000 = 0.40) is checked by hand and by the oracle."},
+    "metadata": {"interface": "rules", "env_mode": "any",
+      "truth": [
+        {"oracle": "verification", "inputs": {"declared_income": 1200000, "verified_income": 720000}, "expect": [{"field": "declared_income", "severity": "Medium"}]},
+        {"oracle": "verification", "inputs": {"declared_income": 1000000, "verified_income": 860000}, "expect": []},
+        {"oracle": "verification", "inputs": {"declared_income": 1000000, "verified_income": 850000}, "expect": [{"field": "declared_income", "severity": "Low"}]},
+        {"oracle": "verification", "inputs": {"declared_income": 1000000, "verified_income": 700000}, "expect": [{"field": "declared_income", "severity": "Medium"}]},
+        {"oracle": "verification", "inputs": {"declared_income": 1000000, "verified_income": 500000}, "expect": [{"field": "declared_income", "severity": "High"}]},
+        {"oracle": "decide", "inputs": {"findings": [{"field": "declared_income", "severity": "Medium"}]}, "expect": "Human Review"}
+      ]}
+  }
+]
