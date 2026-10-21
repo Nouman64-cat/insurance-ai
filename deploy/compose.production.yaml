@@ -1,0 +1,369 @@
+# Production overlay for the root docker-compose.yml.
+# Requires Docker Compose v2.24.4+ for !override list replacement.
+# Start only with the `production` profile (see deploy/README.md).
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    profiles: !override [production]
+    restart: unless-stopped
+    env_file: !override []
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN}
+      TLS_EMAIL: ${TLS_EMAIL:?Set TLS_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [insurance-net]
+    depends_on:
+      frontend: { condition: service_started }
+      marketing-site-prod: { condition: service_started }
+      customer-portal: { condition: service_started }
+      underwriting-app-prod: { condition: service_started }
+      claims-manager-app: { condition: service_started }
+      customer-service-app: { condition: service_started }
+      automation-chat: { condition: service_started }
+      api-gateway: { condition: service_started }
+
+  memgraph:
+    image: memgraph/memgraph-mage:3.13.0
+    profiles: !override [production]
+    ports: !override []
+
+  kafka:
+    profiles: !override [production]
+    ports: !override []
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+
+  kafka-ui:
+    profiles: !override [development]
+
+  api-gateway:
+    profiles: !override [production]
+    env_file: !override []
+    ports: !override []
+    volumes: !override []
+    extra_hosts: !override []
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-graceful-shutdown", "5"]
+    environment:
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?Set explicit browser origins}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set a shared strong JWT_SECRET_KEY}
+
+  tenant-service:
+    profiles: !override [production]
+    env_file: !override []
+    ports: !override []
+    volumes: !override []
+    extra_hosts: !override []
+    environment:
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set a shared strong JWT_SECRET_KEY}
+      AWS_S3_REGION: ${AWS_S3_REGION:-eu-south-1}
+      CONFIG_ENCRYPTION_KEY: ${CONFIG_ENCRYPTION_KEY:?Set CONFIG_ENCRYPTION_KEY}
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?Set INTERNAL_API_SECRET}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-ses}
+      AWS_SES_FROM_EMAIL: ${AWS_SES_FROM_EMAIL:-}
+      AWS_SES_USERNAME: ${AWS_SES_USERNAME:-}
+      AWS_SES_PASSWORD: ${AWS_SES_PASSWORD:-}
+      APP_LOGIN_URL: https://portal.${APP_DOMAIN:?Set APP_DOMAIN}/login
+
+  risk-engine:
+    profiles: !override [production]
+    env_file: !override []
+    ports: !override []
+    volumes: !override []
+    extra_hosts: !override []
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8002"]
+    environment:
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?Set INTERNAL_API_SECRET}
+
+  chat-agent:
+    profiles: !override [production]
+    env_file: !override []
+    ports: !override []
+    volumes: !override []
+    extra_hosts: !override []
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8006"]
+    environment:
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?Set INTERNAL_API_SECRET}
+
+  decision-engine:
+    profiles: !override [production]
+    env_file: !override []
+    ports: !override []
+    volumes: !override []
+    extra_hosts: !override []
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8003"]
+
+  ocr-engine:
+    profiles: !override [production]
+    env_file: !override []
+    ports: !override []
+    volumes: !override []
+    extra_hosts: !override []
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8004"]
+    environment:
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?Set INTERNAL_API_SECRET}
+
+  text-summarizer:
+    profiles: !override [production]
+    env_file: !override []
+    volumes: !override []
+    extra_hosts: !override []
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8005"]
+    environment:
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?Set INTERNAL_API_SECRET}
+
+  request-management-service:
+    profiles: !override [production]
+    env_file: !override []
+    ports: !override []
+    volumes: !override [request-attachments:/data/request-attachments]
+    extra_hosts: !override []
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8007"]
+    environment:
+      REQUEST_MGMT_DATABASE_URL: ${REQUEST_MGMT_DATABASE_URL:?Set the request-management app DSN}
+      REQUEST_MGMT_MIGRATION_DATABASE_URL: ${REQUEST_MGMT_MIGRATION_DATABASE_URL:?Set the request-management owner DSN}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION}
+      AWS_S3_REGION: ${AWS_S3_REGION:-eu-south-1}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+
+  request-management-provision:
+    profiles: !override [production-tools]
+    env_file: !override []
+    extra_hosts: !override []
+    environment:
+      REQUEST_MGMT_PROVISION_DATABASE_URL: ${DATABASE_ADMIN_URL:?Set DATABASE_ADMIN_URL}
+      REQUEST_MGMT_DB_OWNER_PASSWORD: ${REQUEST_MGMT_DB_OWNER_PASSWORD:?Set REQUEST_MGMT_DB_OWNER_PASSWORD}
+      REQUEST_MGMT_DB_APP_PASSWORD: ${REQUEST_MGMT_DB_APP_PASSWORD:?Set REQUEST_MGMT_DB_APP_PASSWORD}
+
+  customer-management-provision:
+    profiles: !override [production]
+    env_file: !override []
+    extra_hosts: !override []
+    environment:
+      CM_PROVISION_DATABASE_URL: ${DATABASE_ADMIN_URL:?Set DATABASE_ADMIN_URL}
+
+  customer-management:
+    profiles: !override [production]
+    env_file: !override []
+    ports: !override []
+    volumes: !override []
+    extra_hosts: !override []
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8009", "--workers", "2"]
+    environment:
+      CM_DATABASE_URL: ${CM_DATABASE_URL:?Set the customer-management app DSN}
+      CM_MIGRATION_DATABASE_URL: ${CM_MIGRATION_DATABASE_URL:?Set the customer-management owner DSN}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set a shared strong JWT_SECRET_KEY}
+
+  audit-provision:
+    profiles: !override [production]
+    env_file: !override []
+    extra_hosts: !override []
+    environment:
+      AUDIT_PROVISION_DATABASE_URL: ${DATABASE_ADMIN_URL:?Set DATABASE_ADMIN_URL}
+
+  audit-service:
+    profiles: !override [production]
+    env_file: !override []
+    ports: !override []
+    volumes: !override
+      - audit-checkpoints:/var/lib/audit-checkpoints:ro
+      - audit-archive-keys:/run/audit-archive-keys:ro
+      - audit-archive-work:/var/lib/audit-archive-work
+    extra_hosts: !override []
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8020", "--workers", "2"]
+    environment:
+      AUDIT_DATABASE_URL: ${AUDIT_DATABASE_URL:?Set the audit app DSN}
+      AUDIT_MIGRATION_DATABASE_URL: ${AUDIT_MIGRATION_DATABASE_URL:?Set the audit owner DSN}
+      AUDIT_ENVIRONMENT_LABEL: production
+
+  minio:
+    profiles: !override [production]
+    ports: !override []
+    volumes: !override
+      - aistor-data:/data
+      - ${AISTOR_LICENSE_FILE:?Set AISTOR_LICENSE_FILE}:/run/license/minio.license:ro
+
+  minio-init:
+    profiles: !override [production]
+    env_file: !override []
+    volumes: !override
+      - ./infrastructure/minio/init.sh:/init/init.sh:ro
+
+  audit-archive-init:
+    profiles: !override [production-tools]
+    env_file: !override []
+
+  audit-signer:
+    profiles: !override [production]
+    env_file: !override []
+    ports: !override []
+    volumes: !override
+      - audit-keys:/run/audit-keys:ro
+      - audit-secrets:/run/audit-secrets:ro
+      - audit-signer-state:/var/lib/audit-signer
+      - audit-checkpoints:/var/lib/audit-checkpoints
+    extra_hosts: !override []
+    environment:
+      AUDIT_SIGNER_DATABASE_URL: ${AUDIT_SIGNER_DATABASE_URL:?Set the audit-signer DSN}
+
+  audit-signer-init:
+    profiles: !override [production-tools]
+    env_file: !override []
+    extra_hosts: !override []
+    environment:
+      AUDIT_SIGNER_DATABASE_URL: ${AUDIT_SIGNER_DATABASE_URL:?Set the audit-signer DSN}
+
+  customer-portal:
+    profiles: !override [production]
+    env_file: !override []
+    build:
+      target: runner
+      args:
+        NEXT_PUBLIC_WALKIN_DEMO: "false"
+    ports: !override []
+    volumes: !override []
+    environment:
+      COOKIE_SECURE: "true"
+      CM_STREAM_URL: http://customer-management:8009
+      CM_API_URL: http://api-gateway:8000/customer-management
+
+  customer-service:
+    profiles: !override [production]
+    env_file: !override []
+    ports: !override []
+    volumes: !override []
+    extra_hosts: !override []
+    environment:
+      CS_DATABASE_URL: ${CS_DATABASE_URL:?Set the customer-service app DSN}
+      CS_MIGRATION_DATABASE_URL: ${CS_MIGRATION_DATABASE_URL:?Set the customer-service owner DSN}
+      CS_ENV: production
+
+  customer-service-provision:
+    profiles: !override [production]
+    env_file: !override []
+    extra_hosts: !override []
+    environment:
+      CS_PROVISION_DATABASE_URL: ${DATABASE_ADMIN_URL:?Set DATABASE_ADMIN_URL}
+      CS_DB_OWNER_PASSWORD: ${CS_DB_OWNER_PASSWORD:?Set CS_DB_OWNER_PASSWORD}
+      CS_DB_APP_PASSWORD: ${CS_DB_APP_PASSWORD:?Set CS_DB_APP_PASSWORD}
+
+  customer-service-app:
+    profiles: !override [production]
+    env_file: !override []
+    build:
+      target: runner
+      args:
+        NEXT_PUBLIC_API_URL: https://api.${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_PORTAL_URL: https://portal.${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_CUSTOMER_SERVICE_URL: https://support.${APP_DOMAIN:?Set APP_DOMAIN}
+    ports: !override []
+    volumes: !override []
+    environment:
+      API_GATEWAY_INTERNAL_URL: http://api-gateway:8000
+      SSO_COOKIE_DOMAIN: .${APP_DOMAIN:?Set APP_DOMAIN}
+
+  customer-service-desk:
+    profiles: !override [development]
+
+  docs:
+    profiles: !override [development]
+
+  frontend:
+    profiles: !override [production]
+    env_file: !override []
+    build:
+      target: runner
+      args:
+        NEXT_PUBLIC_API_URL: https://api.${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_OCR_URL: https://ocr.${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_CUSTOMER_SERVICE_URL: https://support.${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_AUTOMATION_URL: https://automation.${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_UNDERWRITING_URL: https://underwriting.${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_CLAIMS_URL: https://claims.${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_PORTAL_URL: https://portal.${APP_DOMAIN:?Set APP_DOMAIN}
+        ENV_VAR: production
+    ports: !override []
+    volumes: !override []
+    environment:
+      API_GATEWAY_INTERNAL_URL: http://api-gateway:8000
+      SSO_COOKIE_DOMAIN: .${APP_DOMAIN:?Set APP_DOMAIN}
+
+  automation-chat:
+    profiles: !override [production]
+    env_file: !override []
+    build:
+      target: runner
+      args:
+        NEXT_PUBLIC_API_URL: https://api.${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_OCR_URL: https://ocr.${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_PORTAL_URL: https://portal.${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_UNDERWRITING_URL: https://underwriting.${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_CLAIMS_URL: https://claims.${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_CUSTOMER_SERVICE_URL: https://support.${APP_DOMAIN:?Set APP_DOMAIN}
+        ENV_VAR: production
+    ports: !override []
+    volumes: !override []
+    environment:
+      API_GATEWAY_INTERNAL_URL: http://api-gateway:8000
+      SSO_COOKIE_DOMAIN: .${APP_DOMAIN:?Set APP_DOMAIN}
+
+  underwriting-app:
+    profiles: !override [development]
+
+  underwriting-app-prod:
+    profiles: !override [production]
+    env_file: !override []
+    build:
+      args:
+        NEXT_PUBLIC_API_URL: https://api.${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_OCR_URL: https://ocr.${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_PORTAL_URL: https://portal.${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_UNDERWRITING_URL: https://underwriting.${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_AUTOMATION_URL: https://automation.${APP_DOMAIN:?Set APP_DOMAIN}
+        ENV_VAR: production
+    ports: !override []
+    environment:
+      SSO_COOKIE_DOMAIN: .${APP_DOMAIN:?Set APP_DOMAIN}
+
+  claims-manager-app:
+    profiles: !override [production]
+    env_file: !override []
+    build:
+      target: runner
+      args:
+        NEXT_PUBLIC_API_URL: https://api.${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_PORTAL_URL: https://portal.${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_UNDERWRITING_URL: https://underwriting.${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_CLAIMS_URL: https://claims.${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_AUTOMATION_URL: https://automation.${APP_DOMAIN:?Set APP_DOMAIN}
+        ENV_VAR: production
+    ports: !override []
+    volumes: !override []
+    environment:
+      API_GATEWAY_INTERNAL_URL: http://api-gateway:8000
+      SSO_COOKIE_DOMAIN: .${APP_DOMAIN:?Set APP_DOMAIN}
+
+  marketing-site:
+    profiles: !override [development]
+
+  marketing-site-prod:
+    profiles: !override [production]
+    env_file: !override []
+    build:
+      args:
+        NEXT_PUBLIC_SITE_URL: https://${APP_DOMAIN:?Set APP_DOMAIN}
+        NEXT_PUBLIC_PORTAL_URL: https://portal.${APP_DOMAIN:?Set APP_DOMAIN}
+    ports: !override []
+
+volumes:
+  caddy-data:
+  caddy-config:

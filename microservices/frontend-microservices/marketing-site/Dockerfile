@@ -18,8 +18,12 @@ CMD ["npm", "run", "dev"]
 
 # ── Production build ───────────────────────────────────────────────────────
 FROM base AS builder
+ARG NEXT_PUBLIC_SITE_URL=http://localhost:3002
+ARG NEXT_PUBLIC_PORTAL_URL=http://localhost:3000
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
+    NEXT_PUBLIC_PORTAL_URL=$NEXT_PUBLIC_PORTAL_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 

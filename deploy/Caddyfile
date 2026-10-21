@@ -1,0 +1,39 @@
+{
+	email {$TLS_EMAIL}
+}
+
+{$APP_DOMAIN} {
+	reverse_proxy marketing-site-prod:3000
+}
+
+app.{$APP_DOMAIN} {
+	reverse_proxy frontend:3000
+}
+
+portal.{$APP_DOMAIN} {
+	reverse_proxy customer-portal:3009
+}
+
+api.{$APP_DOMAIN} {
+	reverse_proxy api-gateway:8000
+}
+
+ocr.{$APP_DOMAIN} {
+	reverse_proxy ocr-engine:8004
+}
+
+support.{$APP_DOMAIN} {
+	reverse_proxy customer-service-app:3008
+}
+
+underwriting.{$APP_DOMAIN} {
+	reverse_proxy underwriting-app-prod:3005
+}
+
+claims.{$APP_DOMAIN} {
+	reverse_proxy claims-manager-app:3011
+}
+
+automation.{$APP_DOMAIN} {
+	reverse_proxy automation-chat:3000
+}

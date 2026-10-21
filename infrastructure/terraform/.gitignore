@@ -1,0 +1,20 @@
+# Terraform working data and local values (never commit state or credentials).
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!*.tfvars.example
+*.tfvars.json
+crash.log
+crash.*.log
+*.auto.tfvars
+*.auto.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Terraform CLI local state backup.
+.terraformrc
+terraform.rc

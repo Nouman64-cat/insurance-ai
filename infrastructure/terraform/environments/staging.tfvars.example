@@ -1,0 +1,9 @@
+aws_region             = "eu-south-1"
+environment            = "staging"
+instance_type          = "m8g.4xlarge"
+root_volume_size_gib   = 150
+create_app_s3_bucket   = true
+
+# Empty means SSM-only access. Add trusted office/VPN CIDRs only after a TLS
+# reverse proxy or load balancer has been configured for the application.
+allowed_web_ingress_cidrs = []
