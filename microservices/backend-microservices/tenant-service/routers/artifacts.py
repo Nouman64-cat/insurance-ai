@@ -14,6 +14,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 from routers.auth import decode_access_token, oauth2_scheme
+from services.audit_capture import record_standalone as audit_standalone
 from shared.events.kafka_events import ArtifactOCRPayload, ArtifactOCRRequestedEvent
 from sqlalchemy import update as sa_update
 from shared.models.core import (
@@ -371,6 +372,11 @@ async def view_artifact_file(
     if artifact is None or artifact.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Artifact not found")
 
+    # Sensitive document access is audited (who opened which document), without ever recording its content.
+    await audit_standalone(module="documents", action="document.viewed", entity_type="artifact", entity_id=artifact_id,
+                           tenant_id=tenant_id, case_id=artifact.case_id,
+                           metadata={"document_type": artifact.document_type, "file_name": artifact.file_name, "channel": "view"})
+
     # 1. Check if S3 Presigned URL is available (serving directly from S3)
     s3_key_found = None
     if artifact.storage_url and not artifact.storage_url.startswith("local://"):
@@ -547,6 +553,11 @@ async def get_artifact(
     artifact = await session.get(Artifact, artifact_id)
     if artifact is None or artifact.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Artifact not found")
+
+    # A fresh download link is being issued for this document: audited as sensitive document access.
+    await audit_standalone(module="documents", action="document.link_issued", entity_type="artifact", entity_id=artifact_id,
+                           tenant_id=tenant_id, case_id=artifact.case_id,
+                           metadata={"document_type": artifact.document_type, "file_name": artifact.file_name, "channel": "link"})
 
     key = None
     if artifact.storage_url:

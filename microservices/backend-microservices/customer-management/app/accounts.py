@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from app import security
 from app.config import settings
 from app.errors import ApiError, unauthenticated, validation
+from shared.audit.outbox import build_intent, enqueue
 
 log = logging.getLogger("customer-management.accounts")
 
@@ -41,6 +42,34 @@ async def audit(conn: AsyncConnection, kind: str, *, account_id=None, tenant_id=
     """Append to the security trail. `detail` must never contain passwords, hashes or tokens."""
     await conn.execute(text("INSERT INTO security_events (tenant_id, account_id, kind, detail, ip_hash) VALUES (:t, :a, :k, CAST(:d AS jsonb), :ip)"),
                        {"t": tenant_id, "a": account_id, "k": kind, "d": json.dumps(detail, default=str), "ip": ip_hash})
+    if settings.audit_enabled:   # the same fact as a tamper-evident ledger entry, queued in this transaction
+        await enqueue(conn, _audit_intent(kind, account_id, tenant_id, ip_hash, detail))
+
+
+_FAILED = {"LOGIN_FAILED", "PASSWORD_CHANGE_REJECTED", "REFRESH_REUSE"}
+
+
+def _audit_module(kind: str) -> str:
+    if kind.startswith("CLAIM"):
+        return "claims"
+    if kind.startswith(("SURRENDER", "RENEWAL")):
+        return "policies"
+    if kind.startswith("PREMIUM"):
+        return "payments"
+    if kind.startswith("DOCUMENT"):
+        return "documents"
+    if kind.startswith(("FAMILY", "CONTACT")):
+        return "customers_leads"
+    return "administration"
+
+
+def _audit_intent(kind: str, account_id, tenant_id, ip_hash: Optional[str], detail: dict):
+    outcome = "DENIED" if kind == "LOGIN_BLOCKED" else ("FAILURE" if kind in _FAILED else "SUCCESS")
+    return build_intent(
+        "customer-management", module=_audit_module(kind), action=f"customer_portal.{kind.lower()}", entity_type="customer_portal_account",
+        entity_id=account_id, tenant_id=tenant_id, outcome=outcome, metadata={**detail, "ip_hash": ip_hash},
+        actor_id=str(account_id) if account_id else None, actor_type="CUSTOMER" if account_id else "SYSTEM",
+    )
 
 
 # ── sign-in ───────────────────────────────────────────────────────────────────

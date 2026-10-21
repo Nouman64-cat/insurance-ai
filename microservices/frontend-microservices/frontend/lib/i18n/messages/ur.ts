@@ -99,6 +99,8 @@ const ur: Messages = {
     "Profile": "پروفائل",
     "Commission Admin": "کمیشن ایڈمن",
     "Commission Types": "کمیشن کی اقسام",
+    "Security & Compliance": "سیکیورٹی اور تعمیل",
+    "Audit Trail": "آڈٹ ٹریل",
     "Roles": "کردار",
     "Bonuses": "بونسز",
     "Calculator": "کیلکولیٹر",

@@ -454,6 +454,22 @@ const NAV_ITEMS = [
         superAdminOnly: true,
       },
       {
+        // Platform administrator only: the audit trail spans every tenant's chain.
+        href: "#security-compliance",
+        label: "Security & Compliance",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            <path d="M9 12l2 2 4-4" />
+          </svg>
+        ),
+        badge: null,
+        superAdminOnly: true,
+        subLinks: [
+          { href: "/admin/audit-trail", label: "Audit Trail" },
+        ],
+      },
+      {
         href: "/profile",
         label: "Profile",
         icon: (
@@ -754,7 +770,7 @@ export function Sidebar() {
   }));
 
   const workingHrefs = ["/customer-service", "/acr", "/profile", "/cases", "/requests", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/underwriting", "/admin/users", "/admin/leads", "/admin/policyholders", "/plans", "/financial", "/claims", "/claims/dashboard", "/claims/register"];
-  const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/roles", "/super-admin/tokens", "/super-admin/ai-agents", "/super-admin/llm-config"];
+  const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/roles", "/super-admin/tokens", "/super-admin/ai-agents", "/super-admin/llm-config", "#security-compliance"];
 
   const financeIcon = (path: string) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d={path}/></svg>;
   const financeLinks = [
@@ -789,7 +805,7 @@ export function Sidebar() {
     if (["Medical Underwriter", "Financial Underwriter"].includes(userRole ?? "") && !["/underwriting", "/profile"].includes(link.href)) return false;
     if (link.hidden) return false;
     if (link.hideForAdmin && userRole === "Admin") return false;
-    if (link.adminOnly && userRole !== "Admin" && !(link.agentToo && (userRole === "Agent" || userRole === "Broker"))) return false;
+    if (link.adminOnly && userRole !== "Admin" && !(link.agentToo && (userRole === "Agent" || userRole === "Broker")) && !(link.superAdminToo && userRole === "SuperAdmin")) return false;
     if (link.superAdminOnly && userRole !== "SuperAdmin") return false;
     return true;
   };

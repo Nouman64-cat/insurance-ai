@@ -46,6 +46,13 @@ async def health() -> dict:
     return {"status": "ok"}
 
 
+@router.get("/healthz/audit")
+async def audit_health() -> dict:
+    """Audit pipeline health: audit intents queued but not yet delivered to the Audit Service."""
+    from app import workers
+    return await workers.audit_relay.stats() if workers.audit_relay else {"enabled": False}
+
+
 @router.get("/me")
 async def me(identity: Identity = Me) -> dict:
     return {"user_id": str(identity.user_id), "tenant_id": str(identity.tenant_id), "name": identity.name, "role": identity.role,

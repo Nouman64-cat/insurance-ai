@@ -11,6 +11,9 @@ from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 import migrate
+import re, asyncio
+from shared.audit.context import CorrelationContextMiddleware
+from shared.audit.outbox import KafkaPublisher as AuditPublisher, OutboxRelay, build_intent, enqueue
 
 # Who works tickets (reply, assign, change status) and who may only look. Admin sees every ticket but does not work them: the service
 # desk does. 'ServiceDesk' is the shared actor of the open desk (see below).
@@ -26,9 +29,16 @@ async def lifespan(app):
     if OPEN_DESK and (os.environ.get('CS_ENV','').lower()=='production' or not OPEN_TENANT): raise RuntimeError('CS_OPEN_DESK needs CS_OPEN_DESK_TENANT_ID and is refused when CS_ENV=production')
     if os.environ.get('CS_RUN_MIGRATIONS','true')=='true' and os.environ.get('CS_MIGRATION_DATABASE_URL'): await migrate.run()
     engine=create_async_engine(os.environ['CS_DATABASE_URL'],pool_pre_ping=True)
+    stop=asyncio.Event(); relay_task=None
+    if AUDIT:   # publishes committed audit intents to Kafka for the Audit Service (shared/audit/outbox.py)
+        app.state.audit_relay=OutboxRelay(engine.begin,AuditPublisher(os.environ.get('KAFKA_BOOTSTRAP_SERVERS','kafka:9092')),name='customer-service audit',table=AUDIT_TABLE)
+        relay_task=asyncio.create_task(app.state.audit_relay.run(stop),name='audit-outbox-relay')
     yield
+    stop.set()
+    if relay_task: relay_task.cancel(); await asyncio.gather(relay_task,return_exceptions=True)
     await engine.dispose()
 app=FastAPI(title='Customer Service',version='1.0.0',lifespan=lifespan)
+app.add_middleware(CorrelationContextMiddleware)   # X-Correlation-Id from the gateway, recorded on audit events
 
 # The open desk: a separate portal with no sign-in, for development. Switched on with CS_OPEN_DESK=true, it acts as ONE fixed tenant
 # (CS_OPEN_DESK_TENANT_ID) and one shared 'Service Desk' actor, and only for requests that carry the x-open-desk header. It refuses to
@@ -81,8 +91,24 @@ async def record(c,id,u,lock=False):
     row=(await c.execute(text('SELECT * FROM customer_service.tickets WHERE id=:id AND tenant_id=:t'+(' FOR UPDATE' if lock else '')),{'id':id,'t':UUID(u['tenant_id'])})).mappings().first()
     if not row or (not u['staff'] and str(row['requester_id'])!=u['id']): raise HTTPException(404,'Ticket not found')
     return dict(row)
+AUDIT=os.environ.get('AUDIT_ENABLED','true').strip().lower() not in ('0','false','no','off')
+AUDIT_TABLE='customer_service.audit_outbox'
+STATUS_ACTIONS={'RESOLVED':'ticket.resolved','CLOSED':'ticket.closed','CANCELLED':'ticket.cancelled','IN_PROGRESS':'ticket.in_progress','WAITING_CUSTOMER':'ticket.waiting_customer'}
+def ticket_intent(id,u,kind,body,internal):
+    """The ticket event as an audit intent. Ticket text (replies, notes, reasons) is customer data: only its length is recorded."""
+    action={'CREATED':'ticket.created','REPLY':'ticket.replied','NOTE':'ticket.note_added','STATUS':'ticket.status_changed','ASSIGNMENT':'ticket.assigned' if body=='Claimed' else 'ticket.released'}.get(kind,'ticket.'+kind.lower())
+    previous=new=None
+    if kind=='STATUS':
+        m=re.match(r'^(\w+) -> (\w+): ',body or '')
+        if m:
+            previous,new={'status':m[1]},{'status':m[2]}; action=STATUS_ACTIONS.get(m[2],action)
+            if m[2]=='IN_PROGRESS' and m[1] in ('RESOLVED','CLOSED'): action='ticket.reopened'
+    return build_intent('customer-service',module='customer_service',action=action,entity_type='ticket',entity_id=id,tenant_id=UUID(u['tenant_id']),
+        previous_value=previous,new_value=new,metadata={'internal':internal,'body_length':len(body or ''),'actor_name':u.get('full_name')},
+        actor_id=u['id'],actor_type='CUSTOMER' if u.get('role_name')=='Customer' else 'USER',actor_role=u.get('role_name'))
 async def event(c,id,u,kind,body,internal=False):
     await c.execute(text('INSERT INTO customer_service.events(ticket_id,actor_id,actor_name,kind,body,internal) VALUES (:id,:a,:n,:k,:b,:i)'),{'id':id,'a':UUID(u['id']),'n':u.get('full_name') or u['email'],'k':kind,'b':body,'i':internal})
+    if AUDIT: await enqueue(c,ticket_intent(id,u,kind,body,internal),table=AUDIT_TABLE)   # same transaction: the ticket change and its audit intent commit together
 def authorize_change(u,row,new):
     if new not in TRANSITIONS[row['status']]: raise HTTPException(409,'Invalid ticket transition')
     own=str(row['requester_id'])==u['id'] and ((new=='CANCELLED' and row['status']=='OPEN') or (new=='IN_PROGRESS' and row['status'] in {'RESOLVED','CLOSED'}))
@@ -92,6 +118,10 @@ def authorize_change(u,row,new):
 async def health():
     async with engine.connect() as c: await c.execute(text('SELECT 1'))
     return {'status':'ok'}
+@app.get('/internal/v1/audit/health',include_in_schema=False)
+async def audit_health(req: Request):
+    relay=getattr(req.app.state,'audit_relay',None)
+    return await relay.stats() if relay else {'enabled':False}
 @app.get('/v1/me')
 async def me(u=Depends(identity)): return {k:v for k,v in u.items() if k!='token'}
 OPEN_STATUSES="('OPEN','IN_PROGRESS','WAITING_CUSTOMER')"

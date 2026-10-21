@@ -24,6 +24,9 @@ class Settings:
     # How long a verified session is trusted before /auth/me is asked again (a revoked user is cut off within this).
     identity_cache_seconds: int = field(default_factory=lambda: _int("REQUEST_MGMT_IDENTITY_CACHE_SECONDS", 15))
 
+    # Audit trail: queue an audit intent with every audit event and relay it to the Audit Service (shared/audit).
+    audit_enabled: bool = field(default_factory=lambda: os.environ.get("AUDIT_ENABLED", "true").strip().lower() not in ("0", "false", "no", "off"))
+
     kafka_bootstrap: str = field(default_factory=lambda: os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092"))
     # Background workers (outbox relay, executor, notifier, schedulers). Off in tests.
     workers_enabled: bool = field(default_factory=lambda: os.environ.get("REQUEST_MGMT_WORKERS", "true").lower() == "true")

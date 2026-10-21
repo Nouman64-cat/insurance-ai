@@ -18,6 +18,7 @@ async def run():
         await c.execute(text('GRANT USAGE ON SCHEMA customer_service TO customer_service_app'))
         await c.execute(text('GRANT SELECT, INSERT, UPDATE ON customer_service.tickets TO customer_service_app'))
         await c.execute(text('GRANT SELECT, INSERT ON customer_service.events TO customer_service_app'))
+        await c.execute(text('GRANT SELECT, INSERT, UPDATE, DELETE ON customer_service.audit_outbox TO customer_service_app'))
         await c.execute(text('GRANT USAGE ON ALL SEQUENCES IN SCHEMA customer_service TO customer_service_app'))
     await engine.dispose()
 if __name__=='__main__': asyncio.run(run())

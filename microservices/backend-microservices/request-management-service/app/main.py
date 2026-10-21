@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 
 from app import db, live, migrate, workers
+from shared.audit.context import CorrelationContextMiddleware
 from app.api.routes import router
 from app.config import settings
 from app.errors import ApiError, api_error_handler, validation_error_handler
@@ -37,4 +38,5 @@ app = FastAPI(title="Request Management", version="1.0.0", lifespan=lifespan,
               description="Requests, routing, review decisions and approved-action execution. Reached through the API gateway at /request-management.")
 app.add_exception_handler(ApiError, api_error_handler)
 app.add_exception_handler(RequestValidationError, validation_error_handler)
+app.add_middleware(CorrelationContextMiddleware)   # X-Correlation-Id from the gateway, recorded on this request's audit events
 app.include_router(router)

@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from sqlalchemy import text
 
 from app import db
@@ -23,3 +23,10 @@ async def readyz():
     except Exception as exc:  # noqa: BLE001 - reported, never leaked
         raise ApiError(503, "NOT_READY", "The service is not ready") from exc
     return {"status": "ready" if ok else "starting", "database": "ok"}
+
+
+@router.get("/internal/v1/audit/health", include_in_schema=False)
+async def audit_health(request: Request):
+    """Undelivered audit intents. Under /internal, which the gateway never proxies: reachable on the service network only."""
+    relay = getattr(request.app.state, "audit_relay", None)
+    return await relay.stats() if relay else {"enabled": False}

@@ -1,0 +1,5 @@
+*
+!microservices/backend-microservices/audit-service
+!shared
+**/__pycache__
+**/*.pyc

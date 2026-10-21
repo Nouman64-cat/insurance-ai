@@ -1,0 +1,5 @@
+*
+!microservices/backend-microservices/customer-service
+!shared
+**/__pycache__
+**/*.pyc
