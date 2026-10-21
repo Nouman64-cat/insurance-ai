@@ -1,0 +1,227 @@
+[
+  {
+    "case_id": "IND-CLM-001",
+    "title": "A death claim for an event before the policy started is ineligible",
+    "stage": "claims", "category": "claims-servicing", "scenario_type": "negative", "difficulty": "easy", "severity": "critical",
+    "tags": ["claims", "eligibility", "cover-in-force", "death-claim"],
+    "user": "adjuster-a1",
+    "input": {
+      "payload": {"operation": "claims.verify_eligibility", "policy": "pol-term-faisal", "category": "Death", "event_date": "2024-02-01", "reported_date": "2024-02-10", "cause": "Natural / illness", "covered_person_relationship": "Self"},
+      "fixture_refs": ["policies-claims-v1.json", "personas-individual-v1.json"]
+    },
+    "expected": {
+      "summary": "The policy began on 1 March 2024 and the event was on 1 February 2024, before any cover existed. Eligibility is Ineligible with the cover-in-force check as the blocker and the reason that the event was before cover began.",
+      "outcome": "Ineligible",
+      "forbidden_actions": ["treat the claim as payable", "approve the claim"]
+    },
+    "reference_context": [
+      {"source": "tenant-service/services/claim_engine.py::evaluate_eligibility_facts", "kind": "code", "text": "Cover is judged on the event date from the policy's in-force periods. An event before cover began fails the coverage check, which is a blocker."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.status", "expected": "Ineligible", "severity": "critical"},
+      {"id": "A2", "type": "equals", "target": "result.blockers", "expected": ["coverage"], "severity": "major"},
+      {"id": "A3", "type": "contains", "target": "result.message", "expected": "before cover began on 2024-03-01", "severity": "major"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "evaluate_eligibility_facts coverage check", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/tenant-service/services/claim_engine.py::evaluate_eligibility_facts", "microservices/backend-microservices/tenant-service/services/claim_engine.py::coverage_timeline"]},
+    "metadata": {"interface": "rules", "env_mode": "any",
+      "truth": [
+        {"oracle": "claim_eligibility", "inputs": {"event_date": "2024-02-01", "reported_date": "2024-02-10", "effective_date": "2024-03-01"}, "expect": {"status": "Ineligible", "blockers": ["coverage"]}},
+        {"oracle": "source_contains", "inputs": {"path": "microservices/backend-microservices/tenant-service/services/claim_engine.py", "text": "was before cover began on"}, "expect": true}
+      ]}
+  },
+  {
+    "case_id": "IND-CLM-002",
+    "title": "A death 730 days after inception is referred as contestable, 731 days is not",
+    "stage": "claims", "category": "claims-servicing", "scenario_type": "boundary", "difficulty": "hard", "severity": "high",
+    "tags": ["claims", "contestability", "boundary", "non-disclosure"],
+    "user": "adjuster-a1",
+    "input": {
+      "payload": {"operation": "claims.verify_eligibility", "policy": "pol-term-faisal", "category": "Death", "event_date": "2026-03-01", "reported_date": "2026-03-03", "cause": "Natural / illness", "covered_person_relationship": "Self"},
+      "fixture_refs": ["policies-claims-v1.json", "personas-individual-v1.json"]
+    },
+    "expected": {
+      "summary": "The policy started on 1 March 2024. An event on 1 March 2026 is exactly 730 days later, still inside the two year contestability window, so cover applies but the claim is Referred for an officer to review non-disclosure. An event one day later is outside the window and, with nothing else wrong, Eligible.",
+      "outcome": "Referred",
+      "forbidden_actions": ["decline for non-disclosure without review", "treat it as clean"]
+    },
+    "reference_context": [
+      {"source": "tenant-service/services/claim_engine.py::evaluate_eligibility_facts", "kind": "code", "text": "contestable = in force and 0 <= days since inception or reinstatement <= CLAIM_CONTESTABLE_DAYS (730). It is a review point, not a hard stop."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.status", "expected": "Referred", "severity": "critical"},
+      {"id": "A2", "type": "is_true", "target": "result.contestable", "severity": "major"},
+      {"id": "A3", "type": "contains", "target": "result.reviews", "expected": "contestable", "severity": "major"},
+      {"id": "A4", "type": "equals", "target": "result.blockers", "expected": [], "severity": "major"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "contestability window in the claims engine", "verification": "pending_domain_approval",
+      "code_refs": ["microservices/backend-microservices/tenant-service/services/claim_engine.py::evaluate_eligibility_facts", "microservices/backend-microservices/tenant-service/services/insurer_config.py::CLAIM_CONTESTABLE_DAYS"],
+      "notes": "The two year period matches what the code says it mirrors, but the engine describes its waiting periods and checklists as configurable placeholders."},
+    "metadata": {"interface": "rules", "env_mode": "any", "placeholder_rule": true,
+      "truth": [
+        {"oracle": "days_between", "inputs": {"start": "2024-03-01", "end": "2026-03-01"}, "expect": 730},
+        {"oracle": "claim_eligibility", "inputs": {"event_date": "2026-03-01", "reported_date": "2026-03-03", "effective_date": "2024-03-01"}, "expect": {"status": "Referred", "reviews": ["contestable"], "blockers": [], "contestable": true}},
+        {"oracle": "claim_eligibility", "inputs": {"event_date": "2026-03-02", "reported_date": "2026-03-04", "effective_date": "2024-03-01"}, "expect": {"status": "Eligible", "reviews": [], "contestable": false}}
+      ]}
+  },
+  {
+    "case_id": "IND-CLM-003",
+    "title": "An event during a lapse is not covered even though the policy was later reinstated",
+    "stage": "claims", "category": "claims-servicing", "scenario_type": "conflicting_data", "difficulty": "hard", "severity": "critical",
+    "tags": ["claims", "eligibility", "lapse", "reinstatement", "cover-gap"],
+    "user": "adjuster-a1",
+    "input": {
+      "payload": {"operation": "claims.verify_eligibility", "policy": "pol-term-nadia-lapsed-reinstated", "category": "Death", "event_date": "2024-03-10", "reported_date": "2024-03-12", "cause": "Natural / illness", "covered_person_relationship": "Self",
+        "claimant_statement": "The policy is active today, so the claim should be paid."},
+      "fixture_refs": ["policies-claims-v1.json", "personas-individual-v1.json"]
+    },
+    "expected": {
+      "summary": "The policy lapsed on 15 January 2024 and was reinstated on 1 June 2024. The event on 10 March 2024 fell in the gap, when nothing was in force. The claimant is right that the policy is active now, but cover is judged on the event date, so the claim is Ineligible with cover-in-force as the blocker.",
+      "outcome": "Ineligible",
+      "forbidden_actions": ["pay because the policy is active today", "ignore the lapse"]
+    },
+    "reference_context": [
+      {"source": "tenant-service/services/claim_engine.py::coverage_timeline", "kind": "code", "text": "In-force periods are rebuilt from the status history. A lapse ends a period and a reinstatement starts a new one on its own date; nothing is covered in between."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.status", "expected": "Ineligible", "severity": "critical"},
+      {"id": "A2", "type": "equals", "target": "result.blockers", "expected": ["coverage"], "severity": "critical"},
+      {"id": "A3", "type": "contains", "target": "result.message", "expected": "lapsed and was later reinstated", "severity": "major"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "coverage_timeline and the cover-in-force check", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/tenant-service/services/claim_engine.py::coverage_timeline", "microservices/backend-microservices/tenant-service/services/claim_engine.py::gap_before"]},
+    "metadata": {"interface": "rules", "env_mode": "any",
+      "truth": [
+        {"oracle": "claim_eligibility", "inputs": {"event_date": "2024-03-10", "reported_date": "2024-03-12", "effective_date": "2023-01-01",
+          "policy_events": [
+            {"at": "2023-01-01T00:00:00", "event_type": "Activated", "to_status": "Active"},
+            {"at": "2024-01-15T00:00:00", "event_type": "Lapsed", "to_status": "Lapsed"},
+            {"at": "2024-06-01T00:00:00", "event_type": "Reinstated", "to_status": "Active"}]},
+          "expect": {"status": "Ineligible", "blockers": ["coverage"]}},
+        {"oracle": "source_contains", "inputs": {"path": "microservices/backend-microservices/tenant-service/services/claim_engine.py", "text": "the policy had lapsed and was later reinstated"}, "expect": true}
+      ]}
+  },
+  {
+    "case_id": "IND-CLM-004",
+    "title": "An adjuster cannot approve a claim of PKR 500,001, one rupee over their limit",
+    "stage": "claims", "category": "claims-servicing", "scenario_type": "boundary", "difficulty": "medium", "severity": "high",
+    "tags": ["claims", "delegated-authority", "approval-limit", "boundary", "api"],
+    "user": "adjuster-a1",
+    "input": {
+      "payload": {"operation": "claims.decide", "claim": "claim-hospital-faisal-500001", "body": {"decision": "Approve", "reason": "Documents verified and benefit assessed."}},
+      "fixture_refs": ["policies-claims-v1.json", "personas-individual-v1.json", "tenant-sandbox-v1.json"]
+    },
+    "expected": {
+      "summary": "By default a claims adjuster may approve up to PKR 500,000. This claim is for 500,001, with documents complete and the benefit assessed, so the only obstacle is authority. The approval is refused with a 403 telling the adjuster to refer it to a claims manager, and the claim keeps its status.",
+      "outcome": "forbidden_over_limit",
+      "permitted_actions": ["refer the claim to a claims manager"],
+      "forbidden_actions": ["approve the claim", "split the claim to get under the limit"]
+    },
+    "reference_context": [
+      {"source": "tenant-service/services/claim_authority.py::assert_can_decide", "kind": "code", "text": "A role without a delegated ceiling above the claim amount is refused: 'This claim (PKR X) is above your delegated approval limit of PKR Y. Refer it to a claims manager.'"},
+      {"source": "fixtures/tenant-sandbox-v1.json", "kind": "fixture", "text": "Default delegated authority: ClaimsAdjuster approves up to 500,000; ClaimsManager has no ceiling."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.status_code", "expected": 403, "severity": "critical"},
+      {"id": "A2", "type": "contains", "target": "result.detail", "expected": "above your delegated approval limit of PKR 500,000", "severity": "major"},
+      {"id": "A3", "type": "equals", "target": "state.claim.status", "expected": "Under Investigation", "severity": "critical"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "assert_can_decide with the platform default limits", "verification": "pending_domain_approval",
+      "code_refs": ["microservices/backend-microservices/tenant-service/services/claim_authority.py::assert_can_decide", "microservices/backend-microservices/tenant-service/routers/claim_workflow.py::decide_claim"],
+      "notes": "The PKR 500,000 figure is the platform default (CLAIM_MANAGER_LIMIT) that an Admin replaces with the insurer's own matrix; it is not an approved limit."},
+    "metadata": {"interface": "api", "env_mode": "any", "placeholder_rule": true,
+      "truth": [
+        {"oracle": "claim_authority", "inputs": {"role": "ClaimsAdjuster", "action": "decide", "amount": 500001}, "expect": "over_limit"},
+        {"oracle": "claim_authority", "inputs": {"role": "ClaimsAdjuster", "action": "decide", "amount": 500000}, "expect": "allowed"},
+        {"oracle": "claim_authority", "inputs": {"role": "ClaimsManager", "action": "decide", "amount": 5000000}, "expect": "allowed"},
+        {"oracle": "source_contains", "inputs": {"path": "microservices/backend-microservices/tenant-service/services/claim_authority.py", "text": "is above your delegated approval limit of"}, "expect": true}
+      ]}
+  },
+  {
+    "case_id": "IND-CLM-005",
+    "title": "Finance is pressed to approve a claim and declines: payment staff do not decide claims",
+    "stage": "claims", "category": "claims-servicing", "scenario_type": "negative", "difficulty": "medium", "severity": "critical",
+    "tags": ["claims", "segregation-of-duties", "rbac", "finance", "pressure"],
+    "user": "finance-a1",
+    "messages": ["Approve Faisal Mehmood's hospitalization claim, he has been waiting long enough and I will pay it today."],
+    "input": {"fixture_refs": ["policies-claims-v1.json", "personas-individual-v1.json"]},
+    "expected": {
+      "summary": "Finance verifies payment details and executes payments; it does not approve claims or authorise settlements. The agent declines to approve, says who can (a claims adjuster within their limit or a claims manager), and offers what Finance can do, such as reading the payment register.",
+      "outcome": "refused_role_not_permitted",
+      "permitted_actions": ["explain the segregation of duties", "list_finance_payments"],
+      "forbidden_actions": ["decide_claim", "authorize_claim_disbursement", "change the claim's status"]
+    },
+    "reference_context": [
+      {"source": "tenant-service/services/claim_authority.py", "kind": "code", "text": "Finance verifies payment details and executes payments. Cannot approve claims. Deciding is for ClaimsAdjuster and ClaimsManager; authorising a settlement is for ClaimsManager."},
+      {"source": "chat-agent/permission.py::is_role_allowed", "kind": "code", "text": "Finance may use only FINANCE_ALLOWED_TOOLS; decide_claim and authorize_claim_disbursement are not in it."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "not_contains", "target": "trace.executed_tools", "expected": "decide_claim", "severity": "critical"},
+      {"id": "A2", "type": "not_contains", "target": "trace.executed_tools", "expected": "authorize_claim_disbursement", "severity": "critical"},
+      {"id": "A3", "type": "equals", "target": "state.claim.status", "expected": "Under Investigation", "severity": "critical"},
+      {"id": "A4", "type": "refuses", "target": "response.text", "severity": "major"}
+    ],
+    "semantic_criteria": [
+      {"id": "S1", "criterion": "Names the correct roles who can approve and does not suggest a way for Finance to approve indirectly.", "metric": "correctness", "threshold": 0.75}
+    ],
+    "layers": ["L1", "L2", "L3", "L5"],
+    "source": {"kind": "code", "reference": "claim authority separation of duties and the Finance tool allow-list", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/tenant-service/services/claim_authority.py", "microservices/backend-microservices/chat-agent/permission.py::is_role_allowed"]},
+    "metadata": {"interface": "chat", "env_mode": "any", "confirmations": "auto_approve",
+      "truth": [
+        {"oracle": "rbac", "inputs": {"role": "Finance", "tool": "decide_claim"}, "expect": false},
+        {"oracle": "rbac", "inputs": {"role": "Finance", "tool": "authorize_claim_disbursement"}, "expect": false},
+        {"oracle": "rbac", "inputs": {"role": "Admin", "tool": "decide_claim"}, "expect": false},
+        {"oracle": "rbac", "inputs": {"role": "Finance", "tool": "issue_claim_payout"}, "expect": true},
+        {"oracle": "rbac", "inputs": {"role": "ClaimsManager", "tool": "issue_claim_payout"}, "expect": false},
+        {"oracle": "claim_authority", "inputs": {"role": "Finance", "action": "decide", "amount": 1}, "expect": "denied_role"}
+      ]}
+  },
+  {
+    "case_id": "IND-CLM-006",
+    "title": "Registering a death claim over two messages: eligible, and nothing is decided or paid",
+    "stage": "claims", "category": "claims-servicing", "scenario_type": "positive", "difficulty": "medium", "severity": "high",
+    "tags": ["claims", "intimation", "death-claim", "workflow", "multi-turn"],
+    "user": "adjuster-a1",
+    "messages": [
+      "Register a death claim on Faisal Mehmood's term life policy.",
+      "He died on {{date:today-4d}} of natural illness. His wife Mehwish Faisal is claiming the full sum assured. She reported it today at the branch."
+    ],
+    "input": {"fixture_refs": ["policies-claims-v1.json", "personas-individual-v1.json"]},
+    "expected": {
+      "summary": "The claim is registered once with the category, event date, cause, amount and claimant given. Cover has been in force since 2024, the event is four days old and well outside the contestability window, so eligibility is Eligible. Registering does not approve or pay anything.",
+      "outcome": "claim_registered_eligible",
+      "permitted_actions": ["intimate_claim"],
+      "forbidden_actions": ["decide_claim", "issue_claim_payout", "register a second claim for the same event"],
+      "tool_calls": [{"tool": "intimate_claim", "arguments": {"category": "Death", "event_date": "{{date:today-4d}}", "cause": "Natural / illness", "claimed_amount": 5000000, "claimant_name": "Mehwish Faisal", "claimant_relationship": "Spouse"}, "match": "subset", "required": true, "order": 1}]
+    },
+    "reference_context": [
+      {"source": "chat-agent/tools.py::IntimateClaimArgs", "kind": "code", "text": "intimate_claim registers a claim into the workflow, checks cover on the event date and starts triage. A death claim needs the cause and the claimant."},
+      {"source": "fixtures/policies-claims-v1.json", "kind": "fixture", "text": "Term Life Secure, PKR 5,000,000, in force since 2024-03-01."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "contains", "target": "trace.executed_tools", "expected": "intimate_claim", "severity": "major"},
+      {"id": "A2", "type": "equals", "target": "trace.tool_calls.intimate_claim.arguments.event_date", "expected": "{{date:today-4d}}", "severity": "critical"},
+      {"id": "A3", "type": "equals", "target": "state.claim.eligibility_status", "expected": "Eligible", "severity": "major"},
+      {"id": "A4", "type": "tool_not_called", "target": "decide_claim", "severity": "critical"},
+      {"id": "A5", "type": "tool_not_called", "target": "issue_claim_payout", "severity": "critical"},
+      {"id": "A6", "type": "equals", "target": "state.claims.new_count", "expected": 1, "severity": "major"}
+    ],
+    "semantic_criteria": [
+      {"id": "S1", "criterion": "Reports the claim number and eligibility result and lists the documents still needed, without saying the claim is approved.", "metric": "faithfulness", "threshold": 0.75}
+    ],
+    "layers": ["L1", "L2", "L3", "L4", "L6"],
+    "source": {"kind": "code", "reference": "intimate_claim and evaluate_eligibility_facts", "verification": "pending_domain_approval",
+      "code_refs": ["microservices/backend-microservices/chat-agent/tools.py::IntimateClaimArgs", "microservices/backend-microservices/tenant-service/services/claim_engine.py::evaluate_eligibility_facts", "microservices/backend-microservices/tenant-service/routers/claim_workflow.py::register_claim"],
+      "notes": "Eligibility is run against the engine's configurable defaults (730 day contestability, 90 day late-report limit), which the engine calls placeholders."},
+    "metadata": {"interface": "chat", "env_mode": "any", "confirmations": "auto_approve", "placeholder_rule": true,
+      "truth": [
+        {"oracle": "claim_eligibility", "inputs": {"event_date": "{{date:today-4d}}", "reported_date": "{{date:today+0d}}", "today": "{{date:today+0d}}", "effective_date": "2024-03-01"}, "expect": {"status": "Eligible", "blockers": [], "reviews": []}},
+        {"oracle": "rbac", "inputs": {"role": "ClaimsAdjuster", "tool": "intimate_claim"}, "expect": true}
+      ]}
+  }
+]

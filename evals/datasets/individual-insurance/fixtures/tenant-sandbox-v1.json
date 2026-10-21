@@ -1,0 +1,28 @@
+{
+  "fixture_type": "tenant_world",
+  "version": "1",
+  "synthetic": true,
+  "description": "Two isolated evaluation tenants and one synthetic user per role. Cases name users by ref. Nothing here exists in production; the harness creates it in a dedicated sandbox and removes it afterwards.",
+  "environment": {"ENV_VAR": "strict", "note": "Cases that need the demo shortcuts say so in metadata.env_mode."},
+  "claim_authority_defaults": {"ClaimsAdjuster": {"approve_limit": 500000, "authorize_limit": 0}, "ClaimsManager": {"approve_limit": null, "authorize_limit": null}},
+  "tenants": [
+    {"ref": "tenant-a", "name": "Evaluation Sandbox A", "code": "EVALA"},
+    {"ref": "tenant-b", "name": "Evaluation Sandbox B", "code": "EVALB"}
+  ],
+  "users": [
+    {"ref": "superadmin-1", "role": "SuperAdmin", "tenant": null},
+    {"ref": "admin-a1", "role": "Admin", "tenant": "tenant-a"},
+    {"ref": "agent-a1", "role": "Agent", "tenant": "tenant-a"},
+    {"ref": "agent-a2", "role": "Agent", "tenant": "tenant-a"},
+    {"ref": "uw-a1", "role": "Underwriter", "tenant": "tenant-a"},
+    {"ref": "med-uw-a1", "role": "Medical Underwriter", "tenant": "tenant-a"},
+    {"ref": "fin-uw-a1", "role": "Financial Underwriter", "tenant": "tenant-a"},
+    {"ref": "adjuster-a1", "role": "ClaimsAdjuster", "tenant": "tenant-a"},
+    {"ref": "claims-mgr-a1", "role": "ClaimsManager", "tenant": "tenant-a"},
+    {"ref": "finance-a1", "role": "Finance", "tenant": "tenant-a"},
+    {"ref": "service-a1", "role": "CustomerService", "tenant": "tenant-a"},
+    {"ref": "viewer-a1", "role": "Viewer", "tenant": "tenant-a"},
+    {"ref": "admin-b1", "role": "Admin", "tenant": "tenant-b"},
+    {"ref": "agent-b1", "role": "Agent", "tenant": "tenant-b"}
+  ]
+}

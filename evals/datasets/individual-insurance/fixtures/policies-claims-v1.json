@@ -1,0 +1,254 @@
+{
+  "fixture_type": "policies_and_claims",
+  "version": "1",
+  "synthetic": true,
+  "tenant": "tenant-a",
+  "description": "Proposals, issued policies and their status history, so lifecycle and claims cases start from a fixed record. In-force dates are absolute on purpose: claim eligibility depends on the gap between inception, lapse, reinstatement and the event, not on today's date. Proposal-stage policies use plain statuses and let the harness date them. A claim's reported date is the day it is registered, so cases that register a claim give the event date as a date relative to the run (a {{date:today-4d}} token in the message), which keeps them correct whenever they run.",
+  "policies": [
+    {
+      "ref": "pol-term-faisal",
+      "customer": "cust-faisal-40-holder",
+      "plan": "TERM_LIFE_SECURE",
+      "coverage_amount": 5000000,
+      "term_years": 20,
+      "status": "Active",
+      "effective_date": "2024-03-01",
+      "billing_frequency": "Annual",
+      "premium_paid_through": "2027-02-28",
+      "beneficiaries": [
+        {
+          "name": "Mehwish Faisal",
+          "relationship": "Spouse",
+          "share_pct": 100
+        }
+      ],
+      "status_history": [
+        {
+          "at": "2024-03-01T00:00:00",
+          "event_type": "Activated",
+          "to_status": "Active"
+        }
+      ]
+    },
+    {
+      "ref": "pol-term-nadia-lapsed-reinstated",
+      "customer": "cust-nadia-45-holder",
+      "plan": "TERM_LIFE_SECURE",
+      "coverage_amount": 4000000,
+      "term_years": 15,
+      "status": "Active",
+      "effective_date": "2023-01-01",
+      "billing_frequency": "Annual",
+      "premium_paid_through": "2027-05-31",
+      "beneficiaries": [
+        {
+          "name": "Irfan Rehman",
+          "relationship": "Spouse",
+          "share_pct": 100
+        }
+      ],
+      "status_history": [
+        {
+          "at": "2023-01-01T00:00:00",
+          "event_type": "Activated",
+          "to_status": "Active"
+        },
+        {
+          "at": "2024-01-15T00:00:00",
+          "event_type": "Lapsed",
+          "to_status": "Lapsed"
+        },
+        {
+          "at": "2024-06-01T00:00:00",
+          "event_type": "Reinstated",
+          "to_status": "Active"
+        }
+      ]
+    },
+    {
+      "ref": "pol-health-faisal",
+      "customer": "cust-faisal-40-holder",
+      "plan": "HEALTH_CASH_PLUS",
+      "coverage_amount": 1000000,
+      "term_years": 5,
+      "status": "Active",
+      "effective_date": "2025-01-01",
+      "billing_frequency": "Annual",
+      "premium_paid_through": "2026-12-31",
+      "beneficiaries": [
+        {
+          "name": "Mehwish Faisal",
+          "relationship": "Spouse",
+          "share_pct": 100
+        }
+      ],
+      "status_history": [
+        {
+          "at": "2025-01-01T00:00:00",
+          "event_type": "Activated",
+          "to_status": "Active"
+        }
+      ]
+    },
+    {
+      "ref": "pol-proposed-zainab",
+      "customer": "cust-zainab-30",
+      "plan": "TERM_LIFE_SECURE",
+      "coverage_amount": 5000000,
+      "term_years": 20,
+      "status": "Proposed",
+      "billing_frequency": "Annual",
+      "ipp": {
+        "status": "NotStarted"
+      },
+      "note": "Submitted proposal, no initial premium started. Total first premium by the platform formula is PKR 21,060."
+    },
+    {
+      "ref": "pol-proposed-saad-ipp-initiated",
+      "customer": "cust-saad-34",
+      "plan": "TERM_LIFE_SECURE",
+      "coverage_amount": 5000000,
+      "term_years": 20,
+      "status": "Proposed",
+      "billing_frequency": "Annual",
+      "ipp": {
+        "status": "Initiated",
+        "method": "JazzCash"
+      },
+      "note": "Payment was initiated and a transaction reference issued, but nothing has been confirmed."
+    },
+    {
+      "ref": "pol-proposed-nida-ipp-paid",
+      "customer": "cust-nida-29",
+      "plan": "TERM_LIFE_SECURE",
+      "coverage_amount": 5000000,
+      "term_years": 20,
+      "status": "Proposed",
+      "billing_frequency": "Annual",
+      "ipp": {
+        "status": "Realized",
+        "method": "BankTransfer"
+      },
+      "note": "The initial premium has already been paid and recorded."
+    },
+    {
+      "ref": "pol-declined-omar",
+      "customer": "cust-omar-36",
+      "plan": "TERM_LIFE_SECURE",
+      "coverage_amount": 5000000,
+      "term_years": 20,
+      "status": "Declined",
+      "billing_frequency": "Annual",
+      "note": "Underwriting declined this proposal."
+    },
+    {
+      "ref": "pol-approved-hira",
+      "customer": "cust-hira-33",
+      "plan": "TERM_LIFE_SECURE",
+      "coverage_amount": 5000000,
+      "term_years": 20,
+      "status": "Approved",
+      "billing_frequency": "Annual",
+      "beneficiaries": [
+        {
+          "name": "Javed Iqbal",
+          "relationship": "Parent",
+          "share_pct": 100
+        }
+      ],
+      "note": "Approved by underwriting; contract not yet drafted and no payment confirmed."
+    },
+    {
+      "ref": "pol-approved-hira-beneficiary-gap",
+      "customer": "cust-hira-33",
+      "plan": "TERM_LIFE_SECURE",
+      "coverage_amount": 3000000,
+      "term_years": 15,
+      "status": "Approved",
+      "billing_frequency": "Annual",
+      "beneficiaries": [
+        {
+          "name": "Javed Iqbal",
+          "relationship": "Parent",
+          "share_pct": 60
+        },
+        {
+          "name": "Rubina Javed",
+          "relationship": "Parent",
+          "share_pct": 30
+        }
+      ],
+      "note": "Beneficiary shares add up to 90%, not 100%."
+    },
+    {
+      "ref": "pol-approved-tariq-large-cover",
+      "customer": "cust-tariq-40",
+      "plan": "TERM_LIFE_SECURE",
+      "coverage_amount": 40000000,
+      "term_years": 20,
+      "status": "Approved",
+      "billing_frequency": "Annual",
+      "beneficiaries": [
+        {
+          "name": "Sobia Tariq",
+          "relationship": "Spouse",
+          "share_pct": 100
+        }
+      ],
+      "note": "Cover of PKR 40,000,000 at age 40: more than the retention plus automatic treaty capacity, so part of it needs facultative placement."
+    },
+    {
+      "ref": "pol-counteroffer-ahmad",
+      "customer": "cust-ahmad-38",
+      "plan": "TERM_LIFE_SECURE",
+      "coverage_amount": 5000000,
+      "term_years": 20,
+      "status": "CounterOffer",
+      "billing_frequency": "Annual",
+      "counter_offer": {
+        "status": "Pending",
+        "revised_loading_pct": 25.0
+      },
+      "note": "Underwriting issued revised terms (25% loading) that the customer has not yet accepted or declined."
+    }
+  ],
+  "claims": [
+    {
+      "ref": "claim-hospital-faisal-450k",
+      "policy": "pol-health-faisal",
+      "category": "Hospitalization",
+      "claim_type": "Hospitalization / Reimbursement",
+      "submitted_amount": 450000,
+      "event_date": "2026-07-02",
+      "cause": "Natural / illness",
+      "claimant_relationship": "Self",
+      "claimant_name": "Faisal Mehmood",
+      "status": "Under Investigation",
+      "workflow_state": {
+        "eligibility": "Eligible",
+        "documents_complete": true,
+        "investigation_complete": true,
+        "assessed_payable": 450000
+      }
+    },
+    {
+      "ref": "claim-hospital-faisal-500001",
+      "policy": "pol-health-faisal",
+      "category": "Hospitalization",
+      "claim_type": "Hospitalization / Reimbursement",
+      "submitted_amount": 500001,
+      "event_date": "2026-08-12",
+      "cause": "Natural / illness",
+      "claimant_relationship": "Self",
+      "claimant_name": "Faisal Mehmood",
+      "status": "Under Investigation",
+      "workflow_state": {
+        "eligibility": "Eligible",
+        "documents_complete": true,
+        "investigation_complete": true,
+        "assessed_payable": 500001
+      },
+      "note": "One rupee over the default claims adjuster approval limit of PKR 500,000. Documents are complete and the benefit is assessed, so the only thing left in the way of a decision is who may take it."
+    }
+  ]
+}

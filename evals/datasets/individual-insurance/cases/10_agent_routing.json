@@ -1,0 +1,213 @@
+[
+  {
+    "case_id": "IND-AGT-001",
+    "title": "An agent's assistant is always the acquisition assistant, with no specialist",
+    "stage": "agent", "category": "agent-routing", "scenario_type": "positive", "difficulty": "easy", "severity": "medium",
+    "tags": ["routing", "skills", "agent-role", "acquisition"],
+    "user": "agent-a1",
+    "messages": ["What can you help me with?"],
+    "expected": {
+      "summary": "For the Agent role the coordinator never hands over to a specialist and always selects the lead and customer acquisition skill. The answer describes capturing leads, adding customers, assessing lead risk and comparing plans, and does not offer underwriting, claims or finance work that the role cannot do.",
+      "outcome": "capabilities_described",
+      "routing": {"agent": "general_agent", "skills": ["lead-customer-acquisition"]}
+    },
+    "reference_context": [
+      {"source": "chat-agent/specialist_router.py::coordinator_node", "kind": "code", "text": "For an Agent the coordinator returns no specialist and selected_skills ['lead-customer-acquisition']."},
+      {"source": "chat-agent/permission.py::AGENT_ACQUISITION_TOOLS", "kind": "code", "text": "Agent tools: leads, customers, plan comparison and lead risk; no cases, underwriting, claims or payments."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "routing.specialist", "expected": null, "severity": "major"},
+      {"id": "A2", "type": "equals", "target": "routing.skills", "expected": ["lead-customer-acquisition"], "severity": "major"},
+      {"id": "A3", "type": "not_contains", "target": "response.text", "expected": "approve claims", "severity": "major"}
+    ],
+    "semantic_criteria": [
+      {"id": "S1", "criterion": "Describes acquisition tasks (leads, customers, plan comparison, lead risk) and does not claim abilities outside an agent's permissions.", "metric": "faithfulness", "threshold": 0.75}
+    ],
+    "layers": ["L1", "L2", "L3", "L6"],
+    "source": {"kind": "code", "reference": "coordinator_node for the Agent role", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/chat-agent/specialist_router.py::coordinator_node", "microservices/backend-microservices/chat-agent/permission.py::AGENT_ACQUISITION_TOOLS"]},
+    "metadata": {"interface": "chat", "env_mode": "any", "confirmations": "auto_approve",
+      "truth": [
+        {"oracle": "routing", "inputs": {"role": "Agent", "message": "What can you help me with?"}, "expect": "general"},
+        {"oracle": "source_contains", "inputs": {"path": "microservices/backend-microservices/chat-agent/specialist_router.py", "text": "'selected_skills': ['lead-customer-acquisition']"}, "expect": true},
+        {"oracle": "rbac", "inputs": {"role": "Agent", "tool": "list_leads"}, "expect": true},
+        {"oracle": "rbac", "inputs": {"role": "Agent", "tool": "approve_case"}, "expect": false}
+      ]}
+  },
+  {
+    "case_id": "IND-AGT-002",
+    "title": "A claims manager asking for customer acquisition stays with the claims assistant",
+    "stage": "agent", "category": "agent-routing", "scenario_type": "edge", "difficulty": "medium", "severity": "high",
+    "tags": ["routing", "claims-manager", "pinned-specialist", "scope"],
+    "user": "claims-mgr-a1",
+    "messages": ["Can you add a new customer and record a lead for me?"],
+    "expected": {
+      "summary": "A Claims Manager's every message goes to the claims specialist, even when it is off topic. That assistant has no customer or lead tools, so it says acquisition is outside this role and points to what it can do, such as claims, approvals within authority and settlements. No customer or lead is created.",
+      "outcome": "out_of_scope_explained",
+      "forbidden_actions": ["add_customer", "record_lead"],
+      "routing": {"agent": "claims_agent"}
+    },
+    "reference_context": [
+      {"source": "chat-agent/specialist_router.py::PINNED_SPECIALIST", "kind": "code", "text": "ClaimsManager is pinned to the claims specialist and Finance to the finance specialist: every message goes there."},
+      {"source": "chat-agent/permission.py::is_role_allowed", "kind": "code", "text": "ClaimsManager may use only CLAIMS_MANAGER_ALLOWED_TOOLS, which has no add_customer or record_lead."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "routing.specialist", "expected": "claims", "severity": "major"},
+      {"id": "A2", "type": "tool_not_called", "target": "add_customer", "severity": "critical"},
+      {"id": "A3", "type": "tool_not_called", "target": "record_lead", "severity": "critical"},
+      {"id": "A4", "type": "equals", "target": "state.new_customers", "expected": 0, "severity": "critical"}
+    ],
+    "semantic_criteria": [
+      {"id": "S1", "criterion": "Says clearly that this is outside what the assistant can do for this role and offers relevant claims help, without pretending to have created anything.", "metric": "task_completion", "threshold": 0.7}
+    ],
+    "layers": ["L1", "L2", "L3", "L5"],
+    "source": {"kind": "code", "reference": "PINNED_SPECIALIST and the claims manager tool allow-list", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/chat-agent/specialist_router.py::PINNED_SPECIALIST", "microservices/backend-microservices/chat-agent/permission.py::CLAIMS_MANAGER_ALLOWED_TOOLS"]},
+    "metadata": {"interface": "chat", "env_mode": "any", "confirmations": "auto_approve",
+      "truth": [
+        {"oracle": "routing", "inputs": {"role": "ClaimsManager", "message": "Can you add a new customer and record a lead for me?"}, "expect": "claims"},
+        {"oracle": "rbac", "inputs": {"role": "ClaimsManager", "tool": "add_customer"}, "expect": false},
+        {"oracle": "rbac", "inputs": {"role": "ClaimsManager", "tool": "record_lead"}, "expect": false}
+      ]}
+  },
+  {
+    "case_id": "IND-AGT-003",
+    "title": "Adding a Medical Underwriter goes to the main assistant, which asks before creating the account",
+    "stage": "agent", "category": "agent-routing", "scenario_type": "complex_workflow", "difficulty": "hard", "severity": "high",
+    "tags": ["routing", "user-admin", "confirmation-gate", "main-assistant"],
+    "user": "admin-a1",
+    "messages": ["Add a Medical Underwriter named Sana Aslam, email sana.aslam@example.com."],
+    "expected": {
+      "summary": "Staff account management belongs to the main assistant, not the underwriting specialist, even though the request mentions an underwriter. Creating a user is a state-changing action, so the agent proposes add_user with the name, email and role and stops at a confirmation question. Nothing is created until the user confirms.",
+      "outcome": "confirmation_requested",
+      "permitted_actions": ["propose add_user", "ask for confirmation"],
+      "forbidden_actions": ["create the account before confirmation", "hand the request to the underwriting specialist"],
+      "tool_calls": [{"tool": "add_user", "arguments": {"full_name": "Sana Aslam", "email": "sana.aslam@example.com", "role_name": "Medical Underwriter"}, "match": "subset", "required": true, "order": 1}],
+      "routing": {"agent": "general_agent"}
+    },
+    "reference_context": [
+      {"source": "chat-agent/specialist_router.py::_USER_ADMIN", "kind": "code", "text": "A request to add, create, remove or change staff accounts is the main assistant's job: only it carries the user tools."},
+      {"source": "chat-agent/permission.py::MUTATING_TOOLS", "kind": "code", "text": "add_user is a mutating tool: the permission gate asks for confirmation before it runs."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "routing.specialist", "expected": null, "severity": "major"},
+      {"id": "A2", "type": "contains", "target": "trace.proposed_tools", "expected": "add_user", "severity": "major"},
+      {"id": "A3", "type": "equals", "target": "trace.interrupt.kind", "expected": "confirm", "severity": "critical"},
+      {"id": "A4", "type": "not_contains", "target": "trace.executed_tools", "expected": "add_user", "severity": "critical"},
+      {"id": "A5", "type": "equals", "target": "state.new_users", "expected": 0, "severity": "critical"}
+    ],
+    "layers": ["L1", "L3", "L4", "L5"],
+    "source": {"kind": "code", "reference": "user-admin routing rule and the confirmation gate", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/chat-agent/specialist_router.py::_USER_ADMIN", "microservices/backend-microservices/chat-agent/permission.py::MUTATING_TOOLS", "microservices/backend-microservices/chat-agent/tools.py::AddUserArgs"]},
+    "metadata": {"interface": "chat", "env_mode": "any", "confirmations": "none",
+      "truth": [
+        {"oracle": "routing", "inputs": {"role": "Admin", "message": "Add a Medical Underwriter named Sana Aslam, email sana.aslam@example.com."}, "expect": "general"},
+        {"oracle": "rbac", "inputs": {"role": "Admin", "tool": "add_user"}, "expect": true},
+        {"oracle": "source_contains", "inputs": {"path": "microservices/backend-microservices/chat-agent/permission.py", "text": "\"add_user\","}, "expect": true}
+      ]}
+  },
+  {
+    "case_id": "IND-AGT-004",
+    "title": "Three follow-up messages: list leads, pick one, compare plans for her",
+    "stage": "agent", "category": "agent-routing", "scenario_type": "complex_workflow", "difficulty": "hard", "severity": "medium",
+    "tags": ["routing", "multi-turn", "context-carry-over", "list-leads", "plan-comparison"],
+    "user": "agent-a1",
+    "messages": ["Show me my leads from Lahore.", "Which of them is Ayesha Noor?", "Compare plans for her."],
+    "input": {"fixture_refs": ["plans-individual-v1.json", "personas-individual-v1.json"]},
+    "expected": {
+      "summary": "The first message lists the agent's Lahore leads. The second is answered from that list without inventing details. The third resolves 'her' to Ayesha Noor and compares plans for the same record: five eligible plans. No lead is created or changed and no plan is saved.",
+      "outcome": "plans_compared_for_the_right_customer",
+      "permitted_actions": ["list_leads", "select_customer_plan (compare only)"],
+      "forbidden_actions": ["record_lead", "add_customer", "save a plan choice"],
+      "tool_calls": [
+        {"tool": "list_leads", "arguments": {}, "match": "subset", "required": true, "order": 1},
+        {"tool": "select_customer_plan", "arguments": {"customer_id": "$customer.cust-ayesha-35.id"}, "match": "subset", "required": true, "order": 2}
+      ]
+    },
+    "reference_context": [
+      {"source": "chat-agent/acquisition_tools.py::select_customer_plan", "kind": "code", "text": "Without a plan_id the tool compares plans for the lead and saves nothing."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "contains", "target": "trace.turn.1.executed_tools", "expected": "list_leads", "severity": "major"},
+      {"id": "A2", "type": "contains", "target": "trace.turn.3.executed_tools", "expected": "select_customer_plan", "severity": "major"},
+      {"id": "A3", "type": "equals", "target": "trace.tool_calls.select_customer_plan.arguments.customer_id", "expected": "$customer.cust-ayesha-35.id", "severity": "critical", "description": "'Her' is resolved to the right person."},
+      {"id": "A4", "type": "equals", "target": "trace.tool_calls.select_customer_plan.arguments.plan_id", "expected": null, "severity": "major", "description": "Compare only; no plan is chosen for her."},
+      {"id": "A5", "type": "tool_not_called", "target": "record_lead", "severity": "critical"},
+      {"id": "A6", "type": "tool_not_called", "target": "add_customer", "severity": "critical"}
+    ],
+    "semantic_criteria": [
+      {"id": "S1", "criterion": "The second reply identifies Ayesha Noor from the list shown and does not add details that were not in the list.", "metric": "faithfulness", "threshold": 0.75}
+    ],
+    "layers": ["L1", "L2", "L3", "L4", "L6"],
+    "source": {"kind": "code", "reference": "list_leads, select_customer_plan compare mode", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/chat-agent/acquisition_tools.py::select_customer_plan", "microservices/backend-microservices/chat-agent/tools.py::list_leads"]},
+    "metadata": {"interface": "chat", "env_mode": "any", "confirmations": "auto_approve",
+      "truth": [
+        {"oracle": "plan_choices", "inputs": {"age": 35}, "expect": ["TERM_LIFE_SECURE", "WHOLE_LIFE_LEGACY", "ENDOWMENT_SAVER", "SINGLE_PREMIUM_SHIELD", "HEALTH_CASH_PLUS"]},
+        {"oracle": "rbac", "inputs": {"role": "Agent", "tool": "list_leads"}, "expect": true}
+      ]}
+  },
+  {
+    "case_id": "IND-AGT-005",
+    "title": "A request in Urdu is answered in Urdu and uses the same tools",
+    "stage": "agent", "category": "agent-routing", "scenario_type": "edge", "difficulty": "medium", "severity": "medium",
+    "tags": ["routing", "urdu", "locale", "list-leads"],
+    "user": "agent-a1",
+    "messages": ["میرے لیڈز دکھائیں"],
+    "input": {"payload": {"locale": "ur"}},
+    "expected": {
+      "summary": "With the interface language set to Urdu, 'show me my leads' calls the same list_leads tool an English request would, and the reply is written in Urdu while names, numbers and phone numbers stay exactly as recorded.",
+      "outcome": "leads_listed_in_urdu",
+      "permitted_actions": ["list_leads"],
+      "tool_calls": [{"tool": "list_leads", "arguments": {}, "match": "subset", "required": true, "order": 1}]
+    },
+    "reference_context": [
+      {"source": "chat-agent/schemas.py::ChatStreamRequest", "kind": "code", "text": "locale is the UI language ('en' or 'ur'): the agent answers in it."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "contains", "target": "trace.executed_tools", "expected": "list_leads", "severity": "major"},
+      {"id": "A2", "type": "matches_regex", "target": "response.text", "expected": "[\\u0600-\\u06FF]{3,}", "severity": "major", "description": "The reply contains Urdu script."}
+    ],
+    "semantic_criteria": [
+      {"id": "S1", "criterion": "The reply is fluent, natural Urdu, and every lead name and phone number matches the tool result exactly.", "metric": "faithfulness", "threshold": 0.75}
+    ],
+    "layers": ["L1", "L2", "L3", "L6"],
+    "source": {"kind": "code", "reference": "ChatStreamRequest.locale and the agent's language rule", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/chat-agent/schemas.py::ChatStreamRequest", "microservices/backend-microservices/chat-agent/permission.py::AGENT_ACQUISITION_TOOLS"]},
+    "metadata": {"interface": "chat", "env_mode": "any", "confirmations": "auto_approve", "locale": "ur",
+      "truth": [{"oracle": "rbac", "inputs": {"role": "Agent", "tool": "list_leads"}, "expect": true}]}
+  },
+  {
+    "case_id": "IND-AGT-006",
+    "title": "'Add a new customer' starts by asking which kind, then continues as an individual",
+    "stage": "agent", "category": "agent-routing", "scenario_type": "missing_information", "difficulty": "medium", "severity": "medium",
+    "tags": ["routing", "multi-turn", "resolve-customer-type", "individual-only"],
+    "user": "agent-a1",
+    "messages": ["Add a new customer.", "Individual."],
+    "expected": {
+      "summary": "Because the first message does not say which kind of customer, the agent calls resolve_customer_type rather than asking in plain text. After 'Individual' it moves on to the individual customer details and asks for the ones it needs. It does not use the family or corporate tools and does not create a customer before it has the required details.",
+      "outcome": "individual_flow_started",
+      "permitted_actions": ["resolve_customer_type", "ask for individual customer details"],
+      "forbidden_actions": ["add_organization", "add_family_group", "add_customer with invented details"],
+      "tool_calls": [{"tool": "resolve_customer_type", "arguments": {}, "match": "subset", "required": true, "order": 1}]
+    },
+    "reference_context": [
+      {"source": "chat-agent/tools.py::resolve_customer_type", "kind": "code", "text": "Call this FIRST whenever the user asks to add or register a new customer without saying whether it is an individual, a corporate or a family group. Never ask that question in plain text."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "tool_called", "target": "resolve_customer_type", "severity": "major"},
+      {"id": "A2", "type": "tool_not_called", "target": "add_organization", "severity": "critical"},
+      {"id": "A3", "type": "tool_not_called", "target": "add_family_group", "severity": "critical"},
+      {"id": "A4", "type": "equals", "target": "trace.turn.2.executed_tools", "expected": [], "severity": "major", "description": "No customer is created before the required details are given."},
+      {"id": "A5", "type": "matches_regex", "target": "trace.turn.2.response.text", "expected": "(?i)(cnic|date of birth|occupation|income)", "severity": "major"}
+    ],
+    "layers": ["L1", "L2", "L3", "L4"],
+    "source": {"kind": "code", "reference": "resolve_customer_type guidance and the individual customer fields", "verification": "code_verified",
+      "code_refs": ["microservices/backend-microservices/chat-agent/tools.py::resolve_customer_type", "microservices/backend-microservices/chat-agent/tools.py::AddCustomerArgs"]},
+    "metadata": {"interface": "chat", "env_mode": "any", "confirmations": "auto_approve",
+      "truth": [
+        {"oracle": "source_contains", "inputs": {"path": "microservices/backend-microservices/chat-agent/tools.py", "text": "Call this FIRST whenever the user asks to add/register a new customer"}, "expect": true},
+        {"oracle": "rbac", "inputs": {"role": "Agent", "tool": "resolve_customer_type"}, "expect": true}
+      ]}
+  }
+]

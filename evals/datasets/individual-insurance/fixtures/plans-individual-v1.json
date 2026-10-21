@@ -1,0 +1,30 @@
+{
+  "fixture_type": "plan_catalog",
+  "version": "1",
+  "synthetic": true,
+  "tenant": "tenant-a",
+  "description": "A small individual plan catalog with fixed numbers, so eligibility, income-multiple and premium expectations do not depend on whatever plans a real tenant holds. The numbers are evaluation inputs, not any insurer's product terms. Rates follow the platform's own per-1,000 convention.",
+  "plans": [
+    {"code": "TERM_LIFE_SECURE", "label": "Term Life Secure", "insurance_type": "TERM_LIFE", "category": "Individual", "status": "Active",
+     "entry_age_min": 18, "entry_age_max": 60, "term_min_years": 5, "term_max_years": 30, "max_maturity_age": 70,
+     "max_income_multiple": 20, "base_premium_rate": 3.5, "smoker_factor": 1.6, "rate_version": "eval-v1"},
+    {"code": "WHOLE_LIFE_LEGACY", "label": "Whole Life Legacy", "insurance_type": "WHOLE_LIFE", "category": "Individual", "status": "Active",
+     "entry_age_min": 18, "entry_age_max": 65, "term_min_years": 10, "term_max_years": 30, "max_maturity_age": 85,
+     "max_income_multiple": 15, "base_premium_rate": 5.5, "smoker_factor": 1.5, "rate_version": "eval-v1"},
+    {"code": "ENDOWMENT_SAVER", "label": "Endowment Saver", "insurance_type": "ENDOWMENT", "category": "Individual", "status": "Active",
+     "entry_age_min": 18, "entry_age_max": 55, "term_min_years": 10, "term_max_years": 25, "max_maturity_age": 62,
+     "max_income_multiple": 12, "base_premium_rate": 6.0, "smoker_factor": 1.4, "rate_version": "eval-v1"},
+    {"code": "SINGLE_PREMIUM_SHIELD", "label": "Single Premium Shield", "insurance_type": "SINGLE_PREMIUM", "category": "Individual", "status": "Active",
+     "entry_age_min": 18, "entry_age_max": 60, "term_min_years": 5, "term_max_years": 15, "max_maturity_age": 75,
+     "max_income_multiple": 10, "base_premium_rate": 4.0, "smoker_factor": 1.3, "rate_version": "eval-v1"},
+    {"code": "HEALTH_CASH_PLUS", "label": "Health Cash Plus", "insurance_type": "HEALTH_CASH", "category": "Individual", "status": "Active",
+     "entry_age_min": 18, "entry_age_max": 60, "term_min_years": 1, "term_max_years": 10, "max_maturity_age": 70,
+     "max_income_multiple": 8, "base_premium_rate": 8.0, "smoker_factor": 1.2, "rate_version": "eval-v1"},
+    {"code": "TERM_LIFE_LEGACY", "label": "Term Life Legacy (retired draft)", "insurance_type": "TERM_LIFE", "category": "Individual", "status": "Draft",
+     "entry_age_min": 18, "entry_age_max": 60, "term_min_years": 5, "term_max_years": 30, "max_maturity_age": 70,
+     "max_income_multiple": 20, "base_premium_rate": 3.0, "smoker_factor": 1.5, "rate_version": "eval-v0"},
+    {"code": "GROUP_LIFE_STAFF", "label": "Group Life Staff Cover", "insurance_type": "GROUP_LIFE", "category": "Group", "status": "Active",
+     "entry_age_min": 18, "entry_age_max": 65, "term_min_years": 1, "term_max_years": 1, "max_maturity_age": 66,
+     "max_income_multiple": 0, "base_premium_rate": 2.5, "smoker_factor": 1.0, "rate_version": "eval-v1"}
+  ]
+}
