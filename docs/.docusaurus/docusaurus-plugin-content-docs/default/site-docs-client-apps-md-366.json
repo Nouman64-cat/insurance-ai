@@ -1,0 +1,28 @@
+{
+  "id": "client-apps",
+  "title": "Client Apps",
+  "description": "Both clients talk only to the API Gateway (:8010) — except the web portal's OCR and summarizer screens, which call those services directly via NEXTPUBLICOCRURL / NEXTPUBLICSUMMARIZERURL.",
+  "source": "@site/docs/client-apps.md",
+  "sourceDirName": ".",
+  "slug": "/client-apps",
+  "permalink": "/insurance-ai/client-apps",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 12,
+  "frontMatter": {
+    "id": "client-apps",
+    "title": "Client Apps",
+    "sidebar_position": 12
+  },
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "LLM Providers & Token Usage",
+    "permalink": "/insurance-ai/llm-providers"
+  },
+  "next": {
+    "title": "Contributing",
+    "permalink": "/insurance-ai/contributing"
+  }
+}

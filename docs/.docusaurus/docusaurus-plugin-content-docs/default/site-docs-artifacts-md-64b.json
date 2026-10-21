@@ -1,0 +1,28 @@
+{
+  "id": "artifacts",
+  "title": "Artifact Upload & OCR",
+  "description": "The artifact system lets users attach physical documents (CNIC scans, salary slips, medical reports, X-rays, policy forms) to a case and automatically extract their contents via the OCR Engine (the platform's configured multimodal LLM, Gemini 2.5 Flash by default). Results are stored in the artifacts table and can be retrieved with a fresh presigned download URL at any time.",
+  "source": "@site/docs/artifacts.md",
+  "sourceDirName": ".",
+  "slug": "/artifacts",
+  "permalink": "/insurance-ai/artifacts",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 7,
+  "frontMatter": {
+    "id": "artifacts",
+    "title": "Artifact Upload & OCR",
+    "sidebar_position": 7
+  },
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Case Management",
+    "permalink": "/insurance-ai/cases"
+  },
+  "next": {
+    "title": "Fraud Detection Layer",
+    "permalink": "/insurance-ai/fraud-layer"
+  }
+}

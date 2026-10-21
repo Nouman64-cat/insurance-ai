@@ -1,0 +1,28 @@
+{
+  "id": "cases",
+  "title": "Case Management",
+  "description": "The case management module provides a full lifecycle for tracking insurance work items — underwriting proposals, claim investigations, and general inquiries. Every case has an audit trail, workflow state, assignment history, comments, and file attachments.",
+  "source": "@site/docs/cases.md",
+  "sourceDirName": ".",
+  "slug": "/cases",
+  "permalink": "/insurance-ai/cases",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 6,
+  "frontMatter": {
+    "id": "cases",
+    "title": "Case Management",
+    "sidebar_position": 6
+  },
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Commission Earnings",
+    "permalink": "/insurance-ai/commission-earnings"
+  },
+  "next": {
+    "title": "Artifact Upload & OCR",
+    "permalink": "/insurance-ai/artifacts"
+  }
+}

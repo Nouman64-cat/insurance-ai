@@ -1,0 +1,14 @@
+{
+  "id": "LLM_COST_ESTIMATE",
+  "title": "LLM Cost Estimate — OpenAI gpt-4o-mini",
+  "description": "Estimated API cost per request and per case for the Rizviz insurance-ai platform.",
+  "source": "@site/docs/LLM_COST_ESTIMATE.md",
+  "sourceDirName": ".",
+  "slug": "/LLM_COST_ESTIMATE",
+  "permalink": "/insurance-ai/LLM_COST_ESTIMATE",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "frontMatter": {}
+}

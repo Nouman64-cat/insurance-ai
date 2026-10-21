@@ -1,0 +1,28 @@
+{
+  "id": "architecture",
+  "title": "Architecture",
+  "description": "System diagram",
+  "source": "@site/docs/architecture.md",
+  "sourceDirName": ".",
+  "slug": "/architecture",
+  "permalink": "/insurance-ai/architecture",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 2,
+  "frontMatter": {
+    "id": "architecture",
+    "title": "Architecture",
+    "sidebar_position": 2
+  },
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Overview",
+    "permalink": "/insurance-ai/"
+  },
+  "next": {
+    "title": "Tech Stack",
+    "permalink": "/insurance-ai/stack"
+  }
+}
