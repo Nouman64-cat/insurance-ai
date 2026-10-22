@@ -29,6 +29,8 @@ from group_underwriting import (
 )
 from risk_client import evaluate_group_member
 from routers.cases import generate_case_number
+from services.idempotency import read_model_operation, tenant_user_identity
+from shared.idempotency.http import database_operation
 from schemas import (
     BenefitClassCreate,
     BenefitClassRead,
@@ -292,6 +294,7 @@ async def _enrich_organizations(tenant_id: UUID, orgs: List[Organization], sessi
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(verify_admin)],
 )
+@read_model_operation("tenant.organization.create", OrganizationRead, lambda v, rid: v["session"].get(Organization, UUID(rid)), status_code=201, resource_type="organization")
 async def create_organization(
     tenant_id: UUID,
     body: OrganizationCreate,
@@ -561,6 +564,8 @@ async def delete_organization(
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(verify_admin)],
 )
+@read_model_operation("tenant.group.create_master_policy", MasterPolicyRead, lambda v, rid: v["session"].get(MasterPolicy, UUID(rid)), status_code=201, resource_type="master_policy",
+                     render=lambda v, mp: _master_policy_read(mp, v["session"]))
 async def create_master_policy(
     tenant_id: UUID,
     org_id: UUID,
@@ -723,6 +728,8 @@ async def _require_no_members(master_policy_id: UUID, session: AsyncSession) -> 
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(verify_admin)],
 )
+@read_model_operation("tenant.group.create_benefit_class", BenefitClassRead, lambda v, rid: v["session"].get(GroupBenefitClass, UUID(rid)), status_code=201, resource_type="benefit_class",
+                     render=lambda v, cls: _benefit_class_read(cls, v["session"]))
 async def create_benefit_class(
     tenant_id: UUID,
     org_id: UUID,
@@ -857,6 +864,7 @@ async def validate_employee_census(
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(verify_admin)],
 )
+@database_operation("tenant.group.confirm_census", response_fields=("free_cover_limit", "employees"), status_code=201, resource_type="master_policy", authorize=tenant_user_identity)
 async def confirm_employee_census(
     tenant_id: UUID,
     org_id: UUID,

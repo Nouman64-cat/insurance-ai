@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import api from "@/app/services/api";
+import { createCustomer } from "@/app/services/customerCreation";
 import { listAgents, Agent } from "@/app/services/agents";
 import SourcePicker, { pickDemoAgent, useAcquisitionSources } from "./SourcePicker";
 import DemoFillButton from "@/components/DemoFillButton";
@@ -103,7 +103,8 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved, default
           created_via: "Quick Lead Onboarding",
         },
       };
-      await api.post(`/tenants/${tenantId}/customers`, payload);
+      if (!tenantId) throw new Error(tx("No active tenant found."));
+      await createCustomer(tenantId, payload, null, "quick");
       const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
       onSaved(`Lead '${fullName}' added successfully!`);
       onClose();

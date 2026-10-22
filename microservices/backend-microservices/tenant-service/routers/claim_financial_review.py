@@ -50,9 +50,15 @@ async def get_claim_financial_review(tenant_id: UUID, claim_id: UUID,
 
 
 from schemas import ClaimUnderwritingCheckInput
+from services.idempotency import step_operation
+
+
+async def _financial_review_view(values):
+    return await get_claim_financial_review(values['tenant_id'], values['claim_id'], values['token'], values['session'])
 
 
 @router.post('/checks')
+@step_operation('tenant.claimuw.financial_check', _financial_review_view, ids=('claim_id',), atomic=False, resource_type='claim')
 async def record_claim_financial_check(request: Request, tenant_id: UUID, claim_id: UUID, body: ClaimUnderwritingCheckInput,
     token: str = Depends(oauth2_scheme), session: AsyncSession = Depends(get_session)):
     from datetime import datetime

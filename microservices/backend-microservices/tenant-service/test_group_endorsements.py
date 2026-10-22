@@ -53,7 +53,7 @@ from shared.models.core import (
 )
 from shared.pricing.calculator import STAMP_DUTY_RATE
 from test_group_census import _add_classes, _census, _cleanup, _cnic, _enroll, _expect_http, _master_policy, _row, _setup
-from test_group_issuance import _FakeProducer, _fake_request
+from test_group_issuance import _FakeProducer, _drain_outbox, _fake_request
 
 NO_DECISION = GroupQuoteDecision(decided_by="HR Director")
 EXPIRY = date(2026, 12, 31)          # test schemes run 2026-01-01 → 2026-12-31 (365 days)
@@ -167,6 +167,7 @@ async def test_add_members_prices_pro_rata_and_issues_certificates():
             assert len((await list_group_members(**ids))) == before
             assert (await list_endorsements(**ids)) == []
 
+            await _drain_outbox(_FakeProducer())      # earlier set-up events are not part of this assertion
             producer = _FakeProducer()
             e = await create_endorsement_endpoint(body=_req("ADD", effective, rows, reason="Two joiners"),
                                                   request=_fake_request(producer), **ids)
@@ -190,6 +191,7 @@ async def test_add_members_prices_pro_rata_and_issues_certificates():
             assert policy.effective_date == effective and policy.expiry_date == EXPIRY and policy.policy_number == new[0].certificate_number
             assert os.path.exists(e.document_path)
 
+            await _drain_outbox(producer)      # events are queued with the change and relayed afterwards
             events = [m for _t, m, _k in producer.sent]
             assert {x["event_type"] for x in events} == {"GroupEndorsementAdd"}
             assert {x["payload"]["to_status"] for x in events} >= {"Active"}

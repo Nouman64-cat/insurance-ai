@@ -1,0 +1,1918 @@
+{
+ "@file:tenant-service/routers/acquisition_sources.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_provisioning_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/agent_confidential_report.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_case_steps_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/artifacts.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_artifact_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/branches.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_admin_setup_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/cases.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_case_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/claim_workflow.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_claim_workflow_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/claims.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_claim_register_idempotency.py",
+   "microservices/backend-microservices/tenant-service/test_claim_settlement_approval.py"
+  ]
+ },
+ "@file:tenant-service/routers/commission_disbursements.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_commission_earnings.py"
+  ]
+ },
+ "@file:tenant-service/routers/commissions.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_commission_earnings.py"
+  ]
+ },
+ "@file:tenant-service/routers/customer_portal_family.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_customer_portal_family.py"
+  ]
+ },
+ "@file:tenant-service/routers/customer_portal_internal.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_customer_portal_internal.py"
+  ]
+ },
+ "@file:tenant-service/routers/customer_portal_walkin.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_walkin_pay_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/customers.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_provisioning_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/document_requests.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_walkin_pay_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/e_application.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_case_steps_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/families.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_enrollment_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/group_coverages.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_group_setup_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/group_endorsements.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_group_issuance.py"
+  ]
+ },
+ "@file:tenant-service/routers/group_policies.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_group_issuance.py"
+  ]
+ },
+ "@file:tenant-service/routers/group_renewals.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_group_issuance.py"
+  ]
+ },
+ "@file:tenant-service/routers/initial_premium_payment.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_ipp_idempotency.py",
+   "microservices/backend-microservices/tenant-service/test_ipp_lifecycle_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/medical_exam.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_case_steps_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/organizations.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_enrollment_idempotency.py",
+   "microservices/backend-microservices/tenant-service/test_group_setup_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/policies.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_policy_payment_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/policy_exit.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_workflow_idempotency.py",
+   "microservices/backend-microservices/tenant-service/test_exit_loan_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/post_issuance.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_post_issuance_idempotency.py",
+   "microservices/backend-microservices/tenant-service/test_post_issuance_more_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/pre_issuance.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_preissuance_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/reinstatement.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_workflow_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/reinsurance.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_case_steps_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/renewals.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_workflow_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/rules.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_admin_setup_idempotency.py"
+  ]
+ },
+ "@file:tenant-service/routers/users.py": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_provisioning_idempotency.py"
+  ]
+ },
+ "api-gateway/main.py::add_case_comment": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::ai_review_medical_reports": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::apply_reinsurer_terms": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::assess_medical_exam": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::assign_case": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::confirm_ipp": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::confirm_medical_reports": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::create_branch": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::create_case": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::create_customer": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::create_tenant": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::create_user": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::delete_artifact": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::delete_branch": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::delete_case": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::delete_customer": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::delete_tenant": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::delete_user": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::initiate_ipp": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::invite_e_application": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::invite_medical_exam": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::issue_lab_link": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::lab_auto_upload_medical_report": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::lab_complete_medical_exam": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::lab_upload_medical_report": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::login": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::public_book_medical_exam": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::public_save_e_application": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::public_submit_documents": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::public_submit_e_application": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::public_upload_document": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::record_medical_result": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::record_reinsurer_response": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::refer_to_reinsurer": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::reinstate_acr": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::request_acr": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::run_case_compliance": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::run_insurance_history": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::seed_admin": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::submit_acr": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::submit_specialist_questionnaire": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::update_artifact": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::update_branch": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::update_case": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::update_case_status": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::update_customer": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::update_tenant": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::update_user": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::upload_artifact": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::upsert_acr": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::waive_acr": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/main.py::waive_medical_exam": {
+  "reason": "Forwards every header (Idempotency-Key included) to tenant-service and returns its replay headers; the operation is enforced there.",
+  "status": "PROXY",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_idempotency_proxy.py"
+  ]
+ },
+ "api-gateway/routers/chat.py::chat_execute_tool": {
+  "reason": "Each write a tool makes carries its own key derived from the durable tool-call id (chat-agent write_key).",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/chat-agent/test_p1_p2_tools.py"
+  ]
+ },
+ "api-gateway/routers/chat.py::chat_resume": {
+  "reason": "Conversation/LLM proxy; no durable domain write (tool writes are keyed individually).",
+  "status": "NOT_APPLICABLE"
+ },
+ "api-gateway/routers/chat.py::chat_stream": {
+  "reason": "Conversation/LLM proxy; no durable domain write (tool writes are keyed individually).",
+  "status": "NOT_APPLICABLE"
+ },
+ "api-gateway/routers/chat.py::chat_title": {
+  "reason": "Conversation/LLM proxy; no durable domain write (tool writes are keyed individually).",
+  "status": "NOT_APPLICABLE"
+ },
+ "api-gateway/routers/chat.py::voice_proxy": {
+  "reason": "Conversation/LLM proxy; no durable domain write (tool writes are keyed individually).",
+  "status": "NOT_APPLICABLE"
+ },
+ "api-gateway/routers/evaluate.py::evaluate": {
+  "reason": "Risk evaluation persists once per proposal (already-persisted check) and the Kafka path uses idempotency records.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_risk_persistence.py",
+   "microservices/backend-microservices/api-gateway/test_risk_result_idempotency.py"
+  ]
+ },
+ "api-gateway/routers/evaluate.py::evaluate_stream": {
+  "reason": "Risk evaluation persists once per proposal (already-persisted check) and the Kafka path uses idempotency records.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/api-gateway/test_risk_persistence.py",
+   "microservices/backend-microservices/api-gateway/test_risk_result_idempotency.py"
+  ]
+ },
+ "api-gateway/routers/quote.py::get_quote": {
+  "reason": "Computes a quote; stateless",
+  "status": "NOT_APPLICABLE"
+ },
+ "api-gateway/routers/quote.py::update_quote": {
+  "reason": "PATCH overwrite of one quote",
+  "status": "NATURAL"
+ },
+ "api-gateway/routers/suggest.py::suggest_plan": {
+  "reason": "Stateless LLM/summary proxy",
+  "status": "NOT_APPLICABLE"
+ },
+ "api-gateway/routers/summarize.py::summarize": {
+  "reason": "Stateless LLM/summary proxy",
+  "status": "NOT_APPLICABLE"
+ },
+ "api-gateway/routers/summarize.py::summarize_stream": {
+  "reason": "Stateless LLM/summary proxy",
+  "status": "NOT_APPLICABLE"
+ },
+ "api-gateway/routers/summarize.py::underwriter_note": {
+  "reason": "Stateless LLM/summary proxy",
+  "status": "NOT_APPLICABLE"
+ },
+ "api-gateway/routers/summarize.py::underwriting": {
+  "reason": "Stateless LLM/summary proxy",
+  "status": "NOT_APPLICABLE"
+ },
+ "audit-service/app/api/archive.py::cleanup": {
+  "reason": "Durable job/unique keys: one archive job per range, one checkpoint per number, signer adopts an already-stored file, event_sources unique index, Kafka offset dedupe.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/audit-service/tests/test_archive_operations.py",
+   "microservices/backend-microservices/audit-service/tests/test_archive_core.py",
+   "microservices/backend-microservices/audit-service/tests/test_checkpoint_scheduler.py",
+   "microservices/backend-microservices/audit-service/tests/test_signer_service.py",
+   "microservices/backend-microservices/audit-service/tests/test_ledger.py",
+   "microservices/backend-microservices/audit-service/tests/test_consumer_and_outbox.py"
+  ]
+ },
+ "audit-service/app/api/archive.py::place_hold": {
+  "reason": "Durable job/unique keys: one archive job per range, one checkpoint per number, signer adopts an already-stored file, event_sources unique index, Kafka offset dedupe.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/audit-service/tests/test_archive_operations.py",
+   "microservices/backend-microservices/audit-service/tests/test_archive_core.py",
+   "microservices/backend-microservices/audit-service/tests/test_checkpoint_scheduler.py",
+   "microservices/backend-microservices/audit-service/tests/test_signer_service.py",
+   "microservices/backend-microservices/audit-service/tests/test_ledger.py",
+   "microservices/backend-microservices/audit-service/tests/test_consumer_and_outbox.py"
+  ]
+ },
+ "audit-service/app/api/archive.py::release_hold": {
+  "reason": "Durable job/unique keys: one archive job per range, one checkpoint per number, signer adopts an already-stored file, event_sources unique index, Kafka offset dedupe.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/audit-service/tests/test_archive_operations.py",
+   "microservices/backend-microservices/audit-service/tests/test_archive_core.py",
+   "microservices/backend-microservices/audit-service/tests/test_checkpoint_scheduler.py",
+   "microservices/backend-microservices/audit-service/tests/test_signer_service.py",
+   "microservices/backend-microservices/audit-service/tests/test_ledger.py",
+   "microservices/backend-microservices/audit-service/tests/test_consumer_and_outbox.py"
+  ]
+ },
+ "audit-service/app/api/archive.py::request_retrieval": {
+  "reason": "Durable job/unique keys: one archive job per range, one checkpoint per number, signer adopts an already-stored file, event_sources unique index, Kafka offset dedupe.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/audit-service/tests/test_archive_operations.py",
+   "microservices/backend-microservices/audit-service/tests/test_archive_core.py",
+   "microservices/backend-microservices/audit-service/tests/test_checkpoint_scheduler.py",
+   "microservices/backend-microservices/audit-service/tests/test_signer_service.py",
+   "microservices/backend-microservices/audit-service/tests/test_ledger.py",
+   "microservices/backend-microservices/audit-service/tests/test_consumer_and_outbox.py"
+  ]
+ },
+ "audit-service/app/api/archive.py::retry_job": {
+  "reason": "Durable job/unique keys: one archive job per range, one checkpoint per number, signer adopts an already-stored file, event_sources unique index, Kafka offset dedupe.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/audit-service/tests/test_archive_operations.py",
+   "microservices/backend-microservices/audit-service/tests/test_archive_core.py",
+   "microservices/backend-microservices/audit-service/tests/test_checkpoint_scheduler.py",
+   "microservices/backend-microservices/audit-service/tests/test_signer_service.py",
+   "microservices/backend-microservices/audit-service/tests/test_ledger.py",
+   "microservices/backend-microservices/audit-service/tests/test_consumer_and_outbox.py"
+  ]
+ },
+ "audit-service/app/api/archive.py::run": {
+  "reason": "Durable job/unique keys: one archive job per range, one checkpoint per number, signer adopts an already-stored file, event_sources unique index, Kafka offset dedupe.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/audit-service/tests/test_archive_operations.py",
+   "microservices/backend-microservices/audit-service/tests/test_archive_core.py",
+   "microservices/backend-microservices/audit-service/tests/test_checkpoint_scheduler.py",
+   "microservices/backend-microservices/audit-service/tests/test_signer_service.py",
+   "microservices/backend-microservices/audit-service/tests/test_ledger.py",
+   "microservices/backend-microservices/audit-service/tests/test_consumer_and_outbox.py"
+  ]
+ },
+ "audit-service/app/api/archive.py::set_policy": {
+  "reason": "Durable job/unique keys: one archive job per range, one checkpoint per number, signer adopts an already-stored file, event_sources unique index, Kafka offset dedupe.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/audit-service/tests/test_archive_operations.py",
+   "microservices/backend-microservices/audit-service/tests/test_archive_core.py",
+   "microservices/backend-microservices/audit-service/tests/test_checkpoint_scheduler.py",
+   "microservices/backend-microservices/audit-service/tests/test_signer_service.py",
+   "microservices/backend-microservices/audit-service/tests/test_ledger.py",
+   "microservices/backend-microservices/audit-service/tests/test_consumer_and_outbox.py"
+  ]
+ },
+ "audit-service/app/api/archive.py::verify": {
+  "reason": "Read-only verification; writes at most an alert that closes itself when the chain verifies again.",
+  "status": "NOT_APPLICABLE",
+  "tests": [
+   "microservices/backend-microservices/audit-service/tests/test_checkpoint_api.py"
+  ]
+ },
+ "audit-service/app/api/archive.py::verify_chain": {
+  "reason": "Read-only verification; writes at most an alert that closes itself when the chain verifies again.",
+  "status": "NOT_APPLICABLE",
+  "tests": [
+   "microservices/backend-microservices/audit-service/tests/test_checkpoint_api.py"
+  ]
+ },
+ "audit-service/app/api/checkpoints.py::create_checkpoint": {
+  "reason": "Durable job/unique keys: one archive job per range, one checkpoint per number, signer adopts an already-stored file, event_sources unique index, Kafka offset dedupe.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/audit-service/tests/test_archive_operations.py",
+   "microservices/backend-microservices/audit-service/tests/test_archive_core.py",
+   "microservices/backend-microservices/audit-service/tests/test_checkpoint_scheduler.py",
+   "microservices/backend-microservices/audit-service/tests/test_signer_service.py",
+   "microservices/backend-microservices/audit-service/tests/test_ledger.py",
+   "microservices/backend-microservices/audit-service/tests/test_consumer_and_outbox.py"
+  ]
+ },
+ "audit-service/app/api/checkpoints.py::rotate_key": {
+  "reason": "Durable job/unique keys: one archive job per range, one checkpoint per number, signer adopts an already-stored file, event_sources unique index, Kafka offset dedupe.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/audit-service/tests/test_archive_operations.py",
+   "microservices/backend-microservices/audit-service/tests/test_archive_core.py",
+   "microservices/backend-microservices/audit-service/tests/test_checkpoint_scheduler.py",
+   "microservices/backend-microservices/audit-service/tests/test_signer_service.py",
+   "microservices/backend-microservices/audit-service/tests/test_ledger.py",
+   "microservices/backend-microservices/audit-service/tests/test_consumer_and_outbox.py"
+  ]
+ },
+ "audit-service/app/api/checkpoints.py::verify_chain_anchored": {
+  "reason": "Read-only verification; writes at most an alert that closes itself when the chain verifies again.",
+  "status": "NOT_APPLICABLE",
+  "tests": [
+   "microservices/backend-microservices/audit-service/tests/test_checkpoint_api.py"
+  ]
+ },
+ "audit-service/app/api/checkpoints.py::verify_checkpoint": {
+  "reason": "Read-only verification; writes at most an alert that closes itself when the chain verifies again.",
+  "status": "NOT_APPLICABLE",
+  "tests": [
+   "microservices/backend-microservices/audit-service/tests/test_checkpoint_api.py"
+  ]
+ },
+ "audit-service/app/api/demo.py::delete_event": {
+  "reason": "Durable job/unique keys: one archive job per range, one checkpoint per number, signer adopts an already-stored file, event_sources unique index, Kafka offset dedupe.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/audit-service/tests/test_archive_operations.py",
+   "microservices/backend-microservices/audit-service/tests/test_archive_core.py",
+   "microservices/backend-microservices/audit-service/tests/test_checkpoint_scheduler.py",
+   "microservices/backend-microservices/audit-service/tests/test_signer_service.py",
+   "microservices/backend-microservices/audit-service/tests/test_ledger.py",
+   "microservices/backend-microservices/audit-service/tests/test_consumer_and_outbox.py"
+  ]
+ },
+ "audit-service/app/api/demo.py::restore_event": {
+  "reason": "Durable job/unique keys: one archive job per range, one checkpoint per number, signer adopts an already-stored file, event_sources unique index, Kafka offset dedupe.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/audit-service/tests/test_archive_operations.py",
+   "microservices/backend-microservices/audit-service/tests/test_archive_core.py",
+   "microservices/backend-microservices/audit-service/tests/test_checkpoint_scheduler.py",
+   "microservices/backend-microservices/audit-service/tests/test_signer_service.py",
+   "microservices/backend-microservices/audit-service/tests/test_ledger.py",
+   "microservices/backend-microservices/audit-service/tests/test_consumer_and_outbox.py"
+  ]
+ },
+ "audit-service/app/api/verification.py::run_all": {
+  "reason": "Read-only verification; writes at most an alert that closes itself when the chain verifies again.",
+  "status": "NOT_APPLICABLE",
+  "tests": [
+   "microservices/backend-microservices/audit-service/tests/test_checkpoint_api.py"
+  ]
+ },
+ "audit-service/app/api/verification.py::run_verification": {
+  "reason": "Read-only verification; writes at most an alert that closes itself when the chain verifies again.",
+  "status": "NOT_APPLICABLE",
+  "tests": [
+   "microservices/backend-microservices/audit-service/tests/test_checkpoint_api.py"
+  ]
+ },
+ "chat-agent/routers/chat.py::bulk_underwriting_stream": {
+  "reason": "Writes made by tools carry per-request keys derived from the tool-call id.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/chat-agent/test_p1_p2_tools.py"
+  ]
+ },
+ "chat-agent/routers/chat.py::chat_execute_tool": {
+  "reason": "Writes made by tools carry per-request keys derived from the tool-call id.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/chat-agent/test_p1_p2_tools.py"
+  ]
+ },
+ "chat-agent/routers/chat.py::chat_resume": {
+  "reason": "Conversation, LLM or voice endpoint; no durable domain write",
+  "status": "NOT_APPLICABLE"
+ },
+ "chat-agent/routers/chat.py::chat_stream": {
+  "reason": "Conversation, LLM or voice endpoint; no durable domain write",
+  "status": "NOT_APPLICABLE"
+ },
+ "chat-agent/routers/chat.py::chat_title": {
+  "reason": "Conversation, LLM or voice endpoint; no durable domain write",
+  "status": "NOT_APPLICABLE"
+ },
+ "chat-agent/routers/voice.py::transcribe": {
+  "reason": "Conversation, LLM or voice endpoint; no durable domain write",
+  "status": "NOT_APPLICABLE"
+ },
+ "chat-agent/routers/voice.py::voice_session": {
+  "reason": "Conversation, LLM or voice endpoint; no durable domain write",
+  "status": "NOT_APPLICABLE"
+ },
+ "customer-management/app/routers/auth.py::change_password": {
+  "reason": "Credential/session flow: repeating a login or password step must not be replayed from a receipt",
+  "status": "NOT_APPLICABLE"
+ },
+ "customer-management/app/routers/auth.py::first_change": {
+  "reason": "Credential/session flow: repeating a login or password step must not be replayed from a receipt",
+  "status": "NOT_APPLICABLE"
+ },
+ "customer-management/app/routers/auth.py::login": {
+  "reason": "Credential/session flow: repeating a login or password step must not be replayed from a receipt",
+  "status": "NOT_APPLICABLE"
+ },
+ "customer-management/app/routers/auth.py::logout": {
+  "reason": "Credential/session flow: repeating a login or password step must not be replayed from a receipt",
+  "status": "NOT_APPLICABLE"
+ },
+ "customer-management/app/routers/auth.py::preferences": {
+  "reason": "Credential/session flow: repeating a login or password step must not be replayed from a receipt",
+  "status": "NOT_APPLICABLE"
+ },
+ "customer-management/app/routers/auth.py::refresh": {
+  "reason": "Credential/session flow: repeating a login or password step must not be replayed from a receipt",
+  "status": "NOT_APPLICABLE"
+ },
+ "customer-management/app/routers/family.py::submit_request": {
+  "reason": "Own durable key (payment_attempts / idempotency_keys / ticket key) and forwarded to tenant-service.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/customer-management/tests/test_portal.py",
+   "microservices/backend-microservices/customer-management/tests/test_family.py",
+   "microservices/backend-microservices/customer-management/tests/test_support.py"
+  ]
+ },
+ "customer-management/app/routers/family.py::withdraw_request": {
+  "reason": "State-guarded or overwrite semantics (profile/read marker/account flag/version check)",
+  "status": "NATURAL"
+ },
+ "customer-management/app/routers/internal.py::put_account": {
+  "reason": "State-guarded or overwrite semantics (profile/read marker/account flag/version check)",
+  "status": "NATURAL"
+ },
+ "customer-management/app/routers/internal.py::release": {
+  "reason": "State-guarded or overwrite semantics (profile/read marker/account flag/version check)",
+  "status": "NATURAL"
+ },
+ "customer-management/app/routers/internal.py::suspend": {
+  "reason": "State-guarded or overwrite semantics (profile/read marker/account flag/version check)",
+  "status": "NATURAL"
+ },
+ "customer-management/app/routers/portal.py::mark_read": {
+  "reason": "State-guarded or overwrite semantics (profile/read marker/account flag/version check)",
+  "status": "NATURAL"
+ },
+ "customer-management/app/routers/portal.py::pay": {
+  "reason": "Own durable key (payment_attempts / idempotency_keys / ticket key) and forwarded to tenant-service.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/customer-management/tests/test_portal.py",
+   "microservices/backend-microservices/customer-management/tests/test_family.py",
+   "microservices/backend-microservices/customer-management/tests/test_support.py"
+  ]
+ },
+ "customer-management/app/routers/portal.py::renewal_acceptance": {
+  "reason": "Forwards the client-supplied Idempotency-Key (namespaced by account) to tenant-service, which enforces it.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/customer-management/tests/test_portal.py"
+  ]
+ },
+ "customer-management/app/routers/portal.py::request_surrender": {
+  "reason": "Own durable key (payment_attempts / idempotency_keys / ticket key) and forwarded to tenant-service.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/customer-management/tests/test_portal.py",
+   "microservices/backend-microservices/customer-management/tests/test_family.py",
+   "microservices/backend-microservices/customer-management/tests/test_support.py"
+  ]
+ },
+ "customer-management/app/routers/portal.py::submit_claim": {
+  "reason": "Own durable key (payment_attempts / idempotency_keys / ticket key) and forwarded to tenant-service.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/customer-management/tests/test_portal.py",
+   "microservices/backend-microservices/customer-management/tests/test_family.py",
+   "microservices/backend-microservices/customer-management/tests/test_support.py"
+  ]
+ },
+ "customer-management/app/routers/portal.py::update_contact": {
+  "reason": "State-guarded or overwrite semantics (profile/read marker/account flag/version check)",
+  "status": "NATURAL"
+ },
+ "customer-management/app/routers/portal.py::upload_claim_document": {
+  "reason": "Forwards the client-supplied Idempotency-Key (namespaced by account) to tenant-service, which enforces it.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/customer-management/tests/test_portal.py"
+  ]
+ },
+ "customer-management/app/routers/support.py::create_ticket": {
+  "reason": "Own durable key (payment_attempts / idempotency_keys / ticket key) and forwarded to tenant-service.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/customer-management/tests/test_portal.py",
+   "microservices/backend-microservices/customer-management/tests/test_family.py",
+   "microservices/backend-microservices/customer-management/tests/test_support.py"
+  ]
+ },
+ "customer-management/app/routers/support.py::reopen": {
+  "reason": "State-guarded or overwrite semantics (profile/read marker/account flag/version check)",
+  "status": "NATURAL"
+ },
+ "customer-management/app/routers/support.py::reply": {
+  "reason": "Forwards the client-supplied Idempotency-Key (namespaced by account) to tenant-service, which enforces it.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/customer-management/tests/test_portal.py"
+  ]
+ },
+ "customer-management/app/routers/support.py::withdraw": {
+  "reason": "State-guarded or overwrite semantics (profile/read marker/account flag/version check)",
+  "status": "NATURAL"
+ },
+ "customer-management/app/routers/walk_in.py::logout": {
+  "reason": "State-guarded or overwrite semantics (profile/read marker/account flag/version check)",
+  "status": "NATURAL"
+ },
+ "customer-management/app/routers/walk_in.py::otp_request": {
+  "reason": "Sends a one-time code; a repeat issues a fresh code and is rate-limited",
+  "status": "NOT_APPLICABLE"
+ },
+ "customer-management/app/routers/walk_in.py::otp_verify": {
+  "reason": "State-guarded or overwrite semantics (profile/read marker/account flag/version check)",
+  "status": "NATURAL"
+ },
+ "customer-management/app/routers/walk_in.py::pay_declare": {
+  "reason": "Forwards the client-supplied Idempotency-Key (namespaced by account) to tenant-service, which enforces it.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/customer-management/tests/test_portal.py"
+  ]
+ },
+ "customer-management/app/routers/walk_in.py::pay_proof": {
+  "reason": "Forwards the client-supplied Idempotency-Key (namespaced by account) to tenant-service, which enforces it.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/customer-management/tests/test_portal.py"
+  ]
+ },
+ "customer-management/app/routers/walk_in.py::submit_application": {
+  "reason": "Own durable key (payment_attempts / idempotency_keys / ticket key) and forwarded to tenant-service.",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/customer-management/tests/test_portal.py",
+   "microservices/backend-microservices/customer-management/tests/test_family.py",
+   "microservices/backend-microservices/customer-management/tests/test_support.py"
+  ]
+ },
+ "customer-management/app/routers/walk_in.py::update_profile": {
+  "reason": "State-guarded or overwrite semantics (profile/read marker/account flag/version check)",
+  "status": "NATURAL"
+ },
+ "customer-service/main.py::assign": {
+  "reason": "Optimistic version check: a repeat sees a changed version and is refused",
+  "status": "NATURAL",
+  "tests": [
+   "microservices/backend-microservices/customer-service/tests/test_service.py"
+  ]
+ },
+ "customer-service/main.py::change": {
+  "reason": "Optimistic version check: a repeat sees a changed version and is refused",
+  "status": "NATURAL",
+  "tests": [
+   "microservices/backend-microservices/customer-service/tests/test_service.py"
+  ]
+ },
+ "customer-service/main.py::comment": {
+  "reason": "Ticket key (unique per requester) / event key (migration 0003).",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/customer-service/tests/test_service.py"
+  ]
+ },
+ "customer-service/main.py::create": {
+  "reason": "Ticket key (unique per requester) / event key (migration 0003).",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/customer-service/tests/test_service.py"
+  ]
+ },
+ "customer-service/main.py::portal_create": {
+  "reason": "Ticket key (unique per requester) / event key (migration 0003).",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/customer-service/tests/test_service.py"
+  ]
+ },
+ "customer-service/main.py::portal_reopen": {
+  "reason": "Optimistic version check: a repeat sees a changed version and is refused",
+  "status": "NATURAL",
+  "tests": [
+   "microservices/backend-microservices/customer-service/tests/test_service.py"
+  ]
+ },
+ "customer-service/main.py::portal_reply": {
+  "reason": "Ticket key (unique per requester) / event key (migration 0003).",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/customer-service/tests/test_service.py"
+  ]
+ },
+ "customer-service/main.py::portal_withdraw": {
+  "reason": "Optimistic version check: a repeat sees a changed version and is refused",
+  "status": "NATURAL",
+  "tests": [
+   "microservices/backend-microservices/customer-service/tests/test_service.py"
+  ]
+ },
+ "customer-service/main.py::seed_demo": {
+  "reason": "Demo seeding; disabled outside demo mode",
+  "status": "NOT_APPLICABLE"
+ },
+ "ocr-engine/main.py::extract_customer_fields": {
+  "reason": "Stateless extraction/summarisation; nothing is persisted",
+  "status": "NOT_APPLICABLE"
+ },
+ "ocr-engine/main.py::extract_family_fields": {
+  "reason": "Stateless extraction/summarisation; nothing is persisted",
+  "status": "NOT_APPLICABLE"
+ },
+ "ocr-engine/main.py::extract_organization_fields": {
+  "reason": "Stateless extraction/summarisation; nothing is persisted",
+  "status": "NOT_APPLICABLE"
+ },
+ "ocr-engine/main.py::extract_structured": {
+  "reason": "Stateless extraction/summarisation; nothing is persisted",
+  "status": "NOT_APPLICABLE"
+ },
+ "ocr-engine/main.py::extract_text": {
+  "reason": "Stateless extraction/summarisation; nothing is persisted",
+  "status": "NOT_APPLICABLE"
+ },
+ "ocr-engine/main.py::extract_text_from_path": {
+  "reason": "Stateless extraction/summarisation; nothing is persisted",
+  "status": "NOT_APPLICABLE"
+ },
+ "ocr-engine/main.py::extract_text_stream": {
+  "reason": "Stateless extraction/summarisation; nothing is persisted",
+  "status": "NOT_APPLICABLE"
+ },
+ "request-management-service/app/api/routes.py::add_comment": {
+  "reason": "idempotency_keys table (scope + key + body hash).",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/request-management-service/tests/test_requests.py"
+  ]
+ },
+ "request-management-service/app/api/routes.py::create": {
+  "reason": "idempotency_keys table (scope + key + body hash).",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/request-management-service/tests/test_requests.py"
+  ]
+ },
+ "request-management-service/app/api/routes.py::create_rule": {
+  "reason": "Admin routing-rule creation is not keyed; a retry creates a second rule (visible, deactivatable).",
+  "status": "DEFERRED"
+ },
+ "request-management-service/app/api/routes.py::deactivate_rule": {
+  "reason": "Overwrite, read marker or deactivation; repeating reaches the same state",
+  "status": "NATURAL"
+ },
+ "request-management-service/app/api/routes.py::mark_all_read": {
+  "reason": "Overwrite, read marker or deactivation; repeating reaches the same state",
+  "status": "NATURAL"
+ },
+ "request-management-service/app/api/routes.py::mark_read": {
+  "reason": "Overwrite, read marker or deactivation; repeating reaches the same state",
+  "status": "NATURAL"
+ },
+ "request-management-service/app/api/routes.py::update_draft": {
+  "reason": "Overwrite, read marker or deactivation; repeating reaches the same state",
+  "status": "NATURAL"
+ },
+ "request-management-service/app/api/routes.py::update_rule": {
+  "reason": "Overwrite, read marker or deactivation; repeating reaches the same state",
+  "status": "NATURAL"
+ },
+ "request-management-service/app/api/routes.py::upload": {
+  "reason": "Attachment upload is not keyed yet; a retry stores a second attachment (visible and deletable). Follow-up: key via idempotency_keys.",
+  "status": "DEFERRED"
+ },
+ "risk-engine/main.py::evaluate": {
+  "reason": "Stateless evaluation; the Kafka consumer is deduplicated by job_store/idempotency records",
+  "status": "NOT_APPLICABLE",
+  "tests": [
+   "microservices/backend-microservices/risk-engine/test_job_store.py"
+  ]
+ },
+ "risk-engine/main.py::evaluate_claim_underwriting": {
+  "reason": "Stateless evaluation; the Kafka consumer is deduplicated by job_store/idempotency records",
+  "status": "NOT_APPLICABLE",
+  "tests": [
+   "microservices/backend-microservices/risk-engine/test_job_store.py"
+  ]
+ },
+ "risk-engine/main.py::evaluate_financial": {
+  "reason": "Stateless evaluation; the Kafka consumer is deduplicated by job_store/idempotency records",
+  "status": "NOT_APPLICABLE",
+  "tests": [
+   "microservices/backend-microservices/risk-engine/test_job_store.py"
+  ]
+ },
+ "risk-engine/main.py::evaluate_stream": {
+  "reason": "Stateless evaluation; the Kafka consumer is deduplicated by job_store/idempotency records",
+  "status": "NOT_APPLICABLE",
+  "tests": [
+   "microservices/backend-microservices/risk-engine/test_job_store.py"
+  ]
+ },
+ "risk-engine/main.py::suggest_plan_endpoint": {
+  "reason": "Stateless evaluation; the Kafka consumer is deduplicated by job_store/idempotency records",
+  "status": "NOT_APPLICABLE",
+  "tests": [
+   "microservices/backend-microservices/risk-engine/test_job_store.py"
+  ]
+ },
+ "tenant-service/routers/acquisition_sources.py::delete_acquisition_source": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/acquisition_sources.py::send_source_credentials": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/acquisition_sources.py::update_acquisition_source": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/agent.py::suggest_actions": {
+  "reason": "Preview, validation or recomputation: replaces its own result in place and has no external side effect that must not repeat",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/agent_confidential_report.py::reinstate_acr": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/agent_confidential_report.py::request_acr": {
+  "reason": "Documented idempotent: asking again returns the standing request instead of re-sending",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/agent_confidential_report.py::submit_acr": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/agent_confidential_report.py::upsert_acr": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/agent_config.py::update_agent_config": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/artifacts.py::delete_artifact": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/artifacts.py::update_artifact": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/auth.py::change_own_password": {
+  "reason": "Credential flow",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/auth.py::login_for_access_token": {
+  "reason": "Credential flow",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/auth.py::update_own_profile": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/branches.py::create_branch": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/branches.py::delete_branch": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/branches.py::update_branch": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/cases.py::change_case_plan": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/cases.py::delete_case": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/cases.py::get_underwriting_evidence": {
+  "reason": "Preview, validation or recomputation: replaces its own result in place and has no external side effect that must not repeat",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/cases.py::run_case_compliance": {
+  "reason": "Preview, validation or recomputation: replaces its own result in place and has no external side effect that must not repeat",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/cases.py::update_case": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/claim_financial_review.py::record_claim_financial_check": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/claims.py::refer_claim_to_reinsurance": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/claims.py::refer_claim_to_underwriting": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/claims.py::resolve_claim_underwriting": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/claims.py::set_claim_authority": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/commissions.py::assign": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/commissions.py::rate_preview": {
+  "reason": "Preview, validation or recomputation: replaces its own result in place and has no external side effect that must not repeat",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/commissions.py::reconcile": {
+  "reason": "Portfolio sweep: skips anything already open/processed, so a second run finds nothing new",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/commissions.py::update_earning": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/customer_portal_family.py::renewal_acceptance": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/customer_portal_family.py::withdraw_family_request": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/customer_portal_internal.py::portal_sync": {
+  "reason": "Seeding/demo/sync utility that converges to the same state",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/customer_portal_internal.py::update_contact": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/customer_portal_internal.py::upload_claim_document": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/customer_portal_walkin.py::otp_email": {
+  "reason": "Public link endpoint guarded by its own state (already submitted/booked is refused or overwritten)",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/customer_portal_walkin.py::submit_lead": {
+  "reason": "Reference-based duplicate detection returns the earlier lead (duplicate=true)",
+  "status": "EXISTING",
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_walk_in.py"
+  ]
+ },
+ "tenant-service/routers/customers.py::create_customer_policy": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/customers.py::delete_customer": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/customers.py::delete_customer_policy": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/customers.py::renew_policy_document_request": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/customers.py::run_customer_risk_profile": {
+  "reason": "Preview, validation or recomputation: replaces its own result in place and has no external side effect that must not repeat",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/customers.py::send_policy_document_request": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/customers.py::update_customer": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/customers.py::update_customer_policy": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/demo.py::reset_funnel": {
+  "reason": "Seeding/demo/sync utility that converges to the same state",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/document_requests.py::public_submit_documents": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/document_requests.py::public_upload_document": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/e_application.py::invite_e_application": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/e_application.py::public_save_e_application": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/e_application.py::public_submit_e_application": {
+  "reason": "Public link endpoint guarded by its own state (already submitted/booked is refused or overwritten)",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/e_application.py::update_custom_questions": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/e_application.py::verify_e_application": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/families.py::confirm_floater_members": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/families.py::confirm_life_bundle_members": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/families.py::create_floater_policy": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/families.py::create_life_bundle_policy": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/families.py::delete_family_group": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/families.py::delete_family_member": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/families.py::delete_family_nominee": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/families.py::delete_family_policy": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/families.py::update_family_group": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/families.py::update_family_nominee": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/families.py::update_family_policy": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/families.py::validate_floater_members": {
+  "reason": "Preview, validation or recomputation: replaces its own result in place and has no external side effect that must not repeat",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/families.py::validate_life_bundle_members": {
+  "reason": "Preview, validation or recomputation: replaces its own result in place and has no external side effect that must not repeat",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/group_census_upload.py::parse_census_upload": {
+  "reason": "Preview, validation or recomputation: replaces its own result in place and has no external side effect that must not repeat",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/group_claims.py::group_payout": {
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_group_claims.py"
+  ]
+ },
+ "tenant-service/routers/group_claims.py::open_group_claim": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/group_claims.py::preview_split_endpoint": {
+  "reason": "Preview, validation or recomputation: replaces its own result in place and has no external side effect that must not repeat",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/group_coverages.py::remove_class_coverage": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/group_endorsements.py::create": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/group_endorsements.py::preview": {
+  "reason": "Preview, validation or recomputation: replaces its own result in place and has no external side effect that must not repeat",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/group_endorsements.py::resolve": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/group_policies.py::accept_group_quote": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/group_policies.py::add_group_dependent": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/group_policies.py::decline_group_quote": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/group_policies.py::delete_group_dependent": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/group_policies.py::generate_group_quote_endpoint": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/group_policies.py::replace_group_beneficiaries": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/group_renewals.py::accept_renewal": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/group_renewals.py::census_refresh": {
+  "reason": "Portfolio sweep: skips anything already open/processed, so a second run finds nothing new",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/group_renewals.py::decline_renewal": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/group_renewals.py::renewal_quote": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/group_renewals.py::run_cycle": {
+  "reason": "Portfolio sweep: skips anything already open/processed, so a second run finds nothing new",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/group_renewals.py::start_renewal": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/insurance_history.py::clear_insurance_history": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/insurance_history.py::fail_insurance_history": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/insurance_history.py::run_insurance_history": {
+  "reason": "Preview, validation or recomputation: replaces its own result in place and has no external side effect that must not repeat",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/insurance_plans.py::create_insurance_plan": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/insurance_plans.py::delete_insurance_plan": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/insurance_plans.py::remove_policy_wording": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/insurance_plans.py::seed_default_plans": {
+  "reason": "Seeding/demo/sync utility that converges to the same state",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/insurance_plans.py::update_insurance_plan": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/insurance_plans.py::upload_policy_wording": {
+  "reason": "Document upload not keyed yet: a retry stores a second file. Follow-up: wrap with the upload adapter used for case artifacts.",
+  "status": "DEFERRED"
+ },
+ "tenant-service/routers/llm_config.py::test_live_voice_config": {
+  "reason": "Preview, validation or recomputation: replaces its own result in place and has no external side effect that must not repeat",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/llm_config.py::test_llm_config": {
+  "reason": "Preview, validation or recomputation: replaces its own result in place and has no external side effect that must not repeat",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/llm_config.py::update_live_voice_config": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/llm_config.py::update_llm_config": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/llm_config.py::update_ocr_config": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/medical_exam.py::ai_review_medical_reports": {
+  "reason": "Preview, validation or recomputation: replaces its own result in place and has no external side effect that must not repeat",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/medical_exam.py::assess_medical_exam": {
+  "reason": "Preview, validation or recomputation: replaces its own result in place and has no external side effect that must not repeat",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/medical_exam.py::confirm_medical_reports": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/medical_exam.py::invite_medical_exam": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/medical_exam.py::issue_lab_link": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/medical_exam.py::lab_auto_upload_medical_report": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/medical_exam.py::lab_complete_medical_exam": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/medical_exam.py::lab_upload_medical_report": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/medical_exam.py::public_book_medical_exam": {
+  "reason": "Public link endpoint guarded by its own state (already submitted/booked is refused or overwritten)",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/medical_exam.py::record_medical_result": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/medical_exam.py::schedule_medical_exam": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/medical_exam.py::waive_medical_exam": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/organizations.py::confirm_employee_census": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/organizations.py::delete_benefit_class": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/organizations.py::delete_master_policy": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/organizations.py::delete_organization": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/organizations.py::delete_organization_employee": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/organizations.py::update_master_policy": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/organizations.py::update_organization": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/organizations.py::validate_employee_census": {
+  "reason": "Preview, validation or recomputation: replaces its own result in place and has no external side effect that must not repeat",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/policy_exit.py::sweep_exits": {
+  "reason": "Portfolio sweep: skips anything already open/processed, so a second run finds nothing new",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/post_issuance.py::acknowledge_onboarding": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/post_issuance.py::demo_seed_premiums": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/post_issuance.py::email_endorsement": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/post_issuance.py::endorse_contact": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/post_issuance.py::endorse_nominees": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/post_issuance.py::endorse_riders": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/post_issuance.py::endorse_sum_assured": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/post_issuance.py::generate_welcome_kit": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/post_issuance.py::lapse_warning_letter": {
+  "reason": "Preview, validation or recomputation: replaces its own result in place and has no external side effect that must not repeat",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/post_issuance.py::monitor_premiums": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/post_issuance.py::provision_portal": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/post_issuance.py::reset_onboarding": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/post_issuance.py::restructure_plan": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/post_issuance.py::retry_failed_delivery": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/post_issuance.py::send_welcome": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/pre_issuance.py::accept_counter_offer": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/pre_issuance.py::clear_compliance": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/pre_issuance.py::create_counter_offer": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/pre_issuance.py::decline_counter_offer": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/pre_issuance.py::fail_compliance": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/pre_issuance.py::generate_documents": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/pre_issuance.py::run_compliance": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/pre_issuance.py::submit_requirement": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/pre_issuance.py::verify_requirement": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/reinsurance.py::apply_reinsurer_terms": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/reinsurance.py::record_reinsurer_response": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/reinsurance.py::refer_to_reinsurer": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/reinsurance.py::withdraw_referral": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/renewals.py::sweep_renewals": {
+  "reason": "Portfolio sweep: skips anything already open/processed, so a second run finds nothing new",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/request_management_internal.py::apply_profile_correction": {
+  "reason": "Correction id is recorded; a second delivery answers ALREADY_APPLIED",
+  "status": "EXISTING"
+ },
+ "tenant-service/routers/roles.py::create_role": {
+  "reason": "Unique name/code: a retry is refused with 409 instead of creating a second record",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/roles.py::delete_role": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/roles.py::update_role": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/rules.py::add_rule_to_version": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/rules.py::create_eligibility_profile": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/rules.py::create_subcategory": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/rules.py::delete_category": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/rules.py::delete_rule": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/rules.py::delete_rule_set": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/rules.py::delete_subcategory": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/rules.py::early_check_endpoint": {
+  "reason": "Preview, validation or recomputation: replaces its own result in place and has no external side effect that must not repeat",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/rules.py::evaluate_rule_endpoint": {
+  "reason": "Preview, validation or recomputation: replaces its own result in place and has no external side effect that must not repeat",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/rules.py::evaluate_scope_endpoint": {
+  "reason": "Preview, validation or recomputation: replaces its own result in place and has no external side effect that must not repeat",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/rules.py::suggest_values_endpoint": {
+  "reason": "Preview, validation or recomputation: replaces its own result in place and has no external side effect that must not repeat",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/rules.py::update_rule": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/rules.py::update_version_status": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/tenants.py::create_tenant": {
+  "reason": "Unique name/code: a retry is refused with 409 instead of creating a second record",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/tenants.py::delete_tenant": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/tenants.py::update_tenant": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/tokens.py::record_token_usage": {
+  "reason": "Usage ledger append without a request id: a retried call double-counts usage (statistic, not money). Follow-up: add the request id as a unique column.",
+  "status": "DEFERRED"
+ },
+ "tenant-service/routers/underwriting_questionnaires.py::invite": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/underwriting_questionnaires.py::submit": {
+  "reason": "Public link endpoint guarded by its own state (already submitted/booked is refused or overwritten)",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/underwriting_tracks.py::classify_specialist_documents": {
+  "reason": "Document upload not keyed yet: a retry stores a second file. Follow-up: wrap with the upload adapter used for case artifacts.",
+  "status": "DEFERRED"
+ },
+ "tenant-service/routers/underwriting_tracks.py::demo_mark_documents_uploaded": {
+  "reason": "Seeding/demo/sync utility that converges to the same state",
+  "status": "NOT_APPLICABLE"
+ },
+ "tenant-service/routers/underwriting_tracks.py::record_claim_underwriting_outcome": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/underwriting_tracks.py::retry_specialist_document": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/underwriting_tracks.py::run_claim_track_ai": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/underwriting_tracks.py::run_financial_underwriting": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/underwriting_tracks.py::update_track": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/underwriting_tracks.py::upload_specialist_document": {
+  "reason": "Document upload not keyed yet: a retry stores a second file. Follow-up: wrap with the upload adapter used for case artifacts.",
+  "status": "DEFERRED"
+ },
+ "tenant-service/routers/underwriting_tracks.py::waive_e_application_part": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/underwriting_tracks.py::waive_specialist_claim_document": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/users.py::delete_user": {
+  "reason": "Delete: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/users.py::seed_admin": {
+  "note": "adapter integrated; no route-level keyed test yet",
+  "untested": true
+ },
+ "tenant-service/routers/users.py::update_user": {
+  "reason": "Overwrite: the resulting state is the same however often it is repeated; a repeated delete answers 404.",
+  "status": "NATURAL"
+ },
+ "tenant-service/routers/walk_in_leads.py::acknowledge_lead": {
+  "reason": "Sets an acknowledgement/assignment; repeating reaches the same state",
+  "status": "NATURAL",
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_walk_in.py"
+  ]
+ },
+ "tenant-service/routers/walk_in_leads.py::reassign_lead": {
+  "reason": "Sets an acknowledgement/assignment; repeating reaches the same state",
+  "status": "NATURAL",
+  "tests": [
+   "microservices/backend-microservices/tenant-service/test_walk_in.py"
+  ]
+ },
+ "tenant-service/routers/walk_in_leads.py::run_sweep": {
+  "reason": "Portfolio sweep: skips anything already open/processed, so a second run finds nothing new",
+  "status": "NATURAL"
+ },
+ "text-summarizer/main.py::summarize_text": {
+  "reason": "Stateless extraction/summarisation; nothing is persisted",
+  "status": "NOT_APPLICABLE"
+ },
+ "text-summarizer/main.py::summarize_text_stream": {
+  "reason": "Stateless extraction/summarisation; nothing is persisted",
+  "status": "NOT_APPLICABLE"
+ },
+ "text-summarizer/main.py::summarize_underwriter_note": {
+  "reason": "Stateless extraction/summarisation; nothing is persisted",
+  "status": "NOT_APPLICABLE"
+ },
+ "text-summarizer/main.py::summarize_underwriting": {
+  "reason": "Stateless extraction/summarisation; nothing is persisted",
+  "status": "NOT_APPLICABLE"
+ }
+}

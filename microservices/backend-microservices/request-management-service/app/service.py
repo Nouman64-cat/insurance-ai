@@ -559,7 +559,7 @@ async def _comment(conn, identity: Identity, request_id: UUID, body: str, visibi
     return comment_id
 
 
-async def add_comment(identity: Identity, request_id: UUID, body: dict) -> UUID:
+async def add_comment(identity: Identity, request_id: UUID, body: dict, idem_key: Optional[str] = None) -> UUID:
     text_ = _reason(body.get("body"), 1, "comment")
     visibility = body.get("visibility") or "REQUESTER"
     if visibility not in ("REQUESTER", "INTERNAL"):
@@ -573,6 +573,11 @@ async def add_comment(identity: Identity, request_id: UUID, body: dict) -> UUID:
             raise forbidden("Only reviewers can add internal notes.", code="INTERNAL_NOT_ALLOWED")
         if req["review_status"] == "DRAFT" and not rel.is_requester:
             raise ApiError(404, "NOT_FOUND", "Request not found")
+        # Visibility was checked above, so a replay is shown only to someone who may see this thread right now.
+        scope = f"comment:{request_id}"
+        replay = await records.idempotent_replay(conn, tenant_id=identity.tenant_id, actor_id=identity.user_id, scope=scope, key=idem_key, body=body)
+        if replay:
+            return UUID(replay["comment_id"])
         comment_id = await _comment(conn, identity, request_id, text_, visibility)
         await audit(conn, tenant_id=identity.tenant_id, request_id=request_id, event_type="COMMENT_ADDED", actor_id=identity.user_id,
                     actor_name=identity.name, actor_role=identity.role, data={"comment_id": str(comment_id), "visibility": visibility})
@@ -580,6 +585,8 @@ async def add_comment(identity: Identity, request_id: UUID, body: dict) -> UUID:
             await outbox(conn, tenant_id=identity.tenant_id, request_id=request_id, event_type="request.commented",
                          data=_event_data(req, author_id=identity.user_id, assignee=req.get("assignee_user_id")))
         await conn.execute(text("UPDATE requests SET updated_at = now() WHERE id = :id"), {"id": request_id})
+        await records.remember(conn, tenant_id=identity.tenant_id, actor_id=identity.user_id, scope=scope, key=idem_key, body=body,
+                               response={"comment_id": str(comment_id)})
     return comment_id
 
 

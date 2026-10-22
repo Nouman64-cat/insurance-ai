@@ -1,13 +1,13 @@
 "use client";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Banner, Card, EmptyState, ErrorState, InstallmentState, KeyValue, PageHeader, PolicyStatus, Skeleton, tOr } from "@/components/ui";
 import { DownloadButton } from "@/components/DownloadButton";
 import { ApiError, api, useApi } from "@/lib/api";
 import { RequestKind, RequestModal } from "@/components/RequestModal";
 import type { RenewalView } from "@/lib/types";
-import { compactMoney, date, dateTime, daysUntil, money } from "@/lib/format";
+import { compactMoney, date, dateTime, daysUntil, money, newIdempotencyKey } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { PolicyDetail } from "@/lib/types";
 
@@ -20,11 +20,19 @@ function Renewal({ policyId }: { policyId: string }) {
   const { t, locale } = useI18n();
   const { data, error, reload } = useApi<RenewalView>(`policies/${encodeURIComponent(policyId)}/renewal`);
   const [busy, setBusy] = useState(false);
+  const key = useRef(newIdempotencyKey());
   if (error || !data) return null;
   const n = data.next;
   async function answer(accepted: boolean) {
     setBusy(true);
-    try { await api(`policies/${encodeURIComponent(policyId)}/renewal/acceptance`, { method: "POST", body: { accepted } }); reload(); } finally { setBusy(false); }
+    try {
+      await api(`policies/${encodeURIComponent(policyId)}/renewal/acceptance`, { method: "POST", body: { accepted }, idempotencyKey: key.current });
+      key.current = newIdempotencyKey();      // answered; any later answer is a new operation
+      reload();
+    } catch (e) {
+      if (!["NETWORK", "SERVICE_UNAVAILABLE", "DOMAIN_UNAVAILABLE", "REQUEST_IN_PROGRESS"].includes((e as ApiError).code)) key.current = newIdempotencyKey();
+      throw e;
+    } finally { setBusy(false); }
   }
   return (
     <Card title={t("renewal.title")}>

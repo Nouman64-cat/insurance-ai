@@ -93,8 +93,12 @@ async def ticket(ticket_id: UUID, p: Principal = Depends(current_customer)):
 
 
 @router.post("/tickets/{ticket_id}/reply")
-async def reply(ticket_id: UUID, body: ReplyIn, p: Principal = Depends(current_customer)):
-    await _call(p, "POST", f"{BASE}/{ticket_id}/reply", body.model_dump())
+async def reply(ticket_id: UUID, body: ReplyIn, p: Principal = Depends(current_customer), idempotency_key: Optional[str] = Header(None)):
+    # Optional for older clients: a supplied key makes a retried reply the same reply (namespaced by account, bound into the signature).
+    if idempotency_key and not (8 <= len(idempotency_key) <= 64 and all(ch.isalnum() or ch in "-_" for ch in idempotency_key)):
+        raise ApiError(400, "IDEMPOTENCY_KEY_INVALID", "Idempotency-Key must be 8-64 letters, digits, - or _")
+    await _call(p, "POST", f"{BASE}/{ticket_id}/reply", body.model_dump(),
+                operation_key=f"{p.account_id}:{idempotency_key}" if idempotency_key else None)
     return await _call(p, "GET", f"{BASE}/{ticket_id}")
 
 

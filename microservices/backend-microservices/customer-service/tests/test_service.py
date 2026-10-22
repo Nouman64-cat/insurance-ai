@@ -45,6 +45,18 @@ class Tickets(unittest.IsolatedAsyncioTestCase):
   self.assertNotEqual(first.json()['id'],other.json()['id'])
   self.assertEqual((await self.client.post('/v1/tickets',json={**body,'idempotency_key':key},headers={'Idempotency-Key':key})).status_code,422)
 
+ async def test_a_retried_reply_is_posted_once_and_an_unkeyed_reply_is_unchanged(self):
+  t=await self.ticket()
+  url='/v1/tickets/'+t['id']+'/comments'
+  key=str(uuid4())
+  a=await self.client.post(url,json={'body':'Here is the extra detail you asked for'},headers={'Idempotency-Key':key})
+  b=await self.client.post(url,json={'body':'Here is the extra detail you asked for'},headers={'Idempotency-Key':key})
+  c=await self.client.post(url,json={'body':'A different reply'},headers={'Idempotency-Key':key})
+  self.assertEqual((a.status_code,b.status_code,c.status_code),(200,200,409))
+  await self.client.post(url,json={'body':'No key one'});await self.client.post(url,json={'body':'No key one'})
+  async with main.engine.connect() as conn:
+   rows=(await conn.execute(text("SELECT body FROM customer_service.events WHERE ticket_id=:i AND kind='REPLY'"),{'i':t['id']})).scalars().all()
+  self.assertEqual(sorted(rows),sorted(['Here is the extra detail you asked for','No key one','No key one']))
  async def test_idempotency_and_payload_conflict(self):
   t=await self.ticket();r=await await_ticket(self.client, self.payload);self.assertEqual(t['id'],r.json()['id'])
   self.payload['title']='Different enquiry';self.assertEqual((await await_ticket(self.client, self.payload)).status_code,409)

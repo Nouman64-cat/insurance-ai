@@ -56,6 +56,7 @@ async def _get_current_user_id(token: str) -> UUID:
 
 
 from family_approval import owner_case_id
+from services.idempotency import step_operation
 
 
 async def _get_case(session: AsyncSession, tenant_id: UUID, case_id: UUID) -> Case:
@@ -130,6 +131,15 @@ def _to_read(acr: AgentConfidentialReport) -> ACRRead:
     )
 
 
+async def _acr_view(values):
+    session = values["session"]
+    case_id = await owner_case_id(session, await _get_case(session, values["tenant_id"], values["case_id"]), "acr")
+    acr = (await session.execute(select(AgentConfidentialReport).where(AgentConfidentialReport.case_id == case_id))).scalars().first()
+    if acr is None:
+        raise HTTPException(status_code=409, detail="The ACR this key produced no longer exists.")
+    return _to_read(acr)
+
+
 @router.get("/tenants/{tenant_id}/cases/{case_id}/acr", response_model=ACRRead)
 async def get_acr(
     tenant_id: UUID,
@@ -185,6 +195,7 @@ async def upsert_acr(
 
 
 @router.post("/tenants/{tenant_id}/cases/{case_id}/acr/submit", response_model=ACRRead)
+@step_operation("tenant.acr.submit", _acr_view, ids=("case_id",), atomic=False, resource_type="agent_confidential_report")
 async def submit_acr(
     tenant_id: UUID,
     case_id: UUID,
@@ -422,6 +433,7 @@ async def _require_waiver_role(token: str, session: AsyncSession) -> User:
 
 
 @router.post("/tenants/{tenant_id}/cases/{case_id}/acr/waive", response_model=ACRRead)
+@step_operation("tenant.acr.waive", _acr_view, ids=("case_id",), atomic=False, resource_type="agent_confidential_report")
 async def waive_acr(
     tenant_id: UUID,
     case_id: UUID,
@@ -461,6 +473,7 @@ async def waive_acr(
 
 
 @router.delete("/tenants/{tenant_id}/cases/{case_id}/acr/waive", response_model=ACRRead)
+@step_operation("tenant.acr.reinstate", _acr_view, ids=("case_id",), atomic=False, resource_type="agent_confidential_report")
 async def reinstate_acr(
     tenant_id: UUID,
     case_id: UUID,

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import api from "@/app/services/api";
 import { Chip, GroupRenewal, PanelProps, downloadPdf, errMsg, mpBase, pkr, premiumWord, signedPkr } from "./groupShared";
 import { tx } from "@/lib/i18n/tx";
+import { keyedPost } from "@/lib/idempotency";
 
 const LIVE = new Set(["Open", "Quoted", "Accepted"]);
 const tone = (s: string) => (s === "Renewed" ? "Active" : s === "Accepted" ? "Accepted" : s === "Declined" || s === "Lapsed" ? "Declined" : s === "Quoted" ? "Quoted" : "Pending");
@@ -69,7 +70,7 @@ export default function RenewalsPanel({ tenantId, orgId, mp, reload }: PanelProp
     await load();
   });
   const pay = () => run("Record the payment", async () => {
-    await api.post(`${base}/renewals/${detail!.id}/payments`, { reference: reference.trim(), amount: parseFloat(amount) });
+    await keyedPost(api, `group-renewal-payment:${detail!.id}`, `${base}/renewals/${detail!.id}/payments`, { reference: reference.trim(), amount: parseFloat(amount) });
     setNotice(tx("Renewal paid — the scheme now runs the new period.")); setReference(""); await load(); await reload();
   });
 

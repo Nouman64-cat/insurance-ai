@@ -106,8 +106,8 @@ def ticket_intent(id,u,kind,body,internal):
     return build_intent('customer-service',module='customer_service',action=action,entity_type='ticket',entity_id=id,tenant_id=UUID(u['tenant_id']),
         previous_value=previous,new_value=new,metadata={'internal':internal,'body_length':len(body or ''),'actor_name':u.get('full_name')},
         actor_id=u['id'],actor_type='CUSTOMER' if u.get('role_name')=='Customer' else 'USER',actor_role=u.get('role_name'))
-async def event(c,id,u,kind,body,internal=False):
-    await c.execute(text('INSERT INTO customer_service.events(ticket_id,actor_id,actor_name,kind,body,internal) VALUES (:id,:a,:n,:k,:b,:i)'),{'id':id,'a':UUID(u['id']),'n':u.get('full_name') or u['email'],'k':kind,'b':body,'i':internal})
+async def event(c,id,u,kind,body,internal=False,key=None):
+    await c.execute(text('INSERT INTO customer_service.events(ticket_id,actor_id,actor_name,kind,body,internal,idempotency_key) VALUES (:id,:a,:n,:k,:b,:i,:key)'),{'id':id,'a':UUID(u['id']),'n':u.get('full_name') or u['email'],'k':kind,'b':body,'i':internal,'key':key})
     if AUDIT: await enqueue(c,ticket_intent(id,u,kind,body,internal),table=AUDIT_TABLE)   # same transaction: the ticket change and its audit intent commit together
 def authorize_change(u,row,new):
     if new not in TRANSITIONS[row['status']]: raise HTTPException(409,'Invalid ticket transition')
@@ -197,13 +197,21 @@ async def detail(id:UUID,u=Depends(identity)):
         rows=(await c.execute(text('SELECT * FROM customer_service.events WHERE ticket_id=:id'+('' if u['staff'] else ' AND NOT internal')+' ORDER BY id'),{'id':id})).mappings().all()
     return {**row,'events':[dict(r) for r in rows]}
 @app.post('/v1/tickets/{id}/comments')
-async def comment(id:UUID,body:Comment,u=Depends(identity)):
+async def comment(id:UUID,body:Comment,u=Depends(identity),request:Request=None):
     if body.internal and not u.get('can_work'): raise HTTPException(403,'Internal notes are restricted')
+    # An Idempotency-Key makes a retried or double-clicked reply the same reply; without one the original behaviour is unchanged.
+    key=required_uuid_header(request) if request is not None and request.headers.get('idempotency-key') else None
+    kind='NOTE' if body.internal else 'REPLY'
     async with engine.begin() as c:
         row=await record(c,id,u,True)
+        if key is not None:
+            prior=(await c.execute(text('SELECT body FROM customer_service.events WHERE ticket_id=:id AND actor_id=:a AND kind=:k AND idempotency_key=:key'),{'id':id,'a':UUID(u['id']),'k':kind,'key':key})).first()
+            if prior:
+                if prior[0]!=body.body: raise HTTPException(409,'Idempotency key belongs to another reply')
+                return {'ok':True}
         if not u.get('can_work') and str(row['requester_id'])!=u['id']: raise HTTPException(403,'Only the service desk can reply to a customer')
         if row['status'] in {'CLOSED','CANCELLED'}: raise HTTPException(409,'Reopen the ticket before replying')
-        await event(c,id,u,'NOTE' if body.internal else 'REPLY',body.body,body.internal)
+        await event(c,id,u,kind,body.body,body.internal,key)
     return {'ok':True}
 @app.post('/v1/tickets/{id}/status')
 async def change(id:UUID,body:Change,u=Depends(identity)):
@@ -282,8 +290,8 @@ def portal_view(d):
 async def portal_detail(id:UUID,u=Depends(portal_identity)):
     return portal_view(await detail(id,u))
 @app.post('/internal/v1/portal/tickets/{id}/reply')
-async def portal_reply(id:UUID,body:PortalReply,u=Depends(portal_identity)):
-    return await comment(id,Comment(body=body.body,internal=False),u)
+async def portal_reply(id:UUID,body:PortalReply,request:Request,u=Depends(portal_identity)):
+    return await comment(id,Comment(body=body.body,internal=False),u,request)
 @app.post('/internal/v1/portal/tickets/{id}/withdraw')
 async def portal_withdraw(id:UUID,u=Depends(portal_identity)):
     async with engine.connect() as c: row=await record(c,id,u)

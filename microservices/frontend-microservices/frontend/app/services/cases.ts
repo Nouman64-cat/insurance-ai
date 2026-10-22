@@ -1,5 +1,6 @@
 import api from "./api";
 
+import { keyedPost, keyedRequest } from "@/lib/idempotency";
 export type CustomerSegment = "individual" | "family" | "organization";
 
 export interface CaseQueueItem {
@@ -76,7 +77,7 @@ export async function updateUnderwritingTrack(
   track: UnderwritingTrack,
   body: { status?: UnderwritingReviewStatus; assigned_user_id?: string; clear_assignee?: boolean; note?: string },
 ): Promise<UnderwritingReview> {
-  const resp = await api.put<UnderwritingReview>(`/tenants/${tenantId}/cases/${caseId}/underwriting-tracks/${track}`, body);
+  const resp = { data: await keyedRequest<UnderwritingReview>(api, 'put', `updateUnderwritingTrack:${tenantId}`, `/tenants/${tenantId}/cases/${caseId}/underwriting-tracks/${track}`, body) };
   return resp.data;
 }
 
@@ -95,14 +96,14 @@ export async function listCases(
 }
 
 export async function runCaseCompliance(tenantId: string, caseId: string): Promise<any> {
-  const resp = await api.post(`/tenants/${tenantId}/cases/${caseId}/compliance/run`);
+  const resp = { data: await keyedPost(api, `runCaseCompliance:${tenantId}`, `/tenants/${tenantId}/cases/${caseId}/compliance/run`) };
   return resp.data;
 }
 
 export async function clearComplianceCheck(tenantId: string, checkId: string): Promise<any> {
-  const resp = await api.post(`/tenants/${tenantId}/compliance/${checkId}/clear`, {
+  const resp = { data: await keyedPost(api, `clearComplianceCheck:${tenantId}`, `/tenants/${tenantId}/compliance/${checkId}/clear`, {
     cleared_by: "underwriter",
     note: "Force proceeded from Underwriting UI",
-  });
+  }) };
   return resp.data;
 }

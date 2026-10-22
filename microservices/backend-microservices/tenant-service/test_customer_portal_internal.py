@@ -77,9 +77,11 @@ class Adapter(unittest.IsolatedAsyncioTestCase):
     def scope(self, tenant, customer):
         return f"{BASE}/tenants/{tenant.id}/customers/{customer.id}"
 
-    async def call(self, method, path, body=None, key=KEY, caller="customer-management"):
+    async def call(self, method, path, body=None, key=KEY, caller="customer-management", operation_key=None):
         data = json.dumps(body).encode() if body is not None else b""
-        headers = sign(key, method, path, data, caller=caller)
+        # With an operation key the v2 signature binds the Idempotency-Key header, exactly as customer-management sends it.
+        extra = {"bound_headers": {"Idempotency-Key": operation_key}} if operation_key else {}
+        headers = sign(key, method, path, data, caller=caller, **extra)
         return await self.http.request(method, path, content=data, headers={**headers, "Content-Type": "application/json"})
 
     # service authentication ---------------------------------------------------
@@ -168,6 +170,56 @@ class Adapter(unittest.IsolatedAsyncioTestCase):
         r = await self.pay(sc, 900.0, policy=self.pa_lapsed)
         self.assertEqual(r.json()["detail"]["code"], "POLICY_NOT_PAYABLE")
 
+    # idempotency --------------------------------------------------------------
+    async def pay_keyed(self, schedule, amount, operation_key, ref="SIM-IDEMPOT001", policy=None, customer=None):
+        return await self.call("POST", f"{self.scope(self.t1, customer or self.a)}/policies/{(policy or self.pa).id}/premiums/{schedule.id}/pay",
+                               {"method": "JazzCash", "reference": ref, "expected_amount": amount}, operation_key=operation_key)
+
+    async def receipts_for(self, schedule):
+        async with factory() as s:
+            return len((await s.exec(select(PremiumReceipt).where(PremiumReceipt.schedule_id == schedule.id))).all())
+
+    async def test_a_retried_portal_payment_returns_the_original_receipt_not_already_paid(self):
+        key = f"{uuid4()}:pay-operation-0001"
+        first = await self.pay_keyed(self.s1, 10200.0, key)
+        self.assertEqual(first.status_code, 200, first.text)
+        retry = await self.pay_keyed(self.s1, 10200.0, key)                       # the portal timed out and asked again
+        self.assertEqual(retry.status_code, 200, retry.text)
+        self.assertEqual(retry.headers["idempotency-replayed"], "true")
+        self.assertEqual(retry.json(), first.json())
+        self.assertEqual(await self.receipts_for(self.s1), 1)
+        other = await self.pay_keyed(self.s1, 10200.0, f"{uuid4()}:pay-operation-0002", ref="SIM-IDEMPOT002")
+        self.assertEqual(other.json()["detail"]["code"], "ALREADY_PAID", "a new operation cannot pay it a second time")
+        self.assertEqual(await self.receipts_for(self.s1), 1)
+
+    async def test_the_same_key_for_another_customer_or_amount_is_a_conflict_not_a_replay(self):
+        key = f"{uuid4()}:pay-operation-0003"
+        await self.pay_keyed(self.s1, 10200.0, key)
+        changed = await self.pay_keyed(self.s1, 10300.0, key)
+        self.assertEqual(changed.status_code, 409)
+        self.assertEqual(changed.json()["detail"]["code"], "IDEMPOTENCY_CONFLICT")
+        foreign = await self.call("POST", f"{self.scope(self.t1, self.b)}/policies/{self.pb.id}/premiums/{self.sb.id}/pay",
+                                  {"method": "JazzCash", "reference": "SIM-IDEMPOT003", "expected_amount": 5000.0}, operation_key=key)
+        self.assertEqual(foreign.status_code, 409, "another customer cannot ride on this customer's key")
+        self.assertEqual(await self.receipts_for(self.sb), 0)
+
+    async def test_the_operation_key_is_bound_by_the_service_signature(self):
+        path = f"{self.scope(self.t1, self.a)}/policies/{self.pa.id}/premiums/{self.s1.id}/pay"
+        body = json.dumps({"method": "JazzCash", "reference": "SIM-IDEMPOT004", "expected_amount": 10200.0}).encode()
+        headers = sign(KEY, "POST", path, body, caller="customer-management", bound_headers={"Idempotency-Key": f"{uuid4()}:pay-operation-0004"})
+        headers["Idempotency-Key"] = f"{uuid4()}:another-operation-9"            # swapped in transit
+        r = await self.http.request("POST", path, content=body, headers={**headers, "Content-Type": "application/json"})
+        self.assertEqual(r.status_code, 401)
+        self.assertEqual(await self.receipts_for(self.s1), 0)
+
+    async def test_a_declined_portal_payment_leaves_the_key_usable(self):
+        # An unkeyed call still works exactly as before (staged rollout), and a malformed key is refused before anything is charged.
+        bad = await self.pay_keyed(self.s1, 10200.0, "x")
+        self.assertEqual(bad.status_code, 400)
+        self.assertEqual(await self.receipts_for(self.s1), 0)
+        plain = await self.pay(self.s1, 10200.0, ref="SIM-IDEMPOT005")
+        self.assertEqual(plain.status_code, 200)
+
     # claims -------------------------------------------------------------------
     async def test_death_claims_are_refused_for_self_service(self):
         r = await self.call("POST", f"{self.scope(self.t1, self.a)}/policies/{self.pa.id}/claims",
@@ -219,6 +271,8 @@ if __name__ == "__main__":
         target = create_async_engine(f"{ADMIN}/{DB}", poolclass=NullPool)
         async with target.begin() as c:
             await c.run_sync(SQLModel.metadata.create_all)
+            from shared.idempotency.models import metadata as idempotency_metadata   # the migration runner creates these in production
+            await c.run_sync(idempotency_metadata.create_all)
         return target
 
     async def drop(target):

@@ -13,6 +13,7 @@ import ClaimsPanel from "@/components/group/ClaimsPanel";
 import RenewalsPanel from "@/components/group/RenewalsPanel";
 import { tx } from "@/lib/i18n/tx";
 
+import { keyedPost } from "@/lib/idempotency";
 interface Organization {
   id: string;
   name: string;
@@ -378,12 +379,12 @@ export default function OrganizationDetailPage() {
     setSuccess("");
     setMpFormLoading(true);
     try {
-      const resp = await api.post<MasterPolicy>(`/tenants/${tenantId}/organizations/${orgId}/master-policies`, {
+      const resp = { data: await keyedPost<MasterPolicy>(api, `master-policy-create:${orgId}`, `/tenants/${tenantId}/organizations/${orgId}/master-policies`, {
         sum_assured_multiple: parseFloat(sumAssuredMultiple) || 0,
         term_years: parseInt(termYears) || 0,
         effective_date: effectiveDate,
         plan_code: planCode,
-      });
+      }) };
       setSuccess(tx("Master policy created. Now add the employee census below."));
       setShowCreateMP(false);
       setMasterPolicies((prev) => [resp.data, ...prev]);
@@ -496,10 +497,10 @@ export default function OrganizationDetailPage() {
     if (filledCensusRows.length === 0) { setError(tx("Add at least one employee to the census first.")); return; }
     setCensusLoading(true);
     try {
-      const resp = await api.post<CensusConfirmResult>(
+      const resp = { data: await keyedPost<CensusConfirmResult>(api, `census-confirm:${selectedMpId}`, 
         `/tenants/${tenantId}/organizations/${orgId}/master-policies/${selectedMpId}/census/confirm`,
         { employees: buildEmployeesPayload() }
-      );
+      ) };
       const aboveFcl = resp.data.employees.filter((e) => e.coverage_amount > resp.data.free_cover_limit).length;
       setSuccess(
         `${resp.data.employees.length} employee(s) enrolled — Free Cover Limit ${formatPKR(resp.data.free_cover_limit)}` +

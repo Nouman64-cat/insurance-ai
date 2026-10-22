@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import api, { OCR_BASE_URL } from "@/app/services/api";
+import { createCustomer } from "@/app/services/customerCreation";
 import {
   listInsurancePlans,
   InsurancePlan,
@@ -1136,8 +1137,8 @@ export default function CustomerFormModal({
       // waits on the customer until "Create Proposal" turns it into a proposal.
       const holdPlan = !!policyPayload && !inChatPanel;
 
-      const customerResp = await api.post<Customer>(
-        `/tenants/${tenantId}/customers`,
+      const createdCustomer = await createCustomer<Customer>(
+        tenantId,
         {
           cnic: data.cnic,
           first_name: data.firstName,
@@ -1166,23 +1167,17 @@ export default function CustomerFormModal({
             ? { ...payloadDetails, pending_plan: policyPayload }
             : payloadDetails,
         },
+        holdPlan ? null : policyPayload,
       );
 
-      let proposalCreated = false;
-      if (policyPayload && !holdPlan) {
-        await api.post(
-          `/tenants/${tenantId}/customers/${customerResp.data.id}/policies`,
-          policyPayload,
-        );
-        proposalCreated = true;
-      }
+      const proposalCreated = !!policyPayload && !holdPlan;
 
       if (proposalCreated)
-        registerPendingQuote(customerResp.data.id, customerResp.data.name);
+        registerPendingQuote(createdCustomer.id, createdCustomer.name);
       onSaved(
         "Customer registered successfully with full diagnostic profile!",
         {
-          id: customerResp.data.id,
+          id: createdCustomer.id,
           isNew: true,
           name: `${data.firstName} ${data.lastName}`.trim(),
           cnic: data.cnic || null,

@@ -11,6 +11,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
+from services.idempotency import read_model_operation, secret_link_operation
 from schemas import CustomerCreate, CustomerRead, CustomerStatsRead, CustomerUpdate, PolicyCreate, PolicyRead, PolicyUpdate
 from shared.events.kafka_events import CUSTOMER_CREATED_TOPIC, CustomerCreatedEvent, CustomerCreatedPayload
 from shared.models.core import (
@@ -148,6 +149,7 @@ async def _check_acquisition_access(customer, tenant_id, token, session):
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(verify_customer_acquisition)],
 )
+@read_model_operation("tenant.customer.create", CustomerRead, lambda v, rid: v["session"].get(Customer, UUID(rid)), status_code=201, resource_type="customer")
 async def create_customer(
     tenant_id: UUID,
     body: CustomerCreate,
@@ -691,6 +693,7 @@ async def sync_policy_premium_quote(policy: Policy, customer: Customer, session:
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(verify_admin)],
 )
+@read_model_operation("tenant.customer.create_policy", PolicyRead, lambda v, rid: v["session"].get(Policy, UUID(rid)), status_code=201, resource_type="policy")
 async def create_customer_policy(
     tenant_id: UUID,
     customer_id: UUID,
@@ -863,6 +866,7 @@ async def get_policy_document_request(
     "/{tenant_id}/customers/{customer_id}/policies/{policy_id}/document-request/renew",
     dependencies=[Depends(verify_admin)],
 )
+@secret_link_operation("tenant.customer.renew_document_request", ("requirements", "received", "total", "all_received", "submitted", "expires_at", "expired", "link_path", "url", "outstanding", "emailed_to", "email_status"), secrets=("requirements", "link_path", "url"), masked=("emailed_to",), resource_type="document_request")
 async def renew_policy_document_request(
     tenant_id: UUID,
     customer_id: UUID,
@@ -881,6 +885,7 @@ async def renew_policy_document_request(
     "/{tenant_id}/customers/{customer_id}/policies/{policy_id}/document-request/send",
     dependencies=[Depends(verify_admin)],
 )
+@secret_link_operation("tenant.customer.send_document_request", ("requirements", "received", "total", "all_received", "submitted", "expires_at", "expired", "link_path", "url", "outstanding", "emailed_to", "email_status"), secrets=("requirements", "link_path", "url"), masked=("emailed_to",), resource_type="document_request")
 async def send_policy_document_request(
     tenant_id: UUID,
     customer_id: UUID,

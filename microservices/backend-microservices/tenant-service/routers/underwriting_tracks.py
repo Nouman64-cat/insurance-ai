@@ -31,6 +31,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from routers.auth import _get_current_user, _role_name, oauth2_scheme
 from schemas import UnderwritingTrackUpdate
+from services.idempotency import reviewed_operation, step_operation
 from shared.models.core import (
     UNDERWRITING_TRACKS,
     Case,
@@ -84,6 +85,20 @@ def _tracks_for_role(role: str) -> set[str]:
     return {track for track, track_role in TRACK_ROLE.items() if track_role == role}
 
 
+async def _track_review_view(values):
+    return (await reviews_by_case(values["session"], [values["case_id"]]))[values["case_id"]][str(values["track"]).upper()]
+
+
+def _ai_run_view(track):
+    async def view(values):
+        row = (await values["session"].exec(select(CaseUnderwritingTrack).where(
+            CaseUnderwritingTrack.case_id == values["case_id"], CaseUnderwritingTrack.track == (track or str(values["track"]).upper())))).first()
+        if row is None:
+            raise HTTPException(409, "The review this key produced no longer exists.")
+        return {"result": row.ai_result, "run_at": row.ai_run_at}
+    return view
+
+
 @router.get("/underwriting/underwriters")
 async def list_underwriters(
     tenant_id: UUID,
@@ -109,6 +124,7 @@ async def list_underwriters(
 
 
 @router.put("/cases/{case_id}/underwriting-tracks/{track}")
+@step_operation("tenant.uwtrack.update", _track_review_view, ids=("case_id", "track"), atomic=False, resource_type="case_underwriting_track")
 async def update_track(
     request: Request,
     tenant_id: UUID,
@@ -537,6 +553,7 @@ async def get_claim_underwriting_outcome(tenant_id: UUID, case_id: UUID,
 
 
 @router.post('/cases/{case_id}/claim-underwriting-outcome')
+@reviewed_operation("tenant.uwtrack.claim_outcome", ("success", "outcome", "message"), atomic=False, resource_type="case")
 async def record_claim_underwriting_outcome(tenant_id: UUID, case_id: UUID, body: ClaimUnderwritingOutcomeBody,
     session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme)):
     import json
@@ -625,6 +642,7 @@ async def _assigned_claim_document(session, tenant_id, case_id, user, track, doc
 
 
 @router.post('/cases/{case_id}/underwriting-documents/waive')
+@reviewed_operation("tenant.uwtrack.waive_claim_document", ("status", "document_type", "reason", "already_waived"), atomic=False, resource_type="case")
 async def waive_specialist_claim_document(
     tenant_id: UUID, case_id: UUID, body: SpecialistDocumentWaiver,
     session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme),
@@ -671,6 +689,7 @@ async def waive_specialist_claim_document(
 
 
 @router.post('/cases/{case_id}/underwriting-documents/{artifact_id}/retry', status_code=202)
+@reviewed_operation("tenant.uwtrack.retry_document", ("id", "status"), status_code=202, atomic=False, resource_type="artifact")
 async def retry_specialist_document(
     request: Request, tenant_id: UUID, case_id: UUID, artifact_id: UUID,
     session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme),
@@ -774,6 +793,7 @@ async def demo_mark_documents_uploaded(
 
 
 @router.post('/cases/{case_id}/e-application/{part_name}/waive')
+@reviewed_operation("tenant.uwtrack.waive_eapp_part", ("status",), atomic=False, resource_type="case")
 async def waive_e_application_part(
     tenant_id: UUID, case_id: UUID, part_name: str, body: dict,
     session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme),
@@ -857,6 +877,7 @@ async def _evaluate_financial(body: dict, tenant_id: UUID) -> dict:
 
 
 @router.post("/cases/{case_id}/financial-underwriting/run")
+@step_operation("tenant.uwtrack.financial_ai", _ai_run_view("FINANCIAL"), ids=("case_id",), atomic=False, resource_type="case_underwriting_track")
 async def run_financial_underwriting(
     request: Request, tenant_id: UUID, case_id: UUID,
     session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme),
@@ -1102,6 +1123,7 @@ async def _evaluate_claim_ai(body, tenant_id):
 
 
 @router.post('/cases/{case_id}/claim-underwriting/{track}/run')
+@step_operation("tenant.uwtrack.claim_track_ai", _ai_run_view(None), ids=("case_id", "track"), atomic=False, resource_type="case_underwriting_track")
 async def run_claim_track_ai(tenant_id: UUID, case_id: UUID, track: TrackParam,
     session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme)):
     from fastapi.encoders import jsonable_encoder

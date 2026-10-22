@@ -37,6 +37,7 @@ from services.group_renewal import (
     _scheme,
 )
 from shared.models.core import GroupQuote, GroupRenewal
+from services.idempotency import read_model_operation, records_operation
 
 router = APIRouter(prefix="/tenants", tags=["Group Renewals"])
 
@@ -54,6 +55,7 @@ async def _detail(session: AsyncSession, r: GroupRenewal) -> Dict[str, Any]:
 
 
 @router.post(_BASE, status_code=status.HTTP_201_CREATED, dependencies=[Depends(verify_admin)])
+@records_operation("tenant.group.start_renewal", GroupRenewal, None, render=lambda values, rows: _detail(values["session"], rows[0]), status_code=201, resource_type="group_renewal")
 async def start_renewal(tenant_id: UUID, org_id: UUID, mp_id: UUID, body: RenewalStart,
                         session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     try:
@@ -94,6 +96,7 @@ async def census_refresh(tenant_id: UUID, org_id: UUID, mp_id: UUID, renewal_id:
 
 
 @router.post(_BASE + "/{renewal_id}/quote", response_model=GroupQuoteRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(verify_admin)])
+@read_model_operation("tenant.group.renewal_quote", GroupQuoteRead, lambda v, rid: v["session"].get(GroupQuote, UUID(rid)), status_code=201, resource_type="group_quote")
 async def renewal_quote(tenant_id: UUID, org_id: UUID, mp_id: UUID, renewal_id: UUID, session: AsyncSession = Depends(get_session)):
     try:
         renewal = await get_renewal(session, tenant_id, mp_id, renewal_id)
@@ -113,6 +116,7 @@ async def renewal_quote_document(tenant_id: UUID, org_id: UUID, mp_id: UUID, ren
 
 
 @router.post(_BASE + "/{renewal_id}/accept", response_model=RenewalRead, dependencies=[Depends(verify_admin)])
+@read_model_operation("tenant.group.accept_renewal", RenewalRead, lambda v: get_renewal(v["session"], v["tenant_id"], v["mp_id"], v["renewal_id"]), resource_type="group_renewal")
 async def accept_renewal(tenant_id: UUID, org_id: UUID, mp_id: UUID, renewal_id: UUID, body: GroupQuoteDecision,
                          session: AsyncSession = Depends(get_session)):
     try:
@@ -123,6 +127,7 @@ async def accept_renewal(tenant_id: UUID, org_id: UUID, mp_id: UUID, renewal_id:
 
 
 @router.post(_BASE + "/{renewal_id}/decline", response_model=RenewalRead, dependencies=[Depends(verify_admin)])
+@read_model_operation("tenant.group.decline_renewal", RenewalRead, lambda v: get_renewal(v["session"], v["tenant_id"], v["mp_id"], v["renewal_id"]), resource_type="group_renewal")
 async def decline_renewal(tenant_id: UUID, org_id: UUID, mp_id: UUID, renewal_id: UUID, body: GroupQuoteDecision,
                           session: AsyncSession = Depends(get_session)):
     try:
@@ -133,6 +138,7 @@ async def decline_renewal(tenant_id: UUID, org_id: UUID, mp_id: UUID, renewal_id
 
 
 @router.post(_BASE + "/{renewal_id}/payments", response_model=RenewalRead, dependencies=[Depends(verify_admin)])
+@read_model_operation("tenant.group.renewal_payment", RenewalRead, lambda v: get_renewal(v["session"], v["tenant_id"], v["mp_id"], v["renewal_id"]), resource_type="group_renewal")
 async def renewal_payment(tenant_id: UUID, org_id: UUID, mp_id: UUID, renewal_id: UUID, body: RenewalPayment,
                           session: AsyncSession = Depends(get_session), request: Request = None):  # type: ignore[assignment]
     try:

@@ -1,5 +1,6 @@
 import api from "./api";
 
+import { keyedPost, keyedRequest } from "@/lib/idempotency";
 export type PlanCategory = "Individual" | "Group" | "Family";
 export type ProductCategory = "Conventional" | "Takaful" | "Bancassurance";
 export type PlanStatus = "Draft" | "Active" | "Archived";
@@ -139,7 +140,7 @@ export async function createInsurancePlan(
   tenantId: string,
   body: InsurancePlanCreate,
 ): Promise<InsurancePlan> {
-  const resp = await api.post<InsurancePlan>(base(tenantId), body);
+  const resp = { data: await keyedPost<InsurancePlan>(api, `createInsurancePlan:${tenantId}`, base(tenantId), body) };
   return resp.data;
 }
 
@@ -155,20 +156,20 @@ export async function updateInsurancePlan(
 export async function uploadPolicyWording(tenantId: string, planId: string, file: File): Promise<InsurancePlan> {
   const form = new FormData();
   form.append("file", file);
-  const resp = await api.post<InsurancePlan>(`${base(tenantId)}/${planId}/policy-wording`, form);
+  const resp = { data: await keyedPost<InsurancePlan>(api, `uploadPolicyWording:${tenantId}`, `${base(tenantId)}/${planId}/policy-wording`, form) };
   return resp.data;
 }
 
 export async function removePolicyWording(tenantId: string, planId: string): Promise<InsurancePlan> {
-  const resp = await api.delete<InsurancePlan>(`${base(tenantId)}/${planId}/policy-wording`);
+  const resp = { data: await keyedRequest<InsurancePlan>(api, 'delete', `removePolicyWording:${tenantId}`, `${base(tenantId)}/${planId}/policy-wording`) };
   return resp.data;
 }
 
 export async function deleteInsurancePlan(tenantId: string, planId: string): Promise<void> {
-  await api.delete(`${base(tenantId)}/${planId}`);
+  { data: await keyedRequest(api, 'delete', `deleteInsurancePlan:${tenantId}`, `${base(tenantId)}/${planId}`) };
 }
 
 export async function seedDefaultPlans(tenantId: string): Promise<InsurancePlan[]> {
-  const resp = await api.post<InsurancePlan[]>(`${base(tenantId)}/seed-defaults`, {});
+  const resp = { data: await keyedPost<InsurancePlan[]>(api, `seedDefaultPlans:${tenantId}`, `${base(tenantId)}/seed-defaults`, {}) };
   return resp.data;
 }

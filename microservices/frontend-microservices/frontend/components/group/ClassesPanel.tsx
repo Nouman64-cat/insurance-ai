@@ -5,6 +5,7 @@ import api from "@/app/services/api";
 import { BenefitClass, PanelProps, RIDER_LABEL, ServiceBand, basisText, errMsg, mpBase, pkr } from "./groupShared";
 import { tx } from "@/lib/i18n/tx";
 
+import { keyedPost } from "@/lib/idempotency";
 type Basis = BenefitClass["basis"];
 
 const EMPTY = { name: "", basis: "Flat" as Basis, flat: "", multiple: "", grades: "", min: "", max: "", isDefault: false };
@@ -46,7 +47,7 @@ export default function ClassesPanel({ tenantId, orgId, mp, reload }: PanelProps
       if (grades.length) body.grades = grades;
       if (form.min) body.min_cover = parseFloat(form.min);
       if (form.max) body.max_cover = parseFloat(form.max);
-      await api.post(`${base}/benefit-classes`, body);
+      { data: await keyedPost(api, `benefit-class:${base}`, `${base}/benefit-classes`, body) };
       setNotice(tx("Added “{0}”.", { 0: form.name.trim() }));
       setForm({ ...EMPTY }); setBands([{ years: "0", amount: "" }]);
       await load(); await reload();
@@ -67,9 +68,9 @@ export default function ClassesPanel({ tenantId, orgId, mp, reload }: PanelProps
     if (!rider) return;
     setError(""); setNotice("");
     try {
-      await api.post(`${base}/benefit-classes/${rider.classId}/coverages`, {
+      { data: await keyedPost(api, `class-cover:${rider.classId}`, `${base}/benefit-classes/${rider.classId}/coverages`, {
         coverage_type: rider.type, percent_of_base: parseFloat(rider.pct), max_amount: rider.max ? parseFloat(rider.max) : undefined,
-      });
+      }) };
       setNotice(tx("{0} added. Any open quote was withdrawn — generate a new one.", { 0: RIDER_LABEL[rider.type] }));
       setRider(null); await load(); await reload();
     } catch (e: any) { setError(errMsg(e, "Could not add the benefit.")); }

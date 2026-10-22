@@ -15,6 +15,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from routers.auth import decode_access_token, oauth2_scheme
 from services.audit_capture import record_standalone as audit_standalone
+from services.idempotency import scoped_identity
+from shared.idempotency.http import side_effect_operation
 from shared.events.kafka_events import ArtifactOCRPayload, ArtifactOCRRequestedEvent
 from sqlalchemy import update as sa_update
 from shared.models.core import (
@@ -109,11 +111,28 @@ async def _get_current_user_id(token: str) -> UUID:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 
+async def _replay_upload(values, receipt):
+    artifact = await values["session"].get(Artifact, UUID(receipt["artifact_id"]))
+    if artifact is None or artifact.tenant_id != values["tenant_id"]:
+        raise HTTPException(status_code=409, detail="The document this key produced no longer exists.")
+    return _artifact_response(artifact, None, values["request"])
+
+
+def _upload_operation(operation):
+    """A document upload stores the file, writes the row and queues OCR. A retry with the same key and the same file replays the
+    original answer (no second object, row or OCR job); a different file under the same key conflicts. An abandoned attempt may be
+    retried (a duplicate document is the worst case)."""
+    return side_effect_operation(operation, response_fields=None, status_code=202, resource_type="artifact", authorize=scoped_identity,
+                                 recover="retry", receipt_fields=("artifact_id",), view_receipt=lambda values, payload: {"artifact_id": payload["id"] if payload else None},
+                                 replay_response=_replay_upload)
+
+
 @router.post(
     "/{tenant_id}/cases/{case_id}/artifacts",
     status_code=202,
     summary="Upload document — S3 sync, OCR async via Kafka",
 )
+@_upload_operation("tenant.artifact.upload_case_document")
 async def upload_artifact(
     request: Request,
     tenant_id: UUID,
@@ -212,6 +231,7 @@ async def upload_artifact(
     status_code=202,
     summary="Upload claim document — S3 sync, OCR async via Kafka",
 )
+@_upload_operation("tenant.artifact.upload_claim_document")
 async def upload_claim_artifact(
     request: Request,
     tenant_id: UUID,

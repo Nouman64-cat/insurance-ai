@@ -24,7 +24,7 @@ class HttpTests(unittest.IsolatedAsyncioTestCase):
         app = FastAPI()
         @app.post('/tenants/{tenant_id}/payments', status_code=201)
         @database_operation('test.payment', response_fields=('id',), status_code=201)
-        async def pay(tenant_id: str, body: dict, session=Depends(session), user=Depends(user)):
+        async def pay(tenant_id: str, body: dict, request: Request, session=Depends(session), user=Depends(user)):
             await session.execute(text('INSERT INTO business VALUES (:id, 10)'), {'id': body['id']})
             await session.commit()  # Must NOT escape the adapter's outer transaction.
             await session.execute(text('INSERT INTO outbox VALUES (:id)'), {'id': body['id']})

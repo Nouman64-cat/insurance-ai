@@ -1,4 +1,4 @@
-import api from './api';
+import api, { keyedPost } from './api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { agentScopeParams } from './agentScope';
 import { fetchProposals } from './proposals';
@@ -116,7 +116,7 @@ export const createCase = async (data: {
     const firstName = nameParts[0] || 'Applicant';
     const lastName = nameParts.slice(1).join(' ');
 
-    const customerRes = await api.post(`/tenants/${tenantId}/customers`, {
+    const customerRes = await keyedPost('agent-create-customer', `/tenants/${tenantId}/customers`, {
       first_name: firstName,
       last_name: lastName,
       cnic: data.customer_cnic || undefined,
@@ -133,7 +133,7 @@ export const createCase = async (data: {
     mappedCaseType = data.case_type;
   }
 
-  return api.post(`/tenants/${tenantId}/cases`, {
+  return keyedPost(`agent-create-case:${customerId}`, `/tenants/${tenantId}/cases`, {
     customer_id: customerId,
     caseType: mappedCaseType,
     priorityLevel: data.priority || 'Normal',

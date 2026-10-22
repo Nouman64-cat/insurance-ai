@@ -41,7 +41,9 @@ api.interceptors.response.use(
       return Promise.reject(new Error("Session expired. Redirecting to login..."));
     }
     const message = getErrorMessage(err, "An unexpected error occurred.");
-    return Promise.reject(new Error(message));
+    // Keep the HTTP response on the error: lib/idempotency.ts needs the status to tell a refused request (new key next time) from an
+    // uncertain one (same key on retry).
+    return Promise.reject(Object.assign(new Error(message), { response: err.response }));
   },
 );
 

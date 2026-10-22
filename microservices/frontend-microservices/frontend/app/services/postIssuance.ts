@@ -1,3 +1,4 @@
+import { keyedPost, runOperation, browserOperationScope, operationHeaders } from "@/lib/idempotency";
 import api from "./api";
 
 const tenantId = () =>
@@ -50,8 +51,7 @@ export async function cancelWithinFreeLook(
   body?: { reason?: string; requested_by?: string },
 ): Promise<FreeLookCancelResult> {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/policies/${policyId}/free-look/cancel`, body ?? {});
-  return res.data;
+  return keyedPost(api, `free-look:${policyId}`, `/tenants/${tid}/policies/${policyId}/free-look/cancel`, body ?? {});
 }
 
 // ── Step 2 — Customer Welcome & Onboarding ───────────────────────────────────
@@ -244,8 +244,7 @@ export async function collectInstallment(
   body?: { method?: string; manual?: boolean; realize?: boolean; collected_by?: string },
 ): Promise<BillingLedger> {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/policies/${policyId}/premiums/${scheduleId}/collect`, body ?? {});
-  return res.data;
+  return keyedPost(api, `premium-collect:${policyId}:${scheduleId}`, `/tenants/${tid}/policies/${policyId}/premiums/${scheduleId}/collect`, body ?? {});
 }
 
 export async function bulkCollectInstallments(
@@ -253,8 +252,7 @@ export async function bulkCollectInstallments(
   body: { amount: number; method?: string; manual?: boolean; realize?: boolean; collected_by?: string },
 ): Promise<BillingLedger> {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/policies/${policyId}/premiums/bulk-collect`, body);
-  return res.data;
+  return keyedPost(api, `premium-bulk-collect:${policyId}`, `/tenants/${tid}/policies/${policyId}/premiums/bulk-collect`, body);
 }
 
 export async function remindInstallment(
@@ -571,11 +569,11 @@ export async function openReinstatement(
   policyId: string,
   body: { applicant_name?: string; applicant_relationship: string; request_channel: string; reason?: string; requested_by?: string },
 ): Promise<ReinstatementOverview> {
-  return (await api.post(reinstatementBase(policyId), body)).data;
+  return keyedPost(api, `reinstatement-open:${policyId}`, reinstatementBase(policyId), body);
 }
 
 export async function recalculateReinstatementArrears(policyId: string, caseId: string): Promise<ReinstatementOverview> {
-  return (await api.post(`${reinstatementBase(policyId, caseId)}/arrears/recalculate`)).data;
+  return keyedPost(api, `reinstatement-arrears:${policyId}:${caseId}`, `${reinstatementBase(policyId, caseId)}/arrears/recalculate`);
 }
 
 export async function submitReinstatementDeclaration(
@@ -583,11 +581,11 @@ export async function submitReinstatementDeclaration(
   body: { answers: Record<string, boolean>; details: Record<string, string>; signed_by: string;
     signature_method: string; confirm_signed: boolean },
 ): Promise<ReinstatementOverview> {
-  return (await api.post(`${reinstatementBase(policyId, caseId)}/declaration`, body)).data;
+  return keyedPost(api, `reinstatement-declaration:${policyId}:${caseId}`, `${reinstatementBase(policyId, caseId)}/declaration`, body);
 }
 
 export async function rerunReinstatementAssessment(policyId: string, caseId: string): Promise<ReinstatementOverview> {
-  return (await api.post(`${reinstatementBase(policyId, caseId)}/assessment`)).data;
+  return keyedPost(api, `reinstatement-assessment:${policyId}:${caseId}`, `${reinstatementBase(policyId, caseId)}/assessment`);
 }
 
 export async function receiveReinstatementEvidence(
@@ -608,30 +606,30 @@ export async function decideReinstatement(
   body: { decision: ReinstatementDecisionKind; notes?: string; loading_pct?: number; exclusions?: string;
     evidence?: { label: string; reason?: string }[] },
 ): Promise<ReinstatementOverview> {
-  return (await api.post(`${reinstatementBase(policyId, caseId)}/decision`, body)).data;
+  return keyedPost(api, `reinstatement-decision:${policyId}:${caseId}`, `${reinstatementBase(policyId, caseId)}/decision`, body);
 }
 
 export async function respondReinstatementTerms(
   policyId: string, caseId: string, body: { accepted: boolean; responded_by?: string; note?: string },
 ): Promise<ReinstatementOverview> {
-  return (await api.post(`${reinstatementBase(policyId, caseId)}/terms/respond`, body)).data;
+  return keyedPost(api, `reinstatement-terms:${policyId}:${caseId}`, `${reinstatementBase(policyId, caseId)}/terms/respond`, body);
 }
 
 export async function payReinstatement(
   policyId: string, caseId: string,
   body: { method?: string; reference?: string; manual?: boolean; collected_by?: string },
 ): Promise<ReinstatementOverview> {
-  return (await api.post(`${reinstatementBase(policyId, caseId)}/payment`, body)).data;
+  return keyedPost(api, `reinstatement-payment:${policyId}:${caseId}`, `${reinstatementBase(policyId, caseId)}/payment`, body);
 }
 
 export async function restoreReinstatement(policyId: string, caseId: string): Promise<ReinstatementOverview> {
-  return (await api.post(`${reinstatementBase(policyId, caseId)}/restore`, {})).data;
+  return keyedPost(api, `reinstatement-restore:${policyId}:${caseId}`, `${reinstatementBase(policyId, caseId)}/restore`, {});
 }
 
 export async function withdrawReinstatement(
   policyId: string, caseId: string, body: { reason?: string },
 ): Promise<ReinstatementOverview> {
-  return (await api.post(`${reinstatementBase(policyId, caseId)}/withdraw`, body)).data;
+  return keyedPost(api, `reinstatement-withdraw:${policyId}:${caseId}`, `${reinstatementBase(policyId, caseId)}/withdraw`, body);
 }
 
 export function reinstatementConfirmationUrl(policyId: string, caseId: string): string {
@@ -641,7 +639,7 @@ export function reinstatementConfirmationUrl(policyId: string, caseId: string): 
 export async function sendReinstatementConfirmation(
   policyId: string, caseId: string,
 ): Promise<{ sent_to: string; sent_at: string; delivered: boolean; subject: string }> {
-  return (await api.post(`${reinstatementBase(policyId, caseId)}/confirmation/send`)).data;
+  return keyedPost(api, `reinstatement-confirmation:${policyId}:${caseId}`, `${reinstatementBase(policyId, caseId)}/confirmation/send`);
 }
 
 // ── Policy Renewals (Stage B step 7) ─────────────────────────────────────────
@@ -730,41 +728,41 @@ export async function getRenewals(policyId: string): Promise<RenewalOverview> {
   return (await api.get(renewalsBase(policyId))).data;
 }
 export async function openRenewal(policyId: string, body?: { actor?: string }): Promise<RenewalOverview> {
-  return (await api.post(renewalsBase(policyId), body ?? {})).data;
+  return keyedPost(api, `renewal-open:${policyId}`, renewalsBase(policyId), body ?? {});
 }
 export async function sendRenewalNotice(policyId: string, caseId: string, body: { channel?: string }): Promise<RenewalOverview> {
-  return (await api.post(`${renewalsBase(policyId, caseId)}/notice`, body)).data;
+  return keyedPost(api, `renewal-notice:${policyId}:${caseId}`, `${renewalsBase(policyId, caseId)}/notice`, body);
 }
 export function renewalNoticeUrl(policyId: string, caseId: string): string {
   return `${process.env.NEXT_PUBLIC_API_URL ?? ""}${renewalsBase(policyId, caseId)}/notice/download`;
 }
 export async function reevaluateRenewalRisk(policyId: string, caseId: string): Promise<RenewalOverview> {
-  return (await api.post(`${renewalsBase(policyId, caseId)}/risk/evaluate`)).data;
+  return keyedPost(api, `renewal-risk-evaluate:${policyId}:${caseId}`, `${renewalsBase(policyId, caseId)}/risk/evaluate`);
 }
 export async function decideRenewalRisk(
   policyId: string, caseId: string,
   body: { decision: "Approve" | "ApproveWithLoading" | "Decline"; loading_pct?: number; notes?: string },
 ): Promise<RenewalOverview> {
-  return (await api.post(`${renewalsBase(policyId, caseId)}/risk/decision`, body)).data;
+  return keyedPost(api, `renewal-risk-decision:${policyId}:${caseId}`, `${renewalsBase(policyId, caseId)}/risk/decision`, body);
 }
 export async function captureRenewalAcceptance(
   policyId: string, caseId: string, body: { accepted: boolean; accepted_by?: string; method: string; note?: string },
 ): Promise<RenewalOverview> {
-  return (await api.post(`${renewalsBase(policyId, caseId)}/acceptance`, body)).data;
+  return keyedPost(api, `renewal-acceptance:${policyId}:${caseId}`, `${renewalsBase(policyId, caseId)}/acceptance`, body);
 }
 export async function payRenewal(
   policyId: string, caseId: string, body: { method?: string; reference?: string; manual?: boolean },
 ): Promise<RenewalOverview> {
-  return (await api.post(`${renewalsBase(policyId, caseId)}/payment`, body)).data;
+  return keyedPost(api, `renewal-payment:${policyId}:${caseId}`, `${renewalsBase(policyId, caseId)}/payment`, body);
 }
 export async function reconcileRenewal(policyId: string, caseId: string, body: { note?: string }): Promise<RenewalOverview> {
-  return (await api.post(`${renewalsBase(policyId, caseId)}/reconcile`, body)).data;
+  return keyedPost(api, `renewal-reconcile:${policyId}:${caseId}`, `${renewalsBase(policyId, caseId)}/reconcile`, body);
 }
 export async function completeRenewal(policyId: string, caseId: string): Promise<RenewalOverview> {
-  return (await api.post(`${renewalsBase(policyId, caseId)}/complete`, {})).data;
+  return keyedPost(api, `renewal-complete:${policyId}:${caseId}`, `${renewalsBase(policyId, caseId)}/complete`, {});
 }
 export async function cancelRenewal(policyId: string, caseId: string, body: { reason?: string }): Promise<RenewalOverview> {
-  return (await api.post(`${renewalsBase(policyId, caseId)}/cancel`, body)).data;
+  return keyedPost(api, `renewal-cancel:${policyId}:${caseId}`, `${renewalsBase(policyId, caseId)}/cancel`, body);
 }
 export function renewalConfirmationUrl(policyId: string, caseId: string): string {
   return `${process.env.NEXT_PUBLIC_API_URL ?? ""}${renewalsBase(policyId, caseId)}/confirmation/download`;
@@ -772,7 +770,7 @@ export function renewalConfirmationUrl(policyId: string, caseId: string): string
 export async function sendRenewalConfirmation(
   policyId: string, caseId: string,
 ): Promise<{ sent_to: string; sent_at: string; delivered: boolean; subject: string }> {
-  return (await api.post(`${renewalsBase(policyId, caseId)}/confirmation/send`)).data;
+  return keyedPost(api, `renewal-confirmation:${policyId}:${caseId}`, `${renewalsBase(policyId, caseId)}/confirmation/send`);
 }
 
 // ── Claims Management (Stage B step 8) ───────────────────────────────────────
@@ -931,19 +929,24 @@ export async function decideClaim(policyId: string, claimId: string, body: { dec
   return (await api.post(`${claimsBase(policyId, claimId)}/decision`, body)).data;
 }
 export async function prepareClaimSettlement(policyId: string, claimId: string): Promise<ClaimWorkspace> {
-  return (await api.post(`${claimsBase(policyId, claimId)}/settlement/prepare`)).data;
+  return runOperation(browserOperationScope(), `claim-settlement:prepare:${claimId}`, async operationKey =>
+    (await api.post(`${claimsBase(policyId, claimId)}/settlement/prepare`, undefined, { headers: operationHeaders(operationKey) })).data);
 }
 export async function verifyClaimPayees(policyId: string, claimId: string, payees: { id: string; cnic?: string; bank_name?: string; account_title?: string; iban?: string; method?: string; note?: string; verify: boolean }[]): Promise<ClaimWorkspace> {
-  return (await api.post(`${claimsBase(policyId, claimId)}/settlement/payees`, { payees })).data;
+  return runOperation(browserOperationScope(), `claim-settlement:payees:${claimId}`, async operationKey =>
+    (await api.post(`${claimsBase(policyId, claimId)}/settlement/payees`, { payees }, { headers: operationHeaders(operationKey) })).data);
 }
 export async function authorizeClaimDisbursement(policyId: string, claimId: string): Promise<ClaimWorkspace> {
-  return (await api.post(`${claimsBase(policyId, claimId)}/settlement/authorize`)).data;
+  return runOperation(browserOperationScope(), `claim-settlement:authorize:${claimId}`, async operationKey =>
+    (await api.post(`${claimsBase(policyId, claimId)}/settlement/authorize`, undefined, { headers: operationHeaders(operationKey) })).data);
 }
 export async function disburseClaim(policyId: string, claimId: string, method: string, payment?: {reference_number?: string; payee_references?: Record<string, string>; note?: string}): Promise<ClaimWorkspace> {
-  return (await api.post(`${claimsBase(policyId, claimId)}/settlement/disburse`, { method, ...payment })).data;
+  return runOperation(browserOperationScope(), `claim-settlement:disburse:${claimId}`, async operationKey =>
+    (await api.post(`${claimsBase(policyId, claimId)}/settlement/disburse`, { method, ...payment }, { headers: operationHeaders(operationKey) })).data);
 }
 export async function reconcileClaim(policyId: string, claimId: string, note?: string): Promise<ClaimWorkspace> {
-  return (await api.post(`${claimsBase(policyId, claimId)}/settlement/reconcile`, { note })).data;
+  return runOperation(browserOperationScope(), `claim-settlement:reconcile:${claimId}`, async operationKey =>
+    (await api.post(`${claimsBase(policyId, claimId)}/settlement/reconcile`, { note }, { headers: operationHeaders(operationKey) })).data);
 }
 export async function closeClaim(policyId: string, claimId: string): Promise<ClaimWorkspace> {
   return (await api.post(`${claimsBase(policyId, claimId)}/close`)).data;
@@ -1032,48 +1035,48 @@ const exitUrl = (path: string) => `${process.env.NEXT_PUBLIC_API_URL ?? ""}${pat
 
 export async function getExitOverview(policyId: string): Promise<ExitOverview> { return (await api.get(exitBase(policyId))).data; }
 export async function openExit(policyId: string, body: { exit_type?: "Surrender"; reason?: string; requested_by?: string; relationship?: string; channel?: string }): Promise<ExitOverview> {
-  return (await api.post(exitBase(policyId), body)).data;
+  return keyedPost(api, `exit-open:${policyId}`, exitBase(policyId), body);
 }
 export async function recordPolicyLoan(policyId: string, body: { principal: number; annual_interest_pct: number; disbursed_on: string; reference?: string; note?: string }): Promise<ExitLoan[]> {
   return (await api.post(`${exitBase(policyId)}/loans`, body)).data;
 }
-export async function reverifyExit(policyId: string, caseId: string): Promise<ExitOverview> { return (await api.post(`${exitBase(policyId, caseId)}/eligibility/verify`)).data; }
+export async function reverifyExit(policyId: string, caseId: string): Promise<ExitOverview> { return keyedPost(api, `exit-verify:${policyId}:${caseId}`, `${exitBase(policyId, caseId)}/eligibility/verify`); }
 export async function decideExitExtension(policyId: string, caseId: string, body: { decision: "Declined" | "Redirect"; note?: string }): Promise<ExitOverview> {
-  return (await api.post(`${exitBase(policyId, caseId)}/extension`, body)).data;
+  return keyedPost(api, `exit-extension:${policyId}:${caseId}`, `${exitBase(policyId, caseId)}/extension`, body);
 }
 export async function uploadExitDocument(policyId: string, caseId: string, key: string, file: File): Promise<ExitOverview> {
   const form = new FormData(); form.append("file", file);
   return (await api.post(`${exitBase(policyId, caseId)}/documents/${key}`, form)).data;
 }
 export async function waiveExitDocument(policyId: string, caseId: string, key: string, note?: string): Promise<ExitOverview> {
-  return (await api.post(`${exitBase(policyId, caseId)}/documents/${key}/waive`, note ? { note } : {})).data;
+  return keyedPost(api, `exit-waive:${policyId}:${caseId}`, `${exitBase(policyId, caseId)}/documents/${key}/waive`, note ? { note } : {});
 }
 export const exitDocumentUrl = (policyId: string, caseId: string, key: string) => exitUrl(`${exitBase(policyId, caseId)}/documents/${key}/download`);
 export async function recordExitConsent(policyId: string, caseId: string, body: { accepted: string[]; by: string; method: string }): Promise<ExitOverview> {
-  return (await api.post(`${exitBase(policyId, caseId)}/consent`, body)).data;
+  return keyedPost(api, `exit-consent:${policyId}:${caseId}`, `${exitBase(policyId, caseId)}/consent`, body);
 }
 export async function calculateExitSettlement(policyId: string, caseId: string, body: { recoverables: { label: string; amount: number; note?: string }[]; notes?: string }): Promise<ExitOverview> {
-  return (await api.post(`${exitBase(policyId, caseId)}/settlement/calculate`, body)).data;
+  return keyedPost(api, `exit-calculate:${policyId}:${caseId}`, `${exitBase(policyId, caseId)}/settlement/calculate`, body);
 }
 export const exitStatementUrl = (policyId: string, caseId: string) => exitUrl(`${exitBase(policyId, caseId)}/settlement/statement`);
 export async function acceptExitSettlement(policyId: string, caseId: string, body: { accepted: boolean; by?: string; method?: string; note?: string }): Promise<ExitOverview> {
-  return (await api.post(`${exitBase(policyId, caseId)}/settlement/accept`, body)).data;
+  return keyedPost(api, `exit-accept:${policyId}:${caseId}`, `${exitBase(policyId, caseId)}/settlement/accept`, body);
 }
 export async function verifyExitPayee(policyId: string, caseId: string, body: { cnic?: string; bank_name?: string; account_title?: string; iban?: string; method?: string; note?: string; verify: boolean }): Promise<ExitOverview> {
-  return (await api.post(`${exitBase(policyId, caseId)}/settlement/payee`, body)).data;
+  return keyedPost(api, `exit-payee:${policyId}:${caseId}`, `${exitBase(policyId, caseId)}/settlement/payee`, body);
 }
-export async function authorizeExitPayment(policyId: string, caseId: string): Promise<ExitOverview> { return (await api.post(`${exitBase(policyId, caseId)}/settlement/authorize`)).data; }
+export async function authorizeExitPayment(policyId: string, caseId: string): Promise<ExitOverview> { return keyedPost(api, `exit-authorize:${policyId}:${caseId}`, `${exitBase(policyId, caseId)}/settlement/authorize`); }
 export async function disburseExitPayment(policyId: string, caseId: string, method: string): Promise<ExitOverview> {
-  return (await api.post(`${exitBase(policyId, caseId)}/settlement/disburse`, { method })).data;
+  return keyedPost(api, `exit-disburse:${policyId}:${caseId}`, `${exitBase(policyId, caseId)}/settlement/disburse`, { method });
 }
 export async function reconcileExitPayment(policyId: string, caseId: string, note?: string): Promise<ExitOverview> {
-  return (await api.post(`${exitBase(policyId, caseId)}/settlement/reconcile`, { note })).data;
+  return keyedPost(api, `exit-reconcile:${policyId}:${caseId}`, `${exitBase(policyId, caseId)}/settlement/reconcile`, { note });
 }
-export async function closeExit(policyId: string, caseId: string): Promise<ExitOverview> { return (await api.post(`${exitBase(policyId, caseId)}/close`)).data; }
+export async function closeExit(policyId: string, caseId: string): Promise<ExitOverview> { return keyedPost(api, `exit-close:${policyId}:${caseId}`, `${exitBase(policyId, caseId)}/close`); }
 export async function cancelExit(policyId: string, caseId: string, reason?: string): Promise<ExitOverview> {
-  return (await api.post(`${exitBase(policyId, caseId)}/cancel`, { reason })).data;
+  return keyedPost(api, `exit-cancel:${policyId}:${caseId}`, `${exitBase(policyId, caseId)}/cancel`, { reason });
 }
 export const exitLetterUrl = (policyId: string, caseId: string) => exitUrl(`${exitBase(policyId, caseId)}/confirmation/download`);
 export async function sendExitLetter(policyId: string, caseId: string): Promise<{ sent_to: string; sent_at: string; delivered: boolean; subject: string }> {
-  return (await api.post(`${exitBase(policyId, caseId)}/confirmation/send`)).data;
+  return keyedPost(api, `exit-letter:${policyId}:${caseId}`, `${exitBase(policyId, caseId)}/confirmation/send`);
 }

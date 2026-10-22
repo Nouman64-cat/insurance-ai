@@ -275,8 +275,31 @@ async def test_member_death_claim_checklist_split_and_payout():
             await _expect_http(preview_split_endpoint(tenant_id=fx["tenant_id"], claim_id=UUID(claim_id), body=over, _user=USER, session=session), 422)
             assert (await session.exec(select(ClaimPayout))).all() == []
 
-            paid = await group_payout(tenant_id=fx["tenant_id"], claim_id=UUID(claim_id),
-                                      body=GroupPayoutRequest(reference_number="BANK-77", notes="Death benefit"), current_user=USER, session=session)
+            # Use the HTTP adapter so the receipt and payouts commit together.
+            import json
+            from unittest.mock import patch, AsyncMock
+            from starlette.requests import Request
+            from shared.idempotency.models import metadata as receipt_metadata
+            from sqlalchemy import text
+            async with session.bind.begin() as conn:
+                await conn.run_sync(receipt_metadata.create_all)
+            request = Request({"type": "http", "method": "POST", "path": "/group-payout",
+                               "query_string": b"", "headers": [(b"idempotency-key", b"group-payout-test-123")]})
+            kwargs = dict(tenant_id=fx["tenant_id"], claim_id=UUID(claim_id),
+                          body=GroupPayoutRequest(reference_number="BANK-77", notes="Death benefit"),
+                          current_user=USER, session=session, idempotency_request=request)
+            with patch("services.idempotency.tenant_identity", AsyncMock(return_value=(USER, "test"))), \
+                 patch("routers.claims._assert_role", AsyncMock(return_value=USER)):
+                first = await group_payout(**kwargs)
+                replay = await group_payout(**kwargs)
+                assert first.status_code == replay.status_code == 201
+                paid = json.loads(first.body)
+                assert json.loads(replay.body) == paid and replay.headers["idempotency-replayed"] == "true"
+                await _expect_http(group_payout(**{**kwargs, "body": GroupPayoutRequest(reference_number="CHANGED")}), 409)
+                receipt = (await session.execute(text("SELECT response_json FROM idempotency_records WHERE scope_id=:scope"),
+                                                {"scope": f"tenant:{fx['tenant_id']}"})).scalar_one()
+                assert receipt["payout_ids"] == [p["id"] for p in paid["payouts"]]
+                assert "Sara" not in str(receipt) and "Death benefit" not in str(receipt)
             assert paid["total"] == 4_000_000.0 and paid["source"] == "nominees"
             assert [(p["payee"], p["amount"], p["share_pct"]) for p in paid["payouts"]] == [("Sara", 2_800_000.0, 70.0), ("Omar", 1_200_000.0, 30.0)]
             assert {p["reference_number"] for p in paid["payouts"]} == {"BANK-77-1", "BANK-77-2"}

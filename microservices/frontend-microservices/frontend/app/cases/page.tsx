@@ -9,6 +9,7 @@ import { useNotify } from "@/components/NotificationContext";
 import { Pagination, usePagination } from "@/components/Pagination";
 import { tx } from "@/lib/i18n/tx";
 
+import { keyedPost } from "@/lib/idempotency";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Customer {
@@ -335,12 +336,12 @@ function CreateCaseModal({ customer, onClose, onCreated }: { customer: Customer;
     setSubmitting(true);
     setErr("");
     try {
-      await api.post(`/tenants/${tenantId}/cases`, {
+      { data: await keyedPost(api, "case-create", `/tenants/${tenantId}/cases`, {
         customer_id: customer.id,
         caseType,
         priorityLevel: priority,
         sourceChannel: channel,
-      });
+      }) };
       onCreated();
     } catch (err: any) {
       setErr(err.response?.data?.detail ?? "Failed to create case.");
@@ -501,11 +502,11 @@ function UploadModal({ caseItem, onClose, onUploaded }: { caseItem: CaseItem; on
       form.append("document_type", f.docType);
       form.append("file", f.file);
       try {
-        const res = await api.post(
+        const res = { data: await keyedPost(api, `case-upload:${caseItem.caseld}:${f.file.name}`, 
           `/tenants/${tenantId}/cases/${caseItem.caseld}/artifacts`,
           form,
           { headers: { "Content-Type": "multipart/form-data" }, timeout: 120_000 }
-        );
+        ) };
         results.push(res.data);
       } catch (err: any) {
         errors.push(`${f.file.name}: ${err.response?.data?.detail ?? err.message ?? "failed"}`);

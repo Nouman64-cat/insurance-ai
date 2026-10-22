@@ -1,4 +1,4 @@
-import api from './api';
+import api, { keyedPost } from './api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type EntityType = 'INDIVIDUAL' | 'FAMILY' | 'CORPORATE';
@@ -242,7 +242,7 @@ export const createIndividualLead = async (data: any) => {
   const agentId = await AsyncStorage.getItem('agent_id');
 
   if (data.leadCategory === 'quick') {
-    return api.post(`/tenants/${tenantId}/customers`, {
+    return keyedPost('lead-customer', `/tenants/${tenantId}/customers`, {
       first_name: data.firstName,
       last_name: data.lastName,
       cnic: data.cnic || null,
@@ -255,7 +255,7 @@ export const createIndividualLead = async (data: any) => {
     });
   }
 
-  return api.post(`/tenants/${tenantId}/customers`, {
+  return keyedPost('lead-customer', `/tenants/${tenantId}/customers`, {
     cnic: data.cnic || null,
     first_name: data.firstName,
     last_name: data.lastName,
@@ -327,7 +327,7 @@ export const createFamilyLead = async (data: any) => {
   const agentId = await AsyncStorage.getItem('agent_id');
 
   if (data.leadCategory === 'quick') {
-    return api.post(`/tenants/${tenantId}/families`, {
+    return keyedPost('lead-family', `/tenants/${tenantId}/families`, {
       name: data.name,
       contact_person: data.contactPerson || null,
       contact_phone: data.contactPhone || null,
@@ -337,7 +337,7 @@ export const createFamilyLead = async (data: any) => {
     });
   }
 
-  return api.post(`/tenants/${tenantId}/families`, {
+  return keyedPost('lead-family', `/tenants/${tenantId}/families`, {
     name: data.name,
     contact_person: data.contactPerson || null,
     contact_email: data.contactEmail || null,
@@ -355,7 +355,7 @@ export const createCorporateLead = async (data: any) => {
   const agentId = await AsyncStorage.getItem('agent_id');
 
   if (data.leadCategory === 'quick') {
-    return api.post(`/tenants/${tenantId}/organizations`, {
+    return keyedPost('lead-organization', `/tenants/${tenantId}/organizations`, {
       name: data.name,
       contact_person: data.contactPerson || null,
       contact_phone: data.contactPhone || null,
@@ -363,7 +363,7 @@ export const createCorporateLead = async (data: any) => {
     });
   }
 
-  return api.post(`/tenants/${tenantId}/organizations`, {
+  return keyedPost('lead-organization', `/tenants/${tenantId}/organizations`, {
     name: data.name,
     registration_number: data.registrationNumber || null,
     industry: data.industry || null,

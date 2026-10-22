@@ -154,8 +154,8 @@ _action("reopen-for-review", service.reopen_for_review)
 
 
 @router.post("/requests/{request_id}/comments", status_code=201)
-async def add_comment(request_id: UUID, request: Request, identity: Identity = Me) -> dict:
-    await service.add_comment(identity, request_id, await _json(request))
+async def add_comment(request_id: UUID, request: Request, identity: Identity = Me, idempotency_key: Optional[str] = Header(None)) -> dict:
+    await service.add_comment(identity, request_id, await _json(request), _key(idempotency_key))
     return await queries.detail(identity, request_id)
 
 

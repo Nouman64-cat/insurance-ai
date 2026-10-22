@@ -28,6 +28,7 @@ import LeadProgress, { leadStage } from "@/components/LeadProgress";
 import RowActionsMenu, { ActionIcon, type RowAction as LeadAction } from "@/components/RowActionsMenu";
 import { tx } from "@/lib/i18n/tx";
 
+import { keyedPost } from "@/lib/idempotency";
 type EntityType = "INDIVIDUAL" | "FAMILY" | "CORPORATE";
 type ProfileStatus = "LEAD" | "PROSPECT" | "DRAFT" | "UNDERWRITING_READY" | "NOT_INTERESTED" | "POLICYHOLDER";
 
@@ -695,7 +696,7 @@ export default function LeadsHubPage() {
     setActionBusyId(lead.id);
     setError("");
     try {
-      await api.post(`/tenants/${tenantId}/cases/${lead.holdCaseId}/release`, {});
+      { data: await keyedPost(api, `case-release:${lead.holdCaseId}`, `/tenants/${tenantId}/cases/${lead.holdCaseId}/release`, {}) };
       setNotice(tx("Hold removed for \"{0}\". Underwriting continues from where it stopped.", { 0: lead.name }));
       await fetchLeads();
     } catch (err: any) {
@@ -721,7 +722,7 @@ export default function LeadsHubPage() {
     setActionBusyId(lead.id);
     setError("");
     try {
-      await api.post(`/tenants/${tenantId}/walk-in-leads/${lead.walkIn.id}/acknowledge`);
+      { data: await keyedPost(api, `walkin-acknowledge:${lead.walkIn.id}`, `/tenants/${tenantId}/walk-in-leads/${lead.walkIn.id}/acknowledge`) };
       setNotice(tx("\"{0}\" acknowledged.", { 0: lead.name }));
       await fetchLeads();
     } catch (err: any) {

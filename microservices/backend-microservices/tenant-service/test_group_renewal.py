@@ -46,7 +46,7 @@ from shared.models.core import (
 )
 from test_group_census import _census, _cleanup, _cnic, _expect_http, _row, _setup
 from test_group_endorsements import _active_scheme
-from test_group_issuance import _FakeProducer, _fake_request
+from test_group_issuance import _FakeProducer, _drain_outbox, _fake_request
 
 TODAY = date(2026, 10, 6)           # 86 days before the test schemes expire (2026-12-31)
 NO_DECISION = GroupQuoteDecision(decided_by="CFO")
@@ -206,11 +206,13 @@ async def test_full_renewal_cycle():
             assert preview["applied"] is False and (preview["added"], preview["changed"], preview["removed"]) == (1, 1, 0), preview
             assert preview["not_in_file"] == ["Ali Individual"] and (await session.exec(select(GroupEndorsement))).all() == []
 
+            await _drain_outbox(_FakeProducer())      # earlier set-up events are not part of this assertion
             producer = _FakeProducer()
             done = await census_refresh(body=RenewalCensusRefresh(employees=rows, effective_date=date(2026, 10, 10)),
                                         renewal_id=rid, request=_fake_request(producer), **_kw(fx, mp_id, session))
             assert done["applied"] is True and len(done["endorsements"]) == 2 and done["removed"] == 0
             kinds = sorted(e.endorsement_type for e in (await session.exec(select(GroupEndorsement))).all())
+            await _drain_outbox(producer)      # events are queued with the change and relayed afterwards
             assert kinds == ["ADD", "CHANGE"] and producer.sent
             members_now = (await session.exec(select(GroupMember).where(GroupMember.master_policy_id == mp_id))).all()
             assert len([m for m in members_now if m.status == "Active"]) == 11
@@ -242,6 +244,7 @@ async def test_full_renewal_cycle():
             # Payment starts the next period.
             await _expect_http(renewal_payment(body=RenewalPayment(reference="R-1", amount=total - 500), renewal_id=rid,
                                                **_kw(fx, mp_id, session)), 422)
+            await _drain_outbox(_FakeProducer())
             producer = _FakeProducer()
             paid = await renewal_payment(body=RenewalPayment(reference="RENEW-1", amount=total), renewal_id=rid,
                                          request=_fake_request(producer), **_kw(fx, mp_id, session))
@@ -256,6 +259,7 @@ async def test_full_renewal_cycle():
             assert all(abs(m.annual_premium - by_life[str(m.id)]) < 0.02 for m in active if not [] )
             policy = await session.get(Policy, active[0].policy_id)
             assert (policy.effective_date, policy.expiry_date, policy.status) == (date(2027, 1, 1), date(2027, 12, 31), "Active")
+            await _drain_outbox(producer)
             events = [m for _t, m, _k in producer.sent]
             assert len(events) == 12 and {e["event_type"] for e in events} == {"GroupRenewed"} and all(e["payload"]["to_status"] == "Active" for e in events)
 

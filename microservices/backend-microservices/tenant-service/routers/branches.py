@@ -8,6 +8,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from routers.auth import verify_superadmin
 from schemas import BranchCreate, BranchRead, BranchUpdate
+from services.idempotency import read_model_operation
 from shared.models.core import Branch, Tenant
 
 router = APIRouter(tags=["Branches"])
@@ -19,6 +20,7 @@ router = APIRouter(tags=["Branches"])
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(verify_superadmin)],
 )
+@read_model_operation("tenant.branch.create", BranchRead, lambda v, rid: v["session"].get(Branch, UUID(rid)), status_code=201, resource_type="branch")
 async def create_branch(
     tenant_id: UUID,
     body: BranchCreate,

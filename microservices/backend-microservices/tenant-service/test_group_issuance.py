@@ -9,6 +9,7 @@ Run with: docker compose exec tenant-service python test_group_issuance.py
 """
 
 import asyncio
+from uuid import uuid4
 import json
 import os
 import re
@@ -287,6 +288,17 @@ def _fake_request(producer):
     return SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(kafka_producer=producer)))
 
 
+async def _drain_outbox(producer) -> int:
+    """Deliver every queued business event, as the relay does. Delivery is separate from the change that queued it."""
+    from shared.events.outbox import deliver_one
+    delivered = 0
+    while await deliver_one(_session_factory, producer):
+        delivered += 1
+        if delivered > 5000:
+            raise AssertionError("outbox did not drain")
+    return delivered
+
+
 async def test_certificate_events_published_to_kafka():
     async with _session_factory() as session:
         fx = await _setup(session)
@@ -297,23 +309,30 @@ async def test_certificate_events_published_to_kafka():
             quote = await generate_group_quote_endpoint(**ids)
             await accept_group_quote(quote_id=quote.id, body=NO_DECISION, **ids)
 
+            # Earlier tests in this file queued events nobody relayed; settle those so this test sees only its own.
+            from sqlalchemy import text as _text
+            await session.execute(_text("UPDATE business_outbox SET published_at = now() WHERE published_at IS NULL"))
+            await session.commit()
             producer = _FakeProducer()
-            issued = await issue_master_policy(request=_fake_request(producer), **ids)
-            issue_events = [m for _t, m, _k in producer.sent]
+            issued = await issue_master_policy(**ids)
+            assert producer.sent == [], "nothing is sent inside the request: events are queued with the change and relayed afterwards"
+            await _drain_outbox(producer)
+            mine = [m for t, m, k in producer.sent if k == str(fx["tenant_id"])]
+            issue_events = [m for m in mine if m["event_type"] == "GroupCertificateIssued"]
             assert {t for t, _m, _k in producer.sent} == {POLICY_LIFECYCLE_TOPIC}
-            assert {e["event_type"] for e in issue_events} == {"GroupCertificateIssued"}
             assert {e["payload"]["to_status"] for e in issue_events} <= {"Proposed", "Approved", "PendingPayment"}
             # Every certificate reached PendingPayment, and each event names its master policy.
             assert len({e["payload"]["policy_id"] for e in issue_events if e["payload"]["to_status"] == "PendingPayment"}) == n
             assert all(e["payload"]["detail"]["master_policy_number"] == issued.master_policy.policy_number for e in issue_events)
-            assert all(k == str(fx["tenant_id"]) for _t, _m, k in producer.sent)
 
             producer.sent.clear()
-            await record_group_payment(body=GroupPaymentCreate(reference="PAY-K", amount=quote.total_premium),
-                                       request=_fake_request(producer), **ids)
-            bound = [m for _t, m, _k in producer.sent]
+            await record_group_payment(body=GroupPaymentCreate(reference="PAY-K", amount=quote.total_premium), **ids)
+            await _drain_outbox(producer)
+            bound = [m for _t, m, k in producer.sent if k == str(fx["tenant_id"])]
             assert len(bound) == n and {e["event_type"] for e in bound} == {"GroupCoverBound"}
             assert {e["payload"]["to_status"] for e in bound} == {"Active"}
+            # event ids are stable, so a consumer can deduplicate a redelivery
+            assert len({e["event_id"] for e in bound}) == n
             print("PASS test_certificate_events_published_to_kafka")
         finally:
             await _cleanup(session, fx["tenant_id"])
@@ -427,6 +446,64 @@ async def test_http_flow():
             await _cleanup(session, fx["tenant_id"])
 
 
+async def test_keyed_issuance_and_employer_payment_are_idempotent():
+    """A retried issue/payment returns the original outcome; a different key cannot issue or bind cover twice."""
+    import main as app_module
+    from types import SimpleNamespace as NS
+    from unittest.mock import AsyncMock, patch
+    from routers.users import verify_admin
+    from sqlalchemy import text as _text
+
+    async with _session_factory() as session:
+        fx = await _setup(session)
+        app_module.app.dependency_overrides[verify_admin] = lambda: None
+        identity = NS(id=uuid4())
+        try:
+            with patch("services.idempotency.tenant_identity", AsyncMock(return_value=(identity, "t"))):
+                transport = httpx.ASGITransport(app=app_module.app)
+                base = f"/tenants/{fx['tenant_id']}/organizations/{fx['org_id']}/master-policies"
+                async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+                    r = await c.post(base, json={"sum_assured_multiple": 24, "term_years": 1, "effective_date": "2026-01-01", "plan_code": "GROUP_LIFE"})
+                    mp = f"{base}/{r.json()['id']}"
+                    rows = [_row(_cnic(), i, declared_income=360_000) for i in range(10)]
+                    assert (await c.post(f"{mp}/census/confirm", json={"employees": rows})).status_code == 201
+                    quote = (await c.post(f"{mp}/quotes")).json()
+                    assert (await c.post(f"{mp}/quotes/{quote['id']}/accept", json={"decided_by": "CFO"})).status_code == 200
+
+                    k1 = {"Idempotency-Key": "group-issue-operation-1"}
+                    first = await c.post(f"{mp}/issue", headers=k1)
+                    assert first.status_code == 200, first.text
+                    again = await c.post(f"{mp}/issue", headers=k1)
+                    assert again.status_code == 200 and again.headers["idempotency-replayed"] == "true", again.text
+                    assert again.json()["certificates_issued"] == first.json()["certificates_issued"] == 10
+                    assert again.json()["master_policy"]["policy_number"] == first.json()["master_policy"]["policy_number"]
+                    other = await c.post(f"{mp}/issue", headers={"Idempotency-Key": "group-issue-operation-2"})
+                    assert other.status_code == 409, "a second key cannot issue the scheme again"
+
+                    pay = {"reference": "BANK-KEYED-1", "amount": quote["total_premium"]}
+                    k2 = {"Idempotency-Key": "group-pay-operation-1"}
+                    paid = await c.post(f"{mp}/payments", json=pay, headers=k2)
+                    assert paid.status_code == 200 and paid.json()["master_policy"]["status"] == "Active", paid.text
+                    replay = await c.post(f"{mp}/payments", json=pay, headers=k2)
+                    assert replay.status_code == 200 and replay.headers["idempotency-replayed"] == "true"
+                    assert replay.json()["total_premium"] == paid.json()["total_premium"]
+                    changed = await c.post(f"{mp}/payments", json={**pay, "reference": "BANK-OTHER"}, headers=k2)
+                    assert changed.status_code == 409
+                    second = await c.post(f"{mp}/payments", json=pay, headers={"Idempotency-Key": "group-pay-operation-2"})
+                    assert second.status_code == 409, "cover is already bound; the business rule refuses a second payment"
+
+            bound = (await session.execute(_text("SELECT count(*) FROM business_outbox WHERE payload->>'event_type' = 'GroupCoverBound' AND message_key = :t"),
+                                           {"t": str(fx["tenant_id"])})).scalar()
+            issued = (await session.execute(_text("SELECT count(*) FROM business_outbox WHERE payload->>'event_type' = 'GroupCertificateIssued' AND message_key = :t"),
+                                            {"t": str(fx["tenant_id"])})).scalar()
+            assert bound == 10, bound
+            assert issued >= 10 and issued == (await session.execute(_text("SELECT count(DISTINCT payload->>'event_id') FROM business_outbox WHERE payload->>'event_type' = 'GroupCertificateIssued' AND message_key = :t"), {"t": str(fx["tenant_id"])})).scalar()
+            print("PASS test_keyed_issuance_and_employer_payment_are_idempotent")
+        finally:
+            app_module.app.dependency_overrides.pop(verify_admin, None)
+            await _cleanup(session, fx["tenant_id"])
+
+
 async def main():
     await test_full_lifecycle()
     await test_above_fcl_outcomes()
@@ -436,6 +513,7 @@ async def main():
     await test_broker_outage_does_not_fail_issuance()
     await test_quote_guards()
     await test_http_flow()
+    await test_keyed_issuance_and_employer_payment_are_idempotent()
 
 
 if __name__ == "__main__":

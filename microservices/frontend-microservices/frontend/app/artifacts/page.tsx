@@ -13,6 +13,7 @@ import ReactMarkdown from "react-markdown";
 import api, { OCR_BASE_URL, SUMMARIZER_BASE_URL } from "@/app/services/api";
 import { tx } from "@/lib/i18n/tx";
 
+import { keyedPost } from "@/lib/idempotency";
 // ── Shared Types ──────────────────────────────────────────────────────────────
 
 type OcrStatus = "idle" | "ready" | "processing" | "done" | "error";
@@ -315,11 +316,11 @@ function CaseUploadTab() {
 
     try {
       // Server returns 202 immediately — artifact status is "Processing"
-      const res = await api.post(
+      const res = { data: await keyedPost(api, `artifact-upload:${selectedCaseId}`, 
         `/tenants/${tenantId}/cases/${selectedCaseId}/artifacts`,
         form,
         { headers: { "Content-Type": "multipart/form-data" }, timeout: 30_000 }
-      );
+      ) };
       const initial: ArtifactResponse = res.data;
       setArtifact(initial);
       setUploadFile(null);

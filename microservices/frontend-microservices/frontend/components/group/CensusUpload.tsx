@@ -5,6 +5,7 @@ import api from "@/app/services/api";
 import { PanelProps, errMsg, mpBase, pkr } from "./groupShared";
 import { tx } from "@/lib/i18n/tx";
 
+import { keyedPost } from "@/lib/idempotency";
 interface Parsed {
   filename: string;
   rows: Record<string, any>[];
@@ -56,7 +57,7 @@ export default function CensusUpload({ tenantId, orgId, mp, reload }: PanelProps
     if (!parsed) return;
     setError(""); setBusy("Enrolling…");
     try {
-      const res = await api.post(`${base}/census/confirm`, { employees: parsed.rows });
+      const res = { data: await keyedPost(api, `census-confirm:${base}`, `${base}/census/confirm`, { employees: parsed.rows }) };
       const above = res.data.employees.filter((e: any) => e.coverage_amount > res.data.free_cover_limit).length;
       setNotice(`${res.data.employees.length} employees enrolled — Free Cover Limit ${pkr(res.data.free_cover_limit)}` +
         (above ? `; ${above} above it were routed to underwriting.` : "; all guaranteed-issue."));

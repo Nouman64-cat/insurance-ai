@@ -10,6 +10,7 @@ import { demoBranch } from "@/lib/demoData";
 import { adminsHref, type TenantSetupStatus } from "@/components/TenantSetupChecklist";
 import { tx } from "@/lib/i18n/tx";
 
+import { keyedPost } from "@/lib/idempotency";
 interface Tenant {
   id: string;
   name: string;
@@ -194,7 +195,7 @@ function BranchManagementContent() {
       if (createForm.contact_email.trim()) payload.contact_email = createForm.contact_email;
       if (createForm.opened_date.trim()) payload.opened_date = createForm.opened_date;
 
-      await api.post(`/tenants/${tenantId}/branches`, payload);
+      { data: await keyedPost(api, `branch-create:${tenantId}`, `/tenants/${tenantId}/branches`, payload) };
       const tenantName = tenants.find((t) => t.id === tenantId)?.name ?? "this tenant";
       setShowCreateModal(false);
       fetchBranches(tenantId);

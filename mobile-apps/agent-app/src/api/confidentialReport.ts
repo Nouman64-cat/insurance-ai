@@ -1,4 +1,4 @@
-import api from './api';
+import api, { keyedPost } from './api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type ACRRecommendation = 'Recommend' | 'RecommendWithCaution' | 'DoNotRecommend';
@@ -54,7 +54,7 @@ export const saveConfidentialReport = async (
 export const submitConfidentialReport = async (caseId: string): Promise<ConfidentialReport> => {
   const tenantId = await AsyncStorage.getItem('tenant_id');
   if (!tenantId) throw new Error('No tenant ID found');
-  const res = await api.post(`/tenants/${tenantId}/cases/${caseId}/acr/submit`);
+  const res = await keyedPost(`acr-submit:${caseId}`, `/tenants/${tenantId}/cases/${caseId}/acr/submit`);
   return res.data;
 };
 

@@ -56,6 +56,19 @@ class PostgresTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await conn.execute(text('SELECT count(*) FROM business'))).scalar(), 1)
             self.assertEqual((await conn.execute(text('SELECT count(*) FROM outbox'))).scalar(), 1)
 
+    async def test_a_rejected_request_frees_the_key_even_for_different_content_but_an_executed_one_does_not(self):
+        async with self.engine.begin() as conn:
+            r = await reserve(conn, **self.kw)
+            await fail(conn, r, uncertain=False, error_code='HTTP_422')
+        other = fingerprint({'amount': 99}, actor_id='actor')
+        async with self.engine.begin() as conn:
+            r2 = await reserve(conn, **(self.kw | {'request_hash': other}))     # nothing was applied: a corrected request may reuse the key
+            self.assertFalse(r2.replay)
+            await complete(conn, r2, http_status=200, response={'id': 2})
+        with self.assertRaises(IdempotencyError) as ctx:                         # it executed now: other content conflicts
+            await self.execute(request_hash=fingerprint({'amount': 5}, actor_id='actor'))
+        self.assertEqual(ctx.exception.code, 'IDEMPOTENCY_CONFLICT')
+
     async def test_payload_conflict(self):
         await self.execute()
         with self.assertRaises(IdempotencyError) as ctx:

@@ -72,7 +72,9 @@ async def reserve(conn, *, scope_id, operation, key, request_hash, retention_day
         return Reservation(rid, token)
     row = (await conn.execute(select(records).where(records.c.scope_id == scope_id,
         records.c.operation == operation, records.c.idempotency_key == key).with_for_update())).mappings().one()
-    if row['request_hash'] != request_hash:
+    # A FAILED record means the owner established that nothing was applied (a rejected request): the key is free again, even for
+    # different content. For any record that may have executed, reusing the key with other content is a client bug and conflicts.
+    if row['request_hash'] != request_hash and row['status'] != 'FAILED':
         raise IdempotencyError('IDEMPOTENCY_CONFLICT')
     if row['status'] == 'COMPLETED':
         if row['response_json'] is None:
@@ -89,7 +91,7 @@ async def reserve(conn, *, scope_id, operation, key, request_hash, retention_day
         raise IdempotencyError('IDEMPOTENCY_PROCESSING', retry_after=2)
     # FAILED means the owner explicitly established that no side effect occurred.
     await conn.execute(update(records).where(records.c.id == row['id']).values(
-        status='PROCESSING', lease_token=token, lease_expires_at=now + timedelta(seconds=lease_seconds),
+        status='PROCESSING', lease_token=token, lease_expires_at=now + timedelta(seconds=lease_seconds), request_hash=request_hash,
         updated_at=now, attempt_count=records.c.attempt_count + 1, last_error_code=None))
     return Reservation(row['id'], token)
 

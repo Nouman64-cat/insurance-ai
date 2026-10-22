@@ -1,4 +1,4 @@
-import api from './api';
+import api, { keyedPost } from './api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type EApplicationStatus = 'NotSent' | 'Sent' | 'InProgress' | 'Submitted' | 'Verified' | 'Expired';
@@ -36,7 +36,7 @@ export const inviteEApplication = async (caseId: string): Promise<EApplicationIn
   const tenantId = await AsyncStorage.getItem('tenant_id');
   if (!tenantId) throw new Error('No tenant ID found');
 
-  const res = await api.post(`/tenants/${tenantId}/cases/${caseId}/e-application/invite`);
+  const res = await keyedPost(`eapp-invite:${caseId}`, `/tenants/${tenantId}/cases/${caseId}/e-application/invite`);
   return res.data;
 };
 
@@ -59,7 +59,7 @@ export const verifyEApplication = async (
   const tenantId = await AsyncStorage.getItem('tenant_id');
   if (!tenantId) throw new Error('No tenant ID found');
 
-  const res = await api.post(`/tenants/${tenantId}/cases/${caseId}/e-application/verify`, { action, notes });
+  const res = await keyedPost(`eapp-verify:${caseId}`, `/tenants/${tenantId}/cases/${caseId}/e-application/verify`, { action, notes });
   return res.data;
 };
 

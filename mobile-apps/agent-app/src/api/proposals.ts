@@ -1,4 +1,4 @@
-import api from './api';
+import api, { keyedPost } from './api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { agentScopeParams } from './agentScope';
 
@@ -96,7 +96,7 @@ export const submitProposalToUnderwriting = async (proposal: ProposalItem) => {
   const agentId = await AsyncStorage.getItem('agent_id');
   if (!tenantId) throw new Error('No tenant ID found');
 
-  return api.post(`/tenants/${tenantId}/cases`, {
+  return keyedPost(`proposal-case:${proposal.policy_id}`, `/tenants/${tenantId}/cases`, {
     customer_id: proposal.customer_id,
     policy_id: proposal.policy_id,
     caseType: 'Underwriting',

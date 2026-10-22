@@ -20,7 +20,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from shared.idempotency.http import database_operation
-from services.idempotency import payout_identity
+from services.idempotency import payout_identity, records_operation
 from database import get_session
 from routers.auth import oauth2_scheme
 from routers.claims import (
@@ -100,7 +100,15 @@ class GroupPayoutRequest(SplitRequest):
 _SCHEME = "/tenants/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}/claims"
 
 
+async def _render_opened_claim(values, rows):
+    session, claim = values["session"], rows[0]
+    policy = await session.get(Policy, claim.policy_id)
+    cust = await session.get(Customer, policy.customer_id) if policy is not None else None
+    return {"claim": _claim_dict(claim, policy, cust, values["current_user"], 0), "group": await claim_group_context(session, values["tenant_id"], claim)}
+
+
 @router.post(_SCHEME, status_code=status.HTTP_201_CREATED)
+@records_operation("tenant.group.open_claim", Claim, None, render=_render_opened_claim, ids_of=lambda v, p: [p["claim"]["id"]], status_code=201, resource_type="claim")
 async def open_group_claim(tenant_id: UUID, org_id: UUID, mp_id: UUID, body: GroupClaimCreate,
                            current_user: User = Depends(claims_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     mp = await _get_master_policy(tenant_id, org_id, mp_id, session)

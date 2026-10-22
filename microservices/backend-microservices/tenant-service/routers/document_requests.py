@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
+from services.idempotency import token_operation
 from routers.artifacts import OCR_TOPIC, SUPPORTED_MIME, _s3_key, _upload_to_s3
 from services import document_requests as docreq
 from services.case_events import publish_case_event
@@ -59,7 +60,16 @@ def _require_open(req: DocumentRequest) -> None:
         raise HTTPException(status_code=409, detail="These documents have already been submitted and can no longer be changed.")
 
 
+async def _resolve_link(values):
+    return await _resolve(values["session"], values["raw_token"])
+
+
+async def _rebuild_view(values):
+    return await _view(values["session"], await _resolve(values["session"], values["raw_token"]))
+
+
 @router.post("/public/documents/{raw_token}/submit")
+@token_operation("public.documents.submit", _resolve_link, _rebuild_view, token_arg="raw_token", resource_type="document_request")
 async def public_submit_documents(raw_token: str, request: Request, session: AsyncSession = Depends(get_session)):
     """The customer presses Done. Only possible once every required document has arrived; afterwards the link is
     read-only (staff can reopen it by renewing the link)."""
@@ -87,6 +97,7 @@ async def public_get_documents(raw_token: str, session: AsyncSession = Depends(g
 
 
 @router.post("/public/documents/{raw_token}/upload")
+@token_operation("public.documents.upload", _resolve_link, _rebuild_view, token_arg="raw_token", resource_type="document_request")
 async def public_upload_document(
     request: Request,
     raw_token: str,

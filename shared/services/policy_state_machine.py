@@ -10,10 +10,9 @@ Before this module, /issue, /lapse, /cancel and /renew each mutated
   2. Updates ``policy.status`` and ``policy.updated_at``.
   3. Appends an immutable ``PolicyEvent`` row (the SECP audit trail).
 
-Kafka emission is intentionally NOT done here: publishing is a fire-and-forget
-side effect that must happen *after* the DB commit, so the router owns it (see
-``routers/policies._publish_policy_event``). Keeping this module free of the
-Kafka producer also lets the renewal scheduler reuse it without a Request.
+Lifecycle messages are enqueued with the immutable PolicyEvent in the same
+transaction. The owning service's outbox relay delivers them after commit using
+the event ID as the stable message identity, including scheduler-originated events.
 """
 
 from __future__ import annotations
@@ -24,6 +23,7 @@ from typing import Optional
 from uuid import UUID
 
 from shared.models.core import PolicyEvent, PolicyStatusEnum
+from shared.events.outbox import enqueue_policy_event
 
 log = logging.getLogger(__name__)
 
@@ -240,6 +240,7 @@ def record_event(
         detail_json=detail,
     )
     session.add(event)
+    enqueue_policy_event(session, policy, event)
     return event
 
 

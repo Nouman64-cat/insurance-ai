@@ -17,6 +17,8 @@ from provisioning import generate_password, generate_unique_username, split_full
 from schemas import SeedAdminCreate, UserCreate, UserRead, UserUpdate
 from shared.models.core import AcquisitionSource, Branch, Role, Tenant, User, UserProfile, UserStatus
 from routers.auth import _get_current_user, decode_access_token, oauth2_scheme, verify_superadmin
+from services.idempotency import scoped_identity
+from shared.idempotency.http import side_effect_operation
 
 router = APIRouter(prefix="/tenants", tags=["Users"])
 
@@ -175,6 +177,23 @@ def _forbid_superadmin_change(acting_role: str, *role_names: Optional[str]) -> N
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only a SuperAdmin can manage SuperAdmin accounts.")
 
 
+async def _replay_user(values, receipt):
+    user = await values["session"].get(User, UUID(receipt["user_id"]))
+    if user is None or user.tenant_id != values["tenant_id"]:
+        raise HTTPException(status.HTTP_409_CONFLICT, "The user this key produced no longer exists.")
+    profile = (await values["session"].exec(select(UserProfile).where(UserProfile.user_id == user.id))).first()
+    return to_user_read(user, profile)
+
+
+def _user_login_operation(operation):
+    """Creating a user issues a password and e-mails it once. The password is never stored; a replay returns the user without sending
+    again, and an abandoned attempt may be retried (the retry's password replaces the lost one)."""
+    return side_effect_operation(
+        operation, response_fields=None, status_code=201, resource_type="user", authorize=scoped_identity, recover="retry",
+        receipt_fields=("user_id",), view_receipt=lambda values, payload: {"user_id": payload["id"] if payload else None},
+        replay_response=_replay_user)
+
+
 @router.post(
     "/{tenant_id}/setup",
     response_model=UserRead,
@@ -188,6 +207,7 @@ def _forbid_superadmin_change(acting_role: str, *role_names: Optional[str]) -> N
     ),
     dependencies=[Depends(verify_superadmin)],
 )
+@_user_login_operation("tenant.user.seed_admin")
 async def seed_admin(
     tenant_id: UUID,
     body: SeedAdminCreate,
@@ -269,6 +289,7 @@ async def seed_admin(
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(verify_admin)],
 )
+@_user_login_operation("tenant.user.create")
 async def create_user(
     tenant_id: UUID,
     body: UserCreate,

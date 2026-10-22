@@ -4,7 +4,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useRef, useState } from "react";
 import { Banner, Card, ClaimStatus, EmptyState, ErrorState, KeyValue, PageHeader, Skeleton, Spinner, errorText, useToast } from "@/components/ui";
 import { ApiError, api, useApi } from "@/lib/api";
-import { date, dateTime, money } from "@/lib/format";
+import { date, dateTime, money, newIdempotencyKey } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { ClaimDetail } from "@/lib/types";
 
@@ -37,16 +37,24 @@ function Detail() {
   const [uploading, setUploading] = useState<string | null>(null);
   const pick = useRef<HTMLInputElement>(null);
   const target = useRef<string>("");
+  const keys = useRef(new Map<string, string>());      // one operation key per document slot, kept until that upload is settled
 
   async function upload(file: File, key: string) {
     setUploading(key);
     try {
       const form = new FormData();
       form.append("file", file);
-      await api(`claims/${encodeURIComponent(id)}/documents/${encodeURIComponent(key)}`, { method: "POST", form });
+      const opKey = keys.current.get(key) ?? newIdempotencyKey();
+      keys.current.set(key, opKey);
+      await api(`claims/${encodeURIComponent(id)}/documents/${encodeURIComponent(key)}`, { method: "POST", form, idempotencyKey: opKey });
+      keys.current.delete(key);
       toast(t("claim.uploaded"), "success");
       reload();
-    } catch (e) { toast(errorText(t, e as ApiError), "error"); }
+    } catch (e) {
+      // A refused upload ends this attempt (a new file is a new operation); a lost connection keeps the key so the retry is the same upload.
+      if (!["NETWORK", "SERVICE_UNAVAILABLE", "DOMAIN_UNAVAILABLE", "REQUEST_IN_PROGRESS"].includes((e as ApiError).code)) keys.current.delete(key);
+      toast(errorText(t, e as ApiError), "error");
+    }
     finally { setUploading(null); if (pick.current) pick.current.value = ""; }
   }
 

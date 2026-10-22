@@ -41,6 +41,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 from routers.auth import decode_access_token, oauth2_scheme
+from services.idempotency import reviewed_operation, secret_link_operation
 from shared.models.core import (
     Case,
     Customer,
@@ -216,6 +217,7 @@ async def _active_tenant(session: AsyncSession, tenant_id: UUID) -> None:
     "/tenants/{tenant_id}/cases/{case_id}/e-application/invite",
     response_model=InviteBothResponse,
 )
+@secret_link_operation("tenant.eapp.invite_both", ("token", "link_path", "expires_at", "status", "part", "emailed_to", "email_status", "parts"), secrets=("token", "link_path"), masked=("emailed_to",), resource_type="e_application")
 async def invite_e_application(
     tenant_id: UUID,
     case_id: UUID,
@@ -239,6 +241,7 @@ async def invite_e_application(
     "/tenants/{tenant_id}/cases/{case_id}/e-application/{part}/invite",
     response_model=InviteResponse,
 )
+@secret_link_operation("tenant.eapp.invite_part", ("token", "link_path", "expires_at", "status", "part", "emailed_to", "email_status"), secrets=("token", "link_path"), masked=("emailed_to",), resource_type="e_application")
 async def invite_e_application_part(
     tenant_id: UUID,
     case_id: UUID,
@@ -357,6 +360,7 @@ class VerifyPayload(BaseModel):
 
 
 @router.post("/tenants/{tenant_id}/cases/{case_id}/e-application/verify")
+@reviewed_operation("tenant.eapp.verify", ("status", "verified_at"), resource_type="e_application", atomic=False)
 async def verify_e_application(
     tenant_id: UUID,
     case_id: UUID,

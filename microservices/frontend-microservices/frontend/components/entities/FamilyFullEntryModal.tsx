@@ -35,6 +35,7 @@ import FamilyMembersEditor, {
 } from "@/components/family/FamilyMembersEditor";
 import { tx } from "@/lib/i18n/tx";
 
+import { keyedPost } from "@/lib/idempotency";
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -555,7 +556,7 @@ export default function FamilyFullEntryModal({
     const tenantId = localStorage.getItem("tenant_id");
     try {
       if (!created.current.familyId) {
-        const resp = await api.post(`/tenants/${tenantId}/families`, {
+        const resp = { data: await keyedPost(api, "family-full-entry:family", `/tenants/${tenantId}/families`, {
           name: name.trim(),
           contact_person: contactPerson || null,
           contact_email: contactEmail || null,
@@ -568,29 +569,29 @@ export default function FamilyFullEntryModal({
           branch_id: branchId || null,
           assigned_agent_id: assignedAgentId || null,
           acquisition_source_id: acquisitionSourceId || null,
-        });
+        }) };
         created.current.familyId = resp.data.id;
       }
       const familyId = created.current.familyId!;
 
       if (!created.current.policyId) {
         const resp = isBundle
-          ? await api.post(
+          ? { data: await keyedPost(api, "family-full-entry:policy", 
               `/tenants/${tenantId}/families/${familyId}/life-bundle-policies`,
               {
                 term_years: parseInt(term),
                 effective_date: effective,
                 discount_percentage: parseFloat(discount) || 0,
               },
-            )
-          : await api.post(
+            ) }
+          : { data: await keyedPost(api, "family-full-entry:policy", 
               `/tenants/${tenantId}/families/${familyId}/floater-policies`,
               {
                 total_sum_insured: parseFloat(sumInsured) || 0,
                 term_years: parseInt(term),
                 effective_date: effective,
               },
-            );
+            ) };
         created.current.policyId = resp.data.id;
       }
       const policyId = created.current.policyId!;
@@ -600,12 +601,10 @@ export default function FamilyFullEntryModal({
       const path = isBundle ? "life-bundle-policies" : "floater-policies";
       let outcomes: any[];
       try {
-        outcomes = (
-          await api.post(
+        outcomes = (await keyedPost(api, "family-full-entry:members",
             `/tenants/${tenantId}/families/${familyId}/${path}/${policyId}/members/confirm`,
             { members: sent },
-          )
-        ).data.members;
+          )).members;
       } catch (err: any) {
         // The family and policy now exist; say so, so the user knows only the members need fixing.
         setTab("members");

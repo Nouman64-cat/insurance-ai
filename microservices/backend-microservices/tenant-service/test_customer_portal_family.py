@@ -85,9 +85,13 @@ class Family(unittest.IsolatedAsyncioTestCase):
     def sc(self, tenant, customer):
         return f"{BASE}/tenants/{tenant.id}/customers/{customer.id}"
 
-    async def call(self, method, path, body=None):
+    async def call(self, method, path, body=None, operation_key=None):
         data = json.dumps(body).encode() if body is not None else b""
-        return await self.http.request(method, path, content=data, headers={**sign(KEY, method, path, data, caller="customer-management"), "Content-Type": "application/json"})
+        extra = {"bound_headers": {"Idempotency-Key": operation_key}} if operation_key else {}
+        headers = sign(KEY, method, path, data, caller="customer-management", **extra)
+        if operation_key:
+            headers["Idempotency-Key"] = operation_key
+        return await self.http.request(method, path, content=data, headers={**headers, "Content-Type": "application/json"})
 
     async def get(self, tenant, customer, tail):
         return await self.call("GET", self.sc(tenant, customer) + tail)
@@ -312,6 +316,23 @@ class Family(unittest.IsolatedAsyncioTestCase):
             rows = (await s.exec(select(text("1")).select_from(text("beneficiaries")).where(text(f"policy_id = '{pid}'")))).all()
             self.assertEqual(len(rows), 3)                                          # the ISSUED nomination is untouched until staff apply the request
 
+    async def test_a_retried_service_request_is_recorded_once_and_replays_its_summary(self):
+        g = (await self.get(self.t1, self.a, "/family")).json()[0]["id"]
+        path = self.sc(self.t1, self.a) + f"/family/{g}/requests"
+        body = {"kind": "CONTACT_CORRECTION", "reference": "FSR-" + uuid4().hex[:8], "contact_email": "new.address@example.com"}
+        key = f"{uuid4()}:family-request-0001"
+        first = await self.call("POST", path, body, operation_key=key)
+        self.assertEqual(first.status_code, 201, first.text)
+        again = await self.call("POST", path, body, operation_key=key)
+        self.assertEqual((again.status_code, again.headers.get("idempotency-replayed"), again.json()), (201, "true", first.json()))
+        other = await self.call("POST", path, {**body, "contact_email": "someone.else@example.com"}, operation_key=key)
+        self.assertEqual(other.status_code, 409)
+        async with factory() as s:
+            events = (await s.exec(select(PolicyEvent).where(PolicyEvent.event_type == "CustomerServiceRequested"))).all()
+            self.assertEqual(len([e for e in events if (e.detail_json or {}).get("request_ref") == body["reference"]]), 1)
+            stored = (await s.execute(text("SELECT response_json::text FROM idempotency_records WHERE operation = 'portal.family.submit_request'"))).scalars().all()
+            self.assertTrue(stored and all("new.address" not in x for x in stored))
+
     async def test_member_requests_follow_the_family_rules(self):
         g = (await self.get(self.t1, self.a, "/family")).json()[0]["id"]
         path = self.sc(self.t1, self.a) + f"/family/{g}/requests"
@@ -380,6 +401,8 @@ if __name__ == "__main__":
         target = create_async_engine(f"{ADMIN}/{DB}", poolclass=NullPool)
         async with target.begin() as c:
             await c.run_sync(SQLModel.metadata.create_all)
+            from shared.idempotency.models import metadata as idempotency_metadata   # the migration runner creates these in production
+            await c.run_sync(idempotency_metadata.create_all)
         return target
 
     async def drop(target):

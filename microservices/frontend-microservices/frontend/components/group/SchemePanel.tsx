@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import api from "@/app/services/api";
 import { Chip, GroupQuote, PanelProps, downloadPdf, errMsg, mpBase, pkr, premiumWord } from "./groupShared";
 import { tx } from "@/lib/i18n/tx";
+import { keyedPost } from "@/lib/idempotency";
 
 // Where a scheme is in its life, left to right. "Declined" sits beside "Quoted":
 // the employer said no and a revised quote can still be generated.
@@ -49,14 +50,14 @@ export default function SchemePanel({ tenantId, orgId, mp, reload }: PanelProps)
 
   const issue = () => run("Issue", async () => {
     if (!confirm(tx("Issue the master policy and one certificate per member? Cover starts once the employer's payment is recorded."))) return;
-    const res = await api.post(`${base}/issue`);
-    setNotice(tx("Master policy {0} issued with {1} certificates.", { 0: res.data.master_policy.policy_number, 1: res.data.certificates_issued }));
+    const res = await keyedPost(api, `group-issue:${base}`, `${base}/issue`);
+    setNotice(tx("Master policy {0} issued with {1} certificates.", { 0: res.master_policy.policy_number, 1: res.certificates_issued }));
     await reload();
   });
 
   const pay = () => run("Record payment", async () => {
-    const res = await api.post(`${base}/payments`, { reference: reference.trim(), amount: parseFloat(amount) });
-    setNotice(tx("Payment recorded — {0} members are now covered.", { 0: res.data.certificates_issued }));
+    const res = await keyedPost(api, `group-payment:${base}`, `${base}/payments`, { reference: reference.trim(), amount: parseFloat(amount) });
+    setNotice(tx("Payment recorded — {0} members are now covered.", { 0: res.certificates_issued }));
     setReference("");
     await reload();
   });

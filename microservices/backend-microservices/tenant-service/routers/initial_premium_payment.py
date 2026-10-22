@@ -25,8 +25,8 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
-from shared.idempotency.http import database_operation
-from services.idempotency import premium_identity
+from shared.idempotency.http import database_operation, side_effect_operation
+from services.idempotency import mask_email, premium_identity
 from routers.auth import decode_access_token, oauth2_scheme
 from services import payment_gateway, payment_requests
 from shared.models.core import (
@@ -399,7 +399,59 @@ class IPPRequestResult(BaseModel):
     customer_email: Optional[str]
 
 
+# ── payment-request lifecycle: idempotent operations ────────────────────────────────────────────────────────────────────────
+# Requesting/reminding e-mails a link (a repeat is acceptable and issues a fresh link); reviewing a proof or recording receipt CLEARS the
+# initial premium, so an abandoned attempt is settled from the record itself: was the premium realized since the reservation?
+
+def _naive_utc(moment):
+    return moment.replace(tzinfo=None) if getattr(moment, "tzinfo", None) else moment
+
+
+async def _ipp_view(values, receipt):
+    return _to_read(await _find_ipp(values["session"], values["tenant_id"], None, values["policy_id"]))
+
+
+async def _ipp_request_view(values, receipt):
+    ipp = await _find_ipp(values["session"], values["tenant_id"], None, values["policy_id"])
+    try:
+        link = payment_requests.pay_link(ipp)
+    except Exception:
+        link = ""
+    return IPPRequestResult(ipp=_to_read(ipp), link=link, emailed=receipt["emailed"], customer_email=receipt["customer_email"])
+
+
+async def _realized_since(values, record):
+    ipp = await _find_ipp(values["session"], values["tenant_id"], None, values["policy_id"])
+    return bool(ipp is not None and ipp.status == IPPStatusEnum.REALIZED and ipp.realized_at
+                and ipp.realized_at >= _naive_utc(record["created_at"]))
+
+
+async def _review_done_since(values, record):
+    ipp = await _find_ipp(values["session"], values["tenant_id"], None, values["policy_id"])
+    if ipp is None or not ipp.proof_reviewed_at or ipp.proof_reviewed_at < _naive_utc(record["created_at"]):
+        return False
+    return ipp.proof_status == ("Accepted" if values["body"].decision == "accept" else "Rejected")
+
+
+def _payment_request_operation(operation):
+    return side_effect_operation(
+        operation, response_fields=None, authorize=premium_identity, recover="retry", resource_type="initial_premium",
+        receipt_fields=("policy_id", "emailed", "customer_email"), replay_response=_ipp_request_view,
+        view_receipt=lambda values, payload: {"policy_id": str(values["policy_id"]),
+                                              "emailed": bool(payload["emailed"]) if payload else False,
+                                              "customer_email": mask_email(payload["customer_email"]) if payload else None},
+        serialize=lambda result: result)
+
+
+def _ipp_state_operation(operation, evidence=None):
+    return side_effect_operation(
+        operation, response_fields=None, authorize=premium_identity, recover="retry" if evidence is None else "reconcile",
+        resource_type="initial_premium", receipt_fields=("policy_id",), replay_response=_ipp_view,
+        view_receipt=lambda values: {"policy_id": str(values["policy_id"])}, evidence=evidence)
+
+
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/ipp/request", response_model=IPPRequestResult)
+@_payment_request_operation("tenant.premium.ipp_request")
 async def request_policy_payment(tenant_id: UUID, policy_id: UUID, token: str = Depends(oauth2_scheme),
                                  session: AsyncSession = Depends(get_session)):
     """Ask the customer to pay: creates (or renews) the secure payment link and emails it to them. Calling it again sends
@@ -429,6 +481,7 @@ class IPPReviewRequest(BaseModel):
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/ipp/review", response_model=IPPRead)
+@_ipp_state_operation("tenant.premium.ipp_review_proof", _review_done_since)
 async def review_policy_payment_proof(tenant_id: UUID, policy_id: UUID, body: IPPReviewRequest, token: str = Depends(oauth2_scheme),
                                       session: AsyncSession = Depends(get_session)):
     """Staff look at the customer's screenshot. Accepting it clears the initial premium (so the application can go to
@@ -463,6 +516,7 @@ async def review_policy_payment_proof(tenant_id: UUID, policy_id: UUID, body: IP
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/ipp/remind", response_model=IPPRequestResult)
+@_payment_request_operation("tenant.premium.ipp_remind")
 async def remind_policy_payment(tenant_id: UUID, policy_id: UUID, token: str = Depends(oauth2_scheme), session: AsyncSession = Depends(get_session)):
     """Email the customer a reminder with their payment link. If the link has expired a fresh one is issued (the old one stops working)."""
     user_id = await _get_current_user_id(token)
@@ -491,6 +545,7 @@ class IPPReceivedRequest(BaseModel):
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/ipp/mark-received", response_model=IPPRead)
+@_ipp_state_operation("tenant.premium.ipp_mark_received", _realized_since)
 async def mark_policy_payment_received(tenant_id: UUID, policy_id: UUID, body: IPPReceivedRequest, token: str = Depends(oauth2_scheme),
                                        session: AsyncSession = Depends(get_session)):
     """Staff record that the premium has been received (cash at the office, a bank transfer they checked, a customer's message…).
@@ -524,6 +579,7 @@ async def mark_policy_payment_received(tenant_id: UUID, policy_id: UUID, body: I
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/ipp/withdraw", response_model=IPPRead)
+@_ipp_state_operation("tenant.premium.ipp_withdraw")
 async def withdraw_policy_payment_request(tenant_id: UUID, policy_id: UUID, token: str = Depends(oauth2_scheme), session: AsyncSession = Depends(get_session)):
     """Stop the customer's link from working (asked in error, or the customer will pay another way). A new request can be sent later."""
     await _get_current_user_id(token)

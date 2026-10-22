@@ -10,6 +10,7 @@ import DemoFillButton from "@/components/DemoFillButton";
 import { demoAcquisitionSource } from "@/lib/demoData";
 import { tx } from "@/lib/i18n/tx";
 
+import { keyedPost } from "@/lib/idempotency";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type SourceType = "AGENT" | "BROKER" | "BANCASSURANCE" | "CORPORATE_AGENT" | "DIRECT" | "DIGITAL";
@@ -223,7 +224,7 @@ export default function AcquisitionSourcesPage() {
         await api.put(`/tenants/${tenantId}/acquisition-sources/${editingId}`, payload);
         setSuccess(tx("Acquisition source updated."));
       } else {
-        const res = await api.post<AcquisitionSource>(`/tenants/${tenantId}/acquisition-sources`, payload);
+        const res = { data: await keyedPost<AcquisitionSource>(api, "source-create", `/tenants/${tenantId}/acquisition-sources`, payload) };
         if (!payload.contact_email) {
           setSuccess(tx("Acquisition source created."));
         } else if (res.data.credentials_email_sent) {
@@ -255,7 +256,7 @@ export default function AcquisitionSourcesPage() {
     if (!tenantId) return;
     setResendingId(s.id);
     try {
-      const res = await api.post<AcquisitionSource>(`/tenants/${tenantId}/acquisition-sources/${s.id}/send-credentials`);
+      const res = { data: await keyedPost<AcquisitionSource>(api, `source-credentials:${s.id}`, `/tenants/${tenantId}/acquisition-sources/${s.id}/send-credentials`) };
       if (res.data.credentials_email_sent) {
         setSuccess(tx("New login credentials were emailed to {0}.", { 0: s.contact_email }));
       } else {

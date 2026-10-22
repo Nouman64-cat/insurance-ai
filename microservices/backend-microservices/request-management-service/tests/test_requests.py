@@ -426,6 +426,21 @@ class Lifecycle(World):
             object.__setattr__(settings, "max_execution_attempts", 5)
 
 
+class CommentRetries(World):
+    async def test_a_retried_comment_is_added_once_and_a_changed_one_conflicts(self):
+        rid = await self.correction()
+        await self.claim(self.uw1, rid)
+        uw = await self.me(self.uw1)
+        key = "comment-retry-key-0001"
+        first = await service.add_comment(uw, rid, {"body": "Checked the KYC file", "visibility": "REQUESTER"}, key)
+        again = await service.add_comment(uw, rid, {"body": "Checked the KYC file", "visibility": "REQUESTER"}, key)
+        self.assertEqual(first, again)
+        await self.expect(service.add_comment(uw, rid, {"body": "Something else", "visibility": "REQUESTER"}, key), "IDEMPOTENCY_CONFLICT")
+        await service.add_comment(uw, rid, {"body": "Checked the KYC file", "visibility": "REQUESTER"})      # no key: original behaviour
+        bodies = [c["body"] for c in (await self.detail(self.uw1, rid))["comments"]]
+        self.assertEqual(bodies.count("Checked the KYC file"), 2)
+
+
 class Visibility(World):
     async def test_internal_comments_and_attachments_are_hidden_from_the_requester(self):
         rid = await self.correction()

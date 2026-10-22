@@ -72,7 +72,9 @@ class ConfirmationReplay(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(other.status_code, 409)
                 self.assertEqual(provider.call_count, 1)
         async with self.engine.connect() as conn:
-            receipt = (await conn.execute(text('SELECT response_json FROM idempotency_records'))).scalar_one()
+            receipt = (await conn.execute(text("SELECT response_json FROM idempotency_records WHERE status = 'COMPLETED'"))).scalar_one()
+            rejected = (await conn.execute(text("SELECT status FROM idempotency_records WHERE idempotency_key = 'another-operation-123'"))).scalar_one()
+            self.assertEqual(rejected, 'FAILED', 'a rejected request leaves a retryable marker, never a completed receipt')
             self.assertEqual(set(receipt), set(ipp.IPP_RECEIPT_FIELDS))
             self.assertNotIn('Private customer note', str(receipt))
             self.assertNotIn('link', receipt)

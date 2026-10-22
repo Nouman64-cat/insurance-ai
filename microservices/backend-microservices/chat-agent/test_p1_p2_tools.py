@@ -375,3 +375,16 @@ def test_upfront_receipt_does_not_block_collection_of_the_issuance_balance():
     assert result["tool_call"]["name"] == "confirm_policy_payment"
     assert result["tool_call"]["args"]["policy"]["id"] == "p-1"
     assert not client.writes()
+
+
+# ── Per-write idempotency keys ────────────────────────────────────────────────
+
+def test_each_write_of_one_tool_call_has_its_own_stable_key():
+    from tool_executor import write_key
+    op = ("tenant-a", "tool-call-1")
+    a = write_key(op, "POST", "http://t/customers", {"json": {"name": "A"}})
+    assert a == write_key(op, "POST", "http://t/customers", {"json": {"name": "A"}}), "a re-sent request keeps its key"
+    assert a != write_key(op, "POST", "http://t/customers", {"json": {"name": "B"}}), "same endpoint, other body"
+    assert a != write_key(op, "POST", "http://t/families", {"json": {"name": "A"}}), "other endpoint"
+    assert a != write_key(("tenant-a", "tool-call-2"), "POST", "http://t/customers", {"json": {"name": "A"}}), "a new tool call is a new operation"
+    assert a != write_key(("tenant-b", "tool-call-1"), "POST", "http://t/customers", {"json": {"name": "A"}}), "tenants never share keys"

@@ -59,6 +59,7 @@ from shared.models.core import (
     Tenant,
 )
 from shared.services.policy_state_machine import IllegalStateTransition, apply_transition, record_event
+from services.idempotency import notification_operation, step_operation, workflow_operation
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["Stage B — Maturity & Exit"])
@@ -469,6 +470,7 @@ async def list_loans(tenant_id: UUID, policy_id: UUID, session: AsyncSession = D
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/exit/loans", status_code=201)
+@step_operation("tenant.exit.record_loan", lambda values: eng.loans_on(values["session"], values["policy_id"], date.today()), ids=("policy_id",), status_code=201, resource_type="policy_loan")
 async def record_loan(
     tenant_id: UUID, policy_id: UUID, body: LoanBody,
     user=Depends(require_roles(*_MANAGERS)), session: AsyncSession = Depends(get_session),
@@ -540,6 +542,7 @@ async def _create_case(session: AsyncSession, policy: Policy, exit_type: str, us
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/exit", status_code=201)
+@workflow_operation("tenant.exit.open_exit", _overview, ids=("policy_id",))
 async def open_exit(
     tenant_id: UUID, policy_id: UUID, body: OpenBody, request: Request,
     user=Depends(require_roles(*_EXIT_ROLES)), session: AsyncSession = Depends(get_session),
@@ -576,6 +579,7 @@ async def open_exit(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/eligibility/verify")
+@workflow_operation("tenant.exit.reverify", _overview, ids=('policy_id', 'case_id'))
 async def reverify(tenant_id: UUID, policy_id: UUID, case_id: UUID, request: Request,
                    user=Depends(require_roles(*_EXIT_ROLES)), session: AsyncSession = Depends(get_session)):
     """Re-run the eligibility and financial checks (e.g. after a claim was closed or a loan recorded)."""
@@ -594,6 +598,7 @@ async def reverify(tenant_id: UUID, policy_id: UUID, case_id: UUID, request: Req
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/extension")
+@workflow_operation("tenant.exit.decide_extension", _overview, ids=('policy_id', 'case_id'))
 async def decide_extension(tenant_id: UUID, policy_id: UUID, case_id: UUID, body: ExtensionBody, request: Request,
                            user=Depends(require_roles(*_EXIT_ROLES)), session: AsyncSession = Depends(get_session)):
     """Where the product permits an extension: record that the policyholder declines it and the exit
@@ -647,6 +652,7 @@ def _sync_docs(case: PolicyExit) -> None:
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/documents/{key}")
+@workflow_operation("tenant.exit.receive_document", _overview, ids=("policy_id", "case_id"))
 async def receive_document(
     tenant_id: UUID, policy_id: UUID, case_id: UUID, key: str, request: Request,
     note: Optional[str] = Form(None), file: UploadFile = File(...),
@@ -683,6 +689,7 @@ async def receive_document(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/documents/{key}/waive")
+@workflow_operation("tenant.exit.waive_document", _overview, ids=('policy_id', 'case_id'))
 async def waive_document(tenant_id: UUID, policy_id: UUID, case_id: UUID, key: str, body: NoteBody, request: Request,
                          user=Depends(require_roles(*_MANAGERS)), session: AsyncSession = Depends(get_session)):
     policy = await _get_policy(session, tenant_id, policy_id)
@@ -721,6 +728,7 @@ async def download_document(tenant_id: UUID, policy_id: UUID, case_id: UUID, key
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/consent")
+@workflow_operation("tenant.exit.record_consent", _overview, ids=('policy_id', 'case_id'))
 async def record_consent(tenant_id: UUID, policy_id: UUID, case_id: UUID, body: ConsentBody, request: Request,
                          user=Depends(require_roles(*_EXIT_ROLES)), session: AsyncSession = Depends(get_session)):
     """Record the policyholder's declarations (one by one, all required) and who gave them and how."""
@@ -755,6 +763,7 @@ async def record_consent(tenant_id: UUID, policy_id: UUID, case_id: UUID, body: 
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/settlement/calculate")
+@workflow_operation("tenant.exit.calculate", _overview, ids=('policy_id', 'case_id'))
 async def calculate(tenant_id: UUID, policy_id: UUID, case_id: UUID, body: CalcBody, request: Request,
                     user=Depends(require_roles(*_EXIT_ROLES)), session: AsyncSession = Depends(get_session)):
     """Calculate the contractually payable amount — value less loans, premium unpaid, other
@@ -818,6 +827,7 @@ async def settlement_statement(tenant_id: UUID, policy_id: UUID, case_id: UUID, 
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/settlement/accept")
+@workflow_operation("tenant.exit.accept_settlement", _overview, ids=('policy_id', 'case_id'))
 async def accept_settlement(tenant_id: UUID, policy_id: UUID, case_id: UUID, body: AcceptBody, request: Request,
                             user=Depends(require_roles(*_EXIT_ROLES)), session: AsyncSession = Depends(get_session)):
     """Record the policyholder's acceptance of the calculated amount — or their refusal, which ends the
@@ -851,6 +861,7 @@ async def accept_settlement(tenant_id: UUID, policy_id: UUID, case_id: UUID, bod
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/settlement/payee")
+@workflow_operation("tenant.exit.verify_payee", _overview, ids=('policy_id', 'case_id'))
 async def verify_payee(tenant_id: UUID, policy_id: UUID, case_id: UUID, body: PayeeBody, request: Request,
                        user=Depends(require_roles(*_EXIT_ROLES)), session: AsyncSession = Depends(get_session)):
     """The only valid payee of a maturity or surrender is the policyholder. Verify the CNIC against
@@ -897,6 +908,7 @@ async def verify_payee(tenant_id: UUID, policy_id: UUID, case_id: UUID, body: Pa
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/settlement/authorize")
+@workflow_operation("tenant.exit.authorize", _overview, ids=('policy_id', 'case_id'))
 async def authorize(tenant_id: UUID, policy_id: UUID, case_id: UUID, request: Request,
                     user=Depends(require_roles(*_MANAGERS)), session: AsyncSession = Depends(get_session)):
     """Authorise the payment. A manager only; and above the dual-control limit the authoriser must be
@@ -943,6 +955,7 @@ async def _apply_loans(session: AsyncSession, case: PolicyExit, applied_to_loans
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/settlement/disburse")
+@workflow_operation("tenant.exit.disburse", _overview, ids=('policy_id', 'case_id'))
 async def disburse(tenant_id: UUID, policy_id: UUID, case_id: UUID, body: DisburseBody, request: Request,
                    user=Depends(require_roles(*_EXIT_ROLES)), session: AsyncSession = Depends(get_session)):
     policy = await _get_policy(session, tenant_id, policy_id)
@@ -976,6 +989,7 @@ async def disburse(tenant_id: UUID, policy_id: UUID, case_id: UUID, body: Disbur
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/settlement/reconcile")
+@workflow_operation("tenant.exit.reconcile", _overview, ids=('policy_id', 'case_id'))
 async def reconcile(tenant_id: UUID, policy_id: UUID, case_id: UUID, body: ReconcileBody, request: Request,
                     user=Depends(require_roles(*_EXIT_ROLES)), session: AsyncSession = Depends(get_session)):
     policy = await _get_policy(session, tenant_id, policy_id)
@@ -1058,6 +1072,7 @@ async def _render_letter(session: AsyncSession, policy: Policy, case: PolicyExit
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/close")
+@workflow_operation("tenant.exit.close_exit", _overview, ids=('policy_id', 'case_id'))
 async def close_exit(tenant_id: UUID, policy_id: UUID, case_id: UUID, request: Request,
                      user=Depends(require_roles(*_EXIT_ROLES)), session: AsyncSession = Depends(get_session)):
     """Step 7 — record the final coverage end, stop future billing, end riders, settle loans, move the
@@ -1122,6 +1137,7 @@ async def download_letter(tenant_id: UUID, policy_id: UUID, case_id: UUID, sessi
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/confirmation/send")
+@notification_operation("tenant.exit.send_letter", ("sent_to", "sent_at", "delivered"))
 async def send_letter(tenant_id: UUID, policy_id: UUID, case_id: UUID, request: Request,
                       user=Depends(require_roles(*_EXIT_ROLES)), session: AsyncSession = Depends(get_session)):
     policy = await _get_policy(session, tenant_id, policy_id)
@@ -1151,6 +1167,7 @@ async def send_letter(tenant_id: UUID, policy_id: UUID, case_id: UUID, request: 
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/exit/{case_id}/cancel")
+@workflow_operation("tenant.exit.cancel_exit", _overview, ids=('policy_id', 'case_id'))
 async def cancel_exit(tenant_id: UUID, policy_id: UUID, case_id: UUID, body: CancelBody, request: Request,
                       user=Depends(require_roles(*_EXIT_ROLES)), session: AsyncSession = Depends(get_session)):
     """Withdraw an exit before any money has moved; the policy carries on exactly as it was."""

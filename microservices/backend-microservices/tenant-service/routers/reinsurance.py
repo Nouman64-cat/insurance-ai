@@ -44,6 +44,7 @@ from database import get_session
 from routers.auth import _get_current_user, _role_name, oauth2_scheme
 from routers.policies import _get_policy, _publish_policy_event, _st
 from services import reinsurance_engine
+from services.idempotency import records_operation
 from shared.models.core import (
     AgentConfidentialReport,
     Case,
@@ -149,6 +150,24 @@ def _reinsurer_dict(r: Reinsurer) -> dict:
     }
 
 
+async def _referral_view(values, rows):
+    return await _referral_dict(values["session"], rows[0])
+
+
+async def _referral_outcome(values, rows):
+    """Policy status + the referral (+ the counter-offer the terms produced, which the referral remembers)."""
+    policy = await _get_policy(values["session"], values["tenant_id"], values["policy_id"])
+    referral = rows[0]
+    out = {"policy_id": str(values["policy_id"]), "policy_status": _st(policy), "referral": await _referral_dict(values["session"], referral)}
+    return out
+
+
+async def _applied_outcome(values, rows):
+    out = await _referral_outcome(values, rows)
+    return {"policy_id": out["policy_id"], "policy_status": out["policy_status"],
+            "counter_offer_id": str(rows[0].applied_counter_offer_id) if rows[0].applied_counter_offer_id else None, "referral": out["referral"]}
+
+
 @router.get("/tenants/{tenant_id}/reinsurers")
 async def list_reinsurers(
     tenant_id: UUID,
@@ -175,6 +194,7 @@ class ReinsurerCreate(BaseModel):
 
 
 @router.post("/tenants/{tenant_id}/reinsurers", status_code=201)
+@records_operation("tenant.reinsurance.create_reinsurer", Reinsurer, lambda r: _reinsurer_dict(r), status_code=201, resource_type="reinsurer")
 async def create_reinsurer(
     tenant_id: UUID,
     body: ReinsurerCreate,
@@ -344,6 +364,7 @@ class ReferRequest(BaseModel):
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/reinsurance/refer")
+@records_operation("tenant.reinsurance.refer", ReinsuranceReferral, None, render=_referral_outcome, ids_of=lambda v, p: [p["referral"]["id"]], resource_type="reinsurance_referral")
 async def refer_to_reinsurer(
     tenant_id: UUID,
     policy_id: UUID,
@@ -474,6 +495,7 @@ class ReinsurerResponseRequest(BaseModel):
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/reinsurance/response")
+@records_operation("tenant.reinsurance.respond", ReinsuranceReferral, None, render=_referral_view, resource_type="reinsurance_referral")
 async def record_reinsurer_response(
     tenant_id: UUID,
     policy_id: UUID,
@@ -537,6 +559,7 @@ class ApplyTermsRequest(BaseModel):
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/reinsurance/apply")
+@records_operation("tenant.reinsurance.apply_terms", ReinsuranceReferral, None, render=_applied_outcome, ids_of=lambda v, p: [p["referral"]["id"]], resource_type="reinsurance_referral")
 async def apply_reinsurer_terms(
     tenant_id: UUID,
     policy_id: UUID,
@@ -708,6 +731,7 @@ class WithdrawRequest(BaseModel):
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/reinsurance/withdraw")
+@records_operation("tenant.reinsurance.withdraw", ReinsuranceReferral, None, render=_referral_outcome, ids_of=lambda v, p: [p["referral"]["id"]], resource_type="reinsurance_referral")
 async def withdraw_referral(
     tenant_id: UUID,
     policy_id: UUID,
