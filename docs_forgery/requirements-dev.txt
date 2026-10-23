@@ -1,0 +1,4 @@
+-r requirements-app.txt
+# Test-data tooling only. PyMuPDF is AGPL-licensed: it draws and forges the synthetic test documents
+# (tests/, scripts/forge_pdfs.py, scripts/make_layer2_testset.py) and must not be imported by docforensics/.
+pymupdf>=1.28
