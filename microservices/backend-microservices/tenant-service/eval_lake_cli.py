@@ -211,6 +211,27 @@ async def run(args) -> int:
                 print(f"{m.provider}/{m.model_id:28} {m.status:10} {'SYNTHETIC ' if m.synthetic else ''}{','.join(m.roles):16} "
                       + (f"${p.input_per_m}/{p.cached_per_m}/{p.output_per_m} per M tokens" if p else "no price"))
             return 0
+        if args.command == "benchmark-ingest":
+            data = json.loads(Path(args.file).read_text(encoding="utf-8"))
+            bid = data["benchmark_id"]
+            if (await session.exec(select(EvalBenchmark).where(EvalBenchmark.benchmark_id == bid))).first():
+                print(f"benchmark {bid} is already stored; nothing changed")
+                return 0
+            missing = [v["run_id"] for v in data["runs"].values() if v.get("run_id") and not (await session.exec(select(EvalRun).where(EvalRun.run_id == v["run_id"]))).first()]
+            if missing:
+                raise LakeValidationError("ingest the runs of this benchmark first (" + ", ".join(missing) + ")")
+            ds = data.get("dataset") or {}
+            summary = {k: data[k] for k in ("models", "order", "comparisons", "leader", "fairness", "notes", "evidence_rules", "fallback", "runs", "report")}
+            session.add(EvalBenchmark(
+                benchmark_id=bid, mode=data["mode"], dataset_slug=ds.get("dataset"), dataset_version=ds.get("version"),
+                models=[{"label": l, "status": m["status"], "provider": (m.get("config") or {}).get("provider"), "model_id": (m.get("config") or {}).get("model_id"),
+                         "settings": (m.get("config") or {}).get("model_settings")} for l, m in data["models"].items()],
+                repetitions=int(data.get("repetitions") or 1), judge_model=(data.get("judge") or {}).get("model"),
+                judge_version=(data.get("judge") or {}).get("deepeval_version"), synthetic=bool(data["synthetic"]), complete=bool(data["complete"]),
+                config={"judge": data.get("judge"), "dataset": ds}, summary=summary))
+            await session.commit()
+            print(f"stored benchmark {bid}: {len(data['models'])} model(s), {'SYNTHETIC, ' if data['synthetic'] else ''}{'complete' if data['complete'] else 'INCOMPLETE'}")
+            return 0
         if args.command == "benchmarks":
             for b in (await session.exec(select(EvalBenchmark).order_by(EvalBenchmark.created_at.desc()).limit(20))).all():
                 print(f"{b.benchmark_id:34} {b.mode:7} {b.dataset_slug} {b.dataset_version}  x{b.repetitions}  {len(b.models)} model(s)  "
@@ -392,6 +413,7 @@ def main() -> int:
     ru = sub.add_parser("runs"); ru.add_argument("--dataset"); ru.add_argument("--limit", type=int, default=20)
     r1 = sub.add_parser("run"); r1.add_argument("run_id"); r1.add_argument("--report", action="store_true")
     sub.add_parser("models-seed"); sub.add_parser("models"); sub.add_parser("benchmarks")
+    bi = sub.add_parser("benchmark-ingest"); bi.add_argument("file")
     rr = sub.add_parser("run-reliability"); rr.add_argument("run_id")
     c = sub.add_parser("create-dataset"); c.add_argument("slug"); c.add_argument("--name", required=True)
     c.add_argument("--workflow", required=True); c.add_argument("--turn-mode", required=True, choices=["single_turn", "multi_turn"])

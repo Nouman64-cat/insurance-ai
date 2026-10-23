@@ -6,6 +6,7 @@
     python evals/environment/envctl.py down [--volumes] # stop; --volumes also deletes the evaluation database
     python evals/environment/envctl.py snapshot|seed|reset|fresh|guard   # inside the runner: see evals/tools/runner.py
     python evals/environment/envctl.py run --dataset SLUG --version X.Y.Z [options]   # the full runner on a published version (evals/tools/eval_runner.py)
+    python evals/environment/envctl.py benchmark --mode agent|direct --models a,b[,c] --dataset SLUG --version X [options]   # multi-model benchmark
     python evals/environment/envctl.py variants --dataset SLUG --version X --vary skills=on,off|prompt=none,v1|model=a,b [options]   # paired comparison
     python evals/environment/envctl.py worker [--once]                      # claim and run evaluation jobs queued on the platform
     python evals/environment/envctl.py cases [IDS]      # the older, smaller runner (evals/tools/http_runner.py)
@@ -108,7 +109,7 @@ def run_cases(rest: list[str], module: str = "evals.tools.eval_runner") -> int:
     ingest = "--no-ingest" not in rest
     rest = [a for a in rest if a != "--no-ingest"]
     if "--from-source" in rest:
-        return ingest_after(compose(*runner, *rest), ingest)
+        return ingest_after(compose(*runner, *rest), ingest, group=module.endswith(("variants", "benchmark")), benchmark=module.endswith("benchmark"))
     opts: dict[str, str] = {}
     passthrough, i = [], 0
     while i < len(rest):
@@ -124,7 +125,7 @@ def run_cases(rest: list[str], module: str = "evals.tools.eval_runner") -> int:
     name = prepare_bundle(opts["--dataset"], opts["--version"])
     if name is None:
         return 2
-    return ingest_after(compose(*runner, "--bundle", f"/work/runs/bundles/{name}", *passthrough), ingest, group=module.endswith("variants"))
+    return ingest_after(compose(*runner, "--bundle", f"/work/runs/bundles/{name}", *passthrough), ingest, group=module.endswith(("variants", "benchmark")), benchmark=module.endswith("benchmark"))
 
 
 def group_run_ids() -> list[str]:
@@ -137,7 +138,24 @@ def group_run_ids() -> list[str]:
     return [Path(v["run_folder"]).name for v in json.loads(text).get("variants", []) if v.get("run_folder")]
 
 
-def ingest_after(status: int, ingest: bool, group: bool = False) -> int:
+def ingest_benchmark(status: int) -> int:
+    """Store the newest benchmark's comparison (after its runs, which it refers to)."""
+    import tempfile
+    newest = subprocess.run(["docker", "exec", "eval-runner", "sh", "-c", "ls -t /work/runs/benchmarks/*.json 2>/dev/null | head -1"], capture_output=True, text=True).stdout.strip()
+    if not newest:
+        return status
+    with tempfile.TemporaryDirectory() as tmp:
+        steps = [["docker", "cp", f"eval-runner:{newest}", f"{tmp}/benchmark.json"],
+                 ["docker", "compose", "cp", f"{tmp}/benchmark.json", "tenant-service:/tmp/benchmark.json"],
+                 ["docker", "compose", "exec", "-T", "tenant-service", "python", "eval_lake_cli.py", "benchmark-ingest", "/tmp/benchmark.json"]]
+        for cmd in steps:
+            if subprocess.run(cmd, cwd=ROOT).returncode:
+                print(f"ingest: step failed: {' '.join(cmd[:4])}", file=sys.stderr)
+                return status
+    return status
+
+
+def ingest_after(status: int, ingest: bool, group: bool = False, benchmark: bool = False) -> int:
     """Keep the run just finished on the platform side (database + MinIO). The isolated worker never sees the platform: the run
     folder is copied out of it and into tenant-service, which ingests it (re-checking every checksum the worker pinned).
     A failed ingestion is reported but does not change the run's own exit status; the folder stays in the worker's runs/ folder."""
@@ -147,7 +165,7 @@ def ingest_after(status: int, ingest: bool, group: bool = False) -> int:
     if group:
         for run_id in group_run_ids():
             status = ingest_run(run_id, status)
-        return status
+        return ingest_benchmark(status) if benchmark else status
     found = subprocess.run(["docker", "exec", "eval-runner", "sh", "-c", "ls -t /work/runs | grep -E '^[0-9]{8}T' | head -1"], capture_output=True, text=True)
     run_id = found.stdout.strip()
     if not run_id:
@@ -196,6 +214,8 @@ def main(argv: list[str]) -> int:
     if cmd == "worker":
         import job_worker
         return job_worker.main(rest)
+    if cmd == "benchmark":
+        return run_cases(rest, module="evals.tools.benchmark")
     if cmd == "variants":
         return run_cases(rest, module="evals.tools.variants")
     if cmd == "calibrate":                                  # calibrate --judge provider/model
