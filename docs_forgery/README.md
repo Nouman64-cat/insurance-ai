@@ -22,6 +22,7 @@ verdict.
 |---|---|---|---|
 | **1. File and metadata** | The file itself: edit history, draw order, fonts, signatures, producer tool, EXIF/XMP, AI provenance markers | Nothing. Runs locally | Edits that leave a trace in the file: incremental saves, white-out and retype, a second font for a changed value, Photoshop/Canva/AI-tool metadata, broken signatures |
 | **2. Content consistency** | The page: figures and dates | A vision model (Gemini or Groq) to *read* the page | Edits that leave no trace in the file but break the document's own arithmetic: totals, running balances, payslip net pay, impossible dates, invalid IBANs |
+| **3. Pixel forensics** *(experimental, opt-in, local)* | Rendered page images | PyTorch venv + TruFor weights (GRIP-UNINA, non-commercial) | Pixel-level manipulation anomalies; corroborating signal only — capped at LOW severity |
 
 The key design rule of layer 2: **the model only reads; Python checks.** Arithmetic is exact (`Decimal`), figures are
 verified against the PDF's own text or a second read, and a model failure is never treated as a clean result.
@@ -123,6 +124,8 @@ docs/                    documentation (below)
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Data flow, design principles, verdict model, failure semantics |
 | [docs/LAYER1_FILE_CHECKS.md](docs/LAYER1_FILE_CHECKS.md) | Every file and metadata check, with codes and severities |
 | [docs/LAYER2_CONTENT_CHECKS.md](docs/LAYER2_CONTENT_CHECKS.md) | The extraction schema, each equation, verification, severity rules |
+| [docs/LAYER3_PIXEL_FORENSICS.md](docs/LAYER3_PIXEL_FORENSICS.md) | TruFor integration, thresholds, grading, failure semantics, setup |
+| [docs/EXPERIMENTS_PIXEL_MODELS.md](docs/EXPERIMENTS_PIXEL_MODELS.md) | Model candidates evaluated for Layer 3; why TruFor was chosen |
 | [docs/PROVIDERS_AND_LIMITS.md](docs/PROVIDERS_AND_LIMITS.md) | Gemini and Groq setup, observed rate limits, settings, cooldowns |
 | [docs/EVALUATION.md](docs/EVALUATION.md) | Datasets, test sets, results, flaws found and fixed, how to reproduce |
 | [docs/DEMO_APP.md](docs/DEMO_APP.md) | Using and securing the Streamlit app |
