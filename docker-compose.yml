@@ -268,6 +268,60 @@ services:
       - ./microservices/backend-microservices/ocr-engine:/app
       - ./shared/documents:/data # Required for the /extract-from-path endpoint
 
+  docs-forgery:
+    <<: *fastapi-defaults
+    build:
+      context: ./microservices/backend-microservices/docs-forgery
+      dockerfile: Dockerfile
+    container_name: insurance-docs-forgery
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+      PIXEL_PYTHON: /opt/pixel-venv/bin/python
+      TRUFOR_DIR: /opt/trufor
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8022", "--reload"]
+    ports:
+      - "127.0.0.1:8032:8022"
+    volumes:
+      - ./microservices/backend-microservices/docs-forgery:/app
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8022/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Public test UI (no sign-in) for the document forensics service.
+  forgery-detection-app:
+    build:
+      context: ./microservices/frontend-microservices/forgery-detection-app
+      dockerfile: Dockerfile
+      target: dev
+    container_name: insurance-forgery-detection-app
+    restart: unless-stopped
+    networks:
+      - insurance-net
+    ports:
+      - "3012:3012"
+    volumes:
+      - ./microservices/frontend-microservices/forgery-detection-app:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      DOCS_FORGERY_URL: http://docs-forgery:8022
+      WATCHPACK_POLLING: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+    depends_on:
+      docs-forgery:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3012/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
   # khalid
   text-summarizer:
     <<: *fastapi-defaults

@@ -95,7 +95,7 @@ plus a one-time ~10 s model load time.
 
 ## Thresholds and grading
 
-Calibrated thresholds are stored in `thresholds.json` (next to `__init__.py`). They are derived from
+Optional calibrated thresholds are loaded from `PIXEL_THRESHOLDS`, or `thresholds.json` next to `__init__.py`. No calibration file is shipped. They must be derived from
 scoring a set of **known-genuine** calibration pages at 130 DPI and recording:
 
 | Key | Meaning |
@@ -137,14 +137,14 @@ and `source: "layer3"`.
 ```python
 @dataclass
 class Layer3Result:
-    status:   str            # "ok" | "unavailable" | "failed"
+    status:   str            # "ok" | "partial" | "unavailable" | "failed"
     findings: list[Finding]  # PIXEL_ANOMALY findings
     errors:   list[str]      # human-readable error messages
     pages:    list[dict]     # per-page scores + heatmap (for display)
     seconds:  float          # wall-clock time for the whole layer
 ```
 
-`status` is `"ok"` even if some pages failed, as long as at least one was scored successfully.
+`status` is `"partial"` if some pages fail or are missing; the report lists Layer 3 as incomplete.
 
 ---
 
@@ -156,14 +156,41 @@ class Layer3Result:
 | Page rendering failed | `failed` | `inconclusive` if no other findings |
 | Worker subprocess timed out | `failed` | `inconclusive` if no other findings |
 | Worker fatal error (no JSON output) | `failed` | `inconclusive` if no other findings |
-| Some pages scored, some failed | `ok` (partial) | scored pages contribute |
+| Some pages scored, some failed | `partial` | incomplete; cannot produce a clean result |
 | `thresholds.json` missing | `ok` | scores shown but no `Finding` raised |
 
 Layer 3 exceptions are fully caught; they can never bring down the main analysis.
 
 ---
 
-## Setup
+## Docker setup (default)
+
+From the repository root:
+
+```sh
+docker compose build docs-forgery forgery-detection-app
+docker compose up -d --wait docs-forgery forgery-detection-app
+curl http://localhost:8032/health
+```
+
+Open http://localhost:3012, upload a document, enable Pixel forensics and analyze.
+The backend image installs PyTorch 2.6.0 (CPU), torchvision 0.21.0 and the pinned
+`requirements-pixel.txt` dependencies in `/opt/pixel-venv`. It downloads upstream source
+revision `ae54475df6f41a491d7615100feb19263dec13f7` and the official weights into `/opt/trufor`.
+The download must match the archive checksum published by upstream; a mismatch fails the build.
+No downloads happen during an analysis. The model assets are outside the development mount.
+
+`PIXEL_PYTHON` and `TRUFOR_DIR` are set by Compose; no host setup is needed. CPU inference is
+serialized within each API process to bound peak memory; two CPU threads are used by default.
+The API includes per-page scores and base64 PNG heatmaps in `pixel_forensics`; the UI renders them.
+
+No calibrated thresholds are shipped because the repository contains no suitable calibration
+artifacts. Inference still completes and displays raw outputs, explicitly labelled uncalibrated.
+Do not interpret an uncalibrated score as the probability of document fraud. For thresholds
+validated on your genuine document population at the configured rendering resolution and size,
+mount your JSON file and set `PIXEL_THRESHOLDS` to that path.
+
+## Manual setup (running outside Docker)
 
 ### 1. Create a PyTorch virtual environment
 
@@ -207,6 +234,7 @@ print(result.status, result.findings, result.pages)
 |---|---|---|
 | `PIXEL_PYTHON` | `<repo>/venv_exp/bin/python` | Python interpreter with PyTorch |
 | `TRUFOR_DIR` | `<repo>/data/models/trufor` | Root of TruFor code + weights |
+| `PIXEL_THRESHOLDS` | optional package `thresholds.json` | Validated document calibration JSON |
 
 ---
 

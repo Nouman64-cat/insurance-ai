@@ -101,6 +101,17 @@ class RunTests(unittest.TestCase):
         self.assertEqual(r.findings, [])
         self.assertTrue(any("no calibrated thresholds" in e for e in r.errors))
 
+    def test_partial_results_keep_page_numbers_and_cannot_look_clean(self):
+        from docforensics.layer3 import Layer3Result
+        with mock.patch.object(l3, "render_pngs", return_value=[png(), png()]), mock.patch.object(l3, "load_thresholds", return_value=None):
+            result = l3.run_layer3(b"x", "png", runner=runner_returning({"error": "bad page"}, {"score": 0.2}))
+        self.assertEqual(result.status, "partial")
+        self.assertEqual(result.pages[0]["page"], 2)
+        with mock.patch("docforensics.run_layer3", return_value=result):
+            analysis = analyze_document(text_pdf(INVOICE_LINES), "x.pdf", layer3=True)
+        self.assertIn("layer3", analysis.report.incomplete)
+        self.assertEqual(analysis.report.verdict, Verdict.INCONCLUSIVE)
+
 
 class AvailabilityTests(unittest.TestCase):
     def test_unavailable_is_reported_and_never_clean(self):

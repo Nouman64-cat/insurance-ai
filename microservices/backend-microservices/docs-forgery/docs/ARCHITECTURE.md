@@ -75,7 +75,7 @@ excluded from the count.
 | `layer2/runner.py` | Orchestration, verification, severity, `Layer2Result` |
 | `gemini_client.py` | Provider-neutral `GeminiClient`: rate limiter, retries, typed errors, call log. The name is historical |
 | `groq_client.py` | Groq transport (OpenAI-compatible), token-window handling |
-| `demo.py` | UI-independent helpers for `app.py` |
+| `../main.py`, `../schemas.py` | FastAPI upload/health endpoints and HTTP response contract |
 
 ## Failure semantics
 

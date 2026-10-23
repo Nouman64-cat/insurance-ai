@@ -1,9 +1,0 @@
-[server]
-# Local only: the demo can spend API quota and handles customer documents, and it has no login.
-address = "localhost"
-headless = true
-port = 8501
-maxUploadSize = 50
-
-[browser]
-gatherUsageStats = false

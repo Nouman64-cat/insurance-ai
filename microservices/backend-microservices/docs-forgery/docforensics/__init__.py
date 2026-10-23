@@ -164,7 +164,7 @@ def analyze_document(data: bytes, name: str = "<upload>", doc_type: str | None =
             report.findings += pixel.findings
             report.errors += pixel.errors
             report.layer3_status = pixel.status
-            if pixel.status in ("failed", "unavailable"):
+            if pixel.status in ("failed", "unavailable", "partial"):
                 report.incomplete.append("layer3")
             analysis.layer3 = pixel
     return analysis

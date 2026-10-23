@@ -25,6 +25,7 @@ import struct
 import subprocess
 import sys
 import time
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -35,6 +36,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKER = Path(__file__).with_name("trufor_worker.py")
 THRESHOLDS = Path(__file__).with_name("thresholds.json")
 RENDER_DPI = 130  # the resolution the thresholds were calibrated at
+_WORKER_LOCK = threading.Lock()  # bound peak memory when public callers request pixel inference
 
 
 @dataclass
@@ -74,7 +76,7 @@ def availability() -> tuple[bool, str]:
 
 def load_thresholds() -> dict[str, Any] | None:
     try:
-        return json.loads(THRESHOLDS.read_text(encoding="utf-8"))
+        return json.loads(Path(os.environ.get("PIXEL_THRESHOLDS", "") or THRESHOLDS).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
 
@@ -111,8 +113,9 @@ def _subprocess_runner(pages: list[bytes], options: Layer3Options) -> list[dict[
     python = pixel_python()
     payload = b"".join(struct.pack(">I", len(p)) + p for p in pages) + struct.pack(">I", 0)
     try:
-        proc = subprocess.run([str(python), str(WORKER), str(models_dir()), str(options.max_side)], input=payload,
-                              capture_output=True, timeout=options.timeout_s, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        with _WORKER_LOCK:
+            proc = subprocess.run([str(python), str(WORKER), str(models_dir()), str(options.max_side)], input=payload,
+                                  capture_output=True, timeout=options.timeout_s, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except subprocess.TimeoutExpired as exc:
         raise TimeoutError(f"pixel model did not finish within {options.timeout_s:.0f}s") from exc
     lines = [json.loads(line) for line in proc.stdout.decode("utf-8", "replace").splitlines() if line.startswith("{")]
@@ -176,15 +179,18 @@ def run_layer3(data: bytes, file_type: str, options: Layer3Options | None = None
     for i, page in enumerate(scored, 1):
         if "error" in page:
             res.errors.append(f"layer3: page {i}: {page['error']}")
-            res.status = "failed" if not res.pages else "ok"
+            res.status = "partial"
             continue
+        page["page"] = i
         res.pages.append(page)
         finding = grade(page, thresholds, i)
         if finding:
             res.findings.append(finding)
     if len(scored) < len(pages):
         res.errors.append(f"layer3: only {len(scored)} of {len(pages)} pages were scored")
-        res.status = "failed" if not res.pages else res.status
+        res.status = "partial"
+    if not res.pages:
+        res.status = "failed"
     if thresholds is None:
         res.errors.append("layer3: no calibrated thresholds installed, so scores are shown but no finding is raised")
     res.seconds = round(time.time() - started, 1)

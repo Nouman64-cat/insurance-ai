@@ -1,10 +1,104 @@
-# fintechdocs-forgery-perturbation
+# Document Forensics Microservice
 
 Detects edited, manipulated and machine-generated financial documents (payslips, bank statements, invoices,
 receipts) **without needing the issuer's template and without training data**.
 
 > **Status: research prototype.** It produces evidence for a human reviewer, not a decision. See
 > [Limitations](#limitations) and [docs/EVALUATION.md](docs/EVALUATION.md) before relying on any number here.
+
+## Public testing UI
+
+A separate [Forgery Detection frontend](../../frontend-microservices/forgery-detection-app/README.md)
+is available without login at [http://localhost:3012](http://localhost:3012). Start it and
+this backend from the repository root with:
+
+```sh
+docker compose build docs-forgery forgery-detection-app
+docker compose up -d docs-forgery forgery-detection-app
+```
+
+The UI supports file uploads, analysis options, findings and evidence, and JSON downloads.
+It proxies requests to this service over Docker's internal network; browser CORS changes
+are not needed. This FastAPI service contains no frontend; the Next.js app supplies the UI.
+
+## Service API
+
+This FastAPI service lives at `microservices/backend-microservices/docs-forgery`.
+The existing `docforensics` package supplies detection logic; `main.py` supplies the HTTP interface.
+The CLI remains available for local analysis and development.
+
+From the repository root:
+
+```sh
+docker compose up -d --build docs-forgery
+curl http://localhost:8032/health
+curl -X POST http://localhost:8032/analyze \
+  -F 'file=@statement.pdf' -F 'doc_type=bank_statement'
+```
+
+Interactive API documentation: [Swagger UI](http://localhost:8032/docs).
+Containers on `insurance-net` call `http://docs-forgery:8022`. The host port is bound to loopback.
+This service has no database or Kafka dependency, no authentication, and is not yet connected to
+API Gateway routes or automatic document-upload processing.
+
+`POST /analyze` accepts multipart form fields:
+
+| Field | Default | Meaning |
+|---|---|---|
+| `file` | required | PDF or JPEG, PNG, WebP, TIFF, GIF, HEIC/HEIF, BMP; detected from bytes |
+| `doc_type` | omitted | `bank_statement`, `payslip`, `invoice`, `receipt`, `other` |
+| `layer2` | `false` | Send rendered pages to an external model provider for content checks |
+| `provider` | `gemini` | `gemini` or `groq`; used only with Layer 2 |
+| `visual` | `false` | Additional visual model inspection, used only with Layer 2 |
+| `max_pages` | `4` | Layer 2/3 page limit, from 1 to 40; Layer 1 retains its own 40-page limit |
+| `layer3` | `false` | Local experimental TruFor; CPU runtime and official weights bundled in Docker |
+
+The response is the report JSON: `path`, `file_type`, `sha256`, `size`, `verdict`,
+`layer2_status`, `layer3_status`, `incomplete`, `findings`, `errors`, and `pixel_forensics`.
+When requested, `pixel_forensics` includes the model name, calibration flag, elapsed time,
+and per-page scores, page numbers and base64 PNG anomaly heatmaps.
+Findings include a code, severity, category, explanation, and evidence.
+Empty uploads return 400, documents over 100 MiB return 413, unsupported content returns 415,
+and invalid form options return 422. A recognized but unreadable document returns an
+`inconclusive` report with HTTP 200. Requested analysis-layer failures remain visible in the report.
+The application bounds its read before analysis; multipart uploads may be spooled to temporary
+storage by the HTTP framework. No document archive is created by this service.
+
+Layer 1 needs no credentials. For Layer 2 in Compose, put `GEMINI_API_KEY` or `GROQ_API_KEY`
+in the repository-root `.env` (loaded by the shared Compose defaults). Model settings are
+shown in `.env.example`; they are separate from the platform's shared LLM configuration.
+For example:
+
+```sh
+curl -X POST http://localhost:8032/analyze \
+  -F 'file=@statement.pdf' -F 'doc_type=bank_statement' \
+  -F 'layer2=true' -F 'provider=gemini'
+```
+
+The default Docker image includes a CPU-only PyTorch environment at `/opt/pixel-venv` and
+pinned upstream TruFor code and checksum-verified official weights at `/opt/trufor`. No host
+venv, GPU, or manual model download is needed. The first build downloads the model and
+runtime; subsequent builds reuse Docker layers. These paths stay outside `/app` so the
+development source mount cannot hide them.
+
+Enable `layer3=true` to return per-page scores and PNG heatmaps under `pixel_forensics`.
+`GET /health` includes pixel availability and calibration status. There is no document-specific
+calibration dataset in this repository: the UI labels these raw scores as uncalibrated and
+they do not determine a verdict. To apply validated calibration, mount a thresholds JSON file
+and set `PIXEL_THRESHOLDS` to its container path (see Layer 3 documentation).
+
+TruFor's upstream licence limits use to informational and nonprofit purposes. The integration
+is for the testing/research workspace; the model is not a commercially licensed detector.
+
+For local development, from the service directory:
+
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r requirements-dev.txt
+uvicorn main:app --host 127.0.0.1 --port 8022 --reload
+python -m unittest discover -s tests -t .
+```
 
 ## The problem
 
@@ -15,7 +109,7 @@ photos and re-saved scans, so noise and compression must **not** be treated as e
 
 ## How it works
 
-Two independent layers. Each returns *findings* with a severity and an explanation; a small rule set turns them into a
+Three analysis layers (the third is experimental). Each returns *findings* with a severity and an explanation; a small rule set turns them into a
 verdict.
 
 | Layer | Looks at | Needs | Catches |
@@ -27,7 +121,7 @@ verdict.
 The key design rule of layer 2: **the model only reads; Python checks.** Arithmetic is exact (`Decimal`), figures are
 verified against the PDF's own text or a second read, and a model failure is never treated as a clean result.
 
-Pixel-forensics (noise analysis, ELA) is deliberately **not** used: it is the part most likely to confuse compression with
+Handcrafted pixel heuristics (noise analysis, ELA) are deliberately **not** used: it is the part most likely to confuse compression with
 tampering.
 
 ## Verdicts
@@ -41,13 +135,13 @@ tampering.
 
 ## Quick start
 
-Developed on Python 3.15 on Windows; nothing is platform-specific.
+The service Docker image uses Python 3.12. For the optional CLI, install dependencies from the service directory.
 
 ```powershell
 python -m venv venv
 venv\Scripts\activate
-pip install -r requirements-dev.txt        # requirements.txt for runtime only; -app.txt adds Streamlit
-python -m unittest discover -s tests -t .  # 197 tests, all offline
+pip install -r requirements-dev.txt        # requirements.txt for runtime only
+python -m unittest discover -s tests -t .  # offline engine, API and CLI tests
 ```
 
 **Command line**
@@ -67,13 +161,6 @@ from docforensics.gemini_client import make_client
 a = analyze_document(open("slip.pdf", "rb").read(), "slip.pdf", "payslip",
                      layer2=True, client=make_client("groq"), options=Layer2Options(visual=False))
 a.report.verdict, a.report.layer2_status, a.report.sorted_findings()
-```
-
-**Demo app** (local only, no login: do not expose it)
-
-```powershell
-pip install -r requirements-app.txt
-streamlit run app.py        # http://localhost:8501
 ```
 
 **Configuration:** copy `.env.example` to `.env` and add a key for the provider you use. `.env` is git-ignored.
@@ -110,10 +197,11 @@ docforensics/            the package
   layer2/                layer 2: schema, prompts, checks, render, runner
   gemini_client.py       provider-neutral client: rate limit, retries, typed errors, call log
   groq_client.py         Groq transport
-  demo.py                helpers for the app (no Streamlit imports)
-app.py                   Streamlit demo
+main.py                  FastAPI service (/health, /analyze)
+schemas.py               HTTP response contract
+Dockerfile               service image
 scripts/                 dataset download, forgery generation, test runner, replay
-tests/                   197 offline tests
+tests/                   offline engine, API and CLI tests
 docs/                    documentation (below)
 ```
 
@@ -128,7 +216,6 @@ docs/                    documentation (below)
 | [docs/EXPERIMENTS_PIXEL_MODELS.md](docs/EXPERIMENTS_PIXEL_MODELS.md) | Model candidates evaluated for Layer 3; why TruFor was chosen |
 | [docs/PROVIDERS_AND_LIMITS.md](docs/PROVIDERS_AND_LIMITS.md) | Gemini and Groq setup, observed rate limits, settings, cooldowns |
 | [docs/EVALUATION.md](docs/EVALUATION.md) | Datasets, test sets, results, flaws found and fixed, how to reproduce |
-| [docs/DEMO_APP.md](docs/DEMO_APP.md) | Using and securing the Streamlit app |
 
 ## Limitations
 

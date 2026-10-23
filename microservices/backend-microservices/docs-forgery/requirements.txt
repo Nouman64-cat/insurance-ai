@@ -8,3 +8,6 @@ c2pa-python>=0.38
 pypdfium2>=4.30
 google-genai>=2.0
 httpx>=0.27
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+python-multipart>=0.0.18

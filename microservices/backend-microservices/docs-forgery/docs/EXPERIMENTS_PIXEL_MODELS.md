@@ -42,7 +42,7 @@ detector, and gate findings at a threshold calibrated on genuine documents of th
 
 **Why selected:**
 - Produces an image-level score (`sigmoid(det)`) and a per-pixel heatmap in a single forward pass,
-  which allows both a threshold check and a visual display in the demo app.
+  which allows both a threshold check and a visual display in experiment tooling.
 - The confidence map (`conf`) lets the grader compute `map_p99_conf`, a hot-spot score that
   down-weights uncertain regions — useful on noisy scanned documents.
 - Can be loaded safely in `weights_only=True` mode (checkpoint contains only tensors, an

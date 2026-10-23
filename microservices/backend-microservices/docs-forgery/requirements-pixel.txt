@@ -1,0 +1,6 @@
+# Isolated CPU inference environment; do not install into the API environment.
+numpy==2.2.6
+pillow==11.3.0
+timm==0.6.13
+yacs==0.1.8
+tqdm==4.67.1

@@ -143,6 +143,7 @@ insurance-ai/
 │   │   ├── underwriting-app/     # Next.js Underwriting Workbench (queue, case workspace), own container, :3005
 │   │   ├── request-management-app/ # Next.js Request Management app, :3007 (run separately)
 │   │   ├── customer-service-app/ # Next.js Customer Service desk, :3008
+│   │   ├── forgery-detection-app/ # Public document forensics test UI, :3012
 │   │   ├── claims-manager-app/   # Next.js Claims Manager app, :3011
 │   │   ├── customer-portal/      # Next.js customer self-service portal
 │   │   ├── marketing-site/       # Next.js public marketing site (demo content, :3002)
@@ -152,6 +153,7 @@ insurance-ai/
 │       ├── tenant-service/
 │       ├── risk-engine/
 │       ├── chat-agent/
+│       ├── docs-forgery/          # FastAPI document manipulation analysis, :8032
 │       ├── ocr-engine/
 │       ├── text-summarizer/
 │       ├── customer-management/  # FastAPI customer portal back end
@@ -475,6 +477,8 @@ A physical device must use an address reachable from the device rather than `loc
 | Risk Engine     | http://localhost:8012 |
 | Decision Engine | http://localhost:8013 |
 | OCR Engine      | http://localhost:8014 |
+| Document Forensics | http://localhost:8032/docs |
+| Forgery Detection UI | http://localhost:3012 (public, no login) |
 | Text Summarizer | Internal Docker service `text-summarizer:8005`, via the authenticated API Gateway |
 | Chat Agent      | http://localhost:8016 |
 | Customer Service App | http://localhost:3008 |
@@ -549,3 +553,43 @@ The underwriting rules currently included in the repository are engineering/demo
 In `ENV_VAR=demo`, tenant Admin users can use **Fill demo data** in Customer Service to add eight
 clearly marked sample tickets with replies, internal notes, and overdue examples. Repeated fills do not
 duplicate or overwrite tickets. Samples do not link to or modify real customer/policy records.
+
+## Document Forensics Service
+
+The [docs-forgery microservice](microservices/backend-microservices/docs-forgery/README.md)
+checks financial PDFs and images for editing traces and content inconsistencies.
+It runs independently; document uploads do not yet invoke it automatically.
+
+```sh
+docker compose up -d --build docs-forgery
+curl http://localhost:8032/health
+curl -X POST http://localhost:8032/analyze -F 'file=@statement.pdf' -F 'doc_type=bank_statement'
+```
+
+Docker-network callers use `http://docs-forgery:8022`; the host API is loopback-bound at
+`http://localhost:8032`. Layer 1 runs locally by default. Opt into Layer 2 with `layer2=true`
+and `provider=gemini` or `provider=groq`, with the corresponding API key in the root `.env`;
+this sends document pages to that provider. Its provider configuration is separate from
+the platform LLM settings. Optional local TruFor analysis uses the CPU runtime and official weights bundled in the
+backend image. Its first build downloads these assets. The UI displays per-page model scores
+and anomaly heatmaps, explicitly labelled uncalibrated until document thresholds are supplied.
+Reports contain evidence for review; `no_evidence` does not establish authenticity.
+
+### Public Forgery Detection UI
+
+The [Forgery Detection frontend](microservices/frontend-microservices/forgery-detection-app/README.md)
+provides a public, unauthenticated testing workspace with document upload, analysis-layer
+options, findings and evidence, layer-failure notes, and JSON report download.
+
+```sh
+docker compose build docs-forgery forgery-detection-app
+docker compose up -d docs-forgery forgery-detection-app
+```
+
+Open [http://localhost:3012](http://localhost:3012). Compose also starts the detection backend.
+Port 3012 is exposed on the host's network interfaces; no internet domain or tunnel is
+provisioned. The frontend streams requests through its own `/api/analyze` route to
+`docs-forgery:8022` using the server-only `DOCS_FORGERY_URL` setting. No sign-in or API
+Gateway session is required. File checks are local by default. Content checks require
+explicit consent in the UI and the selected provider's backend API key; public visitors
+can invoke those checks with the configured backend credentials.
