@@ -12,7 +12,8 @@ class Support(Base):
         await super().asyncSetUp()
         self.calls = []
 
-        async def fake(p, method, path, body=None):
+        async def fake(p, method, path, body=None, operation_key=None):
+            self.operation_key = operation_key
             self.calls.append((method, path, body, str(p.customer_id)))
             return {"items": []} if method == "GET" and path == support.BASE else {"id": str(uuid4()), "status": "OPEN", "events": []}
         self.patch = patch.object(support, "_call", fake)
@@ -32,7 +33,7 @@ class Support(Base):
     async def test_create_needs_a_key_and_ignores_nothing_it_should_refuse(self):
         token, _ = await self.active_session()
         h = self.bearer(token)
-        self.assertEqual((await self.client.post("/v1/support/tickets", json=self.body(), headers=h)).status_code, 422)                       # no key
+        self.assertEqual((await self.client.post("/v1/support/tickets", json=self.body(), headers=h)).status_code, 400)                       # no key
         key = {**h, "idempotency-key": str(uuid4())}
         for extra in ({"priority": "URGENT"}, {"customer_id": str(uuid4())}, {"internal": True}):
             self.assertEqual((await self.client.post("/v1/support/tickets", json=self.body(**extra), headers=key)).status_code, 422, extra)    # not the browser's to set
@@ -41,7 +42,8 @@ class Support(Base):
         self.assertEqual(ok.status_code, 200)
         method, path, sent, cust = self.calls[-1]
         self.assertEqual((method, path, cust), ("POST", support.BASE, str(self.customer_id)))                                                  # the account's customer
-        self.assertEqual(sent["idempotency_key"], key["idempotency-key"])
+        self.assertNotIn("idempotency_key", sent)
+        self.assertEqual(self.operation_key, key["idempotency-key"])
 
     async def test_a_policy_must_belong_to_the_customer(self):
         token, _ = await self.active_session()

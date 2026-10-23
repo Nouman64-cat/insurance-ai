@@ -284,6 +284,15 @@ _TOKEN_RE = _re.compile(r"^[0-9a-f]{32}\.[0-9a-f]{40}$")
 MAX_PROOF = 10 * 1024 * 1024
 
 
+def _link_operation_key(key: Optional[str]) -> Optional[str]:
+    """A payment link is its own credential, so the tenant side scopes the key to the link. An absent key is not invented."""
+    if not key:
+        return None
+    if not (8 <= len(key) <= 64) or not all(ch.isalnum() or ch in "-_" for ch in key):
+        raise ApiError(422, "VALIDATION", "Idempotency-Key must be 8-64 letters, digits, - or _")
+    return key
+
+
 def _pay_token(token: str) -> str:
     if not _TOKEN_RE.match(token):
         raise ApiError(404, "PAY_LINK_INVALID", "This payment link is not valid.")
@@ -297,7 +306,7 @@ async def pay_details(token: str):
 
 @router.post("/pay/{token}/proof")
 async def pay_proof(token: str, request: Request, file: UploadFile = File(...), note: Optional[str] = Form(None), method: Optional[str] = Form(None),
-                    reference: Optional[str] = Form(None)):
+                    reference: Optional[str] = Form(None), idempotency_key: Optional[str] = Header(None)):
     """The customer's receipt (a photo, screenshot or PDF), with how and under what reference they paid."""
     token = _pay_token(token)
     content = await file.read()
@@ -307,7 +316,8 @@ async def pay_proof(token: str, request: Request, file: UploadFile = File(...), 
         raise ApiError(413, "FILE_TOO_LARGE", "That file is too large (10 MB maximum).")
     return await tenant_client.get_client().upload(f"{PREFIX}/pay/{token}/proof", file.filename or "payment.png", content,
                                                     file.content_type or "application/octet-stream", (note or "")[:500] or None,
-                                                    {"method": (method or "")[:50], "reference": (reference or "")[:100]})
+                                                    {"method": (method or "")[:50], "reference": (reference or "")[:100]},
+                                                    operation_key=_link_operation_key(idempotency_key))
 
 
 class DeclareIn(Strict):
@@ -317,6 +327,7 @@ class DeclareIn(Strict):
 
 
 @router.post("/pay/{token}/declare")
-async def pay_declare(token: str, body: DeclareIn):
+async def pay_declare(token: str, body: DeclareIn, idempotency_key: Optional[str] = Header(None)):
     """"I have paid", without a receipt. Staff see it at once and confirm it."""
-    return await tenant_client.get_client().post(f"{PREFIX}/pay/{_pay_token(token)}/declare", body.model_dump(exclude_none=True))
+    return await tenant_client.get_client().post(f"{PREFIX}/pay/{_pay_token(token)}/declare", body.model_dump(exclude_none=True),
+                                                 operation_key=_link_operation_key(idempotency_key))

@@ -69,6 +69,7 @@ from shared.models.core import (
     Tenant,
 )
 from shared.services.policy_state_machine import IllegalStateTransition, apply_transition, record_event
+from services.idempotency import notification_operation, workflow_operation
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["Stage B — Renewals"])
@@ -451,6 +452,7 @@ async def _create_case(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/renewals")
+@workflow_operation("tenant.renewal.open_renewal", _overview, ids=("policy_id",))
 async def open_renewal(
     tenant_id: UUID, policy_id: UUID,
     body: OpenBody,
@@ -544,6 +546,7 @@ async def _send_notice(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/renewals/{case_id}/notice")
+@workflow_operation("tenant.renewal.issue_renewal_notice", _overview, atomic=False, recover="retry")
 async def issue_renewal_notice(
     tenant_id: UUID, policy_id: UUID, case_id: UUID,
     body: NoticeBody,
@@ -581,6 +584,7 @@ async def download_notice(
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/renewals/{case_id}/risk/evaluate")
+@workflow_operation("tenant.renewal.reevaluate_risk", _overview, ids=('policy_id', 'case_id'))
 async def reevaluate_risk(
     tenant_id: UUID, policy_id: UUID, case_id: UUID,
     request: Request,
@@ -633,6 +637,7 @@ async def _apply_loading(session: AsyncSession, policy: Policy, case: PolicyRene
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/renewals/{case_id}/risk/decision")
+@workflow_operation("tenant.renewal.decide_risk", _overview, ids=('policy_id', 'case_id'))
 async def decide_risk(
     tenant_id: UUID, policy_id: UUID, case_id: UUID,
     body: RiskDecisionBody,
@@ -677,6 +682,7 @@ async def decide_risk(
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/renewals/{case_id}/acceptance")
+@workflow_operation("tenant.renewal.capture_acceptance", _overview, ids=('policy_id', 'case_id'))
 async def capture_acceptance(
     tenant_id: UUID, policy_id: UUID, case_id: UUID,
     body: AcceptanceBody,
@@ -716,6 +722,7 @@ async def capture_acceptance(
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/renewals/{case_id}/payment")
+@workflow_operation("tenant.renewal.collect_renewal_premium", _overview, ids=('policy_id', 'case_id'))
 async def collect_renewal_premium(
     tenant_id: UUID, policy_id: UUID, case_id: UUID,
     body: CollectBody,
@@ -745,6 +752,7 @@ def _expected_for(sched: PremiumSchedule) -> float:
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/renewals/{case_id}/reconcile")
+@workflow_operation("tenant.renewal.reconcile_payment", _overview, ids=('policy_id', 'case_id'))
 async def reconcile_payment(
     tenant_id: UUID, policy_id: UUID, case_id: UUID,
     body: ReconcileBody,
@@ -875,6 +883,7 @@ async def _render_confirmation(session: AsyncSession, policy: Policy, case: Poli
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/renewals/{case_id}/complete")
+@workflow_operation("tenant.renewal.complete_renewal", _overview, ids=('policy_id', 'case_id'))
 async def complete_renewal(
     tenant_id: UUID, policy_id: UUID, case_id: UUID,
     body: CompleteBody,
@@ -966,6 +975,7 @@ async def download_renewal_confirmation(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/renewals/{case_id}/confirmation/send")
+@notification_operation("tenant.renewal.send_confirmation", ("sent_to", "sent_at", "delivered"))
 async def send_renewal_confirmation(
     tenant_id: UUID, policy_id: UUID, case_id: UUID,
     request: Request,
@@ -1005,6 +1015,7 @@ async def send_renewal_confirmation(
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/renewals/{case_id}/cancel")
+@workflow_operation("tenant.renewal.cancel_renewal", _overview, ids=('policy_id', 'case_id'))
 async def cancel_renewal(
     tenant_id: UUID, policy_id: UUID, case_id: UUID,
     body: CancelBody,

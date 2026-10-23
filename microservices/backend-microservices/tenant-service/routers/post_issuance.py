@@ -44,6 +44,10 @@ from services.policy_documents import render_welcome_kit
 from services.email_templates import issuance_email, endorsement_email
 from services.endorsement_engine import create_endorsement
 from routers.policies import _get_policy, _publish_policy_event, _st, _price_breakdown
+from services.idempotency import (BILLING_FIELDS, billing_operation, billing_receipt, mask_contact, notification_operation, outcome_operation,
+                                  premium_identity, replay_billing, reviewed_operation, workflow_operation)
+from shared.idempotency.http import side_effect_operation
+from shared.idempotency.http import database_operation
 from shared.services.policy_state_machine import IllegalStateTransition, apply_transition, record_event
 from shared.models.core import (
     Beneficiary,
@@ -141,6 +145,25 @@ async def _free_look_cancellation_event(session: AsyncSession, policy_id: UUID) 
 # STEP 1 — Deliver Policy & Free-Look Period
 # ══════════════════════════════════════════════════════════════════════════════
 
+async def _retry_delivery_replay(values, receipt):
+    from services.policy_delivery import delivery_status
+    return {"requeued": receipt["requeued"], "automatic_delivery": await delivery_status(values["session"], values["policy_id"])}
+
+
+async def _welcome_replay(values, kept):
+    policy = await _get_policy(values["session"], values["tenant_id"], values["policy_id"])
+    return {**kept, "onboarding": await compute_onboarding(values["session"], policy)}
+
+
+async def _reminder_replay(values, kept):
+    policy = await _get_policy(values["session"], values["tenant_id"], values["policy_id"])
+    return {**await compute_billing(values["session"], policy), **kept}
+
+
+async def _endorsements_view(session, policy):
+    return await endorsements_overview(policy.tenant_id, policy.id, session)
+
+
 @router.get("/tenants/{tenant_id}/policies/{policy_id}/free-look")
 async def free_look_status(
     tenant_id: UUID, policy_id: UUID,
@@ -153,6 +176,7 @@ async def free_look_status(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/free-look/cancel")
+@database_operation("tenant.refund.free_look", response_fields=("policy_id", "status", "refund", "refund_amount", "premium_paid", "medical_exam_deduction"), resource_type="policy", authorize=premium_identity)
 async def cancel_within_free_look(
     tenant_id: UUID, policy_id: UUID,
     body: FreeLookCancelBody,
@@ -167,6 +191,7 @@ async def cancel_within_free_look(
     is moved ACTIVE → CANCELLED, with the refund captured in the audit event.
     """
     policy = await _get_policy(session, tenant_id, policy_id)
+    await session.refresh(policy, with_for_update=True)
 
     if _st(policy) != PolicyStatusEnum.ACTIVE.value:
         raise HTTPException(400, f"Free-look cancellation needs an in-force policy (current: {_st(policy)})")
@@ -182,7 +207,7 @@ async def cancel_within_free_look(
     if deduction > 0 and not (body.medical_exam_note or "").strip():
         raise HTTPException(400, "Say which medical examination the deduction is for (e.g. the lab invoice reference).")
     refund_amount = round(premium_paid - deduction, 2)
-    refund = payment_gateway.refund_payment(refund_amount)
+    refund = payment_gateway.refund_payment(refund_amount, reference=payment_gateway.operation_reference("free-look-refund", policy.id))
 
     try:
         # Reverse the collected installments so the ledger reflects the refund.
@@ -297,6 +322,9 @@ async def onboarding_status(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/onboarding/delivery/retry")
+@database_operation("tenant.onboarding.retry_delivery", response_fields=None, authorize=premium_identity, resource_type="policy",
+                    receipt_fields=("policy_id", "requeued"), view_receipt=lambda values, payload: {"policy_id": str(values["policy_id"]), "requeued": payload["requeued"]},
+                    replay_response=lambda values, receipt: _retry_delivery_replay(values, receipt))
 async def retry_failed_delivery(
     tenant_id: UUID, policy_id: UUID,
     session: AsyncSession = Depends(get_session),
@@ -315,6 +343,7 @@ async def retry_failed_delivery(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/onboarding/reset")
+@workflow_operation("tenant.onboarding.reset_onboarding", compute_onboarding, ids=("policy_id",))
 async def reset_onboarding(
     tenant_id: UUID, policy_id: UUID,
     request: Request,
@@ -371,6 +400,7 @@ async def reset_onboarding(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/onboarding/policyholder-id")
+@reviewed_operation("tenant.onboarding.assign_policyholder_id", ("policyholder_id", "reused"), resource_type="customer")
 async def assign_policyholder_id(
     tenant_id: UUID, policy_id: UUID,
     request: Request,
@@ -400,6 +430,7 @@ async def assign_policyholder_id(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/onboarding/welcome-kit")
+@reviewed_operation("tenant.onboarding.generate_welcome_kit", ("document_name", "generated_at"), resource_type="policy")
 async def generate_welcome_kit(
     tenant_id: UUID, policy_id: UUID,
     request: Request,
@@ -460,6 +491,10 @@ class PortalBody(BaseModel):
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/onboarding/portal")
+@side_effect_operation(
+    "tenant.onboarding.provision_portal", response_fields=("reset", "already_active", "suspended", "username", "portal_url", "invite_expires_at", "temp_password"),
+    authorize=premium_identity, recover="retry", resource_type="customer_portal_account",
+    store=lambda receipt: {**receipt, "temp_password": None})   # the one-time password is shown once and never kept; a replay carries none
 async def provision_portal(
     tenant_id: UUID, policy_id: UUID,
     request: Request,
@@ -558,6 +593,7 @@ class ContactBody(BaseModel):
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/onboarding/contact")
+@workflow_operation("tenant.onboarding.set_onboarding_contact", compute_onboarding, ids=("policy_id",))
 async def set_onboarding_contact(
     tenant_id: UUID, policy_id: UUID,
     body: ContactBody,
@@ -604,6 +640,8 @@ async def portal_credentials_for_email(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/onboarding/send-welcome")
+@outcome_operation("tenant.onboarding.send_welcome", ("channel", "sent_at"), lambda p: {"channel": p["channel"], "sent_at": p["sent_at"]},
+                  lambda values, kept: _welcome_replay(values, kept))
 async def send_welcome(
     tenant_id: UUID, policy_id: UUID,
     body: WelcomeSendBody,
@@ -681,6 +719,7 @@ async def send_welcome(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/onboarding/acknowledge")
+@workflow_operation("tenant.onboarding.acknowledge_onboarding", compute_onboarding, ids=("policy_id",))
 async def acknowledge_onboarding(
     tenant_id: UUID, policy_id: UUID,
     body: AcknowledgeBody,
@@ -793,6 +832,7 @@ async def premium_ledger(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/premiums/{schedule_id}/collect")
+@database_operation("tenant.premium.collect_installment", response_fields=BILLING_FIELDS, receipt_fields=("policy_id",), receipt_builder=billing_receipt, replay_response=replay_billing, resource_type="policy", authorize=premium_identity)
 async def collect_installment(
     tenant_id: UUID, policy_id: UUID, schedule_id: UUID,
     body: CollectBody,
@@ -847,7 +887,7 @@ async def collect_installment(
     receipt_no = await _next_receipt_no(session, tenant_id)
 
     kit = document_generator.generate_receipt({
-        "policy_id": policy.id, "tenant_name": tenant.name if tenant else "Insurer",
+        "receipt_no": receipt_no, "policy_id": policy.id, "tenant_name": tenant.name if tenant else "Insurer",
         "customer_name": customer.name if customer else "—",
         "policy_number": policy.policy_number, "installment_no": schedule.installment_no,
         "paid_date": date.today().isoformat(), "method": method, "payment_reference": reference,
@@ -891,6 +931,7 @@ async def collect_installment(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/premiums/bulk-collect")
+@database_operation("tenant.premium.bulk_collect", response_fields=BILLING_FIELDS, receipt_fields=("policy_id",), receipt_builder=billing_receipt, replay_response=replay_billing, resource_type="policy", authorize=premium_identity)
 async def bulk_collect_premiums(
     tenant_id: UUID, policy_id: UUID,
     body: BulkCollectBody,
@@ -987,7 +1028,7 @@ async def bulk_collect_premiums(
         receipt_no = await _next_receipt_no(session, tenant_id)
 
         kit = document_generator.generate_receipt({
-            "policy_id": policy.id, "tenant_name": tenant.name if tenant else "Insurer",
+            "receipt_no": receipt_no, "policy_id": policy.id, "tenant_name": tenant.name if tenant else "Insurer",
             "customer_name": customer.name if customer else "—",
             "policy_number": policy.policy_number, "installment_no": schedule.installment_no,
             "paid_date": date.today().isoformat(), "method": method, "payment_reference": reference,
@@ -1034,6 +1075,9 @@ async def bulk_collect_premiums(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/premiums/{schedule_id}/remind")
+@outcome_operation("tenant.premium.remind_installment", ("reminder",),
+                  lambda p: {"reminder": {"channel": p["reminder"]["channel"], "to": mask_contact(p["reminder"]["to"]), "delivered": p["reminder"]["delivered"]}},
+                  lambda values, kept: _reminder_replay(values, kept))
 async def remind_installment(
     tenant_id: UUID, policy_id: UUID, schedule_id: UUID,
     body: RemindBody,
@@ -1102,6 +1146,7 @@ async def remind_installment(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/premiums/{schedule_id}/waive")
+@billing_operation("tenant.premium.waive_installment")
 async def waive_installment(
     tenant_id: UUID, policy_id: UUID, schedule_id: UUID,
     body: WaiveBody,
@@ -1138,6 +1183,7 @@ async def waive_installment(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/premiums/monitor")
+@billing_operation("tenant.premium.monitor")
 async def monitor_premiums(
     tenant_id: UUID, policy_id: UUID,
     request: Request,
@@ -1190,6 +1236,7 @@ async def monitor_premiums(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/premiums/autopay")
+@billing_operation("tenant.premium.autopay")
 async def set_autopay(
     tenant_id: UUID, policy_id: UUID,
     body: AutopayBody,
@@ -1227,6 +1274,7 @@ _DEMO_SCENARIOS: dict[str, list[tuple[int, bool]]] = {
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/premiums/demo-seed")
+@billing_operation("tenant.premium.demo_seed")
 async def demo_seed_premiums(
     tenant_id: UUID, policy_id: UUID,
     body: DemoSeedBody,
@@ -1385,6 +1433,7 @@ async def restructure_preview(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/premiums/restructure")
+@billing_operation("tenant.premium.restructure")
 async def restructure_plan(
     tenant_id: UUID, policy_id: UUID,
     body: RestructureBody,
@@ -1459,6 +1508,7 @@ async def lapse_warning_letter(
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/issuance/send-email")
+@notification_operation("tenant.issuance.send_email", ("sent_to", "sent_at", "delivered", "subject"))
 async def send_issuance_email(
     tenant_id: UUID, policy_id: UUID,
     request: Request,
@@ -1628,6 +1678,7 @@ async def _finalize(session, policy, request, endorsement, extra_events=None):
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/endorsements/nominees")
+@workflow_operation("tenant.endorsement.nominees", _endorsements_view, ids=("policy_id",))
 async def endorse_nominees(
     tenant_id: UUID, policy_id: UUID,
     body: EndorseNomineesBody,
@@ -1673,6 +1724,7 @@ async def endorse_nominees(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/endorsements/address")
+@workflow_operation("tenant.endorsement.address", _endorsements_view, ids=("policy_id",))
 async def endorse_address(
     tenant_id: UUID, policy_id: UUID,
     body: EndorseAddressBody,
@@ -1708,6 +1760,7 @@ async def endorse_address(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/endorsements/sum-assured")
+@workflow_operation("tenant.endorsement.sum_assured", _endorsements_view, ids=("policy_id",))
 async def endorse_sum_assured(
     tenant_id: UUID, policy_id: UUID,
     body: EndorseSumAssuredBody,
@@ -1740,6 +1793,7 @@ async def endorse_sum_assured(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/endorsements/riders")
+@workflow_operation("tenant.endorsement.riders", _endorsements_view, ids=("policy_id",))
 async def endorse_riders(
     tenant_id: UUID, policy_id: UUID,
     body: EndorseRiderBody,
@@ -1863,6 +1917,7 @@ async def endorsement_quote(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/endorsements/contact")
+@workflow_operation("tenant.endorsement.contact", _endorsements_view, ids=("policy_id",))
 async def endorse_contact(
     tenant_id: UUID, policy_id: UUID,
     body: EndorseContactBody,
@@ -1899,6 +1954,7 @@ async def endorse_contact(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/endorsements/{endorsement_id}/email")
+@notification_operation("tenant.endorsement.email")
 async def email_endorsement(
     tenant_id: UUID, policy_id: UUID, endorsement_id: UUID,
     request: Request,

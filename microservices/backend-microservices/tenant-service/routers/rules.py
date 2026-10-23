@@ -15,6 +15,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
+from services.idempotency import reviewed_operation
 from routers.users import verify_admin
 from rule_evaluator import ContextDerivationService, evaluate_rule_set, evaluate_scope
 from services.underwriting_limits import (
@@ -1249,6 +1250,7 @@ async def list_categories(tenant_id: UUID, session: AsyncSession = Depends(get_s
 
 
 @router.post("/categories", status_code=status.HTTP_201_CREATED, summary="Create a Category")
+@reviewed_operation("tenant.rules.create_category", ("id", "code"), status_code=201, resource_type="rule")
 async def create_category(tenant_id: UUID, body: CategoryCreateRequest, session: AsyncSession = Depends(get_session)):
     existing = (await session.exec(select(Category).where(Category.code == body.code))).first()
     if existing:
@@ -1261,6 +1263,7 @@ async def create_category(tenant_id: UUID, body: CategoryCreateRequest, session:
 
 
 @router.post("/categories/{category_id}/subcategories", status_code=status.HTTP_201_CREATED, summary="Create a SubCategory")
+@reviewed_operation("tenant.rules.create_subcategory", ("id", "code"), status_code=201, resource_type="rule")
 async def create_subcategory(tenant_id: UUID, category_id: UUID, body: SubCategoryCreateRequest, session: AsyncSession = Depends(get_session)):
     category = await session.get(Category, category_id)
     if not category:
@@ -1273,6 +1276,7 @@ async def create_subcategory(tenant_id: UUID, category_id: UUID, body: SubCatego
 
 
 @router.post("/subcategories/{subcategory_id}/eligibility-profiles", status_code=status.HTTP_201_CREATED, summary="Create an EligibilityProfile")
+@reviewed_operation("tenant.rules.create_eligibility_profile", ("id", "channel_code"), status_code=201, resource_type="rule")
 async def create_eligibility_profile(tenant_id: UUID, subcategory_id: UUID, body: EligibilityProfileCreateRequest, session: AsyncSession = Depends(get_session)):
     subcategory = await session.get(SubCategory, subcategory_id)
     if not subcategory:
@@ -1414,6 +1418,7 @@ async def list_rule_sets(
 
 
 @router.post("/sets", status_code=status.HTTP_201_CREATED, summary="Create a new rule set")
+@reviewed_operation("tenant.rules.create_rule_set", ("id", "rule_code", "message"), status_code=201, resource_type="rule")
 async def create_rule_set(tenant_id: UUID, body: RuleSetCreateRequest, session: AsyncSession = Depends(get_session)):
     existing = (await session.exec(select(RuleSet).where(RuleSet.rule_code == body.rule_code))).first()
     if existing:
@@ -1519,6 +1524,7 @@ async def get_rule_set_detail(tenant_id: UUID, rule_set_id: UUID, session: Async
 
 
 @router.post("/sets/{rule_set_id}/versions", status_code=status.HTTP_201_CREATED, summary="Create a new draft version")
+@reviewed_operation("tenant.rules.create_rule_version", ("id", "version_number", "status"), status_code=201, resource_type="rule")
 async def create_rule_version(tenant_id: UUID, rule_set_id: UUID, session: AsyncSession = Depends(get_session)):
     rule_set = await session.get(RuleSet, rule_set_id)
     if not rule_set:
@@ -1606,6 +1612,7 @@ async def update_version_status(tenant_id: UUID, version_id: UUID, body: Version
 
 
 @router.post("/versions/{version_id}/rules", status_code=status.HTTP_201_CREATED, summary="Add a rule to a DRAFT version")
+@reviewed_operation("tenant.rules.add_rule", ("id", "rule_code", "priority"), status_code=201, resource_type="rule")
 async def add_rule_to_version(tenant_id: UUID, version_id: UUID, body: RuleCreateRequest, session: AsyncSession = Depends(get_session)):
     version = await session.get(RuleVersion, version_id)
     if not version:

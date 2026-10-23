@@ -19,11 +19,14 @@ import asyncio
 import logging
 import os
 import signal
+from uuid import uuid5, NAMESPACE_URL
+import job_store
 from typing import Any, Dict
 
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from aiokafka.errors import KafkaConnectionError
 from pydantic import ValidationError
+from shared.events.consumer import process_partition
 
 from graph_writer import write_customer_to_graph
 from workflow import run_evaluation
@@ -79,11 +82,8 @@ def _coerce_reasons(raw: list) -> list[str]:
 # Core processing
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def _process(
-    event: ProposalSubmittedEvent,
-    producer: AIOKafkaProducer,
-) -> None:
-    """Run the workflow for one event and publish the result."""
+async def _evaluate_event(event: ProposalSubmittedEvent) -> dict:
+    """Evaluate once; the caller persists this domain result before publishing."""
 
     customer = event.payload.customer.model_dump()
     policy    = event.payload.policy.model_dump()
@@ -128,6 +128,7 @@ async def _process(
         )
 
     result_event = RiskEvaluatedEvent(
+        event_id=uuid5(NAMESPACE_URL, f"getinsuredai:risk-result:{event.tenant_id}:{event.event_id}"),
         correlation_id=event.event_id,
         payload=RiskEvaluatedPayload(
             proposal_id=event.payload.proposal_id,
@@ -156,19 +157,17 @@ async def _process(
         ),
     )
 
-    # Key by correlation_id so the gateway can route replies to the right waiter.
-    await producer.send_and_wait(
-        OUTBOUND_TOPIC,
-        value=result_event.model_dump_json(),
-        key=str(event.event_id),
-    )
+    return result_event.model_dump(mode='json')
 
-    logger.info(
-        "published RiskEvaluated | proposal=%s correlation=%s decision=%s",
-        event.payload.proposal_id,
-        event.event_id,
-        result["ai_decision"],
-    )
+
+async def _process(event: ProposalSubmittedEvent, producer: AIOKafkaProducer) -> None:
+    outcome = await job_store.get_store().run(tenant_id=event.tenant_id, operation_id=event.event_id,
+        content=event.model_dump(mode='json'), evaluate=lambda: _evaluate_event(event))
+    # Result persistence and its receipt commit before the broker call. Redelivery
+    # republishes the same envelope rather than rerunning the costly workflow.
+    result_event = RiskEvaluatedEvent.model_validate(outcome)
+    await producer.send_and_wait(OUTBOUND_TOPIC, value=result_event.model_dump_json(), key=str(event.event_id))
+    logger.info("published RiskEvaluated | event_id=%s correlation=%s", result_event.event_id, event.event_id)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -182,6 +181,7 @@ async def run_consumer(stop_event: asyncio.Event | None = None) -> None:
     Offsets are committed manually after a successful publish so a crash
     before publishing causes the message to be reprocessed (at-least-once).
     """
+    await job_store.initialize()
     consumer = AIOKafkaConsumer(
         INBOUND_TOPIC,
         bootstrap_servers=KAFKA_BOOTSTRAP,
@@ -231,41 +231,25 @@ async def run_consumer(stop_event: asyncio.Event | None = None) -> None:
         # calling start_consumer_task) to ever be able to tear this down.
         while not (stop_event and stop_event.is_set()):
             batches = await consumer.getmany(timeout_ms=1000)
-            for msgs in batches.values():
-                for msg in msgs:
-                    logger.info(
-                        "received message | partition=%s offset=%s",
-                        msg.partition,
-                        msg.offset,
-                    )
+            async def handle_message(msg):
+                try:
+                    event = ProposalSubmittedEvent.model_validate_json(msg.value)
+                except ValidationError:
+                    # Preserve the existing invalid-envelope policy without logging
+                    # raw medical/customer content from a validation exception.
+                    logger.error("invalid event schema | partition=%s offset=%s", msg.partition, msg.offset)
+                    return
+                await _process(event, producer)
 
-                    # ── Deserialise ───────────────────────────────────────────
-                    try:
-                        event = ProposalSubmittedEvent.model_validate_json(msg.value)
-                    except ValidationError as exc:
-                        # Poison-pill: log and skip — never block the partition.
-                        logger.error("invalid event schema, skipping | error=%s", exc)
-                        await consumer.commit()
-                        continue
-
-                    # ── Process + publish ─────────────────────────────────────
-                    try:
-                        await _process(event, producer)
-                    except Exception as exc:
-                        # Do NOT commit — retry on next consumer restart.
-                        logger.exception(
-                            "processing failed, offset will be retried | event_id=%s error=%s",
-                            event.event_id,
-                            exc,
-                        )
-                        continue
-
-                    # ── Commit only after successful publish ──────────────────
-                    await consumer.commit()
+            for partition, messages in batches.items():
+                if not await process_partition(consumer, partition, messages, handle_message):
+                    # Do not hot-loop a failed LLM/provider call or advance past it.
+                    await asyncio.sleep(1)
 
     finally:
         await consumer.stop()
         await producer.stop()
+        await job_store.close()
         logger.info("consumer shut down cleanly")
 
 

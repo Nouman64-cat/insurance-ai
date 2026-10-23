@@ -6,6 +6,7 @@ import api from "@/app/services/api";
 import { Pagination, usePagination } from "@/components/Pagination";
 import { Chip, Endorsement, GroupMember, PanelProps, downloadPdf, errMsg, mpBase, pkr, premiumWord, signedPkr } from "./groupShared";
 import { tx } from "@/lib/i18n/tx";
+import { keyedPost } from "@/lib/idempotency";
 
 type Kind = "ADD" | "DELETE" | "CHANGE";
 const KIND_LABEL: Record<Kind, string> = { ADD: "Add members", DELETE: "Remove members", CHANGE: "Change a member" };
@@ -104,7 +105,7 @@ export default function EndorsementsPanel({ tenantId, orgId, mp, reload }: Panel
 
   const resolve = (e: Endorsement) => run("Re-check", async () => { await api.post(`${base}/endorsements/${e.id}/resolve`); await load(); await reload(); });
   const settle = (e: Endorsement) => run("Settle", async () => {
-    await api.post(`${base}/endorsements/${e.id}/settle`, { reference: settleRef.trim(), amount: Math.abs(e.premium_delta) });
+    await keyedPost(api, `group-endorsement-settle:${e.id}`, `${base}/endorsements/${e.id}/settle`, { reference: settleRef.trim(), amount: Math.abs(e.premium_delta) });
     setSettleRef(""); setNotice(tx("{0} settled.", { 0: e.number })); await load();
   });
 

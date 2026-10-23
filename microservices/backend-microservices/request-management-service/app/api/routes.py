@@ -12,7 +12,7 @@ from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import text
 
 from app import attachments, db, live, queries, routing, routing_admin, service
-from app.errors import forbidden, validation
+from app.errors import ApiError, forbidden, validation
 from app.types.registry import get_type
 from app.identity import Identity, current_identity
 
@@ -31,12 +31,14 @@ async def _json(request: Request) -> dict:
 
 
 def _key(value: Optional[str]) -> Optional[str]:
-    if value is None:
+    import os
+    from shared.idempotency import validate_key, IdempotencyError
+    if value is None and os.getenv("IDEMPOTENCY_ENFORCEMENT", "optional") != "required":
         return None
-    value = value.strip()
-    if not 8 <= len(value) <= 120:
-        raise validation("Idempotency-Key must be 8 to 120 characters", field="Idempotency-Key")
-    return value
+    try:
+        return validate_key(value)
+    except IdempotencyError as exc:
+        raise ApiError(400, exc.code, "Supply a valid Idempotency-Key header.") from exc
 
 
 @router.get("/healthz")
@@ -152,8 +154,8 @@ _action("reopen-for-review", service.reopen_for_review)
 
 
 @router.post("/requests/{request_id}/comments", status_code=201)
-async def add_comment(request_id: UUID, request: Request, identity: Identity = Me) -> dict:
-    await service.add_comment(identity, request_id, await _json(request))
+async def add_comment(request_id: UUID, request: Request, identity: Identity = Me, idempotency_key: Optional[str] = Header(None)) -> dict:
+    await service.add_comment(identity, request_id, await _json(request), _key(idempotency_key))
     return await queries.detail(identity, request_id)
 
 

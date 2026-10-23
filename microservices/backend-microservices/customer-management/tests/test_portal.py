@@ -183,6 +183,18 @@ class Claims(Base):
         self.assertIn(bad_key.status_code, (404, 422))
         self.assertEqual(sum(1 for m, *_ in self.fake.calls if m == "UPLOAD"), 0)
 
+    async def test_a_supplied_operation_key_reaches_the_domain_namespaced_by_account_and_none_is_invented(self):
+        token, _ = await self.active_session()
+        url = f"/v1/claims/{uuid4()}/documents/claim_form"
+        self.fake.routes["/documents/claim_form"] = {"ok": True}
+        files = {"file": ("a.pdf", b"%PDF-1.4 x", "application/pdf")}
+        await self.client.post(url, headers=self.bearer(token), files=files)
+        await self.client.post(url, headers={**self.bearer(token), "Idempotency-Key": "upload-key-aaaa-01"}, files=files)
+        self.assertIsNone(self.fake.operation_keys[-2])
+        self.assertTrue(self.fake.operation_keys[-1].endswith(":upload-key-aaaa-01"))
+        bad = await self.client.post(url, headers={**self.bearer(token), "Idempotency-Key": "x"}, files=files)
+        self.assertEqual(bad.status_code, 422)
+
 
 class Profile(Base):
     async def test_contact_change_needs_the_password_and_never_forwards_identity_fields(self):

@@ -322,6 +322,7 @@ class Lifecycle(World):
         # Duplicate create with the same key returns the same draft.
         body = {"request_type": "general", "title": "Same thing", "payload": {"category": "OTHER", "description": "Just one of these please"}}
         self.assertEqual(await service.create_draft(me, body, "create-key-1"), await service.create_draft(me, body, "create-key-1"))
+        await self.expect(service.create_draft(me, {**body, "title": "Changed payload"}, "create-key-1"), "IDEMPOTENCY_CONFLICT")
         # Execution: the same event delivered twice applies once.
         await self.claim(self.uw1, rid)
         await self.approve(self.uw1, rid)
@@ -331,6 +332,17 @@ class Lifecycle(World):
         self.assertEqual(len(self.fake.correction_calls), 1)
         self.assertEqual((await self.detail(self.agent, rid))["execution_status"], "SUCCEEDED")
         self.assertEqual(self.fake.customers[self.customer]["details"]["contact"]["email"], "new@example.test")
+
+    async def test_replay_rechecks_current_reviewer_permission(self):
+        from dataclasses import replace
+        rid = await self.correction()
+        detail = await self.claim(self.uw1, rid)
+        reviewer = await self.me(self.uw1)
+        body = {"expected_version": detail["version"], "revision_no": 1, "reason": "Verified correction"}
+        first = await service.decide(reviewer, rid, "APPROVED", body, "approval-key-1")
+        self.assertEqual(first, await service.decide(reviewer, rid, "APPROVED", body, "approval-key-1"))
+        await self.expect(service.decide(replace(reviewer, role="Viewer"), rid, "APPROVED", body,
+                                         "approval-key-1"), "ACTION_NOT_ALLOWED")
 
     async def test_crash_after_domain_update_does_not_apply_twice(self):
         rid = await self.correction()
@@ -412,6 +424,21 @@ class Lifecycle(World):
             self.assertEqual(kinds.count("execution_failed"), 1)
         finally:
             object.__setattr__(settings, "max_execution_attempts", 5)
+
+
+class CommentRetries(World):
+    async def test_a_retried_comment_is_added_once_and_a_changed_one_conflicts(self):
+        rid = await self.correction()
+        await self.claim(self.uw1, rid)
+        uw = await self.me(self.uw1)
+        key = "comment-retry-key-0001"
+        first = await service.add_comment(uw, rid, {"body": "Checked the KYC file", "visibility": "REQUESTER"}, key)
+        again = await service.add_comment(uw, rid, {"body": "Checked the KYC file", "visibility": "REQUESTER"}, key)
+        self.assertEqual(first, again)
+        await self.expect(service.add_comment(uw, rid, {"body": "Something else", "visibility": "REQUESTER"}, key), "IDEMPOTENCY_CONFLICT")
+        await service.add_comment(uw, rid, {"body": "Checked the KYC file", "visibility": "REQUESTER"})      # no key: original behaviour
+        bodies = [c["body"] for c in (await self.detail(self.uw1, rid))["comments"]]
+        self.assertEqual(bodies.count("Checked the KYC file"), 2)
 
 
 class Visibility(World):

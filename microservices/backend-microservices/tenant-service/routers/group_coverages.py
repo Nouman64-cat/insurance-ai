@@ -21,6 +21,7 @@ from group_benefits import validate_coverage
 from routers.organizations import _benefit_class_read, _get_master_policy
 from routers.users import verify_admin
 from schemas import BenefitClassRead, ClassCoverageCreate
+from services.idempotency import read_model_operation
 from shared.models.core import GroupBenefitClass, GroupClassCoverage, GroupCoverageType, GroupQuote, GroupQuoteStatus
 
 router = APIRouter(prefix="/tenants", tags=["Group Coverages"])
@@ -49,6 +50,8 @@ async def _invalidate_quote(session: AsyncSession, mp) -> None:
 
 
 @router.post(_BASE, response_model=BenefitClassRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(verify_admin)])
+@read_model_operation("tenant.group.add_class_coverage", BenefitClassRead, lambda v: v["session"].get(GroupBenefitClass, v["class_id"]), status_code=201, resource_type="group_benefit_class",
+                     render=lambda v, cls: _benefit_class_read(cls, v["session"]))
 async def add_class_coverage(tenant_id: UUID, org_id: UUID, mp_id: UUID, class_id: UUID, body: ClassCoverageCreate,
                              session: AsyncSession = Depends(get_session)):
     mp, cls = await _class(session, tenant_id, org_id, mp_id, class_id)
@@ -67,6 +70,8 @@ async def add_class_coverage(tenant_id: UUID, org_id: UUID, mp_id: UUID, class_i
 
 
 @router.delete(_BASE + "/{coverage_id}", response_model=BenefitClassRead, dependencies=[Depends(verify_admin)])
+@read_model_operation("tenant.group.remove_class_coverage", BenefitClassRead, lambda v: v["session"].get(GroupBenefitClass, v["class_id"]), resource_type="group_benefit_class",
+                     render=lambda v, cls: _benefit_class_read(cls, v["session"]))
 async def remove_class_coverage(tenant_id: UUID, org_id: UUID, mp_id: UUID, class_id: UUID, coverage_id: UUID,
                                 session: AsyncSession = Depends(get_session)):
     mp, cls = await _class(session, tenant_id, org_id, mp_id, class_id)

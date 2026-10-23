@@ -27,6 +27,7 @@ from services.group_endorsement_engine import (
     settle_endorsement,
 )
 from shared.models.core import GroupEndorsement
+from services.idempotency import read_model_operation
 
 router = APIRouter(prefix="/tenants", tags=["Group Endorsements"])
 
@@ -56,6 +57,7 @@ async def preview(tenant_id: UUID, org_id: UUID, mp_id: UUID, body: EndorsementR
 
 
 @router.post(_BASE, response_model=EndorsementRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(verify_admin)])
+@read_model_operation("tenant.group.create_endorsement", EndorsementRead, lambda v, rid: v["session"].get(GroupEndorsement, UUID(rid)), status_code=201, resource_type="group_endorsement")
 async def create(tenant_id: UUID, org_id: UUID, mp_id: UUID, body: EndorsementRequest,
                  session: AsyncSession = Depends(get_session), request: Request = None):  # type: ignore[assignment]
     try:
@@ -83,6 +85,7 @@ async def get_endorsement(tenant_id: UUID, org_id: UUID, mp_id: UUID, endorsemen
 
 
 @router.post(_BASE + "/{endorsement_id}/resolve", response_model=EndorsementRead, dependencies=[Depends(verify_admin)])
+@read_model_operation("tenant.group.resolve_endorsement", EndorsementRead, lambda v: _get(v["session"], v["tenant_id"], v["mp_id"], v["endorsement_id"]), resource_type="group_endorsement")
 async def resolve(tenant_id: UUID, org_id: UUID, mp_id: UUID, endorsement_id: UUID,
                   session: AsyncSession = Depends(get_session), request: Request = None):  # type: ignore[assignment]
     """Apply the lines that were waiting on an underwriting decision, now that one may exist."""
@@ -98,6 +101,7 @@ async def resolve(tenant_id: UUID, org_id: UUID, mp_id: UUID, endorsement_id: UU
 
 
 @router.post(_BASE + "/{endorsement_id}/settle", response_model=EndorsementRead, dependencies=[Depends(verify_admin)])
+@read_model_operation("tenant.group.settle_endorsement", EndorsementRead, lambda v: _get(v["session"], v["tenant_id"], v["mp_id"], v["endorsement_id"]), resource_type="group_endorsement")
 async def settle(tenant_id: UUID, org_id: UUID, mp_id: UUID, endorsement_id: UUID, body: EndorsementSettle,
                  session: AsyncSession = Depends(get_session)):
     e = await _get(session, tenant_id, mp_id, endorsement_id)

@@ -574,6 +574,25 @@ class CommissionTests(unittest.IsolatedAsyncioTestCase):
         async with factory() as s:
             self.assertEqual((await s.exec(select(CommissionAssignment).where(CommissionAssignment.policy_id == self.policy.id))).all(), [])
 
+    async def test_header_replay_conflict_and_current_authorization(self):
+        earning = await self.payable_earning()
+        headers = {'Idempotency-Key': str(uuid4())}
+        body = {'earning_ids': [str(earning.id)]}
+        async with await self.client() as c:
+            first = await c.post(self.url('disbursements'), json=body, headers=headers)
+            self.assertEqual(first.status_code, 201, first.text)
+            second = await c.post(self.url('disbursements'), json=body, headers=headers)
+            self.assertEqual(second.status_code, 201, second.text)
+            self.assertEqual(first.json(), second.json())
+            conflict = await c.post(self.url('disbursements'), json={'earning_ids': [str(uuid4())]}, headers=headers)
+            self.assertEqual(conflict.status_code, 409)
+            # A new key still cannot reserve the same earning a second time.
+            duplicate = await c.post(self.url('disbursements'), json=body, headers={'Idempotency-Key': str(uuid4())})
+            self.assertEqual(duplicate.status_code, 409)
+        async with await self.client(role='Agent') as c:
+            denied = await c.post(self.url('disbursements'), json=body, headers=headers)
+            self.assertEqual(denied.status_code, 403)
+
     async def test_disbursement_approval_recording_and_no_double_payment(self):
         earning = await self.payable_earning()
         async with await self.client() as c:
@@ -829,6 +848,8 @@ if __name__ == '__main__':
         async with engine.begin() as c:
             await c.execute(text(f'CREATE SCHEMA "{schema}"'))
             await c.run_sync(SQLModel.metadata.create_all)
+            from shared.idempotency.models import metadata as idem_metadata
+            await c.run_sync(idem_metadata.create_all)
     async def cleanup():
         async with engine.begin() as c:
             await c.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))

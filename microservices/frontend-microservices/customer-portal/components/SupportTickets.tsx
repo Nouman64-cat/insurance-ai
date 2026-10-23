@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Banner, EmptyState, ErrorState, Field, Icon, Modal, Skeleton, Spinner, errorText, useToast } from "@/components/ui";
 import { ApiError, api, useApi } from "@/lib/api";
 import { ago, dateTime } from "@/lib/format";
@@ -76,10 +76,15 @@ function TicketView({ id, onClose, onChanged }: { id: string; onClose: () => voi
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<ApiError | null>(null);
+  const replyKey = useRef(newIdempotencyKey());     // a reply typed once is one reply, however many times the request is retried
   async function act(path: string, body?: unknown, done?: string) {
     setBusy(true); setErr(null);
-    try { await api(`support/tickets/${id}/${path}`, { method: "POST", body: body ?? {} }); setText(""); reload(); onChanged(); if (done) toast(done, "success"); }
-    catch (e) { setErr(e as ApiError); } finally { setBusy(false); }
+    const keyed = path === "reply" ? { idempotencyKey: replyKey.current } : {};
+    try { await api(`support/tickets/${id}/${path}`, { method: "POST", body: body ?? {}, ...keyed }); if (path === "reply") replyKey.current = newIdempotencyKey(); setText(""); reload(); onChanged(); if (done) toast(done, "success"); }
+    catch (e) {
+      if (path === "reply" && !["NETWORK", "SERVICE_UNAVAILABLE", "DOMAIN_UNAVAILABLE", "REQUEST_IN_PROGRESS"].includes((e as ApiError).code)) replyKey.current = newIdempotencyKey();
+      setErr(e as ApiError);
+    } finally { setBusy(false); }
   }
   const finished = d && ["CLOSED", "CANCELLED"].includes(d.status);
   return (

@@ -17,6 +17,7 @@ from services.agent_commission import AGENT_COMMISSION_RULE_SET_CODE, commission
 from services.commission_engine import accrue_receipt, automatic_assignment, payable_from, resolve_allocation
 from shared.commissions.calculator import money
 from shared.models.core import AcquisitionSource, Customer, User, InsurancePlan, Policy, PremiumReceipt, PremiumSchedule
+from shared.idempotency.http import database_operation
 from shared.models.commission import (CommissionAccrual, CommissionAgreement, CommissionAssignment,
     CommissionEarning, CommissionPlanRule, CommissionDisbursement, CommissionDisbursementItem)
 
@@ -90,6 +91,7 @@ async def plan_rules(tenant_id: UUID, user=Depends(admin), session: AsyncSession
 
 
 @router.post('/plan-rules', status_code=201)
+@database_operation("tenant.commission.create_plan_rule", response_fields=tuple(CommissionPlanRule.model_fields), status_code=201, resource_type="commission_plan_rule")
 async def create_plan_rule(tenant_id: UUID, body: PlanRuleIn, user=Depends(admin), session: AsyncSession = Depends(get_session)):
     plan = (await session.exec(select(InsurancePlan).where(
         InsurancePlan.id == body.plan_id, InsurancePlan.tenant_id == tenant_id).with_for_update())).first()
@@ -202,6 +204,7 @@ async def agreements(tenant_id: UUID, user=Depends(admin), session: AsyncSession
 
 
 @router.post("/agreements", status_code=201)
+@database_operation("tenant.commission.create_agreement", response_fields=tuple(CommissionAgreement.model_fields), status_code=201, resource_type="commission_agreement")
 async def create_agreement(tenant_id: UUID, body: AgreementIn, user=Depends(admin), session: AsyncSession = Depends(get_session)):
     row = CommissionAgreement(tenant_id=tenant_id, created_by=user.id, **body.model_dump())
     session.add(row)
@@ -214,6 +217,7 @@ async def create_agreement(tenant_id: UUID, body: AgreementIn, user=Depends(admi
 
 
 @router.post("/agreements/{agreement_id}/approve")
+@database_operation("tenant.commission.approve_agreement", response_fields=tuple(CommissionAgreement.model_fields), resource_type="commission_agreement")
 async def approve_agreement(tenant_id: UUID, agreement_id: UUID, user=Depends(admin), session: AsyncSession = Depends(get_session)):
     row = (await session.exec(select(CommissionAgreement).where(
         CommissionAgreement.id == agreement_id, CommissionAgreement.tenant_id == tenant_id,

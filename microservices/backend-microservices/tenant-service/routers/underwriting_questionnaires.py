@@ -9,6 +9,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from routers.auth import oauth2_scheme
+from services.idempotency import secret_link_operation
 from routers.underwriting_tracks import _specialist_identity
 from shared.models.core import Case, CaseUnderwritingTrack, UnderwritingQuestionnaire
 from services.case_events import publish_case_event
@@ -53,6 +54,8 @@ async def read_questionnaire(tenant_id: UUID, case_id: UUID, token: str = Depend
     return view(row, track)
 
 @router.post("/tenants/{tenant_id}/cases/{case_id}/underwriting-questionnaire/invite")
+@secret_link_operation("tenant.uwquestionnaire.invite", ("track", "questions", "status", "sent_at", "submitted_at", "answers", "link_path", "emailed_to", "email_status"),
+                       secrets=("link_path", "answers"), masked=("emailed_to",), resource_type="underwriting_questionnaire")
 async def invite(tenant_id: UUID, case_id: UUID, token: str = Depends(oauth2_scheme), session: AsyncSession = Depends(get_session)):
     user, track, case = await staff_case(tenant_id, case_id, token, session)
     # Serialize competing invitations; a replacement invalidates the earlier link.

@@ -39,6 +39,7 @@ from services.underwriting_limits import age_from_dob, non_medical_limit
 from shared.services.policy_state_machine import IllegalStateTransition, apply_transition, record_event
 from services.pre_issuance_gate import compute_readiness
 from routers.policies import _get_policy, _publish_policy_event, _st
+from services.idempotency import records_operation
 from shared.models.core import (
     Beneficiary,
     BeneficiaryVersion,
@@ -94,6 +95,26 @@ def _assert_stage_a(policy: Policy, action: str) -> None:
 # Readiness aggregate — the 6-step checklist the UI renders and the issuance
 # gate enforces (see services/pre_issuance_gate.py).
 # ══════════════════════════════════════════════════════════════════════════════
+
+async def _render_offer_outcome(values, rows):
+    policy = await _get_policy(values["session"], values["tenant_id"], values["policy_id"])
+    return {"policy_id": str(values["policy_id"]), "status": _st(policy), "counter_offer": _offer_dict(rows[0])}
+
+
+async def _render_beneficiaries(values, rows):
+    session = values["session"]
+    roster = (await session.exec(select(Beneficiary).where(Beneficiary.policy_id == values["policy_id"]))).all()
+    last = (await session.exec(select(BeneficiaryVersion.version_sequence).where(BeneficiaryVersion.policy_id == values["policy_id"])
+                               .order_by(BeneficiaryVersion.version_sequence.desc()))).first()
+    items = [_ben_dict(b) for b in roster]
+    return {"beneficiaries": items, "total_share": round(sum(b["share_pct"] for b in items), 2), "version_sequence": last or 1}
+
+
+def _document_dict(r):
+    return {"id": str(r.id), "document_type": r.document_type.value if hasattr(r.document_type, "value") else str(r.document_type),
+            "document_name": r.document_name, "is_stub": r.is_stub}
+
+
 
 @router.get("/tenants/{tenant_id}/policies/{policy_id}/pre-issuance")
 async def pre_issuance_readiness(
@@ -213,6 +234,7 @@ async def _expire_if_lapsed(session: AsyncSession, request: Optional[Request],
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/counter-offer")
+@records_operation("tenant.preissuance.create_counter_offer", CounterOffer, lambda r: _offer_dict(r), status_code=200, resource_type="counter_offer")
 async def create_counter_offer(
     tenant_id: UUID, policy_id: UUID,
     body: CounterOfferCreate,
@@ -318,6 +340,7 @@ async def _load_open_offer(session: AsyncSession, policy_id: UUID) -> CounterOff
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/counter-offer/accept")
+@records_operation("tenant.preissuance.accept_counter_offer", CounterOffer, None, render=_render_offer_outcome, ids_of=lambda v, p: [p["counter_offer"]["id"]], resource_type="counter_offer")
 async def accept_counter_offer(
     tenant_id: UUID, policy_id: UUID,
     body: OfferResponse,
@@ -358,6 +381,7 @@ async def accept_counter_offer(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/counter-offer/decline")
+@records_operation("tenant.preissuance.decline_counter_offer", CounterOffer, None, render=_render_offer_outcome, ids_of=lambda v, p: [p["counter_offer"]["id"]], resource_type="counter_offer")
 async def decline_counter_offer(
     tenant_id: UUID, policy_id: UUID,
     body: OfferResponse,
@@ -450,6 +474,7 @@ async def list_requirements(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/requirements")
+@records_operation("tenant.preissuance.create_requirements", PolicyRequirement, lambda r: _req_dict(r), many=True, resource_type="policy_requirement")
 async def create_requirements(
     tenant_id: UUID, policy_id: UUID,
     session: AsyncSession = Depends(get_session),
@@ -505,6 +530,7 @@ async def _get_req(session: AsyncSession, tenant_id: UUID, req_id: UUID,
 
 
 @router.post("/tenants/{tenant_id}/requirements/{req_id}/submit")
+@records_operation("tenant.preissuance.submit_requirement", PolicyRequirement, lambda r: _req_dict(r), resource_type="policy_requirement")
 async def submit_requirement(
     tenant_id: UUID, req_id: UUID,
     body: RequirementActionBody,
@@ -522,6 +548,7 @@ async def submit_requirement(
 
 
 @router.post("/tenants/{tenant_id}/requirements/{req_id}/verify")
+@records_operation("tenant.preissuance.verify_requirement", PolicyRequirement, lambda r: _req_dict(r), resource_type="policy_requirement")
 async def verify_requirement(
     tenant_id: UUID, req_id: UUID,
     body: RequirementActionBody,
@@ -540,6 +567,7 @@ async def verify_requirement(
 
 
 @router.post("/tenants/{tenant_id}/requirements/{req_id}/waive")
+@records_operation("tenant.preissuance.waive_requirement", PolicyRequirement, lambda r: _req_dict(r), resource_type="policy_requirement")
 async def waive_requirement(
     tenant_id: UUID, req_id: UUID,
     body: RequirementActionBody,
@@ -590,6 +618,7 @@ async def list_compliance(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/compliance/run")
+@records_operation("tenant.preissuance.run_compliance", ComplianceCheck, lambda r: _check_dict(r), many=True, resource_type="compliance_check")
 async def run_compliance(
     tenant_id: UUID, policy_id: UUID,
     session: AsyncSession = Depends(get_session),
@@ -614,6 +643,7 @@ async def run_compliance(
 
 
 @router.post("/tenants/{tenant_id}/compliance/{check_id}/clear")
+@records_operation("tenant.preissuance.clear_compliance", ComplianceCheck, lambda r: _check_dict(r), resource_type="compliance_check")
 async def clear_compliance(
     tenant_id: UUID, check_id: UUID,
     body: ComplianceClearBody,
@@ -637,6 +667,7 @@ async def clear_compliance(
 
 
 @router.post("/tenants/{tenant_id}/compliance/{check_id}/fail")
+@records_operation("tenant.preissuance.fail_compliance", ComplianceCheck, lambda r: _check_dict(r), resource_type="compliance_check")
 async def fail_compliance(
     tenant_id: UUID, check_id: UUID,
     body: ComplianceClearBody,
@@ -722,6 +753,7 @@ async def list_beneficiaries(
 
 
 @router.put("/tenants/{tenant_id}/policies/{policy_id}/beneficiaries")
+@records_operation("tenant.preissuance.replace_beneficiaries", Policy, None, render=_render_beneficiaries, ids_of=lambda v, p: [v["policy_id"]], resource_type="policy")
 async def replace_beneficiaries(
     tenant_id: UUID, policy_id: UUID,
     body: BeneficiariesReplace,
@@ -819,6 +851,7 @@ async def beneficiary_history(
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/documents/generate")
+@records_operation("tenant.preissuance.generate_documents", PolicyDocument, lambda r: _document_dict(r), many=True, resource_type="policy_document")
 async def generate_documents(
     tenant_id: UUID, policy_id: UUID,
     session: AsyncSession = Depends(get_session),

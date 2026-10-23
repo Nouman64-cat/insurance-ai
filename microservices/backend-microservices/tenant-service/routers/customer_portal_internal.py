@@ -76,6 +76,8 @@ from services import customer_portal_family as fam
 from services.customer_portal_family import PENDING_ISSUANCE, VISIBLE_STATUSES
 from shared.security.service_auth import CALLER_HEADER, verify
 from shared.services.policy_state_machine import record_event
+from services.idempotency import portal_identity, step_operation
+from shared.idempotency.http import database_operation
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/internal/customer-portal/v1", tags=["Internal: Customer Portal"], include_in_schema=False)
@@ -542,6 +544,7 @@ class PayBody(BaseModel):
 
 
 @router.post("/tenants/{tenant_id}/customers/{customer_id}/policies/{policy_id}/premiums/{schedule_id}/pay")
+@database_operation("tenant.portal.pay_installment", response_fields=("status", "simulated", "receipt"), resource_type="premium_receipt", authorize=portal_identity)
 async def pay_installment(tenant_id: UUID, customer_id: UUID, policy_id: UUID, schedule_id: UUID, body: PayBody,
                           request: Request, session: AsyncSession = Depends(get_session)):
     """Pay the oldest unpaid installment through the existing collection path (simulated gateway).
@@ -777,7 +780,17 @@ class ClaimIntimation(BaseModel):
     consent_confirmed: bool = False
 
 
+async def _replay_claim(values, receipt):
+    """The original answer was the claim as the customer sees it; an authorized replay rebuilds it from the claim itself."""
+    policy, claim, proc, access = await _owned_claim(values["session"], values["tenant_id"], values["customer_id"], UUID(receipt["claim_id"]))
+    if policy.id != values["policy_id"]:
+        raise HTTPException(409, "Idempotency receipt does not match this policy")
+    return await _claim_detail(values["session"], policy, claim, proc, access)
+
+
 @router.post("/tenants/{tenant_id}/customers/{customer_id}/policies/{policy_id}/claims", status_code=201)
+@database_operation("tenant.portal.intimate_claim", response_fields=None, status_code=201, resource_type="claim", authorize=portal_identity,
+                    receipt_fields=("claim_id",), view_receipt=lambda values, payload: {"claim_id": payload["id"]}, replay_response=_replay_claim)
 async def intimate_claim(tenant_id: UUID, customer_id: UUID, policy_id: UUID, body: ClaimIntimation, request: Request,
                          session: AsyncSession = Depends(get_session)):
     """A customer's claim, registered through the existing claims workflow (channel "Portal"). Whether it is payable is
@@ -878,7 +891,16 @@ class SurrenderRequest(BaseModel):
     reason: str = PField(min_length=5, max_length=500)
 
 
+async def _replay_surrender(values, receipt):
+    """The original answer was the customer's current surrender quote; an authorized replay rebuilds it from the open case."""
+    if receipt["policy_id"] != str(values["policy_id"]):
+        raise HTTPException(409, "Idempotency receipt does not match this policy")
+    return await surrender_quote(values["tenant_id"], values["customer_id"], values["policy_id"], values["session"])
+
+
 @router.post("/tenants/{tenant_id}/customers/{customer_id}/policies/{policy_id}/surrender", status_code=201)
+@database_operation("tenant.portal.request_surrender", response_fields=None, status_code=201, resource_type="policy_exit", authorize=portal_identity,
+                    receipt_fields=("policy_id",), view_receipt=lambda values: {"policy_id": str(values["policy_id"])}, replay_response=_replay_surrender)
 async def request_surrender(tenant_id: UUID, customer_id: UUID, policy_id: UUID, body: SurrenderRequest, request: Request,
                             session: AsyncSession = Depends(get_session)):
     """The policyholder asks to surrender. This opens the same Surrender case staff open in Maturity & Exit; nothing is
@@ -901,7 +923,13 @@ async def request_surrender(tenant_id: UUID, customer_id: UUID, policy_id: UUID,
     return await surrender_quote(tenant_id, customer_id, policy_id, session)
 
 
+async def _replay_claim_document(values):
+    policy, claim, proc, access = await _owned_claim(values["session"], values["tenant_id"], values["customer_id"], values["claim_id"])
+    return await _claim_detail(values["session"], policy, claim, proc, access)
+
+
 @router.post("/tenants/{tenant_id}/customers/{customer_id}/claims/{claim_id}/documents/{key}")
+@step_operation("tenant.portal.upload_claim_document", _replay_claim_document, ids=("customer_id", "claim_id"), authorize=portal_identity, resource_type="claim")
 async def upload_claim_document(tenant_id: UUID, customer_id: UUID, claim_id: UUID, key: str, request: Request,
                                 note: Optional[str] = Form(None), file: UploadFile = File(...),
                                 session: AsyncSession = Depends(get_session)):

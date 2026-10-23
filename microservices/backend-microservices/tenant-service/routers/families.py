@@ -24,6 +24,7 @@ from family_underwriting import (
 )
 
 from routers.cases import generate_case_number
+from services.idempotency import read_model_operation, sanitized_operation
 from schemas import (
     FamilyConfirmResponse,
     FamilyGroupCreate,
@@ -246,12 +247,24 @@ async def _get_or_create_member_customer(
 
 # ── Family groups ────────────────────────────────────────────────────────────────
 
+async def _replay_family_nominees(values):
+    """Nominees (names, CNICs, shares) are never kept in a receipt: they are rebuilt from the family policy's beneficiaries."""
+    listing = await list_family_nominees(values["tenant_id"], values["family_id"], values["fp_id"], values["session"])
+    return {"nominees": listing["nominees"]}
+
+
+def _family_confirm(operation):
+    return sanitized_operation(operation, ("family_policy_id", "total_sum_insured", "members", "nominees"), drop=("nominees",), rebuild=_replay_family_nominees,
+                               resource_type="family_policy")
+
+
 @router.post(
     "/{tenant_id}/families",
     response_model=FamilyGroupRead,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(verify_admin)],
 )
+@read_model_operation("tenant.family.create_group", FamilyGroupRead, lambda v, rid: v["session"].get(FamilyGroup, UUID(rid)), status_code=201, resource_type="family_group")
 async def create_family_group(
     tenant_id: UUID,
     body: FamilyGroupCreate,
@@ -544,6 +557,7 @@ async def list_family_members(tenant_id: UUID, family_id: UUID, session: AsyncSe
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(verify_admin)],
 )
+@read_model_operation("tenant.family.create_floater_policy", FamilyPolicyRead, lambda v, rid: v["session"].get(FamilyPolicy, UUID(rid)), status_code=201, resource_type="family_policy")
 async def create_floater_policy(
     tenant_id: UUID,
     family_id: UUID,
@@ -574,6 +588,7 @@ async def create_floater_policy(
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(verify_admin)],
 )
+@read_model_operation("tenant.family.create_life_bundle_policy", FamilyPolicyRead, lambda v, rid: v["session"].get(FamilyPolicy, UUID(rid)), status_code=201, resource_type="family_policy")
 async def create_life_bundle_policy(
     tenant_id: UUID,
     family_id: UUID,
@@ -941,6 +956,7 @@ async def validate_floater_members(
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(verify_admin)],
 )
+@_family_confirm("tenant.family.confirm_floater_members")
 async def confirm_floater_members(
     tenant_id: UUID,
     family_id: UUID,
@@ -1185,6 +1201,7 @@ async def validate_life_bundle_members(
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(verify_admin)],
 )
+@_family_confirm("tenant.family.confirm_life_bundle_members")
 async def confirm_life_bundle_members(
     tenant_id: UUID,
     family_id: UUID,

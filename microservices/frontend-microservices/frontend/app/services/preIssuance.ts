@@ -1,5 +1,6 @@
 import api from "./api";
 
+import { keyedPost, keyedRequest } from "@/lib/idempotency";
 const tenantId = () =>
   typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
 
@@ -145,19 +146,19 @@ export interface CounterOfferCreate {
 
 export async function createCounterOffer(policyId: string, body: CounterOfferCreate): Promise<CounterOffer> {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/policies/${policyId}/counter-offer`, body);
+  const res = { data: await keyedPost(api, `createCounterOffer:${policyId}`, `/tenants/${tid}/policies/${policyId}/counter-offer`, body) };
   return res.data;
 }
 
 export async function acceptCounterOffer(policyId: string, note?: string) {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/policies/${policyId}/counter-offer/accept`, { note });
+  const res = { data: await keyedPost(api, `acceptCounterOffer:${policyId}`, `/tenants/${tid}/policies/${policyId}/counter-offer/accept`, { note }) };
   return res.data;
 }
 
 export async function declineCounterOffer(policyId: string, note?: string) {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/policies/${policyId}/counter-offer/decline`, { note });
+  const res = { data: await keyedPost(api, `declineCounterOffer:${policyId}`, `/tenants/${tid}/policies/${policyId}/counter-offer/decline`, { note }) };
   return res.data;
 }
 
@@ -170,7 +171,7 @@ export async function getRequirements(policyId: string): Promise<RequirementItem
 
 export async function seedRequirements(policyId: string): Promise<RequirementItem[]> {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/policies/${policyId}/requirements`, []);
+  const res = { data: await keyedPost(api, `seedRequirements:${policyId}`, `/tenants/${tid}/policies/${policyId}/requirements`, []) };
   return res.data;
 }
 
@@ -181,7 +182,7 @@ export async function actOnRequirement(
   note?: string,
 ): Promise<RequirementItem> {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/requirements/${reqId}/${action}`, { actor, note });
+  const res = { data: await keyedPost(api, `actOnRequirement:${reqId}`, `/tenants/${tid}/requirements/${reqId}/${action}`, { actor, note }) };
   return res.data;
 }
 
@@ -194,19 +195,19 @@ export async function getCompliance(policyId: string): Promise<ComplianceCheck[]
 
 export async function runCompliance(policyId: string): Promise<ComplianceCheck[]> {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/policies/${policyId}/compliance/run`);
+  const res = { data: await keyedPost(api, `runCompliance:${policyId}`, `/tenants/${tid}/policies/${policyId}/compliance/run`) };
   return res.data;
 }
 
 export async function clearCompliance(checkId: string, note?: string, clearedBy?: string): Promise<ComplianceCheck> {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/compliance/${checkId}/clear`, { note, cleared_by: clearedBy });
+  const res = { data: await keyedPost(api, `clearCompliance:${checkId}`, `/tenants/${tid}/compliance/${checkId}/clear`, { note, cleared_by: clearedBy }) };
   return res.data;
 }
 
 export async function failCompliance(checkId: string, note?: string, clearedBy?: string): Promise<ComplianceCheck> {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/compliance/${checkId}/fail`, { note, cleared_by: clearedBy });
+  const res = { data: await keyedPost(api, `failCompliance:${checkId}`, `/tenants/${tid}/compliance/${checkId}/fail`, { note, cleared_by: clearedBy }) };
   return res.data;
 }
 
@@ -223,11 +224,11 @@ export async function replaceBeneficiaries(
   meta?: { changed_by?: string; change_reason?: string },
 ) {
   const tid = tenantId();
-  const res = await api.put(`/tenants/${tid}/policies/${policyId}/beneficiaries`, {
+  const res = { data: await keyedRequest(api, 'put', `replaceBeneficiaries:${policyId}`, `/tenants/${tid}/policies/${policyId}/beneficiaries`, {
     beneficiaries,
     changed_by: meta?.changed_by,
     change_reason: meta?.change_reason,
-  });
+  }) };
   return res.data;
 }
 
@@ -240,7 +241,7 @@ export async function getBeneficiaryHistory(policyId: string): Promise<Beneficia
 // ── Documents ──────────────────────────────────────────────────────────────
 export async function generateDocuments(policyId: string) {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/policies/${policyId}/documents/generate`);
+  const res = { data: await keyedPost(api, `generateDocuments:${policyId}`, `/tenants/${tid}/policies/${policyId}/documents/generate`) };
   return res.data;
 }
 

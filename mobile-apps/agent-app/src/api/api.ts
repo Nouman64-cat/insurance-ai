@@ -62,8 +62,22 @@ api.interceptors.response.use(
       ]);
       unauthorizedHandlers.forEach((handler) => handler());
     }
-    return Promise.reject(new Error(readErrorMessage(err)));
+    // Keep the HTTP response on the error: src/lib/idempotency.ts needs the status to tell a refused write (fresh key next time) from an
+    // uncertain one (same key on retry).
+    return Promise.reject(Object.assign(new Error(readErrorMessage(err)), { response: err.response }));
   }
 );
+
+import { createOperations } from '../lib/idempotency';
+
+/** Writes carrying one Idempotency-Key per user intent. `slot` names the intent (e.g. `ipp-confirm:<caseId>`). */
+const operations = createOperations(AsyncStorage, async () => {
+  const [tenant, agent] = await Promise.all([AsyncStorage.getItem('tenant_id'), AsyncStorage.getItem('agent_id')]);
+  return `${tenant ?? 'platform'}:${agent ?? 'anonymous'}`;
+});
+
+export function keyedPost<T = any>(slot: string, url: string, body?: unknown, config: Record<string, any> = {}): Promise<{ data: T }> {
+  return operations.run(slot, (headers) => api.post<T>(url, body, { ...config, headers: { ...(config.headers ?? {}), ...headers } }));
+}
 
 export default api;

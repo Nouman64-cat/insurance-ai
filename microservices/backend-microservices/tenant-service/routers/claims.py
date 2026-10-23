@@ -13,6 +13,9 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
+from services.idempotency import tenant_operation
+from shared.idempotency.http import database_operation
+from services.idempotency import payout_identity
 from routers.auth import _get_current_user, _role_name, oauth2_scheme
 from routers.users import verify_tenant_member
 from shared.models.core import (
@@ -458,6 +461,29 @@ async def _authority_view(session: AsyncSession, tenant_id: UUID) -> dict:
     return {"limits": rows, "payment_execution_role": ca.DISBURSE_ROLES[0]}
 
 
+# ── idempotent claim-register steps ─────────────────────────────────────────────────────────────────────────────────────────────
+# These answer with the claim card (claimant and policy details). The receipt keeps only the claim id; an authorized replay rebuilds the
+# card from the claim, so the body is current and no personal data is copied into the receipt.
+
+async def _replay_claim_card(values, receipt):
+    session = values["session"]
+    claim = await session.get(Claim, UUID(receipt["claim_id"]))
+    if claim is None or claim.tenant_id != values["tenant_id"]:
+        raise HTTPException(404, "Claim not found")
+    policy = await session.get(Policy, claim.policy_id) if claim.policy_id else None
+    customer = await session.get(Customer, policy.customer_id) if policy else None
+    adjuster = await session.get(User, claim.assigned_adjuster_id) if claim.assigned_adjuster_id else None
+    return _claim_dict(claim, policy, customer, adjuster, 0)
+
+
+def _claim_register_step(operation, *, created=False, status_code=200):
+    from services.idempotency import tenant_user_identity
+    from shared.idempotency.http import database_operation
+    view = (lambda values, payload: {"claim_id": payload["id"]}) if created else (lambda values: {"claim_id": str(values["claim_id"])})
+    return database_operation(operation, response_fields=None, status_code=status_code, resource_type="claim", authorize=tenant_user_identity,
+                              receipt_fields=("claim_id",), view_receipt=view, replay_response=_replay_claim_card)
+
+
 @router.get("/authority", summary="The delegated authority matrix")
 async def get_claim_authority(
     tenant_id: UUID, token: str = Depends(oauth2_scheme), session: AsyncSession = Depends(get_session),
@@ -491,6 +517,7 @@ async def set_claim_authority(
 
 
 @router.post("", status_code=201, summary="Create FNOL Claim")
+@_claim_register_step("tenant.claim_register.create", created=True, status_code=201)
 async def create_claim(
     tenant_id: UUID,
     body: ClaimCreate,
@@ -791,6 +818,7 @@ VALID_TRANSITIONS = {
 
 
 @router.patch("/{claim_id}/status", summary="Update Claim Status")
+@_claim_register_step("tenant.claim_register.status")
 async def update_claim_status(
     tenant_id: UUID,
     claim_id: UUID,
@@ -872,6 +900,7 @@ async def update_claim_status(
 
 
 @router.post("/{claim_id}/adjudicate", summary="Adjudicate Claim Decision")
+@_claim_register_step("tenant.claim_register.adjudicate")
 async def adjudicate_claim(
     tenant_id: UUID,
     claim_id: UUID,
@@ -969,6 +998,7 @@ async def adjudicate_claim(
 async def assert_claim_payable(session: AsyncSession, tenant_id: UUID, claim: Claim, amount: float) -> None:
     """The gates every disbursement passes: an approved claim, at least one document,
     and no more than was approved. Raises the same 400s the payout endpoint always did."""
+    await session.refresh(claim, with_for_update=True)
     if claim.status not in (ClaimStatusEnum.APPROVED, ClaimStatusEnum.PARTIAL_APPROVAL):
         raise HTTPException(
             status_code=400,
@@ -1055,6 +1085,7 @@ async def settle_claim_with_payouts(
 
 
 @router.post("/{claim_id}/payout", status_code=201, summary="Initiate Claim Disbursement Payout")
+@database_operation("tenant.claim.payout", response_fields=("id", "claim_id", "amount", "method", "status", "reference_number", "initiated_at", "completed_at"), status_code=201, resource_type="claim_payout", authorize=payout_identity)
 async def create_claim_payout(
     tenant_id: UUID,
     claim_id: UUID,
@@ -1088,6 +1119,7 @@ async def create_claim_payout(
 
 
 @router.post("/{claim_id}/reinsurance-refer", summary="Refer Claim to Reinsurance for Recovery")
+@tenant_operation("tenant.claim_register.reinsurance_refer", ("claim_id", "status", "reinsurance_referral_id"), resource_type="claim")
 async def refer_claim_to_reinsurance(
     tenant_id: UUID,
     claim_id: UUID,
@@ -1192,6 +1224,7 @@ async def open_claim_uw_case(session: AsyncSession, claim: Claim, *, start_new_r
 
 
 @router.post("/{claim_id}/re-underwrite", summary="Refer Claim to Underwriting")
+@_claim_register_step("tenant.claim_register.re_underwrite")
 async def refer_claim_to_underwriting(
     tenant_id: UUID,
     claim_id: UUID,
@@ -1235,6 +1268,7 @@ async def refer_claim_to_underwriting(
 
 
 @router.post("/{claim_id}/resolve-underwriting", summary="Resolve Claim Underwriting Review")
+@_claim_register_step("tenant.claim_register.resolve_underwriting")
 async def resolve_claim_underwriting(
     tenant_id: UUID,
     claim_id: UUID,

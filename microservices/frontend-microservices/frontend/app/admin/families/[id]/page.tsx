@@ -9,6 +9,7 @@ import FamilyMembersEditor, { FamilyRow, blankRow, buildMembersPayload, checkRow
 import { listInsurancePlans, InsurancePlan } from "@/app/services/insurancePlans";
 import { tx } from "@/lib/i18n/tx";
 
+import { keyedPost } from "@/lib/idempotency";
 interface FamilyGroup {
   id: string;
   name: string;
@@ -436,11 +437,11 @@ export default function FamilyDetailPage() {
     setSuccess("");
     setFloaterFormLoading(true);
     try {
-      const resp = await api.post<FamilyPolicy>(`/tenants/${tenantId}/families/${familyId}/floater-policies`, {
+      const resp = { data: await keyedPost<FamilyPolicy>(api, `floater-create:${familyId}`, `/tenants/${tenantId}/families/${familyId}/floater-policies`, {
         total_sum_insured: parseFloat(totalSumInsured) || 0,
         term_years: parseInt(floaterTermYears) || 0,
         effective_date: floaterEffectiveDate,
-      });
+      }) };
       setSuccess(tx("Floater policy created. Add family members below."));
       setShowCreateFloater(false);
       setFamilyPolicies((prev) => [resp.data, ...prev]);
@@ -459,11 +460,11 @@ export default function FamilyDetailPage() {
     setSuccess("");
     setLifeBundleFormLoading(true);
     try {
-      const resp = await api.post<FamilyPolicy>(`/tenants/${tenantId}/families/${familyId}/life-bundle-policies`, {
+      const resp = { data: await keyedPost<FamilyPolicy>(api, `life-bundle-create:${familyId}`, `/tenants/${tenantId}/families/${familyId}/life-bundle-policies`, {
         term_years: parseInt(lifeBundleTermYears) || 0,
         effective_date: lifeBundleEffectiveDate,
         discount_percentage: parseFloat(discountPercentage) || 0,
-      });
+      }) };
       setSuccess(tx("Life bundle policy created. Add family members below."));
       setShowCreateLifeBundle(false);
       setFamilyPolicies((prev) => [resp.data, ...prev]);
@@ -533,10 +534,10 @@ export default function FamilyDetailPage() {
       if (problems.length) { setError(problems.slice(0, 4).join("; ") + (problems.length > 4 ? `; …and ${problems.length - 4} more` : "")); return; }
       const sent = buildMembersPayload(rowsToSend, isLifeBundle);
       const insuredSent = sent.filter((m: any) => m.is_insured);
-      const resp = await api.post<FamilyConfirmResult>(
+      const resp = { data: await keyedPost<FamilyConfirmResult>(api, `members-confirm:${selectedPolicy.id}`, 
         `/tenants/${tenantId}/families/${familyId}/${policyPathSegment}/${selectedPolicy.id}/members/confirm`,
         { members: sent }
-      );
+      ) };
       // When this page is embedded in the Copilot, hand back to the chat so it carries on with the
       // proposal steps (and then pre-underwriting) — exactly as after "Add demo data". No-op standalone.
       notifyParentPortal("family_members_enrolled", {

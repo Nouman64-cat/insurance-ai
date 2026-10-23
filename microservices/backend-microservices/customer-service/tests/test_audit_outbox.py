@@ -1,3 +1,4 @@
+from tests.test_service import await_ticket
 import os, unittest, json
 from uuid import uuid4
 from unittest.mock import patch
@@ -42,7 +43,7 @@ class TicketAudit(unittest.IsolatedAsyncioTestCase):
   async with main.engine.begin() as c: rows = (await c.execute(text(f'SELECT payload FROM {TABLE} ORDER BY created_at, id'))).all()
   return [AuditIntent.model_validate(r[0]) for r in rows]
  async def ticket(self):
-  r = await self.client.post('/v1/tickets', json={'title': 'Claim enquiry', 'description': 'My CNIC 35202-1234567-1 is wrong on the policy', 'idempotency_key': str(uuid4())})
+  r = await await_ticket(self.client, {'title': 'Claim enquiry', 'description': 'My CNIC 35202-1234567-1 is wrong on the policy', 'idempotency_key': str(uuid4())})
   self.assertEqual(r.status_code, 200, r.text); return r.json()
 
  async def test_the_ticket_lifecycle_is_audited_without_copying_ticket_text(self):
@@ -72,7 +73,7 @@ class TicketAudit(unittest.IsolatedAsyncioTestCase):
 
  async def test_an_idempotent_replay_does_not_audit_twice(self):
   payload = {'title': 'Same enquiry', 'description': 'Please explain policy servicing', 'idempotency_key': str(uuid4())}
-  for _ in range(3): self.assertEqual((await self.client.post('/v1/tickets', json=payload)).status_code, 200)
+  for _ in range(3): self.assertEqual((await await_ticket(self.client, payload)).status_code, 200)
   self.assertEqual([i.action for i in await self.intents()], ['ticket.created'])
 
  async def test_a_rejected_change_leaves_no_audit_intent(self):

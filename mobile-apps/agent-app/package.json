@@ -8,7 +8,8 @@
     "ios": "ELECTRON_DISABLE_SANDBOX=1 NODE_OPTIONS=\"--require ./fix-dns.js\" expo start --ios",
     "web": "ELECTRON_DISABLE_SANDBOX=1 NODE_OPTIONS=\"--require ./fix-dns.js\" expo start --web",
     "typecheck": "tsc --noEmit",
-    "test:chat": "node --test tests/chat.test.cjs"
+    "test:chat": "node --test tests/chat.test.cjs",
+    "test:idempotency": "node --test tests/idempotency.test.cjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

@@ -32,6 +32,7 @@ from routers.customer_portal_internal import (
     policy_actions,
 )
 from routers.policies import _st
+from services.idempotency import portal_identity, reviewed_operation, step_operation
 from routers.renewals import AcceptanceBody, capture_acceptance
 from routers.renewals import _overview as renewal_overview
 from services import customer_portal_family as fam
@@ -47,6 +48,7 @@ from shared.models.core import (
     FamilyPlanTypeEnum,
     FamilyPolicy,
     Policy,
+    PolicyEvent,
 )
 from shared.services.policy_state_machine import record_event
 
@@ -205,6 +207,20 @@ async def _group_view(session: AsyncSession, tenant_id: UUID, customer: Customer
 
 # ── groups ────────────────────────────────────────────────────────────────────
 
+async def _service_request_replay(values, kept):
+    """The summary the customer saw is read back from the audit event the request left, so the receipt holds no member details."""
+    events = (await values["session"].exec(select(PolicyEvent).where(
+        PolicyEvent.policy_id == UUID(kept["policy_id"]), PolicyEvent.event_type == "CustomerServiceRequested"
+    ).order_by(PolicyEvent.created_at.desc()))).all()
+    summary = next(((e.detail_json or {}).get("summary") for e in events if (e.detail_json or {}).get("request_ref") == values["body"].reference), None)
+    return {"ok": True, **kept, "summary": summary}
+
+
+async def _renewal_acceptance_replay(values):
+    policy, _access = await _owned_policy_access(values["session"], values["tenant_id"], values["customer_id"], values["policy_id"], family="full")
+    return _renewal_view(await renewal_overview(values["session"], policy), policy)
+
+
 @router.get(BASE + "/family")
 async def list_family(tenant_id: UUID, customer_id: UUID, session: AsyncSession = Depends(get_session)):
     """The family groups this customer belongs to and may see. Empty for a customer with only individual policies."""
@@ -354,6 +370,9 @@ def validate_nominations(rows: list[NomineeRow]) -> list[dict]:
 
 
 @router.post(BASE + "/family/{family_id}/requests", status_code=201)
+@step_operation("portal.family.submit_request", _service_request_replay, ids=("customer_id", "family_id"), fields=("kind", "policy_id", "policy_number"),
+                keep=lambda p: {"kind": p["kind"], "policy_id": p["policy_id"], "policy_number": p["policy_number"]}, status_code=201,
+                authorize=portal_identity, resource_type="policy")
 async def submit_family_request(tenant_id: UUID, customer_id: UUID, family_id: UUID, body: ServiceRequestIn, request: Request,
                                 session: AsyncSession = Depends(get_session)):
     """Check a customer's servicing request against the SAME state and ownership rules the portal shows, then leave it on the
@@ -453,6 +472,7 @@ class WithdrawIn(BaseModel):
 
 
 @router.post(BASE + "/family/{family_id}/requests/withdraw")
+@reviewed_operation("portal.family.withdraw_request", ("ok",), authorize=portal_identity, resource_type="policy")
 async def withdraw_family_request(tenant_id: UUID, customer_id: UUID, family_id: UUID, body: WithdrawIn,
                                   session: AsyncSession = Depends(get_session)):
     """Tell the insurer's staff a request was withdrawn, so they do not act on it."""
@@ -499,6 +519,7 @@ class RenewalAcceptance(BaseModel):
 
 
 @router.post(BASE + "/policies/{policy_id}/renewal/acceptance")
+@step_operation("portal.renewal.acceptance", _renewal_acceptance_replay, ids=("customer_id", "policy_id"), atomic=False, authorize=portal_identity, resource_type="policy")
 async def renewal_acceptance(tenant_id: UUID, customer_id: UUID, policy_id: UUID, body: RenewalAcceptance, request: Request,
                              session: AsyncSession = Depends(get_session)):
     """Accept (or decline) renewed terms. Offered only when the renewal engine itself says acceptance is the next step."""

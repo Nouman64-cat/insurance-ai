@@ -59,12 +59,15 @@ class TenantClient:
     def scope(self, tenant_id, customer_id) -> str:
         return f"{PREFIX}/tenants/{tenant_id}/customers/{customer_id}"
 
-    async def _send(self, method: str, path: str, *, json_body: Any = None, files: Any = None, data: Any = None) -> Upstream:
+    async def _send(self, method: str, path: str, *, json_body: Any = None, files: Any = None, data: Any = None,
+                    operation_key: Optional[str] = None) -> Upstream:
         try:
             req = self._http.build_request(method, self.base_url + path, json=json_body, files=files, data=data)
             req.read()
             body = b"" if files is not None else (req.content if req.content else b"")  # multipart: signed with an empty body (see tenant-service)
-            req.headers.update(sign(self.key, method, path, body, caller=CALLER))
+            # With an operation key the v2 signature also binds the Idempotency-Key header, so it cannot be swapped in transit.
+            req.headers.update(sign(self.key, method, path, body, caller=CALLER,
+                                    **({"bound_headers": {"Idempotency-Key": operation_key}} if operation_key else {})))
             resp = await self._http.send(req)
         except (httpx.HTTPError, ValueError) as exc:
             log.error("tenant-service unreachable: %s", type(exc).__name__)
@@ -84,8 +87,10 @@ class TenantClient:
         raise_for(resp)
         return resp.body
 
-    async def post(self, path: str, payload: Any = None) -> Any:
-        resp = await self._send("POST", path, json_body=payload if payload is not None else {})
+    async def post(self, path: str, payload: Any = None, *, operation_key: Optional[str] = None) -> Any:
+        """`operation_key` is the customer's own Idempotency-Key, namespaced by account: tenant-service then answers a retry of an
+        operation it already performed with the original outcome instead of performing it again."""
+        resp = await self._send("POST", path, json_body=payload if payload is not None else {}, operation_key=operation_key)
         raise_for(resp)
         return resp.body
 
@@ -94,9 +99,10 @@ class TenantClient:
         raise_for(resp)
         return resp.body
 
-    async def upload(self, path: str, filename: str, content: bytes, content_type: str, note: Optional[str], fields: Optional[dict] = None) -> Any:
+    async def upload(self, path: str, filename: str, content: bytes, content_type: str, note: Optional[str], fields: Optional[dict] = None,
+                     *, operation_key: Optional[str] = None) -> Any:
         data = {**({"note": note} if note else {}), **{k: v for k, v in (fields or {}).items() if v}}
-        resp = await self._send("POST", path, files={"file": (filename, content, content_type)}, data=data or None)
+        resp = await self._send("POST", path, files={"file": (filename, content, content_type)}, data=data or None, operation_key=operation_key)
         raise_for(resp)
         return resp.body
 

@@ -13,6 +13,8 @@ from suggestion import suggest_plan
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import job_store
+    await job_store.initialize()
     # Start the Kafka consumer daemon in the background
     stop_event = asyncio.Event()
     consumer_task = start_consumer_task(stop_event)

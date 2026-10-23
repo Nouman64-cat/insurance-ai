@@ -62,6 +62,7 @@ from shared.models.core import (
     Tenant,
 )
 from shared.services.policy_state_machine import IllegalStateTransition, apply_transition, record_event
+from services.idempotency import notification_operation, workflow_operation
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["Stage B — Reinstatement"])
@@ -261,6 +262,7 @@ async def reinstatement_overview(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/reinstatement")
+@workflow_operation("tenant.reinstatement.open_reinstatement", _overview, ids=("policy_id",))
 async def open_reinstatement(
     tenant_id: UUID, policy_id: UUID,
     body: OpenBody,
@@ -320,6 +322,7 @@ async def open_reinstatement(
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/reinstatement/{case_id}/arrears/recalculate")
+@workflow_operation("tenant.reinstatement.recalculate_arrears", _overview, ids=('policy_id', 'case_id'))
 async def recalculate_arrears(
     tenant_id: UUID, policy_id: UUID, case_id: UUID,
     request: Request,
@@ -368,6 +371,7 @@ async def _run_assessment(session: AsyncSession, policy: Policy, case: PolicyRei
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/reinstatement/{case_id}/declaration")
+@workflow_operation("tenant.reinstatement.submit_declaration", _overview, ids=('policy_id', 'case_id'))
 async def submit_declaration(
     tenant_id: UUID, policy_id: UUID, case_id: UUID,
     body: DeclarationBody,
@@ -415,6 +419,7 @@ async def submit_declaration(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/reinstatement/{case_id}/assessment")
+@workflow_operation("tenant.reinstatement.rerun_assessment", _overview, ids=('policy_id', 'case_id'))
 async def rerun_assessment(
     tenant_id: UUID, policy_id: UUID, case_id: UUID,
     request: Request,
@@ -450,6 +455,7 @@ def _find_evidence(case: PolicyReinstatement, key: str) -> dict:
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/reinstatement/{case_id}/evidence/{key}")
+@workflow_operation("tenant.reinstatement.receive_evidence", _overview, ids=("policy_id", "case_id"))
 async def receive_evidence(
     tenant_id: UUID, policy_id: UUID, case_id: UUID, key: str,
     request: Request,
@@ -549,6 +555,7 @@ def _validate_approval(case: PolicyReinstatement, notes: str) -> None:
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/reinstatement/{case_id}/decision")
+@workflow_operation("tenant.reinstatement.record_decision", _overview, ids=('policy_id', 'case_id'))
 async def record_decision(
     tenant_id: UUID, policy_id: UUID, case_id: UUID,
     body: DecisionBody,
@@ -609,6 +616,7 @@ async def record_decision(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/reinstatement/{case_id}/terms/respond")
+@workflow_operation("tenant.reinstatement.respond_to_terms", _overview, ids=('policy_id', 'case_id'))
 async def respond_to_terms(
     tenant_id: UUID, policy_id: UUID, case_id: UUID,
     body: TermsResponseBody,
@@ -643,6 +651,7 @@ async def respond_to_terms(
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/reinstatement/{case_id}/payment")
+@workflow_operation("tenant.reinstatement.collect_reinstatement_payment", _overview, ids=('policy_id', 'case_id'))
 async def collect_reinstatement_payment(
     tenant_id: UUID, policy_id: UUID, case_id: UUID,
     body: PaymentBody,
@@ -731,7 +740,7 @@ async def _post_arrears_receipts(session: AsyncSession, policy: Policy, case: Po
         surcharge = round(line["surcharge"] + line["interest"], 2)   # interest is excluded from the commission base, like surcharge
         receipt_no = await _next_receipt_no(session, policy.tenant_id)
         doc = document_generator.generate_receipt({
-            "policy_id": policy.id, "tenant_name": tenant.name if tenant else "Insurer",
+            "receipt_no": receipt_no, "policy_id": policy.id, "tenant_name": tenant.name if tenant else "Insurer",
             "customer_name": customer.name if customer else "—",
             "policy_number": policy.policy_number, "installment_no": sched.installment_no,
             "paid_date": date.today().isoformat(), "method": case.payment_method,
@@ -826,6 +835,7 @@ async def _render_confirmation(session: AsyncSession, policy: Policy, case: Poli
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/reinstatement/{case_id}/restore")
+@workflow_operation("tenant.reinstatement.restore_coverage", _overview, ids=('policy_id', 'case_id'))
 async def restore_coverage(
     tenant_id: UUID, policy_id: UUID, case_id: UUID,
     body: RestoreBody,
@@ -893,6 +903,7 @@ async def restore_coverage(
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/reinstatement/{case_id}/withdraw")
+@workflow_operation("tenant.reinstatement.withdraw_reinstatement", _overview, ids=('policy_id', 'case_id'))
 async def withdraw_reinstatement(
     tenant_id: UUID, policy_id: UUID, case_id: UUID,
     body: WithdrawBody,
@@ -907,7 +918,7 @@ async def withdraw_reinstatement(
 
     refund_ref = None
     if case.payment_realized_at and case.payment_amount > 0:
-        refund = payment_gateway.refund_payment(case.payment_amount)
+        refund = payment_gateway.refund_payment(case.payment_amount, reference=payment_gateway.operation_reference("reinstatement-refund", case.id))
         refund_ref = refund.reference
         case.refund_reference = refund_ref
     case.status = "Withdrawn"
@@ -943,6 +954,7 @@ async def download_confirmation(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/reinstatement/{case_id}/confirmation/send")
+@notification_operation("tenant.reinstatement.send_confirmation", ("sent_to", "sent_at", "delivered"))
 async def send_confirmation(
     tenant_id: UUID, policy_id: UUID, case_id: UUID,
     request: Request,

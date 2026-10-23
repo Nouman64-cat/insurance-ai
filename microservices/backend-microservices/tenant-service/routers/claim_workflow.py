@@ -37,6 +37,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 import email_utils
 from database import get_session
+from services.idempotency import notification_operation
+from shared.idempotency.http import database_operation
 from routers.artifacts import _presign_url, _upload_to_s3
 from routers.auth import _role_name, require_roles
 from routers.claims import (
@@ -665,7 +667,29 @@ def _validate_register(body: RegisterBody) -> None:
         raise HTTPException(400, "The claimant's name is required.")
 
 
+# ── idempotent claim steps ──────────────────────────────────────────────────────────────────────────────────────────────────────
+# The response of every claim step is the claim workspace (claimant, medical and bank details included). The receipt keeps only the claim id;
+# an authorized replay rebuilds the workspace from the claim itself, so the body is current and no personal data is copied into the receipt.
+
+async def _replay_workspace(values, receipt):
+    policy = await _get_policy(values["session"], values["tenant_id"], values["policy_id"])
+    claim, proc = await _get_claim(values["session"], values["policy_id"], UUID(receipt["claim_id"]))
+    return await _workspace(values["session"], policy, claim, proc)
+
+
+def _claim_step(operation, *, created=False, status_code=200):
+    """Atomic idempotency for a claim step (database-only). `created=True` for the call that registers the claim."""
+    if created:
+        view = lambda values, payload: {"claim_id": payload["claim"]["id"]}
+    else:
+        view = lambda values: {"claim_id": str(values["claim_id"])}
+    return database_operation(operation, response_fields=None, status_code=status_code, resource_type="claim", receipt_fields=("claim_id",),
+                              view_receipt=view, replay_response=_replay_workspace)
+
+
+
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management", status_code=201)
+@_claim_step("tenant.claim.register", created=True, status_code=201)
 async def register_claim(
     tenant_id: UUID, policy_id: UUID,
     body: RegisterBody,
@@ -728,6 +752,7 @@ async def register_claim(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/adopt")
+@_claim_step("tenant.claim.adopt")
 async def adopt_claim(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID,
     body: AdoptBody,
@@ -765,6 +790,7 @@ async def adopt_claim(
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/eligibility/verify")
+@_claim_step("tenant.claim.reverify_eligibility")
 async def reverify_eligibility(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID,
     request: Request,
@@ -783,6 +809,7 @@ async def reverify_eligibility(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/eligibility/override")
+@_claim_step("tenant.claim.override_eligibility")
 async def override_eligibility(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID,
     body: NoteBody,
@@ -831,6 +858,7 @@ def _update_doc(proc: ClaimProcess, key: str, **changes) -> None:
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/documents/{key}")
+@_claim_step("tenant.claim.receive_document")
 async def receive_document(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID, key: str,
     request: Request,
@@ -880,6 +908,7 @@ async def receive_document(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/documents/{key}/waive")
+@_claim_step("tenant.claim.waive_document")
 async def waive_document(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID, key: str,
     body: DocWaiveBody,
@@ -904,6 +933,7 @@ async def waive_document(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/documents/{key}/reject")
+@_claim_step("tenant.claim.return_document")
 async def reject_document(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID, key: str,
     body: DocReasonBody,
@@ -929,6 +959,7 @@ async def reject_document(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/documents")
+@_claim_step("tenant.claim.request_documents")
 async def request_more_documents(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID,
     body: DocRequestBody,
@@ -1007,6 +1038,7 @@ async def download_checklist(
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/investigation/finding")
+@_claim_step("tenant.claim.add_finding")
 async def add_finding(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID,
     body: FindingBody,
@@ -1031,6 +1063,7 @@ async def add_finding(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/investigation/complete")
+@_claim_step("tenant.claim.complete_investigation")
 async def complete_investigation(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID,
     body: InvestigationCloseBody,
@@ -1066,6 +1099,7 @@ def _policy_year_start(effective: Optional[date], on: date) -> date:
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/assessment")
+@_claim_step("tenant.claim.assess")
 async def assess_claim(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID,
     body: AssessBody,
@@ -1117,6 +1151,7 @@ async def assess_claim(
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/decision")
+@_claim_step("tenant.claim.decide")
 async def decide_claim(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID,
     body: DecisionBody,
@@ -1239,7 +1274,52 @@ async def _derive_payees(session: AsyncSession, policy: Policy, claim: Claim, pr
 # Step 6 — settlement
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Workspace responses contain medical/bank/customer fields. Persist only a safe
+# financial outcome and rehydrate the authorized resource on replay.
+_WORKSPACE_FIELDS = ('claim', 'process', 'eligibility', 'documents', 'investigation', 'assessment', 'decision', 'sla', 'settlement', 'closure', 'stages', 'underwriting', 'plan_terms', 'can', 'timeline')
+
+
+def _settlement_receipt(payload):
+    return {"claim_id": payload["claim"]["id"],
+            "claim": {k: payload["claim"][k] for k in ("status", "approved_amount", "settlement_amount")},
+            "settlement": {k: payload["settlement"][k] for k in (
+                "authorized_at", "authorized_amount", "disbursed_at", "paid_total", "reconciled_at")}}
+
+
+async def _settlement_identity(values, request):
+    user = values["user"]  # require_roles runs on every HTTP call, including replay
+    if not user.is_active or user.tenant_id != values["tenant_id"]:
+        raise HTTPException(403, "Work settlement only in your own organization using an active account.")
+    await _get_policy(values["session"], values["tenant_id"], values["policy_id"])
+    claim = await values["session"].get(Claim, values["claim_id"])
+    if claim is None or claim.tenant_id != values["tenant_id"] or claim.policy_id != values["policy_id"]:
+        raise HTTPException(404, "Claim not found on this policy.")
+    return user
+
+
+async def _authorization_identity(values, request):
+    user = await _settlement_identity(values, request)
+    claim = await values["session"].get(Claim, values["claim_id"])
+    await ca.assert_can_authorize(values["session"], values["tenant_id"],
+                                  await _role_name(user, values["session"]), claim.approved_amount)
+    return user
+
+
+async def _replay_settlement(values, receipt):
+    if receipt["claim_id"] != str(values["claim_id"]):
+        raise HTTPException(409, "Settlement receipt does not match the claim")
+    policy = await _get_policy(values["session"], values["tenant_id"], values["policy_id"])
+    claim, proc = await _get_claim(values["session"], values["policy_id"], values["claim_id"])
+    workspace = await _workspace(values["session"], policy, claim, proc)
+    workspace["claim"].update(receipt["claim"])
+    workspace["settlement"].update(receipt["settlement"])
+    return workspace
+
+
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/settlement/prepare")
+@database_operation("tenant.claim.prepare_claim_settlement", response_fields=_WORKSPACE_FIELDS,
+                    receipt_fields=("claim_id", "claim", "settlement"), receipt_builder=_settlement_receipt,
+                    replay_response=_replay_settlement, authorize=_settlement_identity)
 async def prepare_claim_settlement(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID, request: Request,
     user=Depends(require_roles(*ca.AUTHORIZE_ROLES)), session: AsyncSession = Depends(get_session),
@@ -1279,6 +1359,9 @@ async def prepare_claim_settlement(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/settlement/payees")
+@database_operation("tenant.claim.verify_payees", response_fields=_WORKSPACE_FIELDS,
+                    receipt_fields=("claim_id", "claim", "settlement"), receipt_builder=_settlement_receipt,
+                    replay_response=_replay_settlement, authorize=_settlement_identity)
 async def verify_payees(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID,
     body: PayeesBody,
@@ -1334,6 +1417,9 @@ async def verify_payees(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/settlement/authorize")
+@database_operation("tenant.claim.authorize_disbursement", response_fields=_WORKSPACE_FIELDS,
+                    receipt_fields=("claim_id", "claim", "settlement"), receipt_builder=_settlement_receipt,
+                    replay_response=_replay_settlement, authorize=_authorization_identity)
 async def authorize_disbursement(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID,
     request: Request,
@@ -1369,6 +1455,9 @@ async def authorize_disbursement(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/settlement/disburse")
+@database_operation("tenant.claim.disburse_claim", response_fields=_WORKSPACE_FIELDS,
+                    receipt_fields=("claim_id", "claim", "settlement"), receipt_builder=_settlement_receipt,
+                    replay_response=_replay_settlement, authorize=_settlement_identity)
 async def disburse_claim(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID,
     body: DisburseBody,
@@ -1417,6 +1506,9 @@ async def disburse_claim(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/settlement/reconcile")
+@database_operation("tenant.claim.reconcile_settlement", response_fields=_WORKSPACE_FIELDS,
+                    receipt_fields=("claim_id", "claim", "settlement"), receipt_builder=_settlement_receipt,
+                    replay_response=_replay_settlement, authorize=_settlement_identity)
 async def reconcile_settlement(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID,
     body: ReconcileBody,
@@ -1427,7 +1519,10 @@ async def reconcile_settlement(
     """Reconcile what was disbursed against what was approved and owed. A failed blocking
     check is an Exception and can only be signed off with a note."""
     policy = await _get_policy(session, tenant_id, policy_id)
+    await session.exec(select(Claim).where(Claim.id == claim_id).with_for_update())
     claim, proc = await _get_claim(session, policy_id, claim_id)
+    await session.refresh(claim)
+    await session.refresh(proc)
     if _cstatus(claim) != ClaimStatusEnum.SETTLED:
         raise HTTPException(409, "There is no payment to reconcile yet.")
     payouts = await _payouts(session, claim)
@@ -1523,6 +1618,7 @@ async def _render_letter(session: AsyncSession, policy: Policy, claim: Claim, pr
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/close")
+@_claim_step("tenant.claim.close")
 async def close_claim(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID,
     request: Request,
@@ -1590,6 +1686,7 @@ async def download_claim_letter(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/claims-management/{claim_id}/confirmation/send")
+@notification_operation("tenant.claim.send_letter")
 async def send_claim_letter(
     tenant_id: UUID, policy_id: UUID, claim_id: UUID,
     request: Request,

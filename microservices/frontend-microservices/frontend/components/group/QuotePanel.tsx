@@ -5,6 +5,7 @@ import api from "@/app/services/api";
 import { Chip, GroupQuote, PanelProps, downloadPdf, errMsg, mpBase, pkr, premiumWord } from "./groupShared";
 import { tx } from "@/lib/i18n/tx";
 
+import { keyedPost } from "@/lib/idempotency";
 export default function QuotePanel({ tenantId, orgId, mp, reload }: PanelProps) {
   const base = mpBase(tenantId, orgId, mp.id);
   const word = premiumWord(mp.business_type);
@@ -31,12 +32,12 @@ export default function QuotePanel({ tenantId, orgId, mp, reload }: PanelProps) 
   };
 
   const generate = () => run("Generate", async () => {
-    const res = await api.post<GroupQuote>(`${base}/quotes`);
+    const res = { data: await keyedPost<GroupQuote>(api, `group-quote:${base}`, `${base}/quotes`) };
     setNotice(tx("Quote v{0} generated.", { 0: res.data.version }));
     await load(); await reload();
   });
   const decide = (q: GroupQuote, action: "accept" | "decline") => run(action === "accept" ? "Accept" : "Decline", async () => {
-    await api.post(`${base}/quotes/${q.id}/${action}`, { decided_by: decidedBy.trim() || undefined, notes: notes.trim() || undefined });
+    { data: await keyedPost(api, `group-quote-decision:${q.id}`, `${base}/quotes/${q.id}/${action}`, { decided_by: decidedBy.trim() || undefined, notes: notes.trim() || undefined }) };
     setNotice(action === "accept" ? tx("Quote v{0} accepted — the scheme can now be issued.", { 0: q.version }) : tx("Quote v{0} declined.", { 0: q.version }));
     setNotes(""); await load(); await reload();
   });

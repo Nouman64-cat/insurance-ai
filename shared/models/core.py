@@ -3927,6 +3927,9 @@ from shared.models.evaluation import (  # noqa: E402,F401
     EvalVersionCase,
 )
 
+# Register the owner-database business outbox (policy lifecycle events are queued with the lifecycle change; see shared/events/outbox.py).
+from shared.events.outbox import BusinessOutbox  # noqa: E402,F401
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # WALK-IN LEADS (customer portal self-service)

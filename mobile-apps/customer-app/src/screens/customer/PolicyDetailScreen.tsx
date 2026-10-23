@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { View } from 'react-native';
 import { Badge, Banner, Button, Card, EmptyState, ListRow, SegmentedControl, Text } from '../../components/ui';
 import Screen from '../../components/ui/Screen';
@@ -9,7 +9,7 @@ import RequestSheet, { RequestKind } from '../../components/RequestSheet';
 import { useApi } from '../../hooks/useApi';
 import { ApiError } from '../../api/client';
 import { post } from '../../api/portal';
-import { compactMoney, date, dateTime, daysUntil, money, tOr } from '../../lib/format';
+import { compactMoney, date, dateTime, daysUntil, money, newIdempotencyKey, tOr } from '../../lib/format';
 import { t } from '../../i18n/t';
 import type { PolicyDetail, RenewalView } from '../../api/portalTypes';
 
@@ -21,11 +21,19 @@ type TabKey = (typeof FAMILY_TABS)[number];
 function Renewal({ policyId }: { policyId: string }) {
   const { data, error, reload } = useApi<RenewalView>(`/policies/${encodeURIComponent(policyId)}/renewal`);
   const [busy, setBusy] = useState(false);
+  const key = useRef(newIdempotencyKey());   // one answer = one operation, however often the request is retried
   if (error || !data) return null;
   const n = data.next;
   async function answer(accepted: boolean) {
     setBusy(true);
-    try { await post(`/policies/${encodeURIComponent(policyId)}/renewal/acceptance`, { accepted }); await reload(); } finally { setBusy(false); }
+    try {
+      await post(`/policies/${encodeURIComponent(policyId)}/renewal/acceptance`, { accepted }, { key: key.current });
+      key.current = newIdempotencyKey();
+      await reload();
+    } catch (e) {
+      if (!['NETWORK', 'SERVICE_UNAVAILABLE', 'DOMAIN_UNAVAILABLE', 'REQUEST_IN_PROGRESS'].includes((e as ApiError).code)) key.current = newIdempotencyKey();
+      throw e;
+    } finally { setBusy(false); }
   }
   return (
     <Panel title={t('renewal.title')}>

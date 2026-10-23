@@ -40,6 +40,7 @@ from shared.models.core import (
     VerificationFinding,
     WorkflowStateEnum,
 )
+from services.idempotency import read_model_operation, reviewed_operation, tenant_operation
 from schemas import (
     CustomerRead,
     CaseCreate,
@@ -115,6 +116,7 @@ async def _attach_initial_payment(session: AsyncSession, policy_id: Optional[UUI
 
 
 @router.post("", response_model=CaseRead, status_code=201)
+@read_model_operation("tenant.case.create", CaseRead, lambda v, rid: v["session"].get(Case, UUID(rid)), status_code=201, resource_type="case", id_field="caseld")
 async def create_case(
     tenant_id: UUID,
     body: CaseCreate,
@@ -931,6 +933,7 @@ async def _hold_audit(session: AsyncSession, case: Case, user, event_type: str, 
 
 
 @router.post("/{case_id}/hold", response_model=CaseRead)
+@read_model_operation("tenant.case.hold", CaseRead, lambda v: v["session"].get(Case, v["case_id"]), resource_type="case", id_field="caseld")
 async def hold_case(
     tenant_id: UUID, case_id: UUID, body: CaseHoldBody,
     session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme),
@@ -954,6 +957,7 @@ async def hold_case(
 
 
 @router.post("/{case_id}/release", response_model=CaseRead)
+@read_model_operation("tenant.case.release", CaseRead, lambda v: v["session"].get(Case, v["case_id"]), resource_type="case", id_field="caseld")
 async def release_case(
     tenant_id: UUID, case_id: UUID, body: CaseReleaseBody,
     session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme),
@@ -977,6 +981,7 @@ async def release_case(
 
 
 @router.patch("/{case_id}/status", response_model=CaseRead)
+@read_model_operation("tenant.case.status", CaseRead, lambda v: v["session"].get(Case, v["case_id"]), resource_type="case", id_field="caseld")
 async def update_case_status(
     tenant_id: UUID,
     case_id: UUID,
@@ -1105,6 +1110,7 @@ async def update_case_status(
 
 
 @router.post("/{case_id}/assignments", status_code=201)
+@tenant_operation("tenant.case.assign", ("status",), resource_type="case")
 async def assign_case(
     tenant_id: UUID,
     case_id: UUID,
@@ -1190,6 +1196,7 @@ async def get_document_checklist(
 
 
 @router.post("/{case_id}/comments", status_code=201)
+@tenant_operation("tenant.case.comment", ("status",), resource_type="case")
 async def add_case_comment(
     tenant_id: UUID,
     case_id: UUID,
@@ -1276,6 +1283,7 @@ def _received_document_types(types) -> list[str]:
 
 
 @router.post("/{case_id}/requirements/determine")
+@tenant_operation("tenant.case.determine_requirements", ("requirements", "satisfied", "case_status"), resource_type="case")
 async def determine_case_requirements(
     tenant_id: UUID,
     case_id: UUID,
@@ -1309,6 +1317,7 @@ async def list_case_requirements(
 
 
 @router.post("/{case_id}/requirements/{requirement_id}/waive")
+@tenant_operation("tenant.case.waive_requirement", ("id", "code", "category", "required", "status", "reason", "satisfied_by_artifact_id", "updated_at"), resource_type="case_requirement")
 async def waive_case_requirement(
     tenant_id: UUID,
     case_id: UUID,
@@ -1393,6 +1402,7 @@ async def get_case_workflow(
 
 
 @router.post("/{case_id}/workflow/advance")
+@tenant_operation("tenant.case.advance_workflow", ("currentStep", "previousStep", "workflowState"), resource_type="case")
 async def advance_case_workflow(
     tenant_id: UUID,
     case_id: UUID,
@@ -1429,6 +1439,7 @@ _PLAN_CHANGE_ROLES = {"Underwriter", "Admin", "SuperAdmin"}
 
 
 @router.post("/{case_id}/change-plan")
+@reviewed_operation("tenant.case.change_plan", ("dry_run", "applied", "plan", "coverage", "term", "premium", "documents", "resets", "keeps", "review"), atomic=False, resource_type="case")
 async def change_case_plan(
     tenant_id: UUID,
     case_id: UUID,

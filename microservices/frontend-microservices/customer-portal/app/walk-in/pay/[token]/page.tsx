@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { Banner, Card, Field, Icon, Skeleton, Spinner, errorText } from "@/components/ui";
 import { ApiError } from "@/lib/api";
-import { date, money } from "@/lib/format";
+import { date, money, newIdempotencyKey } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { WalkInPayView } from "@/lib/types";
 
@@ -31,6 +31,7 @@ export default function PayPage({ params }: { params: { token: string } }) {
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const key = useRef(newIdempotencyKey());
   const base = `/api/portal/public/pay/${encodeURIComponent(params.token)}`;
 
   const load = useCallback(async () => {
@@ -67,11 +68,12 @@ export default function PayPage({ params }: { params: { token: string } }) {
         if (note.trim()) form.append("note", note.trim());
         if (method) form.append("method", method);
         if (reference.trim()) form.append("reference", reference.trim());
-        res = await fetch(`${base}/proof`, { method: "POST", headers: H, body: form, cache: "no-store" });
+        res = await fetch(`${base}/proof`, { method: "POST", headers: { ...H, "idempotency-key": key.current }, body: form, cache: "no-store" });
       } else {
-        res = await fetch(`${base}/declare`, { method: "POST", headers: { ...H, "content-type": "application/json" }, body: JSON.stringify({ method: method || undefined, reference: reference.trim() || undefined, note: note.trim() || undefined }), cache: "no-store" });
+        res = await fetch(`${base}/declare`, { method: "POST", headers: { ...H, "content-type": "application/json", "idempotency-key": key.current }, body: JSON.stringify({ method: method || undefined, reference: reference.trim() || undefined, note: note.trim() || undefined }), cache: "no-store" });
       }
       if (!res.ok) throw await fail(res);
+      key.current = newIdempotencyKey();     // this declaration is done; the next one is a new operation
       setView(await res.json()); setSent(true); setFile(null); setNote(""); setReference("");
       if (input.current) input.current.value = "";
     } catch (err) { setError(err as ApiError); }

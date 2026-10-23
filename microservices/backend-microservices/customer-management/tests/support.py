@@ -26,6 +26,7 @@ class FakeTenant:
     def __init__(self):
         self.calls: list[tuple[str, str, object]] = []
         self.routes: dict[str, object] = {}
+        self.operation_keys: list = []
 
     def scope(self, tenant_id, customer_id) -> str:
         return f"/scope/{tenant_id}/{customer_id}"
@@ -42,13 +43,15 @@ class FakeTenant:
     async def get(self, path, **q):
         return self._answer("GET", path, q or None)
 
-    async def post(self, path, payload=None):
+    async def post(self, path, payload=None, *, operation_key=None):
+        self.operation_keys.append(operation_key)
         return self._answer("POST", path, payload)
 
     async def patch(self, path, payload):
         return self._answer("PATCH", path, payload)
 
-    async def upload(self, path, filename, content, content_type, note, fields=None):
+    async def upload(self, path, filename, content, content_type, note, fields=None, *, operation_key=None):
+        self.operation_keys.append(operation_key)
         return self._answer("UPLOAD", path, {"filename": filename, "note": note, **(fields or {})})
 
     async def download(self, path, **q):

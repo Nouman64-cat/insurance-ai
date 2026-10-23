@@ -26,4 +26,6 @@ def cors_options(value: str | None = None) -> dict:
         "allow_credentials": True,
         "allow_methods": ["*"],
         "allow_headers": ["*"],
+        # Let the browser read how an idempotent request was answered and when to retry an in-flight one.
+        "expose_headers": ["Idempotency-Replayed", "Retry-After"],
     }

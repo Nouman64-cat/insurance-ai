@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { runOperation, browserOperationScope, operationHeaders } from "@/lib/idempotency";
 import { tx } from "@/lib/i18n/tx";
 import { OPEN_DESK, api, type Category, type Priority } from "@/lib/api";
 import { CATEGORY_HINT, CATEGORY_ICON, CATEGORY_LABEL } from "@/lib/labels";
@@ -30,11 +31,9 @@ export default function NewTicketDialog({ open, onClose, onCreated }: { open: bo
   const [picked, setPicked] = useState<Picked>(NONE);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // One key per ticket being written: a double click or a retry after a network error creates one ticket.
-  const key = useRef("");
 
   useEffect(() => {
-    if (open) { setForm(EMPTY); setPicked(NONE); setError(null); key.current = crypto.randomUUID(); }
+    if (open) { setForm(EMPTY); setPicked(NONE); setError(null); }
   }, [open]);
 
   const title = form.title.trim(), description = form.description.trim();
@@ -48,9 +47,10 @@ export default function NewTicketDialog({ open, onClose, onCreated }: { open: bo
   const submit = async () => {
     setBusy(true); setError(null);
     try {
-      const r = await api.post("/tickets", {
-        ...form, title, description, customer_id: picked.customer?.id ?? null, policy_id: picked.policy?.id ?? null, idempotency_key: key.current,
-      });
+      const scope = OPEN_DESK ? "customer-service:open-desk" : browserOperationScope();
+      const r = await runOperation(scope, "customer-service:ticket-create", operationKey => api.post("/tickets", {
+        ...form, title, description, customer_id: picked.customer?.id ?? null, policy_id: picked.policy?.id ?? null,
+      }, { headers: operationHeaders(operationKey) }));
       onCreated(r.data.id);
     } catch (e) {
       setError((e as Error).message);

@@ -1,3 +1,4 @@
+import { browserOperationScope, keyedPost, operationHeaders, runOperation } from "@/lib/idempotency";
 import api from "./api";
 
 const tenantId = () =>
@@ -179,7 +180,7 @@ export async function getClaimDetail(claimId: string): Promise<Claim> {
 
 export async function createClaim(payload: CreateClaimRequest): Promise<Claim> {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/claims`, payload);
+  const res = { data: await keyedPost(api, 'createClaim', `/tenants/${tid}/claims`, payload) };
   return res.data;
 }
 
@@ -203,7 +204,7 @@ export async function adjudicateClaim(
   payload: AdjudicateClaimRequest
 ): Promise<Claim> {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/claims/${claimId}/adjudicate`, payload);
+  const res = { data: await keyedPost(api, `adjudicateClaim:${claimId}`, `/tenants/${tid}/claims/${claimId}/adjudicate`, payload) };
   return res.data;
 }
 
@@ -212,13 +213,13 @@ export async function createClaimPayout(
   payload: ClaimPayoutRequest
 ): Promise<any> {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/claims/${claimId}/payout`, payload);
-  return res.data;
+  return runOperation(browserOperationScope(), `claim-payout:${claimId}`, async key =>
+    (await api.post(`/tenants/${tid}/claims/${claimId}/payout`, payload, {headers: operationHeaders(key)})).data);
 }
 
 export async function referClaimToReinsurance(claimId: string): Promise<any> {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/claims/${claimId}/reinsurance-refer`, {});
+  const res = { data: await keyedPost(api, `referClaimToReinsurance:${claimId}`, `/tenants/${tid}/claims/${claimId}/reinsurance-refer`, {}) };
   return res.data;
 }
 
@@ -232,11 +233,11 @@ export async function uploadClaimDocument(
   formData.append("file", file);
   formData.append("document_type", documentType);
 
-  const res = await api.post(`/tenants/${tid}/claims/${claimId}/artifacts`, formData, {
+  const res = { data: await keyedPost(api, `uploadClaimDocument:${claimId}`, `/tenants/${tid}/claims/${claimId}/artifacts`, formData, {
     headers: {
       "Content-Type": "multipart/form-data",
     },
-  });
+  }) };
   return res.data;
 }
 
@@ -246,10 +247,10 @@ export async function referClaimToUnderwriting(
   notes?: string
 ): Promise<Claim> {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/claims/${claimId}/re-underwrite`, {
+  const res = { data: await keyedPost(api, `referClaimToUnderwriting:${claimId}`, `/tenants/${tid}/claims/${claimId}/re-underwrite`, {
     referral_reason,
     notes,
-  });
+  }) };
   return res.data;
 }
 
@@ -259,10 +260,10 @@ export async function resolveClaimUnderwriting(
   decision_notes: string
 ): Promise<Claim> {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/claims/${claimId}/resolve-underwriting`, {
+  const res = { data: await keyedPost(api, `resolveClaimUnderwriting:${claimId}`, `/tenants/${tid}/claims/${claimId}/resolve-underwriting`, {
     decision,
     decision_notes,
-  });
+  }) };
   return res.data;
 }
 

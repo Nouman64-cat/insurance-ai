@@ -23,6 +23,8 @@ from schemas import (
 from shared.models.core import AcquisitionSource, Customer, Role, Tenant, User, UserProfile, UserStatus
 from routers.auth import _get_current_user, oauth2_scheme
 from routers.users import remove_user, verify_admin   # reuse the Admin guard and the shared user removal
+from services.idempotency import scoped_identity
+from shared.idempotency.http import side_effect_operation
 
 _pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -193,6 +195,24 @@ async def _issue_login(
     return user, password
 
 
+async def _replay_source(values, receipt):
+    """The source as the screen shows it; whether the credentials e-mail went is the only thing remembered from the first answer."""
+    source = await _get_source(values["tenant_id"], UUID(receipt["source_id"]), values["session"])
+    login = (await _logins([source], values["session"])).get(source.id)
+    return _to_full(source, 0, login, receipt["credentials_email_sent"])
+
+
+def _source_login_operation(operation, status_code=200):
+    """Creating a source (or re-sending its login) issues a fresh password and e-mails it. The password is never stored; a replay does not
+    send again, and an abandoned attempt may be retried (a retry issues a new password, which replaces the lost one)."""
+    return side_effect_operation(
+        operation, response_fields=None, status_code=status_code, resource_type="acquisition_source", authorize=scoped_identity, recover="retry",
+        receipt_fields=("source_id", "credentials_email_sent"),
+        view_receipt=lambda values, payload: {"source_id": payload["id"] if payload else str(values.get("source_id")),
+                                             "credentials_email_sent": payload.get("credentials_email_sent") if payload else None},
+        replay_response=_replay_source)
+
+
 @router.get(
     "/{tenant_id}/acquisition-sources",
     response_model=list[AcquisitionSourceFull],
@@ -219,6 +239,7 @@ async def list_acquisition_sources(
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(verify_admin)],
 )
+@_source_login_operation("tenant.source.create_source", status_code=201)
 async def create_acquisition_source(
     tenant_id: UUID,
     body: AcquisitionSourceCreate,
@@ -280,6 +301,7 @@ async def create_acquisition_source(
     response_model=AcquisitionSourceFull,
     dependencies=[Depends(verify_admin)],
 )
+@_source_login_operation("tenant.source.send_credentials")
 async def send_source_credentials(
     tenant_id: UUID,
     source_id: UUID,

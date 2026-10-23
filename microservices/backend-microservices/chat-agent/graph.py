@@ -1696,7 +1696,7 @@ async def _permission_gate(state: ChatState) -> Command:
     name, args, call_id = tool_call["name"], tool_call["args"], tool_call["id"]
     platform = state.get("platform") or "web"
     ctx = ExecCtx(tenant_id=state["tenant_id"], jwt_token=state["jwt_token"], role=state.get("user_role") or "",
-                  current_org_id=state.get("group_current_org_id"), platform=platform)
+                  current_org_id=state.get("group_current_org_id"), platform=platform, operation_id=call_id)
     # A group tool called with an explicit organization id is that corporate being chosen: remember it.
     remember: dict = {}
     if name in GROUP_TOOLS and args.get("organization_id"):
@@ -2902,7 +2902,8 @@ async def _resume_operation(state: ChatState, args: dict, ctx: ExecCtx, platform
     tool_args, errors = validate_and_normalize(tool, tool_args)
     if errors:
         return {"success": False, "error": "; ".join(errors), "error_code": "validation", "operation": operation}
-    result = await execute_tool(tool, tool_args, ctx)
+    from dataclasses import replace
+    result = await execute_tool(tool, tool_args, replace(ctx, operation_id=op["operation_id"]))
     status = "failed" if result.get("success") is False else "completed"
     return {**result, "operation": {**operation, "status": status}}
 

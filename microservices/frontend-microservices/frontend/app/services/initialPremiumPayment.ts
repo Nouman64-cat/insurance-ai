@@ -1,3 +1,4 @@
+import { keyedPost, runOperation, browserOperationScope, operationHeaders } from "@/lib/idempotency";
 import api from "./api";
 
 const tenantId = () => (typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "");
@@ -57,26 +58,28 @@ export function initiatePolicyIPP(policyId: string, method?: string): Promise<In
   const key = `${policyId}|${method ?? ""}`;
   const running = initiating.get(key);
   if (running) return running;
-  const request = api
-    .post(`/tenants/${tenantId()}/policies/${policyId}/ipp/initiate`, { method })
-    .then((res) => res.data as Initiation)
+  const request = runOperation(browserOperationScope(), `ipp-initiate:${policyId}`, async operationKey =>
+    (await api.post(`/tenants/${tenantId()}/policies/${policyId}/ipp/initiate`, { method }, {headers: operationHeaders(operationKey)})).data as Initiation)
     .finally(() => initiating.delete(key));
   initiating.set(key, request);
   return request;
 }
 
 export async function confirmPolicyIPP(policyId: string, opts: { method?: string; reference?: string; realize?: boolean } = {}): Promise<IPP> {
-  return (await api.post(`/tenants/${tenantId()}/policies/${policyId}/ipp/confirm`, { realize: true, ...opts })).data;
+  return runOperation(browserOperationScope(), `ipp-confirm:${policyId}`, async operationKey =>
+    (await api.post(`/tenants/${tenantId()}/policies/${policyId}/ipp/confirm`, { realize: true, ...opts },
+      { headers: operationHeaders(operationKey) })).data);
+
 }
 
 /** Ask the customer to pay: sends them a secure link by email (and shows it in their walk-in portal). Calling it again renews the link. */
 export async function requestPolicyPayment(policyId: string): Promise<PaymentRequestResult> {
-  return (await api.post(`/tenants/${tenantId()}/policies/${policyId}/ipp/request`)).data;
+  return keyedPost(api, `ipp-request:${policyId}`, `/tenants/${tenantId()}/policies/${policyId}/ipp/request`);
 }
 
 /** Staff decision on the customer's payment screenshot. Accepting it clears the initial premium. */
 export async function reviewPolicyProof(policyId: string, decision: "accept" | "reject", note?: string): Promise<IPP> {
-  return (await api.post(`/tenants/${tenantId()}/policies/${policyId}/ipp/review`, { decision, note })).data;
+  return keyedPost(api, `ipp-review:${policyId}`, `/tenants/${tenantId()}/policies/${policyId}/ipp/review`, { decision, note });
 }
 
 export const proofUrl = (artifactId: string) => `${process.env.NEXT_PUBLIC_API_URL}/tenants/${tenantId()}/artifacts/${artifactId}/view`;
@@ -85,17 +88,17 @@ export interface ReceivedInput { method: string; reference?: string; note?: stri
 
 /** Email the customer a reminder with their payment link (a fresh link if the old one has expired). */
 export async function remindPolicyPayment(policyId: string): Promise<PaymentRequestResult> {
-  return (await api.post(`/tenants/${tenantId()}/policies/${policyId}/ipp/remind`)).data;
+  return keyedPost(api, `ipp-remind:${policyId}`, `/tenants/${tenantId()}/policies/${policyId}/ipp/remind`);
 }
 
 /** Staff record that the premium has been received (cash, a bank transfer they checked, a customer's message…). Clears it at once. */
 export async function markPolicyPaymentReceived(policyId: string, input: ReceivedInput): Promise<IPP> {
-  return (await api.post(`/tenants/${tenantId()}/policies/${policyId}/ipp/mark-received`, input)).data;
+  return keyedPost(api, `ipp-received:${policyId}`, `/tenants/${tenantId()}/policies/${policyId}/ipp/mark-received`, input);
 }
 
 /** Stop the customer's link working. A new request can be sent later. */
 export async function withdrawPolicyPayment(policyId: string): Promise<IPP> {
-  return (await api.post(`/tenants/${tenantId()}/policies/${policyId}/ipp/withdraw`)).data;
+  return keyedPost(api, `ipp-withdraw:${policyId}`, `/tenants/${tenantId()}/policies/${policyId}/ipp/withdraw`);
 }
 
 export interface PaymentReceipt {

@@ -1,5 +1,6 @@
 import api from "./api";
 
+import { keyedPost, keyedRequest } from "@/lib/idempotency";
 const tenantId = () =>
   typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
 
@@ -68,13 +69,13 @@ export async function getACR(caseId: string): Promise<AgentConfidentialReport> {
 
 export async function saveACR(caseId: string, body: ACRUpsert): Promise<AgentConfidentialReport> {
   const tid = tenantId();
-  const res = await api.put(`/tenants/${tid}/cases/${caseId}/acr`, body);
+  const res = { data: await keyedRequest(api, 'put', `saveACR:${caseId}`, `/tenants/${tid}/cases/${caseId}/acr`, body) };
   return res.data;
 }
 
 export async function submitACR(caseId: string): Promise<AgentConfidentialReport> {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/cases/${caseId}/acr/submit`);
+  const res = { data: await keyedPost(api, `submitACR:${caseId}`, `/tenants/${tid}/cases/${caseId}/acr/submit`) };
   return res.data;
 }
 
@@ -91,21 +92,21 @@ export interface ACRRequestResult {
 /** Ask the case's agent (or its acquisition source's login) to file the ACR from the agent app. Idempotent. */
 export async function requestACR(caseId: string): Promise<ACRRequestResult> {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/cases/${caseId}/acr/request`);
+  const res = { data: await keyedPost(api, `requestACR:${caseId}`, `/tenants/${tid}/cases/${caseId}/acr/request`) };
   return res.data;
 }
 
 /** Underwriter / Admin: bypass Gate 2 when the agent's report never arrives. A reason is required. */
 export async function waiveACR(caseId: string, reason: string): Promise<AgentConfidentialReport> {
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/cases/${caseId}/acr/waive`, { reason });
+  const res = { data: await keyedPost(api, `waiveACR:${caseId}`, `/tenants/${tid}/cases/${caseId}/acr/waive`, { reason }) };
   return res.data;
 }
 
 /** Undo a waiver, so Gate 2 needs the submitted report again. */
 export async function reinstateACR(caseId: string): Promise<AgentConfidentialReport> {
   const tid = tenantId();
-  const res = await api.delete(`/tenants/${tid}/cases/${caseId}/acr/waive`);
+  const res = { data: await keyedRequest(api, 'delete', `reinstateACR:${caseId}`, `/tenants/${tid}/cases/${caseId}/acr/waive`) };
   return res.data;
 }
 

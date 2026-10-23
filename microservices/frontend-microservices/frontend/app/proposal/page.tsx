@@ -26,6 +26,7 @@ import { tx } from "@/lib/i18n/tx";
 import { appHref, portalUrl } from "@/lib/appLinks";
 import { useCaseEvents } from "@/lib/agent/useCaseEvents";
 
+import { keyedPost } from "@/lib/idempotency";
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
@@ -552,12 +553,12 @@ export default function QuotePage() {
 
       if (selectedQuotes.length === 1) {
         const q = selectedQuotes[0];
-        await api.post(`/tenants/${tenantId}/cases`, {
+        { data: await keyedPost(api, "proposal-case-create", `/tenants/${tenantId}/cases`, {
           customer_id: q.customer_id,
           policy_id: q.policy_id,
           caseType: "Underwriting",
           sourceChannel: "Online",
-        });
+        }) };
         router.push(appHref(UNDERWRITING_QUEUE));
         setSelectedProposalIds(new Set());
         setIsBulkProceeding(false);
@@ -570,12 +571,12 @@ export default function QuotePage() {
       //    underwriting page can render a plan switcher dropdown.
       const group = await Promise.all(
         selectedQuotes.map(async (q) => {
-          const caseRes = await api.post(`/tenants/${tenantId}/cases`, {
+          const caseRes = { data: await keyedPost(api, "proposal-case-create-2", `/tenants/${tenantId}/cases`, {
             customer_id: q.customer_id,
             policy_id: q.policy_id,
             caseType: "Underwriting",
             sourceChannel: "Online",
-          });
+          }) };
           return {
             caseId: caseRes.data.caseld as string,
             planLabel: q.plan_label,
@@ -1442,12 +1443,12 @@ export default function QuotePage() {
             if (!detail) return;
             const tenantId = localStorage.getItem("tenant_id");
             if (!tenantId) return;
-            await api.post(`/tenants/${tenantId}/cases`, {
+            { data: await keyedPost(api, "proposal-case-create-3", `/tenants/${tenantId}/cases`, {
               customer_id: detail.customer_id,
               policy_id: detail.policy_id,
               caseType: "Underwriting",
               sourceChannel: "Online",
-            });
+            }) };
             router.push(appHref(UNDERWRITING_QUEUE));
           }}
         />
@@ -2284,7 +2285,7 @@ function QuoteDetailModal({
   const renewDocLink = async () => {
     setDocBusy(true);
     try {
-      const r = await api.post(`${docPath}/renew`);
+      const r = { data: await keyedPost(api, `document-renew:${docPath}`, `${docPath}/renew`) };
       setDocReq(r.data);
       setConfirmRenew(false);
     } catch (err: any) {

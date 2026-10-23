@@ -74,6 +74,8 @@ from shared.models.core import (
     Tenant,
 )
 from shared.services.policy_state_machine import IllegalStateTransition, apply_transition
+from services.idempotency import read_model_operation, records_operation, tenant_user_identity
+from shared.idempotency.http import database_operation
 
 router = APIRouter(prefix="/tenants", tags=["Group Policies"])
 
@@ -242,6 +244,21 @@ async def _next_master_policy_number(session: AsyncSession, tenant_id: UUID, bus
 _PUBLISH_CONCURRENCY = 20
 
 
+GROUP_ISSUE_RECEIPT = ("certificates_issued", "total_premium", "amount_due")
+
+
+async def _replay_group_issue(values, receipt):
+    """Issuing/paying a scheme answered with the master policy as it stood; an authorized replay re-renders it from the record."""
+    mp = await _get_master_policy(values["tenant_id"], values["org_id"], values["mp_id"], values["session"])
+    return {**receipt, "master_policy": await _master_policy_read(mp, values["session"])}
+
+
+def _group_issue_operation(operation):
+    return database_operation(operation, response_fields=("master_policy",) + GROUP_ISSUE_RECEIPT, resource_type="master_policy",
+                              authorize=tenant_user_identity, receipt_fields=GROUP_ISSUE_RECEIPT,
+                              receipt_builder=lambda payload: {k: payload[k] for k in GROUP_ISSUE_RECEIPT}, replay_response=_replay_group_issue)
+
+
 async def _publish_certificate_events(request: Optional[Request], emitted: List[Tuple[Policy, PolicyEvent]]) -> None:
     """Mirror the certificate transitions of a committed issue/payment onto the
     policy lifecycle topic, as individual issuance does. Best-effort, after the
@@ -283,6 +300,18 @@ def _basis_text(cls: GroupBenefitClass) -> str:
 
 
 # ── Members & dependents ────────────────────────────────────────────────────────
+
+async def _render_group_beneficiaries(values, rows):
+    session = values["session"]
+    member = rows[0]
+    roster = (await session.exec(select(Beneficiary).where(Beneficiary.policy_id == member.policy_id))).all()
+    last = (await session.exec(select(BeneficiaryVersion.version_sequence).where(BeneficiaryVersion.policy_id == member.policy_id)
+                               .order_by(BeneficiaryVersion.version_sequence.desc()))).first()
+    snapshot = [{"name": r.name, "cnic": r.cnic, "relationship": r.relationship, "share_pct": r.share_pct,
+                 "date_of_birth": r.date_of_birth.isoformat() if r.date_of_birth else None, "is_minor": r.is_minor, "guardian_name": r.guardian_name}
+                for r in roster]
+    return {"beneficiaries": snapshot, "total_share": round(sum(b["share_pct"] for b in snapshot), 2), "version_sequence": last or 1}
+
 
 @router.get(
     "/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}/members",
@@ -340,6 +369,7 @@ def _assert_dependents_editable(mp: MasterPolicy) -> None:
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(verify_admin)],
 )
+@read_model_operation("tenant.group.add_dependent", GroupDependentRead, lambda v, rid: v["session"].get(GroupMemberDependent, UUID(rid)), status_code=201, resource_type="group_member_dependent")
 async def add_group_dependent(
     tenant_id: UUID, org_id: UUID, mp_id: UUID, member_id: UUID,
     body: GroupDependentCreate,
@@ -421,6 +451,7 @@ _NOMINATION_CLOSED = {"Cancelled", "Lapsed", "NotTakenUp"}
     "/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}/members/{member_id}/beneficiaries",
     dependencies=[Depends(verify_admin)],
 )
+@records_operation("tenant.group.replace_beneficiaries", GroupMember, None, render=_render_group_beneficiaries, ids_of=lambda v, p: [v["member_id"]], resource_type="group_member")
 async def replace_group_beneficiaries(tenant_id: UUID, org_id: UUID, mp_id: UUID, member_id: UUID,
                                       body: BeneficiariesReplace, session: AsyncSession = Depends(get_session)):
     mp = await _get_master_policy(tenant_id, org_id, mp_id, session)
@@ -485,6 +516,7 @@ async def list_group_beneficiaries(tenant_id: UUID, org_id: UUID, mp_id: UUID, m
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(verify_admin)],
 )
+@read_model_operation("tenant.group.generate_quote", GroupQuoteRead, lambda v, rid: v["session"].get(GroupQuote, UUID(rid)), status_code=201, resource_type="group_quote")
 async def generate_group_quote_endpoint(tenant_id: UUID, org_id: UUID, mp_id: UUID, session: AsyncSession = Depends(get_session)):
     """Price the scheme as one pool and issue a versioned quote. A revised
     quote supersedes the open one. Blocked while any above-FCL member still
@@ -592,6 +624,7 @@ async def _open_quote_for_decision(mp: MasterPolicy, quote_id: UUID, session: As
     response_model=GroupQuoteRead,
     dependencies=[Depends(verify_admin)],
 )
+@read_model_operation("tenant.group.accept_quote", GroupQuoteRead, lambda v: v["session"].get(GroupQuote, v["quote_id"]), resource_type="group_quote")
 async def accept_group_quote(tenant_id: UUID, org_id: UUID, mp_id: UUID, quote_id: UUID,
                              body: GroupQuoteDecision, session: AsyncSession = Depends(get_session)):
     """The employer accepts — recorded by staff on their behalf."""
@@ -612,6 +645,7 @@ async def accept_group_quote(tenant_id: UUID, org_id: UUID, mp_id: UUID, quote_i
     response_model=GroupQuoteRead,
     dependencies=[Depends(verify_admin)],
 )
+@read_model_operation("tenant.group.decline_quote", GroupQuoteRead, lambda v: v["session"].get(GroupQuote, v["quote_id"]), resource_type="group_quote")
 async def decline_group_quote(tenant_id: UUID, org_id: UUID, mp_id: UUID, quote_id: UUID,
                               body: GroupQuoteDecision, session: AsyncSession = Depends(get_session)):
     mp = await _get_master_policy(tenant_id, org_id, mp_id, session)
@@ -642,6 +676,7 @@ async def _accepted_quote(mp: MasterPolicy, session: AsyncSession) -> GroupQuote
     response_model=GroupIssueResponse,
     dependencies=[Depends(verify_admin)],
 )
+@_group_issue_operation("tenant.group.issue_master_policy")
 async def issue_master_policy(tenant_id: UUID, org_id: UUID, mp_id: UUID,
                               session: AsyncSession = Depends(get_session), request: Request = None):  # type: ignore[assignment]
     """Issue the contract on the accepted quote's terms: master policy number,
@@ -741,6 +776,7 @@ async def issue_master_policy(tenant_id: UUID, org_id: UUID, mp_id: UUID,
     response_model=GroupIssueResponse,
     dependencies=[Depends(verify_admin)],
 )
+@_group_issue_operation("tenant.group.record_payment")
 async def record_group_payment(tenant_id: UUID, org_id: UUID, mp_id: UUID, body: GroupPaymentCreate,
                                session: AsyncSession = Depends(get_session), request: Request = None):  # type: ignore[assignment]
     """Record the employer's premium/contribution. Full payment binds cover

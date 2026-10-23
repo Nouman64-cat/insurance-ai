@@ -11,6 +11,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 from schemas import InsurancePlanCreate, InsurancePlanRead, InsurancePlanUpdate
+from services.idempotency import read_model_operation
 from seeds.insurance_plans_seed import seed_insurance_plans
 from shared.models.core import InsurancePlan, Tenant
 from routers.users import verify_admin   # tenant-scoped Admin / cross-tenant SuperAdmin guard
@@ -45,6 +46,7 @@ async def _code_taken(tenant_id: UUID, code: str, session: AsyncSession) -> bool
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(verify_admin)],
 )
+@read_model_operation("tenant.plan.create", InsurancePlanRead, lambda v, rid: v["session"].get(InsurancePlan, UUID(rid)), status_code=201, resource_type="insurance_plan")
 async def create_insurance_plan(
     tenant_id: UUID,
     body: InsurancePlanCreate,

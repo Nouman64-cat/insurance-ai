@@ -70,6 +70,7 @@ from shared.models.core import (
 )
 
 from services.case_events import publish_case_event
+from services.idempotency import records_operation, secret_link_operation, step_operation, token_operation
 
 router = APIRouter(tags=["Pre-Underwriting — Medical Examination"])
 
@@ -181,6 +182,14 @@ def _clinic_dict(c: PanelClinic) -> dict:
     }
 
 
+async def _exam_order_view(values):
+    return await _order_with_clinic(values["session"], await _load_order(values["session"], values["case_id"]))
+
+
+async def _exam_result_view(values, kept):
+    return {**await _exam_order_view(values), **kept}
+
+
 @router.get("/tenants/{tenant_id}/panel-clinics")
 async def list_panel_clinics(
     tenant_id: UUID,
@@ -212,6 +221,7 @@ class PanelClinicCreate(BaseModel):
 
 
 @router.post("/tenants/{tenant_id}/panel-clinics", status_code=201)
+@records_operation("tenant.medical.create_panel_clinic", PanelClinic, lambda r: _clinic_dict(r), status_code=201, resource_type="panel_clinic")
 async def create_panel_clinic(
     tenant_id: UUID,
     body: PanelClinicCreate,
@@ -501,6 +511,7 @@ class MedicalInviteResponse(BaseModel):
     "/tenants/{tenant_id}/cases/{case_id}/medical-exam/invite",
     response_model=MedicalInviteResponse,
 )
+@secret_link_operation("tenant.medical.invite", ("token", "link_path", "expires_at", "status", "emailed_to", "email_status"), secrets=("token", "link_path"), masked=("emailed_to",), resource_type="medical_exam_order")
 async def invite_medical_exam(
     tenant_id: UUID,
     case_id: UUID,
@@ -579,6 +590,7 @@ async def list_slots(
 
 
 @router.post("/tenants/{tenant_id}/cases/{case_id}/medical-exam/schedule")
+@step_operation("tenant.medical.schedule", _exam_order_view, ids=("case_id",), atomic=False, resource_type="medical_exam_order")
 async def schedule_medical_exam(
     tenant_id: UUID,
     case_id: UUID,
@@ -694,6 +706,8 @@ async def ai_review_medical_reports(
 
 
 @router.post("/tenants/{tenant_id}/cases/{case_id}/medical-exam/result")
+@step_operation("tenant.medical.record_result", _exam_result_view, ids=("case_id",), fields=("unrated_tests", "uninsurable"), atomic=False,
+                keep=lambda p: {"unrated_tests": p["unrated_tests"], "uninsurable": p["uninsurable"]}, resource_type="medical_exam_order")
 async def record_medical_result(
     tenant_id: UUID,
     case_id: UUID,
@@ -771,6 +785,7 @@ async def record_medical_result(
 
 
 @router.post("/tenants/{tenant_id}/cases/{case_id}/medical-exam/confirm-reports")
+@step_operation("tenant.medical.confirm_reports", _exam_order_view, ids=("case_id",), atomic=False, resource_type="medical_exam_order")
 async def confirm_medical_reports(
     tenant_id: UUID,
     case_id: UUID,
@@ -821,6 +836,7 @@ class WaiveRequest(BaseModel):
 
 
 @router.post("/tenants/{tenant_id}/cases/{case_id}/medical-exam/waive")
+@step_operation("tenant.medical.waive", _exam_order_view, ids=("case_id",), atomic=False, resource_type="medical_exam_order")
 async def waive_medical_exam(
     tenant_id: UUID,
     case_id: UUID,
@@ -1072,6 +1088,7 @@ async def public_book_medical_exam(
 
 
 @router.post("/tenants/{tenant_id}/cases/{case_id}/medical-exam/lab-link")
+@secret_link_operation("tenant.medical.lab_link", ("link_path", "expires_at", "emailed_to", "email_status", "lab_name"), secrets=("link_path",), masked=("emailed_to",), resource_type="medical_exam_order")
 async def issue_lab_link(
     tenant_id: UUID,
     case_id: UUID,
@@ -1108,6 +1125,27 @@ async def _resolve_by_lab_token(session: AsyncSession, raw_token: str) -> tuple[
     return order, clinic
 
 
+async def _resolve_lab_link(values):
+    return await _resolve_by_lab_token(values["session"], values["raw_token"])
+
+
+async def _rebuild_lab_report(values, kept):
+    artifact = await values["session"].get(Artifact, UUID(kept["artifact_id"]))
+    if artifact is None:
+        raise HTTPException(409, "The report this key produced no longer exists.")
+    return {"report": _report_view(artifact)}
+
+
+async def _rebuild_lab_auto_reports(values, kept):
+    artifacts = [a for a in [await values["session"].get(Artifact, UUID(i)) for i in (kept["artifact_ids"] or [])] if a is not None]
+    return {"file_name": artifacts[0].file_name if artifacts else None, "test_codes": kept["test_codes"], "matched_by": kept["matched_by"],
+            "reports": [_report_view(a) for a in artifacts]}
+
+
+async def _rebuild_lab_complete(values, kept):
+    return {"status": kept["status"], "reports_submitted": True, "message": "Reports submitted for medical review. Thank you."}
+
+
 @router.get("/public/medical-lab/{raw_token}")
 async def public_get_lab_exam(raw_token: str, session: AsyncSession = Depends(get_session)):
     """What the doctor sees: the applicant, the booked slot, the tests, and what is uploaded."""
@@ -1136,6 +1174,8 @@ async def public_get_lab_exam(raw_token: str, session: AsyncSession = Depends(ge
 
 
 @router.post("/public/medical-lab/{raw_token}/reports", status_code=202)
+@token_operation("public.medical.lab_upload", _resolve_lab_link, _rebuild_lab_report, token_arg="raw_token", status_code=202, resource_type="artifact",
+                 fields=("artifact_id",), keep=lambda p: {"artifact_id": p["report"]["id"]})
 async def lab_upload_medical_report(
     raw_token: str, request: Request, test_code: str = Form(...),
     file: UploadFile = File(...), session: AsyncSession = Depends(get_session),
@@ -1152,6 +1192,9 @@ async def lab_upload_medical_report(
 
 
 @router.post("/public/medical-lab/{raw_token}/reports/auto", status_code=202)
+@token_operation("public.medical.lab_auto_upload", _resolve_lab_link, _rebuild_lab_auto_reports, token_arg="raw_token", status_code=202, resource_type="artifact",
+                 fields=("artifact_ids", "test_codes", "matched_by"),
+                 keep=lambda p: {"artifact_ids": [r["id"] for r in p["reports"]], "test_codes": p["test_codes"], "matched_by": p["matched_by"]})
 async def lab_auto_upload_medical_report(
     raw_token: str, request: Request, file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session),
@@ -1176,6 +1219,8 @@ class LabSubmitRequest(BaseModel):
 
 
 @router.post("/public/medical-lab/{raw_token}/complete")
+@token_operation("public.medical.lab_complete", _resolve_lab_link, _rebuild_lab_complete, token_arg="raw_token", resource_type="medical_exam_order",
+                 fields=("status",), keep=lambda p: {"status": p["status"]})
 async def lab_complete_medical_exam(
     raw_token: str,
     body: LabSubmitRequest,

@@ -225,6 +225,15 @@ async def j_proposal(state: ChatState) -> dict:
 SPECIALIST_PAUSES = ("Awaiting Assignment", "Awaiting Specialist Reviews", "Awaiting ACR", "PEP Flagged")
 
 
+def _evaluation_key(ctx: ExecCtx, customer, policy, case_id) -> dict:
+    """One evaluation per tool call and content: a resumed or retried call is recognised instead of running (and persisting) twice."""
+    if not ctx.operation_id:
+        return {}
+    from tool_executor import write_key
+    return {"Idempotency-Key": write_key((ctx.effective_tenant_id, ctx.operation_id), "POST", f"{API_GATEWAY_URL}/evaluate/stream",
+                                         {"json": {"customer": customer, "policy": policy, "case_id": case_id}})}
+
+
 async def _tsvc_get(ctx: ExecCtx, path: str) -> dict:
     async with httpx.AsyncClient(timeout=30.0, headers=ctx.headers) as client:
         res = await client.get(f"{TENANT_SERVICE_URL}/tenants/{ctx.effective_tenant_id}{path}")
@@ -376,7 +385,7 @@ async def _run_evaluation_directly(customer: dict, policy: dict, ctx: ExecCtx, c
         async with client.stream(
             "POST", f"{API_GATEWAY_URL}/evaluate/stream",
             json={"customer": customer, "policy": policy, "case_id": case_id},
-            headers=ctx.headers,
+            headers={**ctx.headers, **_evaluation_key(ctx, customer, policy, case_id)},
         ) as resp:
             resp.raise_for_status()
             buffer = ""

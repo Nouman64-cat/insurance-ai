@@ -10,6 +10,7 @@ import { useNotify } from "@/components/NotificationContext";
 import { Pagination, usePagination } from "@/components/Pagination";
 import { tx } from "@/lib/i18n/tx";
 
+import { keyedPost } from "@/lib/idempotency";
 interface User {
   id: string;
   email: string;
@@ -175,13 +176,13 @@ export default function UserManagementPage() {
     const tenantId = localStorage.getItem("tenant_id");
 
     try {
-      await api.post(`/tenants/${tenantId}/users/`, {
+      { data: await keyedPost(api, "user-create", `/tenants/${tenantId}/users/`, {
         email,
         full_name: fullName,
         role_id: roleId,
         cnic: cnic || null,
         location: location || null,
-      });
+      }) };
 
       notify(tx("User created successfully! Login credentials were emailed to {0}.", { 0: email }), true);
       setShowCreateModal(false);

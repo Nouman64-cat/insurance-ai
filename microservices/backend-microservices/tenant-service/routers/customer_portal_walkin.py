@@ -24,6 +24,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
+from services.idempotency import token_operation
 from routers.artifacts import SUPPORTED_MIME, _upload_to_s3
 from routers.customer_portal_internal import signed_by_customer_management
 from services import lead_routing as routing
@@ -456,6 +457,15 @@ async def _record_claim(session: AsyncSession, ipp: InitialPremiumPayment, polic
     return await _pay_view(session, ipp, policy, customer)
 
 
+async def _resolve_pay_link(values):
+    return await _pay_context(values["session"], values["token"])
+
+
+async def _rebuild_pay_view(values):
+    ipp, policy, customer = await _pay_context(values["session"], values["token"])
+    return await _pay_view(values["session"], ipp, policy, customer)
+
+
 class DeclareBody(BaseModel):
     method: Optional[str] = PField(default=None, max_length=50)
     reference: Optional[str] = PField(default=None, max_length=100)
@@ -463,6 +473,7 @@ class DeclareBody(BaseModel):
 
 
 @router.post("/pay/{token}/declare")
+@token_operation("walkin.pay_declare", _resolve_pay_link, _rebuild_pay_view, resource_type="initial_premium")
 async def pay_declare(token: str, body: DeclareBody, session: AsyncSession = Depends(get_session)) -> dict:
     """"I have paid": no receipt attached."""
     ipp, policy, customer = await _pay_context(session, token)
@@ -471,6 +482,7 @@ async def pay_declare(token: str, body: DeclareBody, session: AsyncSession = Dep
 
 
 @router.post("/pay/{token}/proof")
+@token_operation("walkin.pay_upload_proof", _resolve_pay_link, _rebuild_pay_view, resource_type="initial_premium")
 async def pay_upload_proof(token: str, file: UploadFile = File(...), note: Optional[str] = Form(None), method: Optional[str] = Form(None),
                            reference: Optional[str] = Form(None), session: AsyncSession = Depends(get_session)) -> dict:
     """The customer uploads their receipt. Staff are told straight away and decide whether to confirm it."""

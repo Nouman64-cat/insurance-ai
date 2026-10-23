@@ -1,3 +1,4 @@
+import { operation, runOperation, browserOperationScope, operationHeaders } from "@/lib/idempotency";
 import api from "./api";
 
 const tenantId = () =>
@@ -256,12 +257,8 @@ export async function getIssuancePreview(policyId: string): Promise<IssuancePrev
 
 export async function issuePolicy(policyId: string): Promise<IssuanceResult> {
   const tid = tenantId();
-  const res = await api.post(
-    `/tenants/${tid}/policies/${policyId}/issue`,
-    {},
-    { headers: { "X-Tenant-Id": tid } }
-  );
-  return res.data;
+  return operation(`policy-issue:${policyId}`, headers =>
+    api.post(`/tenants/${tid}/policies/${policyId}/issue`, {}, { headers: { "X-Tenant-Id": tid, ...headers } }));
 }
 
 export async function initiatePayment(
@@ -269,12 +266,14 @@ export async function initiatePayment(
   method?: string
 ): Promise<{ policy_id: string; amount_due: number; payment: PaymentIntent; available_payment_methods: PaymentMethod[] }> {
   const tid = tenantId();
+  return runOperation(browserOperationScope(), `premium-initiate:${policyId}`, async key => {
   const res = await api.post(
     `/tenants/${tid}/policies/${policyId}/payments/initiate`,
     { method },
-    { headers: { "X-Tenant-Id": tid } }
+    { headers: { "X-Tenant-Id": tid, ...operationHeaders(key) } }
   );
   return res.data;
+  });
 }
 
 export async function confirmPayment(
@@ -282,12 +281,8 @@ export async function confirmPayment(
   opts: { method?: string; reference?: string; amount?: number; realize?: boolean } = {}
 ): Promise<PaymentConfirmResult> {
   const tid = tenantId();
-  const res = await api.post(
-    `/tenants/${tid}/policies/${policyId}/payments/confirm`,
-    { realize: true, ...opts },
-    { headers: { "X-Tenant-Id": tid } }
-  );
-  return res.data;
+  return operation(`premium-confirm:${policyId}`, headers =>
+    api.post(`/tenants/${tid}/policies/${policyId}/payments/confirm`, { realize: true, ...opts }, { headers: { "X-Tenant-Id": tid, ...headers } }));
 }
 
 export async function renewPolicy(policyId: string): Promise<unknown> {
@@ -379,5 +374,6 @@ export async function getPrepaid(policyId: string): Promise<PrepaidStatus> {
 /** Settle the first premium with the initial premium already received, and bind cover. No second payment. */
 export async function applyPrepaid(policyId: string): Promise<PaymentConfirmResult> {
   const tid = tenantId();
-  return (await api.post(`/tenants/${tid}/policies/${policyId}/payments/apply-prepaid`, {}, { headers: { "X-Tenant-Id": tid } })).data;
+  return operation(`premium-apply-prepaid:${policyId}`, headers =>
+    api.post(`/tenants/${tid}/policies/${policyId}/payments/apply-prepaid`, {}, { headers: { "X-Tenant-Id": tid, ...headers } }));
 }

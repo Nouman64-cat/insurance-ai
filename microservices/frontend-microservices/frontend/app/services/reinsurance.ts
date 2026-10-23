@@ -1,5 +1,6 @@
 import api from "./api";
 
+import { keyedPost } from "@/lib/idempotency";
 const tenantId = () =>
   typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
 
@@ -105,7 +106,7 @@ export async function referToReinsurer(
   policyId: string,
   body: { reinsurer_id: string; underwriter_note?: string },
 ): Promise<{ policy_status: string; referral: Referral }> {
-  const res = await api.post(`/tenants/${tenantId()}/policies/${policyId}/reinsurance/refer`, body);
+  const res = { data: await keyedPost(api, `referToReinsurer:${policyId}`, `/tenants/${tenantId()}/policies/${policyId}/reinsurance/refer`, body) };
   return res.data;
 }
 
@@ -120,7 +121,7 @@ export async function recordReinsurerResponse(
     conditions?: string;
   },
 ): Promise<Referral> {
-  const res = await api.post(`/tenants/${tenantId()}/policies/${policyId}/reinsurance/response`, body);
+  const res = { data: await keyedPost(api, `recordReinsurerResponse:${policyId}`, `/tenants/${tenantId()}/policies/${policyId}/reinsurance/response`, body) };
   return res.data;
 }
 
@@ -128,7 +129,7 @@ export async function applyReinsurerTerms(
   policyId: string,
   body: { valid_days?: number; note?: string } = {},
 ): Promise<{ policy_status: string; counter_offer_id: string | null; referral: Referral }> {
-  const res = await api.post(`/tenants/${tenantId()}/policies/${policyId}/reinsurance/apply`, body);
+  const res = { data: await keyedPost(api, `applyReinsurerTerms:${policyId}`, `/tenants/${tenantId()}/policies/${policyId}/reinsurance/apply`, body) };
   return res.data;
 }
 
@@ -136,7 +137,7 @@ export async function withdrawReferral(
   policyId: string,
   reason?: string,
 ): Promise<{ policy_status: string; referral: Referral }> {
-  const res = await api.post(`/tenants/${tenantId()}/policies/${policyId}/reinsurance/withdraw`, { reason });
+  const res = { data: await keyedPost(api, `withdrawReferral:${policyId}`, `/tenants/${tenantId()}/policies/${policyId}/reinsurance/withdraw`, { reason }) };
   return res.data;
 }
 

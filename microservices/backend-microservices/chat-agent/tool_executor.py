@@ -57,10 +57,14 @@ class ExecCtx:
     current_org_id: Optional[str] = None
     # web | mobile — lets a tool that runs another step re-check that step's RBAC.
     platform: str = "web"
+    # Checkpointed tool-call id; retries and resume retain this identity.
+    operation_id: Optional[str] = None
 
     @property
     def headers(self) -> dict[str, str]:
         h = {"X-Tenant-Id": self.tenant_id or DEFAULT_TENANT_ID}
+        # The Idempotency-Key is NOT set here: one tool call can make several writes (even to the same endpoint, with different
+        # bodies), so _ScopedClient derives a key per request from this call's operation_id.
         if self.jwt_token:
             h["Authorization"] = f"Bearer {self.jwt_token}"
         return h
@@ -144,15 +148,21 @@ class _ScopedClient:
     on the shared client (whose headers would otherwise leak between tenants).
     """
 
-    __slots__ = ("_client", "_headers", "_timeout")
+    __slots__ = ("_client", "_headers", "_timeout", "_operation")
 
-    def __init__(self, client: httpx.AsyncClient, headers: dict[str, str], timeout: float):
+    def __init__(self, client: httpx.AsyncClient, headers: dict[str, str], timeout: float, operation: Optional[tuple[str, str]] = None):
         self._client = client
         self._headers = headers
         self._timeout = timeout
+        # (tenant, tool-call id): the durable identity of this tool call. It survives retries and /chat/resume, so a write that is
+        # sent again is recognised by the owning service instead of being applied twice.
+        self._operation = operation
 
-    def _merge(self, kwargs: dict) -> dict:
-        headers = {**self._headers, **(kwargs.pop("headers", None) or {})}
+    def _merge(self, kwargs: dict, method: str = "GET", url: str = "") -> dict:
+        extra = kwargs.pop("headers", None) or {}
+        headers = {**self._headers, **extra}
+        if self._operation and method != "GET" and not any(k.lower() == "idempotency-key" for k in headers):
+            headers["Idempotency-Key"] = write_key(self._operation, method, url, kwargs)
         kwargs["headers"] = headers
         kwargs.setdefault("timeout", self._timeout)
         return kwargs
@@ -161,16 +171,34 @@ class _ScopedClient:
         return await self._client.get(url, **self._merge(kwargs))
 
     async def post(self, url: str, **kwargs):
-        return await self._client.post(url, **self._merge(kwargs))
+        return await self._client.post(url, **self._merge(kwargs, "POST", url))
 
     async def put(self, url: str, **kwargs):
-        return await self._client.put(url, **self._merge(kwargs))
+        return await self._client.put(url, **self._merge(kwargs, "PUT", url))
 
     async def patch(self, url: str, **kwargs):
-        return await self._client.patch(url, **self._merge(kwargs))
+        return await self._client.patch(url, **self._merge(kwargs, "PATCH", url))
 
     async def delete(self, url: str, **kwargs):
-        return await self._client.delete(url, **self._merge(kwargs))
+        return await self._client.delete(url, **self._merge(kwargs, "DELETE", url))
+
+
+def write_key(operation: tuple[str, str], method: str, url: str, kwargs: dict) -> str:
+    """The operation key for ONE write: stable when the very same request is sent again (retry, resume, connection retry), different for
+    a different write of the same tool call (another endpoint, or the same endpoint with another body)."""
+    import hashlib
+    from uuid import uuid5, NAMESPACE_URL
+    parts = [method, url, kwargs.get("params"), kwargs.get("json"), kwargs.get("data")]
+    content = kwargs.get("content")
+    parts.append(hashlib.sha256(content).hexdigest() if isinstance(content, (bytes, bytearray)) else content)
+    files = kwargs.get("files")
+    if files:
+        items = files.items() if isinstance(files, dict) else files
+        parts.append([(name, getattr(spec[1], "__len__", lambda: 0)() if isinstance(spec, tuple) and len(spec) > 1 else 0,
+                       hashlib.sha256(spec[1]).hexdigest() if isinstance(spec, tuple) and len(spec) > 1 and isinstance(spec[1], (bytes, bytearray)) else None,
+                       spec[0] if isinstance(spec, tuple) else None) for name, spec in items])
+    digest = hashlib.sha256(json.dumps(parts, sort_keys=True, default=str).encode()).hexdigest()
+    return str(uuid5(NAMESPACE_URL, f"getinsuredai:{operation[0]}:{operation[1]}:{digest}"))
 
 
 def handles(name: str):
@@ -4687,7 +4715,8 @@ async def _execute_tool_once(name: str, args: dict[str, Any], ctx: ExecCtx) -> d
         # than a list endpoint.
         client = await _shared_client()
         scoped = Ctx(
-            client=_ScopedClient(client, headers=ctx.headers, timeout=timeout),
+            client=_ScopedClient(client, headers=ctx.headers, timeout=timeout,
+                                  operation=(ctx.effective_tenant_id, ctx.operation_id) if ctx.operation_id else None),
             tenant_id=ctx.effective_tenant_id,
             exec_ctx=ctx,
         )

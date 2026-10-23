@@ -15,7 +15,6 @@ from datetime import date, datetime, timedelta
 from typing import List, Optional
 from uuid import UUID
 
-from aiokafka import AIOKafkaProducer
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, text
@@ -23,6 +22,8 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
+from shared.idempotency.http import database_operation
+from services.idempotency import premium_identity
 from routers.auth import optional_oauth2_scheme, source_scope
 from routers.users import verify_tenant_member
 from services import payment_gateway
@@ -32,11 +33,6 @@ from services.policy_documents import generate_and_store_documents, generate_and
 from services.pre_issuance_gate import NotReadyToIssue, assert_ready_to_issue, compute_readiness
 from services.pricing_engine import GRACE_PERIOD_DAYS, PricingEngine
 from shared.services.policy_state_machine import IllegalStateTransition, apply_transition, record_event
-from shared.events.kafka_events import (
-    POLICY_LIFECYCLE_TOPIC,
-    PolicyLifecycleEvent,
-    PolicyLifecyclePayload,
-)
 from shared.models.core import (
     Beneficiary,
     BillingFrequencyEnum,
@@ -329,36 +325,12 @@ async def _load_plan_rates(session: AsyncSession, tenant_id: UUID, insurance_typ
 
 
 async def _publish_policy_event(request: Optional[Request], policy: Policy, event: PolicyEvent) -> None:
-    """Fire-and-forget: mirror a committed PolicyEvent onto Kafka so downstream
-    services (notifications, document generation) can react. A failed publish
-    must never fail the lifecycle transaction — the PolicyEvent row is the
-    source of truth, this is just the decoupled fan-out."""
-    if request is None or not hasattr(request, "app") or not hasattr(request.app, "state"):
-        return
-    producer: Optional[AIOKafkaProducer] = getattr(request.app.state, "kafka_producer", None)
-    if producer is None:
-        return
-    envelope = PolicyLifecycleEvent(
-        event_type=event.event_type,
-        tenant_id=policy.tenant_id,
-        payload=PolicyLifecyclePayload(
-            policy_id=policy.id,
-            policy_number=policy.policy_number,
-            customer_id=policy.customer_id,
-            from_status=event.from_status,
-            to_status=event.to_status,
-            actor=event.actor,
-            detail=event.detail_json,
-        ),
-    )
-    try:
-        await producer.send_and_wait(
-            POLICY_LIFECYCLE_TOPIC,
-            value=envelope.model_dump_json(),
-            key=str(policy.tenant_id),
-        )
-    except Exception as err:  # noqa: BLE001 — best-effort fan-out
-        log.warning("Failed to publish policy lifecycle event %s: %s", event.event_type, err)
+    """Compatibility hook: record_event now queues delivery in its transaction.
+
+    Keeping this no-op lets existing lifecycle callers migrate without publishing
+    before an enclosing idempotency transaction has committed.
+    """
+    return None
 
 
 async def _pending_schedule(session: AsyncSession, policy_id: UUID) -> Optional[PremiumSchedule]:
@@ -830,6 +802,7 @@ async def issuance_preview(
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/issue", dependencies=[Depends(_policy_in_scope)])
+@database_operation("tenant.policy.issue", response_fields=('policy_number', 'status', 'effective_date', 'expiry_date', 'maturity_date', 'grace_period_end_date', 'premium_breakdown', 'version', 'documents_generated', 'grace_period_days', 'total_premium', 'initial_premium_credited', 'premium_difference', 'amount_due', 'payment', 'available_payment_methods', 'delivery_date', 'free_look_end_date'), resource_type="policy", authorize=premium_identity)
 async def issue_policy(
     tenant_id: UUID, policy_id: UUID,
     request: Request,
@@ -894,7 +867,7 @@ async def issue_policy(
 
     # Payment intent for whatever is still outstanding. Nothing to raise when the
     # initial premium already covered the contract.
-    intent = payment_gateway.initiate_payment(balance_due) if not fully_prepaid else None
+    intent = payment_gateway.initiate_payment(balance_due, reference=payment_gateway.operation_reference("policy-issuance", policy_id)) if not fully_prepaid else None
 
     # ── Atomic draft transaction ─────────────────────────────────────────────
     try:
@@ -1045,6 +1018,7 @@ async def issue_policy(
 # the pending installment's payment_reference to the chosen channel's intent.
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/payments/initiate", dependencies=[Depends(_policy_in_scope)])
+@database_operation("tenant.premium.remaining_initiate", response_fields=("policy_id", "amount_due", "premium_total", "amount_already_paid", "payment", "available_payment_methods"), authorize=premium_identity)
 async def initiate_payment(
     tenant_id: UUID, policy_id: UUID,
     body: PaymentInitiateRequest,
@@ -1064,7 +1038,7 @@ async def initiate_payment(
     if balance <= 0:
         raise HTTPException(409, "No outstanding first-premium balance")
     try:
-        intent = payment_gateway.initiate_payment(float(balance), body.method)
+        intent = payment_gateway.initiate_payment(float(balance), body.method, reference=schedule.payment_reference or payment_gateway.operation_reference("premium-installment", schedule.id, body.method))
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -1119,6 +1093,7 @@ async def prepaid_status(tenant_id: UUID, policy_id: UUID, session: AsyncSession
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/payments/apply-prepaid", dependencies=[Depends(_policy_in_scope)])
+@database_operation("tenant.premium.apply_prepaid", response_fields=("policy_id", "policy_number", "status", "effective_date", "free_look_end_date", "payment"), resource_type="policy", authorize=premium_identity)
 async def apply_prepaid(tenant_id: UUID, policy_id: UUID, request: Request, session: AsyncSession = Depends(get_session)):
     """Settle the first premium with the initial premium already received, and bind cover. No second payment."""
     policy = await _get_policy(session, tenant_id, policy_id)
@@ -1166,6 +1141,7 @@ async def apply_prepaid(tenant_id: UUID, policy_id: UUID, request: Request, sess
 # customer to POLICYHOLDER. This is the single gate that activates a policy.
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/payments/confirm", dependencies=[Depends(_policy_in_scope)])
+@database_operation("tenant.premium.confirm_remaining", response_fields=("policy_id", "policy_number", "status", "effective_date", "expiry_date", "grace_period_end_date", "delivery_date", "free_look_end_date", "payment"), resource_type="policy", authorize=premium_identity)
 async def confirm_payment(
     tenant_id: UUID, policy_id: UUID,
     request: Request,

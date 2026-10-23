@@ -30,6 +30,7 @@ import os
 from aiokafka import AIOKafkaConsumer
 from aiokafka.errors import KafkaConnectionError
 from pydantic import ValidationError
+from shared.events.consumer import process_partition
 from sqlmodel import select
 
 from database import _session_factory
@@ -89,6 +90,9 @@ async def _process(event: RiskEvaluatedEvent) -> None:
         case = await db.get(Case, payload.case_id) if payload.case_id else None
         if case is not None and case.tenant_id != payload.tenant_id:
             case = None
+
+        # Serialize duplicate and concurrent results before the deduplication lookup.
+        await db.refresh(policy, with_for_update=True)
 
         # At-least-once delivery means a redelivered message must not write a
         # second assessment. correlation_id is stable across redeliveries of the
@@ -174,25 +178,18 @@ async def run_consumer(stop_event: asyncio.Event | None = None) -> None:
     try:
         while stop_event is None or not stop_event.is_set():
             batch = await consumer.getmany(timeout_ms=1000)
-            for _tp, messages in batch.items():
-                for message in messages:
-                    try:
-                        event = RiskEvaluatedEvent.model_validate_json(message.value)
-                    except ValidationError as exc:
-                        # Malformed payloads can never succeed on redelivery —
-                        # commit past them instead of blocking the partition.
-                        logger.error("dropping unparseable RiskEvaluated event: %s", exc)
-                        await consumer.commit()
-                        continue
-                    try:
-                        await _process(event)
-                    except Exception:       # noqa: BLE001 — retry on redelivery
-                        logger.exception(
-                            "failed to persist proposal=%s — offset not committed",
-                            event.payload.proposal_id,
-                        )
-                        continue
-                    await consumer.commit()
+            async def handle_message(message):
+                try:
+                    event = RiskEvaluatedEvent.model_validate_json(message.value)
+                except ValidationError:
+                    logger.error("unparseable RiskEvaluated | partition=%s offset=%s", message.partition, message.offset)
+                    return
+                await _process(event)
+
+            for partition, messages in batch.items():
+                if not await process_partition(consumer, partition, messages, handle_message):
+                    await asyncio.sleep(1)
+
     finally:
         await consumer.stop()
         logger.info("risk result worker stopped")

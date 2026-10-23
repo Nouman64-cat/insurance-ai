@@ -29,6 +29,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 from routers.auth import _get_current_user, _role_name, oauth2_scheme
+from services.idempotency import step_operation
 from services import insurance_history as history_engine
 from shared.models.core import (
     Case,
@@ -117,6 +118,10 @@ def _to_dict(check: Optional[InsuranceHistoryCheck]) -> dict:
         "cleared_at": check.cleared_at.isoformat() if check.cleared_at else None,
         "clearance_note": check.clearance_note,
     }
+
+
+async def _history_view(values):
+    return _to_dict(await _load_check(values["session"], values["case_id"]))
 
 
 @router.get("/tenants/{tenant_id}/cases/{case_id}/insurance-history")
@@ -244,6 +249,7 @@ async def _assert_override_role(token: str, session: AsyncSession) -> str:
 
 
 @router.post("/tenants/{tenant_id}/cases/{case_id}/insurance-history/clear")
+@step_operation("tenant.inshistory.clear", _history_view, ids=("case_id",), atomic=False, resource_type="insurance_history_check")
 async def clear_insurance_history(
     tenant_id: UUID,
     case_id: UUID,
@@ -276,6 +282,7 @@ async def clear_insurance_history(
 
 
 @router.post("/tenants/{tenant_id}/cases/{case_id}/insurance-history/fail")
+@step_operation("tenant.inshistory.fail", _history_view, ids=("case_id",), atomic=False, resource_type="insurance_history_check")
 async def fail_insurance_history(
     tenant_id: UUID,
     case_id: UUID,

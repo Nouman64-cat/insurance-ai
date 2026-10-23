@@ -177,6 +177,16 @@ class PayIn(Strict):
     expected_amount: float = Field(gt=0, le=1_000_000_000)
 
 
+def _operation_key(p: Principal, key: str) -> str:
+    """The identity tenant-service records for this customer action: the customer's own key, namespaced by their account."""
+    return f"{p.account_id}:{key}"
+
+
+def _optional_operation_key(p: Principal, key: Optional[str]) -> Optional[str]:
+    """Writes that were never keyed stay usable by older clients: a supplied key is validated and forwarded, an absent one is not invented."""
+    return _operation_key(p, _idem(key)) if key else None
+
+
 def _idem(key: Optional[str]) -> str:
     if not key or not (8 <= len(key) <= 64) or not all(ch.isalnum() or ch in "-_" for ch in key):
         raise validation("An Idempotency-Key header (8-64 letters, digits, - or _) is required")
@@ -220,7 +230,8 @@ async def pay(policy_id: UUID, schedule_id: UUID, body: PayIn, p: Principal = De
     c, scope = _up(p)
     try:
         result = await c.post(f"{scope}/policies/{policy_id}/premiums/{schedule_id}/pay",
-                              {"method": body.method, "reference": reference, "expected_amount": body.expected_amount, "account_ref": p.username})
+                              {"method": body.method, "reference": reference, "expected_amount": body.expected_amount, "account_ref": p.username},
+                              operation_key=_operation_key(p, key))
     except ApiError as exc:
         # ALREADY_PAID from a concurrent staff/other-tab payment is a definitive "no charge"; unavailable stays retryable.
         final = exc.code != "DOMAIN_UNAVAILABLE"
@@ -311,7 +322,7 @@ async def submit_claim(policy_id: UUID, body: ClaimIn, p: Principal = Depends(cu
     key = _idem(idempotency_key)
     c, scope = _up(p)
     payload = body.model_dump(mode="json")
-    result = await _idempotent(p, f"claim:{policy_id}", key, payload, lambda: c.post(f"{scope}/policies/{policy_id}/claims", payload))
+    result = await _idempotent(p, f"claim:{policy_id}", key, payload, lambda: c.post(f"{scope}/policies/{policy_id}/claims", payload, operation_key=_operation_key(p, key)))
     async with db.transaction() as conn:
         await accounts.audit(conn, "CLAIM_SUBMITTED", account_id=p.account_id, tenant_id=p.tenant_id, policy_id=str(policy_id), claim=result.get("claim_number"))
     return result
@@ -333,7 +344,7 @@ async def request_surrender(policy_id: UUID, body: SurrenderIn, p: Principal = D
     key = _idem(idempotency_key)
     c, scope = _up(p)
     payload = body.model_dump(mode="json")
-    result = await _idempotent(p, f"surrender:{policy_id}", key, payload, lambda: c.post(f"{scope}/policies/{policy_id}/surrender", payload))
+    result = await _idempotent(p, f"surrender:{policy_id}", key, payload, lambda: c.post(f"{scope}/policies/{policy_id}/surrender", payload, operation_key=_operation_key(p, key)))
     async with db.transaction() as conn:
         await accounts.audit(conn, "SURRENDER_REQUESTED", account_id=p.account_id, tenant_id=p.tenant_id, policy_id=str(policy_id))
     return result
@@ -341,7 +352,7 @@ async def request_surrender(policy_id: UUID, body: SurrenderIn, p: Principal = D
 
 @router.post("/claims/{claim_id}/documents/{doc_key}")
 async def upload_claim_document(claim_id: UUID, doc_key: str, request: Request, p: Principal = Depends(current_customer),
-                                file: UploadFile = File(...), note: Optional[str] = Form(None)):
+                                file: UploadFile = File(...), note: Optional[str] = Form(None), idempotency_key: Optional[str] = Header(None)):
     if not (1 <= len(doc_key) <= 60) or not all(ch.isalnum() or ch in "-_" for ch in doc_key):
         raise validation("Unknown document")
     declared = request.headers.get("content-length")
@@ -354,7 +365,8 @@ async def upload_claim_document(claim_id: UUID, doc_key: str, request: Request, 
         raise ApiError(400, "FILE_EMPTY", "The file is empty.")
     name = os.path.basename(file.filename or "document")[:120] or "document"
     c, scope = _up(p)
-    result = await c.upload(f"{scope}/claims/{claim_id}/documents/{doc_key}", name, data, file.content_type or "application/octet-stream", (note or "")[:500] or None)
+    result = await c.upload(f"{scope}/claims/{claim_id}/documents/{doc_key}", name, data, file.content_type or "application/octet-stream", (note or "")[:500] or None,
+                          operation_key=_optional_operation_key(p, idempotency_key))
     async with db.transaction() as conn:
         await accounts.audit(conn, "CLAIM_DOCUMENT_UPLOADED", account_id=p.account_id, tenant_id=p.tenant_id, claim_id=str(claim_id), document=doc_key)
     return result
@@ -460,9 +472,11 @@ class RenewalAcceptanceIn(Strict):
 
 
 @router.post("/policies/{policy_id}/renewal/acceptance")
-async def renewal_acceptance(policy_id: UUID, body: RenewalAcceptanceIn, p: Principal = Depends(current_customer)):
+async def renewal_acceptance(policy_id: UUID, body: RenewalAcceptanceIn, p: Principal = Depends(current_customer),
+                             idempotency_key: Optional[str] = Header(None)):
     c, scope = _up(p)
-    result = await c.post(f"{scope}/policies/{policy_id}/renewal/acceptance", body.model_dump(exclude_none=True))
+    result = await c.post(f"{scope}/policies/{policy_id}/renewal/acceptance", body.model_dump(exclude_none=True),
+                          operation_key=_optional_operation_key(p, idempotency_key))
     async with db.transaction() as conn:
         await accounts.audit(conn, "RENEWAL_TERMS_ACCEPTED" if body.accepted else "RENEWAL_TERMS_DECLINED", account_id=p.account_id, tenant_id=p.tenant_id, policy_id=str(policy_id))
     return result

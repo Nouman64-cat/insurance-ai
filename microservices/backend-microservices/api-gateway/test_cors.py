@@ -28,6 +28,17 @@ class Cors(unittest.TestCase):
                 self.assertIn('Origin', response.headers['vary'])
                 self.assertIn('x-tenant-id', response.headers['access-control-allow-headers'])
 
+    def test_idempotency_header_is_allowed_in_and_exposed_from_cross_origin_calls(self):
+        client = self.client(','.join(ORIGINS))
+        preflight = client.options('/health', headers={'Origin': ORIGINS[0], 'Access-Control-Request-Method': 'POST',
+                                                       'Access-Control-Request-Headers': 'idempotency-key,authorization'})
+        self.assertEqual(preflight.status_code, 200)
+        self.assertIn('idempotency-key', preflight.headers['access-control-allow-headers'].lower())
+        options = cors_options(','.join(ORIGINS))
+        self.assertTrue({'Idempotency-Replayed', 'Retry-After'} <= set(options['expose_headers']))
+        simple = client.get('/health', headers={'Origin': ORIGINS[0]})
+        self.assertIn('idempotency-replayed', simple.headers['access-control-expose-headers'].lower())
+
     def test_unlisted_origins_and_lookalike_domains_are_rejected(self):
         client = self.client(','.join(ORIGINS))
         for origin in ['https://evil.example', 'https://app.getinsuredai.com.evil.example', 'http://app.getinsuredai.com', 'http://localhost:3000', 'null']:

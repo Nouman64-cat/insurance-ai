@@ -1,4 +1,4 @@
-import api from './api';
+import api, { keyedPost } from './api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { agentScopeParams } from './agentScope';
 
@@ -160,7 +160,7 @@ export const runComplianceScreening = async (caseId: string): Promise<Compliance
 export const clearComplianceCheck = async (checkId: string, note?: string): Promise<void> => {
   const tenantId = await AsyncStorage.getItem('tenant_id');
   if (!tenantId) throw new Error('No tenant ID found');
-  await api.post(`/tenants/${tenantId}/compliance/${checkId}/clear`, { note });
+  await keyedPost(`compliance-clear:${checkId}`, `/tenants/${tenantId}/compliance/${checkId}/clear`, { note });
 };
 
 // ── Gate 4 · Initial Premium Payment ─────────────────────────────────────────
@@ -188,8 +188,8 @@ export const collectInitialPremium = async (
   const tenantId = await AsyncStorage.getItem('tenant_id');
   if (!tenantId) throw new Error('No tenant ID found');
 
-  const initiated = await api.post(`/tenants/${tenantId}/cases/${caseId}/ipp/initiate`, { method });
-  const confirmed = await api.post(`/tenants/${tenantId}/cases/${caseId}/ipp/confirm`, {
+  const initiated = await keyedPost(`ipp-initiate:${caseId}`, `/tenants/${tenantId}/cases/${caseId}/ipp/initiate`, { method });
+  const confirmed = await keyedPost(`ipp-confirm:${caseId}`, `/tenants/${tenantId}/cases/${caseId}/ipp/confirm`, {
     method,
     realize: true,
   });
@@ -241,6 +241,6 @@ export const assessMedicalExam = async (caseId: string): Promise<MedicalAssessme
 export const inviteMedicalExam = async (caseId: string): Promise<MedicalInvite> => {
   const tenantId = await AsyncStorage.getItem('tenant_id');
   if (!tenantId) throw new Error('No tenant ID found');
-  const res = await api.post(`/tenants/${tenantId}/cases/${caseId}/medical-exam/invite`);
+  const res = await keyedPost(`medical-invite:${caseId}`, `/tenants/${tenantId}/cases/${caseId}/medical-exam/invite`);
   return res.data;
 };

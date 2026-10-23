@@ -193,6 +193,11 @@ async def lifespan(app: FastAPI):
     stop_event = asyncio.Event()
     worker_task = start_ocr_worker(stop_event)
     audit_relay_task = start_audit_relay(stop_event, producer)
+    from shared.events.outbox import relay as business_outbox_relay
+    business_relay_task = asyncio.create_task(business_outbox_relay(stop_event, _session_factory, producer))
+    from shared.idempotency import maintenance as idempotency_maintenance
+    from database import engine as _db_engine
+    idempotency_task = asyncio.create_task(idempotency_maintenance.run(stop_event, _db_engine))
 
     # Group scheme renewals — daily job, opt-in (GROUP_RENEWAL_SCHEDULER=true).
     group_renewal_task = start_group_renewal_scheduler(stop_event, _session_factory)
@@ -222,6 +227,8 @@ async def lifespan(app: FastAPI):
     if audit_relay_task is not None:
         await audit_relay_task
     await delivery_task
+    await business_relay_task
+    await idempotency_task
     if walkin_task is not None:
         await walkin_task
     if group_renewal_task is not None:
@@ -345,6 +352,14 @@ app.include_router(walk_in_leads_router)
 @app.get("/health", tags=["Ops"])
 async def health_check():
     return {"service": "tenant-service", "status": "healthy"}
+
+
+@app.get("/health/idempotency", tags=["Ops"])
+async def idempotency_health():
+    """Idempotency upkeep: records by status, attempts stuck past their lease, unknown outcomes awaiting a decision. No keys or business data."""
+    from shared.idempotency import maintenance
+    from database import engine
+    return await maintenance.status(engine)
 
 
 @app.get("/health/audit", tags=["Ops"])
