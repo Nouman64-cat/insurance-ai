@@ -572,7 +572,9 @@ and `provider=gemini` or `provider=groq`, with the corresponding API key in the 
 this sends document pages to that provider. Its provider configuration is separate from
 the platform LLM settings. Optional local TruFor analysis uses the CPU runtime and TruFor weights bundled in the
 backend image. Its first build downloads these assets. The UI displays per-page model scores
-and anomaly heatmaps, explicitly labelled uncalibrated until document thresholds are supplied.
+and anomaly heatmaps with provisional cutoffs measured from public reference documents.
+The UI displays the cutoffs and their limitations; customer-document calibration still
+requires representative genuine and forged evaluation data.
 Reports contain evidence for review; `no_evidence` does not establish authenticity.
 
 ### Public Forgery Detection UI

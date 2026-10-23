@@ -14,6 +14,8 @@ export async function GET() {
       status: "healthy",
       backend: "healthy",
       pixel_forensics: capabilities.pixel_forensics,
+      analysis_policy: capabilities.analysis_policy,
+      platform_configuration: capabilities.platform_configuration,
     });
   } catch {
     return Response.json(

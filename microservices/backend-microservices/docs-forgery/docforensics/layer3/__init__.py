@@ -5,9 +5,9 @@ PyTorch (the main app's interpreter has none), driven by ``trufor_worker.py`` ov
 and nothing is written to disk.
 
 Reliability: pixel models trained on photographs transfer weakly to documents (see docs/EXPERIMENTS_PIXEL_MODELS.md), so
-this layer is deliberately conservative. A finding is only raised when a page scores above ``tmax``, the highest score any
-genuine *calibration* page reached, and its severity is capped by what was measured (see ``thresholds.json``). It never
-decides a verdict alone.
+this layer is deliberately conservative. Scores at t95 yield informational findings; scores at tmax yield at most LOW.
+The packaged thresholds are a provisional public-reference baseline, not validated for customer submissions.
+It never decides a verdict alone.
 
 Licence: TruFor's weights are for informational and NONPROFIT use only (GRIP-UNINA). They are not part of this repository.
 
@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import os
 import struct
 import subprocess
@@ -44,6 +45,7 @@ class Layer3Options:
     max_pages: int = 1  # ~15 s per page on a laptop CPU, plus ~10 s to load the model
     max_side: int = 1024  # the worker downscales pages so the longer side is at most this (calibration used the same)
     timeout_s: float = 300.0
+    thresholds: dict[str, Any] | None = None  # immutable per-request platform override
 
 
 @dataclass
@@ -53,6 +55,7 @@ class Layer3Result:
     errors: list[str] = field(default_factory=list)
     pages: list[dict[str, Any]] = field(default_factory=list)  # per-page scores (and a small heatmap) for display
     seconds: float = 0.0
+    calibration: dict[str, Any] | None = None
 
 
 def pixel_python() -> Path | None:
@@ -76,9 +79,53 @@ def availability() -> tuple[bool, str]:
 
 def load_thresholds() -> dict[str, Any] | None:
     try:
-        return json.loads(Path(os.environ.get("PIXEL_THRESHOLDS", "") or THRESHOLDS).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        value = json.loads(Path(os.environ.get("PIXEL_THRESHOLDS", "") or THRESHOLDS).read_text(encoding="utf-8"))
+        if not isinstance(value, dict):
+            return None
+        if not isinstance(value.get("model", "trufor"), str) or value.get("model", "trufor").lower() != "trufor":
+            return None
+        t95, tmax = value["t95"], value["tmax"]
+        if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in (t95, tmax)):
+            return None
+        if not 0 <= t95 <= tmax <= 1 or value.get("severity_at_tmax", "LOW") not in ("INFO", "LOW"):
+            return None
+        if value.get("render_dpi", RENDER_DPI) != RENDER_DPI or value.get("max_side", 1024) != 1024:
+            return None
+        if not isinstance(value.get("n_calibration"), int) or value["n_calibration"] < 2:
+            return None
+        validation = value.get("validation", {})
+        if not isinstance(validation, dict) or not isinstance(value.get("scope", "reference"), str):
+            return None
+        if not isinstance(validation.get("n_genuine", 0), int) or validation.get("n_genuine", 0) < 0:
+            return None
+        fpr = validation.get("fpr_at_tmax")
+        if fpr is not None and (isinstance(fpr, bool) or not isinstance(fpr, (int, float)) or not math.isfinite(fpr) or not 0 <= fpr <= 1):
+            return None
+        if value.get("created_at") is not None and not isinstance(value["created_at"], str):
+            return None
+        runtime = value.get("runtime", {})
+        if not isinstance(runtime, dict):
+            return None
+        if runtime.get("worker_sha256"):
+            import hashlib
+            if hashlib.sha256(WORKER.read_bytes()).hexdigest() != runtime["worker_sha256"]:
+                return None
+        revision_file = models_dir()/"REVISION"
+        if runtime.get("upstream_revision") and revision_file.is_file() and revision_file.read_text().strip() != runtime["upstream_revision"]:
+            return None
+        return value
+    except (OSError, ValueError, KeyError, TypeError):
         return None
+
+
+def threshold_summary(value):
+    if value is None:
+        return None
+    validation = value.get("validation", {})
+    return {"t95": value["t95"], "tmax": value["tmax"], "n_calibration": value["n_calibration"],
+            "scope": value.get("scope", "unspecified_reference_baseline"),
+            "n_validation": validation.get("n_genuine", 0), "fpr_at_tmax": validation.get("fpr_at_tmax"),
+            "created_at": value.get("created_at"), "provisional": True}
 
 
 def render_pngs(data: bytes, file_type: str, max_pages: int) -> list[bytes]:
@@ -135,14 +182,14 @@ def grade(page: dict[str, Any], thresholds: dict[str, Any] | None, number: int) 
     if score < t95:
         return None
     above_max = score >= tmax
-    severity = Severity[thresholds.get("severity_at_tmax", "LOW")] if above_max else Severity.INFO
+    severity = min(Severity[thresholds.get("severity_at_tmax", "LOW")], Severity.LOW) if above_max else Severity.INFO
     measured = thresholds.get("measured", {})
     return Finding(
         "PIXEL_ANOMALY", severity, Category.TAMPERING,
         f"The pixel model rates page {number} as unusual" if above_max else f"The pixel model rates page {number} as slightly elevated",
         f"TruFor scored page {number} at {score:.2f}. "
-        + (f"{'Every' if above_max else 'Most'} genuine page in the calibration set scored below "
-           f"{'this' if above_max else 'this level'} (calibrated on {thresholds.get('n_calibration', '?')} genuine pages). ")
+        + ("Using SuperAdmin manual thresholds " if thresholds.get("scope") == "superadmin_manual" else f"Compared against {thresholds.get('n_calibration', '?')} reference calibration pages ")
+        + f"(t95={t95:.6f}, tmax={tmax:.6f}). These thresholds are provisional and not validated for customer submissions. "
         + "Pixel models trained on photographs transfer weakly to documents"
         + (f": in testing it caught {measured['tpr_gap_tmax']:.0%} of the forgeries the other layers miss at this threshold, "
            f"with {measured['fpr_phone_tmax']:.0%} false alarms on phone-style recompressed genuine pages. " if measured else ". ")
@@ -175,7 +222,11 @@ def run_layer3(data: bytes, file_type: str, options: Layer3Options | None = None
         res.status = "failed"
         res.errors.append(f"layer3: {type(exc).__name__}: {exc}")
         return res
-    thresholds = load_thresholds()
+    thresholds = options.thresholds if options.thresholds is not None else load_thresholds()
+    if thresholds is not None and options.max_side != thresholds.get("max_side", 1024):
+        res.errors.append("layer3: inference size differs from calibration; cutoffs were not applied")
+        thresholds = None
+    res.calibration = threshold_summary(thresholds)
     for i, page in enumerate(scored, 1):
         if "error" in page:
             res.errors.append(f"layer3: page {i}: {page['error']}")

@@ -386,3 +386,6 @@ from routers.eval_models import benchmarks as eval_benchmarks_router, router as 
 app.include_router(eval_models_router)
 app.include_router(eval_benchmarks_router)
 app.include_router(eval_jobs_internal_router)   # the worker's side: shared secret, never proxied by the gateway
+
+from routers.document_forgery import router as document_forgery_router
+app.include_router(document_forgery_router)

@@ -95,17 +95,26 @@ plus a one-time ~10 s model load time.
 
 ## Thresholds and grading
 
-Optional calibrated thresholds are loaded from `PIXEL_THRESHOLDS`, or `thresholds.json` next to `__init__.py`. No calibration file is shipped. They must be derived from
+Optional calibrated thresholds are loaded from `PIXEL_THRESHOLDS`, or `thresholds.json` next to `__init__.py`. A provisional public-reference calibration file is shipped; it is not validated for customer submissions. They must be derived from
 scoring a set of **known-genuine** calibration pages at 130 DPI and recording:
 
 | Key | Meaning |
 |---|---|
 | `t95` | Score at the 95th percentile of genuine pages |
 | `tmax` | Highest score any genuine calibration page reached |
-| `severity_at_tmax` | Severity (`LOW` / `MEDIUM`) to assign when `score ≥ tmax` |
+| `severity_at_tmax` | Severity (`INFO` / `LOW` only) to assign when `score ≥ tmax` |
 | `n_calibration` | Number of genuine pages used for calibration |
 | `model` | Model identifier logged in the finding's evidence |
 | `measured` | Optional: `tpr_gap_tmax`, `fpr_phone_tmax` from a paired evaluation |
+
+### Packaged reference baseline
+
+The current measured cutoffs are `t95 = 0.5256373882293701` and
+`tmax = 0.7155507206916809`, using 21 calibration first pages and 9 separate
+validation first pages. None of the 9 validation references reached either cutoff.
+This small, source-specific result is not a customer-document false-positive guarantee.
+No forged-case detection rate was measured in this calibration run. The JSON records
+all source hashes and scores, plus model/software provenance.
 
 ### Grading logic (`grade()`)
 
@@ -188,11 +197,12 @@ No downloads happen during an analysis. The model assets are outside the develop
 serialized within each API process to bound peak memory; two CPU threads are used by default.
 The API includes per-page scores and base64 PNG heatmaps in `pixel_forensics`; the UI renders them.
 
-No calibrated thresholds are shipped because the repository contains no suitable calibration
-artifacts. Inference still completes and displays raw outputs, explicitly labelled uncalibrated.
-Do not interpret an uncalibrated score as the probability of document fraud. For thresholds
-validated on your genuine document population at the configured rendering resolution and size,
-mount your JSON file and set `PIXEL_THRESHOLDS` to that path.
+The image ships a measured, provisional public-reference baseline. Its JSON records the
+input document hashes, source URLs, split membership, raw scores and held-out genuine-reference
+exceedance rates. No forged-case sensitivity or customer-document performance is claimed.
+The UI presents these limits alongside the cutoffs. In the API, `calibrated: true` means
+a compatible threshold file was loaded; it does not certify validation for your document population. Scores are never forgery probabilities.
+You can replace the baseline using your own disjoint genuine calibration and validation sets.
 
 ## Manual setup (running outside Docker)
 
@@ -265,3 +275,54 @@ print(result.status, result.findings, result.pages)
   (GRIP-UNINA). Confirm compliance before deploying in a commercial product.
 - **Calibration is document-type specific.** `thresholds.json` must be re-calibrated for the actual
   document population (see [EVALUATION.md](EVALUATION.md)).
+
+## Calibrating thresholds
+
+To reproduce the public-reference baseline from the repository root:
+
+```sh
+docker compose exec -T docs-forgery python scripts/calibrate_pixel.py --reference
+```
+
+The command downloads 20 official IRS PDFs and 10 public invoice2data fixtures, rendering
+only their first pages at 130 DPI and scoring with a 1024-pixel maximum side. It assigns
+21 documents to calibration and 9 to validation using a source-stratified split chosen
+before scores are observed. PDFs stay in the ignored `data/calibration` cache. The model
+loads once and prints progress for every page. It can take several minutes on CPU.
+
+`t95` is the linearly interpolated 95th percentile of calibration scores; `tmax` is their
+maximum. Validation pages do not influence either value. Exceedance uses `>=`, including
+at exact boundaries. Thresholds are written atomically only after every page succeeds.
+Public source files can change over time; the recorded SHA-256 hashes identify the exact
+download snapshot used. A rerun on updated sources produces a new dated baseline.
+The JSON is included in Docker images and loaded per request; source mounts expose the
+same file in development. Rebuild images when deploying updated thresholds.
+
+The reference set is a development baseline: blank tax forms and public invoice test
+fixtures are not representative verified customer submissions, and the invoices are
+assumed untampered rather than issuer-verified. The validation set is small and contains
+no forged cases, phone captures or recompressed scans. Its exceedance rates are sample
+measurements, not an operational false-positive guarantee or sensitivity estimate.
+
+For your own genuine corpus, create CSV with `path,label,split`:
+
+```csv
+path,label,split
+genuine/cal-001.pdf,genuine,calibration
+genuine/val-001.pdf,genuine,validation
+```
+
+Supply at least 20 calibration documents and 5 separate validation documents. Duplicate
+content is rejected across the whole set. Paths are relative to the CSV directory.
+
+```sh
+docker compose exec -T docs-forgery python scripts/calibrate_pixel.py \
+  --labels data/genuine-split.csv --out docforensics/layer3/thresholds.json
+```
+
+Evaluate detection separately with held-out genuine and forged documents using the benchmark
+runner. Do not reuse the validation set for tuning and then describe it as held-out.
+`PIXEL_THRESHOLDS` can override the packaged file. Invalid numbers, cutoffs out of order,
+severities above LOW, and incompatible rendering settings are rejected. Results scored at
+a different image size do not use the cutoffs. The service fails back to visibly uncalibrated
+raw output rather than applying an invalid configuration.

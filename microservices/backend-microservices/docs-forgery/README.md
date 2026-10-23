@@ -82,10 +82,13 @@ runtime; subsequent builds reuse Docker layers. These paths stay outside `/app` 
 development source mount cannot hide them.
 
 Enable `layer3=true` to return per-page scores and PNG heatmaps under `pixel_forensics`.
-`GET /health` includes pixel availability and calibration status. There is no document-specific
-calibration dataset in this repository: the UI labels these raw scores as uncalibrated and
-they do not determine a verdict. To apply validated calibration, mount a thresholds JSON file
-and set `PIXEL_THRESHOLDS` to its container path (see Layer 3 documentation).
+`GET /health` includes pixel availability and calibration status. The image ships a provisional public-reference threshold file at
+`docforensics/layer3/thresholds.json`. Cutoffs are measured from a calibration subset of
+public IRS forms and invoice2data fixtures, then checked on a disjoint reference subset.
+The UI displays the exact cutoffs, reference counts and validation result. This is not
+validated calibration for customer submissions: pixel signals remain capped at LOW severity.
+See [Layer 3 calibration](docs/LAYER3_PIXEL_FORENSICS.md#calibrating-thresholds) to reproduce
+or replace it with representative genuine documents.
 
 TruFor's upstream licence limits use to informational and nonprofit purposes. The integration
 is for the testing/research workspace; the model is not a commercially licensed detector.

@@ -4059,3 +4059,20 @@ class AuditOutbox(SQLModel, table=True):
     published_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     publish_attempts: int = Field(default=0, sa_column=Column(Integer, nullable=False, server_default="0"))
     last_error: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+
+
+class DocumentForgeryConfig(SQLModel, table=True):
+    """Platform singleton, validated by the SuperAdmin configuration API."""
+    __tablename__ = "document_forgery_config"
+    id: str = Field(default="default", primary_key=True, max_length=40)
+    settings: dict = Field(sa_column=Column(JSONB, nullable=False))
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_by: Optional[UUID] = Field(default=None)
+
+
+class DocumentForgeryUsage(SQLModel, table=True):
+    """One public test analysis; no document contents. Rates are snapshotted at execution."""
+    __tablename__ = "document_forgery_usage"
+    id: UUID = Field(primary_key=True)
+    details: dict = Field(sa_column=Column(JSONB, nullable=False))
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True, nullable=False)

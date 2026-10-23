@@ -25,11 +25,23 @@ class PixelPageResponse(BaseModel):
     seconds: float = 0
 
 
+class CalibrationResponse(BaseModel):
+    t95: float
+    tmax: float
+    n_calibration: int
+    scope: str
+    n_validation: int = 0
+    fpr_at_tmax: float | None = None
+    created_at: str | None = None
+    provisional: bool = True
+
+
 class PixelForensicsResponse(BaseModel):
     model: str = "TruFor"
     calibrated: bool
     seconds: float
     pages: list[PixelPageResponse]
+    calibration: CalibrationResponse | None = None
 
 
 class AnalysisResponse(BaseModel):

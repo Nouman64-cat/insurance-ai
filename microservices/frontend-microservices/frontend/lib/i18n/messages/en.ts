@@ -92,6 +92,7 @@ const en = {
     "Branch Management": "Branch Management",
     "Role Management": "Role Management",
     "Token Economy": "Token Economy",
+    "Document Forgery Detection": "Document Forgery Detection",
     "AI Agents": "AI Agents",
     "LLM Configuration": "LLM Configuration",
     "Golden Datasets": "Golden Datasets",

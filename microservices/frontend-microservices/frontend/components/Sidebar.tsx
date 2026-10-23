@@ -428,6 +428,13 @@ const NAV_ITEMS = [
         superAdminOnly: true,
       },
       {
+        href: "/super-admin/document-forgery",
+        label: "Document Forgery Detection",
+        icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path d="M6 3h9l4 4v14H6zM9 12h7M9 16h5" /></svg>,
+        badge: null,
+        superAdminOnly: true,
+      },
+      {
         href: "/super-admin/ai-agents",
         label: "AI Agents",
         icon: (
@@ -783,7 +790,7 @@ export function Sidebar() {
   }));
 
   const workingHrefs = ["/customer-service", "/acr", "/profile", "/cases", "/requests", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/underwriting", "/admin/users", "/admin/leads", "/admin/policyholders", "/plans", "/financial", "/claims", "/claims/dashboard", "/claims/register"];
-  const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/roles", "/super-admin/tokens", "/super-admin/ai-agents", "/super-admin/llm-config", "/super-admin/datasets", "#security-compliance"];
+  const superAdminHrefs = ["/super-admin/document-forgery", "/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/roles", "/super-admin/tokens", "/super-admin/ai-agents", "/super-admin/llm-config", "/super-admin/datasets", "#security-compliance"];
 
   const financeIcon = (path: string) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d={path}/></svg>;
   const financeLinks = [

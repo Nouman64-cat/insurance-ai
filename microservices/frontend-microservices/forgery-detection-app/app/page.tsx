@@ -35,6 +35,15 @@ type Report = {
   pixel_forensics?: {
     model: string;
     calibrated: boolean;
+    calibration?: {
+      t95: number;
+      tmax: number;
+      n_calibration: number;
+      n_validation: number;
+      fpr_at_tmax: number | null;
+      scope: string;
+      provisional: boolean;
+    } | null;
     seconds: number;
     pages: {
       page: number;
@@ -135,6 +144,7 @@ export default function Home() {
   const [dragging, setDragging] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [health, setHealth] = useState("checking");
+  const [policy, setPolicy] = useState<{enabled:boolean; content_enabled:boolean; pixel_enabled:boolean; visual_enabled:boolean; provider:string; max_pages:number} | null>(null);
   const [pixelReady, setPixelReady] = useState<boolean | null>(null);
   const controller = useRef<AbortController | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -146,6 +156,13 @@ export default function Home() {
         setHealth(r.ok ? "online" : "offline");
         const capabilities = await r.json();
         setPixelReady(capabilities.pixel_forensics?.available ?? null);
+        if (capabilities.analysis_policy) {
+          setPolicy(capabilities.analysis_policy);
+          setProvider(capabilities.analysis_policy.provider);
+          setConsent(false);
+          setPages(p => Math.min(p, capabilities.analysis_policy.max_pages));
+        }
+        if (capabilities.platform_configuration === "unavailable") setHealth("offline");
       })
       .catch((e) => {
         if (e.name !== "AbortError") setHealth("offline");
@@ -318,7 +335,8 @@ export default function Home() {
                 <p>One document, multiple layers of evidence.</p>
               </div>
             </div>
-            <fieldset disabled={running}>
+            {policy?.enabled === false && <p role="status" className="error-banner">Document Forgery Detection is disabled by SuperAdmin.</p>}
+            <fieldset disabled={running || policy?.enabled === false}>
               <label
                 className={`dropzone ${dragging ? "dragging" : ""} ${file ? "selected" : ""}`}
                 onDragOver={(e) => {
@@ -390,6 +408,7 @@ export default function Home() {
                   role="switch"
                   aria-label="Content consistency"
                   checked={layer2}
+                  disabled={policy?.content_enabled === false}
                   onChange={(e) => setLayer2(e.target.checked)}
                 />
               </label>
@@ -399,6 +418,7 @@ export default function Home() {
                     Model provider
                   </label>
                   <select
+                    disabled={policy !== null}
                     id="provider"
                     value={provider}
                     onChange={(e) => {
@@ -413,6 +433,7 @@ export default function Home() {
                     <input
                       type="checkbox"
                       checked={visual}
+                      disabled={policy?.visual_enabled === false}
                       onChange={(e) => setVisual(e.target.checked)}
                     />
                     Include visual model inspection
@@ -451,6 +472,7 @@ export default function Home() {
                   role="switch"
                   aria-label="Pixel forensics"
                   checked={layer3}
+                  disabled={policy?.pixel_enabled === false}
                   onChange={(e) => setLayer3(e.target.checked)}
                 />
               </label>
@@ -676,6 +698,48 @@ export default function Home() {
                           not determine the verdict.
                         </p>
                       )}
+                      {report.pixel_forensics.calibration && (
+                        <div
+                          className="pixel-caveat"
+                          aria-label="Configured pixel thresholds"
+                        >
+                          <strong>
+                            {report.pixel_forensics.calibration.scope === "superadmin_manual" ? "SuperAdmin manual thresholds configured" : "Provisional reference thresholds configured"}
+                          </strong>
+                          <div className="threshold-values">
+                            <span>
+                              Informational cutoff (t95):{" "}
+                              <b>
+                                {report.pixel_forensics.calibration.t95.toFixed(
+                                  6,
+                                )}
+                              </b>
+                            </span>
+                            <span>
+                              Low-severity cutoff (tmax):{" "}
+                              <b>
+                                {report.pixel_forensics.calibration.tmax.toFixed(
+                                  6,
+                                )}
+                              </b>
+                            </span>
+                          </div>
+                          <p>
+                            {report.pixel_forensics.calibration.scope === "superadmin_manual" ? "Manual cutoffs have no calibration or validation claim. " : <>Measured on{" "}
+                            {report.pixel_forensics.calibration.n_calibration}{" "}
+                            reference pages; checked on{" "}
+                            {report.pixel_forensics.calibration.n_validation}{" "}
+                            separate genuine-reference pages
+                            {report.pixel_forensics.calibration.fpr_at_tmax !==
+                            null
+                              ? ` (${(report.pixel_forensics.calibration.fpr_at_tmax * 100).toFixed(1)}% above the low-severity cutoff)`
+                              : ""}
+                            . </>}This policy is not validated for your customer
+                            documents. Pixel findings remain low-severity hints
+                            and cannot determine the verdict alone.
+                          </p>
+                        </div>
+                      )}
                       <div className="pixel-pages">
                         {report.pixel_forensics.pages.map((page) => (
                           <article className="pixel-page" key={page.page}>
@@ -695,6 +759,17 @@ export default function Home() {
                               Raw anomaly heatmap · {page.seconds.toFixed(1)}s
                               inference
                             </small>
+                            {report.pixel_forensics?.calibration && (
+                              <p className="metric-caption">
+                                {page.score >=
+                                report.pixel_forensics.calibration.tmax
+                                  ? "At or above LOW cutoff · LOW signal"
+                                  : page.score >=
+                                      report.pixel_forensics.calibration.t95
+                                    ? "At or above INFO cutoff · INFO signal"
+                                    : "Below informational cutoff"}
+                              </p>
+                            )}
                           </article>
                         ))}
                       </div>

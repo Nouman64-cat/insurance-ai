@@ -275,6 +275,7 @@ services:
       dockerfile: Dockerfile
     container_name: insurance-docs-forgery
     environment:
+      TENANT_SERVICE_URL: http://tenant-service:8001
       WATCHFILES_FORCE_POLLING: "true"
       PIXEL_PYTHON: /opt/pixel-venv/bin/python
       TRUFOR_DIR: /opt/trufor

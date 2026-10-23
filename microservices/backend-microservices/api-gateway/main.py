@@ -1277,3 +1277,8 @@ async def submit_specialist_questionnaire(raw_token: str, request: Request):
 @app.api_route("/platform/agent-config", methods=["GET", "PUT", "OPTIONS"], include_in_schema=False)
 async def proxy_platform_agent_config(request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/platform/agent-config")
+
+
+@app.api_route("/platform/document-forgery/{path:path}", methods=["GET", "PUT", "OPTIONS"], include_in_schema=False)
+async def proxy_document_forgery(request: Request, path: str):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/platform/document-forgery/{path}")

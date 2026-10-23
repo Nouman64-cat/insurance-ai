@@ -32,8 +32,11 @@ an internet domain or tunnel. The backend remains loopback-bound on host port 80
 Pixel forensics uses the CPU-only PyTorch runtime and TruFor weights bundled in
 the backend Docker image. The first backend build downloads these dependencies. Enable
 **Pixel forensics** and run analysis to see per-page model scores and anomaly heatmaps.
-Without a validated document calibration file, these are explicitly uncalibrated outputs
-and do not determine the verdict. Partial or failed inference is reported as incomplete.
+The backend ships provisional cutoffs measured from public reference pages. The UI shows
+t95/tmax, calibration/validation counts and the held-out exceedance rate. This reference
+baseline is not validated for customer submissions; pixel signals remain LOW severity
+and cannot determine the verdict alone. Missing or invalid calibration falls back to
+explicitly uncalibrated raw output. Partial or failed inference is reported as incomplete.
 The upstream model is licensed for informational and nonprofit use only.
 The page limit applies to Layers 2 and 3. Layer 1 retains the backend's own limit.
 

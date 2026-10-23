@@ -94,6 +94,7 @@ const ur: Messages = {
     "Branch Management": "برانچوں کا انتظام",
     "Role Management": "کرداروں کا انتظام",
     "Token Economy": "ٹوکن اکانومی",
+    "Document Forgery Detection": "دستاویز میں جعل سازی کی جانچ",
     "AI Agents": "اے آئی ایجنٹس",
     "LLM Configuration": "LLM کنفیگریشن",
     "Golden Datasets": "گولڈن ڈیٹا سیٹس",
