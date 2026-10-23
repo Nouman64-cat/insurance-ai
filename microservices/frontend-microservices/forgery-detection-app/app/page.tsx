@@ -21,6 +21,17 @@ type Report = {
   incomplete: string[];
   findings: Finding[];
   errors: string[];
+  performance?: {
+    total_seconds: number;
+    layer_seconds: Record<string, number>;
+    input_bytes: number;
+    model_calls: number;
+    model_input_tokens: number | null;
+    model_output_tokens: number | null;
+    pixel_pages_scored: number;
+    pixel_inference_seconds: number;
+    complete: boolean;
+  };
   pixel_forensics?: {
     model: string;
     calibrated: boolean;
@@ -124,13 +135,18 @@ export default function Home() {
   const [dragging, setDragging] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [health, setHealth] = useState("checking");
+  const [pixelReady, setPixelReady] = useState<boolean | null>(null);
   const controller = useRef<AbortController | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const check = new AbortController();
     fetch("/api/health", { signal: check.signal })
-      .then((r) => setHealth(r.ok ? "online" : "offline"))
+      .then(async (r) => {
+        setHealth(r.ok ? "online" : "offline");
+        const capabilities = await r.json();
+        setPixelReady(capabilities.pixel_forensics?.available ?? null);
+      })
       .catch((e) => {
         if (e.name !== "AbortError") setHealth("offline");
       });
@@ -422,7 +438,13 @@ export default function Home() {
                     Pixel forensics{" "}
                     <span className="experimental">Experimental</span>
                   </strong>
-                  <p>Bundled TruFor model. Runs locally on CPU.</p>
+                  <p>
+                    {pixelReady === true
+                      ? "TruFor CPU runtime ready. Runs locally."
+                      : pixelReady === false
+                        ? "TruFor unavailable. Rebuild the backend image."
+                        : "Bundled TruFor model. Runs locally on CPU."}
+                  </p>
                 </div>
                 <input
                   type="checkbox"
@@ -495,6 +517,9 @@ export default function Home() {
               <div>
                 <span className="eyebrow">02 / EVIDENCE WORKSPACE</span>
                 <h2>Analysis report</h2>
+                <a className="metrics-link" href="/performance">
+                  Performance metrics →
+                </a>
               </div>
               {report && (
                 <button className="secondary-button" onClick={download}>
@@ -565,6 +590,71 @@ export default function Home() {
                     <strong>{report.layer3_status || "Not requested"}</strong>
                   </div>
                 </div>
+                {report.performance &&
+                  Object.keys(report.performance).length > 0 && (
+                    <section
+                      className="report-performance"
+                      aria-label="Analysis performance"
+                    >
+                      <div className="findings-heading">
+                        <h3>Analysis performance</h3>
+                        <span>
+                          {report.performance.complete
+                            ? "All requested checks completed"
+                            : "Incomplete analysis"}
+                        </span>
+                      </div>
+                      <div className="metrics-cards compact">
+                        <article>
+                          <span>TOTAL ANALYSIS</span>
+                          <strong>
+                            {report.performance.total_seconds.toFixed(3)}s
+                          </strong>
+                        </article>
+                        <article>
+                          <span>MODEL CALLS</span>
+                          <strong>{report.performance.model_calls}</strong>
+                        </article>
+                        <article>
+                          <span>PIXEL PAGES</span>
+                          <strong>
+                            {report.performance.pixel_pages_scored}
+                          </strong>
+                        </article>
+                      </div>
+                      <div className="timing-rows">
+                        {Object.entries(report.performance.layer_seconds).map(
+                          ([layer, seconds]) => (
+                            <div key={layer}>
+                              <span>
+                                {layer === "layer1"
+                                  ? "File & metadata"
+                                  : layer === "layer2"
+                                    ? "Content consistency"
+                                    : "Pixel forensics"}
+                              </span>
+                              <strong>{seconds.toFixed(3)}s</strong>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                      <p className="metric-caption">
+                        Server processing time excludes upload and browser
+                        rendering. Pixel time includes rendering, queueing,
+                        model loading and inference.
+                      </p>
+                      {report.performance.model_calls > 0 && (
+                        <p className="metric-caption">
+                          Reported input / output tokens:{" "}
+                          {report.performance.model_input_tokens ??
+                            "unavailable"}{" "}
+                          /{" "}
+                          {report.performance.model_output_tokens ??
+                            "unavailable"}
+                        </p>
+                      )}
+                    </section>
+                  )}
                 {report.pixel_forensics &&
                   report.pixel_forensics.pages.length > 0 && (
                     <section

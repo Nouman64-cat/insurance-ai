@@ -8,7 +8,8 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .gemini_client import GeminiClient
@@ -123,6 +124,7 @@ class Analysis:
     report: Report
     layer2: Layer2Result | None = None
     layer3: Layer3Result | None = None
+    performance: dict = field(default_factory=dict)
 
 
 def analyze_document(data: bytes, name: str = "<upload>", doc_type: str | None = None, ctx: Context | None = None,
@@ -136,9 +138,12 @@ def analyze_document(data: bytes, name: str = "<upload>", doc_type: str | None =
     (an experimental pixel model in a separate PyTorch environment); nothing leaves the machine. A requested layer that
     cannot run is listed in ``report.incomplete``, so it can never make a document look clean.
     """
+    started = time.perf_counter()
     report = analyze_bytes(data, name, doc_type, ctx)
     analysis = Analysis(report)
+    durations = {"layer1": time.perf_counter() - started}
     if layer2:
+        layer_started = time.perf_counter()
         now = ctx.now if ctx is not None else None
         try:
             result = run_layer2(data, name, report.file_type, doc_type, client=client, now=now, options=options)
@@ -153,7 +158,9 @@ def analyze_document(data: bytes, name: str = "<upload>", doc_type: str | None =
             if result.status == "failed":
                 report.incomplete.append("layer2")
             analysis.layer2 = result
+        durations["layer2"] = time.perf_counter() - layer_started
     if layer3:
+        layer_started = time.perf_counter()
         try:
             pixel = run_layer3(data, report.file_type, layer3_options, runner=layer3_runner)
         except Exception as exc:  # noqa: BLE001 - layer 3 must never take the whole analysis down
@@ -167,4 +174,17 @@ def analyze_document(data: bytes, name: str = "<upload>", doc_type: str | None =
             if pixel.status in ("failed", "unavailable", "partial"):
                 report.incomplete.append("layer3")
             analysis.layer3 = pixel
+        durations["layer3"] = time.perf_counter() - layer_started
+    calls = analysis.layer2.calls if analysis.layer2 else []
+    analysis.performance = {
+        "total_seconds": time.perf_counter() - started,
+        "layer_seconds": durations,
+        "input_bytes": len(data),
+        "model_calls": len(calls),
+        "model_input_tokens": sum(c["tokens_in"] for c in calls if c.get("tokens_in") is not None) if any(c.get("tokens_in") is not None for c in calls) else None,
+        "model_output_tokens": sum(c["tokens_out"] for c in calls if c.get("tokens_out") is not None) if any(c.get("tokens_out") is not None for c in calls) else None,
+        "pixel_pages_scored": len(analysis.layer3.pages) if analysis.layer3 else 0,
+        "pixel_inference_seconds": sum(p.get("seconds", 0) for p in analysis.layer3.pages) if analysis.layer3 else 0,
+        "complete": report.parsed and not report.incomplete and report.layer2_status not in ("partial", "failed"),
+    }
     return analysis

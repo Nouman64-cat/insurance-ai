@@ -29,7 +29,7 @@ an internet domain or tunnel. The backend remains loopback-bound on host port 80
 4. Select **Analyze document**. Review the verdict, layer statuses, errors, and findings.
    Expand evidence, include informational findings, or download the complete JSON report.
 
-Pixel forensics uses the CPU-only PyTorch runtime and official TruFor weights bundled in
+Pixel forensics uses the CPU-only PyTorch runtime and TruFor weights bundled in
 the backend Docker image. The first backend build downloads these dependencies. Enable
 **Pixel forensics** and run analysis to see per-page model scores and anomaly heatmaps.
 Without a validated document calibration file, these are explicitly uncalibrated outputs
@@ -108,3 +108,20 @@ Open [http://localhost:3012](http://localhost:3012). Create `forgery-net` only o
 For subsequent runs, start the existing containers with
 `docker start docs-forgery forgery-detection-app`; rebuild and recreate them when source changes.
 The backend uses FastAPI only, and the frontend uses Next.js; no Streamlit installation is needed.
+
+## Performance dashboard
+
+Open [http://localhost:3012/performance](http://localhost:3012/performance), or follow the
+**Performance metrics** link in an analysis report. The dashboard displays engine latency
+and completion by requested-layer configuration, HTTP outcomes and process peak memory.
+Use Refresh metrics for a new snapshot, or Download snapshot to export aggregate JSON.
+Each report also shows total/per-layer analysis time, model-call counts and pixel-page counts.
+
+`/api/performance` proxies the backend aggregate endpoint. Metrics reset on backend restart
+and are per process; rolling percentile samples are bounded to 256 per configuration.
+They are runtime measurements, not detection accuracy. In the Detection quality section,
+use **Load benchmark JSON** to view a benchmark report locally in the browser: precision,
+recall, F1, specificity, false-positive rate, coverage and the confusion matrix. Synthetic
+reports are clearly qualified as functional smoke tests. For labelled precision/recall/F1 and
+repeatable HTTP benchmarks, see the backend's
+[performance documentation](../../backend-microservices/docs-forgery/docs/PERFORMANCE_METRICS.md).

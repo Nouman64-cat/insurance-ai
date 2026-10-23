@@ -51,7 +51,7 @@ API Gateway routes or automatic document-upload processing.
 | `provider` | `gemini` | `gemini` or `groq`; used only with Layer 2 |
 | `visual` | `false` | Additional visual model inspection, used only with Layer 2 |
 | `max_pages` | `4` | Layer 2/3 page limit, from 1 to 40; Layer 1 retains its own 40-page limit |
-| `layer3` | `false` | Local experimental TruFor; CPU runtime and official weights bundled in Docker |
+| `layer3` | `false` | Local experimental TruFor; CPU runtime and TruFor weights bundled in Docker |
 
 The response is the report JSON: `path`, `file_type`, `sha256`, `size`, `verdict`,
 `layer2_status`, `layer3_status`, `incomplete`, `findings`, `errors`, and `pixel_forensics`.
@@ -76,7 +76,7 @@ curl -X POST http://localhost:8032/analyze \
 ```
 
 The default Docker image includes a CPU-only PyTorch environment at `/opt/pixel-venv` and
-pinned upstream TruFor code and checksum-verified official weights at `/opt/trufor`. No host
+pinned upstream TruFor code and checksum-verified TruFor weights at `/opt/trufor`. No host
 venv, GPU, or manual model download is needed. The first build downloads the model and
 runtime; subsequent builds reuse Docker layers. These paths stay outside `/app` so the
 development source mount cannot hide them.
@@ -164,6 +164,18 @@ a.report.verdict, a.report.layer2_status, a.report.sorted_findings()
 ```
 
 **Configuration:** copy `.env.example` to `.env` and add a key for the provider you use. `.env` is git-ignored.
+
+## Performance metrics
+
+Open [the runtime dashboard](http://localhost:3012/performance) for per-configuration latency,
+P50/P95, completion, HTTP outcomes and process peak-memory measurements. Reports include total
+and per-layer analysis time, model calls/tokens and pixel processing counts.
+`GET /performance` returns aggregate JSON; `GET /metrics` returns Prometheus-compatible output.
+Metrics are process-local, bounded and reset on restart; no document content is retained.
+
+The benchmark runner measures HTTP latency/throughput and, with a labelled dataset, precision,
+recall, F1, false positives and coverage. See [performance metrics](docs/PERFORMANCE_METRICS.md)
+for commands, definitions, abstention handling and dataset limitations.
 
 ## Results at a glance
 

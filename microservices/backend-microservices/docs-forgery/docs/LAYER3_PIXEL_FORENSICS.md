@@ -177,7 +177,11 @@ Open http://localhost:3012, upload a document, enable Pixel forensics and analyz
 The backend image installs PyTorch 2.6.0 (CPU), torchvision 0.21.0 and the pinned
 `requirements-pixel.txt` dependencies in `/opt/pixel-venv`. It downloads upstream source
 revision `ae54475df6f41a491d7615100feb19263dec13f7` and the official weights into `/opt/trufor`.
-The download must match the archive checksum published by upstream; a mismatch fails the build.
+The official archive must match the MD5 published by upstream. If its server is unreachable,
+the installer uses the checkpoint mirrored in Hugging Face Space `jatin-tech/Tru_Image_Classifier`,
+pinned to revision `1eb63112bc3219694c93dc5a8b826e2593bbc8a0`, and verifies SHA-256
+`ac1d90e329a72e0d66e8665e123a19e94bfae3209c3ef8a4f9ca3b91578c7844`.
+A checksum mismatch fails the build. The asset directory records source and licence information.
 No downloads happen during an analysis. The model assets are outside the development mount.
 
 `PIXEL_PYTHON` and `TRUFOR_DIR` are set by Compose; no host setup is needed. CPU inference is

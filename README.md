@@ -570,7 +570,7 @@ Docker-network callers use `http://docs-forgery:8022`; the host API is loopback-
 `http://localhost:8032`. Layer 1 runs locally by default. Opt into Layer 2 with `layer2=true`
 and `provider=gemini` or `provider=groq`, with the corresponding API key in the root `.env`;
 this sends document pages to that provider. Its provider configuration is separate from
-the platform LLM settings. Optional local TruFor analysis uses the CPU runtime and official weights bundled in the
+the platform LLM settings. Optional local TruFor analysis uses the CPU runtime and TruFor weights bundled in the
 backend image. Its first build downloads these assets. The UI displays per-page model scores
 and anomaly heatmaps, explicitly labelled uncalibrated until document thresholds are supplied.
 Reports contain evidence for review; `no_evidence` does not establish authenticity.
@@ -593,3 +593,14 @@ provisioned. The frontend streams requests through its own `/api/analyze` route 
 Gateway session is required. File checks are local by default. Content checks require
 explicit consent in the UI and the selected provider's backend API key; public visitors
 can invoke those checks with the configured backend credentials.
+
+### Forgery Detection performance metrics
+
+Open [http://localhost:3012/performance](http://localhost:3012/performance) for runtime metrics.
+Reports include per-layer latency and model usage. The service exposes aggregate JSON at
+`http://localhost:8032/performance` and Prometheus-compatible metrics at
+`http://localhost:8032/metrics`. Metrics are process-local and reset on restart.
+
+The [benchmark runner and metric definitions](microservices/backend-microservices/docs-forgery/docs/PERFORMANCE_METRICS.md)
+cover HTTP latency/throughput and labelled precision, recall, F1, false-positive rate and
+coverage. Synthetic checks test functionality and must not be interpreted as real-world accuracy.

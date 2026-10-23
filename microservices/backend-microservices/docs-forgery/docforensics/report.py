@@ -75,7 +75,7 @@ class Report:
     errors: list[str] = field(default_factory=list)
     parsed: bool = True
     layer2_status: str | None = None  # None: not requested; "ok", "partial" or "failed" once run
-    layer3_status: str | None = None  # None: not requested; "ok", "unavailable" or "failed" once run
+    layer3_status: str | None = None  # None: not requested; "ok", "partial", "unavailable" or "failed" once run
     incomplete: list[str] = field(default_factory=list)  # layers that were requested but could not run
 
     @property

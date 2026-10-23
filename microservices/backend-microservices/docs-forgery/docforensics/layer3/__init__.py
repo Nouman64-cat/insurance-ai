@@ -48,7 +48,7 @@ class Layer3Options:
 
 @dataclass
 class Layer3Result:
-    status: str = "ok"  # "ok" | "unavailable" (not set up) | "failed"
+    status: str = "ok"  # "ok" | "partial" | "unavailable" (not set up) | "failed"
     findings: list[Finding] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     pages: list[dict[str, Any]] = field(default_factory=list)  # per-page scores (and a small heatmap) for display

@@ -4,6 +4,8 @@ from enum import Enum
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from starlette.concurrency import run_in_threadpool
+from fastapi.responses import PlainTextResponse
+from performance import Metrics
 
 from docforensics import Layer2Options, Layer3Options, analyze_document
 from docforensics import MAX_FILE_SIZE, detect_type
@@ -12,6 +14,30 @@ from docforensics.layer3 import availability, load_thresholds
 from schemas import AnalysisResponse
 
 app = FastAPI(title="Document Forensics Service", version="1.0.0")
+metrics = Metrics()
+
+
+@app.middleware("http")
+async def count_analysis_requests(request, call_next):
+    if request.url.path != "/analyze":
+        return await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception:
+        metrics.observe_http(500)
+        raise
+    metrics.observe_http(response.status_code)
+    return response
+
+
+@app.get("/performance")
+def performance_summary():
+    return metrics.snapshot()
+
+
+@app.get("/metrics", response_class=PlainTextResponse)
+def prometheus_metrics():
+    return PlainTextResponse(metrics.prometheus(), media_type="text/plain; version=0.0.4")
 
 
 class DocumentType(str, Enum):
@@ -45,6 +71,9 @@ def _analyze(data, name, doc_type, layer2, provider, visual, max_pages, layer3):
         layer3=layer3, layer3_options=Layer3Options(max_pages=max_pages),
     )
     report = analysis.report.to_dict()
+    report["performance"] = analysis.performance
+    if analysis.performance:
+        metrics.observe(analysis.performance, analysis.report.verdict.value, layer2, layer3)
     if analysis.layer3 is not None:
         report["pixel_forensics"] = {
             "model": "TruFor", "calibrated": load_thresholds() is not None,

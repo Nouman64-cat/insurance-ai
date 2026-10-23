@@ -8,10 +8,12 @@ export async function GET() {
       signal: AbortSignal.timeout(5000),
     });
     if (!response.ok) throw new Error("Backend unavailable");
+    const capabilities = await response.json();
     return Response.json({
       service: "forgery-detection-app",
       status: "healthy",
       backend: "healthy",
+      pixel_forensics: capabilities.pixel_forensics,
     });
   } catch {
     return Response.json(

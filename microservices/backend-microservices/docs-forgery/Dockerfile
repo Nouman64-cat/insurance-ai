@@ -21,6 +21,7 @@ RUN python -m venv /opt/pixel-venv \
     && /opt/pixel-venv/bin/pip install --no-cache-dir torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cpu \
     && /opt/pixel-venv/bin/pip install --no-cache-dir -r requirements-pixel.txt
 COPY --from=model-assets /opt/trufor /opt/trufor
+RUN /opt/pixel-venv/bin/python -c "import torch, torchvision, timm, yacs; print('CPU pixel runtime ready:', torch.__version__)"
 
 COPY . .
 EXPOSE 8022

@@ -44,3 +44,4 @@ class AnalysisResponse(BaseModel):
     findings: list[FindingResponse]
     errors: list[str]
     pixel_forensics: PixelForensicsResponse | None = None
+    performance: dict[str, Any] = Field(default_factory=dict)
