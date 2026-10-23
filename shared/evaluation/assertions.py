@@ -6,16 +6,27 @@ An *observation* is a plain dict the runner builds from what the system did, in 
   trace     what the agent did: executed_tools, proposed_tools, tool_calls, llm_calls, interrupt, and `turn.N.*` per user turn
   state     the data the run left behind (new_customers, lead.pending_plan, policy.status ...)
   routing   which agent, specialist and skills were chosen
-An assertion's `target` is a dotted path into that dict; a number selects a list item (`trace.turn.1.executed_tools`).
+An assertion's `target` is a dotted path into that dict. Turns are numbered from 1, as the dataset writes them: `trace.turn.1.*`
+and `state.turn.1.*` are the first user message, and each is a list in message order. `response.text` of a multi-turn run is the
+final reply. The runner also resolves placeholders (`$customer.<ref>.id`, `{{date:today-4d}}`) in each assertion's `expected`,
+as it does in the input, before calling this module.
 
-Nothing here guesses: a target the runner did not observe is an `error`, never a pass, so a broken run cannot look green.
+What the runner must write: every namespace the case's assertions start with (response, result, trace, state, routing), with
+`executed_tools` meaning the tools whose execution was attempted after the permission gate (a success or a failure), not a
+proposal still waiting for confirmation (that is `trace.proposed_tools`) and not a call the gate refused.
+
+Nothing here guesses a pass:
+  * a namespace, a turn or an intermediate object the runner did not write is an `error` (it counts as failed, never passed);
+  * a key missing from an object that was written is *absent*: it equals null, differs from anything else, and contains and
+    leaks nothing, but is not true, not a number and not text. So `state.lead.pending_plan equals null` holds when the lead
+    has no pending plan, and `trace.tool_calls.select_customer_plan.arguments.plan_id` is absent when the tool never ran.
 The engine is deterministic and has no I/O. The only heuristic is `refuses` (see REFUSAL_MARKERS); a result says which.
 Meaning of the less obvious types:
-  equals / not_equals  deep equality; numbers compare by value, True is not 1, strings are case-sensitive
+  equals / not_equals  deep equality; numbers compare by value, True is not 1, strings are case-sensitive, lists keep their order
   contains             text: case-insensitive substring. List: an element equal to the value, or (for text lists other than
-                       tool names) an element that contains it. Dict: the key exists
+                       tool names) an element that contains it. Dict: the text is a key, or appears in a value, at any depth
   numeric_close        |actual - expected| <= tolerance, an ABSOLUTE amount (0 when not given)
-  tool_called          the tool is in the executed tools of the whole conversation (a proposed tool that was not run does not count)
+  tool_called          the tool is in the executed tools of the whole conversation
   no_leak              none of the expected strings (a string or a list) appears in the text, case-insensitive
   state_is             equals, with the target read from `state.` unless it already starts with `state.`
 """
@@ -76,17 +87,75 @@ class CaseAssertions:
                 "results": [r.as_dict() for r in self.results]}
 
 
+# ── The target grammar ─────────────────────────────────────────────────────────────────────────────────────────────────
+# One definition, used by the engine below and by the dataset verifier (evals/tools/verify_dataset.py), so a case cannot be
+# written against a convention the engine does not follow (turns numbered from 1, which side of the run a root belongs to).
+TOOL_TYPES = ("tool_called", "tool_not_called")
+ROOTS = ("response", "result", "trace", "state", "routing")
+CHAT_ROOTS = ("response", "trace", "state", "routing")   # what a conversation produces
+CALL_ROOTS = ("result", "state")                         # what an API, rules or OCR call produces (plus trace.llm_calls)
+CALL_TRACE = ("trace.llm_calls",)
+TURN_BASE = 1
+_TURN_RE = re.compile(r"(?:^|\.)turn\.([^.]*)(?:\.|$)")
+
+
+def target_problems(assertion: Dict[str, Any], *, interface: str, user_turns: int) -> List[str]:
+    """Why an assertion's target cannot be satisfied by a run of this kind of case (an empty list when it can)."""
+    kind, target, aid = assertion["type"], assertion.get("target") or "", assertion.get("id", "?")
+    chat = interface == "chat"
+    if kind in TOOL_TYPES:
+        problems = [] if chat else [f"{aid}: {kind} needs a chat case; only a conversation uses tools"]
+        if not target or "." in target:
+            problems.append(f"{aid}: {kind} target must be a tool name, got {target!r}")
+        return problems
+    root = target.split(".")[0]
+    if root not in ROOTS:
+        return [f"{aid}: target {target!r} must start with one of {', '.join(ROOTS)}"]
+    if chat and root not in CHAT_ROOTS:
+        return [f"{aid}: a chat case has no {root}.* (use {', '.join(CHAT_ROOTS)}): {target!r}"]
+    if not chat and root not in CALL_ROOTS and target not in CALL_TRACE:
+        return [f"{aid}: a {interface} case produces {', '.join(CALL_ROOTS)} (and trace.llm_calls), not {target!r}"]
+    problems = []
+    for match in _TURN_RE.finditer(target):
+        n = match.group(1)
+        if not chat or root not in ("trace", "state"):
+            problems.append(f"{aid}: turn targets belong to trace.turn.N.* and state.turn.N.* of a chat case: {target!r}")
+        elif not n.isdigit() or not TURN_BASE <= int(n) < TURN_BASE + user_turns:
+            problems.append(f"{aid}: turn {n!r} is outside {TURN_BASE}..{TURN_BASE + user_turns - 1} "
+                            f"(turns are numbered from {TURN_BASE}, and this case has {user_turns}): {target!r}")
+    return problems
+
+
+FOUND, ABSENT, UNOBSERVED = "found", "absent", "unobserved"
+
+
+def lookup(observation: Any, path: str) -> Tuple[str, Any]:
+    """Follow a dotted path. Returns (FOUND, value), (ABSENT, None) or (UNOBSERVED, None).
+
+    A list item is picked by number, from 1 under `turn` (the dataset's numbering) and from 0 anywhere else.
+    ABSENT: the last key is missing from an object that was written, or a tool is missing under `trace.tool_calls` (it never ran).
+    Anything else that cannot be followed is UNOBSERVED: the runner did not write it."""
+    node, parts = observation, path.split(".")
+    for i, part in enumerate(parts):
+        last = i == len(parts) - 1
+        if isinstance(node, dict):
+            if part in node:
+                node = node[part]
+                continue
+            return (ABSENT, None) if last or parts[:i] == ["trace", "tool_calls"] else (UNOBSERVED, None)
+        if isinstance(node, list) and part.isdigit():
+            index = int(part) - TURN_BASE if parts[i - 1] == "turn" else int(part)
+            if 0 <= index < len(node):
+                node = node[index]
+                continue
+        return UNOBSERVED, None
+    return FOUND, node
+
+
 def resolve(observation: Any, path: str) -> Tuple[bool, Any]:
-    """Follow a dotted path (list items by number). Returns (found, value); a value of None that is present is found."""
-    node = observation
-    for part in path.split("."):
-        if isinstance(node, dict) and part in node:
-            node = node[part]
-        elif isinstance(node, list) and part.isdigit() and int(part) < len(node):
-            node = node[int(part)]
-        else:
-            return False, None
-    return True, node
+    """(found, value) for a path; an absent or unobserved path is (False, None)."""
+    status, value = lookup(observation, path)
+    return status == FOUND, value
 
 
 def _num(x: Any) -> bool:
@@ -109,16 +178,28 @@ def _text(value: Any) -> str:
     return value if isinstance(value, str) else str(value)
 
 
+def _nested_has(node: Any, text: str) -> bool:
+    """`text` is a key, or appears in a text value, anywhere inside a JSON structure (case-insensitive)."""
+    needle = text.lower()
+    if isinstance(node, dict):
+        return any(needle in str(k).lower() or _nested_has(v, text) for k, v in node.items())
+    if isinstance(node, (list, tuple)):
+        return any(_nested_has(item, text) for item in node)
+    return isinstance(node, str) and needle in node.lower()
+
+
 def _contains(actual: Any, expected: Any, target: str) -> bool:
     if isinstance(actual, str):
         return _text(expected).lower() in actual.lower()
     if isinstance(actual, dict):
-        return expected in actual if isinstance(expected, str) else False
+        # A key, or text anywhere inside: "the answer holds no payee_name" must also see one nested in a list of items.
+        return _nested_has(actual, expected) if isinstance(expected, str) else False
     if isinstance(actual, (list, tuple)):
         if any(_eq(item, expected) for item in actual):
             return True
         if isinstance(expected, str) and not target.endswith(_EXACT_LIST_SUFFIXES):
-            return any(isinstance(item, str) and expected.lower() in item.lower() for item in actual)
+            # Text items by substring; object items (a validation error's {"loc", "msg"}) by the text anywhere inside them.
+            return any(expected.lower() in item.lower() if isinstance(item, str) else _nested_has(item, expected) for item in actual)
         return False
     return False
 
@@ -166,9 +247,17 @@ def evaluate_assertion(assertion: Dict[str, Any], observation: Dict[str, Any]) -
         if not target:
             return result("error", f"A {kind} assertion needs a target.")
         path = target if kind != "state_is" or target.startswith("state.") else f"state.{target}"
-        found, actual = resolve(observation, path)
-        if not found:
+        status, actual = lookup(observation, path)
+        if status == UNOBSERVED:
             return result("error", f"{path} was not observed in this run.")
+        if status == ABSENT:
+            if kind in ("equals", "state_is"):
+                return verdict(expected is None, f"{path} is absent, which equals null.", f"{path} is absent; the case expects a value.")
+            if kind == "not_equals":
+                return verdict(expected is not None, f"{path} is absent, so it differs from {expected!r}.", f"{path} is absent, which equals null.")
+            if kind in ("not_contains", "no_leak"):
+                return result("passed", f"{path} is absent, so it holds nothing forbidden.")
+            return result("failed", f"{path} is absent from what the run produced.")
 
         if kind in ("equals", "state_is"):
             return verdict(_eq(actual, expected), f"{path} equals the expected value.", f"{path} differs from the expected value.", actual)

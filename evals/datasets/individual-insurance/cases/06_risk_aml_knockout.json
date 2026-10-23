@@ -31,7 +31,7 @@
   },
   {
     "case_id": "IND-RISK-002",
-    "title": "Entry age 66 is declined, 65 and 18 pass, 17 is declined",
+    "title": "Entry age 66, one above the 18 to 65 band, is declined",
     "stage": "risk", "category": "risk-aml-knockout", "scenario_type": "boundary", "difficulty": "medium", "severity": "high",
     "tags": ["risk", "early-knockout", "entry-age", "boundary"],
     "user": "agent-a1",
@@ -149,7 +149,7 @@
   },
   {
     "case_id": "IND-RISK-006",
-    "title": "A missing or short CNIC cannot pass the SECP identity screen",
+    "title": "A missing CNIC cannot pass the SECP identity screen",
     "stage": "risk", "category": "risk-aml-knockout", "scenario_type": "missing_information", "difficulty": "easy", "severity": "medium",
     "tags": ["risk", "secp", "cnic", "identity", "screening"],
     "user": "uw-a1",
@@ -173,6 +173,92 @@
         {"oracle": "secp", "inputs": {"cnic": null}, "expect": "Flagged"},
         {"oracle": "secp", "inputs": {"cnic": "3520267812"}, "expect": "Flagged"},
         {"oracle": "secp", "inputs": {"cnic": "35202-6781234-5"}, "expect": "Passed"}
+      ]}
+  },
+  {
+    "case_id": "IND-RISK-007",
+    "title": "Entry age 65, the top of the 18 to 65 band, is not declined",
+    "stage": "risk", "category": "risk-aml-knockout", "scenario_type": "boundary", "difficulty": "medium", "severity": "high",
+    "tags": ["risk", "early-knockout", "entry-age", "boundary"],
+    "user": "agent-a1",
+    "input": {"payload": {"operation": "rules.early_check", "body": {"occupation": "Teacher", "age": 65}}},
+    "expected": {
+      "summary": "KO-AGE-01 declines only above 65, so an applicant aged exactly 65 proceeds with no rule matched. This is the upper edge of the band; IND-RISK-002 covers 66, one year above it.",
+      "outcome": "PROCEED",
+      "permitted_actions": ["continue to underwriting"],
+      "forbidden_actions": ["decline at the early check"]
+    },
+    "reference_context": [
+      {"source": "tenant-service/routers/rules.py::_KNOCKOUT_RULE_SET", "kind": "code", "text": "KO-AGE-01 declines when age is below 18 or above 65. 65 is not above 65."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.decision", "expected": "PROCEED", "severity": "critical"},
+      {"id": "A2", "type": "equals", "target": "result.rule_codes", "expected": [], "severity": "major"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "KO-AGE-01 in the seeded early knockout rule set", "verification": "pending_domain_approval",
+      "code_refs": ["microservices/backend-microservices/tenant-service/routers/rules.py::_KNOCKOUT_RULE_SET"],
+      "notes": "The 18 to 65 band is one of the starting values the code asks the business to confirm."},
+    "metadata": {"interface": "api", "env_mode": "any", "placeholder_rule": true,
+      "truth": [
+        {"oracle": "knockout", "inputs": {"occupation": "Teacher", "age": 65}, "expect": {"decision": "PROCEED", "rule_codes": []}}
+      ]}
+  },
+  {
+    "case_id": "IND-RISK-008",
+    "title": "Entry age 18, the bottom of the 18 to 65 band, is not declined",
+    "stage": "risk", "category": "risk-aml-knockout", "scenario_type": "boundary", "difficulty": "medium", "severity": "high",
+    "tags": ["risk", "early-knockout", "entry-age", "boundary"],
+    "user": "agent-a1",
+    "input": {"payload": {"operation": "rules.early_check", "body": {"occupation": "Teacher", "age": 18}}},
+    "expected": {
+      "summary": "KO-AGE-01 declines only below 18, so an applicant aged exactly 18 proceeds with no rule matched. This is the lower edge of the band; IND-RISK-009 covers 17.",
+      "outcome": "PROCEED",
+      "permitted_actions": ["continue to underwriting"],
+      "forbidden_actions": ["decline at the early check"]
+    },
+    "reference_context": [
+      {"source": "tenant-service/routers/rules.py::_KNOCKOUT_RULE_SET", "kind": "code", "text": "KO-AGE-01 declines when age is below 18 or above 65. 18 is not below 18."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.decision", "expected": "PROCEED", "severity": "critical"},
+      {"id": "A2", "type": "equals", "target": "result.rule_codes", "expected": [], "severity": "major"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "KO-AGE-01 in the seeded early knockout rule set", "verification": "pending_domain_approval",
+      "code_refs": ["microservices/backend-microservices/tenant-service/routers/rules.py::_KNOCKOUT_RULE_SET"],
+      "notes": "The 18 to 65 band is one of the starting values the code asks the business to confirm."},
+    "metadata": {"interface": "api", "env_mode": "any", "placeholder_rule": true,
+      "truth": [
+        {"oracle": "knockout", "inputs": {"occupation": "Teacher", "age": 18}, "expect": {"decision": "PROCEED", "rule_codes": []}}
+      ]}
+  },
+  {
+    "case_id": "IND-RISK-009",
+    "title": "Entry age 17, one below the 18 to 65 band, is declined",
+    "stage": "risk", "category": "risk-aml-knockout", "scenario_type": "boundary", "difficulty": "medium", "severity": "high",
+    "tags": ["risk", "early-knockout", "entry-age", "boundary"],
+    "user": "agent-a1",
+    "input": {"payload": {"operation": "rules.early_check", "body": {"occupation": "Teacher", "age": 17}}},
+    "expected": {
+      "summary": "An applicant aged 17 is below the insurable entry band of 18 to 65 and is declined under rule KO-AGE-01. This is the lower edge; IND-RISK-008 covers 18, which proceeds.",
+      "outcome": "DECLINE",
+      "forbidden_actions": ["continue to underwriting at age 17"]
+    },
+    "reference_context": [
+      {"source": "tenant-service/routers/rules.py::_KNOCKOUT_RULE_SET", "kind": "code", "text": "KO-AGE-01 declines when age is below 18 or above 65: 'Applicant's age is outside the insurable entry band (18–65).'"}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.decision", "expected": "DECLINE", "severity": "critical"},
+      {"id": "A2", "type": "equals", "target": "result.rule_codes", "expected": ["KO-AGE-01"], "severity": "major"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "KO-AGE-01 in the seeded early knockout rule set", "verification": "pending_domain_approval",
+      "code_refs": ["microservices/backend-microservices/tenant-service/routers/rules.py::_KNOCKOUT_RULE_SET"],
+      "notes": "The 18 to 65 band is one of the starting values the code asks the business to confirm."},
+    "metadata": {"interface": "api", "env_mode": "any", "placeholder_rule": true,
+      "truth": [
+        {"oracle": "knockout", "inputs": {"occupation": "Teacher", "age": 17}, "expect": {"decision": "DECLINE", "rule_codes": ["KO-AGE-01"]}}
       ]}
   }
 ]

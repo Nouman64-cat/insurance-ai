@@ -33,7 +33,7 @@
   },
   {
     "case_id": "IND-CLM-002",
-    "title": "A death 730 days after inception is referred as contestable, 731 days is not",
+    "title": "A death exactly 730 days after inception is referred as contestable",
     "stage": "claims", "category": "claims-servicing", "scenario_type": "boundary", "difficulty": "hard", "severity": "high",
     "tags": ["claims", "contestability", "boundary", "non-disclosure"],
     "user": "adjuster-a1",
@@ -222,6 +222,40 @@
       "truth": [
         {"oracle": "claim_eligibility", "inputs": {"event_date": "{{date:today-4d}}", "reported_date": "{{date:today+0d}}", "today": "{{date:today+0d}}", "effective_date": "2024-03-01"}, "expect": {"status": "Eligible", "blockers": [], "reviews": []}},
         {"oracle": "rbac", "inputs": {"role": "ClaimsAdjuster", "tool": "intimate_claim"}, "expect": true}
+      ]}
+  },
+  {
+    "case_id": "IND-CLM-007",
+    "title": "A death 731 days after inception is outside the contestability window and eligible",
+    "stage": "claims", "category": "claims-servicing", "scenario_type": "boundary", "difficulty": "hard", "severity": "high",
+    "tags": ["claims", "contestability", "boundary", "eligibility"],
+    "user": "adjuster-a1",
+    "input": {
+      "payload": {"operation": "claims.verify_eligibility", "policy": "pol-term-faisal", "category": "Death", "event_date": "2026-03-02", "reported_date": "2026-03-04", "cause": "Natural / illness", "covered_person_relationship": "Self"},
+      "fixture_refs": ["policies-claims-v1.json", "personas-individual-v1.json"]
+    },
+    "expected": {
+      "summary": "The policy started on 1 March 2024. An event on 2 March 2026 is 731 days later, one day past the two year contestability window, so nothing needs review and, with cover in force and the report on time, the claim is Eligible. This is the other side of IND-CLM-002, where 730 days is Referred.",
+      "outcome": "Eligible",
+      "forbidden_actions": ["refer the claim as contestable", "treat the claim as ineligible"]
+    },
+    "reference_context": [
+      {"source": "tenant-service/services/claim_engine.py::evaluate_eligibility_facts", "kind": "code", "text": "contestable = in force and 0 <= days since inception or reinstatement <= CLAIM_CONTESTABLE_DAYS (730). 731 is outside it."}
+    ],
+    "assertions": [
+      {"id": "A1", "type": "equals", "target": "result.status", "expected": "Eligible", "severity": "critical"},
+      {"id": "A2", "type": "is_false", "target": "result.contestable", "severity": "major"},
+      {"id": "A3", "type": "equals", "target": "result.reviews", "expected": [], "severity": "major"},
+      {"id": "A4", "type": "equals", "target": "result.blockers", "expected": [], "severity": "major"}
+    ],
+    "layers": ["L1", "L4", "L5"],
+    "source": {"kind": "code", "reference": "contestability window in the claims engine", "verification": "pending_domain_approval",
+      "code_refs": ["microservices/backend-microservices/tenant-service/services/claim_engine.py::evaluate_eligibility_facts", "microservices/backend-microservices/tenant-service/services/insurer_config.py::CLAIM_CONTESTABLE_DAYS"],
+      "notes": "The two year period matches what the code says it mirrors, but the engine describes its waiting periods and checklists as configurable placeholders."},
+    "metadata": {"interface": "rules", "env_mode": "any", "placeholder_rule": true,
+      "truth": [
+        {"oracle": "days_between", "inputs": {"start": "2024-03-01", "end": "2026-03-02"}, "expect": 731},
+        {"oracle": "claim_eligibility", "inputs": {"event_date": "2026-03-02", "reported_date": "2026-03-04", "effective_date": "2024-03-01"}, "expect": {"status": "Eligible", "reviews": [], "blockers": [], "contestable": false}}
       ]}
   }
 ]

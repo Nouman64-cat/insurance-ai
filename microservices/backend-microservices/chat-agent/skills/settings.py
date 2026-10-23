@@ -1,5 +1,6 @@
 """Short-lived cache of database-backed SuperAdmin settings; no env toggle."""
 import asyncio
+import contextvars
 import logging
 import os
 import time
@@ -13,8 +14,14 @@ _at = 0.0
 _lock = asyncio.Lock()
 
 
+# Evaluation only: one request can run with the progressive skills on or off (routers/chat.py sets this from a header, and only in the
+# evaluation stack). Unset everywhere else, so the platform's saved setting decides.
+eval_skills: contextvars.ContextVar = contextvars.ContextVar("eval_skills", default=None)
+
+
 def enabled() -> bool:
-    return _value
+    override = eval_skills.get()
+    return _value if override is None else bool(override)
 
 
 async def _fetch() -> bool:

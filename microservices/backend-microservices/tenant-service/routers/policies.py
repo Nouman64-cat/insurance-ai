@@ -24,6 +24,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 from routers.auth import optional_oauth2_scheme, source_scope
+from routers.users import verify_tenant_member
 from services import payment_gateway
 from services.env_mode import is_demo
 from family_approval import pending_insured_members, waiting_message
@@ -66,7 +67,9 @@ from shared.models.core import (
 )
 
 log = logging.getLogger(__name__)
-router = APIRouter(tags=["Policy Issuance & Renewals"])
+# Every route here is under /tenants/{tenant_id}: the caller must be signed in and belong to that tenant (a SuperAdmin may reach any).
+# Before this, the list and every policy route answered with no login at all, for any tenant. Role limits stay in the handlers.
+router = APIRouter(tags=["Policy Issuance & Renewals"], dependencies=[Depends(verify_tenant_member)])
 
 
 # ── Request bodies ────────────────────────────────────────────────────────────

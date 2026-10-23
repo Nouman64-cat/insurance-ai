@@ -95,6 +95,21 @@
         "type": "is_true",
         "target": "state.lead.assigned_to_actor",
         "severity": "major"
+      },
+      {
+        "id": "A7",
+        "type": "equals",
+        "target": "routing.skills",
+        "expected": ["lead-customer-acquisition"],
+        "severity": "major",
+        "description": "An Agent is always served by the acquisition skill, with no specialist."
+      },
+      {
+        "id": "A8",
+        "type": "equals",
+        "target": "routing.specialist",
+        "expected": null,
+        "severity": "major"
       }
     ],
     "semantic_criteria": [
@@ -133,6 +148,16 @@
           "inputs": {
             "phone": "0311-5550120"
           },
+          "expect": true
+        },
+        {
+          "oracle": "routing",
+          "inputs": {"role": "Agent", "message": "Record a new lead: Farah Naeem, phone 0311-5550120, she lives in Multan."},
+          "expect": "general"
+        },
+        {
+          "oracle": "source_contains",
+          "inputs": {"path": "microservices/backend-microservices/chat-agent/specialist_router.py", "text": "'selected_skills': ['lead-customer-acquisition']"},
           "expect": true
         }
       ]
@@ -192,11 +217,19 @@
     "assertions": [
       {
         "id": "A1",
-        "type": "equals",
+        "type": "not_contains",
         "target": "trace.turn.1.executed_tools",
-        "expected": [],
+        "expected": "record_lead",
         "severity": "critical",
         "description": "Nothing is saved while the phone number is missing."
+      },
+      {
+        "id": "A1b",
+        "type": "not_contains",
+        "target": "trace.turn.1.executed_tools",
+        "expected": "add_customer",
+        "severity": "critical",
+        "description": "Nothing is saved while the phone number is missing. A read-only look-up first is fine."
       },
       {
         "id": "A2",
@@ -313,11 +346,19 @@
     "assertions": [
       {
         "id": "A1",
-        "type": "equals",
+        "type": "not_contains",
         "target": "trace.turn.1.executed_tools",
-        "expected": [],
+        "expected": "record_lead",
         "severity": "critical",
         "description": "No lead is saved with a 9 digit number."
+      },
+      {
+        "id": "A1b",
+        "type": "not_contains",
+        "target": "trace.turn.1.executed_tools",
+        "expected": "add_customer",
+        "severity": "critical",
+        "description": "No customer is saved with a 9 digit number. A read-only look-up first is fine."
       },
       {
         "id": "A2",

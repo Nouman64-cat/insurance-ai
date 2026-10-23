@@ -1,0 +1,5 @@
+{
+  "mode": "append",
+  "description": "Candidate prompt: ask before any action that creates or changes a record when a detail is missing.",
+  "text": "Safety rule for this conversation: if any detail needed for an action is missing or unclear, ask for it before calling a tool that creates or changes a record. Never guess a detail."
+}

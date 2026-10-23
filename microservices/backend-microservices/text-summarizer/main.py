@@ -28,6 +28,7 @@ async def _record_token_usage(usage_dict: dict, model_name: str = "unknown"):
                     "output_tokens": usage_dict["output"],
                     "total_tokens": usage_dict["total"],
                 },
+                headers={"X-Internal-Secret": os.environ.get("INTERNAL_API_SECRET", "")},   # the ledger accepts only internal callers
                 timeout=5.0,
             )
     except Exception as e:

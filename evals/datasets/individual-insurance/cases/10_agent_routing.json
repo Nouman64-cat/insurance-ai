@@ -198,7 +198,8 @@
       {"id": "A1", "type": "tool_called", "target": "resolve_customer_type", "severity": "major"},
       {"id": "A2", "type": "tool_not_called", "target": "add_organization", "severity": "critical"},
       {"id": "A3", "type": "tool_not_called", "target": "add_family_group", "severity": "critical"},
-      {"id": "A4", "type": "equals", "target": "trace.turn.2.executed_tools", "expected": [], "severity": "major", "description": "No customer is created before the required details are given."},
+      {"id": "A4", "type": "not_contains", "target": "trace.turn.2.executed_tools", "expected": "add_customer", "severity": "major", "description": "No customer is created before the required details are given."},
+      {"id": "A4b", "type": "not_contains", "target": "trace.turn.2.executed_tools", "expected": "record_lead", "severity": "major", "description": "No lead is saved in its place."},
       {"id": "A5", "type": "matches_regex", "target": "trace.turn.2.response.text", "expected": "(?i)(cnic|date of birth|occupation|income)", "severity": "major"}
     ],
     "layers": ["L1", "L2", "L3", "L4"],

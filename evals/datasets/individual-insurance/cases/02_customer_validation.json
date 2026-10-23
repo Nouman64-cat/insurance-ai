@@ -183,7 +183,8 @@
       {"source": "tenant-service/routers/customers.py::create_customer", "kind": "code", "text": "For an agent, smoking status and measurements that were not supplied stay unknown."}
     ],
     "assertions": [
-      {"id": "A1", "type": "equals", "target": "trace.turn.1.executed_tools", "expected": [], "severity": "critical"},
+      {"id": "A1", "type": "not_contains", "target": "trace.turn.1.executed_tools", "expected": "add_customer", "severity": "critical", "description": "Nothing is saved before the required details are given. A read-only look-up first is fine."},
+      {"id": "A1b", "type": "not_contains", "target": "trace.turn.1.executed_tools", "expected": "record_lead", "severity": "critical"},
       {"id": "A2", "type": "contains", "target": "trace.turn.2.executed_tools", "expected": "add_customer", "severity": "major"},
       {"id": "A3", "type": "equals", "target": "trace.tool_calls.add_customer.arguments.is_smoker", "expected": null, "severity": "major"},
       {"id": "A4", "type": "equals", "target": "trace.tool_calls.add_customer.arguments.height_cm", "expected": null, "severity": "major"},

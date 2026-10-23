@@ -22,6 +22,12 @@ PROPOSAL_TOPIC = "insurance.proposal.submitted.v1"
 
 async def create_producer() -> AIOKafkaProducer:
     """Start and return a ready-to-use producer instance with retry logic."""
+    if os.getenv("EVAL_MOCK_EXTERNALS") == "1":
+        # The evaluation stack has no broker; the stand-in refuses to exist outside an evaluation process.
+        from shared.evaluation.recording_producer import RecordingProducer
+        stub = RecordingProducer()
+        await stub.start()
+        return stub
     producer = AIOKafkaProducer(
         bootstrap_servers=KAFKA_BOOTSTRAP,
         # Serialise str → bytes at the transport layer so callers pass plain str.

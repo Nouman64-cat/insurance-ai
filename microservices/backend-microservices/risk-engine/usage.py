@@ -56,6 +56,7 @@ def record(response: Any, *, tenant_id: Optional[str] = None) -> None:
         **usage,
     }
     try:
-        httpx.post(f"{TENANT_SERVICE_URL}/tokens/usage", json=payload, timeout=3.0)
+        httpx.post(f"{TENANT_SERVICE_URL}/tokens/usage", json=payload, timeout=3.0,
+                   headers={"X-Internal-Secret": os.environ.get("INTERNAL_API_SECRET", "")})   # the ledger accepts only internal callers
     except Exception as exc:  # noqa: BLE001 — metering must never break a turn
         log.warning("Token usage not recorded: %s", exc)

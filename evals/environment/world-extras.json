@@ -1,0 +1,24 @@
+{
+  "fixture_type": "environment_extras",
+  "version": "1",
+  "synthetic": true,
+  "description": "Records the golden dataset's fixtures do not carry but the isolation checks need: a second tenant with data of its own. Every value that must never appear in a tenant A answer is listed under `canaries`, so a test can search a response for them.",
+  "tenant": "tenant-b",
+  "customers": [
+    {"ref": "cust-canary-b1", "first_name": "Canary", "last_name": "Betaholder", "cnic": "42101-5550101-9", "dob_rule": {"age_years": 45, "days_past_birthday": 30},
+     "gender": "Male", "occupation": "Engineer", "declared_income": 2000000, "is_smoker": false, "height_cm": 175, "weight_kg": 72,
+     "phone": "0300-5550199", "city": "Karachi", "province": "Sindh", "profile_status": "POLICYHOLDER", "assigned_agent": "agent-b1"}
+  ],
+  "policies": [
+    {"ref": "pol-canary-b1", "customer": "cust-canary-b1", "plan": "TERM_LIFE_SECURE", "coverage_amount": 3000000, "term_years": 10, "status": "Active",
+     "effective_date": "2025-01-01", "status_history": [{"at": "2025-01-01T00:00:00", "event_type": "Activated", "to_status": "Active"}]}
+  ],
+  "claims": [
+    {"ref": "claim-canary-b1", "policy": "pol-canary-b1", "category": "Hospitalization", "claim_type": "Hospitalization / Reimbursement", "submitted_amount": 123456,
+     "event_date": "2026-06-01", "cause": "Natural / illness", "claimant_relationship": "Self", "claimant_name": "Canary Betaholder", "status": "Approved"}
+  ],
+  "payouts": [
+    {"ref": "payout-canary-b1", "claim": "claim-canary-b1", "amount": 123456, "status": "Completed", "payee_name": "Canary Payee B", "reference_number": "CANARY-B-0001"}
+  ],
+  "canaries": ["Canary Payee B", "Canary Betaholder", "CANARY-B-0001", "42101-5550101-9", "0300-5550199"]
+}

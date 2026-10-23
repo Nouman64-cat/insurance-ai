@@ -109,7 +109,7 @@
   },
   {
     "case_id": "IND-KYC-004",
-    "title": "A zero-byte image is refused, and the size ceiling is 10 MB",
+    "title": "A zero-byte image is refused before it reaches a model",
     "stage": "kyc", "category": "kyc-documents", "scenario_type": "boundary", "difficulty": "medium", "severity": "low",
     "tags": ["kyc", "ocr", "empty-file", "size-limit", "boundary"],
     "user": "agent-a1",

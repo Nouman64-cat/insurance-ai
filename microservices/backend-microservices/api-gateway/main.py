@@ -1015,7 +1015,8 @@ async def proxy_roles_management(path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/roles/{path}")
 
 
-@app.api_route("/tokens/usage", methods=["GET", "POST", "OPTIONS"], include_in_schema=False)
+# Read only: services record usage by calling tenant-service directly with the internal secret; the gateway never forwards a write.
+@app.api_route("/tokens/usage", methods=["GET", "OPTIONS"], include_in_schema=False)
 async def proxy_tokens_usage(request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tokens/usage")
 
@@ -1036,6 +1037,42 @@ async def proxy_platform_llm_config(path: str, request: Request):
 @app.api_route("/eval/datasets{path:path}", methods=["GET", "POST", "PUT", "OPTIONS"], include_in_schema=False)
 async def proxy_eval_datasets(path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/eval/datasets{path}")
+
+
+# Evaluation jobs (SuperAdmin): request, list, cancel, and the live event stream. The worker's own endpoints (/internal/eval/jobs) are not proxied.
+@app.get("/eval/jobs/{job_id}/stream", include_in_schema=False)
+async def proxy_eval_job_stream(job_id: str, request: Request):
+    """Server-Sent Events relayed chunk by chunk with no read timeout (the service sends a keep-alive every 15 s)."""
+    headers = {k: v for k, v in request.headers.items() if k.lower() not in _HOP_HEADERS}
+    client = httpx.AsyncClient(timeout=httpx.Timeout(10.0, read=None))
+    try:
+        upstream = await client.send(client.build_request("GET", f"{TENANT_SERVICE_URL}/eval/jobs/{job_id}/stream", headers=headers,
+                                                          params=request.query_params), stream=True)
+    except httpx.HTTPError:
+        await client.aclose()
+        return JSONResponse(status_code=502, content={"detail": "The evaluation service is unavailable. Try again shortly."})
+    if upstream.status_code != 200:
+        body = await upstream.aread()
+        await upstream.aclose()
+        await client.aclose()
+        return Response(content=body, status_code=upstream.status_code, media_type=upstream.headers.get("content-type"))
+
+    async def relay():
+        try:
+            async for chunk in upstream.aiter_raw():
+                yield chunk
+        except httpx.HTTPError:
+            return
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+
+    return StreamingResponse(relay(), media_type="text/event-stream", headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"})
+
+
+@app.api_route("/eval/jobs{path:path}", methods=["GET", "POST", "OPTIONS"], include_in_schema=False)
+async def proxy_eval_jobs(path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/eval/jobs{path}")
 
 
 @app.api_route("/agent/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)

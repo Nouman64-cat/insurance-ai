@@ -15,6 +15,14 @@ from typing import Callable, List, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import casekit  # noqa: E402
+import test_assertions  # noqa: E402
+import test_chat_eval  # noqa: E402
+import test_stats  # noqa: E402
+import test_environment  # noqa: E402
+import test_operations  # noqa: E402
+import test_runner  # noqa: E402
+import test_runs  # noqa: E402
+import test_usage  # noqa: E402
 import verify_dataset  # noqa: E402
 
 Sources = List[Tuple[str, dict]]
@@ -104,9 +112,61 @@ def m_unknown_oracle(s: Sources) -> None:
 
 def m_missing_category(s: Sources) -> None:
     for i, (_, raw) in enumerate(s):
-        if raw["case_id"] == "IND-SEC-006":
+        if raw["case_id"] == "IND-LEAD-006":          # lead-onboarding has exactly the minimum of 6
             del s[i]
             return
+
+
+def _assertion(case_id: str, s: Sources, **fields) -> None:
+    find(s, case_id)["assertions"].append(fields)
+
+
+def m_turn_past_the_end(s: Sources) -> None:
+    for a in find(s, "IND-AGT-006")["assertions"]:
+        a["target"] = a["target"].replace("turn.2", "turn.3")
+
+
+def m_turn_zero_based(s: Sources) -> None:
+    for a in find(s, "IND-AGT-004")["assertions"]:
+        a["target"] = a["target"].replace("turn.1", "turn.0")
+
+
+def m_result_in_a_chat_case(s: Sources) -> None:
+    _assertion("IND-LEAD-001", s, id="A9", type="equals", target="result.status_code", expected=200)
+
+
+def m_tool_in_an_api_case(s: Sources) -> None:
+    _assertion("IND-PAY-001", s, id="A9", type="tool_called", target="record_lead")
+
+
+def m_unbacked_no_leak(s: Sources) -> None:
+    for a in find(s, "IND-SEC-004")["assertions"]:
+        if a["type"] == "no_leak":
+            a["expected"] = "system prompt"
+
+
+def m_called_and_not_called(s: Sources) -> None:
+    _assertion("IND-LEAD-001", s, id="A9", type="tool_not_called", target="record_lead")
+
+
+def m_two_values_for_one_target(s: Sources) -> None:
+    _assertion("IND-PAY-001", s, id="A8", type="equals", target="result.status_code", expected=200)
+    _assertion("IND-PAY-001", s, id="A9", type="equals", target="result.status_code", expected=201)
+
+
+def m_required_call_not_asserted(s: Sources) -> None:
+    case = find(s, "IND-PLAN-005")
+    case["assertions"] = [a for a in case["assertions"] if a["type"] != "tool_called"]
+
+
+def m_placeholder_names_nobody(s: Sources) -> None:
+    _assertion("IND-PLAN-001", s, id="A9", type="equals", target="state.lead.customer_id", expected="$customer.nobody.id")
+
+
+def m_malformed_date_token(s: Sources) -> None:
+    for a in find(s, "IND-CLM-006")["assertions"]:
+        if isinstance(a.get("expected"), str):
+            a["expected"] = a["expected"].replace("{{date:today-4d}}", "{{date:yesterday}}")
 
 
 MUTATIONS: List[Tuple[str, Callable[[Sources], None], str]] = [
@@ -129,6 +189,16 @@ MUTATIONS: List[Tuple[str, Callable[[Sources], None], str]] = [
     ("a NaN inside a case", m_nan, "NaN"),
     ("an oracle that does not exist", m_unknown_oracle, "unknown oracle"),
     ("a category with a case missing", m_missing_category, "has 5 cases"),
+    ("a turn number past the last message", m_turn_past_the_end, "is outside 1..2"),
+    ("a 0-based turn number (turns start at 1)", m_turn_zero_based, "numbered from 1"),
+    ("result.* asserted on a chat case", m_result_in_a_chat_case, "has no result"),
+    ("a tool assertion on an API case", m_tool_in_an_api_case, "needs a chat case"),
+    ("a no_leak phrase nothing in the source supports", m_unbacked_no_leak, "is not backed by a source_contains"),
+    ("a tool both required and forbidden", m_called_and_not_called, "contradictory assertions"),
+    ("one target equal to two different values", m_two_values_for_one_target, "with different values"),
+    ("a required call that no assertion checks", m_required_call_not_asserted, "no assertion checks that it was called"),
+    ("a placeholder that names a customer who does not exist", m_placeholder_names_nobody, "is not in the fixtures"),
+    ("a malformed date token", m_malformed_date_token, "is not of the form"),
 ]
 
 
@@ -153,7 +223,24 @@ def main() -> int:
             failures += 1
             print(f"FAIL did not catch {label} (looked for {expect!r}; got {errors[:3]})")
     print(f"{'PASS' if not failures else 'FAILED'}: {len(MUTATIONS)} mutations, {failures} not caught")
-    return 1 if failures else 0
+    # The assertion engine is part of what must keep working: its tests run with the verifier's.
+    engine_failures = test_assertions.run()
+    print(f"{'PASS' if not engine_failures else 'FAILED'}: {len(test_assertions.TESTS)} engine tests, {engine_failures} failed")
+    operation_failures = test_operations.run_all()
+    print(f"{'PASS' if not operation_failures else 'FAILED'}: {len(test_operations.TESTS)} operation tests, {operation_failures} failed")
+    environment_failures = test_environment.run_all()
+    print(f"{'PASS' if not environment_failures else 'FAILED'}: {len(test_environment.TESTS)} environment tests, {environment_failures} failed")
+    runner_failures = test_runner.run_all()
+    print(f"{'PASS' if not runner_failures else 'FAILED'}: {len(test_runner.TESTS)} runner tests, {runner_failures} failed")
+    runs_failures = test_runs.run_all()
+    print(f"{'PASS' if not runs_failures else 'FAILED'}: {len(test_runs.TESTS)} run-storage tests, {runs_failures} failed")
+    stats_failures = test_stats.run_all()
+    print(f"{'PASS' if not stats_failures else 'FAILED'}: {len(test_stats.TESTS)} statistics tests, {stats_failures} failed")
+    chat_eval_failures = test_chat_eval.run_all()
+    print(f"{'PASS' if not chat_eval_failures else 'FAILED'}: {len(test_chat_eval.TESTS)} chat evaluation tests, {chat_eval_failures} failed")
+    usage_failures = test_usage.run_all()
+    print(f"{'PASS' if not usage_failures else 'FAILED'}: {len(test_usage.TESTS)} usage tests, {usage_failures} failed")
+    return 1 if failures or engine_failures or operation_failures or usage_failures or environment_failures or runner_failures or runs_failures or stats_failures or chat_eval_failures else 0
 
 
 if __name__ == "__main__":

@@ -1,16 +1,32 @@
+import hmac
+import os
 from datetime import datetime, date
 from typing import List, Dict, Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Header, Query, HTTPException
 from sqlmodel import select, func
 from sqlmodel.ext.asyncio.session import AsyncSession
 from pydantic import BaseModel
 
 from database import get_session
-from shared.models.core import TokenUsage
+from routers.auth import _get_current_user, oauth2_scheme
+from shared.models.core import Role, TokenUsage
 
 router = APIRouter(prefix="/tokens", tags=["Token Management"])
+
+
+def require_internal_service(x_internal_secret: str = Header(default="")) -> None:
+    """Only the platform's own services may write to the usage ledger: they send the shared INTERNAL_API_SECRET.
+
+    This fails closed. The LLM-config endpoint treats an unset secret as "open"; here an unset secret means no write is
+    accepted, so a missing configuration can never leave the ledger (and the spend figures built on it) writable by anyone
+    who can reach the service. The comparison is constant-time."""
+    expected = os.environ.get("INTERNAL_API_SECRET", "").strip()
+    if not expected:
+        raise HTTPException(status_code=503, detail="Token usage cannot be recorded: INTERNAL_API_SECRET is not configured.")
+    if not hmac.compare_digest(x_internal_secret.encode(), expected.encode()):
+        raise HTTPException(status_code=401, detail="A valid internal service secret is required to record token usage.")
 
 # The three areas the Token Economy page reports spend in. Every service_name falls in exactly one; anything not
 # listed is the base model (the chat agent and its specialists, risk engine, summarizer, rule assist...).
@@ -43,12 +59,12 @@ class TokenUsageCreate(BaseModel):
     model_name: Optional[str] = None
     thread_id: Optional[str] = None
 
-@router.post("/usage")
+@router.post("/usage", dependencies=[Depends(require_internal_service)])
 async def record_token_usage(
     data: TokenUsageCreate,
     session: AsyncSession = Depends(get_session)
 ):
-    """Record LLM token usage for a specific service."""
+    """Record LLM token usage for a specific service. Internal only: callers send X-Internal-Secret."""
     usage = TokenUsage(
         service_name=data.service_name,
         input_tokens=data.input_tokens,
@@ -69,7 +85,27 @@ async def record_token_usage(
     return {"status": "success", "id": usage.id}
 
 
-@router.get("/usage")
+async def require_usage_reader(
+    tenant_id: Optional[UUID] = Query(default=None),
+    token: str = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Who may read the spend figures. Platform-wide totals (no tenant_id) are for SuperAdmin; one tenant's spend is for that
+    tenant's Admin (or a SuperAdmin). Anyone else, and anyone not signed in, is refused. Before this the read needed no login."""
+    user = await _get_current_user(token, session)             # 401: no token, a bad token, or a removed account
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Your account is inactive.")
+    role = await session.get(Role, user.role_id)
+    name = role.name if role else None
+    if name == "SuperAdmin":
+        return
+    if tenant_id is None:
+        raise HTTPException(status_code=403, detail="Platform-wide token usage is for SuperAdmin; pass your own tenant_id for your organisation's spend.")
+    if name != "Admin" or user.tenant_id != tenant_id:
+        raise HTTPException(status_code=403, detail="Token usage for a tenant is for that tenant's Admin or a SuperAdmin.")
+
+
+@router.get("/usage", dependencies=[Depends(require_usage_reader)])
 async def get_token_usage(
     start_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
     end_date: str = Query(..., description="End date (YYYY-MM-DD)"),

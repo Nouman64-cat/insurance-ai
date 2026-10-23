@@ -1,0 +1,206 @@
+"""Integration tests of run storage (shared/evaluation/runs.py) against the isolated evaluation database and an in-memory object
+store, so nothing is added to the platform's real, immutable run history. Inside eval-runner:
+
+    python evals/environment/envctl.py test-runs         # wraps  python -m evals.tools.test_runs_integration
+
+Real runs are produced by the real runner (function cases need no stack), sealed, and ingested. They check: rows equal the results
+file, every artifact reaches the object store with its checksum, a second ingestion changes nothing, a tampered or reused run is
+refused, the database itself refuses to change a finished run, and an unknown cost stays unknown through ingestion and totals.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import Callable, List
+
+from sqlalchemy import text
+from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlmodel import select
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared.evaluation import environment as env_lib  # noqa: E402
+from shared.evaluation.canonical import sha256_hex  # noqa: E402
+from shared.evaluation.config import LakeSettings  # noqa: E402
+from shared.evaluation.lake import DataLake  # noqa: E402
+from shared.evaluation.object_store import InMemoryObjectStore  # noqa: E402
+from shared.evaluation.runs import RunFolderError, ingest_run, seal_folder  # noqa: E402
+from shared.models.evaluation import EvalAssertionResult, EvalCaseResult, EvalCostRecord, EvalPricingVersion, EvalRun  # noqa: E402
+
+ROOT = Path("/work")
+CASES = ["IND-PAY-001", "IND-PAY-002", "IND-UW-005"]
+
+
+class Rig:
+    def __init__(self) -> None:
+        self.engine = env_lib.evaluation_engine()
+        self.store = InMemoryObjectStore()
+        self.lake = DataLake(self.store, LakeSettings(backend="memory"), lambda: AsyncSession(self.engine, expire_on_commit=False))
+
+    async def clean(self) -> None:
+        async with self.engine.begin() as conn:
+            await env_lib.reset(conn)
+
+    async def session(self) -> AsyncSession:
+        return AsyncSession(self.engine, expire_on_commit=False)
+
+
+def real_run() -> Path:
+    """A sealed run folder made by the real runner."""
+    out = subprocess.run([sys.executable, "-m", "evals.tools.eval_runner", "--from-source", "--case", *CASES], cwd=ROOT, capture_output=True, text=True)
+    folder = next(line.split("results: ")[1].strip() for line in out.stdout.splitlines() if line.startswith("results: "))
+    return Path(folder)
+
+
+def copy_of(folder: Path, name: str) -> Path:
+    dest = ROOT / "runs" / f"_test-{name}-{int(time.time() * 1000)}"
+    shutil.copytree(folder, dest)
+    return dest
+
+
+async def t_a_real_run_is_stored_completely(rig: Rig, folder: Path) -> None:
+    await rig.clean()
+    report = await ingest_run(rig.lake, folder)
+    assert report.created and report.results == len(CASES), report
+    async with await rig.session() as s:
+        run = (await s.exec(select(EvalRun).where(EvalRun.run_id == report.run_id))).one()
+        rows = (await s.exec(select(EvalCaseResult).where(EvalCaseResult.run_row_id == run.id))).all()
+        file_lines = [json.loads(x) for x in (folder / "results.jsonl").read_text().splitlines() if x.strip()]
+        assert run.state == "complete" and run.executions == len(file_lines) == len(rows)
+        assert sorted(r.case_key for r in rows) == sorted(x["case_id"] for x in file_lines)
+        assert run.passed == sum(1 for x in file_lines if x["status"] == "passed") and run.known_cost_usd == 0.0 and run.unknown_cost_executions == 0
+        n_assert = (await s.execute(text("select count(*) from eval_assertion_results"))).scalar()
+        assert n_assert == sum(sum(x["assertion_counts"].values()) for x in file_lines), "every assertion of every execution is stored"
+        for key in (run.summary_key, run.report_key, run.results_key):
+            assert rig.store.head(key) is not None, key
+        for r in rows:
+            data = rig.store.get(r.artifact_key)
+            assert sha256_hex(data) == r.artifact_sha256, "the stored artifact is the sealed one"
+
+
+async def t_ingesting_twice_changes_nothing(rig: Rig, folder: Path) -> None:
+    await rig.clean()
+    first = await ingest_run(rig.lake, folder)
+    async with await rig.session() as s:
+        before = (await s.execute(text("select (select count(*) from eval_runs), (select count(*) from eval_case_results), (select count(*) from eval_assertion_results)"))).one()
+    again = await ingest_run(rig.lake, folder)
+    async with await rig.session() as s:
+        after = (await s.execute(text("select (select count(*) from eval_runs), (select count(*) from eval_case_results), (select count(*) from eval_assertion_results)"))).one()
+    assert first.created and not again.created and tuple(before) == tuple(after) == (1, len(CASES), tuple(before)[2])
+
+
+async def t_a_tampered_or_reused_run_is_refused(rig: Rig, folder: Path) -> None:
+    await rig.clean()
+    await ingest_run(rig.lake, folder)
+    bad = copy_of(folder, "tamper")
+    (bad / "results.jsonl").write_text((bad / "results.jsonl").read_text() + "\n{}\n")
+    try:
+        await ingest_run(rig.lake, bad)
+    except RunFolderError as exc:
+        assert "does not match" in str(exc)
+    else:
+        raise AssertionError("a tampered folder was ingested")
+    other = copy_of(folder, "reuse")
+    summary = json.loads((other / "summary.json").read_text())
+    summary["note"] = "same id, different content"
+    (other / "summary.json").write_text(json.dumps(summary))
+    (other / "manifest.json").unlink()
+    seal_folder(other)
+    try:
+        await ingest_run(rig.lake, other)
+    except RunFolderError as exc:
+        assert "never reused" in str(exc)
+    else:
+        raise AssertionError("a different folder with an already-stored run id was ingested")
+    async with await rig.session() as s:
+        assert (await s.execute(text("select count(*) from eval_runs"))).scalar() == 1
+
+
+async def t_the_database_refuses_to_change_a_finished_run(rig: Rig, folder: Path) -> None:
+    await rig.clean()
+    await ingest_run(rig.lake, folder)
+    attempts = ["update eval_runs set passed = 99", "delete from eval_runs", "update eval_case_results set status = 'passed'",
+                "delete from eval_case_results", "update eval_assertion_results set status = 'passed'", "delete from eval_assertion_results"]
+    for sql in attempts:
+        async with await rig.session() as s:
+            try:
+                await s.execute(text(sql))
+                await s.commit()
+            except Exception as exc:                                   # noqa: BLE001
+                assert "immutable" in str(exc), (sql, str(exc)[:120])
+            else:
+                raise AssertionError(f"not refused: {sql}")
+
+
+def synthetic_run(root: Path, run_id: str, usage) -> Path:
+    (root / "artifacts").mkdir(parents=True)
+    result = {"case_id": "IND-KYC-001", "category": "kyc-documents", "operation": "ocr.extract_customer", "verification": "code_verified", "status": "passed",
+              "repetition": 1, "latency_ms": 900, "usage": usage, "assertion_counts": {"passed": 1}, "artifact": None}
+    (root / "results.jsonl").write_text(json.dumps(result) + "\n")
+    (root / "summary.json").write_text(json.dumps({"run_id": run_id, "suite": "technical", "repeat": 1, "selected_cases": 1, "dataset": {"dataset": None},
+                                                    "by_status": {"passed": 1, "failed": 0, "blocked": 0, "skipped": 0, "infrastructure_error": 0}}))
+    (root / "report.txt").write_text("r\n")
+    seal_folder(root, extra={"run_id": run_id})
+    return root
+
+
+async def t_unknown_cost_stays_unknown_and_known_cost_follows_the_active_price(rig: Rig, folder: Path) -> None:
+    await rig.clean()
+    async with await rig.session() as s:
+        s.add(EvalPricingVersion(label="test-rates", rates={"gpt-4o-mini": {"input": 1.0, "cached": 0.5, "output": 2.0}}, default_rate={"input": 0, "cached": 0, "output": 0},
+                                 is_active=True, content_hash="0" * 64))
+        await s.commit()
+    tmp = ROOT / "runs"
+    missing = synthetic_run(tmp / f"_test-missing-{int(time.time() * 1000)}", f"t-missing-{int(time.time() * 1000)}", {"status": "missing", "calls": None})
+    await ingest_run(rig.lake, missing)
+    known = synthetic_run(tmp / f"_test-known-{int(time.time() * 1000)}", f"t-known-{int(time.time() * 1000)}",
+                          {"status": "attributed", "calls": 1, "input_tokens": 1_000_000, "output_tokens": 500_000, "cached_tokens": 0,
+                           "by_model": {"gpt-4o-mini-2024-07-18": {"calls": 1, "input_tokens": 1_000_000, "output_tokens": 500_000}}})
+    await ingest_run(rig.lake, known)
+    async with await rig.session() as s:
+        runs = {r.run_id.split("-")[1]: r for r in (await s.exec(select(EvalRun))).all()}
+        r_missing = (await s.exec(select(EvalCaseResult).where(EvalCaseResult.run_row_id == runs["missing"].id))).one()
+        r_known = (await s.exec(select(EvalCaseResult).where(EvalCaseResult.run_row_id == runs["known"].id))).one()
+        assert r_missing.cost_usd is None and r_missing.cost_known is False, "a model run whose usage is missing has an UNKNOWN cost, not 0"
+        assert runs["missing"].unknown_cost_executions == 1 and runs["missing"].known_cost_usd == 0.0
+        assert abs(r_known.cost_usd - (1_000_000 * 1.0 + 500_000 * 2.0) / 1e6) < 1e-9 and r_known.cost_known, "priced with the ACTIVE version, not the built-in rate"
+        assert runs["known"].pricing_version_id is not None and runs["known"].summary["ingest"]["pricing_label"] == "test-rates"
+        records = (await s.exec(select(EvalCostRecord).where(EvalCostRecord.run_id == runs["known"].run_id))).all()
+        assert len(records) == 1 and abs(records[0].total_cost_usd - 2.0) < 1e-9 and records[0].cost_basis == "calculated"
+        assert not (await s.exec(select(EvalCostRecord).where(EvalCostRecord.run_id == runs["missing"].run_id))).all(), "no usage, so no cost record is invented"
+
+
+TESTS: List[Callable] = [t_a_real_run_is_stored_completely, t_ingesting_twice_changes_nothing, t_a_tampered_or_reused_run_is_refused,
+                         t_the_database_refuses_to_change_a_finished_run, t_unknown_cost_stays_unknown_and_known_cost_follows_the_active_price]
+
+
+async def main() -> int:
+    rig = Rig()
+    folder = real_run()
+    failed = 0
+    try:
+        for test in TESTS:
+            started = time.monotonic()
+            try:
+                await test(rig, folder)
+                status, detail = "ok", ""
+            except AssertionError as exc:
+                status, detail, failed = "FAIL", str(exc), failed + 1
+            except Exception as exc:                                  # noqa: BLE001
+                status, detail, failed = "FAIL", f"{type(exc).__name__}: {exc}", failed + 1
+            print(f"{status:5} {test.__name__[2:]:78} {time.monotonic() - started:5.1f}s" + (f"\n        {detail}" if detail else ""))
+        await rig.clean()
+    finally:
+        await rig.engine.dispose()
+        for p in (ROOT / "runs").glob("_test-*"):
+            shutil.rmtree(p, ignore_errors=True)
+    print(f"\n{len(TESTS)} run-storage integration tests: {len(TESTS) - failed} ok, {failed} failed")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(asyncio.run(main()))

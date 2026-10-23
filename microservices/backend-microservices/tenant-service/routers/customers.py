@@ -5,7 +5,7 @@ from datetime import date
 from typing import Literal, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import func, or_, cast, String
+from sqlalchemy import func, or_, cast, String, null as sa_null
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -243,6 +243,12 @@ async def create_customer(
         province        = body.province,
         details         = body.details,
     )
+    # An agent's unrecorded smoking status and measurements must stay unknown. A plain None is not enough: on INSERT the ORM treats an
+    # unset-or-None attribute as "use the column default" and stores the model's False / 170.0 / 70.0. An explicit SQL NULL is kept.
+    if is_agent:
+        for field in ("is_smoker", "height_cm", "weight_kg"):
+            if getattr(body, field) is None:
+                setattr(customer, field, sa_null())
     session.add(customer)
     await session.commit()
     await session.refresh(customer)

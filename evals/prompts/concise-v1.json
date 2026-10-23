@@ -1,0 +1,5 @@
+{
+  "mode": "append",
+  "description": "Candidate prompt: answer in at most two short sentences and never repeat the user's details back.",
+  "text": "Style rule for this conversation: answer in at most two short sentences. Do not repeat the user's own details back to them."
+}

@@ -1,0 +1,191 @@
+# The evaluation stack. Separate from the application's compose file on purpose: see README.md in this folder.
+#
+#   python evals/environment/envctl.py provision     # first time: creates eval.env with fresh random secrets
+#   python evals/environment/envctl.py up            # build and start the stack
+#
+# Nothing here reads the repository .env. Every service gets only evals/environment/eval.env.
+name: insurance-ai-eval
+
+networks:
+  eval-internal:
+    internal: true          # no internet, no host, no route to the production stack
+  eval-egress:              # attached to the OCR engine only: reading a document calls a paid model
+    driver: bridge
+
+volumes:
+  eval-postgres-data:
+
+x-eval-service: &eval-service
+  restart: "no"
+  env_file: [eval.env]
+  networks: [eval-internal]
+  environment: &eval-env
+    PYTHONPATH: /app
+    PYTHONDONTWRITEBYTECODE: "1"
+    EVAL_ENVIRONMENT: "1"          # the guard (shared/evaluation/safety.py) refuses to run without this
+    EVAL_MOCK_EXTERNALS: "1"       # Kafka is replaced by a recording stub, which itself refuses to exist outside an eval process
+    DISABLE_PGVECTOR: "true"
+    AUDIT_ENABLED: "false"         # no audit outbox, no archive writes
+    PORTAL_PROVISIONING_MODE: legacy
+    ENV_VAR: strict
+    KAFKA_BOOTSTRAP_SERVERS: eval-no-broker:9092   # does not exist, on purpose
+
+services:
+  eval-postgres:
+    image: postgres:16-alpine
+    container_name: eval-postgres
+    restart: "no"
+    networks: [eval-internal]
+    env_file: [eval.env]
+    environment:
+      POSTGRES_USER: eval_app
+      POSTGRES_DB: insurance_eval
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes: [eval-postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eval_app -d insurance_eval"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  eval-tenant-service:
+    <<: *eval-service
+    build: {context: ../../microservices/backend-microservices/tenant-service, dockerfile: Dockerfile}
+    image: insurance-ai-eval-backend
+    container_name: eval-tenant-service
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "1"]
+    volumes:
+      - ../../microservices/backend-microservices/tenant-service:/app:ro
+      - ../../shared:/app/shared:ro
+    environment:
+      <<: *eval-env
+      OCR_ENGINE_URL: http://eval-ocr-engine:8004
+    depends_on: {eval-postgres: {condition: service_healthy}}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8001/openapi.json')"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+
+  eval-api-gateway:
+    <<: *eval-service
+    build: {context: ../../microservices/backend-microservices/api-gateway, dockerfile: Dockerfile}
+    image: insurance-ai-eval-gateway
+    container_name: eval-api-gateway
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-graceful-shutdown", "5"]
+    volumes:
+      - ../../microservices/backend-microservices/api-gateway:/app:ro
+      - ../../shared:/app/shared:ro
+    environment:
+      <<: *eval-env
+      TENANT_SERVICE_URL: http://eval-tenant-service:8001
+    depends_on: {eval-tenant-service: {condition: service_healthy}}
+
+  eval-ocr-engine:
+    <<: *eval-service
+    build: {context: ../../microservices/backend-microservices/ocr-engine, dockerfile: Dockerfile}
+    image: insurance-ai-eval-ocr
+    container_name: eval-ocr-engine
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8004"]
+    networks: [eval-internal, eval-egress]
+    volumes:
+      - ../../microservices/backend-microservices/ocr-engine:/app:ro     # (like production, the OCR engine has no shared/ mount)
+    environment:
+      <<: *eval-env
+      TENANT_SERVICE_URL: http://eval-tenant-service:8001
+    depends_on: {eval-tenant-service: {condition: service_healthy}}
+
+  # The scripted stand-in model (SYNTHETIC: results from it are never model-quality results). Internal network only.
+  eval-mock-llm:
+    <<: *eval-service
+    image: insurance-ai-eval-backend
+    container_name: eval-mock-llm
+    command: ["python", "/mock/server.py"]
+    volumes: [./mock_llm:/mock:ro]
+    environment:
+      <<: *eval-env
+      PORT: "8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # The judge (DeepEval): scores the semantic criteria of a reply. Internal network only: the scripted judge (mock/...) needs nothing
+  # else, a real judge provider needs docker-compose.eval.live.yml (egress) and its key in eval.env.
+  eval-judge:
+    <<: *eval-service
+    build: {context: ./judge, dockerfile: Dockerfile}
+    image: insurance-ai-eval-judge
+    container_name: eval-judge
+    working_dir: /tmp
+    command: ["uvicorn", "server:app", "--app-dir", "/srv", "--host", "0.0.0.0", "--port", "8090"]
+    volumes: [./judge:/srv:ro]
+    environment:
+      <<: *eval-env
+      EVAL_MOCK_LLM_URL: http://eval-mock-llm:8080/v1
+      DEEPEVAL_TELEMETRY_OPT_OUT: "YES"
+    depends_on: {eval-mock-llm: {condition: service_healthy}}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8090/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  # The real chat agent (the code under test), with its own checkpoint tables in the evaluation database. Internal network only; with
+  # docker-compose.eval.live.yml it also gets egress, for a run against a real provider. The model of a request is chosen by the
+  # runner (X-Eval-Model), so the platform's LLM configuration is never touched.
+  eval-chat-agent:
+    <<: *eval-service
+    image: insurance-ai-eval-chat
+    container_name: eval-chat-agent
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8006"]
+    volumes:
+      - ../../microservices/backend-microservices/chat-agent:/app:ro
+      - ../../shared:/app/shared:ro
+      - ../prompts:/eval-prompts:ro                    # prompt variants for prompt-version comparisons (X-Eval-Prompt)
+    environment:
+      <<: *eval-env
+      TENANT_SERVICE_URL: http://eval-tenant-service:8001
+      API_GATEWAY_URL: http://eval-api-gateway:8000
+      EVAL_PROMPT_DIR: /eval-prompts
+      EVAL_MOCK_LLM_URL: http://eval-mock-llm:8080/v1
+      COMMISSION_SPECIALIST_ENABLED: "true"
+      GROUP_SPECIALIST_ENABLED: "true"
+      SERVICING_SPECIALIST_ENABLED: "true"
+      UNDERWRITING_SPECIALIST_ENABLED: "true"
+      CLAIMS_SPECIALIST_ENABLED: "true"
+    depends_on:
+      eval-tenant-service: {condition: service_healthy}
+      eval-mock-llm: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8006/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  # The harness worker: seeds, resets and runs cases. Same image as the backend (it needs the app's models), no ports,
+  # no egress, and a read-only view of the code. Only ./runs (its results) is writable.
+  eval-runner:
+    <<: *eval-service
+    image: insurance-ai-eval-backend
+    container_name: eval-runner
+    profiles: [runner]
+    working_dir: /work
+    command: ["sleep", "infinity"]
+    volumes:
+      - ../../microservices/backend-microservices/tenant-service:/app:ro
+      - ../../shared:/app/shared:ro
+      - ../../evals:/work/evals:ro
+      - ./runs:/work/runs
+    environment:
+      <<: *eval-env
+      PYTHONPATH: /app:/work
+      EVAL_API_URL: http://eval-tenant-service:8001
+      EVAL_GATEWAY_URL: http://eval-api-gateway:8000
+      EVAL_OCR_URL: http://eval-ocr-engine:8004
+      EVAL_CHAT_URL: http://eval-chat-agent:8006
+      EVAL_MOCK_LLM_URL: http://eval-mock-llm:8080
+      EVAL_JUDGE_URL: http://eval-judge:8090

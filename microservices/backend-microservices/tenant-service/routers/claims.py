@@ -14,6 +14,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 from routers.auth import _get_current_user, _role_name, oauth2_scheme
+from routers.users import verify_tenant_member
 from shared.models.core import (
     ClaimAuthorityLimit,
     Artifact,
@@ -38,7 +39,18 @@ from shared.models.core import (
     User,
 )
 
-router = APIRouter(prefix="/tenants/{tenant_id}/claims", tags=["Claims"])
+# The caller must belong to the tenant in the path (a SuperAdmin may reach any). Before this only Finance was checked, so an Admin or
+# claims user of tenant A could read tenant B's claims; most routes also only compared the claim's tenant with the PATH, not the caller.
+async def _verify_claims_tenant(tenant_id: UUID, token: str = Depends(oauth2_scheme), session: AsyncSession = Depends(get_session)) -> None:
+    """The caller belongs to the tenant in the path (verify_tenant_member). Finance keeps the message this API has always given it for
+    another organization's claims and payments, which clients and the golden case IND-SEC-005 rely on."""
+    user = await _get_current_user(token, session)
+    if user.tenant_id != tenant_id and await _role_name(user, session) == "Finance":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your organization or your account is inactive.")
+    await verify_tenant_member(tenant_id, token, session)
+
+
+router = APIRouter(prefix="/tenants/{tenant_id}/claims", tags=["Claims"], dependencies=[Depends(_verify_claims_tenant)])
 
 # Roles and limits: services/claim_authority.py. Admin configures and oversees; it does not work claims.
 from services import claim_authority as ca

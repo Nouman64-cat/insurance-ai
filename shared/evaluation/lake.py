@@ -30,6 +30,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from uuid import UUID, uuid4
 
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -360,6 +361,9 @@ class DataLake:
             o = by_key[row.case_key]
             if o.ok:
                 row.content, row.content_sha256, row.dedupe_key = o.case, o.content_sha256, o.dedupe_key
+                # The validated case writes 1 as 1.0. Python sees {"w": 1} == {"w": 1.0}, so without this the change is
+                # not detected, the old content stays in the database and no longer matches the checksum stored beside it.
+                flag_modified(row, "content")
                 row.tier, row.validation_errors = "silver", None
                 for k, v in summary_fields(o.case).items():
                     setattr(row, k, _text(v))

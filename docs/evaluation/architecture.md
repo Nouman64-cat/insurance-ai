@@ -88,3 +88,53 @@ docker compose exec -T tenant-service python test_migrations.py
 ```
 
 The full command list is in the header of `eval_lake_cli.py`.
+
+## Phase 4: the evaluation harness
+
+The harness runs a published, checksum-verified dataset version against the real Individual Insurance agents inside the isolated
+stack (`evals/environment/`, compose project `insurance-ai-eval`: own Postgres, internal network only). The host-side worker is the only
+bridge between the platform (jobs, MinIO, results database) and that stack.
+
+```
+platform (SuperAdmin API, MinIO, results DB)  <--worker (envctl.py worker)-->  eval-runner  -->  eval-gateway / eval-tenant-service
+                                                                                         |-->  eval-chat-agent  -->  eval-mock-llm (scripted) or a real provider
+                                                                                         '-->  eval-judge (DeepEval)
+```
+
+**Six layers per execution** (`shared/evaluation/layers.py`; each case's `evaluation` block says which are enabled):
+L1 inputs and fixtures, L2 output quality (text checks plus judged criteria), L3 agent / skill / tool trajectory, L4 workflow and
+state, L5 security, permissions, business rules and money, L6 latency, tokens and cost (fails only against limits the run set).
+A failed critical assertion fails the case whatever the aggregate score. When no judge is configured L2 is `not_scored` and the
+verdict says it is incomplete; it is never silently passed.
+
+**Judge.** `eval-judge` is a separate service with DeepEval 3.9.9 (GEval for correctness, task completion, safety and custom;
+AnswerRelevancy; Faithfulness; Hallucination inverted to "1 minus the rate"). The judge may not be the model under test unless forced
+(`--allow-same-judge`). A real provider needs `EVAL_ALLOWED_PROVIDERS` and a key in `eval.env`, otherwise the score is
+`blocked_missing_credentials`. **Calibration:** `evals/calibration/judge-calibration-v1.json` holds answers of known quality; `--calibrate`
+(or `envctl.py calibrate --judge P/M`) scores them and reports agreement; below 80% the judge is `NOT TRUSTED` and the run says so.
+
+**What a run can vary:** `--model P/M` (`mock/<name>` is a scripted stand-in), `--skills on|off`, `--prompt-version V` (files in
+`evals/prompts/`, pinned by sha256), `--repeat N|auto`, `--judge`, `--max-latency-ms/--max-tokens/--max-cost-usd`, `--stop-on-critical`,
+`--gate`. `envctl.py variants --vary skills=on,off|prompt=none,v1|model=a,b` runs the same cases once per value and compares them case by
+case. **Everything run with a scripted model is SYNTHETIC: it proves the harness, not model quality.**
+
+**Jobs.** `eval_jobs` / `eval_job_events` (platform DB); SuperAdmin `POST/GET /eval/jobs`, `/eval/jobs/{id}/stream` (SSE, `Last-Event-ID`),
+`.../cancel`; the worker claims through `X-Internal-Secret` endpoints, sends heartbeats (a silent job is marked lost), cancels by signalling the
+runner (finishes the case in flight, writes what exists).
+
+**Chat-agent hooks** (only when `EVAL_ENVIRONMENT=1`): headers `X-Eval-Model`, `X-Eval-Skills`, `X-Eval-Prompt` and
+`GET /chat/eval/trace/{thread}`. In production the trace route answers 404 (checked against `insurance-chat-agent`), and in the stack
+another user's thread answers 403 (integration test).
+
+```
+python evals/environment/envctl.py run --dataset individual-insurance-single-turn --version 1.0.6 --model mock/mock-oracle --judge mock/mock-judge --repeat 3 --gate --calibrate
+python evals/environment/envctl.py variants --vary skills=on,off --model mock/mock-oracle --from-source --case IND-LEAD-001
+python evals/environment/envctl.py worker            # executes queued jobs
+python evals/environment/envctl.py calibrate --judge mock/mock-judge
+python evals/environment/envctl.py test-chat | test-runner | test-runs
+docker compose exec tenant-service python eval_lake_cli.py job-submit | jobs | job-events --follow | job-cancel | run-reliability <run_id>
+```
+
+**Not built in this phase:** the runs API and Evaluation Center pages, the model registry and cross-provider benchmark (Phase 5), a
+dedicated real-provider key (so no real-model or real-judge result exists yet), and a budget stop in the middle of a conversation
+(the budget is checked before each execution and judge call).

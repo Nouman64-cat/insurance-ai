@@ -148,3 +148,7 @@ test-data
 /.audit-protected/
 /.protected-data/
 *.pem
+
+# evaluation stack secrets and run output
+evals/environment/eval.env
+evals/environment/runs/

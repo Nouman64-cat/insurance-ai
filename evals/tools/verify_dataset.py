@@ -15,6 +15,9 @@ What it checks
      must be marked pending_domain_approval, and a case marked code_verified or independently_verified must have an
      oracle to back it.
   5. Coverage: cases per category, scenario types, difficulty, severity and turn modes.
+  6. Assertions: every target is one that kind of run produces and turns are numbered as the engine numbers them; no assertion
+     contradicts another; a no_leak string is backed by real source text; a call the case requires is asserted; placeholders
+     ($customer.<ref>.id, $plan.<CODE>.id, {{date:today-4d}}) name something that exists.
 """
 from __future__ import annotations
 
@@ -33,7 +36,7 @@ import casekit  # noqa: E402
 import make_fixtures  # noqa: E402
 import oracles  # noqa: E402
 
-PER_CATEGORY = 6
+MIN_PER_CATEGORY = 6   # a floor, not a target: a category may grow (extra boundary cases), never shrink
 MIN_MULTI_TURN = 8   # the multi-turn dataset is a deliverable of its own; it must not shrink away
 SCENARIO_TYPES = ("positive", "negative", "boundary", "edge", "adversarial", "missing_information", "conflicting_data",
                   "complex_workflow")
@@ -115,12 +118,101 @@ def check_refs(case: dict, errors: List[str]) -> None:
             errors.append(f"{cid}: code ref {ref!r}: the file no longer mentions {symbol.split('.')[-1]!r}")
 
 
+_PLACEHOLDER = re.compile(r"\$([a-z]+)\.([A-Za-z0-9_-]+)\.([a-z_]+)")
+_DATE_TOKEN = re.compile(r"\{\{[^}]*\}\}")
+_TOOL_LISTS = re.compile(r"(?:^|\.)(?:executed|proposed)_tools$")
+
+
+def fixture_refs() -> Dict[str, set]:
+    """What `$customer.<ref>.…`, `$plan.<CODE>.…` and `$policy.<ref>.…` may name, read from the fixtures a case can use."""
+    def refs(file: str, key: str, field: str) -> set:
+        path = casekit.FIXTURES / file
+        return {r[field] for r in casekit.read_json(path).get(key, [])} if path.is_file() else set()
+    return {"customer": refs("personas-individual-v1.json", "customers", "ref"),
+            "plan": {p["code"] for p in casekit.plans()},
+            "policy": refs("policies-claims-v1.json", "policies", "ref")}
+
+
+def _walk(value: Any):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for v in value.values():
+            yield from _walk(v)
+    elif isinstance(value, list):
+        for v in value:
+            yield from _walk(v)
+
+
+def check_assertions(case: dict, known: Dict[str, set], errors: List[str]) -> None:
+    """Rules about the assertions themselves, so a case cannot ask for something the engine cannot judge, contradict itself,
+    or lean on a number or phrase nothing supports. Each rule is proved able to fail by selftest.py."""
+    from shared.evaluation.assertions import target_problems  # one grammar, shared with the engine
+    cid, interface = case["case_id"], case["metadata"].get("interface", "")
+    user_turns = sum(1 for m in case["input"]["messages"] if m["role"] == "user")
+    assertions = case["assertions"]
+
+    # 1. Every target is one this kind of run produces; turns are numbered as the engine numbers them.
+    for a in assertions:
+        errors += [f"{cid}: {p}" for p in target_problems(a, interface=interface, user_turns=user_turns)]
+
+    # 2. No assertion contradicts another about the same thing.
+    seen: Dict[tuple, Any] = {}
+    for a in assertions:
+        key, value = (a["type"], a.get("target")), repr(a.get("expected"))
+        if a["type"] == "equals" and (key in seen and seen[key] != value):
+            errors.append(f"{cid}: assertions {a['id']} and an earlier one both say what {a['target']} equals, with different values")
+        seen[key] = value
+    for a in assertions:
+        opposite = {"equals": "not_equals", "contains": "not_contains", "is_true": "is_false", "tool_called": "tool_not_called"}.get(a["type"])
+        if opposite and any(b["type"] == opposite and b.get("target") == a.get("target") and repr(b.get("expected")) == repr(a.get("expected"))
+                            for b in assertions):
+            errors.append(f"{cid}: contradictory assertions: {a['type']} and {opposite} on {a.get('target')!r} with the same value")
+
+    # 3. A phrase that must not leak has to come from real source text, or a correct refusal that repeats it would fail.
+    truth = case["metadata"].get("truth", [])
+    for a in assertions:
+        if a["type"] != "no_leak":
+            continue
+        secrets = a["expected"] if isinstance(a["expected"], list) else [a["expected"]]
+        for secret in secrets:
+            backed = any(t.get("oracle") == "source_contains" and str(secret).lower() in str(t["inputs"].get("text", "")).lower()
+                         and t.get("expect") is True for t in truth)
+            if not secret or not backed:
+                errors.append(f"{cid}: no_leak string {secret!r} is not backed by a source_contains oracle that shows it in the source text")
+
+    # 4. A call the case says must happen is asserted somewhere (as called, proposed, or an argument of that call).
+    for call in case["expected"].get("tool_calls") or []:
+        tool = call.get("tool")
+        asserted = any(
+            (a["type"] in ("tool_called",) and a.get("target") == tool)
+            or (a["type"] == "contains" and _TOOL_LISTS.search(a.get("target") or "") and a.get("expected") == tool)
+            or (a.get("target") or "").startswith(f"trace.tool_calls.{tool}.")
+            for a in assertions)
+        if tool and not asserted:
+            errors.append(f"{cid}: expected.tool_calls requires {tool} but no assertion checks that it was called")
+
+    # 5. Placeholders name something that exists, and date tokens are well formed.
+    where = [a.get("expected") for a in assertions] + [case["input"]["payload"], case["expected"].get("tool_calls"),
+                                                       [m["content"] for m in case["input"]["messages"]]]
+    for text in _walk(where):
+        for kind, ref, _ in _PLACEHOLDER.findall(text):
+            if kind not in known:
+                errors.append(f"{cid}: placeholder ${kind}.{ref} has an unknown kind (use {', '.join(sorted(known))})")
+            elif ref not in known[kind]:
+                errors.append(f"{cid}: placeholder ${kind}.{ref} is not in the fixtures")
+        for token in _DATE_TOKEN.findall(text):
+            if not re.fullmatch(r"\{\{date:today[+-]\d+d\}\}", token):
+                errors.append(f"{cid}: date token {token} is not of the form {{{{date:today-4d}}}}")
+
+
 def verify(sources=None, *, check_fixture_files: bool = True) -> dict:
     """Run every check over `sources` (default: the authoring files). Returns {"errors", "cases", "oracle_ok", "oracle_runs"}."""
     errors: List[str] = []
     if check_fixture_files:
         check_fixtures(errors)
     known_fixtures = set(casekit.manifest())
+    known_refs = fixture_refs()
     cases: List[dict] = []
     fingerprints: Dict[str, str] = {}
     truth_runs = truth_ok = 0
@@ -144,6 +236,7 @@ def verify(sources=None, *, check_fixture_files: bool = True) -> dict:
             if ref not in known_fixtures:
                 errors.append(f"{cid}: fixture {ref!r} is not in the manifest")
         check_refs(case, errors)
+        check_assertions(case, known_refs, errors)
 
         meta = case["metadata"]
         truth = meta.get("truth", [])
@@ -172,8 +265,8 @@ def verify(sources=None, *, check_fixture_files: bool = True) -> dict:
 
     by_cat = Counter(c["category"] for c in cases)
     for cat in casekit.categories():
-        if by_cat.get(cat, 0) != PER_CATEGORY:
-            errors.append(f"coverage: category {cat} has {by_cat.get(cat, 0)} cases, expected {PER_CATEGORY}")
+        if by_cat.get(cat, 0) < MIN_PER_CATEGORY:
+            errors.append(f"coverage: category {cat} has {by_cat.get(cat, 0)} cases, expected at least {MIN_PER_CATEGORY}")
     types = Counter(c["scenario_type"] for c in cases)
     for t in SCENARIO_TYPES:
         if types.get(t, 0) == 0:

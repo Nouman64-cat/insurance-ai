@@ -10,6 +10,7 @@ answer, a yes/no confirmation, or a client-side upload result), `action_complete
 from __future__ import annotations
 
 import json
+import os
 import httpx
 from typing import Any
 
@@ -55,6 +56,41 @@ def _owner_mismatch(snapshot, caller: dict) -> bool:
 
 
 _NOT_YOURS = {"detail": "This conversation belongs to another user."}
+
+
+def _eval_enabled() -> bool:
+    """True only in the isolated evaluation stack. Everything eval-specific in this file is gated on it."""
+    return os.environ.get("EVAL_ENVIRONMENT") == "1"
+
+
+async def _with_eval_context(request: Request, stream):
+    """Run `stream` with this request's evaluation overrides (model, skills on/off, prompt variant) applied. A no-op outside the evaluation stack:
+    the headers are not even read there."""
+    if not _eval_enabled():
+        async for item in stream:
+            yield item
+        return
+    import providers
+    from skills import settings as skills_settings
+    model = request.headers.get("x-eval-model")
+    skills = request.headers.get("x-eval-skills")
+    prompt = request.headers.get("x-eval-prompt")
+    tokens = []
+    if model:
+        tokens.append((providers.eval_override, providers.eval_override.set({"spec": model})))
+    if prompt:
+        tokens.append((providers.eval_prompt, providers.eval_prompt.set(providers.load_prompt_variant(prompt))))
+    if skills in ("on", "off"):
+        tokens.append((skills_settings.eval_skills, skills_settings.eval_skills.set(skills == "on")))
+    try:
+        async for item in stream:
+            yield item
+    finally:
+        for var, token in reversed(tokens):
+            try:
+                var.reset(token)
+            except ValueError:
+                pass
 
 
 def _event(payload: dict) -> str:
@@ -299,7 +335,7 @@ async def chat_stream(body: ChatStreamRequest, request: Request, x_tenant_id: st
         "jwt_token": jwt_token,
         "last_action": None,
     }
-    return StreamingResponse(_consume(graph, config, input_), media_type="text/event-stream", headers=_SSE_HEADERS)
+    return StreamingResponse(_with_eval_context(request, _consume(graph, config, input_)), media_type="text/event-stream", headers=_SSE_HEADERS)
 
 
 @router.post("/resume")
@@ -310,10 +346,46 @@ async def chat_resume(body: ChatResumeRequest, request: Request, x_tenant_id: st
     if _owner_mismatch(await graph.aget_state(config), caller):
         return JSONResponse(status_code=403, content=_NOT_YOURS)
     return StreamingResponse(
-        _consume(graph, config, Command(resume=body.resume_value)),
+        _with_eval_context(request, _consume(graph, config, Command(resume=body.resume_value))),
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
     )
+
+
+@router.get("/eval/trace/{thread_id}", include_in_schema=False)
+async def eval_trace(thread_id: str, request: Request, x_tenant_id: str = Header(default=""), authorization: str = Header(default="")):
+    """What the agent did in one thread, read from its checkpoint: the messages in order, every tool call with its arguments and its
+    result, which specialist and skills were chosen, and what the thread is waiting on. Read-only, and it does not exist (404)
+    outside the evaluation stack. Only the thread's own user may read it, as for chat itself."""
+    if not _eval_enabled():
+        raise HTTPException(404, "Not found")
+    caller = await _caller(authorization, x_tenant_id)
+    graph = request.app.state.graph
+    snapshot = await graph.aget_state({"configurable": {"thread_id": thread_id}})
+    if _owner_mismatch(snapshot, caller):
+        return JSONResponse(status_code=403, content=_NOT_YOURS)
+    values = (snapshot.values if snapshot else None) or {}
+    messages = []
+    for m in values.get("messages", []):
+        item: dict = {"id": getattr(m, "id", None), "type": m.type, "content": _as_text(m.content)}
+        if isinstance(m, AIMessage):
+            item["tool_calls"] = [{"id": tc.get("id"), "name": tc.get("name"), "args": tc.get("args")} for tc in (m.tool_calls or [])]
+            item["model"] = (getattr(m, "response_metadata", None) or {}).get("model_name") or (getattr(m, "response_metadata", None) or {}).get("model")
+        if isinstance(m, ToolMessage):
+            item["name"], item["tool_call_id"] = m.name, m.tool_call_id
+            try:
+                item["result"] = json.loads(m.content)
+            except Exception:
+                item["result"] = None
+        messages.append(item)
+    interrupt = None
+    for task in getattr(snapshot, "tasks", None) or []:
+        if task.interrupts:
+            interrupt = task.interrupts[0].value
+            break
+    return {"thread_id": thread_id, "messages": messages, "active_specialist": values.get("active_specialist"),
+            "selected_skills": values.get("selected_skills") or [], "last_action": values.get("last_action"),
+            "interrupt": interrupt, "waiting": bool(getattr(snapshot, "next", None))}
 
 
 @router.post("/title")

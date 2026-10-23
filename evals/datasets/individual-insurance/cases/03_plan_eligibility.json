@@ -62,7 +62,7 @@
       {"id": "A4", "type": "equals", "target": "state.lead.pending_plan", "expected": null, "severity": "major"}
     ],
     "semantic_criteria": [
-      {"id": "S1", "criterion": "If the agent mentions why a plan is missing, the reason given (term would end past the plan's maximum maturity age) is accurate.", "metric": "faithfulness", "threshold": 0.7}
+      {"id": "S1", "criterion": "Offers only the plans the comparison returned, and does not name, describe or invent any other plan or a reason for one being left out.", "metric": "faithfulness", "threshold": 0.7}
     ],
     "layers": ["L1", "L2", "L3", "L5"],
     "source": {"kind": "code", "reference": "select_customer_plan maturity-age test at the 52 / 53 boundary", "verification": "code_verified",
@@ -166,7 +166,8 @@
       {"id": "A1", "type": "equals", "target": "state.turn.1.lead.pending_plan", "expected": null, "severity": "critical", "description": "Nothing is saved before cover and term are given."},
       {"id": "A2", "type": "matches_regex", "target": "trace.turn.1.response.text", "expected": "(?i)(cover|coverage|sum assured)[\\s\\S]*(term|years)|(term|years)[\\s\\S]*(cover|coverage|sum assured)", "severity": "major"},
       {"id": "A3", "type": "equals", "target": "state.lead.pending_plan.coverage_amount", "expected": 5000000, "severity": "major"},
-      {"id": "A4", "type": "equals", "target": "state.lead.pending_plan.term_years", "expected": 20, "severity": "major"}
+      {"id": "A4", "type": "equals", "target": "state.lead.pending_plan.term_years", "expected": 20, "severity": "major"},
+      {"id": "A5", "type": "tool_called", "target": "select_customer_plan", "severity": "major", "description": "The choice is saved through the plan tool once cover and term are given."}
     ],
     "layers": ["L1", "L2", "L3", "L4"],
     "source": {"kind": "code", "reference": "select_customer_plan asks for cover and term when they are missing", "verification": "code_verified",

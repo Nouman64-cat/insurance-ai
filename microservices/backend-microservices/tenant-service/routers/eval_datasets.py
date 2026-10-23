@@ -27,8 +27,9 @@ from shared.evaluation import case_schema
 from shared.evaluation.formats import FORMATS
 from shared.evaluation.lake import LakeValidationError, PublishConflict
 from shared.evaluation.object_store import IntegrityFailure, LakeError, LakeNotReady
+from shared.evaluation.policy import UNCONFIRMED, is_unconfirmed
 from shared.models.core import User
-from shared.models.evaluation import EvalCase, EvalDataset, EvalDatasetVersion, EvalFixture, EvalVersionCase
+from shared.models.evaluation import EvalCase, EvalDataset, EvalDatasetVersion, EvalFixture, EvalStorageObject, EvalVersionCase
 
 router = APIRouter(prefix="/eval/datasets", tags=["Evaluation datasets"], dependencies=[Depends(verify_superadmin)])
 _SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
@@ -76,8 +77,8 @@ async def _dataset(session: AsyncSession, slug: str) -> EvalDataset:
     return dataset
 
 
-def _version_out(v: EvalDatasetVersion) -> Dict[str, Any]:
-    return {
+def _version_out(v: EvalDatasetVersion, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    return {**(extra or {}),
         "version": v.version, "state": v.state, "case_count": v.case_count, "fixture_count": v.fixture_count,
         "parent_version": v.parent_version, "change_summary": v.change_summary, "approval": v.approval, "stats": v.stats,
         "snapshot_sha256": v.snapshot_sha256, "published_at": v.published_at, "started_at": v.started_at,
@@ -85,9 +86,26 @@ def _version_out(v: EvalDatasetVersion) -> Dict[str, Any]:
     }
 
 
+async def _version_facts(session: AsyncSession, versions: List[EvalDatasetVersion]) -> Dict[UUID, Dict[str, Any]]:
+    """Per published version: how many cases rest on a rule the business has not confirmed (such a version is provisional for
+    authoritative evaluation, whatever it was called when it was published) and how long its objects are retained."""
+    out: Dict[UUID, Dict[str, Any]] = {v.id: {"unconfirmed_cases": 0, "provisional": False, "retained_until": None} for v in versions}
+    ids = [v.id for v in versions]
+    if not ids:
+        return out
+    for version_id, n in (await session.exec(select(EvalVersionCase.version_id, func.count()).where(
+            EvalVersionCase.version_id.in_(ids), EvalVersionCase.verification == UNCONFIRMED).group_by(EvalVersionCase.version_id))).all():
+        out[version_id].update(unconfirmed_cases=n, provisional=n > 0)
+    for version_id, until in (await session.exec(select(EvalStorageObject.version_id, func.min(EvalStorageObject.retain_until)).where(
+            EvalStorageObject.version_id.in_(ids)).group_by(EvalStorageObject.version_id))).all():
+        out[version_id]["retained_until"] = until
+    return out
+
+
 async def _case_counts(session: AsyncSession, dataset_ids: List[UUID]) -> Dict[UUID, Dict[str, Any]]:
     """Per dataset: Silver cases by status, and how many differ from what the latest Gold version holds."""
-    out: Dict[UUID, Dict[str, Any]] = {i: {"by_status": {}, "unpublished_changes": 0} for i in dataset_ids}
+    out: Dict[UUID, Dict[str, Any]] = {i: {"by_status": {}, "unpublished_changes": 0, "bronze_cases": 0, "by_verification": {}, "awaiting_review": 0}
+                                       for i in dataset_ids}
     if not dataset_ids:
         return out
     rows = (await session.exec(select(EvalCase.dataset_id, EvalCase.status, func.count())
@@ -100,6 +118,20 @@ async def _case_counts(session: AsyncSession, dataset_ids: List[UUID]) -> Dict[U
                                .group_by(EvalCase.dataset_id))).all()
     for dataset_id, n in rows:
         out[dataset_id]["unpublished_changes"] = n
+    # Cases not yet validated (just uploaded or edited) or that failed validation: still in Bronze.
+    rows = (await session.exec(select(EvalCase.dataset_id, func.count())
+                               .where(EvalCase.dataset_id.in_(dataset_ids), EvalCase.tier == "bronze", EvalCase.status != "archived")
+                               .group_by(EvalCase.dataset_id))).all()
+    for dataset_id, n in rows:
+        out[dataset_id]["bronze_cases"] = n
+    # Technical verification (what a case claims about its own expected value) is counted apart from review status.
+    # `awaiting_review` is what "Approve all pending" would approve: unconfirmed cases are not in it.
+    for dataset_id, content, status in (await session.exec(select(EvalCase.dataset_id, EvalCase.content, EvalCase.status).where(
+            EvalCase.dataset_id.in_(dataset_ids), EvalCase.tier == "silver", EvalCase.status != "archived"))).all():
+        label = ((content or {}).get("source") or {}).get("verification") or "unspecified"
+        out[dataset_id]["by_verification"][label] = out[dataset_id]["by_verification"].get(label, 0) + 1
+        if status in ("draft", "in_review") and not is_unconfirmed(content or {}):
+            out[dataset_id]["awaiting_review"] += 1
     return out
 
 
@@ -123,6 +155,7 @@ async def get_dataset(slug: str, session: AsyncSession = Depends(get_session)):
     d = await _dataset(session, slug)
     versions = (await session.exec(select(EvalDatasetVersion).where(EvalDatasetVersion.dataset_id == d.id)
                                    .order_by(EvalDatasetVersion.started_at.desc()))).all()
+    facts = await _version_facts(session, list(versions))
     facets = {}
     for name, column in (("category", EvalCase.category), ("scenario_type", EvalCase.scenario_type)):
         facets[name] = sorted(v for v in (await session.exec(select(column).where(EvalCase.dataset_id == d.id).distinct())).all() if v)
@@ -131,7 +164,8 @@ async def get_dataset(slug: str, session: AsyncSession = Depends(get_session)):
             "status": d.status, "latest_version": d.latest_version, "suggested_version": _next_version(d.latest_version),
             "schema_version": d.schema_version,
             "created_at": d.created_at, "updated_at": d.updated_at, **(await _case_counts(session, [d.id]))[d.id],
-            "versions": [_version_out(v) for v in versions]}
+            "unconfirmed_label": UNCONFIRMED,
+            "versions": [_version_out(v, facts[v.id]) for v in versions]}
 
 
 @router.get("/{slug}/cases")
@@ -214,7 +248,7 @@ async def get_version(slug: str, version: str, session: AsyncSession = Depends(g
     d = await _dataset(session, slug)
     v = await _published(session, d.id, version)
     cases = sorted((await _index(session, v.id)).values(), key=lambda r: r.line_no)
-    return {**_version_out(v), "cases": [{"case_key": r.case_key, "revision": r.revision, "category": r.category,
+    return {**_version_out(v, (await _version_facts(session, [v]))[v.id]), "cases": [{"case_key": r.case_key, "revision": r.revision, "category": r.category,
                                           "scenario_type": r.scenario_type, "difficulty": r.difficulty, "severity": r.severity,
                                           "verification": r.verification} for r in cases]}
 
@@ -291,6 +325,7 @@ class PublishBody(BaseModel):
     change_summary: Optional[str] = Field(default=None, max_length=2000)
     note: Optional[str] = Field(default=None, max_length=1000)
     case_keys: Optional[List[str]] = None
+    include_unconfirmed: bool = Field(default=False, description="Also publish approved cases whose rule the business has not confirmed")
 
 
 async def _case_row(session: AsyncSession, dataset_id: UUID, case_key: str) -> EvalCase:
@@ -399,20 +434,26 @@ async def set_case_status(slug: str, case_key: str, body: StatusBody, actor: Use
 
 @router.post("/{slug}/approve")
 async def approve_cases(slug: str, body: ApproveBody, actor: User = Depends(_actor), session: AsyncSession = Depends(get_session)):
-    """Approve every draft or in-review Silver case (or just the named ones), recording the signed-in user as approver."""
+    """Approve every draft or in-review Silver case whose rule is confirmed (or just the named ones), recording the signed-in user
+    as approver. Cases marked pending_domain_approval are left alone unless they are named."""
     d = await _dataset(session, slug)
     lake = get_lake()
     stmt = select(EvalCase).where(EvalCase.dataset_id == d.id, EvalCase.tier == "silver", EvalCase.status.in_(["draft", "in_review"]))
     if body.case_keys:
         stmt = stmt.where(EvalCase.case_key.in_(body.case_keys))
     rows = (await session.exec(stmt.order_by(EvalCase.case_key))).all()
+    held = 0
+    if not body.case_keys:
+        # Bulk approval never confirms a rule on the business's behalf: those cases are approved one by one, on purpose.
+        held = sum(1 for r in rows if is_unconfirmed(r.content))
+        rows = [r for r in rows if not is_unconfirmed(r.content)]
     with _lake_errors():
         for row in rows:
             if row.status == "draft":
                 await lake.transition_case(session, row, "in_review", actor=actor.id)
             await lake.transition_case(session, row, "approved", actor=actor.id, note=body.note)
     await _audit(actor, "approve", slug, count=len(rows), case_keys=[r.case_key for r in rows][:200], note=body.note)
-    return {"approved": len(rows)}
+    return {"approved": len(rows), "left_for_business_confirmation": held}
 
 
 @router.post("/{slug}/fixtures", status_code=201)
@@ -435,9 +476,16 @@ async def upload_fixture(slug: str, file: UploadFile = File(...), fixture_key: O
 async def publish_version(slug: str, body: PublishBody, actor: User = Depends(_actor), session: AsyncSession = Depends(get_session)):
     """Publish the approved Silver cases as a new, immutable Gold version. The signed-in user is recorded as approver."""
     d = await _dataset(session, slug)
+    case_keys = body.case_keys
+    if not case_keys and not body.include_unconfirmed:
+        approved = (await session.exec(select(EvalCase).where(EvalCase.dataset_id == d.id, EvalCase.tier == "silver",
+                                                              EvalCase.status == "approved"))).all()
+        case_keys = [r.case_key for r in approved if not is_unconfirmed(r.content)]
+        if not case_keys:   # an empty list would mean "every approved case" to the lake
+            raise HTTPException(status_code=422, detail={"message": "No approved case with a confirmed rule to publish.", "problems": []})
     with _lake_errors():
         v = await get_lake().publish(d.id, body.version, approval={"approved_by": actor.email, "note": body.note},
-                                     published_by=actor.id, change_summary=body.change_summary, case_keys=body.case_keys)
+                                     published_by=actor.id, change_summary=body.change_summary, case_keys=case_keys)
     await _audit(actor, "publish", slug, version=v.version, case_count=v.case_count, snapshot_sha256=v.snapshot_sha256,
                  change_summary=body.change_summary)
     return _version_out(v)

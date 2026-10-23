@@ -17,6 +17,12 @@ interface VersionInfo {
   approval: { approved_by?: string; approved_at?: string; note?: string | null };
   snapshot_sha256: string;
   published_at: string | null;
+  started_at: string | null;
+  /** Cases in this version whose rule the business has not confirmed: such a version is provisional for authoritative evaluation. */
+  unconfirmed_cases?: number;
+  provisional?: boolean;
+  /** When the earliest object of this version may be deleted (the lake's retention). */
+  retained_until?: string | null;
 }
 
 interface DatasetSummary {
@@ -28,6 +34,11 @@ interface DatasetSummary {
   latest_version: string | null;
   by_status: Partial<Record<CaseStatus, number>>;
   unpublished_changes: number;
+  bronze_cases?: number;
+  /** Technical verification of the working copy, kept apart from review status: code_verified, pending_domain_approval, ... */
+  by_verification?: Record<string, number>;
+  /** What "Approve all pending" will approve: draft or in-review cases whose rule is confirmed. */
+  awaiting_review?: number;
 }
 
 interface DatasetDetail extends DatasetSummary {
@@ -175,6 +186,59 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function ErrorBox({ text }: { text: string }) {
   return <div className="text-xs rounded-lg px-3 py-2 border bg-red-50 border-red-200 text-red-600 whitespace-pre-wrap">{text}</div>;
+}
+
+// ── Layer guide ──────────────────────────────────────────────────────────────
+// Explains Bronze / Silver / Gold in plain words, with the live numbers of the selected dataset.
+function LayerGuide({ detail }: { detail: DatasetDetail }) {
+  const silver = Object.values(detail.by_status).reduce((a, b) => a + (b ?? 0), 0);
+  const gold = detail.versions.find((v) => v.state === "published" && v.version === detail.latest_version);
+  const layers = [
+    {
+      name: "Bronze",
+      role: "Raw intake",
+      text: "Cases exactly as uploaded, or an edited case waiting to be checked. A case that fails the schema check stays here with its errors and is not used anywhere.",
+      figure: `${detail.bronze_cases ?? 0} ${tx("waiting or failed")}`,
+      style: "border-amber-200 bg-amber-50/60",
+      badge: "bg-amber-100 text-amber-800",
+    },
+    {
+      name: "Silver",
+      role: "Working copy",
+      text: "Checked cases you can edit, review and approve. Every edit makes a new revision and needs approving again. Silver is where you maintain the set.",
+      figure: `${silver} ${tx("cases")}${detail.unpublished_changes ? ` · ${detail.unpublished_changes} ${tx("not published yet")}` : ""}`,
+      style: "border-slate-300 bg-slate-50",
+      badge: "bg-slate-200 text-slate-700",
+    },
+    {
+      name: "Gold",
+      role: "Published, locked",
+      text: "An approved, numbered snapshot (for example 1.0.1). It never changes. Evaluation runs use Gold only, so a result always names the exact version it was scored against.",
+      figure: gold ? `${tx("version")} ${gold.version} · ${gold.case_count} ${tx("cases")}` : tx("nothing published yet"),
+      style: "border-yellow-300 bg-yellow-50/70",
+      badge: "bg-yellow-200 text-yellow-900",
+    },
+  ];
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl px-4 py-3">
+      <div className="text-[11px] font-semibold text-slate-500 mb-2">
+        {tx("How a case moves: Bronze → Silver → Gold. You work in Silver; Gold only changes when you publish a new version.")}
+      </div>
+      <div className="grid gap-2 md:grid-cols-3">
+        {layers.map((l, i) => (
+          <div key={l.name} className={`rounded-lg border px-3 py-2 ${l.style}`}>
+            <div className="flex items-center gap-2">
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${l.badge}`}>{tx(l.name)}</span>
+              <span className="text-[11px] font-semibold text-slate-700">{tx(l.role)}</span>
+              {i < layers.length - 1 && <span className="ml-auto text-slate-300 hidden md:inline">→</span>}
+            </div>
+            <p className="text-[11px] text-slate-600 mt-1.5 leading-snug">{tx(l.text)}</p>
+            <div className="text-[11px] font-semibold text-slate-800 mt-1.5">{l.figure}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // ── New dataset ──────────────────────────────────────────────────────────────
@@ -769,18 +833,20 @@ function VersionsTab({ detail }: { detail: DatasetDetail }) {
           <thead>
             <tr className="text-left text-slate-400 bg-slate-50/70">
               <th className="px-3 py-2 font-semibold">{tx("Version")}</th>
+              <th className="px-3 py-2 font-semibold">{tx("Date & time")}</th>
+              <th className="px-3 py-2 font-semibold">{tx("Change summary")}</th>
+              <th className="px-3 py-2 font-semibold">{tx("Approved by")}</th>
               <th className="px-3 py-2 font-semibold">{tx("State")}</th>
+              <th className="px-3 py-2 font-semibold" title={tx("Provisional: contains cases whose rule the business has not confirmed")}>{tx("Basis")}</th>
+              <th className="px-3 py-2 font-semibold">{tx("Retained until")}</th>
               <th className="px-3 py-2 font-semibold">{tx("Cases")}</th>
               <th className="px-3 py-2 font-semibold">{tx("Fixtures")}</th>
-              <th className="px-3 py-2 font-semibold">{tx("Published")}</th>
-              <th className="px-3 py-2 font-semibold">{tx("Approved by")}</th>
-              <th className="px-3 py-2 font-semibold">{tx("Change summary")}</th>
               <th className="px-3 py-2 font-semibold">{tx("Export")}</th>
             </tr>
           </thead>
           <tbody>
             {detail.versions.length === 0 && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-slate-400">{tx("Nothing published yet.")}</td></tr>
+              <tr><td colSpan={10} className="px-3 py-8 text-center text-slate-400">{tx("Nothing published yet.")}</td></tr>
             )}
             {detail.versions.map((v) => (
               <tr key={v.version} className="border-t border-slate-100">
@@ -788,12 +854,24 @@ function VersionsTab({ detail }: { detail: DatasetDetail }) {
                   {v.version}
                   {v.version === detail.latest_version && <span className="ml-2 text-[10px] text-emerald-600 font-semibold">{tx("latest")}</span>}
                 </td>
+                <td className="px-3 py-2 text-slate-700 whitespace-nowrap" title={v.published_at ? tx("Published") : tx("Started")}>
+                  {fmtDate(v.published_at ?? v.started_at)}
+                </td>
+                <td className="px-3 py-2 text-slate-600 max-w-xs truncate" title={v.change_summary ?? ""}>{v.change_summary ?? "—"}</td>
+                <td className="px-3 py-2 text-slate-500">{v.approval?.approved_by ?? "—"}</td>
                 <td className="px-3 py-2 text-slate-500">{v.state}</td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  {v.state !== "published" ? "—" : v.provisional ? (
+                    <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-semibold" title={`${v.unconfirmed_cases ?? 0} ${tx("cases rest on a rule the business has not confirmed")}`}>
+                      {tx("Provisional")} · {v.unconfirmed_cases ?? 0}
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold">{tx("Authoritative")}</span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{v.retained_until ? fmtDate(v.retained_until) : "—"}</td>
                 <td className="px-3 py-2 text-slate-500">{v.case_count}</td>
                 <td className="px-3 py-2 text-slate-500">{v.fixture_count}</td>
-                <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{fmtDate(v.published_at)}</td>
-                <td className="px-3 py-2 text-slate-500">{v.approval?.approved_by ?? "—"}</td>
-                <td className="px-3 py-2 text-slate-600 max-w-xs truncate" title={v.change_summary ?? ""}>{v.change_summary ?? "—"}</td>
                 <td className="px-3 py-2 whitespace-nowrap">
                   {v.state === "published" &&
                     ["jsonl", "json", "csv"].map((f) => (
@@ -1099,8 +1177,9 @@ function DatasetsContent() {
     if (!detail) return;
     setApproving(true);
     try {
-      const { data } = await api.post<{ approved: number }>(`/eval/datasets/${detail.slug}/approve`, { note: null });
-      say(`${data.approved} case(s) approved.`);
+      const { data } = await api.post<{ approved: number; left_for_business_confirmation?: number }>(`/eval/datasets/${detail.slug}/approve`, { note: null });
+      const held = data.left_for_business_confirmation ?? 0;
+      say(`${data.approved} case(s) approved.${held ? ` ${held} case(s) left for business confirmation.` : ""}`);
       await refresh();
     } catch (e: any) {
       say(errText(e, "Approval failed."), "error");
@@ -1123,7 +1202,10 @@ function DatasetsContent() {
     );
   }
 
-  const pendingReview = detail ? (detail.by_status.draft ?? 0) + (detail.by_status.in_review ?? 0) : 0;
+  // Cases whose rule the business has not confirmed are never bulk-approved, so they are not counted here.
+  const pendingReview = detail
+    ? detail.awaiting_review ?? (detail.by_status.draft ?? 0) + (detail.by_status.in_review ?? 0)
+    : 0;
 
   return (
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full font-sans">
@@ -1181,6 +1263,7 @@ function DatasetsContent() {
 
           {detail && (
             <div className="space-y-4">
+              <LayerGuide detail={detail} />
               <div className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-3">
                 <div className="min-w-0 mr-auto">
                   <div className="text-sm font-bold text-slate-900">{detail.name}</div>
@@ -1193,6 +1276,16 @@ function DatasetsContent() {
                       ) : null,
                     )}
                   </div>
+                  {detail.by_verification && (
+                    <div className="text-[11px] text-slate-500 flex flex-wrap gap-x-3 mt-0.5" title={tx("How far each case's expected value is verified. Separate from review status.")}>
+                      <span className="font-semibold text-slate-400">{tx("Verification")}</span>
+                      {Object.entries(detail.by_verification).map(([k, n]) => (
+                        <span key={k} className={k === "pending_domain_approval" ? "text-amber-600 font-semibold" : ""}>
+                          {n} {k === "pending_domain_approval" ? tx("awaiting business confirmation") : k.replace(/_/g, " ")}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <button type="button" className={btnGhost} onClick={() => setModal("upload")}>{tx("Upload cases")}</button>
                 <button type="button" className={btnGhost} disabled={approving || pendingReview === 0} onClick={approveAll}>
@@ -1209,7 +1302,7 @@ function DatasetsContent() {
                     onClick={() => setTab(t)}
                     className={`px-4 py-2 text-xs font-semibold border-b-2 -mb-px ${tab === t ? "border-blue-600 text-blue-600" : "border-transparent text-slate-500 hover:text-slate-700"}`}
                   >
-                    {t === "cases" ? tx("Cases") : t === "versions" ? tx("Versions") : tx("Fixtures")}
+                    {t === "cases" ? tx("Cases · Silver (working copy)") : t === "versions" ? tx("Versions · Gold (published)") : tx("Fixtures")}
                   </button>
                 ))}
               </div>

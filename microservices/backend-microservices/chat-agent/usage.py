@@ -103,7 +103,8 @@ def extract_usage(response: Any) -> Optional[dict[str, int]]:
 async def _post(payload: dict) -> None:
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.post(f"{TENANT_SERVICE_URL}/tokens/usage", json=payload)
+            await client.post(f"{TENANT_SERVICE_URL}/tokens/usage", json=payload,
+                              headers={"X-Internal-Secret": os.environ.get("INTERNAL_API_SECRET", "")})   # the ledger accepts only internal callers
     except Exception as exc:  # noqa: BLE001 — metering must never break a turn
         log.warning("Token usage not recorded: %s", exc)
 
