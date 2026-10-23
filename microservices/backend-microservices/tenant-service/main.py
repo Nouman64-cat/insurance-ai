@@ -367,4 +367,7 @@ from routers.eval_datasets import router as eval_datasets_router
 app.include_router(eval_datasets_router)
 from routers.eval_jobs import internal as eval_jobs_internal_router, router as eval_jobs_router
 app.include_router(eval_jobs_router)
+from routers.eval_models import benchmarks as eval_benchmarks_router, router as eval_models_router
+app.include_router(eval_models_router)
+app.include_router(eval_benchmarks_router)
 app.include_router(eval_jobs_internal_router)   # the worker's side: shared secret, never proxied by the gateway

@@ -417,3 +417,77 @@ class EvalCostRecord(SQLModel, table=True):
     cost_basis: str = Field(max_length=12)       # as the table exists in the platform database: calculated | none | unknown
     created_by: Optional[UUID] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ── Phase 5: the model registry and benchmarks ──
+
+MODEL_PROVIDERS = ("openai", "gemini", "anthropic", "mock")
+MODEL_STATUSES = ("active", "deprecated", "disabled")
+MODEL_ROLES = ("candidate", "judge")
+BENCHMARK_MODES = ("agent", "direct")
+
+
+class EvalModel(SQLModel, table=True):
+    """A model the evaluation platform knows about: who provides it, what it can do, how it is configured, and (through its price history
+    and the benchmarks that used it) what it costs and how it performed. `mock` models are scripted stand-ins of the evaluation stack
+    (synthetic): they exist so the harness can be tested, and never carry a quality claim."""
+
+    __tablename__ = "eval_models"
+    __table_args__ = (UniqueConstraint("provider", "model_id", name="uq_eval_models_provider_model"),)
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    provider: str = Field(max_length=20, index=True)
+    model_id: str = Field(max_length=120)
+    display_name: str = Field(max_length=160)
+    status: str = Field(default="active", max_length=12, index=True)
+    synthetic: bool = False
+    roles: list = Field(default_factory=lambda: ["candidate"], sa_column=Column(JSONB, nullable=False, server_default=text("'[\"candidate\"]'::jsonb")))
+    capabilities: dict = Field(default_factory=dict, sa_column=Column(JSONB, nullable=False, server_default=text("'{}'::jsonb")))
+    configuration: dict = Field(default_factory=dict, sa_column=Column(JSONB, nullable=False, server_default=text("'{}'::jsonb")))
+    notes: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    created_by: Optional[UUID] = Field(default=None, foreign_key="users.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EvalModelPrice(SQLModel, table=True):
+    """Price history of a model, per million tokens. Append-only: a change of price is a new row with its own effective date and source,
+    so an old run can always be priced with the rates of its day."""
+
+    __tablename__ = "eval_model_prices"
+    __table_args__ = (Index("ix_eval_model_prices_model_effective", "model_row_id", "effective_from"),)
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    model_row_id: UUID = Field(foreign_key="eval_models.id", index=True)
+    input_per_m: float
+    cached_per_m: float
+    output_per_m: float
+    effective_from: datetime = Field(default_factory=datetime.utcnow)
+    source: str = Field(max_length=300)                                       # where the figure comes from; a price without a source is refused
+    created_by: Optional[UUID] = Field(default=None, foreign_key="users.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EvalBenchmark(SQLModel, table=True):
+    """A benchmark: the same cases, fixtures, prompts and permissions run against several models. The runs are `eval_runs` rows sharing the
+    benchmark's `group_id`; this row is the comparison itself, with the exact configuration it was run under and the evidence behind any
+    claim that one model is better."""
+
+    __tablename__ = "eval_benchmarks"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    benchmark_id: str = Field(unique=True, index=True, max_length=60)        # also the group_id of its runs
+    mode: str = Field(max_length=10)                                          # agent | direct
+    dataset_slug: Optional[str] = Field(default=None, max_length=80)
+    dataset_version: Optional[str] = Field(default=None, max_length=20)
+    models: list = Field(default_factory=list, sa_column=Column(JSONB, nullable=False, server_default=text("'[]'::jsonb")))
+    repetitions: int = 1
+    judge_model: Optional[str] = Field(default=None, max_length=120)
+    judge_version: Optional[str] = Field(default=None, max_length=60)
+    synthetic: bool = False
+    complete: bool = True                                                     # false when some model was blocked or the run was cancelled
+    config: dict = Field(default_factory=dict, sa_column=Column(JSONB, nullable=False, server_default=text("'{}'::jsonb")))
+    summary: dict = Field(default_factory=dict, sa_column=Column(JSONB, nullable=False, server_default=text("'{}'::jsonb")))
+    report_key: Optional[str] = Field(default=None, max_length=600)
+    created_by: Optional[UUID] = Field(default=None, foreign_key="users.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)

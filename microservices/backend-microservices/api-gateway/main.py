@@ -1075,6 +1075,16 @@ async def proxy_eval_jobs(path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/eval/jobs{path}")
 
 
+@app.api_route("/eval/models{path:path}", methods=["GET", "POST", "PATCH", "OPTIONS"], include_in_schema=False)
+async def proxy_eval_models(path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/eval/models{path}")
+
+
+@app.api_route("/eval/benchmarks{path:path}", methods=["GET", "OPTIONS"], include_in_schema=False)
+async def proxy_eval_benchmarks(path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/eval/benchmarks{path}")
+
+
 @app.api_route("/agent/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)
 async def proxy_agent(path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/agent/{path}")

@@ -23,6 +23,7 @@
     docker compose exec tenant-service python eval_lake_cli.py reconcile
     docker compose exec -T tenant-service python eval_lake_cli.py job-submit --as-user admin@example.com --config - < job.json    # queue an evaluation run
     docker compose exec tenant-service python eval_lake_cli.py jobs | job <id> | job-events <id> [--follow] | job-cancel <id>
+    docker compose exec tenant-service python eval_lake_cli.py models-seed | models | benchmark-ingest <benchmark.json> | benchmarks
     python evals/environment/envctl.py worker [--once]                                                        # on the host: runs the queued jobs
 
 The browser-based Dataset Manager (a later stage) uses the same DataLake; this is for setup, checks and recovery.
@@ -50,7 +51,7 @@ from shared.evaluation.lake import LakeValidationError
 from shared.evaluation.object_store import LakeError
 from shared.evaluation.policy import is_unconfirmed
 from shared.models.core import User
-from shared.models.evaluation import EvalCase, EvalCaseResult, EvalDataset, EvalDatasetVersion, EvalRun
+from shared.models.evaluation import EvalBenchmark, EvalCase, EvalCaseResult, EvalDataset, EvalDatasetVersion, EvalModel, EvalModelPrice, EvalRun
 from shared.evaluation.runs import RunFolderError
 
 
@@ -186,6 +187,34 @@ async def run(args) -> int:
             print(json.dumps({k: v for k, v in r.summary.items() if k not in ("by_category",)}, indent=1, default=str))
             for row in (await session.exec(select(EvalCaseResult).where(EvalCaseResult.run_row_id == r.id, EvalCaseResult.status.in_(["failed", "infrastructure_error"])).order_by(EvalCaseResult.case_key))).all():
                 print(f"  {row.status:20} {row.case_key} r{row.repetition} {row.reason or ''}")
+            return 0
+        if args.command == "models-seed":
+            from shared.evaluation import registry
+            added = 0
+            for entry in registry.seed_entries():
+                price = entry.pop("price")
+                display = entry.pop("display_name")
+                notes = entry.pop("notes")
+                if (await session.exec(select(EvalModel).where(EvalModel.provider == entry["provider"], EvalModel.model_id == entry["model_id"]))).first():
+                    continue
+                m = EvalModel(**entry, display_name=display, notes=notes)
+                session.add(m)
+                await session.flush()
+                session.add(EvalModelPrice(model_row_id=m.id, **price))
+                added += 1
+            await session.commit()
+            print(f"registered {added} model(s); the rest were already there")
+            return 0
+        if args.command == "models":
+            for m in (await session.exec(select(EvalModel).order_by(EvalModel.provider, EvalModel.model_id))).all():
+                p = (await session.exec(select(EvalModelPrice).where(EvalModelPrice.model_row_id == m.id).order_by(EvalModelPrice.effective_from.desc()))).first()
+                print(f"{m.provider}/{m.model_id:28} {m.status:10} {'SYNTHETIC ' if m.synthetic else ''}{','.join(m.roles):16} "
+                      + (f"${p.input_per_m}/{p.cached_per_m}/{p.output_per_m} per M tokens" if p else "no price"))
+            return 0
+        if args.command == "benchmarks":
+            for b in (await session.exec(select(EvalBenchmark).order_by(EvalBenchmark.created_at.desc()).limit(20))).all():
+                print(f"{b.benchmark_id:34} {b.mode:7} {b.dataset_slug} {b.dataset_version}  x{b.repetitions}  {len(b.models)} model(s)  "
+                      f"{'SYNTHETIC ' if b.synthetic else ''}{'complete' if b.complete else 'INCOMPLETE'}")
             return 0
         if args.command == "run-reliability":
             r = (await session.exec(select(EvalRun).where(EvalRun.run_id == args.run_id))).first()
@@ -362,6 +391,7 @@ def main() -> int:
     ri = sub.add_parser("run-ingest"); ri.add_argument("folder")
     ru = sub.add_parser("runs"); ru.add_argument("--dataset"); ru.add_argument("--limit", type=int, default=20)
     r1 = sub.add_parser("run"); r1.add_argument("run_id"); r1.add_argument("--report", action="store_true")
+    sub.add_parser("models-seed"); sub.add_parser("models"); sub.add_parser("benchmarks")
     rr = sub.add_parser("run-reliability"); rr.add_argument("run_id")
     c = sub.add_parser("create-dataset"); c.add_argument("slug"); c.add_argument("--name", required=True)
     c.add_argument("--workflow", required=True); c.add_argument("--turn-mode", required=True, choices=["single_turn", "multi_turn"])
