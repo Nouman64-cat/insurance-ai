@@ -51,6 +51,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
+from shared.evaluation import direct as direct_lib
 from shared.evaluation import judge as judge_lib
 from shared.evaluation import layers as layers_lib
 from shared.evaluation import stats
@@ -220,6 +221,7 @@ class Runner:
 
     async def _execute_once(self, case: dict, repetition: int) -> CaseResult:
         chat = is_chat(case)
+        direct = self.args.mode == "direct"
         uses_model = chat or needs_model(case, self.bundle.fixtures)
         budget = self.args.budget_usd
         if uses_model:
@@ -236,6 +238,10 @@ class Runner:
         try:
             async def work() -> Dict[str, Any]:
                 nonlocal resolved
+                if direct:
+                    resolved = direct_lib.direct_view(direct_lib.resolve_standalone(case))
+                    return await direct_lib.execute_direct_case(resolved, client=self.client, judge_url=JUDGE_URL, model=self.args.model, settings=self.args.settings,
+                                                                timeout_s=float(self.args.chat_timeout))
                 if mode == "function":
                     return await execute(case, RunContext(fixtures=self.json_fixtures, execution_id=f"{self.run_id}/r{repetition}/{case['case_id']}"))
                 if chat or self.args.reset == "per-case" or (self.args.reset == "per-writer" and op in WRITERS):
@@ -256,8 +262,10 @@ class Runner:
                 return await execute(case, ctx)
             limit = float(self.args.chat_timeout if chat else self.args.timeout)
             observation = await asyncio.wait_for(work(), timeout=limit)
-        except MissingCredentials as exc:
+        except (MissingCredentials, direct_lib.DirectBlocked) as exc:
             return self._make(case, repetition, "blocked", "blocked_missing_credentials", error=str(exc))
+        except direct_lib.DirectError as exc:
+            return self._make(case, repetition, "infrastructure_error", exc.kind, error=str(exc), latency_ms=exc.latency_ms or int((time.monotonic() - started) * 1000))
         except asyncio.TimeoutError:
             return self._make(case, repetition, "infrastructure_error", "timeout", error=f"no answer within {limit}s", latency_ms=int((time.monotonic() - started) * 1000))
         except (ChatExecutionError, OperationError, httpx.HTTPError, OSError) as exc:
@@ -313,7 +321,7 @@ class Runner:
             assertion_counts=counts, usage=usage, cost_usd=cost, cost_known=known, artifact=self._artifact(case, repetition, observation, outcome, verdict, layers, metrics),
             model_id=model_id, input_tokens=(usage or {}).get("input_tokens"), output_tokens=(usage or {}).get("output_tokens"), cached_tokens=(usage or {}).get("cached_tokens"),
             llm_calls=(usage or {}).get("calls") if usage and usage.get("status") == "attributed" else trace.get("llm_calls"), ttft_ms=observation.get("ttft_ms"),
-            turns=len(trace.get("turn") or []) if chat else None, critical_failed=verdict["critical_failed"], layer_scores=layers, verdict=verdict,
+            turns=len(trace.get("turn") or []) if chat and not direct else None, critical_failed=verdict["critical_failed"], layer_scores=layers, verdict=verdict,
             trace_summary=trace_summary, trace_artifact=self._trace_artifact(case, repetition, observation), metric_scores=metrics, judge_cost_usd=judge_cost)
 
     # ── the run ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -340,6 +348,8 @@ class Runner:
             await self.execute_one(case, repetition)
 
     def stack_needed(self, cases: List[dict]) -> bool:
+        if self.args.mode == "direct":
+            return False                                   # a bare model call: no database, no agent
         return any((is_chat(c) or self.registered.get(operation_of(c)) == "http") and not self.classify(c) for c in cases)
 
     async def run(self, cases: List[dict]) -> None:
@@ -348,7 +358,7 @@ class Runner:
             self.env = Environment(fixtures_dir)
             self.client = httpx.AsyncClient(timeout=httpx.Timeout(float(max(self.args.timeout, self.args.chat_timeout))))
             self.meter = UsageMeter(self.env.ledger)
-        elif self.args.judge:
+        elif self.args.judge or self.args.mode == "direct":
             self.client = httpx.AsyncClient(timeout=httpx.Timeout(float(self.args.timeout)))
         try:
             total = max((self.repetitions(c) for c in cases), default=1)
@@ -375,6 +385,9 @@ def parse(argv: List[str]) -> argparse.Namespace:
     p.add_argument("--category", nargs="*", default=[], dest="categories")
     p.add_argument("--operation", nargs="*", default=[], dest="operations")
     p.add_argument("--model", help="the model under test for chat cases, provider/model (mock/mock-oracle, mock/mock-lazy, mock/mock-reckless, openai/gpt-4o-mini...)")
+    p.add_argument("--mode", choices=("agent", "direct"), default="agent",
+                   help="agent: the real Individual Insurance agent answers; direct: the bare model is asked the same question with the same reference information, no agent or tools")
+    p.add_argument("--setting", action="append", default=[], metavar="KEY=VALUE", help="direct mode: a model setting (temperature, top_p, max_tokens, seed, timeout_s)")
     p.add_argument("--skills", choices=("on", "off", "default"), default="default", help="the chat agent's progressive skills for this run")
     p.add_argument("--prompt-version", help="a prompt variant (evals/prompts/<version>.json); omitted: the agent's own prompts")
     p.add_argument("--judge", help="the judge model for semantic criteria, provider/model (mock/mock-judge, openai/gpt-4o-mini...)")
@@ -405,11 +418,37 @@ def parse(argv: List[str]) -> argparse.Namespace:
         p.error("--repeat must be a positive number or `auto`")
     if a.concurrency < 1 or a.timeout <= 0 or a.chat_timeout <= 0 or a.retries < 0:
         p.error("--concurrency, --timeout and --chat-timeout must be positive and --retries not negative")
+    a.settings = parse_settings(a.setting, p)
+    if a.mode == "direct" and not a.model:
+        p.error("--mode direct needs --model")
+    if a.mode == "agent" and a.settings:
+        p.error("--setting applies to --mode direct: in agent mode the platform's own configuration of the model is used")
+    if a.mode == "direct" and (a.skills != "default" or a.prompt_version):
+        p.error("--skills and --prompt-version belong to the agent: a direct call has neither")
     if a.calibrate and not a.judge:
         p.error("--calibrate needs --judge")
     if a.model and (a.model.count("/") != 1 or not all(a.model.split("/"))):
         p.error("--model must be provider/model, for example mock/mock-oracle or openai/gpt-4o-mini")
     return a
+
+
+def parse_settings(items: List[str], parser: argparse.ArgumentParser) -> Dict[str, Any]:
+    """`--setting temperature=0.2 ...` checked against the registry's own rules, so a benchmark cannot use a setting the registry refuses."""
+    from shared.evaluation.registry import RegistryError, check_configuration
+    out: Dict[str, Any] = {}
+    for item in items:
+        key, sep, raw = item.partition("=")
+        if not sep:
+            parser.error(f"--setting {item!r} is not KEY=VALUE")
+        try:
+            out[key] = int(raw) if re.fullmatch(r"-?\d+", raw) else float(raw)
+        except ValueError:
+            parser.error(f"--setting {key}: {raw!r} is not a number")
+    try:
+        return check_configuration(out)
+    except RegistryError as exc:
+        parser.error(str(exc))
+    return out
 
 
 PROMPTS = Path(os.environ.get("EVAL_PROMPTS", "/work/evals/prompts"))
@@ -426,13 +465,23 @@ def prompt_pin(version: Optional[str]) -> Optional[str]:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def direct_selection(selected: List[dict], left: List[dict]) -> tuple[List[dict], List[dict]]:
+    """Direct mode asks a bare model, so only chat cases it can judge take part. The others are listed as left out, with the reason."""
+    keep, out = [], list(left)
+    for case in selected:
+        why = direct_lib.applicable(case) if is_chat(case) else "not a chat case"
+        (out if why else keep).append({**case, "_left_out": f"{direct_lib.NOT_APPLICABLE}: {why}"} if why else case)
+    return keep, out
+
+
 def config_of(args: argparse.Namespace, runner: Runner) -> Dict[str, Any]:
     t = runner.target
     return {"kind": args.kind, "group_id": args.group_id, "job_id": args.job_id, "provider": t.provider if t else None, "model_id": t.model if t else None,
             "skills_enabled": None if not t else t.skills, "prompt_version": args.prompt_version, "prompt_sha256": getattr(args, "prompt_sha256", None), "judge_model": args.judge,
             "synthetic_model": bool(t and t.synthetic), "retries": args.retries, "limits": runner.limits, "repeat": args.repeat, "stop_on_critical": args.stop_on_critical,
             "gate": ({"min_pass_rate": args.gate_min_pass_rate, "min_repetitions": args.gate_min_repetitions} if args.gate else None),
-            "concurrency": args.concurrency, "timeout_s": args.timeout, "chat_timeout_s": args.chat_timeout, "allow_same_judge": args.allow_same_judge}
+            "concurrency": args.concurrency, "timeout_s": args.timeout, "chat_timeout_s": args.chat_timeout, "allow_same_judge": args.allow_same_judge,
+            "mode": args.mode, "model_settings": args.settings, "direct_prompt_version": direct_lib.DIRECT_PROMPT_VERSION if args.mode == "direct" else None}
 
 
 async def main(argv: List[str]) -> int:
@@ -443,6 +492,8 @@ async def main(argv: List[str]) -> int:
         args.prompt_sha256 = prompt_pin(args.prompt_version)
         bundle = bundle_from_source() if args.from_source else load_bundle(args.bundle)
         selected, left = select_cases(bundle.cases, suite=args.suite, case_ids=args.cases, categories=args.categories, operations=args.operations)
+        if args.mode == "direct":
+            selected, left = direct_selection(selected, left)
     except (BundleError, EvaluationGuardError, ValueError, judge_lib.JudgeGovernanceError) as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
         return 4

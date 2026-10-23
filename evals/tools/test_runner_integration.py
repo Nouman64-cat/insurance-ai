@@ -23,7 +23,7 @@ from shared.evaluation.run_report import select_cases  # noqa: E402
 
 
 def args(**kw) -> argparse.Namespace:
-    base = dict(bundle=None, from_source=True, suite="technical", cases=[], categories=[], operations=[], repeat=1, concurrency=4, timeout=120.0,
+    base = dict(mode="agent", settings={}, bundle=None, from_source=True, suite="technical", cases=[], categories=[], operations=[], repeat=1, concurrency=4, timeout=120.0,
                 reset="per-case", budget_usd=1.0, strict=False, model=None, skills="default", prompt_version=None, judge=None, allow_same_judge=False,
                 kind="suite", group_id=None, job_id=None, chat_timeout=300.0, retries=0, max_latency_ms=None, max_tokens=None, max_cost_usd=None,
                 stop_on_critical=False, gate=False, gate_min_pass_rate=0.9, gate_min_repetitions=1)
