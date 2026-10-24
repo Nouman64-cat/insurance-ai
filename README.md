@@ -303,12 +303,14 @@ the manual end-to-end guide.
 **Archive & cold storage (Stage 3).** Events older than the hot window (default 6 months) are moved by the Audit Service into **compressed (zstd), encrypted (AES-256-GCM) and signed**
 archives in a local **MinIO AIStor Free** bucket (private, versioned, Object Lock). They stay searchable and verifiable (Audit Trail → **Archive & retention**), retention policies
 and legal holds are configurable, and only fully archived, re-verified months can be removed from PostgreSQL (a separate, confirmed step; automatic cleanup is off by default).
-One-time per installation, with the AIStor Free license file kept **outside** the repository:
+Archive storage is optional and uses the `storage` Compose profile. An ordinary `docker compose up -d` skips MinIO and its initialization job; document forgery analysis works without them. Archive operations and evaluation dataset storage require MinIO to be configured and running.
+
+One-time per installation, with the AIStor Free license file kept **outside** the repository. Set `AISTOR_LICENSE_FILE` in `.env` to a real file on the current host. On macOS, for example, use `/Users/your-name/.config/insurance-ai/minio.license`; do not copy another machine's `/home/...` path. The file must exist and be accessible to Docker Desktop before starting storage:
 
 ```bash
 # .env: MINIO_ROOT_USER, MINIO_ROOT_PASSWORD (16+ chars), AUDIT_ARCHIVE_WRITER_KEY/SECRET, AUDIT_ARCHIVE_READER_KEY/SECRET, AISTOR_LICENSE_FILE=<path to your license file>
-docker compose up -d minio
-docker compose run --rm minio-init            # private bucket + Object Lock + least-privilege identities (idempotent)
+docker compose --profile storage up -d minio
+docker compose --profile storage run --rm minio-init            # private bucket + Object Lock + least-privilege identities (idempotent)
 docker compose run --rm audit-archive-init    # archive master key, created once; back it up separately
 docker compose up -d audit-service audit-signer
 docker compose exec audit-service python -m app.archive.cli status
@@ -558,7 +560,7 @@ duplicate or overwrite tickets. Samples do not link to or modify real customer/p
 
 The [docs-forgery microservice](microservices/backend-microservices/docs-forgery/README.md)
 checks financial PDFs and images for editing traces and content inconsistencies.
-It runs independently; document uploads do not yet invoke it automatically.
+Document uploads do not yet invoke it automatically. In Compose, tenant-service supplies SuperAdmin policy and the cost ledger.
 
 ```sh
 docker compose up -d --build docs-forgery
@@ -595,6 +597,8 @@ provisioned. The frontend streams requests through its own `/api/analyze` route 
 Gateway session is required. File checks are local by default. Content checks require
 explicit consent in the UI and the selected provider's backend API key; public visitors
 can invoke those checks with the configured backend credentials.
+
+Manage thresholds, enabled layers, provider/model names, page/time limits and rates under **SuperAdmin → [Document Forgery Detection](http://localhost:3000/super-admin/document-forgery)**. Costs appear in the new **[Token Economy → Document Forgery Detection](http://localhost:3000/super-admin/tokens?tab=document-forgery)** tab. Both require SuperAdmin sign-in. Blank rates are shown as unpriced; rates are snapshotted per analysis. Pixel inference is costed by measured worker time, separately from provider tokens. The services need a shared nonempty `INTERNAL_API_SECRET`. Settings apply to new requests within five seconds. See the [service README](microservices/backend-microservices/docs-forgery/README.md#superadmin-policy-and-token-economy) for persistence and metering limitations.
 
 ### Forgery Detection performance metrics
 

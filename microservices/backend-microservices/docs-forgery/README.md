@@ -21,6 +21,18 @@ The UI supports file uploads, analysis options, findings and evidence, and JSON 
 It proxies requests to this service over Docker's internal network; browser CORS changes
 are not needed. This FastAPI service contains no frontend; the Next.js app supplies the UI.
 
+## SuperAdmin policy and Token Economy
+
+Sign in to the main portal as SuperAdmin and open **Document Forgery Detection** (`/super-admin/document-forgery`). Configure service/layer availability, the content provider and model names, page limit, pixel timeout, threshold source, and USD rates. Credentials remain in the backend environment. Packaged reference mode uses the bundled calibration; manual overrides carry no calibration or validation claims. Pixel findings remain capped at LOW.
+
+**Token Economy → Document Forgery Detection** (`/super-admin/tokens?tab=document-forgery`) shows analyses, input/output tokens, pixel pages/time, and separate token/inference costs. Blank rates mean unpriced, not free; zero explicitly means free. Rates are snapshotted for each new analysis and never reprice history. The pixel rate is USD per worker hour of measured inference, excluding loading, queueing and idle infrastructure. Public uploads are platform-level usage; no tenant identity is accepted from anonymous callers. No document contents are saved to this cost ledger.
+
+Compose sets `TENANT_SERVICE_URL=http://tenant-service:8001`. Both services require the same nonempty `INTERNAL_API_SECRET` in the root `.env`. Settings refresh within five seconds; after cache expiry, an unavailable policy returns 503 instead of bypassing saved restrictions. Usage writes retry once using a stable analysis ID; failed writes are logged and do not fail the analysis. This is best-effort operational costing, not a billing-grade delivery guarantee. Earlier analyses are not backfilled.
+
+New settings and usage tables are created by tenant-service's existing startup migration. Restart/rebuild tenant-service, api-gateway, frontend and both forgery services when deploying these changes. MinIO is optional and is only started with the `storage` profile; neither runtime policy nor this cost ledger needs a MinIO license.
+
+For standalone engine/CLI use without the platform, leave `TENANT_SERVICE_URL` unset; environment configuration and the packaged reference thresholds apply, without central cost metering.
+
 ## Service API
 
 This FastAPI service lives at `microservices/backend-microservices/docs-forgery`.
@@ -38,8 +50,8 @@ curl -X POST http://localhost:8032/analyze \
 
 Interactive API documentation: [Swagger UI](http://localhost:8032/docs).
 Containers on `insurance-net` call `http://docs-forgery:8022`. The host port is bound to loopback.
-This service has no database or Kafka dependency, no authentication, and is not yet connected to
-API Gateway routes or automatic document-upload processing.
+This service has no database of its own and the public analysis API has no authentication.
+In Compose, tenant-service supplies SuperAdmin policy and persists cost records. Automatic document-upload processing is not yet connected.
 
 `POST /analyze` accepts multipart form fields:
 

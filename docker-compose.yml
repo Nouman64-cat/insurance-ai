@@ -286,6 +286,9 @@ services:
       - "127.0.0.1:8032:8022"
     volumes:
       - ./microservices/backend-microservices/docs-forgery:/app
+    depends_on:
+      tenant-service:
+        condition: service_started # SuperAdmin policy and usage ledger; storage is optional
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8022/health')"]
       interval: 15s
@@ -547,10 +550,11 @@ services:
 
   # ── MinIO AIStor Free: cold storage for archived audit events (Stage 3) ──────────────────────────────────
   # Single-node AIStor Free, pinned to an exact release. It needs a FREE LICENSE FILE that stays outside the repository: download it from
-  # MinIO and point AISTOR_LICENSE_FILE (in .env) at it, e.g. /home/<you>/.config/insurance-ai/minio.license (chmod 600). Without it the
+  # MinIO and point AISTOR_LICENSE_FILE (in .env) at an existing file on THIS host (chmod 600). Enable with --profile storage. Without it the
   # container refuses to start with an explanatory message. Reachable only from the Docker network and from localhost (ports bound to
   # 127.0.0.1). The bucket is private, versioned and Object-Lock-enabled; the application uses separate writer and reader identities.
   minio:
+    profiles: ["storage"]
     image: quay.io/minio/aistor/minio:RELEASE.2026-09-19T17-05-25Z
     container_name: insurance-minio
     restart: unless-stopped
@@ -565,7 +569,12 @@ services:
       - "127.0.0.1:9001:9001"   # web console
     volumes:
       - aistor-data:/data
-      - ${AISTOR_LICENSE_FILE:-/dev/null}:/run/license/minio.license:ro
+      - type: bind
+        source: ${AISTOR_LICENSE_FILE:-/dev/null}
+        target: /run/license/minio.license
+        read_only: true
+        bind:
+          create_host_path: false # a typo must not create a directory instead of a license file
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
       interval: 10s
@@ -576,6 +585,7 @@ services:
   # One-off, idempotent: creates the private versioned Object-Lock bucket and the least-privilege identities (writer: put/get/list,
   # NO delete; reader: get/list). Uses the root credentials, which no other service ever receives.
   minio-init:
+    profiles: ["storage"]
     image: quay.io/minio/aistor/minio:RELEASE.2026-09-19T17-05-25Z
     restart: "no"
     networks: [insurance-net]

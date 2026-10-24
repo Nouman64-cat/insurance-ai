@@ -13,7 +13,7 @@ docker compose build docs-forgery forgery-detection-app
 docker compose up -d docs-forgery forgery-detection-app
 ```
 
-Compose starts the `docs-forgery` backend dependency and waits for its health check.
+Compose starts tenant-service for SuperAdmin settings/cost metering and the `docs-forgery` backend dependency, then waits for the analysis backend health check. MinIO storage is optional.
 The frontend listens on port 3012 on the host's network interfaces, so it can also be
 accessed at `http://<host-ip>:3012` where the host firewall permits. This does not provision
 an internet domain or tunnel. The backend remains loopback-bound on host port 8032.
@@ -23,7 +23,7 @@ an internet domain or tunnel. The backend remains loopback-bound on host port 80
 1. Drop or select a PDF or supported image, up to 100 MiB, and choose a document type.
 2. File and metadata checks always run. Optionally enable content consistency checks
    or experimental pixel forensics.
-3. For content checks, choose Gemini or Groq and explicitly agree to send document pages
+3. For content checks, use the provider configured by SuperAdmin and explicitly agree to send document pages
    to the provider. API keys belong in the repository-root `.env` used by the backend;
    they are never configured in browser code. Recreate the backend after changing its keys.
 4. Select **Analyze document**. Review the verdict, layer statuses, errors, and findings.
@@ -128,3 +128,5 @@ recall, F1, specificity, false-positive rate, coverage and the confusion matrix.
 reports are clearly qualified as functional smoke tests. For labelled precision/recall/F1 and
 repeatable HTTP benchmarks, see the backend's
 [performance documentation](../../backend-microservices/docs-forgery/docs/PERFORMANCE_METRICS.md).
+
+SuperAdmins manage policy and USD rates in the main portal at `/super-admin/document-forgery`; costs appear under Token Economy’s **Document Forgery Detection** tab. The public UI reflects available options and the page cap. A provider policy change requires selecting the configured provider and confirming consent again.
