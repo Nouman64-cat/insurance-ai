@@ -211,9 +211,32 @@ async def run(args) -> int:
                 print(f"{m.provider}/{m.model_id:28} {m.status:10} {'SYNTHETIC ' if m.synthetic else ''}{','.join(m.roles):16} "
                       + (f"${p.input_per_m}/{p.cached_per_m}/{p.output_per_m} per M tokens" if p else "no price"))
             return 0
+        if args.command == "drift-ingest":
+            from services import eval_drift
+            report = json.loads(Path(args.file).read_text(encoding="utf-8"))
+            out = await eval_drift.ingest_scan(session, report)
+            await session.commit()
+            print(json.dumps(out))
+            return 0
+        if args.command == "drift-registry":
+            from services import eval_drift
+            out = await eval_drift.scan_registry(session, captured_from="cli")
+            await session.commit()
+            print(json.dumps(out, default=str))
+            return 0
+        if args.command == "drift-deps-load":
+            from services import eval_registry
+            data = json.loads(Path(args.file).read_text(encoding="utf-8"))
+            known = [o["key"] for o in await eval_registry.read_all(session)]
+            n = await eval_registry.load_dependencies(session, args.slug, args.version, data["dependencies"], known)
+            await session.commit()
+            print(f"stored {n} dependencies for {args.slug} {args.version}")
+            return 0
         if args.command == "benchmark-ingest":
             data = json.loads(Path(args.file).read_text(encoding="utf-8"))
             bid = data["benchmark_id"]
+            if not data.get("valid", False):
+                raise LakeValidationError(f"benchmark {bid} is not valid and is not stored: " + "; ".join(data.get("problems") or ["it carries no validity check"]))
             if (await session.exec(select(EvalBenchmark).where(EvalBenchmark.benchmark_id == bid))).first():
                 print(f"benchmark {bid} is already stored; nothing changed")
                 return 0
@@ -414,6 +437,9 @@ def main() -> int:
     r1 = sub.add_parser("run"); r1.add_argument("run_id"); r1.add_argument("--report", action="store_true")
     sub.add_parser("models-seed"); sub.add_parser("models"); sub.add_parser("benchmarks")
     bi = sub.add_parser("benchmark-ingest"); bi.add_argument("file")
+    di = sub.add_parser("drift-ingest"); di.add_argument("file")
+    sub.add_parser("drift-registry")
+    dd = sub.add_parser("drift-deps-load"); dd.add_argument("slug"); dd.add_argument("version"); dd.add_argument("file")
     rr = sub.add_parser("run-reliability"); rr.add_argument("run_id")
     c = sub.add_parser("create-dataset"); c.add_argument("slug"); c.add_argument("--name", required=True)
     c.add_argument("--workflow", required=True); c.add_argument("--turn-mode", required=True, choices=["single_turn", "multi_turn"])

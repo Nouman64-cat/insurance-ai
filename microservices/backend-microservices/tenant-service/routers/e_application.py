@@ -33,6 +33,7 @@ from datetime import datetime, timedelta
 from typing import Literal, Optional
 from uuid import UUID
 
+from services import lead_template
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from jose import JWTError
 from pydantic import BaseModel
@@ -526,6 +527,8 @@ async def public_save_e_application(
     if _link_status(e_app, row) in (S.SUBMITTED, S.VERIFIED):
         raise HTTPException(status_code=409, detail="This application has already been submitted.")
 
+    if body.declaration is not None:
+        body.declaration = await lead_template.check_declaration(session, body.declaration, submitting=False)
     now = datetime.utcnow()
     for name in (PART_SECTIONS[row.part] if row else ALL_SECTIONS):
         value = getattr(body, name)
@@ -554,6 +557,16 @@ async def public_save_e_application(
     return {"status": _link_status(e_app, row)}
 
 
+@router.get("/public/e-application/{raw_token}/template")
+async def public_e_application_template(raw_token: str, session: AsyncSession = Depends(get_session)):
+    """The published Proposal template, so the form can draw the questions a Super Admin added. Only for someone holding a valid link."""
+    await _resolve_by_token(session, raw_token)
+    tpl = await lead_template.published(session, "proposal")
+    if tpl is None:
+        raise HTTPException(status_code=404, detail="No published template")
+    return tpl
+
+
 REQUIRED_DECLARATION_KEYS = [
     "confirms_accurate",
     "authorizes_records_access",
@@ -573,6 +586,7 @@ async def public_submit_e_application(
         raise HTTPException(status_code=409, detail="This application has already been submitted.")
 
     declaration = (row.declaration if row else e_app.declaration) or {}
+    declaration = await lead_template.check_declaration(session, declaration, submitting=True) or declaration
     missing = [k for k in REQUIRED_DECLARATION_KEYS if not declaration.get(k)]
     if missing:
         raise HTTPException(

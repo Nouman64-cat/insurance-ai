@@ -30,6 +30,8 @@ from routers.customer_portal_internal import signed_by_customer_management
 from services import lead_routing as routing
 from services import payment_gateway, payment_requests
 from services.walkin_profile import FamilyApplication, WalkInProfile, build_details
+from services import lead_template
+from shared import doc_templates as dt
 from shared.models.core import (
     Branch,
     Case,
@@ -91,6 +93,15 @@ async def list_plans(tenant_id: UUID, session: AsyncSession = Depends(get_sessio
     return {"plans": [plan_public(p) for p in rows if p.is_active]}
 
 
+@router.get("/template")
+async def lead_template_for_form(session: AsyncSession = Depends(get_session)) -> dict:
+    """The published Lead acquisition template, so the walk-in form can draw the fields a Super Admin added. Published content only, never a draft."""
+    t = await lead_template.published(session)
+    if t is None:
+        raise _err(404, "TEMPLATE_NOT_FOUND", "No published template")
+    return t
+
+
 class OtpMail(BaseModel):
     tenant_id: UUID
     email: str = PField(max_length=255)
@@ -122,6 +133,7 @@ class LeadBody(BaseModel):
     preferred_contact: str = "Any"
     message: Optional[str] = PField(default=None, max_length=1000)
     consent: bool = False
+    custom: dict = PField(default_factory=dict)             # answers to the fields added in the Templates tab (checked against the published template)
 
 
 def _new_reference() -> str:
@@ -152,6 +164,13 @@ async def submit_lead(body: LeadBody, session: AsyncSession = Depends(get_sessio
         raise _err(422, "HOUSEHOLD_REQUIRED", "Add the members of your family")
     if not family and prof is None:
         raise _err(422, "VALIDATION", "Your details are required")
+    custom: dict = {}
+    tpl = None
+    if not family:
+        tpl = await lead_template.published(session)
+        custom, problems = dt.validate_answers(tpl["content"] if tpl else None, body.custom, enforce_required=True)
+        if problems:
+            raise _err(422, "CUSTOM_FIELDS", "; ".join(problems[:5]))
     phone_raw = fam.contact_phone if family else prof.mobile_number
     if not _PHONE_RE.match(phone_raw.strip()):
         raise _err(422, "INVALID_PHONE", "Enter a valid mobile number")
@@ -210,7 +229,8 @@ async def submit_lead(body: LeadBody, session: AsyncSession = Depends(get_sessio
         customer = existing
         d = dict(customer.details or {})
         # The customer's own record is not changed: what was submitted is kept beside the request.
-        d.setdefault("walk_in_requests", []).append({**walk_in_info, "submitted_profile": prof.model_dump(mode="json")})
+        d.setdefault("walk_in_requests", []).append({**walk_in_info, "submitted_profile": prof.model_dump(mode="json"),
+                                                     **({"custom": custom, "template": {"key": tpl["key"], "version": tpl["version"]}} if custom and tpl else {})})
         customer.details = d
     else:
         if prof.cnic:
@@ -221,6 +241,8 @@ async def submit_lead(body: LeadBody, session: AsyncSession = Depends(get_sessio
         branch = next((b for b in branches if (b.city or "").lower() == city.lower()), branches[0] if branches else None)
         details = build_details(prof, email)
         details["lead_source"], details["walk_in"] = "Digital Walk-In", walk_in_info
+        if custom and tpl:
+            details["custom"], details["template"] = custom, {"key": tpl["key"], "version": tpl["version"]}
         if prof.policy_coverage and prof.policy_term:         # same shape the staff form stores, so "Send Draft" works as for any lead
             details["pending_plan"] = {"product_name": plan.label, "insurance_type": _v(plan.insurance_type),
                                        "coverage_amount": prof.policy_coverage, "term_years": prof.policy_term}

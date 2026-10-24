@@ -203,7 +203,7 @@ def cost_from_usage(usage: Optional[Dict[str, Any]], uses_model: bool) -> tuple[
         return 0.0, True
     total = 0.0
     for model, v in by_model.items():
-        c = cost_of({"model_name": model, "input_tokens": v.get("input_tokens"), "output_tokens": v.get("output_tokens"), "cached_tokens": 0})
+        c = cost_of({"model_name": model, "input_tokens": v.get("input_tokens"), "output_tokens": v.get("output_tokens"), "cached_tokens": v.get("cached_tokens")})
         if c is None:
             return None, False
         total += c

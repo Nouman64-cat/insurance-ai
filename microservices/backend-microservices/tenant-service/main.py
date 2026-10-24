@@ -381,8 +381,18 @@ app.include_router(claim_financial_review_router)
 from routers.eval_datasets import router as eval_datasets_router
 app.include_router(eval_datasets_router)
 from routers.eval_jobs import internal as eval_jobs_internal_router, router as eval_jobs_router
+from routers.eval_drift import internal as eval_drift_internal_router, router as eval_drift_router
+app.include_router(eval_drift_router)
+app.include_router(eval_drift_internal_router)
 app.include_router(eval_jobs_router)
 from routers.eval_models import benchmarks as eval_benchmarks_router, router as eval_models_router
+from routers.eval_runs import benchmark_views as eval_benchmark_views_router, results as eval_results_router, runs as eval_runs_router
+from routers.doc_templates import admin as doc_templates_admin_router, reader as doc_templates_reader_router
+app.include_router(doc_templates_admin_router)
+app.include_router(doc_templates_reader_router)
+app.include_router(eval_runs_router)
+app.include_router(eval_results_router)
+app.include_router(eval_benchmark_views_router)   # before the benchmark routes: /eval/benchmarks/history must not be read as a benchmark id
 app.include_router(eval_models_router)
 app.include_router(eval_benchmarks_router)
 app.include_router(eval_jobs_internal_router)   # the worker's side: shared secret, never proxied by the gateway

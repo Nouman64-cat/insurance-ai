@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, BigInteger, Boolean, Column, Index, Text, UniqueConstraint, text
+from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, Column, Index, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
@@ -29,6 +29,9 @@ RUN_STATES = ("ingesting", "complete", "failed")
 RESULT_STATUSES = ("passed", "failed", "blocked", "skipped", "infrastructure_error")
 RUN_KINDS = ("suite", "benchmark_agent", "benchmark_direct")
 JOB_STATES = ("queued", "running", "cancel_requested", "finished", "failed", "cancelled")
+REGISTRY_TYPES = ("plan", "calc", "rule", "workflow", "gate", "access", "message", "template", "form")
+DRIFT_STATES = ("open", "in_review", "accepted", "rejected", "dismissed", "cleared")
+DRIFT_DECIDED = ("accepted", "rejected", "dismissed")
 
 
 class EvalDataset(SQLModel, table=True):
@@ -490,4 +493,246 @@ class EvalBenchmark(SQLModel, table=True):
     summary: dict = Field(default_factory=dict, sa_column=Column(JSONB, nullable=False, server_default=text("'{}'::jsonb")))
     report_key: Optional[str] = Field(default=None, max_length=600)
     created_by: Optional[UUID] = Field(default=None, foreign_key="users.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ── Phase 6: the change registry and the review queue (docs/evaluation/phase-6-change-registry-plan.md) ─────────────────────
+
+class EvalRegistryItem(SQLModel, table=True):
+    """Something a golden case depends on, and which can change: a plan, a calculation, a rule, a workflow, a template. One row per item;
+    its history is the `eval_registry_versions` rows."""
+
+    __tablename__ = "eval_registry_items"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    item_key: str = Field(unique=True, index=True, max_length=160)           # for example plan:term-life-secure, template:proposal
+    item_type: str = Field(index=True, max_length=20)
+    title: str = Field(max_length=200)
+    source: Optional[str] = Field(default=None, max_length=300)              # where it is read from, so a reviewer can find it
+    status: str = Field(default="active", max_length=12)                     # active | retired
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EvalRegistryVersion(SQLModel, table=True):
+    """One recorded state of a registry item. Append-only: history is never edited or deleted (trigger in shared/evaluation/ddl.py). A new row
+    is written only when the fingerprint differs from the last one."""
+
+    __tablename__ = "eval_registry_versions"
+    __table_args__ = (UniqueConstraint("item_id", "version", name="uq_eval_registry_item_version"),)
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    item_id: UUID = Field(foreign_key="eval_registry_items.id", index=True)
+    version: int
+    fingerprint: str = Field(max_length=64)
+    previous_fingerprint: Optional[str] = Field(default=None, max_length=64)
+    summary: dict = Field(default_factory=dict, sa_column=Column(JSONB, nullable=False, server_default=text("'{}'::jsonb")))   # a readable rendering, for the difference view
+    captured_from: str = Field(default="scan", max_length=20)                # scan | publish | manual
+    captured_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EvalCaseDependency(SQLModel, table=True):
+    """What a case of a published dataset version depends on (its `depends_on` list), indexed so that a changed item finds its cases without
+    reading the lake."""
+
+    __tablename__ = "eval_case_dependencies"
+    __table_args__ = (UniqueConstraint("dataset_slug", "dataset_version", "case_key", "item_key", name="uq_eval_case_dependency"),
+                      Index("ix_eval_case_dependencies_item", "item_key"))
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    dataset_slug: str = Field(max_length=80)
+    dataset_version: str = Field(max_length=20)
+    case_key: str = Field(max_length=80)
+    item_key: str = Field(max_length=160)
+
+
+class EvalDriftScan(SQLModel, table=True):
+    """One scan of a dataset: what was compared, how many findings, and where the full report is. Append-only."""
+
+    __tablename__ = "eval_drift_scans"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    scan_id: str = Field(unique=True, index=True, max_length=60)
+    dataset_slug: Optional[str] = Field(default=None, max_length=80)
+    dataset_version: Optional[str] = Field(default=None, max_length=20)
+    source: str = Field(default="published", max_length=12)                  # published | working
+    compared: Optional[dict] = Field(default=None, sa_column=Column(JSONB, nullable=True))     # {baseline_run, current_run} when two runs were compared
+    counts: dict = Field(default_factory=dict, sa_column=Column(JSONB, nullable=False, server_default=text("'{}'::jsonb")))
+    summary: dict = Field(default_factory=dict, sa_column=Column(JSONB, nullable=False, server_default=text("'{}'::jsonb")))
+    report_key: Optional[str] = Field(default=None, max_length=600)
+    job_id: Optional[UUID] = Field(default=None, index=True)
+    created_by: Optional[UUID] = Field(default=None, foreign_key="users.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EvalDriftItem(SQLModel, table=True):
+    """A review item: a finding (or a suggested case) and what a person decided about it. The same problem found by two scans is one row
+    (`finding_key`). The database enforces the review rules: a decision needs a named person and a written reason, and an item whose
+    acceptance produces a new case needs an expected value written by that person."""
+
+    __tablename__ = "eval_drift_items"
+    __table_args__ = (
+        CheckConstraint("state IN ('open','in_review','accepted','rejected','dismissed','cleared')", name="ck_eval_drift_state"),
+        CheckConstraint("state NOT IN ('accepted','rejected','dismissed') OR (decided_by IS NOT NULL AND decided_at IS NOT NULL AND decision_note IS NOT NULL "
+                        "AND length(btrim(decision_note)) > 0)", name="ck_eval_drift_decision_needs_person_and_reason"),
+        CheckConstraint("state <> 'accepted' OR kind NOT IN ('proposal','rule_changed','unconfirmed','coverage_gap') OR expected IS NOT NULL",
+                        name="ck_eval_drift_accept_needs_expected"),
+        CheckConstraint("expected IS NULL OR COALESCE(expected_source, '') = 'reviewer'", name="ck_eval_drift_expected_is_reviewers"),   # NULL would pass a plain =, so it is coalesced
+        Index("ix_eval_drift_items_state_kind", "state", "kind"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    finding_key: str = Field(unique=True, index=True, max_length=80)
+    kind: str = Field(max_length=24)
+    severity: str = Field(default="medium", max_length=10)
+    state: str = Field(default="open", max_length=12)
+    summary: str = Field(sa_column=Column(Text, nullable=False))
+    dataset_slug: Optional[str] = Field(default=None, max_length=80)
+    affected_cases: list = Field(default_factory=list, sa_column=Column(JSONB, nullable=False, server_default=text("'[]'::jsonb")))
+    detail: dict = Field(default_factory=dict, sa_column=Column(JSONB, nullable=False, server_default=text("'{}'::jsonb")))
+    registry_item_key: Optional[str] = Field(default=None, max_length=160)
+    from_version: Optional[int] = None
+    to_version: Optional[int] = None
+    first_scan_id: Optional[str] = Field(default=None, max_length=60)
+    last_scan_id: Optional[str] = Field(default=None, max_length=60)
+    times_seen: int = 1
+    opened_at: datetime = Field(default_factory=datetime.utcnow)
+    last_seen_at: datetime = Field(default_factory=datetime.utcnow)
+    cleared_at: Optional[datetime] = None
+    assigned_to: Optional[UUID] = Field(default=None, foreign_key="users.id")
+    decided_by: Optional[UUID] = Field(default=None, foreign_key="users.id")
+    decided_at: Optional[datetime] = None
+    decision_note: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    expected: Optional[dict] = Field(default=None, sa_column=Column(JSONB(none_as_null=True), nullable=True))     # none_as_null: no value is SQL NULL, not the JSON text null
+    expected_source: Optional[str] = Field(default=None, max_length=12)      # always 'reviewer': the system never writes an expected value
+
+
+class EvalDriftEvent(SQLModel, table=True):
+    """Every change of a review item: who, when, from which state to which, and why. Append-only: it is the audit trail of the review."""
+
+    __tablename__ = "eval_drift_events"
+
+    id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, primary_key=True, autoincrement=True))
+    drift_item_id: UUID = Field(foreign_key="eval_drift_items.id", index=True)
+    at: datetime = Field(default_factory=datetime.utcnow)
+    from_state: Optional[str] = Field(default=None, max_length=12)
+    to_state: str = Field(max_length=12)
+    actor_kind: str = Field(default="user", max_length=8)                   # user | system (a scan opening, reopening or clearing an item)
+    actor_id: Optional[UUID] = Field(default=None, foreign_key="users.id")
+    note: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    data: dict = Field(default_factory=dict, sa_column=Column(JSONB, nullable=False, server_default=text("'{}'::jsonb")))
+
+
+# ── Phase 7: cost intelligence. Money is recorded once, in USD, as an append-only line that says WHAT it paid for, how sure we are, and where the
+# number came from. Budgets and exchange rates are append-only too: the current one is the latest row, and every change keeps who and why. ──
+
+COST_COMPONENTS = ("candidate_llm", "agent_llm", "subagent_llm", "judge", "ocr", "embedding", "retry", "fallback", "self_hosted")
+COST_KINDS = ("confirmed", "estimated", "unknown")
+COST_UNITS = ("tokens", "pages", "calls", "gpu_seconds", "cpu_seconds")
+BUDGET_PERIODS = ("day", "month")
+
+
+class EvalExchangeRate(SQLModel, table=True):
+    """How many units of a currency one US dollar was worth, from a given moment, with where the number came from. Reports convert at the rate
+    in force at the time the cost was incurred, never at today's rate. Append-only."""
+
+    __tablename__ = "eval_exchange_rates"
+    __table_args__ = (
+        CheckConstraint("units_per_usd > 0", name="ck_eval_exchange_rate_positive"),
+        CheckConstraint("currency ~ '^[A-Z]{3}$'", name="ck_eval_exchange_rate_currency"),
+        CheckConstraint("length(btrim(source)) > 0", name="ck_eval_exchange_rate_source"),
+        Index("ix_eval_exchange_rates_currency_from", "currency", "effective_from"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    currency: str = Field(max_length=3)
+    units_per_usd: float
+    effective_from: datetime
+    source: str = Field(sa_column=Column(Text, nullable=False))
+    recorded_by: UUID = Field(foreign_key="users.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EvalBudgetLimit(SQLModel, table=True):
+    """A spending limit for evaluations over a day or a month (UTC). `limit_usd` NULL means no limit. Append-only: a change is a new row, so the
+    history of who set what, when and why is the table itself."""
+
+    __tablename__ = "eval_budget_limits"
+    __table_args__ = (
+        CheckConstraint("period IN ('day','month')", name="ck_eval_budget_period"),
+        CheckConstraint("limit_usd IS NULL OR limit_usd >= 0", name="ck_eval_budget_limit"),
+        CheckConstraint("warn_at_pct BETWEEN 1 AND 100", name="ck_eval_budget_warn"),
+        CheckConstraint("length(btrim(reason)) > 0", name="ck_eval_budget_reason"),
+        Index("ix_eval_budget_limits_period_from", "period", "effective_from"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    period: str = Field(max_length=5)
+    limit_usd: Optional[float] = None
+    warn_at_pct: int = 80
+    enforce: bool = Field(default=True, sa_column=Column(Boolean, nullable=False, server_default=text("true")))    # true: a job that would pass the limit is refused
+    effective_from: datetime = Field(default_factory=datetime.utcnow)
+    set_by: UUID = Field(foreign_key="users.id")
+    reason: str = Field(sa_column=Column(Text, nullable=False))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EvalCostLine(SQLModel, table=True):
+    """One piece of spending: what it paid for (`component`), how much was used, what it cost, and how sure we are (`cost_kind`).
+    confirmed = the provider reported or billed it; estimated = computed from usage and a recorded price; unknown = used but cannot be priced
+    (usd is then NULL, never 0). A ledger row can be attributed to a component only once (`usage_ref`), which is what prevents double counting.
+    Append-only: a correction is a new line, never an edit."""
+
+    __tablename__ = "eval_cost_lines"
+    __table_args__ = (
+        CheckConstraint("component IN ('candidate_llm','agent_llm','subagent_llm','judge','ocr','embedding','retry','fallback','self_hosted')", name="ck_eval_cost_component"),
+        CheckConstraint("cost_kind IN ('confirmed','estimated','unknown')", name="ck_eval_cost_kind"),
+        CheckConstraint("unit_kind IN ('tokens','pages','calls','gpu_seconds','cpu_seconds')", name="ck_eval_cost_unit"),
+        CheckConstraint("(cost_kind = 'unknown') = (usd IS NULL)", name="ck_eval_cost_unknown_has_no_amount"),
+        CheckConstraint("usd IS NULL OR usd >= 0", name="ck_eval_cost_usd"),
+        Index("uq_eval_cost_line_usage", "usage_ref", "component", unique=True, postgresql_where=text("usage_ref IS NOT NULL")),
+        Index("ix_eval_cost_lines_run", "run_id"),
+        Index("ix_eval_cost_lines_at", "incurred_at"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    run_id: Optional[str] = Field(default=None, max_length=100)
+    case_id: Optional[str] = Field(default=None, max_length=100)
+    job_id: Optional[UUID] = None
+    component: str = Field(max_length=20)
+    provider: Optional[str] = Field(default=None, max_length=20)
+    model: Optional[str] = Field(default=None, max_length=120)
+    unit_kind: str = Field(default="tokens", max_length=12)
+    input_units: float = 0
+    output_units: float = 0
+    cached_units: float = 0
+    usd: Optional[float] = None
+    cost_kind: str = Field(max_length=10)
+    source: str = Field(sa_column=Column(Text, nullable=False))               # where the number came from: "ledger row + registry price v3", "provider response", ...
+    usage_ref: Optional[str] = Field(default=None, max_length=80)             # the token-ledger row this line was attributed from
+    pricing_version_id: Optional[UUID] = None
+    rate_ref: Optional[UUID] = None                                           # the exchange rate recorded for this line, when a second currency is shown
+    incurred_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EvalProviderStatement(SQLModel, table=True):
+    """What a provider billed (or reported as used) for a period, typed in by a person, to be compared with what we recorded. Append-only: a
+    correction is a new statement that names the one it replaces."""
+
+    __tablename__ = "eval_provider_statements"
+    __table_args__ = (
+        CheckConstraint("billed_usd >= 0", name="ck_eval_statement_amount"),
+        CheckConstraint("period_end >= period_start", name="ck_eval_statement_period"),
+        CheckConstraint("length(btrim(source)) > 0", name="ck_eval_statement_source"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    provider: str = Field(max_length=20)
+    period_start: datetime
+    period_end: datetime
+    billed_usd: float
+    reference: Optional[str] = Field(default=None, max_length=120)            # invoice number, dashboard export name
+    source: str = Field(sa_column=Column(Text, nullable=False))               # "typed from the OpenAI usage page", "uploaded CSV", ...
+    supersedes_id: Optional[UUID] = Field(default=None, foreign_key="eval_provider_statements.id")
+    entered_by: UUID = Field(foreign_key="users.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)

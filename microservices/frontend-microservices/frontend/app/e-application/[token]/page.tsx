@@ -7,9 +7,12 @@
 // this browser's localStorage, neither of which is correct for an anonymous
 // customer filling in their own declaration.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { tx } from "@/lib/i18n/tx";
+import TemplateFields from "@/components/templates/TemplateFields";
+import { cleanAnswers, isAdded, isVisible, type Custom } from "@/lib/leadTemplate";
+import type { Field, Section, TemplateContent } from "@/lib/templates";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -189,6 +192,27 @@ const STEPS_FOR: Record<Part, string[]> = {
   financial: ["Confirm Details", "Employment & Income", "Commitments & Assets", "Premium & Purpose", "Existing Insurance", "Declaration & Signature"],
   combined: ["Confirm Details", "Medical Questionnaire", "Family History", "Lifestyle & Habits", "Existing Insurance", "Declaration & Signature"],
 };
+// The Proposal template's sections and the steps of this form that mean the same thing. Fields a Super Admin ADDED to such a section are drawn at the
+// end of that step; a section the form does not have becomes an extra step before the declaration. The step names themselves are not changed here:
+// the form's logic is keyed on them.
+const STEP_OF_SECTION: Record<string, string> = {
+  confirm_details: "Confirm Details", medical: "Medical Questionnaire", family_history: "Family History", lifestyle: "Lifestyle & Habits",
+  existing_insurance: "Existing Insurance", declaration: "Declaration & Signature", employment_income: "Employment & Income",
+  commitments_assets: "Commitments & Assets", premium_purpose: "Premium & Purpose",
+};
+const EXTRA_STEP = "tpl:";
+function splitProposal(content: TemplateContent | null): { byStep: Record<string, Field[]>; steps: Section[] } {
+  const out = { byStep: {} as Record<string, Field[]>, steps: [] as Section[] };
+  for (const sec of content?.sections ?? []) {
+    const added = sec.fields.filter(isAdded);
+    const step = STEP_OF_SECTION[sec.id];
+    if (step) { if (added.length) out.byStep[step] = added; } else if (added.length) out.steps.push({ ...sec, fields: added });
+  }
+  return out;
+}
+const detailText = (d: any, fallback: string): string =>
+  typeof d === "string" ? d : d && typeof d === "object" && Array.isArray(d.problems) ? `${d.message ?? ""} ${d.problems.join("; ")}`.trim() : fallback;
+
 const PART_TITLE: Record<Part, string> = {
   medical: "Medical E-Application",
   financial: "Financial E-Application",
@@ -222,8 +246,37 @@ export default function EApplicationPage({
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [part, setPart] = useState<Part>("combined");
-  const STEPS = STEPS_FOR[part];
+  const [tplContent, setTplContent] = useState<TemplateContent | null>(null);
+  const [tplVersion, setTplVersion] = useState<number | null>(null);
+  const [custom, setCustom] = useState<Custom>({});
+  const extra = useMemo(() => splitProposal(tplContent), [tplContent]);
+  const STEPS = useMemo(() => {
+    const base = STEPS_FOR[part];
+    const added = part === "financial" ? [] : extra.steps.map((s) => EXTRA_STEP + s.id);
+    const last = base.length - 1;                                   // "Declaration & Signature" stays last
+    return [...base.slice(0, last), ...added, base[last]];
+  }, [part, extra]);
   const current = STEPS[step];
+  const stepFields = (name: string): Field[] => (name.startsWith(EXTRA_STEP) ? extra.steps.find((s) => EXTRA_STEP + s.id === name)?.fields ?? [] : extra.byStep[name] ?? []);
+  const stepTitle = (name: string) => (name.startsWith(EXTRA_STEP) ? extra.steps.find((s) => EXTRA_STEP + s.id === name)?.title ?? name : name);
+  const gapsIn = (names: string[]) =>
+    names.flatMap((n) => stepFields(n)).filter((f) => f.required && isVisible(f, custom) && (custom[f.id] === undefined || custom[f.id] === "" || custom[f.id] === null || custom[f.id] === false));
+  const [invalidExtra, setInvalidExtra] = useState<string[]>([]);
+  const setAnswer = (id: string, v: string | number | boolean) => setCustom((c) => ({ ...c, [id]: v }));
+  // The published Proposal template, re-read every 15 s and when the window regains focus, so a publish reaches a form that is already open.
+  useEffect(() => {
+    let stop = false;
+    const load = async () => {
+      try {
+        const r = await publicApi.get(`/public/e-application/${token}/template`);
+        if (!stop) { setTplContent(r.data.content); setTplVersion(r.data.version); }
+      } catch { /* the form works without it */ }
+    };
+    load();
+    const timer = window.setInterval(load, 15000);
+    window.addEventListener("focus", load);
+    return () => { stop = true; window.clearInterval(timer); window.removeEventListener("focus", load); };
+  }, [token]);
   const [financial, setFinancial] = useState<FinancialProfile>(emptyFinancial());
 
   const [applicant, setApplicant] = useState<{
@@ -338,6 +391,7 @@ export default function EApplicationPage({
           setFinancial((f) => ({ ...f, employment: { ...f.employment, occupation: d.occupation } }));
         }
         if (d.declaration) setDeclaration((s) => ({ ...s, ...d.declaration }));
+        if (d.declaration?.custom && typeof d.declaration.custom === "object") setCustom(d.declaration.custom);
         setLoadState("ready");
       } catch (e: any) {
         const status = e?.response?.status;
@@ -357,7 +411,7 @@ export default function EApplicationPage({
     ...(part !== "financial" ? { medical_questionnaire: medical, family_history: { entries: familyHistory }, lifestyle_habits: lifestyle } : {}),
     ...(part !== "medical" ? { existing_insurance: existingInsurance } : {}),
     ...(part === "financial" ? { financial_profile: financial } : {}),
-    declaration,
+    declaration: tplContent ? { ...declaration, custom: cleanAnswers(tplContent, custom), template: { key: "proposal", version: tplVersion } } : declaration,
   });
 
   const saveDraft = async () => {
@@ -372,6 +426,14 @@ export default function EApplicationPage({
   };
 
   const goNext = async () => {
+    const gaps = gapsIn([current]);
+    if (gaps.length > 0) {
+      setInvalidExtra(gaps.map((g) => g.id));
+      setSubmitErr(`${tx("Please answer")}: ${gaps.map((g) => g.label).join(", ")}`);
+      return;
+    }
+    setInvalidExtra([]);
+    setSubmitErr(null);
     await saveDraft();
     setStep((s) => Math.min(s + 1, STEPS.length - 1));
   };
@@ -493,16 +555,21 @@ export default function EApplicationPage({
 
   const submit = async () => {
     setSubmitErr(null);
+    const gaps = gapsIn(STEPS);
+    if (gaps.length > 0) {
+      setInvalidExtra(gaps.map((g) => g.id));
+      const at = STEPS.findIndex((n) => stepFields(n).some((f) => f.id === gaps[0].id));
+      if (at >= 0) setStep(at);
+      setSubmitErr(`${tx("Please answer")}: ${gaps.map((g) => g.label).join(", ")}`);
+      return;
+    }
     setSubmitting(true);
     try {
       await publicApi.put(`/public/e-application/${token}`, payload());
       await publicApi.post(`/public/e-application/${token}/submit`);
       setLoadState("submitted");
     } catch (e: any) {
-      setSubmitErr(
-        e?.response?.data?.detail ??
-          "Failed to submit. Please review your answers and try again.",
-      );
+      setSubmitErr(detailText(e?.response?.data?.detail, "Failed to submit. Please review your answers and try again."));
     } finally {
       setSubmitting(false);
     }
@@ -554,7 +621,7 @@ export default function EApplicationPage({
             {tx(", let's complete your application")}
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            {tx("Step")} {step + 1} {tx("of")} {STEPS.length} · {STEPS[step]}
+            {tx("Step")} {step + 1} {tx("of")} {STEPS.length} · {stepTitle(STEPS[step])}
           </p>
           <div className="mt-2 h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
             <div
@@ -598,6 +665,12 @@ export default function EApplicationPage({
               declaration={declaration}
               setDeclaration={setDeclaration}
             />
+          )}
+          {stepFields(current).length > 0 && (
+            <div className={current.startsWith(EXTRA_STEP) ? "space-y-3" : "mt-6 space-y-3 border-t border-slate-100 pt-4"} data-testid="template-extra">
+              {!current.startsWith(EXTRA_STEP) && <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">{tx("Additional questions")}</h4>}
+              <TemplateFields fields={stepFields(current)} values={custom} onChange={setAnswer} invalid={invalidExtra} />
+            </div>
           )}
         </div>
 

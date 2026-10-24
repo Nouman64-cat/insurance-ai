@@ -93,6 +93,12 @@ async def plans():
     return await tenant_client.get_client().get(f"{PREFIX}/plans", tenant_id=await tenant_id())
 
 
+@router.get("/template")
+async def template():
+    """The published lead form template, so the form can draw the fields a Super Admin added. Public: it holds only the questions asked."""
+    return await tenant_client.get_client().get(f"{PREFIX}/template")
+
+
 # ── one-time code ─────────────────────────────────────────────────────────────
 
 class OtpRequest(Strict):
@@ -229,6 +235,7 @@ class ApplicationIn(Strict):
     preferred_contact: str = Field(default="Any", pattern="^(Any|Phone|WhatsApp|Email)$")
     message: Optional[str] = Field(default=None, max_length=1000)
     consent: bool
+    custom: dict = Field(default_factory=dict)  # answers to the fields a Super Admin added to the lead form; checked against the published template downstream
 
 
 def _idem(key: Optional[str]) -> str:
@@ -247,6 +254,8 @@ async def submit_application(body: ApplicationIn, w: Walker = Depends(current_wa
         raise validation("A family application carries the family form, not a personal one")
     if body.applicant_type == "Self" and (body.profile is None or body.family is not None):
         raise validation("Your details are required")
+    if len(body.custom) > 200:
+        raise validation("Too many additional answers")
     payload = body.model_dump(mode="json", exclude_none=True)
     payload.pop("consent")
     out = await tenant_client.get_client().post(f"{PREFIX}/leads", {**payload, "consent": True, "tenant_id": str(w.tenant_id), "email": w.email,

@@ -1,0 +1,17 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "noEmit": false,
+    "incremental": false,
+    "plugins": [],
+    "target": "es2020",
+    "jsx": "react",
+    "rootDir": "..",
+    "outDir": "../node_modules/.bm-test",
+    "baseUrl": "..",
+    "paths": { "@/*": ["./*"] }
+  },
+  "include": ["./benchmarking.integration.ts", "./templates.integration.ts", "./drift.integration.ts", "./leadTemplate.unit.ts"]
+}

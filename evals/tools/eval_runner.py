@@ -132,7 +132,17 @@ class Runner:
         by: Dict[str, int] = {}
         for r in self.results:
             by[r.status] = by.get(r.status, 0) + 1
-        return {"executions": len(self.results), "by_status": by, "spent_usd": round(self.spent_usd, 6)}
+        return {"executions": len(self.results), "by_status": by, "spent_usd": round(self.spent_usd, 6), "model": self.args.model, "planned": getattr(self, "planned", None)}
+
+    def _reply_excerpt(self, result: CaseResult, limit: int = 400) -> Optional[str]:
+        """The start of what the model answered, for the live monitor. The full answer and trace are in the run's artifacts."""
+        if not result.artifact:
+            return None
+        try:
+            text = (json.loads((self.out / result.artifact).read_text()).get("observation") or {}).get("response", {}).get("text")
+        except (OSError, ValueError, AttributeError):
+            return None
+        return None if not text else (text if len(text) <= limit else text[:limit] + "…")
 
     @property
     def chat_state(self) -> str:
@@ -159,7 +169,8 @@ class Runner:
             f.write(json.dumps(result.as_dict(), default=str) + "\n")
         self.event("case", f"{result.case_id} r{result.repetition}: {result.status}" + (f" ({result.reason})" if result.reason else ""),
                    case_id=result.case_id, repetition=result.repetition, status=result.status, reason=result.reason, latency_ms=result.latency_ms,
-                   cost_usd=result.cost_usd, critical_failed=result.critical_failed, attempts=result.attempts)
+                   cost_usd=result.cost_usd, critical_failed=result.critical_failed, attempts=result.attempts, model=self.args.model, stage=result.category,
+                   input_tokens=result.input_tokens, output_tokens=result.output_tokens, reply=self._reply_excerpt(result))
         self.event("progress", **self.progress())
         reason = stats.should_stop_on_critical([r.as_dict() for r in self.results], enabled=self.args.stop_on_critical)
         if reason and not self.cancel.is_set():
@@ -293,6 +304,8 @@ class Runner:
 
         metrics: List[Dict[str, Any]] = []
         judge_cost: Optional[float] = None
+        if self.args.metrics:                                                     # only the chosen metrics are asked for, so only they are judged and counted
+            resolved = {**resolved, "semantic_criteria": [c for c in resolved.get("semantic_criteria", []) if c.get("metric", "correctness") in self.args.metrics]}
         wants_judge = chat and bool(resolved.get("semantic_criteria")) and any(l.get("layer") == "L2" and l.get("enabled", True) for l in (resolved.get("evaluation") or {}).get("layers", []))
         if wants_judge and self.args.judge:
             scored = await judge_lib.score_case(self.client, url=JUDGE_URL, judge_model=self.args.judge, case=resolved, observation=observation)
@@ -362,6 +375,7 @@ class Runner:
             self.client = httpx.AsyncClient(timeout=httpx.Timeout(float(self.args.timeout)))
         try:
             total = max((self.repetitions(c) for c in cases), default=1)
+            self.planned = sum(self.repetitions(c) for c in cases)
             for repetition in range(1, total + 1):
                 if self.cancel.is_set():
                     break
@@ -391,6 +405,7 @@ def parse(argv: List[str]) -> argparse.Namespace:
     p.add_argument("--skills", choices=("on", "off", "default"), default="default", help="the chat agent's progressive skills for this run")
     p.add_argument("--prompt-version", help="a prompt variant (evals/prompts/<version>.json); omitted: the agent's own prompts")
     p.add_argument("--judge", help="the judge model for semantic criteria, provider/model (mock/mock-judge, openai/gpt-4o-mini...)")
+    p.add_argument("--metrics", default="", help="judge only these metrics (comma separated: correctness, faithfulness, relevance, hallucination, task_completion, safety, custom); default all the case asks for")
     p.add_argument("--calibrate", action="store_true", help="first check the judge on answers of known quality (evals/calibration) and record the result with the run")
     p.add_argument("--allow-same-judge", action="store_true", help="let the judge be the model under test (not independent evidence)")
     p.add_argument("--repeat", default="1", help="repetitions per case: a number, or `auto` (deterministic 1, chat and model-backed 3, benchmark 5)")
@@ -427,6 +442,12 @@ def parse(argv: List[str]) -> argparse.Namespace:
         p.error("--skills and --prompt-version belong to the agent: a direct call has neither")
     if a.calibrate and not a.judge:
         p.error("--calibrate needs --judge")
+    a.metrics = [m for m in a.metrics.split(",") if m]
+    unknown = [m for m in a.metrics if m not in judge_lib.METRICS]
+    if unknown:
+        p.error(f"--metrics: unknown {', '.join(unknown)} (known: {', '.join(judge_lib.METRICS)})")
+    if a.metrics and not a.judge:
+        p.error("--metrics selects what the judge scores; it needs --judge")
     if a.model and (a.model.count("/") != 1 or not all(a.model.split("/"))):
         p.error("--model must be provider/model, for example mock/mock-oracle or openai/gpt-4o-mini")
     return a
@@ -477,7 +498,7 @@ def direct_selection(selected: List[dict], left: List[dict]) -> tuple[List[dict]
 def config_of(args: argparse.Namespace, runner: Runner) -> Dict[str, Any]:
     t = runner.target
     return {"kind": args.kind, "group_id": args.group_id, "job_id": args.job_id, "provider": t.provider if t else None, "model_id": t.model if t else None,
-            "skills_enabled": None if not t else t.skills, "prompt_version": args.prompt_version, "prompt_sha256": getattr(args, "prompt_sha256", None), "judge_model": args.judge,
+            "skills_enabled": None if not t else t.skills, "prompt_version": args.prompt_version, "prompt_sha256": getattr(args, "prompt_sha256", None), "judge_model": args.judge, "metrics": args.metrics or None,
             "synthetic_model": bool(t and t.synthetic), "retries": args.retries, "limits": runner.limits, "repeat": args.repeat, "stop_on_critical": args.stop_on_critical,
             "gate": ({"min_pass_rate": args.gate_min_pass_rate, "min_repetitions": args.gate_min_repetitions} if args.gate else None),
             "concurrency": args.concurrency, "timeout_s": args.timeout, "chat_timeout_s": args.chat_timeout, "allow_same_judge": args.allow_same_judge,

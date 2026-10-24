@@ -1608,7 +1608,25 @@ async def update_version_status(tenant_id: UUID, version_id: UUID, body: Version
 
     session.add(version)
     await session.commit()
-    return {"id": str(version.id), "status": version.status}
+    drift = None
+    if body.status == RuleVersionStatusEnum.ACTIVE:
+        drift = await _tell_drift_monitor(session)
+    return {"id": str(version.id), "status": version.status, "drift_monitor": drift}
+
+
+async def _tell_drift_monitor(session: AsyncSession):
+    """A rule set going live is a change the golden cases may depend on: record it in the change registry now and queue a dataset scan. A failure
+    here never undoes the deployment; the nightly scan picks the change up."""
+    try:
+        from routers.eval_drift import queue_scan
+        from services import eval_drift
+        registry = await eval_drift.scan_registry(session, captured_from="rule_publish")
+        await session.commit()
+        job = await queue_scan(session, None, None, None, "a rule version went live") if registry["changed"] else None
+        return {"changed": registry["changed"], "scan_queued": bool(job)}
+    except Exception as exc:                                                              # noqa: BLE001
+        await session.rollback()
+        return {"error": f"{type(exc).__name__}: {str(exc)[:160]}", "note": "the rule version is live; the nightly scan will record the change"}
 
 
 @router.post("/versions/{version_id}/rules", status_code=status.HTTP_201_CREATED, summary="Add a rule to a DRAFT version")

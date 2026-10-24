@@ -5,6 +5,8 @@ Creates its own test entries and removes them afterwards.
 Run: docker compose exec -T tenant-service python test_eval_models.py
 """
 import asyncio
+import json
+import subprocess
 import sys
 import uuid
 from datetime import datetime, timedelta
@@ -16,7 +18,7 @@ from sqlmodel import select
 import database
 from routers.auth import create_access_token
 from shared.models.core import Role, User
-from shared.models.evaluation import EvalModel, EvalModelPrice
+from shared.models.evaluation import EvalBenchmark, EvalModel, EvalModelPrice
 
 BASE = "http://localhost:8001"
 FAILS = 0
@@ -95,7 +97,28 @@ async def main() -> int:
         check("an unknown benchmark is 404", (await c.get("/eval/benchmarks/nope", headers=A)).status_code == 404)
         check("benchmarks are not open to an ordinary user", (await c.get("/eval/benchmarks", headers=O)).status_code == 403)
 
+        bid = "bench-registry-test-" + uuid.uuid4().hex[:6]
+        crafted = {"benchmark_id": bid, "mode": "direct", "valid": True, "problems": [], "synthetic": True, "complete": True, "repetitions": 3, "dataset": {"dataset": "d", "version": "1.0.0"},
+                   "judge": {"model": "mock/mock-judge", "deepeval_version": "3.9.9"}, "runs": {}, "leader": None, "order": ["mock/mock-oracle"], "comparisons": [], "fairness": [],
+                   "notes": [], "evidence_rules": {}, "fallback": "none", "report": "r",
+                   "models": {"mock/mock-oracle": {"status": "measured", "pass_rate": 0.5, "ci_low": 0.3, "ci_high": 0.7, "cost_per_passed_usd": None, "config": {"provider": "mock", "model_id": "mock/mock-oracle"}}}}
+        path = f"/tmp/{bid}.json"
+        open(path, "w").write(json.dumps(crafted))
+        ingest = lambda: subprocess.run([sys.executable, "eval_lake_cli.py", "benchmark-ingest", path], capture_output=True, text=True)       # noqa: E731
+        first = ingest()
+        check("a valid benchmark is stored", first.returncode == 0 and "stored benchmark" in first.stdout, first.stdout + first.stderr)
+        check("storing it again changes nothing", "already stored" in ingest().stdout)
+        r = await c.get(f"/eval/benchmarks/{bid}", headers=A)
+        check("the benchmark is served with its per-model results", r.status_code == 200 and r.json()["summary"]["models"]["mock/mock-oracle"]["pass_rate"] == 0.5, r.text[:200])
+        listed = {m["label"]: m for m in (await c.get("/eval/models?provider=mock", headers=A)).json()}
+        check("the registry shows the model's latest benchmark result", (listed["mock/mock-oracle"]["latest_benchmark"] or {}).get("benchmark_id") == bid)
+        crafted["valid"], crafted["problems"], crafted["benchmark_id"] = False, ["x ran in mode 'agent', not 'direct'"], bid + "-bad"
+        open(path, "w").write(json.dumps(crafted))
+        bad = ingest()
+        check("an invalid benchmark is refused", bad.returncode != 0 and "not valid" in (bad.stderr + bad.stdout), bad.stdout + bad.stderr)
+
     async with database._session_factory() as s:                     # leave the registry as it was
+        await s.exec(delete(EvalBenchmark).where(EvalBenchmark.benchmark_id.like("bench-registry-test-%")))
         for mid in created:
             await s.exec(delete(EvalModelPrice).where(EvalModelPrice.model_row_id == uuid.UUID(mid)))
             await s.exec(delete(EvalModel).where(EvalModel.id == uuid.UUID(mid)))

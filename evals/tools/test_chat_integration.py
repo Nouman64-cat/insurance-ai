@@ -31,7 +31,7 @@ MOCK = os.environ["EVAL_MOCK_LLM_URL"]
 
 
 def args(**kw) -> argparse.Namespace:
-    base = dict(mode="agent", settings={}, bundle=None, from_source=True, suite="technical", cases=[], categories=[], operations=[], repeat=1, concurrency=4, timeout=120.0,
+    base = dict(metrics=[], mode="agent", settings={}, bundle=None, from_source=True, suite="technical", cases=[], categories=[], operations=[], repeat=1, concurrency=4, timeout=120.0,
                 reset="per-case", budget_usd=1.0, strict=False, model="mock/mock-oracle", skills="default", prompt_version=None, judge=None,
                 allow_same_judge=False, kind="suite", group_id=None, job_id=None, chat_timeout=300.0, retries=0, max_latency_ms=None, max_tokens=None,
                 max_cost_usd=None, stop_on_critical=False, gate=False, gate_min_pass_rate=0.9, gate_min_repetitions=1)
@@ -125,6 +125,26 @@ async def t_the_trace_is_closed_to_other_users() -> None:
     assert trace["intruder_trace_status"] == 403, trace
 
 
+async def t_the_only_way_out_is_the_allowlisted_provider_through_the_proxy() -> None:
+    import socket
+    def direct(host: str, port: int) -> bool:
+        try:
+            socket.create_connection((host, port), 3).close()
+            return True
+        except OSError:
+            return False
+
+    def tunnel(host: str) -> str:
+        with socket.create_connection(("eval-egress-proxy", 3128), 8) as c:
+            c.sendall(f"CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n".encode())
+            return c.recv(200).split(b"\r\n", 1)[0].decode()
+    assert not direct("1.1.1.1", 443) and not direct("api.openai.com", 443), "the stack must have no direct route to the internet"
+    assert not direct("host.docker.internal", 8010) and not direct("insurance-tenant-service", 8001), "no route to the host or to production"
+    assert "200" in tunnel("api.openai.com"), "the provider is reachable through the proxy"
+    for blocked in ("example.com", "localhost", "169.254.169.254"):
+        assert "403" in tunnel(blocked), f"{blocked} must be refused by the proxy"
+
+
 async def t_an_infrastructure_error_is_retried_but_a_verdict_is_not() -> None:
     bundle = eval_runner.bundle_from_source()
     selected, _ = select_cases(bundle.cases, case_ids=["IND-LEAD-001", "IND-AGT-001"])
@@ -158,7 +178,11 @@ async def t_every_repetition_gets_a_new_thread_and_a_clean_database() -> None:
 async def t_a_real_model_without_a_key_blocks_chat_cases_and_calls_nothing() -> None:
     async with httpx.AsyncClient() as c:
         await c.post(f"{MOCK}/__eval/reset")
-    r = await run(["IND-LEAD-001", "IND-AGT-001"], model="openai/gpt-4o-mini")
+    bundle = eval_runner.bundle_from_source()
+    selected, _ = select_cases(bundle.cases, case_ids=["IND-LEAD-001", "IND-AGT-001"])
+    r = eval_runner.Runner(bundle, args(model="openai/gpt-4o-mini"))
+    r.providers = set()                                     # whatever key the environment has, this run has none
+    await r.run(selected)
     assert [(x.status, x.reason) for x in r.results] == [("blocked", "blocked_missing_credentials")] * 2, [(x.status, x.reason) for x in r.results]
     assert not await mock_log(), "nothing was sent to any model"
 
@@ -188,7 +212,7 @@ async def t_the_judge_service_scores_every_metric_and_refuses_a_real_provider_wi
             bad = (await c.post(f"{url}/score", json={**req, "actual_output": "Okay."})).json()
             assert good["status"] == "scored" and good["score"] >= 0.7 and good["input_tokens"] > 0, (metric, good)
             assert bad["status"] == "scored" and bad["score"] < 0.7, (metric, bad)
-        blocked = (await c.post(f"{url}/score", json={**req, "judge_model": "openai/gpt-4o-mini"})).json()
+        blocked = (await c.post(f"{url}/score", json={**req, "judge_model": "anthropic/claude-haiku-4-5"})).json()      # no key for this provider in any configuration
         assert blocked["status"] == "blocked_missing_credentials" and "score" not in blocked, blocked
 
 
@@ -212,7 +236,7 @@ async def t_a_prompt_version_that_does_not_exist_is_refused_before_anything_runs
 
 TESTS: List[Callable] = [t_a_conversation_is_driven_observed_and_judged_in_layers, t_without_a_judge_the_case_is_decided_without_it_and_says_so,
                          t_a_lazy_agent_fails_and_the_judge_sees_the_empty_answer, t_a_reckless_agent_is_stopped_by_the_permission_gate_and_otherwise_fails_critically,
-                         t_skills_and_prompt_variants_change_what_the_agent_sends_to_the_model, t_another_users_conversation_is_refused_and_left_untouched, t_the_trace_is_closed_to_other_users,
+                         t_skills_and_prompt_variants_change_what_the_agent_sends_to_the_model, t_another_users_conversation_is_refused_and_left_untouched, t_the_trace_is_closed_to_other_users, t_the_only_way_out_is_the_allowlisted_provider_through_the_proxy,
                          t_an_infrastructure_error_is_retried_but_a_verdict_is_not, t_every_repetition_gets_a_new_thread_and_a_clean_database,
                          t_a_real_model_without_a_key_blocks_chat_cases_and_calls_nothing, t_a_chat_case_without_a_model_is_skipped_never_passed,
                          t_events_describe_the_run_in_order, t_the_judge_service_scores_every_metric_and_refuses_a_real_provider_without_a_key,

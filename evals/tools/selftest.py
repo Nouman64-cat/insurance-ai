@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import casekit  # noqa: E402
 import test_assertions  # noqa: E402
+import test_benchmark  # noqa: E402
 import test_chat_eval  # noqa: E402
 import test_stats  # noqa: E402
 import test_environment  # noqa: E402
@@ -238,9 +239,11 @@ def main() -> int:
     print(f"{'PASS' if not stats_failures else 'FAILED'}: {len(test_stats.TESTS)} statistics tests, {stats_failures} failed")
     chat_eval_failures = test_chat_eval.run_all()
     print(f"{'PASS' if not chat_eval_failures else 'FAILED'}: {len(test_chat_eval.TESTS)} chat evaluation tests, {chat_eval_failures} failed")
+    benchmark_failures = test_benchmark.run_all()
+    print(f"{'PASS' if not benchmark_failures else 'FAILED'}: {len(test_benchmark.TESTS)} benchmark tests, {benchmark_failures} failed")
     usage_failures = test_usage.run_all()
     print(f"{'PASS' if not usage_failures else 'FAILED'}: {len(test_usage.TESTS)} usage tests, {usage_failures} failed")
-    return 1 if failures or engine_failures or operation_failures or usage_failures or environment_failures or runner_failures or runs_failures or stats_failures or chat_eval_failures else 0
+    return 1 if failures or engine_failures or operation_failures or usage_failures or environment_failures or runner_failures or runs_failures or stats_failures or chat_eval_failures or benchmark_failures else 0
 
 
 if __name__ == "__main__":

@@ -1075,9 +1075,34 @@ async def proxy_eval_jobs(path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/eval/jobs{path}")
 
 
+@app.api_route("/eval/drift{path:path}", methods=["GET", "POST", "OPTIONS"], include_in_schema=False)
+async def proxy_eval_drift(path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/eval/drift{path}")
+
+
 @app.api_route("/eval/models{path:path}", methods=["GET", "POST", "PATCH", "OPTIONS"], include_in_schema=False)
 async def proxy_eval_models(path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/eval/models{path}")
+
+
+@app.api_route("/admin/doc-templates{path:path}", methods=["GET", "PUT", "POST", "DELETE", "OPTIONS"], include_in_schema=False)
+async def proxy_admin_doc_templates(path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/admin/doc-templates{path}")
+
+
+@app.api_route("/doc-templates{path:path}", methods=["GET", "OPTIONS"], include_in_schema=False)
+async def proxy_doc_templates(path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/doc-templates{path}")
+
+
+@app.api_route("/eval/runs{path:path}", methods=["GET", "OPTIONS"], include_in_schema=False)
+async def proxy_eval_runs(path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/eval/runs{path}")
+
+
+@app.api_route("/eval/results{path:path}", methods=["GET", "OPTIONS"], include_in_schema=False)
+async def proxy_eval_results(path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/eval/results{path}")
 
 
 @app.api_route("/eval/benchmarks{path:path}", methods=["GET", "OPTIONS"], include_in_schema=False)

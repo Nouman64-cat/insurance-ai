@@ -1,0 +1,157 @@
+{
+ "schema": 1,
+ "derived_from": "metadata.truth oracles and source.code_refs of each case; nothing is guessed",
+ "dependencies": {
+  "IND-AGT-004": [
+   "plan:*"
+  ],
+  "IND-ISS-001": [
+   "workflow:policy-status"
+  ],
+  "IND-ISS-002": [
+   "workflow:policy-status"
+  ],
+  "IND-ISS-003": [
+   "workflow:policy-status"
+  ],
+  "IND-ISS-004": [
+   "rule:*"
+  ],
+  "IND-ISS-006": [
+   "workflow:policy-status"
+  ],
+  "IND-KYC-005": [
+   "rule:*"
+  ],
+  "IND-PAY-001": [
+   "calc:premium",
+   "plan:*"
+  ],
+  "IND-PAY-002": [
+   "calc:premium",
+   "plan:*"
+  ],
+  "IND-PAY-003": [
+   "calc:premium",
+   "plan:*"
+  ],
+  "IND-PAY-006": [
+   "calc:premium",
+   "plan:*"
+  ],
+  "IND-PLAN-001": [
+   "plan:*"
+  ],
+  "IND-PLAN-002": [
+   "plan:*"
+  ],
+  "IND-PLAN-003": [
+   "plan:*"
+  ],
+  "IND-PLAN-004": [
+   "plan:*"
+  ],
+  "IND-PLAN-005": [
+   "plan:*"
+  ],
+  "IND-PLAN-006": [
+   "plan:*"
+  ],
+  "IND-RISK-001": [
+   "rule:*"
+  ],
+  "IND-RISK-002": [
+   "rule:*"
+  ],
+  "IND-RISK-003": [
+   "rule:*"
+  ],
+  "IND-RISK-004": [
+   "rule:*"
+  ],
+  "IND-RISK-005": [
+   "rule:*"
+  ],
+  "IND-RISK-006": [
+   "rule:*"
+  ],
+  "IND-RISK-007": [
+   "rule:*"
+  ],
+  "IND-RISK-008": [
+   "rule:*"
+  ],
+  "IND-RISK-009": [
+   "rule:*"
+  ],
+  "IND-SEC-005": [
+   "access:claims"
+  ],
+  "IND-SEC-009": [
+   "access:claims"
+  ],
+  "IND-SEC-011": [
+   "access:claims"
+  ],
+  "IND-UW-001": [
+   "rule:*"
+  ],
+  "IND-UW-002": [
+   "rule:*"
+  ],
+  "IND-UW-003": [
+   "rule:*"
+  ],
+  "IND-UW-004": [
+   "rule:*"
+  ],
+  "IND-UW-005": [
+   "rule:*"
+  ],
+  "IND-UW-006": [
+   "rule:*"
+  ]
+ },
+ "undeclared": [
+  "IND-AGT-001",
+  "IND-AGT-002",
+  "IND-AGT-003",
+  "IND-AGT-005",
+  "IND-AGT-006",
+  "IND-CLM-001",
+  "IND-CLM-002",
+  "IND-CLM-003",
+  "IND-CLM-004",
+  "IND-CLM-005",
+  "IND-CLM-006",
+  "IND-CLM-007",
+  "IND-CUST-001",
+  "IND-CUST-002",
+  "IND-CUST-003",
+  "IND-CUST-004",
+  "IND-CUST-005",
+  "IND-CUST-006",
+  "IND-ISS-005",
+  "IND-KYC-001",
+  "IND-KYC-002",
+  "IND-KYC-003",
+  "IND-KYC-004",
+  "IND-KYC-006",
+  "IND-LEAD-001",
+  "IND-LEAD-002",
+  "IND-LEAD-003",
+  "IND-LEAD-004",
+  "IND-LEAD-005",
+  "IND-LEAD-006",
+  "IND-PAY-004",
+  "IND-PAY-005",
+  "IND-SEC-001",
+  "IND-SEC-002",
+  "IND-SEC-003",
+  "IND-SEC-004",
+  "IND-SEC-006",
+  "IND-SEC-007",
+  "IND-SEC-008",
+  "IND-SEC-010"
+ ]
+}

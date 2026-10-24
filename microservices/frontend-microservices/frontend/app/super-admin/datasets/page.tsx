@@ -1211,7 +1211,7 @@ function DatasetsContent() {
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full font-sans">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Golden Datasets")}</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Evaluation Datasets")}</h1>
           <p className="text-sm text-slate-500 mt-0.5 max-w-3xl">
             {tx("Keep the evaluation cases in step with the system. Edit or add cases here, approve them, then publish a new version. Published versions never change, so every evaluation run can say exactly which version it used.")}
           </p>

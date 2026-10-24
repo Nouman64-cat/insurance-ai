@@ -153,7 +153,7 @@ async def main(argv: List[str]) -> int:
     (RUNS / "groups" / f"{benchmark_id}.json").write_text(json.dumps({"group_id": benchmark_id, "variants": [{"value": r["label"], "run_folder": r["folder"]} for r in runs]}), encoding="utf-8")
     print("\n" + report)
     print(f"benchmark: {benchmark_id}  ({RUNS / 'benchmarks' / (benchmark_id + '.json')})")
-    return 0
+    return 0 if result["valid"] else 3
 
 
 if __name__ == "__main__":

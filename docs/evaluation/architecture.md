@@ -135,6 +135,51 @@ python evals/environment/envctl.py test-chat | test-runner | test-runs
 docker compose exec tenant-service python eval_lake_cli.py job-submit | jobs | job-events --follow | job-cancel | run-reliability <run_id>
 ```
 
-**Not built in this phase:** the runs API and Evaluation Center pages, the model registry and cross-provider benchmark (Phase 5), a
+**Not built in this phase:** the runs API and Evaluation Center pages, a
 dedicated real-provider key (so no real-model or real-judge result exists yet), and a budget stop in the middle of a conversation
 (the budget is checked before each execution and judge call).
+
+## Phase 5: model registry and multi-LLM benchmarking
+
+**Model registry** (`eval_models`, `eval_model_prices`; rules in `shared/evaluation/registry.py`; API `/eval/models`, Super Admin only,
+proxied by the gateway). An entry is `provider/model_id` (providers: `openai`, `gemini`, `anthropic`, `mock`) with its roles
+(`candidate`, `judge`), status, capabilities, the configuration a benchmark applies (temperature, top_p, max_tokens, seed, timeout_s) and
+an append-only price history: every price has an effective date and a source, and a price without a source is refused. The provider and
+model id of an entry never change. `mock` models are the scripted stand-ins: synthetic by definition, price zero.
+`eval_lake_cli.py models-seed` registers the models of the Token Economy page and the stand-ins; `models` lists them.
+
+**Two benchmark modes** (`evals/tools/benchmark.py`, `envctl.py benchmark`, or a job of kind `benchmark_agent` / `benchmark_direct`):
+- `agent`: the real Individual Insurance agent answers, only the model changes; also measures tool accuracy (layer L3) and workflow compliance (L4).
+- `direct`: the bare model gets the same question and the same reference information through the generation service
+  (`eval-judge` `POST /generate`, the only service that may reach a provider, with the same allow-list and key rules as scoring);
+  no agent, no tools. Prompt `direct-v1` is identical for every model and recorded. Only chat cases with one user message and something
+  judgeable from the answer take part; the rest are listed as left out, with the reason.
+
+Each model is one ordinary run (verified dataset, sealed, stored on its own) with the same cases, repetitions, judge and limits, tied
+together by one benchmark id; models run one after another so timings do not interfere. A provider without a key is reported
+`blocked_missing_credentials` (not skipped, not failed). Fallback behaviour is recorded: none; a failed call is an error or timeout of the
+model that was asked.
+
+**What is measured per model:** pass rate with Wilson interval, consistency, flaky cases, critical-failure rate, judge scores per metric
+(correctness, task completion, faithfulness, relevance, hallucination, safety), tool accuracy, workflow compliance, safety violations,
+latency mean/p50/p95, time to first token, throughput (output tokens per second), errors and timeouts, input/output/cached tokens, candidate
+cost, judge cost (a separate figure), cost per successful execution. Unreported token counts and unpriced models stay unknown.
+
+**Superiority needs evidence** (`shared/evaluation/benchmark.py`): a model is called better than another only if at least 10 cases were
+compared, each ran at least 3 repetitions, the 95% bootstrap interval of the paired pass-rate difference excludes zero, the sign test is
+below 0.05 and its critical-failure rate is not worse. Otherwise the report says "insufficient evidence" or "no reliable difference", and a
+benchmark names a leader only if it beats every other model. A benchmark that includes a scripted model never ranks anything.
+A benchmark whose runs did not record the requested mode, kind, group or model is **invalid**: it is not stored, its runs are.
+
+```
+python evals/environment/envctl.py benchmark --mode direct --dataset individual-single-turn --version 1.0.6 \
+    --models openai/gpt-4o-mini,gemini/gemini-2.5-flash,anthropic/claude-haiku-4-5 --judge openai/gpt-4o --repeat 5 --setting temperature=0 --calibrate
+python evals/environment/envctl.py benchmark --mode agent --dataset ... --models a,b   # the agent with a different model
+docker compose exec tenant-service python eval_lake_cli.py models-seed | models | benchmarks | benchmark-ingest <file>
+python evals/environment/envctl.py test-benchmark
+docker compose exec -T tenant-service python test_eval_models.py
+```
+
+**Still blocked:** a benchmark of real GPT, Gemini and Claude models needs a key for each provider in `evals/environment/eval.env` and the
+provider in `EVAL_ALLOWED_PROVIDERS`. Until then every benchmark here is scripted (synthetic) and says nothing about real models.
+The benchmark comparison page is Phase 8; the budget and cost forecasting for benchmarks is Phase 7.
