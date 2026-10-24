@@ -511,8 +511,7 @@ chmod 600 ~/.config/insurance-ai/minio.license
 echo "AISTOR_LICENSE_FILE=$HOME/.config/insurance-ai/minio.license" >> .env
 
 # 3. Start MinIO, create the bucket and identities (idempotent), create the archive master key (once)
-docker compose up -d minio
-docker compose run --rm minio-init            # ends with "object lock: VERIFIED" and the two identities
+docker compose up -d --build                 # includes MinIO + minio-init after MinIO is healthy
 docker compose run --rm audit-archive-init    # prints the key id; BACK THE KEY UP (see "Master key")
 
 # 4. Start the audit service and signer (see Stage 2 for audit-signer-init), then check everything the archive depends on
@@ -520,7 +519,9 @@ docker compose up -d audit-service audit-signer
 docker compose exec audit-service python -m app.archive.cli status
 ```
 
-`status` prints `master_key: true` and a bucket report with `reachable`, `versioning`, `object_lock` and `private` all `true`. The container **refuses to start** (and says why) without a license file or without a root password of 16+ characters. AIStor Free is under MinIO's license (not AGPL); read the terms before redistributing this stack.
+The default Compose startup includes `minio-init`: missing buckets are created with Object Lock, and existing buckets and data are preserved. Repeated initialization is safe. To retry initialization independently, run `docker compose run --rm minio-init`.
+
+`status` prints `master_key: true` and a bucket report with `reachable`, `versioning`, `object_lock` and `private` all `true`. The container **refuses to start** (and says why) without a license key/file or without a root password of 16+ characters. AIStor Free is under MinIO's license (not AGPL); read the terms before redistributing this stack.
 
 ### Everyday commands
 
@@ -559,7 +560,7 @@ Keep backups outside the repository and away from the machine's only disk. The v
 
 | Symptom | Cause / fix |
 |---|---|
-| `minio` exits: "AIStor Free license file missing" | `AISTOR_LICENSE_FILE` unset or wrong path in `.env`; the file must exist and be non-empty |
+| `minio` exits: "Set AISTOR_LICENSE_KEY" | Set a valid key in `.env` and leave `AISTOR_LICENSE_FILE` blank, or configure an existing non-empty host license file |
 | `minio` exits: "MINIO_ROOT_USER … 16+ characters" | set both root variables in `.env` |
 | Jobs `FAILED` with `STORE_UNAVAILABLE` | MinIO is down or restarting; they resume automatically once `docker compose ps minio` shows *healthy* |
 | Jobs `FAILED` with `STORE_CAPABILITY` | the bucket lacks Object Lock/versioning or is public. Object Lock can only be set when a bucket is created: recreate the bucket (`minio-init` creates it correctly) |
@@ -609,7 +610,8 @@ Set these in `.env` (names in **bold** are passed through `docker-compose.yml`; 
 | Variable | Default | |
 |---|---|---|
 | `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` | – (required) | MinIO root account: used only by `minio-init` and for the console |
-| `AISTOR_LICENSE_FILE` | – (required) | path of the AIStor Free license file, **outside the repo**; mounted read-only |
+| `AISTOR_LICENSE_KEY` | – | License string; startup writes it to a private container file. Leave `AISTOR_LICENSE_FILE` blank in this mode. |
+| `AISTOR_LICENSE_FILE` | – | Alternative: path of the AIStor license file **outside the repo**, mounted read-only. |
 | **`AUDIT_ARCHIVE_WRITER_KEY/SECRET`**, **`AUDIT_ARCHIVE_READER_KEY/SECRET`** | – (required) | application identities: writer = put/get/list (no delete), reader = get/list |
 | **`AUDIT_ARCHIVE_BUCKET`** | `insurance-audit-archive` | private, versioned, Object-Lock bucket |
 | **`AUDIT_ARCHIVE_S3_ENDPOINT`** | `http://minio:9000` | S3 endpoint the audit service uses |

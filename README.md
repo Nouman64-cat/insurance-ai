@@ -303,14 +303,21 @@ the manual end-to-end guide.
 **Archive & cold storage (Stage 3).** Events older than the hot window (default 6 months) are moved by the Audit Service into **compressed (zstd), encrypted (AES-256-GCM) and signed**
 archives in a local **MinIO AIStor Free** bucket (private, versioned, Object Lock). They stay searchable and verifiable (Audit Trail → **Archive & retention**), retention policies
 and legal holds are configurable, and only fully archived, re-verified months can be removed from PostgreSQL (a separate, confirmed step; automatic cleanup is off by default).
-Archive storage is optional and uses the `storage` Compose profile. An ordinary `docker compose up -d` skips MinIO and its initialization job; document forgery analysis works without them. Archive operations and evaluation dataset storage require MinIO to be configured and running.
+MinIO and its initialization job start with `docker compose up -d --build`. After MinIO becomes healthy, initialization creates missing buckets and identities. Existing buckets and their data are preserved; versioning and private access are reapplied. The evaluation bucket is configured when `EVAL_LAKE_ACCESS_KEY` is set. Configure the license and storage credentials in `.env` before starting.
 
-One-time per installation, with the AIStor Free license file kept **outside** the repository. Set `AISTOR_LICENSE_FILE` in `.env` to a real file on the current host. On macOS, for example, use `/Users/your-name/.config/insurance-ai/minio.license`; do not copy another machine's `/home/...` path. The file must exist and be accessible to Docker Desktop before starting storage:
+Set your AIStor license string in the ignored root `.env`:
 
+```dotenv
+AISTOR_LICENSE_KEY='paste-your-license-key-here'
+AISTOR_LICENSE_FILE=
+```
+
+The startup wrapper writes the key to a private temporary file inside the container, then passes that file to AIStor. Do not commit or paste the license into chat. Alternatively, leave `AISTOR_LICENSE_KEY` blank and set `AISTOR_LICENSE_FILE` to an existing license file on this host. Do not use another machine's `/home/...` path. Keep `AISTOR_LICENSE_FILE` blank in key mode so Docker does not attempt the old host-file mount.
+
+One-time setup:
 ```bash
-# .env: MINIO_ROOT_USER, MINIO_ROOT_PASSWORD (16+ chars), AUDIT_ARCHIVE_WRITER_KEY/SECRET, AUDIT_ARCHIVE_READER_KEY/SECRET, AISTOR_LICENSE_FILE=<path to your license file>
-docker compose --profile storage up -d minio
-docker compose --profile storage run --rm minio-init            # private bucket + Object Lock + least-privilege identities (idempotent)
+# .env: MINIO_ROOT_USER, MINIO_ROOT_PASSWORD (16+ chars), AUDIT_ARCHIVE_WRITER_KEY/SECRET, AUDIT_ARCHIVE_READER_KEY/SECRET, AISTOR_LICENSE_KEY=<your license string> (AISTOR_LICENSE_FILE blank)
+docker compose up -d --build                 # includes MinIO and automatic, idempotent bucket initialization
 docker compose run --rm audit-archive-init    # archive master key, created once; back it up separately
 docker compose up -d audit-service audit-signer
 docker compose exec audit-service python -m app.archive.cli status

@@ -573,18 +573,18 @@ services:
 
   # ── MinIO AIStor Free: cold storage for archived audit events (Stage 3) ──────────────────────────────────
   # Single-node AIStor Free, pinned to an exact release. It needs a FREE LICENSE FILE that stays outside the repository: download it from
-  # MinIO and point AISTOR_LICENSE_FILE (in .env) at an existing file on THIS host (chmod 600). Enable with --profile storage. Without it the
+  # MinIO and set AISTOR_LICENSE_KEY in .env, or mount a real file via AISTOR_LICENSE_FILE. Started by the default Compose command. Without a license the
   # container refuses to start with an explanatory message. Reachable only from the Docker network and from localhost (ports bound to
   # 127.0.0.1). The bucket is private, versioned and Object-Lock-enabled; the application uses separate writer and reader identities.
   minio:
-    profiles: ["storage"]
     image: quay.io/minio/aistor/minio:RELEASE.2026-09-19T17-05-25Z
     container_name: insurance-minio
     restart: unless-stopped
     networks: [insurance-net]
-    # Refuse to start without explicit root credentials and a license rather than silently using a default account or a trial.
-    entrypoint: ["/bin/sh", "-c", "test -n \"$$MINIO_ROOT_USER\" -a \"$${#MINIO_ROOT_PASSWORD}\" -ge 16 || { echo 'MINIO_ROOT_USER and a MINIO_ROOT_PASSWORD of 16+ characters must be set in .env' >&2; exit 1; }; test -s /run/license/minio.license || { echo 'AIStor Free license file missing: set AISTOR_LICENSE_FILE in .env to the license file downloaded from MinIO (see README, Stage 3)' >&2; exit 1; }; exec minio server /data --address :9000 --console-address :9001 --license /run/license/minio.license"]
+    # The wrapper materializes an env license key inside the container; file mode also remains available.
+    entrypoint: ["/bin/sh", "/init/start.sh"]
     environment:
+      AISTOR_LICENSE_KEY: ${AISTOR_LICENSE_KEY:-}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
     ports:
@@ -592,8 +592,9 @@ services:
       - "127.0.0.1:9001:9001"   # web console
     volumes:
       - aistor-data:/data
+      - ./infrastructure/minio/start.sh:/init/start.sh:ro
       - type: bind
-        source: ${AISTOR_LICENSE_FILE:-/dev/null}
+        source: ${AISTOR_LICENSE_FILE:-./infrastructure/minio/license-empty}
         target: /run/license/minio.license
         read_only: true
         bind:
@@ -608,7 +609,6 @@ services:
   # One-off, idempotent: creates the private versioned Object-Lock bucket and the least-privilege identities (writer: put/get/list,
   # NO delete; reader: get/list). Uses the root credentials, which no other service ever receives.
   minio-init:
-    profiles: ["storage"]
     image: quay.io/minio/aistor/minio:RELEASE.2026-09-19T17-05-25Z
     restart: "no"
     networks: [insurance-net]
