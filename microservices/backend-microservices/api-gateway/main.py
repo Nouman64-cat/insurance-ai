@@ -854,7 +854,7 @@ async def _stream_request_management_events(request: Request, headers: dict):
 AUDIT_SERVICE_URL = os.environ.get("AUDIT_SERVICE_URL", "http://audit-service:8020")
 
 
-@app.api_route("/audit/{path:path}", methods=["GET", "POST"], include_in_schema=False)
+@app.api_route("/audit/{path:path}", methods=["GET", "POST", "PUT"], include_in_schema=False)
 async def proxy_audit(path: str, request: Request):
     if not path.startswith("v1/"):
         return JSONResponse(status_code=404, content={"detail": "Unknown Audit API version"})

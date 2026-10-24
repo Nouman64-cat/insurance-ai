@@ -72,6 +72,7 @@ async def apply_grants(conn, schema: str) -> None:
     await conn.execute(text(f'GRANT UPDATE (cleanup_approved_at) ON "{schema}".archive_catalog TO {app_role}'))
     await conn.execute(text(f'GRANT DELETE ON "{schema}".archive_staging TO {app_role}'))
     await conn.execute(text(f'GRANT EXECUTE ON FUNCTION "{schema}".remove_event_partition(DATE, TEXT), "{schema}".list_event_partitions() TO {app_role}'))
+    await conn.execute(text(f'GRANT INSERT ON "{schema}".archive_configuration_versions TO {app_role}'))
     # Stage 2: signed checkpoints. The app role records them (insert-only), keeps its scheduler state, and may mark a key retired.
     await conn.execute(text(f'GRANT INSERT ON "{schema}".checkpoints, "{schema}".checkpoint_alerts, "{schema}".anchor_verification_runs, "{schema}".signing_keys TO {app_role}'))
     await conn.execute(text(f'GRANT INSERT, UPDATE ON "{schema}".checkpoint_state TO {app_role}'))

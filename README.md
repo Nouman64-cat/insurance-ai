@@ -303,6 +303,8 @@ the manual end-to-end guide.
 **Archive & cold storage (Stage 3).** Events older than the hot window (default 6 months) are moved by the Audit Service into **compressed (zstd), encrypted (AES-256-GCM) and signed**
 archives in a local **MinIO AIStor Free** bucket (private, versioned, Object Lock). They stay searchable and verifiable (Audit Trail → **Archive & retention**), retention policies
 and legal holds are configurable, and only fully archived, re-verified months can be removed from PostgreSQL (a separate, confirmed step; automatic cleanup is off by default).
+**[SuperAdmin → Audit Configuration](http://localhost:3000/super-admin/audit-configuration)** manages retention, scheduling, compression, cleanup, object locks, environment label and local test mode. Changes are persisted and audited, apply to new requests immediately, and reach idle archive workers within five seconds without a restart. Jobs retain their saved settings on retry; explicit category/tenant retention policies override the global default.
+
 MinIO and its initialization job start with `docker compose up -d --build`. After MinIO becomes healthy, initialization creates missing buckets and identities. Existing buckets and their data are preserved; versioning and private access are reapplied. The evaluation bucket is configured when `EVAL_LAKE_ACCESS_KEY` is set. Configure the license and storage credentials in `.env` before starting.
 
 Set your AIStor license string in the ignored root `.env`:

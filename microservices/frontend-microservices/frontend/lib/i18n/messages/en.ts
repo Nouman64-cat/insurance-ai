@@ -102,6 +102,7 @@ const en = {
     "Commission Types": "Commission Types",
     "Security & Compliance": "Security & Compliance",
     "Audit Trail": "Audit Trail",
+    "Audit Configuration": "Audit Configuration",
     "Roles": "Roles",
     "Bonuses": "Bonuses",
     "Calculator": "Calculator",

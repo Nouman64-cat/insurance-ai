@@ -74,8 +74,10 @@ async def checkpoint_status(request: Request, identity: Identity = Depends(curre
     scope = scope_for(identity)
     signer = _signer(request)
     env = await _environment_id()
+    runtime = getattr(request.app.state, "archive_runtime", None)
+    label = (await runtime.snapshot())[1].environment_label if runtime else settings.environment_label
     out: dict = {"signing_enabled": settings.signing_enabled, "provider": settings.signing_provider, "environment_id": env,
-                 "environment_label": settings.environment_label, "server_time": format_timestamp(now),
+                 "environment_label": label, "server_time": format_timestamp(now),
                  "storage_available": TrustedStorage(settings.checkpoint_directory).available(), "signer": None, "registry": None}
     if signer is not None:
         status = await signer.status()

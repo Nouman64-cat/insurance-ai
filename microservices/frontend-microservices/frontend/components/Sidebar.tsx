@@ -488,6 +488,7 @@ const NAV_ITEMS = [
         superAdminOnly: true,
         subLinks: [
           { href: "/admin/audit-trail", label: "Audit Trail" },
+          { href: "/super-admin/audit-configuration", label: "Audit Configuration" },
         ],
       },
       {
@@ -791,7 +792,7 @@ export function Sidebar() {
   }));
 
   const workingHrefs = ["/customer-service", "/acr", "/profile", "/cases", "/requests", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/underwriting", "/admin/users", "/admin/leads", "/admin/policyholders", "/plans", "/financial", "/claims", "/claims/dashboard", "/claims/register"];
-  const superAdminHrefs = ["/super-admin/document-forgery", "/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/roles", "/super-admin/tokens", "/super-admin/ai-agents", "/super-admin/llm-config", "/super-admin/datasets", "#security-compliance"];
+  const superAdminHrefs = ["/super-admin/audit-configuration", "/super-admin/document-forgery", "/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/roles", "/super-admin/tokens", "/super-admin/ai-agents", "/super-admin/llm-config", "/super-admin/datasets", "#security-compliance"];
 
   const financeIcon = (path: string) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d={path}/></svg>;
   const financeLinks = [

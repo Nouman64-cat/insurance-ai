@@ -1,4 +1,8 @@
-"""Settings, all from the environment. See README.md, "Configuration"."""
+"""Infrastructure settings and first-install archive defaults.
+
+Archive controls are seeded once, then resolved from archive_configuration_versions.
+Environment changes do not override persisted SuperAdmin controls.
+"""
 import os
 from dataclasses import dataclass, field
 

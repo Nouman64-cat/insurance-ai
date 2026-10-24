@@ -104,6 +104,7 @@ const ur: Messages = {
     "Commission Types": "کمیشن کی اقسام",
     "Security & Compliance": "سیکیورٹی اور تعمیل",
     "Audit Trail": "آڈٹ ٹریل",
+    "Audit Configuration": "آڈٹ کی ترتیبات",
     "Roles": "کردار",
     "Bonuses": "بونسز",
     "Calculator": "کیلکولیٹر",
