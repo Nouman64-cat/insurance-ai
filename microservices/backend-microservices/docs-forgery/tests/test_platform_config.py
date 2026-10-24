@@ -20,8 +20,11 @@ def config(**changes):
 
 
 class PlatformTests(unittest.TestCase):
+    def setUp(self):
+        auth=patch.dict(os.environ,{"INTERNAL_API_SECRET":"test-internal"});auth.start();self.addCleanup(auth.stop)
+
     def test_disabled_options_and_page_limits_are_enforced(self):
-        client = TestClient(main.app)
+        client = TestClient(main.app, headers={"X-Internal-Secret":"test-internal"})
         for policy, options, status in [(dict(enabled=False),{},503), (dict(content_enabled=False),{'layer2':'true'},403),
                                        (dict(pixel_enabled=False),{'layer3':'true'},403),
                                        (dict(visual_enabled=False),{'visual':'true','layer2':'true'},403),

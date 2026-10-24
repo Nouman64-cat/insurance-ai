@@ -6,34 +6,34 @@ receipts) **without needing the issuer's template and without training data**.
 > **Status: research prototype.** It produces evidence for a human reviewer, not a decision. See
 > [Limitations](#limitations) and [docs/EVALUATION.md](docs/EVALUATION.md) before relying on any number here.
 
-## Public testing UI
+## Admin workspace and saved results
 
-A separate [Forgery Detection frontend](../../frontend-microservices/forgery-detection-app/README.md)
-is available without login at [http://localhost:3012](http://localhost:3012). Start it and
-this backend from the repository root with:
+Use the main portal's **Admin → Document Intelligence** at [http://localhost:3000/admin/document-intelligence](http://localhost:3000/admin/document-intelligence). A signed-in, active tenant Admin account is required. Tenant-service authenticates uploads and history requests, then calls docs-forgery’s internal API; all reads and writes are scoped to the authenticated tenant. The old port 3012 UI no longer accepts analysis requests.
+
+PostgreSQL `docs_forgery.document_intelligence_results` stores full report JSON (including heatmaps/evidence/performance), filename/hash/size, options, status, uploading admin and timestamps. Original document bytes are not retained. A processing record is committed before analysis; complete, incomplete and failed outcomes are persisted. The API returns success only after saving the report. A process interruption can leave a processing record; inspect history before retrying. Records currently have no automatic deletion policy.
 
 ```sh
-docker compose build docs-forgery forgery-detection-app
-docker compose up -d docs-forgery forgery-detection-app
+docker compose build tenant-service api-gateway frontend docs-forgery forgery-detection-app
+docker compose up -d tenant-service api-gateway frontend docs-forgery forgery-detection-app
 ```
 
-The UI supports file uploads, analysis options, findings and evidence, and JSON downloads.
-It proxies requests to this service over Docker's internal network; browser CORS changes
-are not needed. This FastAPI service contains no frontend; the Next.js app supplies the UI.
+Docs-forgery owns its result table. Provision it once with `docker compose --profile tools run --rm --no-deps -T docs-forgery-provision` after configuring a private `.env.docs-forgery`. See [schema ownership and migration](docs/SCHEMA_OWNERSHIP.md) before deploying. Admin API routes through API Gateway: `POST /document-intelligence/analyze`, `GET /document-intelligence/results?offset=0&limit=20`, `GET /document-intelligence/results/{id}`. SuperAdmin settings and costs remain separate; they do not grant access to the tenant Admin workspace.
 
 ## SuperAdmin policy and Token Economy
 
 Sign in to the main portal as SuperAdmin and open **Document Forgery Detection** (`/super-admin/document-forgery`). Configure service/layer availability, the content provider and model names, page limit, pixel timeout, threshold source, and USD rates. Credentials remain in the backend environment. Packaged reference mode uses the bundled calibration; manual overrides carry no calibration or validation claims. Pixel findings remain capped at LOW.
 
-**Token Economy → Document Forgery Detection** (`/super-admin/tokens?tab=document-forgery`) shows analyses, input/output tokens, pixel pages/time, and separate token/inference costs. Blank rates mean unpriced, not free; zero explicitly means free. Rates are snapshotted for each new analysis and never reprice history. The pixel rate is USD per worker hour of measured inference, excluding loading, queueing and idle infrastructure. Public uploads are platform-level usage; no tenant identity is accepted from anonymous callers. No document contents are saved to this cost ledger.
+**Token Economy → Document Forgery Detection** (`/super-admin/tokens?tab=document-forgery`) shows analyses, input/output tokens, pixel pages/time, and separate token/inference costs. Blank rates mean unpriced, not free; zero explicitly means free. Rates are snapshotted for each new analysis and never reprice history. The pixel rate is USD per worker hour of measured inference, excluding loading, queueing and idle infrastructure. Uploads are attributed to the authenticated Admin’s tenant; the browser cannot select another tenant. No document contents are saved to this cost ledger.
 
 Compose sets `TENANT_SERVICE_URL=http://tenant-service:8001`. Both services require the same nonempty `INTERNAL_API_SECRET` in the root `.env`. Settings refresh within five seconds; after cache expiry, an unavailable policy returns 503 instead of bypassing saved restrictions. Usage writes retry once using a stable analysis ID; failed writes are logged and do not fail the analysis. This is best-effort operational costing, not a billing-grade delivery guarantee. Earlier analyses are not backfilled.
 
 New settings and usage tables are created by tenant-service's existing startup migration. Restart/rebuild tenant-service, api-gateway, frontend and both forgery services when deploying these changes. MinIO is optional and is only started with the `storage` profile; neither runtime policy nor this cost ledger needs a MinIO license.
 
-For standalone engine/CLI use without the platform, leave `TENANT_SERVICE_URL` unset; environment configuration and the packaged reference thresholds apply, without central cost metering.
+For standalone engine/CLI use without the platform, leave `TENANT_SERVICE_URL` and `DOCS_FORGERY_DATABASE_URL` unset; environment configuration and the packaged reference thresholds apply, without central cost metering.
 
 ## Service API
+
+Only tenant-service/internal tooling should call the engine directly. `/health` remains available for liveness; `/analyze`, `/performance` and `/metrics` reject missing or incorrect `X-Internal-Secret`, and fail closed when the secret is unset. The CLI works without HTTP authentication.
 
 This FastAPI service lives at `microservices/backend-microservices/docs-forgery`.
 The existing `docforensics` package supplies detection logic; `main.py` supplies the HTTP interface.
@@ -45,12 +45,13 @@ From the repository root:
 docker compose up -d --build docs-forgery
 curl http://localhost:8032/health
 curl -X POST http://localhost:8032/analyze \
+  -H "X-Internal-Secret: $INTERNAL_API_SECRET" \
   -F 'file=@statement.pdf' -F 'doc_type=bank_statement'
 ```
 
 Interactive API documentation: [Swagger UI](http://localhost:8032/docs).
 Containers on `insurance-net` call `http://docs-forgery:8022`. The host port is bound to loopback.
-This service has no database of its own and the public analysis API has no authentication.
+This service owns the `docs_forgery` schema in the existing PostgreSQL database; it does not use a separate database. Its analysis and metrics HTTP endpoints require the shared internal service secret.
 In Compose, tenant-service supplies SuperAdmin policy and persists cost records. Automatic document-upload processing is not yet connected.
 
 `POST /analyze` accepts multipart form fields:
@@ -83,6 +84,7 @@ For example:
 
 ```sh
 curl -X POST http://localhost:8032/analyze \
+  -H "X-Internal-Secret: $INTERNAL_API_SECRET" \
   -F 'file=@statement.pdf' -F 'doc_type=bank_statement' \
   -F 'layer2=true' -F 'provider=gemini'
 ```
@@ -182,7 +184,7 @@ a.report.verdict, a.report.layer2_status, a.report.sorted_findings()
 
 ## Performance metrics
 
-Open [the runtime dashboard](http://localhost:3012/performance) for per-configuration latency,
+Open [the runtime dashboard](http://localhost:3000/super-admin/document-forgery/performance) for per-configuration latency,
 P50/P95, completion, HTTP outcomes and process peak-memory measurements. Reports include total
 and per-layer analysis time, model calls/tokens and pixel processing counts.
 `GET /performance` returns aggregate JSON; `GET /metrics` returns Prometheus-compatible output.

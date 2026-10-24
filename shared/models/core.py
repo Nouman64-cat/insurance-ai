@@ -4071,7 +4071,7 @@ class DocumentForgeryConfig(SQLModel, table=True):
 
 
 class DocumentForgeryUsage(SQLModel, table=True):
-    """One public test analysis; no document contents. Rates are snapshotted at execution."""
+    """One metered analysis; no document contents. Rates are snapshotted at execution."""
     __tablename__ = "document_forgery_usage"
     id: UUID = Field(primary_key=True)
     details: dict = Field(sa_column=Column(JSONB, nullable=False))

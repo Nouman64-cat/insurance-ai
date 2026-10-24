@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 
 // Fixed upstream and resource allowlist. The tenant service enforces SuperAdmin RBAC.
 async function proxy(request: NextRequest, {params}: {params:{resource:string}}) {
-  if (!["config", "usage"].includes(params.resource) || (request.method === "PUT" && params.resource !== "config")) return new Response(null,{status:404});
+  if (!["config", "usage", "performance"].includes(params.resource) || (request.method === "PUT" && params.resource !== "config")) return new Response(null,{status:404});
   const authorization = request.headers.get("authorization");
   if (!authorization) return Response.json({detail:"Authentication required"},{status:401});
   const base = process.env.API_GATEWAY_INTERNAL_URL || "http://localhost:8010";

@@ -23,6 +23,9 @@ RUN python -m venv /opt/pixel-venv \
 COPY --from=model-assets /opt/trufor /opt/trufor
 RUN /opt/pixel-venv/bin/python -c "import torch, torchvision, timm, yacs; print('CPU pixel runtime ready:', torch.__version__)"
 
+COPY requirements-storage.txt .
+RUN pip install --no-cache-dir -r requirements-storage.txt
+
 COPY . .
 EXPOSE 8022
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8022"]

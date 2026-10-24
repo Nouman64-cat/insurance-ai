@@ -336,6 +336,7 @@ const NAV_ITEMS = [
   {
     group: "Admin",
     links: [
+      {href:"/admin/document-intelligence",label:"Document Intelligence",icon:<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path d="M6 3h9l4 4v14H6zM9 12h7M9 16h5" /></svg>,badge:null,adminOnly:true},
       {
         href: "/admin/rule-engine",
         label: "Rule Engine",

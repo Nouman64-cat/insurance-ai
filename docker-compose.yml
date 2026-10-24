@@ -166,6 +166,7 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_REGION: ${AWS_REGION}
       S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+      DOCS_FORGERY_URL: ${DOCS_FORGERY_URL:-http://docs-forgery:8022}
       OCR_ENGINE_URL: http://ocr-engine:8004
       RISK_ENGINE_URL: http://risk-engine:8002
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
@@ -274,7 +275,14 @@ services:
       context: ./microservices/backend-microservices/docs-forgery
       dockerfile: Dockerfile
     container_name: insurance-docs-forgery
+    env_file:
+      - path: .env.docs-forgery # Private to this service; no shared database-owner credentials
+        required: false
     environment:
+      DOCS_FORGERY_DATABASE_URL: ${DOCS_FORGERY_DATABASE_URL:-}
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
       TENANT_SERVICE_URL: http://tenant-service:8001
       WATCHFILES_FORCE_POLLING: "true"
       PIXEL_PYTHON: /opt/pixel-venv/bin/python
@@ -288,7 +296,7 @@ services:
       - ./microservices/backend-microservices/docs-forgery:/app
     depends_on:
       tenant-service:
-        condition: service_started # SuperAdmin policy and usage ledger; storage is optional
+        condition: service_started # SuperAdmin policy and usage ledger
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8022/health')"]
       interval: 15s
@@ -296,7 +304,22 @@ services:
       retries: 5
       start_period: 30s
 
-  # Public test UI (no sign-in) for the document forensics service.
+  # Explicit one-off DDL job. Owner credentials are never injected into the docs-forgery runtime.
+  docs-forgery-provision:
+    profiles: ["tools"]
+    image: insurance-ai-docs-forgery
+    restart: "no"
+    networks: [insurance-net]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    env_file:
+      - .env
+      - path: .env.docs-forgery
+        required: false
+    volumes:
+      - ./microservices/backend-microservices/docs-forgery:/app
+    command: ["python", "scripts/provision_results.py"]
+
+  # Legacy entrypoint linking to the authenticated Admin workspace.
   forgery-detection-app:
     build:
       context: ./microservices/frontend-microservices/forgery-detection-app
@@ -313,7 +336,7 @@ services:
       - /app/node_modules
       - /app/.next
     environment:
-      DOCS_FORGERY_URL: http://docs-forgery:8022
+      PORTAL_URL: http://localhost:3000
       WATCHPACK_POLLING: "true"
       NEXT_TELEMETRY_DISABLED: "1"
     depends_on:

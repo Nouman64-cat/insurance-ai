@@ -389,3 +389,6 @@ app.include_router(eval_jobs_internal_router)   # the worker's side: shared secr
 
 from routers.document_forgery import router as document_forgery_router
 app.include_router(document_forgery_router)
+
+from routers.document_intelligence import router as document_intelligence_router
+app.include_router(document_intelligence_router)

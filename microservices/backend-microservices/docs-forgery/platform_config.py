@@ -41,7 +41,7 @@ def configuration():
             raise HTTPException(503, "Document Forgery Detection configuration is unavailable. Try again shortly.") from exc
 
 
-def record_usage(analysis, client, config):
+def record_usage(analysis, client, config, tenant_id=None):
     url = os.getenv("TENANT_SERVICE_URL", "").rstrip("/")
     if not url or config is None:
         return
@@ -49,7 +49,7 @@ def record_usage(analysis, client, config):
     provider = settings["provider"]
     calls = getattr(client, "calls", []) if client else []
     perf = analysis.performance or {}
-    body = {"id": str(uuid4()), "models": [
+    body = {"id": str(uuid4()), "tenant_id": tenant_id, "models": [
         {"model": c.model, "input_tokens": c.tokens_in, "output_tokens": c.tokens_out,
          "input_rate": settings.get(provider + "_input_per_million"),
          "output_rate": settings.get(provider + "_output_per_million")}

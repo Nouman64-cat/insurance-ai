@@ -1,5 +1,6 @@
 """HTTP boundary tests; provider calls remain offline."""
 
+import os
 import unittest
 from unittest.mock import patch
 
@@ -13,7 +14,9 @@ from .test_layer2 import INVOICE_LINES, text_pdf
 
 class ApiTests(unittest.TestCase):
     def setUp(self):
-        self.client = TestClient(main.app)
+        auth = patch.dict(os.environ, {"INTERNAL_API_SECRET":"test-internal"})
+        auth.start(); self.addCleanup(auth.stop)
+        self.client = TestClient(main.app, headers={"X-Internal-Secret":"test-internal"})
 
     def test_health(self):
         with patch.object(main, "availability", return_value=(True, "")):

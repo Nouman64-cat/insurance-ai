@@ -38,7 +38,7 @@ export default function DocumentForgerySettings() {
   };
   if (allowed === false) return <div className="p-8">{tx("Access Denied")}</div>;
   return <main className="mx-auto max-w-5xl space-y-6 p-6">
-    <header><p className="text-xs font-semibold uppercase tracking-widest text-blue-600">{tx("SuperAdmin")}</p><h1 className="mt-1 text-2xl font-semibold">{tx("Document Forgery Detection")}</h1><p className="mt-2 text-sm text-slate-500">{tx("Manage analysis limits, pixel thresholds and cost rates for the public testing service.")}</p><Link href="/super-admin/tokens?tab=document-forgery" className="mt-3 inline-block text-sm text-blue-600">{tx("View costs in Token Economy")} →</Link></header>
+    <header><p className="text-xs font-semibold uppercase tracking-widest text-blue-600">{tx("SuperAdmin")}</p><h1 className="mt-1 text-2xl font-semibold">{tx("Document Forgery Detection")}</h1><p className="mt-2 text-sm text-slate-500">{tx("Manage analysis limits, pixel thresholds and cost rates for the Admin service.")}</p><Link href="/super-admin/document-forgery/performance" className="mr-6 mt-3 inline-block text-sm text-blue-600">Runtime and quality metrics →</Link><Link href="/super-admin/tokens?tab=document-forgery" className="mt-3 inline-block text-sm text-blue-600">{tx("View costs in Token Economy")} →</Link></header>
     {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-red-700">{error}</p>}
     {success && <p role="status" className="rounded-xl bg-emerald-50 p-4 text-emerald-700">{success}</p>}
     {!draft ? <p>{tx("Loading settings…")}</p> : <form className="space-y-6" onSubmit={e => {e.preventDefault(); void save();}}>
@@ -48,7 +48,7 @@ export default function DocumentForgerySettings() {
         {(['gemini_model','groq_model'] as const).map(key => <label key={key} className="text-sm">{key === 'gemini_model' ? 'Gemini model' : 'Groq model'}<input required maxLength={100} pattern="[a-zA-Z0-9./_-]+" className={field} value={draft[key]} onChange={e => update(key,e.target.value)} /></label>)}
         <label className="text-sm">{tx("Maximum pages per analysis")}<input type="number" required min={1} max={40} className={field} value={draft.max_pages} onChange={e => update('max_pages',Number(e.target.value))} /></label>
         <label className="text-sm">{tx("Pixel worker timeout (seconds)")}<input type="number" required min={30} max={540} className={field} value={draft.pixel_timeout_seconds} onChange={e => update('pixel_timeout_seconds',Number(e.target.value))} /></label></div>
-        <p className="text-xs leading-5 text-slate-500">{tx("Layer 1 always runs. Layers 2 and 3 remain opt-in for each upload. Provider credentials come from the service environment; keys are never exposed here. Public test usage is charged to the platform.")}</p>
+        <p className="text-xs leading-5 text-slate-500">{tx("Layer 1 always runs. Layers 2 and 3 remain opt-in for each upload. Provider credentials come from the service environment; keys are never exposed here. Usage is attributed to the signed-in Admin’s tenant.")}</p>
       </fieldset>
       <fieldset disabled={saving} className={card}><legend className="px-2 font-semibold">{tx("Pixel anomaly thresholds")}</legend>
         <label className="block text-sm">{tx("Threshold source")}<select className={field} value={draft.threshold_mode} onChange={e => update('threshold_mode',e.target.value)}><option value="reference">{tx("Packaged reference baseline")}</option><option value="manual">{tx("SuperAdmin manual override")}</option></select></label>

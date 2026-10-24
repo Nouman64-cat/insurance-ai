@@ -143,7 +143,7 @@ insurance-ai/
 │   │   ├── underwriting-app/     # Next.js Underwriting Workbench (queue, case workspace), own container, :3005
 │   │   ├── request-management-app/ # Next.js Request Management app, :3007 (run separately)
 │   │   ├── customer-service-app/ # Next.js Customer Service desk, :3008
-│   │   ├── forgery-detection-app/ # Public document forensics test UI, :3012
+│   │   ├── forgery-detection-app/ # Legacy link to protected Admin workspace, :3012
 │   │   ├── claims-manager-app/   # Next.js Claims Manager app, :3011
 │   │   ├── customer-portal/      # Next.js customer self-service portal
 │   │   ├── marketing-site/       # Next.js public marketing site (demo content, :3002)
@@ -480,7 +480,7 @@ A physical device must use an address reachable from the device rather than `loc
 | Decision Engine | http://localhost:8013 |
 | OCR Engine      | http://localhost:8014 |
 | Document Forensics | http://localhost:8032/docs |
-| Forgery Detection UI | http://localhost:3012 (public, no login) |
+| Admin Document Intelligence | http://localhost:3000/admin/document-intelligence |
 | Text Summarizer | Internal Docker service `text-summarizer:8005`, via the authenticated API Gateway |
 | Chat Agent      | http://localhost:8016 |
 | Customer Service App | http://localhost:3008 |
@@ -556,57 +556,31 @@ In `ENV_VAR=demo`, tenant Admin users can use **Fill demo data** in Customer Ser
 clearly marked sample tickets with replies, internal notes, and overdue examples. Repeated fills do not
 duplicate or overwrite tickets. Samples do not link to or modify real customer/policy records.
 
-## Document Forensics Service
+## Document Intelligence (Admin)
 
-The [docs-forgery microservice](microservices/backend-microservices/docs-forgery/README.md)
-checks financial PDFs and images for editing traces and content inconsistencies.
-Document uploads do not yet invoke it automatically. In Compose, tenant-service supplies SuperAdmin policy and the cost ledger.
+Sign in as a tenant **Admin**, then open **Admin → [Document Intelligence](http://localhost:3000/admin/document-intelligence)**. Upload a document, select the permitted analysis layers and review or download the report. **Saved analyses** lists your organisation's history and reopens stored reports. This page is for tenant Admins; SuperAdmins retain the separate configuration and costing controls.
 
-```sh
-docker compose up -d --build docs-forgery
-curl http://localhost:8032/health
-curl -X POST http://localhost:8032/analyze -F 'file=@statement.pdf' -F 'doc_type=bank_statement'
-```
-
-Docker-network callers use `http://docs-forgery:8022`; the host API is loopback-bound at
-`http://localhost:8032`. Layer 1 runs locally by default. Opt into Layer 2 with `layer2=true`
-and `provider=gemini` or `provider=groq`, with the corresponding API key in the root `.env`;
-this sends document pages to that provider. Its provider configuration is separate from
-the platform LLM settings. Optional local TruFor analysis uses the CPU runtime and TruFor weights bundled in the
-backend image. Its first build downloads these assets. The UI displays per-page model scores
-and anomaly heatmaps with provisional cutoffs measured from public reference documents.
-The UI displays the cutoffs and their limitations; customer-document calibration still
-requires representative genuine and forged evaluation data.
-Reports contain evidence for review; `no_evidence` does not establish authenticity.
-
-### Public Forgery Detection UI
-
-The [Forgery Detection frontend](microservices/frontend-microservices/forgery-detection-app/README.md)
-provides a public, unauthenticated testing workspace with document upload, analysis-layer
-options, findings and evidence, layer-failure notes, and JSON report download.
+The old port 3012 workspace now links to the Admin portal. Its upload and performance proxy endpoints return 401. The detection engine requires `X-Internal-Secret` for analysis and metrics; browser clients never receive that secret. The portal forwards the user's JWT through API Gateway, and tenant-service checks role, active account and tenant ownership before analysis or history access.
 
 ```sh
-docker compose build docs-forgery forgery-detection-app
-docker compose up -d docs-forgery forgery-detection-app
+docker compose build tenant-service api-gateway frontend docs-forgery forgery-detection-app
+docker compose up -d tenant-service api-gateway frontend docs-forgery forgery-detection-app
 ```
 
-Open [http://localhost:3012](http://localhost:3012). Compose also starts the detection backend.
-Port 3012 is exposed on the host's network interfaces; no internet domain or tunnel is
-provisioned. The frontend streams requests through its own `/api/analyze` route to
-`docs-forgery:8022` using the server-only `DOCS_FORGERY_URL` setting. No sign-in or API
-Gateway session is required. File checks are local by default. Content checks require
-explicit consent in the UI and the selected provider's backend API key; public visitors
-can invoke those checks with the configured backend credentials.
+The shared nonempty `INTERNAL_API_SECRET` is required in `.env`. Results are owned by docs-forgery in the `docs_forgery` schema of the same database; run the explicit [schema provisioning/migration](microservices/backend-microservices/docs-forgery/docs/SCHEMA_OWNERSHIP.md#provisioning-and-migration) before starting analysis. The detection runtime and TruFor weights remain in the docs-forgery image. Automatic analysis of other document uploads is not connected.
 
-Manage thresholds, enabled layers, provider/model names, page/time limits and rates under **SuperAdmin → [Document Forgery Detection](http://localhost:3000/super-admin/document-forgery)**. Costs appear in the new **[Token Economy → Document Forgery Detection](http://localhost:3000/super-admin/tokens?tab=document-forgery)** tab. Both require SuperAdmin sign-in. Blank rates are shown as unpriced; rates are snapshotted per analysis. Pixel inference is costed by measured worker time, separately from provider tokens. The services need a shared nonempty `INTERNAL_API_SECRET`. Settings apply to new requests within five seconds. See the [service README](microservices/backend-microservices/docs-forgery/README.md#superadmin-policy-and-token-economy) for persistence and metering limitations.
+### Saved reports
 
-### Forgery Detection performance metrics
+PostgreSQL table `docs_forgery.document_intelligence_results` stores the tenant, uploading admin, filename, SHA-256, file size, requested options, timestamps, status, verdict and complete report JSON, including findings, evidence, heatmaps and performance measurements. Original document bytes are not retained. Analyses are recorded before execution and are marked completed, incomplete or failed; success is returned only after the report is committed. Interrupted service processes can leave a processing record; check history before retrying. Retention follows database backup/administration policies; there is no automatic report deletion.
 
-Open [http://localhost:3012/performance](http://localhost:3012/performance) for runtime metrics.
-Reports include per-layer latency and model usage. The service exposes aggregate JSON at
-`http://localhost:8032/performance` and Prometheus-compatible metrics at
-`http://localhost:8032/metrics`. Metrics are process-local and reset on restart.
+History queries and report downloads are restricted to the signed-in Admin's tenant. The API never accepts a browser-supplied tenant ID. API routes are `POST /document-intelligence/analyze`, `GET /document-intelligence/results`, and `GET /document-intelligence/results/{id}` through API Gateway. The main UI uses authenticated same-origin proxies under `/api/document-intelligence/`.
 
-The [benchmark runner and metric definitions](microservices/backend-microservices/docs-forgery/docs/PERFORMANCE_METRICS.md)
-cover HTTP latency/throughput and labelled precision, recall, F1, false-positive rate and
-coverage. Synthetic checks test functionality and must not be interpreted as real-world accuracy.
+### Configuration, costing and metrics
+
+SuperAdmins manage thresholds, enabled layers, provider/model names, page/time limits and rates under **[Document Forgery Detection](http://localhost:3000/super-admin/document-forgery)**. Costs appear in **[Token Economy → Document Forgery Detection](http://localhost:3000/super-admin/tokens?tab=document-forgery)**. Rates are snapshotted per analysis; blank means unpriced. Model tokens and local inference time are costed separately, and usage records include tenant attribution.
+
+The **[SuperAdmin performance dashboard](http://localhost:3000/super-admin/document-forgery/performance)** preserves runtime metrics and labelled quality report import. Runtime metrics are process-local and reset on restart. See [metric definitions and benchmarks](microservices/backend-microservices/docs-forgery/docs/PERFORMANCE_METRICS.md). Synthetic checks test functionality and do not establish detection accuracy.
+
+The [engine README](microservices/backend-microservices/docs-forgery/README.md) documents its API and limitations. Pixel thresholds remain provisional; reports provide evidence for human review, and `no_evidence` does not establish authenticity.
+
+Service APIs, credentials, database roles and tenant RLS are explained in [Schema ownership and secure communication](microservices/backend-microservices/docs-forgery/docs/SCHEMA_OWNERSHIP.md). Central settings/costs stay in tenant-service; results are read and written only by docs-forgery.

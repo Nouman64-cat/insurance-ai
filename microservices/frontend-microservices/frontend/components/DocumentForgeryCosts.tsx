@@ -18,7 +18,7 @@ export default function DocumentForgeryCosts({startDate,endDate}: {startDate:str
   },[startDate,endDate,revision]);
   const s=data?.summary;
   return <section className="space-y-6 py-6">
-    <div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="text-xl font-semibold">{tx("Document Forgery Detection")}</h2><p className="mt-2 text-sm text-slate-500">{tx("Platform public testing · model tokens and local pixel inference · USD")}</p></div><div className="flex gap-4 text-sm text-blue-600"><Link href="/super-admin/document-forgery">{tx("Configure rates and thresholds")}</Link><button onClick={() => setRevision(n=>n+1)}>{tx("Refresh")}</button></div></div>
+    <div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="text-xl font-semibold">{tx("Document Forgery Detection")}</h2><p className="mt-2 text-sm text-slate-500">{tx("Tenant Admin analyses · model tokens and local pixel inference · USD")}</p></div><div className="flex gap-4 text-sm text-blue-600"><Link href="/super-admin/document-forgery">{tx("Configure rates and thresholds")}</Link><button onClick={() => setRevision(n=>n+1)}>{tx("Refresh")}</button></div></div>
     {error && <p role="alert" className="rounded-lg bg-red-50 p-4 text-red-700">{error}</p>}
     {!s && !error && <p>{tx("Loading costs…")}</p>}
     {s && <><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{[

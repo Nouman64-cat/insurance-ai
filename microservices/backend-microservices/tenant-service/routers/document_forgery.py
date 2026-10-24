@@ -1,4 +1,4 @@
-"""Document forgery runtime policy and cost ledger (platform-wide public testing)."""
+"""Document forgery runtime policy and cost ledger (tenant Admin analysis)."""
 from datetime import date, datetime, time
 from typing import Literal
 from uuid import UUID
@@ -81,6 +81,7 @@ class ModelUsage(BaseModel):
 class Usage(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: UUID
+    tenant_id: UUID | None = None
     models: list[ModelUsage] = Field(default_factory=list, max_length=1000)
     pixel_pages: int = Field(default=0, ge=0, le=40)
     pixel_seconds: float = Field(default=0, ge=0, allow_inf_nan=False)
@@ -136,4 +137,19 @@ async def get_usage(start_date: date = Query(...), end_date: date = Query(...),
             for key in ("input_tokens", "output_tokens"):
                 summary[key] += m[key] or 0
                 bucket[key] += m[key] or 0
-    return {"summary": summary, "by_model": by_model, "currency": "USD", "scope": "platform_public_testing"}
+    return {"summary": summary, "by_model": by_model, "currency": "USD", "scope": "platform_admin_analysis"}
+
+
+@router.get("/platform/document-forgery/performance")
+async def performance(user=Depends(superadmin)):
+    import os
+    import httpx
+    secret = os.getenv("INTERNAL_API_SECRET", "").strip()
+    if not secret: raise HTTPException(503, "Internal service authentication is not configured")
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            result = await client.get(os.getenv("DOCS_FORGERY_URL", "http://docs-forgery:8022").rstrip("/") + "/performance", headers={"X-Internal-Secret":secret})
+            result.raise_for_status()
+        return result.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(503, "Performance metrics are temporarily unavailable") from exc

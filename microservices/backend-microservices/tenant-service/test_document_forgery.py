@@ -69,7 +69,7 @@ class ForgeryConfigTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status_code, 422, response.text)
 
     async def test_rbac_and_internal_fail_closed(self):
-        for path in ('/platform/document-forgery/config','/platform/document-forgery/usage?start_date=2026-01-01&end_date=2026-12-31'):
+        for path in ('/platform/document-forgery/config','/platform/document-forgery/performance','/platform/document-forgery/usage?start_date=2026-01-01&end_date=2026-12-31'):
             self.assertEqual((await self.http.get(path)).status_code, 401)
             for role in ('Admin','Viewer'):
                 self.assertEqual((await self.http.get(path, headers=self.headers[role])).status_code, 403)

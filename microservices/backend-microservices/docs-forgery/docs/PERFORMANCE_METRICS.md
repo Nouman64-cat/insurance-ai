@@ -1,6 +1,8 @@
+The dashboard requires SuperAdmin sign-in. Engine `/performance` and `/metrics` endpoints require `X-Internal-Secret`. The former public port 3012 analysis and metrics proxies are closed.
+
 # Performance metrics
 
-The [performance dashboard](http://localhost:3012/performance) displays measured runtime and
+The [performance dashboard](http://localhost:3000/super-admin/document-forgery/performance) displays measured runtime and
 completion statistics. Each analysis also includes a `performance` object, rendered in its
 report and included in JSON downloads. Use **Load benchmark JSON** in the Detection quality section to display a generated benchmark
 report, its confusion matrix, coverage and quality metrics. The JSON is parsed locally in the
@@ -115,3 +117,7 @@ The benchmark assesses **the complete verdict pipeline**, not pixel localization
 Uncalibrated pixel scores do not affect verdicts. Pixel-mask IoU/AUC and calibrated score quality
 need a separate ground-truth mask/score dataset. Do not tune thresholds on the held-out evaluation
 set or present synthetic or previously tuned development results as insurance-submission accuracy.
+
+## Authenticated benchmarks
+
+For a private engine benchmark, set `INTERNAL_API_SECRET` in the process environment. For tenant Admin analysis (which persists results), use `--admin --url http://localhost:8010` and set `DOCUMENT_INTELLIGENCE_TOKEN` to an existing tenant Admin JWT. The script reads credentials from environment variables rather than command-line arguments. `--frontend` is retired. Benchmark inputs may be sent to a model provider when `--layer2` is enabled; use non-sensitive evaluation data. Persisted benchmark runs remain in that tenant's history.

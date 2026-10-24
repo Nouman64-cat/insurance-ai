@@ -144,7 +144,7 @@ TENANT_SERVICE_URL = os.environ.get("TENANT_SERVICE_URL", "http://tenant-service
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 
-async def _proxy_to_tenant(request: Request, url: str) -> Response:
+async def _proxy_to_tenant(request: Request, url: str, timeout: float = 120.0) -> Response:
     async with httpx.AsyncClient(follow_redirects=True) as client:
         headers = dict(request.headers)
         headers.pop("host", None)
@@ -156,7 +156,7 @@ async def _proxy_to_tenant(request: Request, url: str) -> Response:
                 headers=headers,
                 params=request.query_params,
                 content=body,
-                timeout=120.0,
+                timeout=timeout,
             )
             resp_headers = dict(resp.headers)
             # Strip CORS headers from upstream tenant-service to prevent duplicate CORS headers
@@ -1282,3 +1282,8 @@ async def proxy_platform_agent_config(request: Request):
 @app.api_route("/platform/document-forgery/{path:path}", methods=["GET", "PUT", "OPTIONS"], include_in_schema=False)
 async def proxy_document_forgery(request: Request, path: str):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/platform/document-forgery/{path}")
+
+
+@app.api_route("/document-intelligence/{path:path}", methods=["GET", "POST", "OPTIONS"], include_in_schema=False)
+async def proxy_document_intelligence(request: Request, path: str):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/document-intelligence/{path}", timeout=630.0)

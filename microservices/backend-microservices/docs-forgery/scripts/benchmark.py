@@ -1,5 +1,6 @@
 """Repeatable HTTP benchmark. Synthetic mode verifies function, never estimates accuracy."""
 
+import os
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import csv
@@ -39,8 +40,9 @@ def main(argv=None):
     sources = parser.add_mutually_exclusive_group(required=True)
     sources.add_argument("--labels", type=Path, help="CSV: path,label[,group]; labels genuine or forged")
     sources.add_argument("--synthetic", action="store_true", help="Two synthetic smoke cases; not an accuracy dataset")
-    parser.add_argument("--url", default="http://localhost:8032", help="Backend URL, or frontend URL with --frontend")
-    parser.add_argument("--frontend", action="store_true")
+    parser.add_argument("--url", default="http://localhost:8032", help="Private engine URL, or API Gateway URL with --admin")
+    parser.add_argument("--frontend", action="store_true", help="Removed public interface; use --admin instead")
+    parser.add_argument("--admin", action="store_true", help="Use authenticated /document-intelligence/analyze; reads DOCUMENT_INTELLIGENCE_TOKEN")
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--concurrency", type=int, choices=range(1, 33), default=1)
     parser.add_argument("--layer2", action="store_true", help="Send benchmark pages to the external model provider")
@@ -49,6 +51,12 @@ def main(argv=None):
     parser.add_argument("--max-pages", type=int, choices=range(1, 41), default=1)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
+    if args.frontend:
+        parser.error("The public frontend analysis endpoint is closed. Use --admin --url http://localhost:8010 and DOCUMENT_INTELLIGENCE_TOKEN.")
+    credential = os.getenv("DOCUMENT_INTELLIGENCE_TOKEN" if args.admin else "INTERNAL_API_SECRET", "").strip()
+    if not credential:
+        parser.error("Set DOCUMENT_INTELLIGENCE_TOKEN for --admin or INTERNAL_API_SECRET for a private engine benchmark")
+    headers = {"Authorization":"Bearer " + credential} if args.admin else {"X-Internal-Secret":credential}
     if args.repeat < 1:
         parser.error("--repeat must be positive")
     if args.synthetic:
@@ -62,8 +70,8 @@ def main(argv=None):
                   "path": args.labels.parent / r["path"]} for r in rows]
     settings = {"layer2": str(args.layer2).lower(), "layer3": str(args.layer3).lower(),
                 "provider": args.provider, "max_pages": str(args.max_pages), "visual": "false"}
-    endpoint = args.url.rstrip("/") + ("/api/analyze" if args.frontend else "/analyze")
-    with httpx.Client(timeout=660) as client:
+    endpoint = args.url.rstrip("/") + ("/document-intelligence/analyze" if args.admin else "/analyze")
+    with httpx.Client(timeout=660, headers=headers) as client:
         def run(case):
             started = time.perf_counter()
             result = {"name": case["name"], "label": case["label"], "group": case["group"], "complete": False}
@@ -72,7 +80,7 @@ def main(argv=None):
                 response = client.post(endpoint, files={"file": (case["name"], payload)}, data=settings)
                 result["http_status"] = response.status_code
                 if response.status_code == 200:
-                    report = response.json()
+                    report = response.json()["report"] if args.admin else response.json()
                     result.update(verdict=report["verdict"], complete=report.get("performance", {}).get("complete", False),
                                   performance=report.get("performance"), errors=report.get("errors", []))
                 else:

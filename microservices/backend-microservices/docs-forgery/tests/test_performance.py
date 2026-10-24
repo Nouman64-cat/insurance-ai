@@ -71,8 +71,9 @@ class RuntimeTests(unittest.TestCase):
         from fastapi.testclient import TestClient
         from tests.test_layer2 import INVOICE_LINES, text_pdf
         collector = Metrics()
-        with patch.object(main, "metrics", collector):
-            client = TestClient(main.app)
+        import os
+        with patch.object(main, "metrics", collector), patch.dict(os.environ,{"INTERNAL_API_SECRET":"test-internal"}):
+            client = TestClient(main.app, headers={"X-Internal-Secret":"test-internal"})
             response = client.post("/analyze", files={"file": ("invoice.pdf", text_pdf(INVOICE_LINES))})
             self.assertTrue(response.json()["performance"]["complete"])
             client.post("/analyze", files={"file": ("empty.pdf", b"")})
