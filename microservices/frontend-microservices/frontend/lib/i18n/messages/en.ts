@@ -95,6 +95,7 @@ const en = {
     "AI Agents": "AI Agents",
     "LLM Configuration": "LLM Configuration",
     "Golden Datasets": "Golden Datasets",
+    "AI Evaluation Center": "AI Evaluation Center",
     "Evaluation Datasets": "Evaluation Datasets",
     "Templates": "Templates",
     "Drift Monitor": "Drift Monitor",

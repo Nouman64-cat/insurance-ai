@@ -18,9 +18,16 @@ const nextConfig = {
   // Lets client code tell demo from prod (see lib/envMode.ts).
   env: { NEXT_PUBLIC_ENV_VAR: process.env.ENV_VAR || "" },
   async redirects() {
+    // The AI Evaluation Center replaced three sidebar pages. The old addresses keep working (bookmarks, links in notices): a real HTTP redirect, query string kept.
+    const evaluationCenter = [
+      { source: "/super-admin/datasets", destination: "/super-admin/evaluation/datasets", permanent: false },
+      { source: "/super-admin/drift-monitor", destination: "/super-admin/evaluation/drift", permanent: false },
+      { source: "/super-admin/llm-benchmarking", destination: "/super-admin/evaluation/benchmarking", permanent: false },
+    ];
     // Pointing the workbench at the portal itself would redirect these pages to themselves forever.
-    if (new URL(UNDERWRITING_URL).origin === new URL(PORTAL_URL).origin) return [];
+    if (new URL(UNDERWRITING_URL).origin === new URL(PORTAL_URL).origin) return evaluationCenter;
     return [
+      ...evaluationCenter,
       ...UNDERWRITING_ROUTES.flatMap((route) => [
         { source: route, destination: `${UNDERWRITING_URL}${route}`, permanent: false },
         { source: `${route}/:path*`, destination: `${UNDERWRITING_URL}${route}/:path*`, permanent: false },

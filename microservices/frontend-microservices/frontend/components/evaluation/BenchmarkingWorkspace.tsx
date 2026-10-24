@@ -6,6 +6,7 @@ import LiveRun from "@/components/benchmarking/LiveRun";
 import Results from "@/components/benchmarking/Results";
 import SetupPanel from "@/components/benchmarking/SetupPanel";
 import { tx } from "@/lib/i18n/tx";
+import { useQueryState } from "@/lib/useQueryState";
 import { cancelJob, listJobs, rerunJob, runsOfJob, usd, type Job } from "@/lib/evalBenchmarks";
 
 type Tab = "new" | "live" | "results" | "jobs";
@@ -70,10 +71,13 @@ function JobsTab({ onOpen, onResults, onRerun }: { onOpen: (j: Job) => void; onR
   );
 }
 
-export default function LlmBenchmarkingPage() {
-  const [tab, setTab] = useState<Tab>("new");
+export default function BenchmarkingWorkspace() {
+  const [tabParam, setTab] = useQueryState("view", "new");
   const [job, setJob] = useState<Job | null>(null);
-  const [benchmarkId, setBenchmarkId] = useState<string | null>(null);
+  const tab = (["new", "results", "jobs"].includes(tabParam) || (tabParam === "live" && job) ? tabParam : "new") as Tab;
+  const [benchmarkParam, setBenchmark] = useQueryState("benchmark");
+  const benchmarkId = benchmarkParam || null;
+  const setBenchmarkId = (id: string | null) => setBenchmark(id ?? "");
 
   const openJob = (j: Job) => { setJob(j); setTab("live"); };
   const openResults = (id: string) => { setBenchmarkId(id); setTab("results"); };
@@ -88,7 +92,7 @@ export default function LlmBenchmarkingPage() {
   return (
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full min-w-0 overflow-x-hidden font-sans">
       <div>
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Model Benchmarking")}</h1>
+        <h2 className="text-xl font-bold text-slate-900 tracking-tight">{tx("Model Benchmarking")}</h2>
         <p className="text-sm text-slate-500 mt-0.5 max-w-3xl">
           {tx("Compare GPT, Gemini and Claude on the published evaluation datasets: pick the models, see the cost before you spend it, watch the run, then compare accuracy, reliability, speed and cost side by side.")}
         </p>

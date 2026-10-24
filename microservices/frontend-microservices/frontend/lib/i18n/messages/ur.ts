@@ -97,6 +97,7 @@ const ur: Messages = {
     "AI Agents": "اے آئی ایجنٹس",
     "LLM Configuration": "LLM کنفیگریشن",
     "Golden Datasets": "گولڈن ڈیٹا سیٹس",
+    "AI Evaluation Center": "اے آئی ایویلیویشن سینٹر",
     "Evaluation Datasets": "جائزہ ڈیٹا سیٹس",
     "Templates": "ٹیمپلیٹس",
     "Drift Monitor": "ڈرفٹ مانیٹر",

@@ -454,8 +454,8 @@ const NAV_ITEMS = [
         superAdminOnly: true,
       },
       {
-        href: "/super-admin/datasets",
-        label: "Evaluation Datasets",
+        href: "/super-admin/evaluation",
+        label: "AI Evaluation Center",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
             <ellipse cx="12" cy="5" rx="8" ry="3" />
@@ -474,31 +474,6 @@ const NAV_ITEMS = [
             <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
             <path d="M14 3v6h6" />
             <path d="M8 13h8M8 17h5" />
-          </svg>
-        ),
-        badge: null,
-        superAdminOnly: true,
-      },
-      {
-        href: "/super-admin/drift-monitor",
-        label: "Drift Monitor",
-        icon: (
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-            <path d="M3 12h4l3-8 4 16 3-8h4" />
-          </svg>
-        ),
-        badge: null,
-        superAdminOnly: true,
-      },
-      {
-        href: "/super-admin/llm-benchmarking",
-        label: "Model Benchmarking",
-        icon: (
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-            <path d="M4 20V10" />
-            <path d="M10 20V4" />
-            <path d="M16 20v-7" />
-            <path d="M22 20H2" />
           </svg>
         ),
         badge: null,
@@ -630,6 +605,7 @@ const SECTION_PAGES: { prefix: string; href: string }[] = [
   { prefix: "/case/", href: "/underwriting?tab=pre-underwriting" },
   { prefix: "/post-issuance/", href: "/policy-issuance" },
   { prefix: "/claims/", href: "/claims/register" },
+  { prefix: "/super-admin/evaluation/", href: "/super-admin/evaluation" },
 ];
 
 function activeSidebarHref(pathname: string, searchParams: { get(name: string): string | null }): string {
@@ -821,7 +797,7 @@ export function Sidebar() {
   }));
 
   const workingHrefs = ["/customer-service", "/acr", "/profile", "/cases", "/requests", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/underwriting", "/admin/users", "/admin/leads", "/admin/policyholders", "/plans", "/financial", "/claims", "/claims/dashboard", "/claims/register"];
-  const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/roles", "/super-admin/tokens", "/super-admin/ai-agents", "/super-admin/llm-config", "/super-admin/datasets", "/super-admin/templates", "/super-admin/drift-monitor", "/super-admin/llm-benchmarking", "#security-compliance"];
+  const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/roles", "/super-admin/tokens", "/super-admin/ai-agents", "/super-admin/llm-config", "/super-admin/evaluation", "/super-admin/templates", "#security-compliance"];
 
   const financeIcon = (path: string) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d={path}/></svg>;
   const financeLinks = [

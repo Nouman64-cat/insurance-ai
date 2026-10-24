@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { tx } from "@/lib/i18n/tx";
+import { useQueryState } from "@/lib/useQueryState";
 import {
   KIND_LABEL, decide, getDraft, getItem, getKnowledge, getOverview, getRegistry, getVersions, listItems, listScans, parseExpected, scanNow, syncKnowledge,
   type DriftAction, type DriftHistory, type DriftItem, type DriftOverview, type KnowledgeRow, type ScanJob, type ScanRow, type WatchedItem, type WatchedVersion,
@@ -81,6 +83,12 @@ function ItemDrawer({ id, onClose, onChanged }: { id: string; onClose: () => voi
           <p className="mt-2 text-sm font-semibold text-slate-800">{item.summary}</p></div>
         <button type="button" className={btnGhost} onClick={onClose}>{tx("Close")}</button>
       </div>
+      <div className="flex flex-wrap gap-2 text-[11px]" data-testid="item-links">
+        {item.dataset && <Link className="text-blue-600 hover:underline" href={`/super-admin/evaluation/datasets?dataset=${encodeURIComponent(item.dataset)}`}>{tx("Open the dataset")} ({item.dataset})</Link>}
+        {item.registry_item?.startsWith("template:") && <Link className="text-blue-600 hover:underline" href={`/super-admin/templates?key=${encodeURIComponent(item.registry_item.slice(9))}`}>{tx("Open the template")}</Link>}
+        {item.detail?.provenance?.template && <Link className="text-blue-600 hover:underline" href={`/super-admin/templates?key=${encodeURIComponent(String(item.detail.provenance.template))}`}>{tx("Open the template")}</Link>}
+        <Link className="text-blue-600 hover:underline" href="/super-admin/evaluation/benchmarking">{tx("Run a benchmark")}</Link>
+      </div>
       {item.affected_cases.length > 0 && <div><div className="text-[11px] font-bold text-slate-500 mb-1">{tx("Cases affected")}</div><div className="flex flex-wrap gap-1">{item.affected_cases.map((c) => <span key={c} className="px-2 py-0.5 rounded bg-slate-100 text-[11px] font-mono text-slate-600">{c}</span>)}</div></div>}
       {diff.length > 0 && (
         <div><div className="text-[11px] font-bold text-slate-500 mb-1">{tx("What changed")} (v{item.from_version} → v{item.to_version})</div>
@@ -106,11 +114,12 @@ function ItemDrawer({ id, onClose, onChanged }: { id: string; onClose: () => voi
 
 function Queue({ overview, onChanged }: { overview: DriftOverview | null; onChanged: () => void }) {
   const [items, setItems] = useState<DriftItem[]>([]);
-  const [state, setState] = useState("active");
-  const [kind, setKind] = useState("");
-  const [severity, setSeverity] = useState("");
-  const [q, setQ] = useState("");
-  const [open, setOpen] = useState<string | null>(null);
+  const [state, setState] = useQueryState("state", "active");
+  const [kind, setKind] = useQueryState("kind");
+  const [severity, setSeverity] = useQueryState("severity");
+  const [q, setQ] = useQueryState("q", "", { replace: true });
+  const [openId, setOpen] = useQueryState("item");
+  const open = openId || null;
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(() => listItems({ state: state === "all" ? "" : state, kind, severity, q }).then((r) => setItems(r.items)).catch((e) => setError(String(err(e)))), [state, kind, severity, q]);
   useEffect(() => { load(); }, [load]);
@@ -142,7 +151,7 @@ function Queue({ overview, onChanged }: { overview: DriftOverview | null; onChan
           </tbody>
         </table>
       </div>
-      {open && <ItemDrawer id={open} onClose={() => setOpen(null)} onChanged={() => { load(); onChanged(); }} />}
+      {open && <ItemDrawer id={open} onClose={() => setOpen("")} onChanged={() => { load(); onChanged(); }} />}
     </div>
   );
 }
@@ -225,8 +234,9 @@ function Knowledge() {
   );
 }
 
-export default function DriftMonitorPage() {
-  const [tab, setTab] = useState<Tab>("queue");
+export default function DriftWorkspace() {
+  const [tabParam, setTab] = useQueryState("view", "queue");
+  const tab = (["queue", "watched", "scans", "knowledge"].includes(tabParam) ? tabParam : "queue") as Tab;
   const [overview, setOverview] = useState<DriftOverview | null>(null);
   const [tick, setTick] = useState(0);
   const refresh = useCallback(() => { getOverview().then(setOverview).catch(() => undefined); setTick((t) => t + 1); }, []);
@@ -234,7 +244,7 @@ export default function DriftMonitorPage() {
   const tabs: [Tab, string][] = [["queue", "Review queue"], ["watched", "Watched items"], ["scans", "Scans"], ["knowledge", "Assistant knowledge"]];
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-5">
-      <div><h1 className="text-xl font-bold text-slate-900">{tx("Drift Monitor")}</h1>
+      <div><h2 className="text-xl font-bold text-slate-900">{tx("Drift Monitor")}</h2>
         <p className="text-xs text-slate-500 mt-1">{tx("Finds where the evaluation datasets may be out of date, and queues each finding for a person to decide. Nothing changes a golden case until you accept it and publish a new version.")}</p></div>
       {overview && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="overview">

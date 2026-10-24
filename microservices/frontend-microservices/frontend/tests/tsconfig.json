@@ -13,5 +13,5 @@
     "baseUrl": "..",
     "paths": { "@/*": ["./*"] }
   },
-  "include": ["./benchmarking.integration.ts", "./templates.integration.ts", "./drift.integration.ts", "./leadTemplate.unit.ts"]
+  "include": ["./benchmarking.integration.ts", "./templates.integration.ts", "./drift.integration.ts", "./navigation.regression.ts", "./leadTemplate.unit.ts"]
 }
