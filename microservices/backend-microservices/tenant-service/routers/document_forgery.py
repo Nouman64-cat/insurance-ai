@@ -23,18 +23,11 @@ class Settings(BaseModel):
     content_enabled: StrictBool = True
     pixel_enabled: StrictBool = True
     visual_enabled: StrictBool = True
-    provider: Literal["gemini", "groq"] = "gemini"
-    gemini_model: str = Field(default="gemini-2.5-flash", min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9./_-]+$")
-    groq_model: str = Field(default="meta-llama/llama-4-scout-17b-16e-instruct", min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9./_-]+$")
     max_pages: int = Field(default=4, ge=1, le=40)
     pixel_timeout_seconds: int = Field(default=300, ge=30, le=540)
     threshold_mode: Literal["reference", "manual"] = "reference"
     t95: float = Field(default=0.5256373882293701, ge=0, le=1)
     tmax: float = Field(default=0.7155507206916809, ge=0, le=1)
-    gemini_input_per_million: float | None = Field(default=None, ge=0, le=10000)
-    gemini_output_per_million: float | None = Field(default=None, ge=0, le=10000)
-    groq_input_per_million: float | None = Field(default=None, ge=0, le=10000)
-    groq_output_per_million: float | None = Field(default=None, ge=0, le=10000)
     pixel_per_hour: float | None = Field(default=None, ge=0, le=10000)
 
     @model_validator(mode="after")
@@ -45,7 +38,7 @@ class Settings(BaseModel):
 
 
 def view(row):
-    return {"settings": Settings.model_validate(row.settings).model_dump() if row else Settings().model_dump(),
+    return {"settings": Settings.model_validate({k: v for k, v in row.settings.items() if k in Settings.model_fields}).model_dump() if row else Settings().model_dump(),
             "updated_at": row.updated_at if row else None, "updated_by": row.updated_by if row else None,
             "propagation_seconds": 5}
 
@@ -66,12 +59,14 @@ async def put_config(body: Settings, user=Depends(superadmin), session: AsyncSes
 
 @router.get("/internal/document-forgery/config", dependencies=[Depends(require_internal_service)], include_in_schema=False)
 async def internal_config(session: AsyncSession = Depends(get_session)):
-    return view(await session.get(DocumentForgeryConfig, "default"))
+    from routers.llm_config import resolved_document_forgery
+    return {**view(await session.get(DocumentForgeryConfig, "default")), "llm": await resolved_document_forgery(session)}
 
 
 class ModelUsage(BaseModel):
     model_config = ConfigDict(extra="forbid")
     model: str = Field(max_length=100)
+    provider: str | None = Field(default=None, max_length=40)
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
     input_rate: float | None = Field(default=None, ge=0, allow_inf_nan=False)
@@ -132,8 +127,13 @@ async def get_usage(start_date: date = Query(...), end_date: date = Query(...),
         for key in ("pixel_pages", "pixel_seconds", "token_cost_usd", "pixel_cost_usd", "known_cost_usd", "unpriced_components"):
             summary[key] += d[key]
         for m in d["models"]:
-            bucket = by_model.setdefault(m["model"], dict(calls=0, input_tokens=0, output_tokens=0))
+            bucket = by_model.setdefault(m["model"], dict(calls=0, input_tokens=0, output_tokens=0, token_cost_usd=0.0, providers=[]))
             bucket["calls"] += 1
+            if m.get("provider") and m["provider"] not in bucket["providers"]:
+                bucket["providers"].append(m["provider"])
+            for count, rate in ((m.get("input_tokens"), m.get("input_rate")), (m.get("output_tokens"), m.get("output_rate"))):
+                if count is not None and rate is not None:
+                    bucket["token_cost_usd"] += count * rate / 1_000_000
             for key in ("input_tokens", "output_tokens"):
                 summary[key] += m[key] or 0
                 bucket[key] += m[key] or 0

@@ -87,7 +87,7 @@ docker compose exec docs-forgery python scripts/benchmark.py \
   --repeat 1 --concurrency 1 --out data/benchmarks/held-out.json
 ```
 
-Layer 2 is opt-in (`--layer2 --provider gemini` or `groq`); it sends labelled document pages to
+Layer 2 is opt-in (`--layer2 --provider gemini`, `openai` or `anthropic`, matching the dedicated model in SuperAdmin LLM Configuration); it sends labelled document pages to
 the configured external provider. A frontend benchmark can use `--url http://forgery-detection-app:3012
 --frontend`. Concurrency defaults to 1 and can be set from 1 to 32. Pixel inference is serialized
 within an API process to bound memory, so concurrent pixel requests include queueing latency.

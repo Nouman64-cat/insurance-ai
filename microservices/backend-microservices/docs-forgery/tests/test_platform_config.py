@@ -13,10 +13,10 @@ from docforensics.report import Report
 
 def config(**changes):
     settings = dict(enabled=True, content_enabled=True, pixel_enabled=True, visual_enabled=True,
-                    provider='gemini', gemini_model='test-model', groq_model='test-groq', max_pages=4,
+                    max_pages=4,
                     pixel_timeout_seconds=90, threshold_mode='manual', t95=.1, tmax=.2,
-                    gemini_input_per_million=2, gemini_output_per_million=4, pixel_per_hour=1)
-    return {'settings': settings | changes, 'updated_at':'2026-10-24T00:00:00'}
+                    pixel_per_hour=1)
+    return {'settings': settings | changes, 'llm': {'provider': changes.get('provider','gemini'), 'model':'test-model', 'api_key':'central-test-key', 'input_rate':2, 'output_rate':4, 'revision':'llm-v1'}, 'updated_at':'2026-10-24T00:00:00'}
 
 
 class PlatformTests(unittest.TestCase):
@@ -37,9 +37,9 @@ class PlatformTests(unittest.TestCase):
 
     def test_saved_model_timeout_and_thresholds_reach_engine(self):
         result = Analysis(Report('test.pdf','pdf','hash',10))
-        with patch.object(main,'analyze_document',return_value=result) as engine, patch.object(main,'make_client') as client:
+        with patch.object(main,'analyze_document',return_value=result) as engine, patch.object(main,'make_platform_client') as client:
             main._analyze(b'%PDF-123','test.pdf',None,True,main.Provider.gemini,False,2,True,config())
-        client.assert_called_once_with('gemini',model='test-model')
+        client.assert_called_once_with(config()['llm'])
         options = engine.call_args.kwargs['layer3_options']
         self.assertEqual(options.timeout_s,90)
         self.assertEqual(options.thresholds['tmax'],.2)
@@ -67,3 +67,22 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(first['pixel_seconds'],7.5)
         self.assertFalse(first['complete'])
         self.assertNotIn('file',first)
+
+    def test_missing_central_model_never_uses_environment_key(self):
+        client=TestClient(main.app,headers={"X-Internal-Secret":"test-internal"})
+        policy=config(); policy['llm']=None
+        with patch.dict(os.environ,{'GEMINI_API_KEY':'must-not-be-used'}), patch.object(main,'configuration',return_value=policy), patch.object(main,'make_platform_client') as provider:
+            response=client.post('/analyze',files={'file':('test.pdf',b'%PDF-123')},data={'layer2':'true'})
+            self.assertEqual(response.status_code,503)
+            provider.assert_not_called()
+            health=client.get('/health').json()
+            self.assertFalse(health['analysis_policy']['llm_ready'])
+            self.assertNotIn('api_key',str(health))
+
+    def test_health_does_not_expose_decrypted_key(self):
+        client=TestClient(main.app)
+        with patch.object(main,'configuration',return_value=config()):
+            health=client.get('/health').json()
+        self.assertTrue(health['analysis_policy']['llm_ready'])
+        self.assertEqual(health['analysis_policy']['model'],'test-model')
+        self.assertNotIn('central-test-key',str(health))

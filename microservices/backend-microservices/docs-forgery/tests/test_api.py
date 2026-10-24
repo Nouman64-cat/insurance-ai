@@ -39,7 +39,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(pixel["seconds"], 3.5)
 
     def test_real_pdf_defaults_to_local_analysis(self):
-        with patch.object(main, "make_client") as provider:
+        with patch.object(main, "make_platform_client") as provider:
             response = self.client.post("/analyze", files={"file": ("invoice.pdf", text_pdf(INVOICE_LINES))})
         self.assertEqual(response.status_code, 200, response.text)
         report = response.json()
@@ -66,16 +66,18 @@ class ApiTests(unittest.TestCase):
 
     def test_layer_failure_preserves_inconclusive_report_and_options(self):
         failed = Report("x.pdf", "pdf", "digest", 8, layer2_status="failed", incomplete=["layer2"])
-        with patch.object(main, "make_client") as provider, patch.object(
+        from tests.test_platform_config import config
+        policy=config(); policy["llm"]["provider"]="openai"
+        with patch.object(main,"configuration",return_value=policy), patch.object(main, "make_platform_client") as provider, patch.object(
             main, "analyze_document", return_value=Analysis(failed),
         ) as analyze:
             response = self.client.post("/analyze", files={"file": ("x.pdf", b"%PDF-123")},
-                                        data={"layer2": "true", "provider": "groq", "doc_type": "invoice",
+                                        data={"layer2": "true", "provider": "openai", "doc_type": "invoice",
                                               "max_pages": "2", "visual": "true", "layer3": "true"})
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["verdict"], "inconclusive")
         self.assertEqual(response.json()["incomplete"], ["layer2"])
-        provider.assert_called_once_with("groq")
+        provider.assert_called_once_with(policy["llm"])
         self.assertEqual(analyze.call_args.kwargs["options"].max_pages, 2)
         self.assertTrue(analyze.call_args.kwargs["options"].visual)
         self.assertTrue(analyze.call_args.kwargs["layer3"])

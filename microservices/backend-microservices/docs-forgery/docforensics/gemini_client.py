@@ -264,14 +264,14 @@ class RateLimiter:
 _sdk_clients: dict[tuple[str, float], Any] = {}
 
 
-def _sdk_transport(request: Request, settings: Settings) -> Reply:
+def _sdk_transport(request: Request, settings: Settings, *, api_key: str | None = None) -> Reply:
     try:
         from google import genai
         from google.genai import types
     except ImportError as exc:
         raise ConfigError("The 'google-genai' package is not installed. Run: pip install google-genai") from exc
 
-    key = os.environ.get("GEMINI_API_KEY", "").strip()
+    key = (api_key if api_key is not None else os.environ.get("GEMINI_API_KEY", "")).strip()
     if not key:
         raise ConfigError("GEMINI_API_KEY is not set. Add it to your .env file or the environment.")
     cache_key = (key, settings.timeout_s)

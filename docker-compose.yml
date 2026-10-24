@@ -281,8 +281,6 @@ services:
     environment:
       DOCS_FORGERY_DATABASE_URL: ${DOCS_FORGERY_DATABASE_URL:-}
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GROQ_API_KEY: ${GROQ_API_KEY:-}
       TENANT_SERVICE_URL: http://tenant-service:8001
       WATCHFILES_FORCE_POLLING: "true"
       PIXEL_PYTHON: /opt/pixel-venv/bin/python

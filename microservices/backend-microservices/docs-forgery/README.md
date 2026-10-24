@@ -21,15 +21,15 @@ Docs-forgery owns its result table. Provision it once with `docker compose --pro
 
 ## SuperAdmin policy and Token Economy
 
-Sign in to the main portal as SuperAdmin and open **Document Forgery Detection** (`/super-admin/document-forgery`). Configure service/layer availability, the content provider and model names, page limit, pixel timeout, threshold source, and USD rates. Credentials remain in the backend environment. Packaged reference mode uses the bundled calibration; manual overrides carry no calibration or validation claims. Pixel findings remain capped at LOW.
+Sign in to the main portal as SuperAdmin and open **Document Forgery Detection** (`/super-admin/document-forgery`). Configure service/layer availability, page limit, pixel timeout, threshold source, and the local pixel worker rate. Choose the content model and token rates separately in **SuperAdmin → LLM Configuration → Document Forgery Detection model** (`/super-admin/llm-config`). It supports Gemini, OpenAI and Anthropic vision models and reuses the encrypted provider key saved on that page. No provider key or model is read from the docs-forgery environment in the HTTP service. An explicit task selection is required; chat/OCR defaults and the old forgery model settings are not inherited. Missing or removed keys disable Layer 2 without disabling local Layers 1 and 3. There is no automatic cross-provider fallback. Packaged reference mode uses the bundled calibration; manual overrides carry no calibration or validation claims. Pixel findings remain capped at LOW.
 
 **Token Economy → Document Forgery Detection** (`/super-admin/tokens?tab=document-forgery`) shows analyses, input/output tokens, pixel pages/time, and separate token/inference costs. Blank rates mean unpriced, not free; zero explicitly means free. Rates are snapshotted for each new analysis and never reprice history. The pixel rate is USD per worker hour of measured inference, excluding loading, queueing and idle infrastructure. Uploads are attributed to the authenticated Admin’s tenant; the browser cannot select another tenant. No document contents are saved to this cost ledger.
 
 Compose sets `TENANT_SERVICE_URL=http://tenant-service:8001`. Both services require the same nonempty `INTERNAL_API_SECRET` in the root `.env`. Settings refresh within five seconds; after cache expiry, an unavailable policy returns 503 instead of bypassing saved restrictions. Usage writes retry once using a stable analysis ID; failed writes are logged and do not fail the analysis. This is best-effort operational costing, not a billing-grade delivery guarantee. Earlier analyses are not backfilled.
 
-New settings and usage tables are created by tenant-service's existing startup migration. Restart/rebuild tenant-service, api-gateway, frontend and both forgery services when deploying these changes. MinIO is optional and is only started with the `storage` profile; neither runtime policy nor this cost ledger needs a MinIO license.
+The task uses the existing `llm_task_model` table (`task=document_forgery`, `role=primary`), with rate metadata in `settings`; no new table is needed. Settings and usage tables are created by tenant-service's existing startup migration. Restart/rebuild tenant-service, api-gateway, frontend and both forgery services when deploying these changes. MinIO starts with the main Compose stack; runtime policy and this cost ledger use PostgreSQL, independently of archive storage.
 
-For standalone engine/CLI use without the platform, leave `TENANT_SERVICE_URL` and `DOCS_FORGERY_DATABASE_URL` unset; environment configuration and the packaged reference thresholds apply, without central cost metering.
+The standalone CLI retains its Gemini/Groq environment configuration for developer experiments, without central metering. HTTP Layer 2 requires the central task configuration even when the HTTP engine is run outside Compose; local Layers 1 and 3 can run without it.
 
 ## Service API
 
@@ -77,9 +77,7 @@ and invalid form options return 422. A recognized but unreadable document return
 The application bounds its read before analysis; multipart uploads may be spooled to temporary
 storage by the HTTP framework. No document archive is created by this service.
 
-Layer 1 needs no credentials. For Layer 2 in Compose, put `GEMINI_API_KEY` or `GROQ_API_KEY`
-in the repository-root `.env` (loaded by the shared Compose defaults). Model settings are
-shown in `.env.example`; they are separate from the platform's shared LLM configuration.
+Layer 1 needs no credentials. HTTP Layer 2 uses the provider key, vision model and token rates saved in **SuperAdmin → LLM Configuration → Document Forgery Detection model**. Select that same provider when submitting an analysis. Compose does not inject provider keys into docs-forgery. The standalone CLI retains environment-based settings for developer experiments.
 For example:
 
 ```sh

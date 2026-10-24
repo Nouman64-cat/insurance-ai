@@ -9,6 +9,7 @@ Endpoints
 GET   /platform/llm-config              list providers + status (no keys)
 PUT   /platform/llm-config/{provider}   set model / role / api_key
 POST  /platform/llm-config/{provider}/test   live key check (real generation)
+PUT   /platform/llm-config/tasks/document-forgery   dedicated vision model and token rates
 PUT   /platform/llm-config/tasks/ocr    choose the OCR engine's own primary/fallback model
 PUT   /platform/llm-config/tasks/live-voice        realtime model, voice and transcription model
 POST  /platform/llm-config/tasks/live-voice/test   live check that OpenAI accepts that choice
@@ -29,13 +30,14 @@ from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from crypto_utils import EncryptionUnavailable, decrypt_secret, encrypt_secret, is_available
 from database import get_session
-from routers.auth import verify_superadmin
+from routers.auth import verify_superadmin, require_roles
+from routers.tokens import require_internal_service
 from shared.models.core import LLMProviderConfig, LLMTaskModel
 
 router = APIRouter(tags=["Platform — LLM Config"])
@@ -52,9 +54,7 @@ DEFAULT_MODELS = {
     "anthropic": "claude-sonnet-4-5",
 }
 
-# Optional shared secret for the internal endpoint. When set (in .env, shared
-# by all services), GET /internal/llm-config requires a matching header.
-INTERNAL_API_SECRET = os.environ.get("INTERNAL_API_SECRET", "").strip()
+# Internal reads require a nonempty shared secret, checked by require_internal_service.
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -82,6 +82,27 @@ class TaskConfig(BaseModel):
     fallback: Optional[TaskModelStatus] = None
 
 
+class ForgeryModelChoice(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    provider: str
+    model_name: str = Field(min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9./_-]+$")
+    input_per_million: float | None = Field(default=None, ge=0, le=10000)
+    output_per_million: float | None = Field(default=None, ge=0, le=10000)
+
+
+class ForgeryModelStatus(ForgeryModelChoice):
+    has_key: bool
+
+
+class ForgeryTaskConfig(BaseModel):
+    primary: ForgeryModelStatus | None = None
+
+
+class ForgeryTaskUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    primary: ForgeryModelChoice | None = None
+
+
 class LiveVoiceStatus(BaseModel):
     configured: bool  # False: the built-in defaults below are in use
     model_name: str
@@ -101,6 +122,7 @@ class LLMConfigResponse(BaseModel):
     providers: list[LLMProviderStatus]
     ocr: TaskConfig = TaskConfig()
     live_voice: Optional[LiveVoiceStatus] = None
+    document_forgery: ForgeryTaskConfig = Field(default_factory=ForgeryTaskConfig)
 
 
 class TaskConfigUpdate(BaseModel):
@@ -192,6 +214,30 @@ def _task_config(rows: list[LLMProviderConfig], task_rows: list[LLMTaskModel]) -
         role: TaskModelStatus(provider=t.provider, model_name=t.model_name, has_key=t.provider in keyed)
         for role, t in by_role.items() if role in TASK_ROLES
     })
+
+
+def _forgery_status(rows, task_rows) -> ForgeryTaskConfig:
+    task = next((t for t in task_rows if t.role == "primary"), None)
+    if task is None:
+        return ForgeryTaskConfig()
+    rates = task.settings or {}
+    return ForgeryTaskConfig(primary=ForgeryModelStatus(
+        provider=task.provider, model_name=task.model_name,
+        has_key=any(r.provider == task.provider and r.api_key_encrypted for r in rows),
+        input_per_million=rates.get("input_per_million"), output_per_million=rates.get("output_per_million")))
+
+
+async def resolved_document_forgery(session: AsyncSession) -> dict | None:
+    """Explicit task only: never inherit chat/OCR models or environment credentials."""
+    rows = list((await session.exec(select(LLMProviderConfig))).all())
+    tasks = await _task_rows(session, "document_forgery")
+    entry = _resolved_task(rows, tasks, "primary")
+    if entry is None:
+        return None
+    task = next(t for t in tasks if t.role == "primary")
+    rates = task.settings or {}
+    return {**entry, "input_rate": rates.get("input_per_million"),
+            "output_rate": rates.get("output_per_million"), "revision": _version(rows, tasks)}
 
 
 def _error_message(r: httpx.Response) -> str:
@@ -317,7 +363,34 @@ async def list_llm_config(session: AsyncSession = Depends(get_session)):
         providers=[_status(r) for r in rows],
         ocr=_task_config(rows, await _task_rows(session, "ocr")),
         live_voice=_live_voice_status(rows, await _task_rows(session, "live_voice")),
+        document_forgery=_forgery_status(rows, await _task_rows(session, "document_forgery")),
     )
+
+
+@router.put("/platform/llm-config/tasks/document-forgery", response_model=ForgeryTaskConfig)
+async def update_document_forgery_model(body: ForgeryTaskUpdate, session: AsyncSession = Depends(get_session), user=Depends(require_roles("SuperAdmin"))):
+    rows = await _all_rows(session)
+    choice = body.primary
+    if choice is not None:
+        choice.provider = choice.provider.lower().strip()
+        if choice.provider not in PROVIDERS:
+            raise HTTPException(422, "Choose Gemini, OpenAI or Anthropic for Document Forgery Detection.")
+        if not any(r.provider == choice.provider and r.api_key_encrypted for r in rows):
+            raise HTTPException(400, "Save the provider API key in LLM Configuration first.")
+    existing = await _task_rows(session, "document_forgery")
+    row = next((t for t in existing if t.role == "primary"), None)
+    if choice is None:
+        if row is not None:
+            await session.delete(row)
+    else:
+        row = row or LLMTaskModel(task="document_forgery", role="primary", provider=choice.provider, model_name=choice.model_name)
+        row.provider, row.model_name = choice.provider, choice.model_name
+        row.settings = {"input_per_million": choice.input_per_million, "output_per_million": choice.output_per_million}
+        row.updated_at = datetime.utcnow()
+        row.updated_by = user.id
+        session.add(row)
+    await session.commit()
+    return _forgery_status(rows, await _task_rows(session, "document_forgery"))
 
 
 @router.put(
@@ -548,20 +621,21 @@ async def internal_llm_config(
     session: AsyncSession = Depends(get_session),
     x_internal_secret: str = Header(default=""),
 ):
-    if INTERNAL_API_SECRET and x_internal_secret != INTERNAL_API_SECRET:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bad internal secret")
+    require_internal_service(x_internal_secret)
 
     rows = await _all_rows(session)
     ocr_rows = await _task_rows(session, "ocr")
     voice_rows = await _task_rows(session, "live_voice")
+    forgery_rows = await _task_rows(session, "document_forgery")
     return {
-        "version": _version(rows, ocr_rows + voice_rows),
+        "version": _version(rows, ocr_rows + voice_rows + forgery_rows),
         "primary": _resolved(rows, "primary"),
         "fallback": _resolved(rows, "fallback"),
         # The OCR engine's own models, each with its provider's key; null where none is chosen (or the key is gone).
         "ocr": {role: _resolved_task(rows, ocr_rows, role) for role in TASK_ROLES},
         # The live voice choice with the OpenAI key; null while the built-in defaults apply (or the key is gone).
         "live_voice": _resolved_live_voice(rows, voice_rows),
+        "document_forgery": await resolved_document_forgery(session),
     }
 
 

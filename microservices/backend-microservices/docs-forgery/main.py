@@ -16,7 +16,7 @@ from performance import Metrics
 
 from docforensics import Layer2Options, Layer3Options, analyze_document
 from docforensics import MAX_FILE_SIZE, detect_type
-from docforensics.gemini_client import make_client
+from docforensics.platform_client import make_platform_client
 from docforensics.layer3 import availability, load_thresholds, threshold_summary
 from schemas import AnalysisResponse
 
@@ -67,7 +67,8 @@ class DocumentType(str, Enum):
 
 class Provider(str, Enum):
     gemini = "gemini"
-    groq = "groq"
+    openai = "openai"
+    anthropic = "anthropic"
 
 
 @app.get("/health")
@@ -82,7 +83,9 @@ def health():
     return {"service": "docs-forgery", "status": "healthy",
             "result_storage": {"schema":"docs_forgery","configured":bool(os.getenv("DOCS_FORGERY_DATABASE_URL")),"ready":result_store._pool is not None},
             "platform_configuration": policy_status,
-            "analysis_policy": {k: config["settings"][k] for k in ("enabled", "content_enabled", "pixel_enabled", "visual_enabled", "provider", "max_pages")} if config else None,
+            "analysis_policy": ({**{k: config["settings"][k] for k in ("enabled", "content_enabled", "pixel_enabled", "visual_enabled", "max_pages")},
+                                 "provider": (config.get("llm") or {}).get("provider"),
+                                 "model": (config.get("llm") or {}).get("model"), "llm_ready": bool(config.get("llm"))} if config else None),
             "pixel_forensics": {"available": ready, "reason": reason, "calibrated": calibration is not None, "calibration": calibration}}
 
 
@@ -100,8 +103,7 @@ def _analyze(data, name, doc_type, layer2, provider, visual, max_pages, layer3, 
     # Construct a client per request so call logs and rate-limit state are not
     # shared across concurrent analyses. Layer 1 never needs a provider.
     settings = config["settings"] if config else {}
-    overrides = {"model": settings[provider.value + "_model"]} if settings else {}
-    client = make_client(provider.value, **overrides) if layer2 else None
+    client = make_platform_client(config.get("llm") if config else None) if layer2 else None
     analysis = analyze_document(
         data, name, doc_type.value if doc_type else None,
         layer2=layer2, client=client,
@@ -154,8 +156,12 @@ async def analyze(
             raise HTTPException(403, "The requested analysis option is disabled by SuperAdmin.")
         if max_pages > settings["max_pages"]:
             raise HTTPException(422, f"SuperAdmin limits analysis to {settings['max_pages']} pages.")
-        if layer2 and provider.value != settings["provider"]:
-            raise HTTPException(422, f"SuperAdmin configured {settings['provider']} as the content provider. Select that provider and confirm consent.")
+    if layer2:
+        llm = config.get("llm") if config else None
+        if not llm:
+            raise HTTPException(503, "Configure Document Forgery Detection in SuperAdmin LLM Configuration before enabling content analysis.")
+        if provider.value != llm["provider"]:
+            raise HTTPException(422, f"SuperAdmin configured {llm['provider']} as the content provider. Select that provider and confirm consent.")
     # The engine and provider clients are synchronous; keep them off the event loop.
     return await run_in_threadpool(
         _analyze, data, name, doc_type, layer2, provider, visual, max_pages, layer3, config, x_tenant_id,

@@ -46,7 +46,7 @@ def main(argv=None):
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--concurrency", type=int, choices=range(1, 33), default=1)
     parser.add_argument("--layer2", action="store_true", help="Send benchmark pages to the external model provider")
-    parser.add_argument("--provider", choices=("gemini", "groq"), default="gemini")
+    parser.add_argument("--provider", choices=("gemini", "openai", "anthropic"), default="gemini")
     parser.add_argument("--layer3", action="store_true")
     parser.add_argument("--max-pages", type=int, choices=range(1, 41), default=1)
     parser.add_argument("--out", type=Path, required=True)

@@ -7,11 +7,8 @@ import { tx } from "@/lib/i18n/tx";
 
 type Settings = {
   enabled: boolean; content_enabled: boolean; pixel_enabled: boolean; visual_enabled: boolean;
-  provider: "gemini" | "groq"; gemini_model: string; groq_model: string;
   max_pages: number; pixel_timeout_seconds: number; threshold_mode: "reference" | "manual";
   t95: number; tmax: number;
-  gemini_input_per_million: number | null; gemini_output_per_million: number | null;
-  groq_input_per_million: number | null; groq_output_per_million: number | null;
   pixel_per_hour: number | null;
 };
 const field = "mt-2 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm disabled:bg-slate-100";
@@ -44,11 +41,10 @@ export default function DocumentForgerySettings() {
     {!draft ? <p>{tx("Loading settings…")}</p> : <form className="space-y-6" onSubmit={e => {e.preventDefault(); void save();}}>
       <fieldset disabled={saving} className={card}><legend className="px-2 font-semibold">{tx("Analysis policy")}</legend>
         <div className="grid gap-4 sm:grid-cols-2">{([['enabled','Service enabled'],['content_enabled','Allow content analysis (Layer 2)'],['pixel_enabled','Allow pixel forensics (Layer 3)'],['visual_enabled','Allow additional visual inspection']] as const).map(([key,label]) => <label key={key} className="flex items-center gap-3 text-sm"><input type="checkbox" checked={draft[key]} onChange={e => update(key,e.target.checked)} />{tx(label)}</label>)}</div>
-        <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm">{tx("Content provider")}<select className={field} value={draft.provider} onChange={e => update('provider',e.target.value)}><option value="gemini">Gemini</option><option value="groq">Groq</option></select></label>
-        {(['gemini_model','groq_model'] as const).map(key => <label key={key} className="text-sm">{key === 'gemini_model' ? 'Gemini model' : 'Groq model'}<input required maxLength={100} pattern="[a-zA-Z0-9./_-]+" className={field} value={draft[key]} onChange={e => update(key,e.target.value)} /></label>)}
-        <label className="text-sm">{tx("Maximum pages per analysis")}<input type="number" required min={1} max={40} className={field} value={draft.max_pages} onChange={e => update('max_pages',Number(e.target.value))} /></label>
+        <Link href="/super-admin/llm-config" className="block text-sm text-blue-600">Configure the content model, encrypted provider key and model rates in LLM Configuration →</Link>
+        <div className="grid gap-4 sm:grid-cols-2">        <label className="text-sm">{tx("Maximum pages per analysis")}<input type="number" required min={1} max={40} className={field} value={draft.max_pages} onChange={e => update('max_pages',Number(e.target.value))} /></label>
         <label className="text-sm">{tx("Pixel worker timeout (seconds)")}<input type="number" required min={30} max={540} className={field} value={draft.pixel_timeout_seconds} onChange={e => update('pixel_timeout_seconds',Number(e.target.value))} /></label></div>
-        <p className="text-xs leading-5 text-slate-500">{tx("Layer 1 always runs. Layers 2 and 3 remain opt-in for each upload. Provider credentials come from the service environment; keys are never exposed here. Usage is attributed to the signed-in Admin’s tenant.")}</p>
+        <p className="text-xs leading-5 text-slate-500">{tx("Layer 1 always runs. Layers 2 and 3 remain opt-in for each upload. Content models and provider credentials come from SuperAdmin LLM Configuration; keys are never exposed here. Usage is attributed to the signed-in Admin’s tenant.")}</p>
       </fieldset>
       <fieldset disabled={saving} className={card}><legend className="px-2 font-semibold">{tx("Pixel anomaly thresholds")}</legend>
         <label className="block text-sm">{tx("Threshold source")}<select className={field} value={draft.threshold_mode} onChange={e => update('threshold_mode',e.target.value)}><option value="reference">{tx("Packaged reference baseline")}</option><option value="manual">{tx("SuperAdmin manual override")}</option></select></label>
@@ -56,8 +52,8 @@ export default function DocumentForgerySettings() {
         <p className="rounded-lg bg-amber-50 p-4 text-sm leading-6 text-amber-800">{tx("Reference cutoffs use 21 genuine calibration pages and 9 held-out genuine pages. They are provisional. Manual cutoffs have no calibration or validation claim. Scores are anomaly indicators, not forgery probabilities; pixel findings are capped at LOW severity.")}</p>
       </fieldset>
       <fieldset disabled={saving} className={card}><legend className="px-2 font-semibold">{tx("Cost rates · USD")}</legend>
-        <div className="grid gap-4 sm:grid-cols-2">{([['gemini_input_per_million','Gemini input / 1M tokens'],['gemini_output_per_million','Gemini output / 1M tokens'],['groq_input_per_million','Groq input / 1M tokens'],['groq_output_per_million','Groq output / 1M tokens'],['pixel_per_hour','Pixel inference / worker hour']] as const).map(([key,label]) => <label key={key} className="text-sm">{tx(label)}<input type="number" min={0} max={10000} step="any" placeholder="Unpriced" className={field} value={draft[key] ?? ''} onChange={e => update(key,e.target.value === '' ? null : Number(e.target.value))} /></label>)}</div>
-        <p className="text-xs leading-5 text-slate-500">{tx("Enter your provider and infrastructure rates. Blank means unpriced; zero means explicitly free. Rates are saved with each analysis, so later changes do not reprice history. Pixel cost uses measured inference time, excluding queueing, loading and idle infrastructure. No tokens are invented for local inference.")}</p>
+        <div className="grid gap-4 sm:grid-cols-2">{([['pixel_per_hour','Pixel inference / worker hour']] as const).map(([key,label]) => <label key={key} className="text-sm">{tx(label)}<input type="number" min={0} max={10000} step="any" placeholder="Unpriced" className={field} value={draft[key] ?? ''} onChange={e => update(key,e.target.value === '' ? null : Number(e.target.value))} /></label>)}</div>
+        <p className="text-xs leading-5 text-slate-500">{tx("Set model token rates in LLM Configuration and the local pixel infrastructure rate here. Blank means unpriced; zero means explicitly free. Rates are saved with each analysis, so later changes do not reprice history. Pixel cost uses measured inference time, excluding queueing, loading and idle infrastructure. No tokens are invented for local inference.")}</p>
       </fieldset>
       <button disabled={saving || JSON.stringify(draft) === JSON.stringify(saved)} className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{saving ? tx("Saving…") : tx("Save changes")}</button>
     </form>}

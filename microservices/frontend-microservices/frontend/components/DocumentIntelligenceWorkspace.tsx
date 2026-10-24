@@ -170,7 +170,7 @@ export default function DocumentIntelligenceWorkspace() {
   const [dragging, setDragging] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [health, setHealth] = useState("checking");
-  const [policy, setPolicy] = useState<{enabled:boolean; content_enabled:boolean; pixel_enabled:boolean; visual_enabled:boolean; provider:string; max_pages:number} | null>(null);
+  const [policy, setPolicy] = useState<{enabled:boolean; content_enabled:boolean; pixel_enabled:boolean; visual_enabled:boolean; provider:string | null; model?:string | null; llm_ready:boolean; max_pages:number} | null>(null);
   const [pixelReady, setPixelReady] = useState<boolean | null>(null);
   const controller = useRef<AbortController | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -184,7 +184,7 @@ export default function DocumentIntelligenceWorkspace() {
         setPixelReady(capabilities.pixel_forensics?.available ?? null);
         if (capabilities.analysis_policy) {
           setPolicy(capabilities.analysis_policy);
-          setProvider(capabilities.analysis_policy.provider);
+          setProvider(capabilities.analysis_policy.provider || "gemini");
           setConsent(false);
           setPages(p => Math.min(p, capabilities.analysis_policy.max_pages));
         }
@@ -447,10 +447,12 @@ export default function DocumentIntelligenceWorkspace() {
                   role="switch"
                   aria-label="Content consistency"
                   checked={layer2}
-                  disabled={policy?.content_enabled === false}
+                  disabled={policy?.content_enabled === false || policy?.llm_ready === false}
                   onChange={(e) => setLayer2(e.target.checked)}
                 />
               </label>
+              {policy?.llm_ready === false && <p className="muted">Content analysis requires a model and provider key in SuperAdmin LLM Configuration.</p>}
+              {policy?.model && <p className="muted">Configured model: {policy.model}</p>}
               {layer2 && (
                 <div className="layer-options">
                   <label className="field-label" htmlFor="provider">
@@ -466,7 +468,8 @@ export default function DocumentIntelligenceWorkspace() {
                     }}
                   >
                     <option value="gemini">Google Gemini</option>
-                    <option value="groq">Groq</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="anthropic">Anthropic Claude</option>
                   </select>
                   <label className="checkbox-row">
                     <input
@@ -485,7 +488,7 @@ export default function DocumentIntelligenceWorkspace() {
                     />
                     <span>
                       I agree to send this document’s pages to{" "}
-                      {provider === "gemini" ? "Google Gemini" : "Groq"} for
+                      {({gemini:"Google Gemini",openai:"OpenAI",anthropic:"Anthropic Claude"} as Record<string,string>)[provider] || "the configured provider"} for
                       analysis.
                     </span>
                   </label>

@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from "react";
 import api from "@/app/services/api";
 import { tx } from "@/lib/i18n/tx";
+import DocumentForgeryModelCard, { type ForgeryModel } from "@/components/DocumentForgeryModelCard";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type Role = "primary" | "fallback" | "disabled";
@@ -39,6 +40,7 @@ interface ConfigResponse {
   encryption_available: boolean;
   providers: ProviderStatus[];
   ocr: TaskConfig;
+  document_forgery?: {primary: ForgeryModel | null};
   live_voice?: LiveVoiceConfig | null;
 }
 
@@ -488,6 +490,7 @@ function OcrModelCard({
   onSaved,
 }: {
   ocr: TaskConfig;
+  document_forgery?: {primary: ForgeryModel | null};
   providers: ProviderStatus[];
   platformPrimary: ProviderStatus | undefined;
   onSaved: () => void;
@@ -818,7 +821,7 @@ function LLMConfigContent() {
         </h1>
         <p className="text-sm text-slate-500 mt-0.5">
           {tx("Primary and fallback chat models for the AI agent and risk engine. Keys are encrypted at rest and take effect within ~60 seconds — no restart.")}{" "}
-          {tx("OCR and live voice can use their own models, set below.")}
+          {tx("OCR, live voice and Document Forgery Detection can use their own models, set below.")}
         </p>
       </div>
 
@@ -918,6 +921,8 @@ function LLMConfigContent() {
               platformPrimary={primary}
               onSaved={load}
             />
+
+            <DocumentForgeryModelCard config={cfg.document_forgery ?? {primary:null}} providers={cfg.providers} onSaved={load} />
 
             {cfg.live_voice && <LiveVoiceCard config={cfg.live_voice} onSaved={load} />}
           </>

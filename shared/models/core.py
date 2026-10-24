@@ -2343,7 +2343,9 @@ class LLMProviderConfig(SQLModel, table=True):
 class LLMTaskModel(SQLModel, table=True):
     """A model chosen for one task instead of the platform defaults.
 
-    Tasks: "ocr" (the OCR engine and in-process document reading; roles
+    "document_forgery" uses one explicit primary model with input/output USD rates
+    in settings; no configured row means content analysis is unavailable.
+    Other tasks: "ocr" (the OCR engine and in-process document reading; roles
     "primary" | "fallback") and "live_voice" (the realtime voice conversation;
     one "primary" row, OpenAI only, with the voice and transcription model in
     `settings`). The row names a provider and a model only: the API key is the

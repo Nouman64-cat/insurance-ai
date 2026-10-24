@@ -46,18 +46,17 @@ def record_usage(analysis, client, config, tenant_id=None):
     if not url or config is None:
         return
     settings = config["settings"]
-    provider = settings["provider"]
+    llm = config.get("llm") or {}
     calls = getattr(client, "calls", []) if client else []
     perf = analysis.performance or {}
     body = {"id": str(uuid4()), "tenant_id": tenant_id, "models": [
-        {"model": c.model, "input_tokens": c.tokens_in, "output_tokens": c.tokens_out,
-         "input_rate": settings.get(provider + "_input_per_million"),
-         "output_rate": settings.get(provider + "_output_per_million")}
+        {"model": c.model, "provider": llm.get("provider"), "input_tokens": c.tokens_in, "output_tokens": c.tokens_out,
+         "input_rate": llm.get("input_rate"), "output_rate": llm.get("output_rate")}
         for c in calls if c.status == "ok" or c.tokens_in is not None or c.tokens_out is not None],
         "pixel_pages": perf.get("pixel_pages_scored", 0),
         "pixel_seconds": perf.get("pixel_inference_seconds", 0),
         "pixel_rate": settings.get("pixel_per_hour"), "complete": perf.get("complete", False),
-        "config_revision": config.get("updated_at")}
+        "config_revision": str(config.get("updated_at")) + ":" + str(llm.get("revision"))}
     for attempt in range(2):
         try:
             response = httpx.post(url + "/internal/document-forgery/usage", headers=headers(), json=body, timeout=3)
